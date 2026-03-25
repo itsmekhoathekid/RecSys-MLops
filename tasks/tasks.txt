@@ -1,0 +1,90 @@
+1) important : idea FSDS + full pipeline FSDS -> dua cho anh Nguyen + Quandv check 
+            gather as much relevant project as possible
+                -> find the most appropritate (tech stack, the problem, the scalability, relevant compare to the real world scenario)
+                - company that i want to work in : 
+                    - Google/Microsoft/Amazone
+                    - VNG/Fsot/Momo/viettel
+                    -> find related problems that correlated to the problems that my targeted company is trying to solve
+                        -> dataset/problemset
+
+            the problem : tabular using normal ML / NLP / DL (translation seq2seq task)
+            full pipeline
+                xac dinh input, output cua dataset + model pick + training metrics 
+                -> tim doc paper ve rec Sys 
+
+
+
+unrelevant question that needed to be asked:
+    - what should be the type of projects that my mentor (FSDS) thought that would be a good idea to do it 
+        -> neural machine translation dc kh nhỉ (transformer based)
+        (credit scoring)
+    - should we integrate module aide 1 2 3 together (if yes, tabular dataset should be suitable)
+        -> depends on what problems we r trying to solve
+    
+    - LLM / RAG thì sao dùng MLflow dc (vì nặng vkl)
+    
+    => kết luận cuối : làm ML tabular data, dataset sẽ search ở trên kaggle (for example : customer purchase prediction ML service)
+        + 1 câu hỏi : liệu bài toán machine translation có khả thi để integrate data pipeline + ML service + LLM ko 
+            (or bất cứ bài toán về deep learning nào khác)
+https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce
+
+    
+    1st choice https://www.kaggle.com/datasets/snap/amazon-fine-food-reviews (this fit the best)
+        -> ecommerce review summarization 
+        -> read paper to find how they crawl and create the text summarization dataset 
+    2nd choice : ecommerece ML tabular problems
+    https://github.com/dongtd6/Sentiment-Classifier-ML-System-on-K8S 
+    https://github.com/nguyenthai-duong/Ecommerce-Recommender-System-On-Aws-With-Mlops
+
+    
+
+candidate problems:
+    - recommendation system
+    - tabuler ML
+    - NLP/Deep Learning 
+    - CV/OCR
+
+tìm service về AI của các cty sau:
+    - Google/Microsoft/Amazone
+    - VNG/Fsot/Momo/viettel
+
+
+
+locked recommendation system
+related content : 
+    techstack : https://github.com/thanhphat-19/card-approval-prediction 
+    https://github.com/nguyenthai-duong/Ecommerce-Recommender-System-On-Aws-With-Mlops
+dataset : https://www.kaggle.com/datasets/rsrishav/youtube-trending-video-dataset/data 
+tasks : reseearch paper + models (to see which can apply into youtube video rec sys) 
+input + output of the problems : 
+
+Input = (User features, Behavior sequence, Item features, Context)
+Top-K items (K ~ 100–1000)
+questions:
+    neu co user id moi vao thi nen recommend cai gi 
+    cach train, inference rec sys 
+
+overview: 
+    https://learnopencv.com/recommendation-system/
+
+paper: prod ready 
+    LinRec: Linear Attention Mechanism for Long-term Sequential Recommender Systems (ACM, A* conference)
+        url: https://arxiv.org/html/2411.01537
+        code: https://github.com/Applied-Machine-Learning-Lab/LinRec
+
+        datasets benchmark:
+            ml-1m : movie recommendation 
+            gowalla : 
+                Domain: location-based social network (LBSN)
+                Loại dữ liệu: implicit feedback (check-in)
+    paper tren chi la phan bo tro, method chinh se la --SASRec-- : https://github.com/pmixer/SASRec.pytorch
+    
+
+    -> must including features : user previously intereacted time stamp, previously interacted items id, user id, candidate categories, candidate features 
+    
+    
+
+
+
+
+
