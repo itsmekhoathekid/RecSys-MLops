@@ -11,8 +11,13 @@ highly relevant proj :
     techstack : https://github.com/thanhphat-19/card-approval-prediction 
     idea : https://github.com/nguyenthai-duong/Ecommerce-Recommender-System-On-Aws-With-Mlops 
     
+    model : https://github.com/jiwidi/Behavior-Sequence-Transformer-Pytorch
 
+    dataset champion : https://www.kaggle.com/datasets/mkechinov/ecommerce-behavior-data-from-multi-category-store/ 
+        -> extract into smaller dataset 
+    dataset : https://www.kaggle.com/datasets/shikharg97/movielens-1m
 
+    
 
 
 

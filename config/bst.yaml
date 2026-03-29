@@ -1,0 +1,9 @@
+n_heads: 4
+k_interests: 16
+embed_dim: 16
+seq_len: 50
+intermediate_size: 64
+hidden_dropout_prob: 0.2
+attn_dropout_prob: 0.2
+hidden_act: gelu
+layer_norm_eps: 1e-12

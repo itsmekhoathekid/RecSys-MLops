@@ -82,9 +82,5 @@ paper: prod ready
 
     -> must including features : user previously intereacted time stamp, previously interacted items id, user id, candidate categories, candidate features 
     
-    
-
-
-
 
 

@@ -1,2 +1,8 @@
 .venv
 notesbooks/data/
+.env
+.env
+models/__pycache__/
+*.pyc
+notebooks/data/
+.ipynb_checkpoints/
