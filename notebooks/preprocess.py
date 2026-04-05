@@ -4,6 +4,30 @@ from concurrent.futures import ProcessPoolExecutor
 from tqdm.auto import tqdm
 from sklearn.preprocessing import LabelEncoder
 
+def bucketize_seconds_diff(seconds: int) -> int:
+    if seconds < 60 * 5:                 # < 5 phút
+        return 0
+    if seconds < 60 * 30:                # < 30 phút
+        return 1
+    if seconds < 60 * 60 * 2:            # < 2 giờ
+        return 2
+    if seconds < 60 * 60 * 6:            # < 6 giờ
+        return 3
+    if seconds < 60 * 60 * 24:           # < 1 ngày
+        return 4
+    if seconds < 60 * 60 * 24 * 3:       # < 3 ngày
+        return 5
+    if seconds < 60 * 60 * 24 * 7:       # < 7 ngày
+        return 6
+    if seconds < 60 * 60 * 24 * 14:      # < 14 ngày
+        return 7
+    return 8                             # >= 14 ngày
+
+def from_ts_to_bucket(ts, current_ts):
+    ts = ts/1000
+    current_ts = current_ts/1000
+    return bucketize_seconds_diff(current_ts - ts)
+
 
 def normalize_row_worker(row):
     row.pop("target_event_type", None)
@@ -48,6 +72,7 @@ def normalize_row_worker(row):
     row["hist_price_bucket"] = row["hist_price_bucket"][:true_len]
     row["hist_time"] = row["hist_time"][:true_len]
     row["hist_len"] = true_len
+    row["hist_time_bucket"] = [from_ts_to_bucket(ts, row['event_time']) for ts in row["hist_time"]]
 
     return row
 
@@ -185,12 +210,115 @@ def preprocessing_bst_ranking_parallel(
             json.dump(encoder_json, f, ensure_ascii=False, indent=2)
 
         print(f"Saved encoder mapping JSON to: {encoder_json_output}")
+from pathlib import Path
+from collections import defaultdict
+
+
+def split_preprocessed_bst_jsonl_by_time(
+    input_jsonl: str,
+    output_dir: str,
+    train_ratio: float = 0.8,
+    val_ratio: float = 0.1,
+):
+    """
+    Split encoded/preprocessed BST JSONL into train/val/test by temporal groups.
+
+    Group key = (user_id, event_time)
+    This keeps one positive + its negatives together.
+
+    Output:
+      - train.jsonl
+      - val.jsonl
+      - test.jsonl
+    """
+    assert 0 < train_ratio < 1
+    assert 0 <= val_ratio < 1
+    assert train_ratio + val_ratio < 1
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("\n[Split] Reading all rows and grouping by (user_id, event_time)")
+    groups = defaultdict(list)
+
+    with open(input_jsonl, "r", encoding="utf-8") as f:
+        for line in tqdm(f, desc="Reading encoded JSONL"):
+            row = json.loads(line)
+            key = (row["user_id"], row["event_time"])
+            groups[key].append(row)
+
+    print(f"Total groups: {len(groups):,}")
+
+    # Sort groups by event_time ascending, then user_id
+    sorted_groups = sorted(groups.items(), key=lambda x: (x[0][1], x[0][0]))
+
+    n_groups = len(sorted_groups)
+    train_end = int(n_groups * train_ratio)
+    val_end = int(n_groups * (train_ratio + val_ratio))
+
+    train_groups = sorted_groups[:train_end]
+    val_groups = sorted_groups[train_end:val_end]
+    test_groups = sorted_groups[val_end:]
+
+    print(f"Train groups: {len(train_groups):,}")
+    print(f"Val groups:   {len(val_groups):,}")
+    print(f"Test groups:  {len(test_groups):,}")
+
+    def write_groups(path, grouped_rows):
+        n_rows = 0
+        with open(path, "w", encoding="utf-8") as out_f:
+            for _, rows in tqdm(grouped_rows, desc=f"Writing {Path(path).name}"):
+                for row in rows:
+                    out_f.write(json.dumps(row, ensure_ascii=False) + "\n")
+                    n_rows += 1
+        return n_rows
+
+    train_path = output_dir / "train.jsonl"
+    val_path = output_dir / "val.jsonl"
+    test_path = output_dir / "test.jsonl"
+
+    train_rows = write_groups(train_path, train_groups)
+    val_rows = write_groups(val_path, val_groups)
+    test_rows = write_groups(test_path, test_groups)
+
+    print("\n[Split] Done")
+    print(f"Train rows: {train_rows:,} -> {train_path}")
+    print(f"Val rows:   {val_rows:,} -> {val_path}")
+    print(f"Test rows:  {test_rows:,} -> {test_path}")
+
+    split_meta = {
+        "input_jsonl": input_jsonl,
+        "output_dir": str(output_dir),
+        "train_ratio": train_ratio,
+        "val_ratio": val_ratio,
+        "test_ratio": 1.0 - train_ratio - val_ratio,
+        "num_groups": n_groups,
+        "train_groups": len(train_groups),
+        "val_groups": len(val_groups),
+        "test_groups": len(test_groups),
+        "train_rows": train_rows,
+        "val_rows": val_rows,
+        "test_rows": test_rows,
+    }
+
+    with open(output_dir / "split_meta.json", "w", encoding="utf-8") as f:
+        json.dump(split_meta, f, ensure_ascii=False, indent=2)
+
+    print(f"Saved split metadata -> {output_dir / 'split_meta.json'}")
+    return split_meta
 
 if __name__ == "__main__":
     preprocessing_bst_ranking_parallel(
         json_input="./notebooks/data/2019-Oct-bst-ranking-1m.jsonl",
-        json_output="./notebooks/data/2019-Oct-bst-ranking-1m-preprocessed.json",
+        json_output="./notebooks/data/2019-Oct-bst-ranking-1m-preprocessed.jsonl",
         encoder_json_output="./notebooks/data/2019-Oct-bst-ranking-1m-encoders.json",
         num_workers=16,
         chunk_size=50000,
+    )
+
+    split_preprocessed_bst_jsonl_by_time(
+        input_jsonl="./notebooks/data/2019-Oct-bst-ranking-1m-preprocessed.jsonl",
+        output_dir="./notebooks/data/bst_split",
+        train_ratio=0.8,
+        val_ratio=0.1,
     )
