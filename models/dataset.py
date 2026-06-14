@@ -83,6 +83,9 @@ class Logger:
     def log_loss(self, loss, epoch):
         self.logger.info(f"Epoch {epoch}: Loss = {loss:.4f}")
 
+    def log(self, name, value, epoch):
+        self.logger.info(f"Epoch {epoch}: {name} = {value:.4f}")
+
 def load_config(config_path):
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)

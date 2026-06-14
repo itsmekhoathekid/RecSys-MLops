@@ -945,6 +945,8 @@ class BST(nn.Module):
         self.sequence_linear_target = nn.Linear(self.embed_dim * 4, self.embed_dim)
         self.sequence_linear = nn.Linear(self.embed_dim * 5, self.embed_dim)
 
+        self.model_name = "BST"
+
     @staticmethod
     def concat(features):
         return torch.cat(features, dim=-1)

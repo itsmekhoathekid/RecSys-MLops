@@ -1,6 +1,6 @@
 import math
 from collections import defaultdict
-
+import os 
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -67,11 +67,14 @@ class Trainer:
         self.logger = Logger()
         self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
-        self.model = self.get_model().to(self.device)
-        self.optimizer, self.scheduler = self.get_optimizer()
+        self.model, self.optimizer, self.scheduler, self.best_score = self.initialize()
+        self.model.to(self.device)
         self.loss_fn = self._get_loss_fn()
 
         self.ranking_ks = self.training_args.get("ranking_ks", [1, 3, 5, 10])
+    
+    def get_best_score(self):
+        return self.best_score
     
     def get_data_loader(self, dataset, shuffle=False):
         return torch.utils.data.DataLoader(
@@ -104,6 +107,24 @@ class Trainer:
             target_brand=batch["target_brand"],
             target_price_bucket=batch["target_price_bucket"],
         )
+    
+    def save_model(self, epoch, best_score):
+        base_path = self.model_args.get("save_path", "./notebooks/data/")
+        
+        
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
+            "score": best_score, 
+            'config': self.config
+        }, os.path.join(
+            base_path,
+            self.model.model_name
+        ))
+    
+
 
     def train(self, train_loader):
         self.model.train()
@@ -190,6 +211,7 @@ class Trainer:
             all_group_keys=all_group_keys,
         )
         metrics["loss"] = total_loss / max(len(val_loader), 1)
+        
         return metrics
 
     def _compute_metrics(self, all_labels, all_probs, all_group_keys):
@@ -241,38 +263,31 @@ class Trainer:
         metrics["num_groups"] = len(grouped)
         metrics["valid_auc_groups"] = valid_groups
         return metrics
-
-    def get_model(self):
+    
+    def initialize(self):
         model = BST(self.model_args)
-        if self.model_args.get("reload_model", False):
-            model.load_state_dict(torch.load(self.model_args["model_path"], map_location="cpu"))
-            print(f"Model loaded from {self.model_args['model_path']}")
-        return model
-
-    def get_optimizer(self):
         optimizer = torch.optim.Adam(
-            self.model.parameters(),
+            model.parameters(),
             lr=self.learning_rate,
             weight_decay=self.l2_reg,
         )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.3, patience=2
+        )
 
         if self.model_args.get("reload_model", False):
-            optimizer_path = self.model_args["model_path"].replace("model", "optimizer")
-            scheduler_path = self.model_args["model_path"].replace("model", "scheduler")
-            optimizer.load_state_dict(torch.load(optimizer_path, map_location="cpu"))
-            print(f"Optimizer loaded from {optimizer_path}")
+            base_path = self.model_args.get("save_path", "./notebooks/data/")
+            checkpoint_path = os.path.join(base_path, self.model.model_name)
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            score = checkpoint.get("score", 0)
+            print(f"Model, optimizer, and scheduler loaded from {checkpoint_path}")
+                
+        return model, optimizer, scheduler, score 
 
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode="min", factor=0.3, patience=2
-            )
-            scheduler.load_state_dict(torch.load(scheduler_path, map_location="cpu"))
-            print(f"Scheduler loaded from {scheduler_path}")
-        else:
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode="min", factor=0.3, patience=2
-            )
-
-        return optimizer, scheduler
+    
 
     def _get_loss_fn(self):
         return nn.BCEWithLogitsLoss()

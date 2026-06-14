@@ -41,3 +41,10 @@ python ./notebooks/ranking_sampling_process.py \
 
 
 python train.py --config_path ./config/bst.yaml
+
+high level design
+
+https://excalidraw.com/#json=KMDLTodfVMIhOLekAsxlt,oaCYBPNjMOFj9h-T5GnyYw 
+
+
+
