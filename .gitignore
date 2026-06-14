@@ -6,3 +6,5 @@ models/__pycache__/
 *.pyc
 notebooks/data/
 .ipynb_checkpoints/
+data_generator/output/
+coursework/

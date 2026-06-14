@@ -1,0 +1,74 @@
+seed: 42
+history_start_date: "2025-05-01"
+history_days: 150
+
+entities:
+  n_users: 1000
+  n_products: 500
+  n_categories: 20
+  n_brands: 80
+  preferences_per_user: 3
+
+traffic:
+  target_behavior_events: 50000
+  target_tolerance: 0.02
+  requests_per_session_min: 1
+  requests_per_session_max: 2
+  impressions_per_request_min: 5
+  impressions_per_request_max: 9
+  session_gap_minutes_min: 5
+  session_gap_minutes_max: 240
+
+session_behavior:
+  view_after_impression_base: 0.32
+  cart_after_view_base: 0.20
+  purchase_after_cart_base: 0.30
+
+distribution:
+  top_city: "HCMC"
+  top_city_ratio: 0.35
+  cities:
+    - "HCMC"
+    - "Hanoi"
+    - "Da Nang"
+    - "Can Tho"
+    - "Hai Phong"
+    - "Hue"
+    - "Nha Trang"
+    - "Bien Hoa"
+  top_category_ratio: 0.30
+
+challenges:
+  duplicate_event_rate: 0.015
+  conflicting_duplicate_rate: 0.001
+  late_arrival_rate: 0.12
+  out_of_order_rate: 0.03
+  late_delay_minutes_min: 5
+  late_delay_minutes_max: 45
+
+burst_windows:
+  - start_hour: 12
+    end_hour: 13
+    traffic_weight: 3.0
+  - start_hour: 20
+    end_hour: 21
+    traffic_weight: 3.0
+
+schema_evolution:
+  change_date: "2025-07-01"
+
+drift:
+  enabled: true
+  scenario: "user_purchase_frequency"
+  drift_start_date: "2025-07-30"
+  drift_mode: "gradual"
+  purchase_probability_multiplier: 1.50
+  ramp_up_days: 30
+  baseline_start_date: "2025-06-30"
+  baseline_end_date: "2025-07-29"
+  psi_alert_threshold: 0.15
+
+output:
+  base_path: "data_generator/output"
+  run_id: "drift_50k_seed42"
+  overwrite: true
