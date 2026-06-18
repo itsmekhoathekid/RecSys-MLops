@@ -1,0 +1,21 @@
+FROM recsys-base-python:local
+
+WORKDIR /opt/recsys
+COPY pyproject.toml uv.lock* /opt/recsys/
+ENV PYTHONPATH=/opt/recsys
+
+RUN uv pip install --no-cache \
+    pandas \
+    pyarrow \
+    pyyaml \
+    boto3 \
+    s3fs \
+    psycopg[binary] \
+    redis \
+    kafka-python \
+    requests \
+    feast
+
+COPY . /opt/recsys
+
+CMD ["bash"]

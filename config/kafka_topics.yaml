@@ -1,0 +1,19 @@
+bootstrap_servers: localhost:9092
+
+topics:
+  users: cdc.users
+  user_preferences: cdc.user_preferences
+  products: cdc.products
+  product_snapshots: cdc.product_snapshots
+  sessions: cdc.sessions
+  recommendation_requests: cdc.recommendation_requests
+  impressions: cdc.impressions
+  behavior_events: cdc.behavior_events
+  orders: cdc.orders
+  order_items: cdc.order_items
+
+raw_sink:
+  lake_bucket: recsys-lake
+  feature_store_bucket: recsys-feature-store
+  prefix: bronze/kafka
+  partition_field: event_date

@@ -1,0 +1,17 @@
+kafka:
+  bootstrap_servers: localhost:9092
+  behavior_events_topic: cdc.behavior_events
+  impressions_topic: cdc.impressions
+  orders_topic: cdc.orders
+  order_items_topic: cdc.order_items
+
+streaming:
+  event_time_column: event_timestamp
+  watermark_delay_minutes: 60
+  max_history_length: 50
+
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+

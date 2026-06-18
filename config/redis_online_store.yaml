@@ -1,0 +1,18 @@
+host: localhost
+port: 6379
+db: 0
+
+keys:
+  user_sequence: fs:user_sequence:{user_id}
+  user_aggregate: fs:user_aggregate:{user_id}
+  item_features: fs:item:{product_id}
+  popular_global: candidate:popular:global
+  popular_category: candidate:popular:category:{category_id}
+  trending_global_1h: candidate:trending:1h
+  trending_category: candidate:trending:category:{category_id}
+
+ttl_seconds:
+  user_sequence: 7776000
+  user_aggregate: 86400
+  item_features: 604800
+
