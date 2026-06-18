@@ -1,0 +1,22 @@
+{
+  "name": "recsys-postgres-cdc",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "recsys",
+    "database.password": "recsys",
+    "database.dbname": "recsys",
+    "topic.prefix": "cdc",
+    "plugin.name": "pgoutput",
+    "slot.name": "recsys_slot",
+    "publication.autocreate.mode": "filtered",
+    "table.include.list": "public.users,public.user_preferences,public.products,public.product_snapshots,public.sessions,public.recommendation_requests,public.impressions,public.behavior_events,public.orders,public.order_items",
+    "tombstones.on.delete": "false",
+    "include.schema.changes": "false",
+    "transforms": "route",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "cdc\\.public\\.([^.]+)",
+    "transforms.route.replacement": "cdc.$1"
+  }
+}

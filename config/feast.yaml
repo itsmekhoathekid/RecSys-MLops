@@ -1,0 +1,19 @@
+project: recsys_local
+provider: local
+registry: feature_store/feature_repo/data/registry.db
+
+offline_store:
+  type: file
+
+online_store:
+  type: redis
+  connection_string: localhost:6379
+
+feature_paths:
+  user_sequence_features: s3://recsys-feature-store/offline/user_sequence_features
+  user_aggregate_features: s3://recsys-feature-store/offline/user_aggregate_features
+  item_features: s3://recsys-feature-store/offline/item_features
+
+buckets:
+  lake_bucket: recsys-lake
+  feature_store_bucket: recsys-feature-store

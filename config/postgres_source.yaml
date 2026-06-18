@@ -1,0 +1,19 @@
+host: localhost
+port: 5432
+database: recsys
+user: recsys
+password: recsys
+schema: public
+
+tables:
+  - users
+  - user_preferences
+  - products
+  - product_snapshots
+  - sessions
+  - recommendation_requests
+  - impressions
+  - behavior_events
+  - orders
+  - order_items
+

@@ -1,0 +1,17 @@
+FROM apache/airflow:2.9.3-python3.10
+
+USER root
+WORKDIR /opt/recsys
+COPY . /opt/recsys
+USER airflow
+
+RUN pip install --no-cache-dir \
+    apache-airflow-providers-docker \
+    apache-airflow-providers-http \
+    apache-airflow-providers-postgres \
+    requests \
+    pyyaml \
+    redis
+
+ENV PYTHONPATH=/opt/recsys
+
