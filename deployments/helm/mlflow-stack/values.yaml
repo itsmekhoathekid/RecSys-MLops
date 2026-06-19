@@ -1,0 +1,42 @@
+namespace:
+  create: true
+  name: mlops
+
+storageClassName: ""
+
+minio:
+  image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+  rootUser: minio
+  rootPassword: minio123
+  bucket: mlflow-artifacts
+  storage: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  service:
+    apiPort: 9000
+    consolePort: 9001
+
+postgres:
+  image: postgres:16
+  database: mlflow
+  user: mlflow
+  password: mlflow123
+  storage: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  service:
+    port: 5432
+
+mlflow:
+  image: recsys-mlflow:local
+  imagePullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  service:
+    port: 5000

@@ -1,0 +1,13 @@
+entrypoint:
+  gpusPerTrial: 1
+
+gpu:
+  enabled: true
+  limit: 1
+
+worker:
+  cpuRequest: "2"
+  cpuLimit: "4"
+  memoryRequest: 4Gi
+  memoryLimit: 8Gi
+

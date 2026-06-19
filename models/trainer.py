@@ -110,6 +110,8 @@ class Trainer:
     
     def save_model(self, epoch, best_score):
         base_path = self.model_args.get("save_path", "./notebooks/data/")
+        os.makedirs(base_path, exist_ok=True)
+        checkpoint_path = os.path.join(base_path, self.model.model_name)
         
         
         torch.save({
@@ -119,10 +121,8 @@ class Trainer:
             "scheduler_state_dict": self.scheduler.state_dict(),
             "score": best_score, 
             'config': self.config
-        }, os.path.join(
-            base_path,
-            self.model.model_name
-        ))
+        }, checkpoint_path)
+        return checkpoint_path
     
 
 
@@ -266,6 +266,7 @@ class Trainer:
     
     def initialize(self):
         model = BST(self.model_args)
+        score = 0.0
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=self.learning_rate,

@@ -1,0 +1,522 @@
+# PIPELINE DEFINITION
+# Name: recsys-bst-feature-train-evaluate
+# Description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO artifacts, and Postgres model config.
+# Inputs:
+#    bst_config_path: str [Default: 'config/bst.yaml']
+#    config_path: str [Default: 'config/spark_batch.yaml']
+#    eval_metrics_path: str [Default: '/workspace/recsys/data_pipeline/output/ml/eval_metrics.json']
+#    feature_summary_path: str [Default: '/workspace/recsys/data_pipeline/output/feature_summary.json']
+#    gpu_limit: int [Default: 1.0]
+#    max_history_len: int [Default: 50.0]
+#    max_trials: int [Default: 2.0]
+#    num_epochs: int [Default: 1.0]
+#    output_base: str [Default: '/workspace/recsys/data_pipeline/output']
+#    parallel_trials: int [Default: 1.0]
+#    pvc_mount_path: str [Default: '/workspace']
+#    pvc_name: str [Default: 'recsys-mlops-pvc']
+#    ray_best_result_path: str [Default: '/workspace/recsys/data_pipeline/output/ml/ray/best_result.json']
+#    ray_image: str [Default: 'recsys-mlops-training:local']
+#    ray_job_name: str [Default: 'recsys-bst-ray-tune']
+#    ray_namespace: str [Default: 'kubeflow']
+#    ray_output_dir: str [Default: '/workspace/recsys/data_pipeline/output/ml/ray']
+#    ray_status_path: str [Default: '/workspace/recsys/data_pipeline/output/ml/ray/rayjob_status.json']
+#    runtime_secret_name: str [Default: 'recsys-mlops-runtime']
+#    source_run_path: str [Default: 'data_generator/output/test_10k_seed42']
+#    split_output_dir: str [Default: '/workspace/recsys/notebooks/data/bst_split']
+#    training_percent: float [Default: 0.01]
+#    training_table_path: str [Default: '/workspace/recsys/data_pipeline/output/ml/offline/ml_bst_training']
+#    use_gpu: bool [Default: False]
+#    workspace_root: str [Default: '/workspace/recsys']
+components:
+  comp-evaluate-bst:
+    executorLabel: exec-evaluate-bst
+    inputDefinitions:
+      parameters:
+        config_path:
+          parameterType: STRING
+        metrics_path:
+          parameterType: STRING
+        ray_result_path:
+          parameterType: STRING
+  comp-feature-engineering:
+    executorLabel: exec-feature-engineering
+    inputDefinitions:
+      parameters:
+        config_path:
+          parameterType: STRING
+        output_base:
+          parameterType: STRING
+        run_path:
+          parameterType: STRING
+        summary_path:
+          parameterType: STRING
+  comp-prepare-training-data:
+    executorLabel: exec-prepare-training-data
+    inputDefinitions:
+      parameters:
+        max_history_len:
+          parameterType: NUMBER_INTEGER
+        output_dir:
+          parameterType: STRING
+        training_table_path:
+          parameterType: STRING
+  comp-submit-rayjob:
+    executorLabel: exec-submit-rayjob
+    inputDefinitions:
+      parameters:
+        best_result_path:
+          parameterType: STRING
+        gpu_limit:
+          parameterType: NUMBER_INTEGER
+        image:
+          parameterType: STRING
+        job_name:
+          parameterType: STRING
+        max_trials:
+          parameterType: NUMBER_INTEGER
+        namespace:
+          parameterType: STRING
+        num_epochs:
+          parameterType: NUMBER_INTEGER
+        parallel_trials:
+          parameterType: NUMBER_INTEGER
+        pvc_name:
+          parameterType: STRING
+        ray_output_dir:
+          parameterType: STRING
+        runtime_secret_name:
+          parameterType: STRING
+        split_dir:
+          parameterType: STRING
+        status_path:
+          parameterType: STRING
+        training_percent:
+          parameterType: NUMBER_DOUBLE
+        use_gpu:
+          parameterType: BOOLEAN
+deploymentSpec:
+  executors:
+    exec-evaluate-bst:
+      container:
+        args:
+        - --config-path
+        - '{{$.inputs.parameters[''config_path'']}}'
+        - --ray-result-path
+        - '{{$.inputs.parameters[''ray_result_path'']}}'
+        - --split
+        - test
+        - --metrics-path
+        - '{{$.inputs.parameters[''metrics_path'']}}'
+        command:
+        - python
+        - -m
+        - pipelines.model_pipeline.evaluate_ray_best_bst
+        image: recsys-mlops-training:local
+    exec-feature-engineering:
+      container:
+        args:
+        - --source-config
+        - '{{$.inputs.parameters[''config_path'']}}'
+        - --output-base
+        - '{{$.inputs.parameters[''output_base'']}}'
+        - --run-path
+        - '{{$.inputs.parameters[''run_path'']}}'
+        - --summary-path
+        - '{{$.inputs.parameters[''summary_path'']}}'
+        command:
+        - python
+        - -m
+        - pipelines.model_pipeline.run_feature_engineering
+        image: recsys-mlops-training:local
+    exec-prepare-training-data:
+      container:
+        args:
+        - --input-path
+        - '{{$.inputs.parameters[''training_table_path'']}}'
+        - --output-dir
+        - '{{$.inputs.parameters[''output_dir'']}}'
+        - --max-history-len
+        - '{{$.inputs.parameters[''max_history_len'']}}'
+        command:
+        - python
+        - -m
+        - pipelines.model_pipeline.prepare_bst_training_data
+        image: recsys-mlops-training:local
+    exec-submit-rayjob:
+      container:
+        args:
+        - --namespace
+        - '{{$.inputs.parameters[''namespace'']}}'
+        - --job-name
+        - '{{$.inputs.parameters[''job_name'']}}'
+        - --image
+        - '{{$.inputs.parameters[''image'']}}'
+        - --pvc-name
+        - '{{$.inputs.parameters[''pvc_name'']}}'
+        - --runtime-secret-name
+        - '{{$.inputs.parameters[''runtime_secret_name'']}}'
+        - --split-dir
+        - '{{$.inputs.parameters[''split_dir'']}}'
+        - --ray-output-dir
+        - '{{$.inputs.parameters[''ray_output_dir'']}}'
+        - --best-result-path
+        - '{{$.inputs.parameters[''best_result_path'']}}'
+        - --training-percent
+        - '{{$.inputs.parameters[''training_percent'']}}'
+        - --num-epochs
+        - '{{$.inputs.parameters[''num_epochs'']}}'
+        - --max-trials
+        - '{{$.inputs.parameters[''max_trials'']}}'
+        - --parallel-trials
+        - '{{$.inputs.parameters[''parallel_trials'']}}'
+        - --use-gpu-value
+        - '{{$.inputs.parameters[''use_gpu'']}}'
+        - --gpu-limit
+        - '{{$.inputs.parameters[''gpu_limit'']}}'
+        - --status-path
+        - '{{$.inputs.parameters[''status_path'']}}'
+        command:
+        - python
+        - -m
+        - pipelines.model_pipeline.submit_ray_job
+        image: recsys-mlops-training:local
+pipelineInfo:
+  description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
+    artifacts, and Postgres model config.
+  name: recsys-bst-feature-train-evaluate
+root:
+  dag:
+    tasks:
+      evaluate-bst:
+        cachingOptions: {}
+        componentRef:
+          name: comp-evaluate-bst
+        dependentTasks:
+        - submit-rayjob
+        inputs:
+          parameters:
+            config_path:
+              componentInputParameter: bst_config_path
+            metrics_path:
+              componentInputParameter: eval_metrics_path
+            ray_result_path:
+              componentInputParameter: ray_best_result_path
+        taskInfo:
+          name: evaluate-bst
+      feature-engineering:
+        cachingOptions: {}
+        componentRef:
+          name: comp-feature-engineering
+        inputs:
+          parameters:
+            config_path:
+              componentInputParameter: config_path
+            output_base:
+              componentInputParameter: output_base
+            run_path:
+              componentInputParameter: source_run_path
+            summary_path:
+              componentInputParameter: feature_summary_path
+        taskInfo:
+          name: feature-engineering
+      prepare-training-data:
+        cachingOptions: {}
+        componentRef:
+          name: comp-prepare-training-data
+        dependentTasks:
+        - feature-engineering
+        inputs:
+          parameters:
+            max_history_len:
+              componentInputParameter: max_history_len
+            output_dir:
+              componentInputParameter: split_output_dir
+            training_table_path:
+              componentInputParameter: training_table_path
+        taskInfo:
+          name: prepare-training-data
+      submit-rayjob:
+        cachingOptions: {}
+        componentRef:
+          name: comp-submit-rayjob
+        dependentTasks:
+        - prepare-training-data
+        inputs:
+          parameters:
+            best_result_path:
+              componentInputParameter: ray_best_result_path
+            gpu_limit:
+              componentInputParameter: gpu_limit
+            image:
+              componentInputParameter: ray_image
+            job_name:
+              componentInputParameter: ray_job_name
+            max_trials:
+              componentInputParameter: max_trials
+            namespace:
+              componentInputParameter: ray_namespace
+            num_epochs:
+              componentInputParameter: num_epochs
+            parallel_trials:
+              componentInputParameter: parallel_trials
+            pvc_name:
+              componentInputParameter: pvc_name
+            ray_output_dir:
+              componentInputParameter: ray_output_dir
+            runtime_secret_name:
+              componentInputParameter: runtime_secret_name
+            split_dir:
+              componentInputParameter: split_output_dir
+            status_path:
+              componentInputParameter: ray_status_path
+            training_percent:
+              componentInputParameter: training_percent
+            use_gpu:
+              componentInputParameter: use_gpu
+        taskInfo:
+          name: submit-rayjob
+  inputDefinitions:
+    parameters:
+      bst_config_path:
+        defaultValue: config/bst.yaml
+        isOptional: true
+        parameterType: STRING
+      config_path:
+        defaultValue: config/spark_batch.yaml
+        isOptional: true
+        parameterType: STRING
+      eval_metrics_path:
+        defaultValue: /workspace/recsys/data_pipeline/output/ml/eval_metrics.json
+        isOptional: true
+        parameterType: STRING
+      feature_summary_path:
+        defaultValue: /workspace/recsys/data_pipeline/output/feature_summary.json
+        isOptional: true
+        parameterType: STRING
+      gpu_limit:
+        defaultValue: 1.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      max_history_len:
+        defaultValue: 50.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      max_trials:
+        defaultValue: 2.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      num_epochs:
+        defaultValue: 1.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      output_base:
+        defaultValue: /workspace/recsys/data_pipeline/output
+        isOptional: true
+        parameterType: STRING
+      parallel_trials:
+        defaultValue: 1.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      pvc_mount_path:
+        defaultValue: /workspace
+        isOptional: true
+        parameterType: STRING
+      pvc_name:
+        defaultValue: recsys-mlops-pvc
+        isOptional: true
+        parameterType: STRING
+      ray_best_result_path:
+        defaultValue: /workspace/recsys/data_pipeline/output/ml/ray/best_result.json
+        isOptional: true
+        parameterType: STRING
+      ray_image:
+        defaultValue: recsys-mlops-training:local
+        isOptional: true
+        parameterType: STRING
+      ray_job_name:
+        defaultValue: recsys-bst-ray-tune
+        isOptional: true
+        parameterType: STRING
+      ray_namespace:
+        defaultValue: kubeflow
+        isOptional: true
+        parameterType: STRING
+      ray_output_dir:
+        defaultValue: /workspace/recsys/data_pipeline/output/ml/ray
+        isOptional: true
+        parameterType: STRING
+      ray_status_path:
+        defaultValue: /workspace/recsys/data_pipeline/output/ml/ray/rayjob_status.json
+        isOptional: true
+        parameterType: STRING
+      runtime_secret_name:
+        defaultValue: recsys-mlops-runtime
+        isOptional: true
+        parameterType: STRING
+      source_run_path:
+        defaultValue: data_generator/output/test_10k_seed42
+        isOptional: true
+        parameterType: STRING
+      split_output_dir:
+        defaultValue: /workspace/recsys/notebooks/data/bst_split
+        isOptional: true
+        parameterType: STRING
+      training_percent:
+        defaultValue: 0.01
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      training_table_path:
+        defaultValue: /workspace/recsys/data_pipeline/output/ml/offline/ml_bst_training
+        isOptional: true
+        parameterType: STRING
+      use_gpu:
+        defaultValue: false
+        isOptional: true
+        parameterType: BOOLEAN
+      workspace_root:
+        defaultValue: /workspace/recsys
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.16.1
+---
+platforms:
+  kubernetes:
+    deploymentSpec:
+      executors:
+        exec-evaluate-bst:
+          pvcMount:
+          - constant: recsys-mlops-pvc
+            mountPath: /workspace
+            pvcNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-pvc
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MINIO_ENDPOINT
+              secretKey: MINIO_ENDPOINT
+            - envVar: MINIO_ROOT_USER
+              secretKey: MINIO_ROOT_USER
+            - envVar: MINIO_ROOT_PASSWORD
+              secretKey: MINIO_ROOT_PASSWORD
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: MODEL_REGISTRY_POSTGRES_URI
+              secretKey: MODEL_REGISTRY_POSTGRES_URI
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            optional: false
+            secretName: recsys-mlops-runtime
+            secretNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-runtime
+        exec-feature-engineering:
+          pvcMount:
+          - constant: recsys-mlops-pvc
+            mountPath: /workspace
+            pvcNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-pvc
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MINIO_ENDPOINT
+              secretKey: MINIO_ENDPOINT
+            - envVar: MINIO_ROOT_USER
+              secretKey: MINIO_ROOT_USER
+            - envVar: MINIO_ROOT_PASSWORD
+              secretKey: MINIO_ROOT_PASSWORD
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: MODEL_REGISTRY_POSTGRES_URI
+              secretKey: MODEL_REGISTRY_POSTGRES_URI
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            optional: false
+            secretName: recsys-mlops-runtime
+            secretNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-runtime
+        exec-prepare-training-data:
+          pvcMount:
+          - constant: recsys-mlops-pvc
+            mountPath: /workspace
+            pvcNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-pvc
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MINIO_ENDPOINT
+              secretKey: MINIO_ENDPOINT
+            - envVar: MINIO_ROOT_USER
+              secretKey: MINIO_ROOT_USER
+            - envVar: MINIO_ROOT_PASSWORD
+              secretKey: MINIO_ROOT_PASSWORD
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: MODEL_REGISTRY_POSTGRES_URI
+              secretKey: MODEL_REGISTRY_POSTGRES_URI
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            optional: false
+            secretName: recsys-mlops-runtime
+            secretNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-runtime
+        exec-submit-rayjob:
+          pvcMount:
+          - constant: recsys-mlops-pvc
+            mountPath: /workspace
+            pvcNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-pvc
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MINIO_ENDPOINT
+              secretKey: MINIO_ENDPOINT
+            - envVar: MINIO_ROOT_USER
+              secretKey: MINIO_ROOT_USER
+            - envVar: MINIO_ROOT_PASSWORD
+              secretKey: MINIO_ROOT_PASSWORD
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: MODEL_REGISTRY_POSTGRES_URI
+              secretKey: MODEL_REGISTRY_POSTGRES_URI
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            optional: false
+            secretName: recsys-mlops-runtime
+            secretNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-runtime

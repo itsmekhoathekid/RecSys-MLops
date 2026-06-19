@@ -6,6 +6,11 @@ DATAFLOW_SMOKE_PHASE ?= all
 DATAFLOW_LOG_SERVICE ?=
 DATAFLOW_INGEST_BUCKET ?= recsys-lake
 DATAFLOW_INGEST_PREFIX ?= raw
+RECSYS_PIPELINE_IMAGE ?= recsys-mlops-training:local
+MINIKUBE_PROFILE ?= recsys-mlops
+KFP_VERSION ?= 2.16.1
+KUBEFLOW_NAMESPACE ?= kubeflow
+MLOPS_NAMESPACE ?= mlops
 
 .PHONY: help
 help:
@@ -31,6 +36,22 @@ help:
 	@echo "  make dataflow-smoke DATAFLOW_SMOKE_PHASE=services|buckets|connectors|bronze|offline|redis"
 	@echo "  make dataflow-trigger         Trigger full_dataflow_local_dag"
 	@echo "  make dataflow-test            Run local unit tests"
+	@echo ""
+	@echo "Kubeflow/MLflow:"
+	@echo "  make mlops-local-up           Start local minikube profile"
+	@echo "  make mlops-images             Build training and MLflow images"
+	@echo "  make mlops-images-minikube    Build images inside minikube Docker daemon"
+	@echo "  make mlops-install-kfp        Install standalone Kubeflow Pipelines"
+	@echo "  make mlops-install-kuberay    Install KubeRay operator"
+	@echo "  make mlops-install-stack      Install MLflow/runtime Helm charts"
+	@echo "  make mlops-compile-kfp        Compile the RecSys BST Kubeflow pipeline"
+	@echo "  make mlops-helm-template      Render MLflow/runtime Helm charts"
+	@echo "  make mlops-port-forward       Port-forward KFP, MLflow, MinIO, Ray dashboards"
+
+.PHONY: mlops-local-up
+mlops-local-up:
+	@minikube start --profile $(MINIKUBE_PROFILE) --driver=docker --cpus=6 --memory=12288 --disk-size=40g
+	@kubectl config use-context $(MINIKUBE_PROFILE)
 
 .PHONY: dataflow-build
 dataflow-build:
@@ -90,3 +111,48 @@ dataflow-realtime-down:
 .PHONY: dataflow-test
 dataflow-test:
 	@uv run pytest data_generator/tests testing/unit -q
+
+.PHONY: mlops-images
+mlops-images:
+	@docker build -f deployments/docker/Dockerfile.base-python -t recsys-base-python:local .
+	@docker build -f deployments/docker/Dockerfile.training -t recsys-mlops-training:local .
+	@docker build -f deployments/docker/Dockerfile.mlflow -t recsys-mlflow:local .
+
+.PHONY: mlops-images-minikube
+mlops-images-minikube:
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && $(MAKE) mlops-images
+
+.PHONY: mlops-install-kfp
+mlops-install-kfp:
+	@kubectl apply -k "github.com/kubeflow/pipelines/manifests/kustomize/cluster-scoped-resources?ref=$(KFP_VERSION)"
+	@kubectl wait --for condition=established --timeout=60s crd/applications.app.k8s.io
+	@kubectl apply -k "github.com/kubeflow/pipelines/manifests/kustomize/env/dev?ref=$(KFP_VERSION)"
+
+.PHONY: mlops-install-kuberay
+mlops-install-kuberay:
+	@helm repo add kuberay https://ray-project.github.io/kuberay-helm/
+	@helm repo update
+	@helm upgrade --install kuberay-operator kuberay/kuberay-operator --namespace $(KUBEFLOW_NAMESPACE) --create-namespace
+
+.PHONY: mlops-install-stack
+mlops-install-stack:
+	@helm upgrade --install recsys-mlflow deployments/helm/mlflow-stack --namespace $(MLOPS_NAMESPACE) --create-namespace
+	@helm upgrade --install recsys-runtime deployments/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
+
+.PHONY: mlops-compile-kfp
+mlops-compile-kfp:
+	@RECSYS_PIPELINE_IMAGE=$(RECSYS_PIPELINE_IMAGE) python deployments/kubeflow/pipelines/recsys_bst_pipeline.py
+
+.PHONY: mlops-helm-template
+mlops-helm-template:
+	@helm template recsys-mlflow deployments/helm/mlflow-stack --namespace mlops
+	@helm template recsys-runtime deployments/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
+	@helm template recsys-ray-cpu deployments/helm/ray-cluster --namespace $(KUBEFLOW_NAMESPACE)
+	@helm template recsys-ray-gpu deployments/helm/ray-cluster --namespace $(KUBEFLOW_NAMESPACE) -f deployments/helm/ray-cluster/values-gpu.yaml
+
+.PHONY: mlops-port-forward
+mlops-port-forward:
+	@echo "KFP UI:    kubectl port-forward -n $(KUBEFLOW_NAMESPACE) svc/ml-pipeline-ui 8080:80"
+	@echo "MLflow:    kubectl port-forward -n $(MLOPS_NAMESPACE) svc/mlflow 5000:5000"
+	@echo "MinIO:     kubectl port-forward -n $(MLOPS_NAMESPACE) svc/minio 9001:9001"
+	@echo "Ray UI:    kubectl port-forward -n $(KUBEFLOW_NAMESPACE) svc/recsys-bst-ray-tune-raycluster-*-head-svc 8265:8265"

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: recsys-ray-cluster
+description: KubeRay RayJob for RecSys BST tuning and training.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

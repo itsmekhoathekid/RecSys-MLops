@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-create-mlflow-bucket
+  namespace: {{ .Values.namespace.name }}
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+          envFrom:
+            - secretRef:
+                name: recsys-mlflow-secrets
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+                sleep 5
+              done
+              mc mb --ignore-existing "local/{{ .Values.minio.bucket }}"
+
