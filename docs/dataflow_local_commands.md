@@ -1,10 +1,55 @@
-# Local Dataflow Docker Commands
+# Local Dataflow Make Commands
 
-File này ghi nhanh các command để build, bật, tắt, kiểm tra local dataflow stack.
+File này gom toàn bộ `make` commands hiện có cho local dataflow stack.
 
 Stack gồm: MinIO, Postgres, Kafka, Kafka Connect/Debezium, Flink, Redis, Feast/dataflow-cli, Airflow, Spark.
 
+## Quick Reference
+
+```bash
+make help
+make dataflow-build
+make dataflow-up
+make dataflow-up-build
+make dataflow-down
+make dataflow-down-volumes
+make dataflow-restart
+make dataflow-ps
+make dataflow-logs
+make dataflow-smoke
+make dataflow-trigger
+make dataflow-e2e
+make dataflow-ingest-lake
+make dataflow-realtime-up
+make dataflow-realtime-down
+make dataflow-test
+```
+
+## Help
+
+In toàn bộ command có trong Makefile:
+
+```bash
+make help
+```
+
+## Build Images
+
+Build các Docker images cho dataflow stack:
+
+```bash
+make dataflow-build
+```
+
+Dùng command này khi sửa Dockerfile, dependency, hoặc code được copy vào image.
+
 ## Start Services
+
+Bật toàn bộ services, không rebuild image:
+
+```bash
+make dataflow-up
+```
 
 Build images rồi bật toàn bộ services:
 
@@ -12,11 +57,7 @@ Build images rồi bật toàn bộ services:
 make dataflow-up-build
 ```
 
-Chỉ bật services, không rebuild image:
-
-```bash
-make dataflow-up
-```
+Dùng command này cho lần chạy đầu tiên hoặc sau khi sửa Dockerfile/dependencies.
 
 ## Stop Services
 
@@ -26,7 +67,7 @@ Tắt và remove containers, giữ lại Docker volumes:
 make dataflow-down
 ```
 
-Dùng command này khi muốn dừng stack nhưng vẫn giữ data trong Postgres, MinIO, Redis, Kafka, Airflow DB.
+Command này giữ data trong Postgres, MinIO, Redis, Kafka, Airflow metadata.
 
 Tắt stack và xóa luôn Docker volumes:
 
@@ -34,7 +75,7 @@ Tắt stack và xóa luôn Docker volumes:
 make dataflow-down-volumes
 ```
 
-Dùng command này khi muốn reset sạch local state. Sau lệnh này, MinIO buckets/data, Postgres data, Redis data, Kafka data, Airflow metadata sẽ mất.
+Command này reset sạch local state. MinIO buckets/data, Postgres data, Redis data, Kafka data, Airflow metadata sẽ mất.
 
 ## Restart Services
 
@@ -44,9 +85,16 @@ Restart stack, giữ volumes:
 make dataflow-restart
 ```
 
-## Check Status
+Tương đương:
 
-Xem container nào đang chạy, port nào đang expose:
+```bash
+make dataflow-down
+make dataflow-up
+```
+
+## Service Status
+
+Xem containers, status, và ports:
 
 ```bash
 make dataflow-ps
@@ -64,8 +112,12 @@ Tail logs một service cụ thể:
 
 ```bash
 make dataflow-logs DATAFLOW_LOG_SERVICE=airflow-webserver
-make dataflow-logs DATAFLOW_LOG_SERVICE=spark-master
+make dataflow-logs DATAFLOW_LOG_SERVICE=airflow-scheduler
 make dataflow-logs DATAFLOW_LOG_SERVICE=kafka-connect
+make dataflow-logs DATAFLOW_LOG_SERVICE=spark-master
+make dataflow-logs DATAFLOW_LOG_SERVICE=flink-jobmanager
+make dataflow-logs DATAFLOW_LOG_SERVICE=redis
+make dataflow-logs DATAFLOW_LOG_SERVICE=minio
 ```
 
 ## Smoke Checks
@@ -74,6 +126,12 @@ Kiểm tra toàn bộ stack, buckets, connectors, bronze CDC, offline feature ou
 
 ```bash
 make dataflow-smoke
+```
+
+Mặc định:
+
+```text
+DATAFLOW_SMOKE_PHASE=all
 ```
 
 Chạy từng phase:
@@ -88,31 +146,51 @@ make dataflow-smoke DATAFLOW_SMOKE_PHASE=redis
 make dataflow-smoke DATAFLOW_SMOKE_PHASE=all
 ```
 
-## Trigger Airflow DAG
+Ý nghĩa nhanh:
 
-## Run One Full E2E Flow
-
-Trigger DAG chính một lần:
-
-```bash
-make dataflow-e2e
+```text
+services   kiểm tra MinIO, Kafka Connect, Redis reachable
+buckets    kiểm tra đúng 2 buckets: recsys-lake, recsys-feature-store
+connectors kiểm tra Debezium + Kafka MinIO sink đang RUNNING
+bronze     kiểm tra CDC objects trong recsys-lake/bronze
+offline    kiểm tra Feast offline feature outputs
+redis      kiểm tra Redis online feature keys
+all        chạy tất cả checks trên
 ```
 
-Command này chạy DAG `full_dataflow_local_dag`, tức là một E2E batch/realtime verification run. Nó không bật realtime loop vô hạn.
+## Trigger Airflow DAG
 
-Trigger DAG trực tiếp nếu chỉ muốn gọi Airflow:
+Trigger DAG mặc định:
 
 ```bash
 make dataflow-trigger
 ```
 
-Mặc định DAG là:
+Mặc định:
 
 ```text
-full_dataflow_local_dag
+DATAFLOW_DAG=full_dataflow_local_dag
 ```
 
-DAG này chạy đủ 2 nhánh:
+Trigger DAG khác nếu cần:
+
+```bash
+make dataflow-trigger DATAFLOW_DAG=full_dataflow_local_dag
+```
+
+Command này chỉ trigger DAG. Nó không tự bật realtime continuous loop.
+
+## Run One Full E2E Flow
+
+Trigger một E2E DAG run:
+
+```bash
+make dataflow-e2e
+```
+
+Command này chạy `full_dataflow_local_dag` một lần. Nó verify đủ historical path và realtime path, nhưng không bật realtime loop vô hạn.
+
+Flow trong DAG:
 
 ```text
 historical_bootstrap_path:
@@ -121,13 +199,14 @@ historical_bootstrap_path:
 realtime path:
   generator -> Postgres -> Debezium -> Kafka
     -> Kafka S3 sink -> recsys-lake/bronze -> Spark batch -> recsys-feature-store/offline -> Feast -> Redis
-    -> bounded PyFlink realtime job -> Redis
+    -> bounded realtime stream job -> Redis
 ```
 
-Trigger DAG khác nếu cần:
+Có thể override DAG hoặc smoke phase truyền vào script:
 
 ```bash
-make dataflow-trigger DATAFLOW_DAG=full_dataflow_local_dag
+make dataflow-e2e DATAFLOW_DAG=full_dataflow_local_dag
+make dataflow-e2e DATAFLOW_SMOKE_PHASE=all
 ```
 
 ## Ingest Historical Data Into Data Lake
@@ -138,7 +217,14 @@ Generate historical data rồi ghi vào MinIO lake bucket:
 make dataflow-ingest-lake
 ```
 
-Default path:
+Default:
+
+```text
+DATAFLOW_INGEST_BUCKET=recsys-lake
+DATAFLOW_INGEST_PREFIX=raw
+```
+
+Default output path:
 
 ```text
 s3://recsys-lake/raw/<run_id>/<table_name>/...
@@ -150,7 +236,7 @@ Override bucket/prefix nếu cần:
 make dataflow-ingest-lake DATAFLOW_INGEST_BUCKET=recsys-lake DATAFLOW_INGEST_PREFIX=raw
 ```
 
-## Continuous Realtime Flow
+## Start Continuous Realtime Flow
 
 Bật realtime continuous mode:
 
@@ -177,6 +263,16 @@ Data Generator loop -> Postgres source system
     -> realtime stream job -> Redis online store
 ```
 
+Sau khi bật có thể check:
+
+```bash
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=connectors
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=bronze
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=redis
+```
+
+## Stop Continuous Realtime Flow
+
 Tắt realtime continuous mode:
 
 ```bash
@@ -192,12 +288,18 @@ recsys-dataflow-realtime-flink
 
 Nó không tắt toàn bộ stack và không xóa Docker volumes.
 
-## Run Tests
+## Tests
 
 Chạy unit tests local:
 
 ```bash
 make dataflow-test
+```
+
+Hiện command này chạy:
+
+```bash
+uv run pytest data_generator/tests testing/unit -q
 ```
 
 ## Local UIs
@@ -230,21 +332,72 @@ Flink UI:
 http://localhost:8082
 ```
 
+Kafka Connect:
+
+```text
+http://localhost:8083/connectors
+```
+
+Schema Registry:
+
+```text
+http://localhost:8081/subjects
+```
+
+## Recommended Workflows
+
+Lần đầu chạy stack:
+
+```bash
+make dataflow-up-build
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=services
+make dataflow-e2e
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=all
+```
+
+Chỉ test historical ingest:
+
+```bash
+make dataflow-up
+make dataflow-ingest-lake
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=buckets
+```
+
+Chạy realtime liên tục:
+
+```bash
+make dataflow-up
+make dataflow-realtime-up
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=connectors
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=bronze
+make dataflow-smoke DATAFLOW_SMOKE_PHASE=redis
+```
+
+Tắt realtime loop nhưng giữ platform:
+
+```bash
+make dataflow-realtime-down
+```
+
+Tắt toàn bộ platform nhưng giữ data:
+
+```bash
+make dataflow-down
+```
+
+Reset sạch local environment:
+
+```bash
+make dataflow-down-volumes
+make dataflow-up-build
+```
+
 ## Notes
+
+`make dataflow-e2e` và `make dataflow-trigger` là one-shot Airflow DAG run.
+
+`make dataflow-realtime-up` mới là command bật realtime flow chạy liên tục.
 
 `make dataflow-down` là command nên dùng thường ngày vì nó không xóa data.
 
 `make dataflow-down-volumes` chỉ dùng khi muốn reset sạch môi trường local.
-
-Nếu sửa Dockerfile hoặc dependencies, chạy:
-
-```bash
-make dataflow-up-build
-```
-
-Nếu chỉ sửa code Python được copy vào image, cũng nên rebuild image tương ứng bằng:
-
-```bash
-make dataflow-build
-make dataflow-up
-```
