@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: {{ .Values.mlflow.image }}
+          imagePullPolicy: {{ .Values.mlflow.imagePullPolicy }}
+          env:
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://minio:9000
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: recsys-mlflow-secrets
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: recsys-mlflow-secrets
+                  key: MINIO_ROOT_PASSWORD
+{{- with .Values.mlflow.resources }}
+          resources:
+{{ toYaml . | nindent 12 }}
+{{- end }}
+          command:
+            - mlflow
+          args:
+            - server
+            - --host
+            - 0.0.0.0
+            - --port
+            - "{{ .Values.mlflow.service.port }}"
+            - --backend-store-uri
+            - postgresql+psycopg2://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@postgres:5432/{{ .Values.postgres.database }}
+            - --default-artifact-root
+            - s3://{{ .Values.minio.bucket }}
+            - --allowed-hosts
+            - "*"
+          ports:
+            - name: http
+              containerPort: {{ .Values.mlflow.service.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    app: mlflow
+  ports:
+    - name: http
+      port: {{ .Values.mlflow.service.port }}
+      targetPort: http

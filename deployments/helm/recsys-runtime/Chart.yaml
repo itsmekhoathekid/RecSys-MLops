@@ -1,0 +1,7 @@
+apiVersion: v2
+name: recsys-runtime
+description: Shared runtime secret and PVC for RecSys Kubeflow pipeline tasks.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

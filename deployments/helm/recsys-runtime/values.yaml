@@ -1,0 +1,26 @@
+namespace:
+  create: false
+  name: kubeflow
+
+pvc:
+  name: recsys-mlops-pvc
+  storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+
+secret:
+  name: recsys-mlops-runtime
+  minioEndpoint: http://minio.mlops.svc.cluster.local:9000
+  minioRootUser: minio
+  minioRootPassword: minio123
+  mlflowTrackingUri: http://mlflow.mlops.svc.cluster.local:5000
+  mlflowExperimentName: recsys-bst-ranking
+  modelRegistryPostgresUri: postgresql://mlflow:mlflow123@postgres.mlops.svc.cluster.local:5432/mlflow
+
+rbac:
+  create: true
+  serviceAccountNames:
+    - default
+    - pipeline-runner
+    - default-editor

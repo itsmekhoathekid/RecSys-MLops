@@ -1,0 +1,57 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: recsys-rayjob-runner
+  namespace: {{ .Values.namespace.name }}
+rules:
+  - apiGroups:
+      - ray.io
+    resources:
+      - rayjobs
+      - rayclusters
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+---
+{{- range .Values.rbac.serviceAccountNames }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: recsys-rayjob-runner-{{ . }}
+  namespace: {{ $.Values.namespace.name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ . }}
+    namespace: {{ $.Values.namespace.name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: recsys-rayjob-runner
+---
+{{- end }}
+{{- end }}
+

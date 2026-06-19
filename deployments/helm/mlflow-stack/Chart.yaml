@@ -1,0 +1,7 @@
+apiVersion: v2
+name: recsys-mlflow-stack
+description: MLflow tracking server with MinIO artifact storage and PostgreSQL backend.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

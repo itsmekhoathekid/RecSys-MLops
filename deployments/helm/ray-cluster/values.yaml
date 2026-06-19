@@ -1,0 +1,48 @@
+namespace: kubeflow
+
+job:
+  name: recsys-bst-ray-tune
+  shutdownAfterJobFinishes: true
+  ttlSecondsAfterFinished: 300
+
+image:
+  repository: recsys-mlops-training
+  tag: local
+  pullPolicy: IfNotPresent
+
+runtime:
+  secretName: recsys-mlops-runtime
+  pvcName: recsys-mlops-pvc
+  workspaceMountPath: /workspace
+
+entrypoint:
+  baseConfigPath: /opt/recsys/config/bst.yaml
+  splitDir: /workspace/recsys/notebooks/data/bst_split
+  outputDir: /workspace/recsys/data_pipeline/output/ml/ray
+  bestResultPath: /workspace/recsys/data_pipeline/output/ml/ray/best_result.json
+  trainingPercent: 0.01
+  numEpochs: 1
+  maxTrials: 2
+  parallelTrials: 1
+  cpusPerTrial: 1
+  gpusPerTrial: 0
+
+head:
+  cpuRequest: 500m
+  cpuLimit: "1"
+  memoryRequest: 1Gi
+  memoryLimit: 2Gi
+
+worker:
+  replicas: 1
+  cpuRequest: "1"
+  cpuLimit: "2"
+  memoryRequest: 2Gi
+  memoryLimit: 4Gi
+
+gpu:
+  enabled: false
+  limit: 1
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+
