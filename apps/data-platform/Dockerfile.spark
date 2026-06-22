@@ -1,0 +1,16 @@
+FROM spark:3.5.8-scala2.12-java11-ubuntu
+
+WORKDIR /opt/recsys
+COPY . /opt/recsys
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --no-cache-dir pandas pyarrow pyyaml boto3 s3fs==0.4.2
+
+ENV AWS_ACCESS_KEY_ID=minio \
+    AWS_SECRET_ACCESS_KEY=minio123 \
+    AWS_REGION=us-east-1 \
+    SPARK_EXTRA_CLASSPATH=/opt/spark/jars/* \
+    PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys

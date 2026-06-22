@@ -1,0 +1,28 @@
+environment: local_poc
+
+lake:
+  endpoint_url: http://localhost:9000
+  lake_bucket: recsys-lake
+  feature_store_bucket: recsys-feature-store
+  raw_prefix: raw
+  bronze_prefix: bronze
+  silver_prefix: silver
+
+feature_store_offline:
+  bucket: recsys-feature-store
+  prefix: offline
+
+ml_artifacts:
+  bucket: recsys-lake
+  prefix: silver/ml
+
+source:
+  historical_run_id: test_10k_seed42
+  local_generator_output: apps/data-platform/data-generator/src/output/test_10k_seed42
+
+feature_store:
+  repo_path: apps/data-platform/feature-store/feature_repo
+  registry_path: apps/data-platform/feature-store/feature_repo/data/registry.db
+
+orchestration:
+  airflow_dags_path: apps/data-platform/src/orchestration/airflow/dags

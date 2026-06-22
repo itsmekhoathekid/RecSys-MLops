@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-DATAFLOW_SCRIPTS_DIR := deployments/docker/scripts
+DATAFLOW_SCRIPTS_DIR := infra/docker/scripts
 DATAFLOW_DAG ?= full_dataflow_local_dag
 DATAFLOW_SMOKE_PHASE ?= all
 DATAFLOW_LOG_SERVICE ?=
@@ -110,13 +110,14 @@ dataflow-realtime-down:
 
 .PHONY: dataflow-test
 dataflow-test:
-	@uv run pytest data_generator/tests testing/unit -q
+	@PYTHONPATH=apps/data-platform/data-generator/src uv run pytest tests/unit/data_generator -q
+	@PYTHONPATH=apps/data-platform/src:apps/data-platform/data-generator/src uv run pytest tests/unit/data_platform tests/contract -q
 
 .PHONY: mlops-images
 mlops-images:
-	@docker build -f deployments/docker/Dockerfile.base-python -t recsys-base-python:local .
-	@docker build -f deployments/docker/Dockerfile.training -t recsys-mlops-training:local .
-	@docker build -f deployments/docker/Dockerfile.mlflow -t recsys-mlflow:local .
+	@docker build -f infra/docker/Dockerfile.base-python -t recsys-base-python:local .
+	@docker build -f apps/ml-system/Dockerfile.training -t recsys-mlops-training:local .
+	@docker build -f infra/docker/Dockerfile.mlflow -t recsys-mlflow:local .
 
 .PHONY: mlops-images-minikube
 mlops-images-minikube:
@@ -136,19 +137,19 @@ mlops-install-kuberay:
 
 .PHONY: mlops-install-stack
 mlops-install-stack:
-	@helm upgrade --install recsys-mlflow deployments/helm/mlflow-stack --namespace $(MLOPS_NAMESPACE) --create-namespace
-	@helm upgrade --install recsys-runtime deployments/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
+	@helm upgrade --install recsys-mlflow infra/helm/mlflow-stack --namespace $(MLOPS_NAMESPACE) --create-namespace
+	@helm upgrade --install recsys-runtime infra/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
 
 .PHONY: mlops-compile-kfp
 mlops-compile-kfp:
-	@RECSYS_PIPELINE_IMAGE=$(RECSYS_PIPELINE_IMAGE) python deployments/kubeflow/pipelines/recsys_bst_pipeline.py
+	@PYTHONPATH=apps/ml-system/src:apps/data-platform/src RECSYS_PIPELINE_IMAGE=$(RECSYS_PIPELINE_IMAGE) uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
 
 .PHONY: mlops-helm-template
 mlops-helm-template:
-	@helm template recsys-mlflow deployments/helm/mlflow-stack --namespace mlops
-	@helm template recsys-runtime deployments/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
-	@helm template recsys-ray-cpu deployments/helm/ray-cluster --namespace $(KUBEFLOW_NAMESPACE)
-	@helm template recsys-ray-gpu deployments/helm/ray-cluster --namespace $(KUBEFLOW_NAMESPACE) -f deployments/helm/ray-cluster/values-gpu.yaml
+	@helm template recsys-mlflow infra/helm/mlflow-stack --namespace mlops
+	@helm template recsys-runtime infra/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
+	@helm template recsys-ray-cpu infra/helm/ray-cluster --namespace $(KUBEFLOW_NAMESPACE)
+	@helm template recsys-ray-gpu infra/helm/ray-cluster --namespace $(KUBEFLOW_NAMESPACE) -f infra/helm/ray-cluster/values-gpu.yaml
 
 .PHONY: mlops-port-forward
 mlops-port-forward:
