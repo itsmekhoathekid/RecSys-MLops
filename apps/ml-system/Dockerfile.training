@@ -1,0 +1,39 @@
+ARG RECSYS_BASE_IMAGE=recsys-base-python:local
+FROM ${RECSYS_BASE_IMAGE}
+
+WORKDIR /opt/recsys
+COPY pyproject.toml uv.lock* /opt/recsys/
+
+ENV PYTHONPATH=/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys \
+    UV_SYSTEM_PYTHON=1
+
+RUN uv pip install --no-cache \
+    boto3 \
+    feast \
+    kfp \
+    kfp-kubernetes \
+    kubernetes \
+    mlflow \
+    numpy \
+    pandas \
+    psycopg[binary] \
+    pyarrow \
+    pyyaml \
+    "ray[default,train,tune]" \
+    s3fs \
+    scikit-learn \
+    torch \
+    tqdm
+
+# Ray 2.55 auto-starts the Ray Client server whenever grpcio is installed.
+# KubeRay RayJob uses the dashboard Jobs API instead; disabling the unused
+# client server avoids a ray_client_server crash on local arm64 Minikube.
+RUN python -c "from pathlib import Path; import ray; p = Path(ray.__file__).parent / 'scripts' / 'scripts.py'; text = p.read_text(); old = 'if has_ray_client and ray_client_server_port is None:\\n        ray_client_server_port = 10001'; new = 'if False and has_ray_client and ray_client_server_port is None:\\n        ray_client_server_port = 10001'; assert old in text; p.write_text(text.replace(old, new))"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /opt/recsys
+
+CMD ["bash"]

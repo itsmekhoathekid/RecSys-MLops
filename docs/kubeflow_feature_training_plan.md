@@ -12,7 +12,7 @@ Feature store hien co 3 nhom feature chinh:
 - `user_aggregate_features`: views/carts/purchases va cac aggregate gan realtime theo user.
 - `item_features`: category/brand/price bucket, popularity, conversion va activity theo item.
 
-Nhung de train BST trong `models/`, can them cac buoc sau:
+Nhung de train BST trong `apps/ml-system/src/models/`, can them cac buoc sau:
 
 - Build training labels theo impression/candidate tai `prediction_timestamp`.
 - Point-in-time join labels voi sequence, user aggregate va item features de tranh leakage.
@@ -23,16 +23,16 @@ Nhung de train BST trong `models/`, can them cac buoc sau:
 
 Code moi da them:
 
-- `pipelines/model_pipeline/prepare_bst_training_data.py`: doc `ml_bst_training` parquet tu local/S3 MinIO va tao `train.jsonl`, `val.jsonl`, `test.jsonl`.
-- `pipelines/model_pipeline/evaluate_bst.py`: load checkpoint BST va tinh metric tren split test.
-- `train.py`: them metrics output, MLflow logging, MinIO artifact logging qua MLflow artifact store, va Postgres model config registry.
+- `apps/ml-system/src/prepare_bst_training_data.py`: doc `ml_bst_training` parquet tu local/S3 MinIO va tao `train.jsonl`, `val.jsonl`, `test.jsonl`.
+- `apps/ml-system/src/evaluate_bst.py`: load checkpoint BST va tinh metric tren split test.
+- `apps/ml-system/src/train.py`: them metrics output, MLflow logging, MinIO artifact logging qua MLflow artifact store, va Postgres model config registry.
 
 ## Kubeflow Flow
 
 Target flow:
 
-1. `feature_engineering`: chay `pipelines.data_pipeline.local.run_batch_features` de tao silver tables, Feast offline features, labels va `ml_bst_training`.
-2. `prepare_training_data`: convert `ml_bst_training` parquet sang JSONL split cho `models/dataset.py`.
+1. `feature_engineering`: chay `recsys_data_platform.local.run_batch_features` de tao silver tables, Feast offline features, labels va `ml_bst_training`.
+2. `prepare_training_data`: convert `ml_bst_training` parquet sang JSONL split cho `apps/ml-system/src/models/dataset.py`.
 3. `submit_rayjob`: submit KubeRay `RayJob`; Ray Tune chay HPO va Ray workers train BST trials.
 4. `evaluate_bst`: evaluate best Ray checkpoint tren test split, log test metrics vao MLflow run.
 5. Artifact/config:
@@ -41,22 +41,22 @@ Target flow:
 
 KFP DSL nam o:
 
-- `deployments/kubeflow/pipelines/recsys_bst_pipeline.py`
+- `apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py`
 
 ## Helm Charts
 
 Charts moi:
 
-- `deployments/helm/mlflow-stack`: MLflow tracking server, MinIO, PostgreSQL.
-- `deployments/helm/recsys-runtime`: PVC va secret runtime cho pipeline pod.
-- `deployments/helm/ray-cluster`: RayJob CPU profile va GPU overlay cho KubeRay.
+- `infra/helm/mlflow-stack`: MLflow tracking server, MinIO, PostgreSQL.
+- `infra/helm/recsys-runtime`: PVC va secret runtime cho pipeline pod.
+- `infra/helm/ray-cluster`: RayJob CPU profile va GPU overlay cho KubeRay.
 
 Build images:
 
 ```bash
-docker build -f deployments/docker/Dockerfile.base-python -t recsys-base-python:local .
-docker build -f deployments/docker/Dockerfile.training -t recsys-mlops-training:local .
-docker build -f deployments/docker/Dockerfile.mlflow -t recsys-mlflow:local .
+docker build -f infra/docker/Dockerfile.base-python -t recsys-base-python:local .
+docker build -f apps/ml-system/Dockerfile.training -t recsys-mlops-training:local .
+docker build -f infra/docker/Dockerfile.mlflow -t recsys-mlflow:local .
 ```
 
 Install KubeRay operator:
@@ -72,7 +72,7 @@ helm upgrade --install kuberay-operator kuberay/kuberay-operator \
 Install MLflow stack:
 
 ```bash
-helm upgrade --install recsys-mlflow deployments/helm/mlflow-stack \
+helm upgrade --install recsys-mlflow infra/helm/mlflow-stack \
   --namespace mlops \
   --create-namespace
 ```
@@ -80,7 +80,7 @@ helm upgrade --install recsys-mlflow deployments/helm/mlflow-stack \
 Install runtime secret/PVC in the Kubeflow user namespace:
 
 ```bash
-helm upgrade --install recsys-runtime deployments/helm/recsys-runtime \
+helm upgrade --install recsys-runtime infra/helm/recsys-runtime \
   --namespace kubeflow \
   --set namespace.name=kubeflow
 ```
@@ -89,10 +89,10 @@ Compile KFP pipeline:
 
 ```bash
 RECSYS_PIPELINE_IMAGE=recsys-mlops-training:local \
-python deployments/kubeflow/pipelines/recsys_bst_pipeline.py
+uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
 ```
 
-Submit `deployments/kubeflow/pipelines/recsys_bst_pipeline.yaml` in Kubeflow Pipelines UI.
+Submit `infra/kubeflow/compiled/bst_training_pipeline.yaml` in Kubeflow Pipelines UI.
 
 ## Retraining Triggers
 
@@ -107,6 +107,6 @@ Nen trigger retraining khi:
 
 - Them component data validation thanh step rieng trong KFP.
 - Tach train/eval output path sang PVC mount path `/opt/recsys` hoac S3 path thong nhat.
-- Build image trong Jenkins CI/CD va push vao registry thay vi dung `:local`.
+- Build image dry-run trong Jenkins CI/CD; push registry/deploy cluster se la hardening phase sau.
 - Them model promotion gate: chi promote khi test `ndcg@10`/`gauc` vuot threshold.
 - Neu can distributed tuning/training, them Ray/KubeRay chart sau khi single-node flow on dinh.

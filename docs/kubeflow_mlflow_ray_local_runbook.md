@@ -48,7 +48,7 @@ kubectl config use-context recsys-mlops
 Neu local dataflow compose dang an RAM, nen stop truoc khi chay Ray smoke:
 
 ```bash
-docker compose -f deployments/docker/docker-compose.dataflow.yml stop
+docker compose -f infra/docker/docker-compose.dataflow.yml stop
 ```
 
 ## 2. Build Images Trong Minikube
@@ -146,7 +146,7 @@ Neu local env co `kfp`:
 
 ```bash
 RECSYS_PIPELINE_IMAGE=recsys-mlops-training:local \
-python deployments/kubeflow/pipelines/recsys_bst_pipeline.py
+uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
 ```
 
 Neu local env khong co `kfp`, compile bang training image:
@@ -157,13 +157,13 @@ docker run --rm \
   -w /opt/recsys \
   -e RECSYS_PIPELINE_IMAGE=recsys-mlops-training:local \
   recsys-mlops-training:local \
-  python deployments/kubeflow/pipelines/recsys_bst_pipeline.py
+  uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
 ```
 
 Output:
 
 ```bash
-deployments/kubeflow/pipelines/recsys_bst_pipeline.yaml
+infra/kubeflow/compiled/bst_training_pipeline.yaml
 ```
 
 KFP UI:
@@ -196,17 +196,17 @@ kubectl run recsys-pvc-loader \
 Copy small dataset vao PVC:
 
 ```bash
-kubectl exec -n kubeflow recsys-pvc-loader -- mkdir -p /workspace/recsys/data_generator/output
+kubectl exec -n kubeflow recsys-pvc-loader -- mkdir -p /workspace/recsys/apps/data-platform/data-generator/src/output
 kubectl cp \
-  data_generator/output/test_10k_seed42 \
-  kubeflow/recsys-pvc-loader:/workspace/recsys/data_generator/output/test_10k_seed42
+  apps/data-platform/data-generator/src/output/test_10k_seed42 \
+  kubeflow/recsys-pvc-loader:/workspace/recsys/apps/data-platform/data-generator/src/output/test_10k_seed42
 ```
 
 Verify:
 
 ```bash
 kubectl exec -n kubeflow recsys-pvc-loader -- \
-  ls /workspace/recsys/data_generator/output/test_10k_seed42
+  ls /workspace/recsys/apps/data-platform/data-generator/src/output/test_10k_seed42
 ```
 
 ## 6. Run Direct Smoke E2E
@@ -221,7 +221,7 @@ kubectl run recsys-fe-smoke \
   --restart=Never \
   --image=recsys-mlops-training:local \
   --image-pull-policy=Never \
-  --overrides='{"spec":{"containers":[{"name":"recsys-fe-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","envFrom":[{"secretRef":{"name":"recsys-mlops-runtime"}}],"command":["python","-m","pipelines.model_pipeline.run_feature_engineering","--input-dir","/workspace/recsys/data_generator/output/test_10k_seed42","--output-dir","/workspace/recsys/data_pipeline/output","--summary-path","/workspace/recsys/data_pipeline/output/feature_summary.json"],"volumeMounts":[{"name":"recsys-shared","mountPath":"/workspace"}],"resources":{"requests":{"cpu":"100m","memory":"512Mi"},"limits":{"cpu":"1","memory":"2Gi"}}}],"volumes":[{"name":"recsys-shared","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}]}}'
+  --overrides='{"spec":{"containers":[{"name":"recsys-fe-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","envFrom":[{"secretRef":{"name":"recsys-mlops-runtime"}}],"command":["python","-m","recsys_model_pipeline.run_feature_engineering","--input-dir","/workspace/recsys/apps/data-platform/data-generator/src/output/test_10k_seed42","--output-dir","/workspace/recsys/data_platform/output","--summary-path","/workspace/recsys/data_platform/output/feature_summary.json"],"volumeMounts":[{"name":"recsys-shared","mountPath":"/workspace"}],"resources":{"requests":{"cpu":"100m","memory":"512Mi"},"limits":{"cpu":"1","memory":"2Gi"}}}],"volumes":[{"name":"recsys-shared","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}]}}'
 ```
 
 Watch:
@@ -245,7 +245,7 @@ kubectl run recsys-prepare-smoke \
   --restart=Never \
   --image=recsys-mlops-training:local \
   --image-pull-policy=Never \
-  --overrides='{"spec":{"containers":[{"name":"recsys-prepare-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","command":["python","-m","pipelines.model_pipeline.prepare_bst_training_data","--input-path","/workspace/recsys/data_pipeline/output/ml/offline/ml_bst_training","--output-dir","/workspace/recsys/notebooks/data/bst_split","--metadata-path","/workspace/recsys/data_pipeline/output/ml/bst_split_meta.json"],"volumeMounts":[{"name":"recsys-shared","mountPath":"/workspace"}],"resources":{"requests":{"cpu":"100m","memory":"512Mi"},"limits":{"cpu":"1","memory":"2Gi"}}}],"volumes":[{"name":"recsys-shared","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}]}}'
+  --overrides='{"spec":{"containers":[{"name":"recsys-prepare-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","command":["python","-m","recsys_model_pipeline.prepare_bst_training_data","--input-path","/workspace/recsys/data_platform/output/ml/offline/ml_bst_training","--output-dir","/workspace/recsys/notebooks/data/bst_split","--metadata-path","/workspace/recsys/data_platform/output/ml/bst_split_meta.json"],"volumeMounts":[{"name":"recsys-shared","mountPath":"/workspace"}],"resources":{"requests":{"cpu":"100m","memory":"512Mi"},"limits":{"cpu":"1","memory":"2Gi"}}}],"volumes":[{"name":"recsys-shared","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}]}}'
 ```
 
 Watch:
@@ -269,7 +269,7 @@ kubectl run recsys-submit-ray-smoke \
   --restart=Never \
   --image=recsys-mlops-training:local \
   --image-pull-policy=Never \
-  --overrides='{"spec":{"serviceAccountName":"pipeline-runner","containers":[{"name":"recsys-submit-ray-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","envFrom":[{"secretRef":{"name":"recsys-mlops-runtime"}}],"command":["python","-m","pipelines.model_pipeline.submit_ray_job","--namespace","kubeflow","--job-name","recsys-bst-ray-direct","--image","recsys-mlops-training:local","--base-config-path","/opt/recsys/config/bst.yaml","--split-dir","/workspace/recsys/notebooks/data/bst_split","--ray-output-dir","/workspace/recsys/data_pipeline/output/ml/ray","--best-result-path","/workspace/recsys/data_pipeline/output/ml/ray/best_result.json","--training-percent","0.01","--num-epochs","1","--max-trials","2","--parallel-trials","1","--pvc-name","recsys-mlops-pvc","--runtime-secret-name","recsys-mlops-runtime","--head-cpu-request","500m","--head-cpu-limit","1","--head-memory-request","1Gi","--head-memory-limit","3Gi","--worker-cpu-request","500m","--worker-cpu-limit","2","--worker-memory-request","1Gi","--worker-memory-limit","2Gi","--worker-replicas","1","--timeout-seconds","1800"],"resources":{"requests":{"cpu":"100m","memory":"256Mi"},"limits":{"cpu":"500m","memory":"512Mi"}}}]}}'
+  --overrides='{"spec":{"serviceAccountName":"pipeline-runner","containers":[{"name":"recsys-submit-ray-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","envFrom":[{"secretRef":{"name":"recsys-mlops-runtime"}}],"command":["python","-m","recsys_model_pipeline.submit_ray_job","--namespace","kubeflow","--job-name","recsys-bst-ray-direct","--image","recsys-mlops-training:local","--base-config-path","/opt/recsys/configs/local/bst.yaml","--split-dir","/workspace/recsys/notebooks/data/bst_split","--ray-output-dir","/workspace/recsys/data_platform/output/ml/ray","--best-result-path","/workspace/recsys/data_platform/output/ml/ray/best_result.json","--training-percent","0.01","--num-epochs","1","--max-trials","2","--parallel-trials","1","--pvc-name","recsys-mlops-pvc","--runtime-secret-name","recsys-mlops-runtime","--head-cpu-request","500m","--head-cpu-limit","1","--head-memory-request","1Gi","--head-memory-limit","3Gi","--worker-cpu-request","500m","--worker-cpu-limit","2","--worker-memory-request","1Gi","--worker-memory-limit","2Gi","--worker-replicas","1","--timeout-seconds","1800"],"resources":{"requests":{"cpu":"100m","memory":"256Mi"},"limits":{"cpu":"500m","memory":"512Mi"}}}]}}'
 ```
 
 Monitor:
@@ -309,7 +309,7 @@ Check best result:
 
 ```bash
 kubectl exec -n kubeflow recsys-pvc-loader -- \
-  cat /workspace/recsys/data_pipeline/output/ml/ray/best_result.json
+  cat /workspace/recsys/data_platform/output/ml/ray/best_result.json
 ```
 
 ### 6.4 Evaluate Best Checkpoint
@@ -320,7 +320,7 @@ kubectl run recsys-eval-smoke \
   --restart=Never \
   --image=recsys-mlops-training:local \
   --image-pull-policy=Never \
-  --overrides='{"spec":{"containers":[{"name":"recsys-eval-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","envFrom":[{"secretRef":{"name":"recsys-mlops-runtime"}}],"command":["python","-m","pipelines.model_pipeline.evaluate_ray_best_bst","--ray-result-path","/workspace/recsys/data_pipeline/output/ml/ray/best_result.json","--split","test","--metrics-path","/workspace/recsys/data_pipeline/output/ml/eval_metrics.json"],"volumeMounts":[{"name":"recsys-shared","mountPath":"/workspace"}],"resources":{"requests":{"cpu":"100m","memory":"512Mi"},"limits":{"cpu":"1","memory":"2Gi"}}}],"volumes":[{"name":"recsys-shared","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}]}}'
+  --overrides='{"spec":{"containers":[{"name":"recsys-eval-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","envFrom":[{"secretRef":{"name":"recsys-mlops-runtime"}}],"command":["python","-m","recsys_model_pipeline.evaluate_ray_best_bst","--ray-result-path","/workspace/recsys/data_platform/output/ml/ray/best_result.json","--split","test","--metrics-path","/workspace/recsys/data_platform/output/ml/eval_metrics.json"],"volumeMounts":[{"name":"recsys-shared","mountPath":"/workspace"}],"resources":{"requests":{"cpu":"100m","memory":"512Mi"},"limits":{"cpu":"1","memory":"2Gi"}}}],"volumes":[{"name":"recsys-shared","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}]}}'
 ```
 
 Monitor:
@@ -334,7 +334,7 @@ Read test metrics:
 
 ```bash
 kubectl exec -n kubeflow recsys-pvc-loader -- \
-  cat /workspace/recsys/data_pipeline/output/ml/eval_metrics.json
+  cat /workspace/recsys/data_platform/output/ml/eval_metrics.json
 ```
 
 Smoke run da verify:
@@ -386,7 +386,7 @@ kubectl exec -n mlops deploy/minio -- \
 Expected artifact dirs:
 
 - `model/BST/.../part.1`
-- `config/bst.yaml`
+- `configs/local/bst.yaml`
 - `metrics/training_metrics.json`
 
 ## 8. Monitor Full Kubeflow Logs
@@ -600,9 +600,9 @@ Expected GPU allocatable must include `nvidia.com/gpu`.
 Render GPU Ray chart:
 
 ```bash
-helm template recsys-ray-gpu deployments/helm/ray-cluster \
+helm template recsys-ray-gpu infra/helm/ray-cluster \
   --namespace kubeflow \
-  -f deployments/helm/ray-cluster/values-gpu.yaml
+  -f infra/helm/ray-cluster/values-gpu.yaml
 ```
 
 GPU worker should request/limit:

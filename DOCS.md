@@ -1,5 +1,7 @@
 # AIDE1-project
 
+Repo file map: `docs/project_file_map.md`
+
 dataset picked : https://www.kaggle.com/datasets/computingvictor/transactions-fraud-datasets
 problems picked : churn prediction, recommendation system
     Predict whether a customer will stop using the service
@@ -40,11 +42,9 @@ python ./notebooks/ranking_sampling_process.py \
   --random_state 42
 
 
-python train.py --config_path ./config/bst.yaml
+PYTHONPATH=apps/ml-system/src uv run python apps/ml-system/src/train.py --config_path ./configs/local/bst.yaml
 
 high level design
 
 https://excalidraw.com/#json=KMDLTodfVMIhOLekAsxlt,oaCYBPNjMOFj9h-T5GnyYw 
-
-
 

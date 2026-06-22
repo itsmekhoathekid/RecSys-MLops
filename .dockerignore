@@ -8,11 +8,23 @@ __pycache__
 notebooks/data
 notebooks/**/*.ipynb
 data_generator/output
+apps/data-generator/src/output
 data_pipeline/output
 data_pipeline/lake
 feature_store/feature_repo/data
+apps/feature-store/feature_repo/data
+outputs
+artifacts
+reports
+.ci-components.env
+*.parquet
+*.jsonl
+.mlflow
+minio-data
+postgres-data
+redis-data
+spark-warehouse
 
 coursework
 tasks
 *.log
-
