@@ -19,6 +19,7 @@ REQUIRED_MODEL_FILES = [
     "bst_ranker/config.pbtxt",
     "bst_postprocess/1/model.py",
     "bst_postprocess/config.pbtxt",
+    "bst_ensemble/1/.keep",
     "bst_ensemble/config.pbtxt",
 ]
 

@@ -70,3 +70,33 @@ def test_recommend_uses_fallback_candidates_and_ranker_scores():
 
     assert response.model_version == "trial-001"
     assert [item.item_id for item in response.items] == [11]
+
+
+def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkeypatch):
+    import serving
+
+    class BrokenRedis:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get(self, key):
+            raise OSError("redis unavailable")
+
+        def zrevrange(self, key, start, end):
+            raise OSError("redis unavailable")
+
+    monkeypatch.setattr(serving, "redis", type("RedisModule", (), {"Redis": BrokenRedis}), raising=False)
+
+    original_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "redis":
+            return type("RedisModule", (), {"Redis": BrokenRedis})
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    client = serving.FeatureClient()
+
+    assert client.user_sequence(1) == {}
+    assert client.item_features(1) == {}
+    assert client.candidates(1, 3) == [1, 2, 3]

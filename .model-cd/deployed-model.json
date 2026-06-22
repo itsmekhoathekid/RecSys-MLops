@@ -1,5 +1,5 @@
 {
   "model_name": "bst",
-  "model_version": "run_trial_81ea4_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0010,weight_decay=0.0000_2026-06-22_13-30-18",
-  "triton_storage_uri": "s3://recsys-model-store/triton/bst/run_trial_81ea4_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0010,weight_decay=0.0000_2026-06-22_13-30-18"
+  "model_version": "run_trial_92395_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0005,weight_decay=0.0001_2026-06-22_13-52-13",
+  "triton_storage_uri": "s3://recsys-model-store/triton/bst/run_trial_92395_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0005,weight_decay=0.0001_2026-06-22_13-52-13"
 }

@@ -21,6 +21,11 @@ spec:
   protocolVersions:
     - v2
     - grpc-v2
+  volumes:
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 256Mi
   containers:
     - name: kserve-container
       image: {{ .Values.kserve.servingRuntime.image }}
@@ -38,6 +43,9 @@ spec:
         - --http-port=8080
         - --allow-grpc=true
         - --allow-http=true
+      volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
       securityContext:
         runAsUser: 1000
         allowPrivilegeEscalation: false
