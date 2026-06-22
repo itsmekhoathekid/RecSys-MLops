@@ -1,3 +1,9 @@
-# I code whatever u see in this diagram
+# Full Data & ML system
 
-![Data flow](docs/pngs/full_flow.png)
+## I coded whatever you see in this diagram
+
+![Data & ML system](docs/pngs/full_flow.png)
+
+# Data platform
+
+![Data platform](docs/pngs/data_flow.png)
