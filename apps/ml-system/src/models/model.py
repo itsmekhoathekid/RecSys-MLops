@@ -961,12 +961,12 @@ class BST(nn.Module):
         hist_time,
     ):
         return {
-            "item": torch.stack([self.item_id_embed(item) for item in hist_item_id], dim=1),
-            "category": torch.stack([self.category_id_embed(category) for category in hist_category], dim=1),
-            "brand": torch.stack([self.brand_id_embed(brand) for brand in hist_brand], dim=1),
-            "price_bucket": torch.stack([self.price_bucket_embed(price) for price in hist_price_bucket], dim=1),
-            "time": torch.stack([self.time_bucket_embed(time) for time in hist_time], dim=1),
-            "event_type": torch.stack([self.event_type_embed(event) for event in hist_event_type], dim=1),
+            "item": self.item_id_embed(hist_item_id).transpose(0, 1),
+            "category": self.category_id_embed(hist_category).transpose(0, 1),
+            "brand": self.brand_id_embed(hist_brand).transpose(0, 1),
+            "price_bucket": self.price_bucket_embed(hist_price_bucket).transpose(0, 1),
+            "time": self.time_bucket_embed(hist_time).transpose(0, 1),
+            "event_type": self.event_type_embed(hist_event_type).transpose(0, 1),
         }
 
     def _embed_target(
@@ -1011,8 +1011,6 @@ class BST(nn.Module):
         return target_concat
 
     def _build_history_stack(self, hist_embeds):
-        stacks = []
-
         hist_item = hist_embeds["item"]
         hist_category = hist_embeds["category"]
         hist_brand = hist_embeds["brand"]
@@ -1020,26 +1018,18 @@ class BST(nn.Module):
         hist_event_type = hist_embeds["event_type"]
         hist_time = hist_embeds["time"]
 
-        for i in range(len(hist_item)):
-            item_feats = self.concat(
+        history_core = self.sequence_linear(
+            self.concat(
                 [
-                    self.sequence_linear(
-                        self.concat(
-                            [
-                                hist_item[i],
-                                hist_category[i],
-                                hist_brand[i],
-                                hist_price_bucket[i],
-                                hist_event_type[i],
-                            ]
-                        )
-                    ),
-                    hist_time[i],
+                    hist_item,
+                    hist_category,
+                    hist_brand,
+                    hist_price_bucket,
+                    hist_event_type,
                 ]
-            )  # [L, 2D] if iterating over batch dim like original logic
-            stacks.append(item_feats)
-
-        return stacks
+            )
+        )
+        return self.concat([history_core, hist_time]).transpose(0, 1)
 
     def forward(
         self,
@@ -1071,10 +1061,8 @@ class BST(nn.Module):
         )
 
         target_concat = self._build_target_concat(target_embeds)  # [B, 2D]
-        stacks = self._build_history_stack(hist_embeds)
-        stacks.append(target_concat)
-
-        stacks = torch.stack(stacks, dim=1)  # giữ nguyên logic cũ
+        history_stack = self._build_history_stack(hist_embeds)
+        stacks = torch.cat([history_stack, target_concat.unsqueeze(1)], dim=1)
         seq_len = stacks.size(1)
         pos_emb = self.positional_encoding.get_pe(seq_len).squeeze(0).to(stacks.device)  # [L, D]
         feats = self.transformer_layer(stacks, pos_emb=pos_emb)[:, -1, :]
@@ -1086,7 +1074,6 @@ class BST(nn.Module):
 
 
         
-
 
 
 

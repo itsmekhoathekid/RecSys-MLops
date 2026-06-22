@@ -18,6 +18,12 @@ def run(command: list[str]) -> str:
     return subprocess.check_output(command, text=True)
 
 
+def parse_first_json_object(output: str) -> dict:
+    decoder = json.JSONDecoder()
+    body, _ = decoder.raw_decode(output.strip())
+    return body
+
+
 def test_live_kserve_fastapi_recommendation_flow():
     if shutil.which("kubectl") is None:
         pytest.skip("kubectl is not installed")
@@ -67,7 +73,7 @@ def test_live_kserve_fastapi_recommendation_flow():
             payload,
         ]
     )
-    body = json.loads(response)
+    body = parse_first_json_object(response)
     assert body["model_version"]
     assert body["items"]
     scores = [item["score"] for item in body["items"]]

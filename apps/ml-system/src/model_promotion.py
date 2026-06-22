@@ -42,6 +42,7 @@ TARGET_INPUTS = [
 ]
 
 ONNX_INPUTS = [*HISTORY_INPUTS, *TARGET_INPUTS]
+RANKER_HISTORY_OUTPUTS = {name: f"ranker_{name}" for name in HISTORY_INPUTS}
 
 
 @dataclass(frozen=True)
@@ -151,7 +152,10 @@ def write_triton_configs(repository: str | Path, max_history_len: int) -> None:
         'name: "score" data_type: TYPE_FP32 dims: [ -1 ]',
     ]
     preprocess_output_entries = [
-        *ranker_history_entries,
+        *[
+            f'name: "{RANKER_HISTORY_OUTPUTS[name]}" data_type: TYPE_INT64 dims: [ -1, -1 ]'
+            for name in HISTORY_INPUTS
+        ],
         *ranker_target_entries,
         'name: "candidate_item_id_out" data_type: TYPE_INT64 dims: [ -1 ]',
     ]
@@ -165,7 +169,6 @@ def write_triton_configs(repository: str | Path, max_history_len: int) -> None:
     ranker_input_blocks = _pbtxt_list(ranker_input_entries)
     postprocess_input_blocks = _pbtxt_list(
         [
-            'name: "candidate_item_id_out" data_type: TYPE_INT64 dims: [ -1 ]',
             'name: "logits" data_type: TYPE_FP32 dims: [ -1 ]',
         ]
     )
@@ -182,13 +185,12 @@ output [
 {preprocess_output_blocks}
 ]
 parameters: {{
-  key: "EXECUTION_ENV_PATH"
-  value: {{ string_value: "$$TRITON_MODEL_DIRECTORY" }}
-}}
-parameters: {{
   key: "max_history_len"
   value: {{ string_value: "{max_history_len}" }}
 }}
+instance_group [
+  {{ kind: KIND_CPU }}
+]
 """,
     )
     _write_text(
@@ -215,7 +217,10 @@ input [
 {postprocess_input_blocks}
 ]
 output [
-{ensemble_output_blocks}
+  {{ name: "score" data_type: TYPE_FP32 dims: [ -1 ] }}
+]
+instance_group [
+  {{ kind: KIND_CPU }}
 ]
 """,
     )
@@ -268,16 +273,8 @@ ensemble_scheduling {{
       model_name: "{POSTPROCESS_MODEL_NAME}"
       model_version: -1
       input_map {{
-        key: "candidate_item_id_out"
-        value: "candidate_item_id_out"
-      }}
-      input_map {{
         key: "logits"
         value: "logits"
-      }}
-      output_map {{
-        key: "candidate_item_id_out"
-        value: "candidate_item_id_out"
       }}
       output_map {{
         key: "score"
@@ -303,8 +300,8 @@ def _ensemble_history_maps() -> str:
 def _ensemble_preprocess_output_maps() -> str:
     return "\n".join(
         f"""      output_map {{
-        key: "{name}"
-        value: "{name}"
+        key: "{RANKER_HISTORY_OUTPUTS.get(name, name)}"
+        value: "{RANKER_HISTORY_OUTPUTS.get(name, name)}"
       }}"""
         for name in [*ONNX_INPUTS, "candidate_item_id_out"]
     )
@@ -314,7 +311,7 @@ def _ranker_input_maps() -> str:
     return "\n".join(
         f"""      input_map {{
         key: "{name}"
-        value: "{name}"
+        value: "{RANKER_HISTORY_OUTPUTS.get(name, name)}"
       }}"""
         for name in ONNX_INPUTS
     )
@@ -359,7 +356,7 @@ class TritonPythonModel:
             candidate_item_id = self._target(request, "candidate_item_id")
             n_candidates = candidate_item_id.size
             outputs = [
-                pb_utils.Tensor(name, self._history(request, name, n_candidates))
+                pb_utils.Tensor(f"ranker_{name}", self._history(request, name, n_candidates))
                 for name in HISTORY_INPUTS
             ]
             outputs.extend(
@@ -385,13 +382,11 @@ class TritonPythonModel:
     def execute(self, requests):
         responses = []
         for request in requests:
-            candidate_item_id = pb_utils.get_input_tensor_by_name(request, "candidate_item_id_out").as_numpy().astype(np.int64).reshape(-1)
             logits = pb_utils.get_input_tensor_by_name(request, "logits").as_numpy().astype(np.float32).reshape(-1)
             scores = 1.0 / (1.0 + np.exp(-logits))
             responses.append(
                 pb_utils.InferenceResponse(
                     output_tensors=[
-                        pb_utils.Tensor("candidate_item_id_out", candidate_item_id),
                         pb_utils.Tensor("score", scores.astype(np.float32)),
                     ]
                 )
@@ -416,6 +411,7 @@ def build_triton_repository(
     if repo.exists():
         shutil.rmtree(repo)
     (repo / RANKER_MODEL_NAME / "1").mkdir(parents=True, exist_ok=True)
+    _write_text(repo / ENSEMBLE_MODEL_NAME / "1" / ".keep", "ensemble version directory")
     write_python_backend_models(repo)
     write_triton_configs(
         repo,

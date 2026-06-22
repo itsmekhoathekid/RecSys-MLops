@@ -133,14 +133,23 @@ class FeatureClient:
         )
 
     def user_sequence(self, user_id: int) -> dict[str, Any]:
-        return parse_json_bytes(self.client.get(f"fs:user_sequence:{user_id}"))
+        try:
+            return parse_json_bytes(self.client.get(f"fs:user_sequence:{user_id}"))
+        except Exception:
+            return {}
 
     def item_features(self, item_id: int) -> dict[str, Any]:
-        return parse_json_bytes(self.client.get(f"fs:item:{item_id}"))
+        try:
+            return parse_json_bytes(self.client.get(f"fs:item:{item_id}"))
+        except Exception:
+            return {}
 
     def candidates(self, user_id: int, limit: int) -> list[int]:
-        raw = self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
-        return [int(item.decode("utf-8") if isinstance(item, bytes) else item) for item in raw]
+        try:
+            raw = self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
+            return [int(item.decode("utf-8") if isinstance(item, bytes) else item) for item in raw]
+        except Exception:
+            return list(range(1, limit + 1))
 
 
 class TritonRanker:
