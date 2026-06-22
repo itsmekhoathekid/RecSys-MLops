@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import numpy as np
+
+from serving import (
+    RecommendationRequest,
+    build_triton_payload,
+    format_top_k,
+    recommend,
+)
+
+
+def test_build_triton_payload_maps_feature_rows_to_tensors():
+    payload = build_triton_payload(
+        sequence_row={
+            "hist_item_ids": "[1, 2, 3]",
+            "hist_event_type_ids": [1, 1, 2],
+            "hist_category_ids": [4, 5, 6],
+            "hist_brand_ids": [7, 8, 9],
+            "hist_price_bucket_ids": [1, 2, 3],
+            "hist_time_ids": [1, 2, 3],
+        },
+        item_rows={
+            10: {"category_id": 2, "brand_id": 3, "price_bucket": 4},
+            11: {"category_id": 5, "brand_id": 6, "price_bucket": 7},
+        },
+        candidate_item_ids=[10, 11],
+    )
+
+    assert payload["hist_item_id"].tolist() == [1, 2, 3]
+    assert payload["candidate_item_id"].tolist() == [10, 11]
+    assert payload["candidate_category"].tolist() == [2, 5]
+    assert payload["candidate_brand"].dtype == np.int64
+
+
+def test_format_top_k_sorts_scores_descending():
+    response = format_top_k(
+        user_id=1,
+        model_version="v1",
+        candidate_item_ids=[10, 11, 12],
+        scores=[0.2, 0.9, 0.5],
+        top_k=2,
+    )
+
+    assert [item.item_id for item in response.items] == [11, 12]
+    assert [item.score for item in response.items] == [0.9, 0.5]
+
+
+def test_recommend_uses_fallback_candidates_and_ranker_scores():
+    class Features:
+        def candidates(self, user_id, limit):
+            return [10, 11]
+
+        def user_sequence(self, user_id):
+            return {"hist_item_ids": [1], "hist_event_type_ids": [1]}
+
+        def item_features(self, item_id):
+            return {"category_id": item_id, "brand_id": 1, "price_bucket": 2}
+
+    class Ranker:
+        def score(self, payload):
+            return payload["candidate_item_id"].tolist(), [0.1, 0.8]
+
+    response = recommend(
+        request=RecommendationRequest(user_id=1, top_k=1),
+        feature_client=Features(),
+        ranker=Ranker(),
+        model_version="trial-001",
+    )
+
+    assert response.model_version == "trial-001"
+    assert [item.item_id for item in response.items] == [11]

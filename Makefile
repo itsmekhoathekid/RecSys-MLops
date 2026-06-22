@@ -10,7 +10,7 @@ RECSYS_PIPELINE_IMAGE ?= recsys-mlops-training:local
 MINIKUBE_PROFILE ?= recsys-mlops
 KFP_VERSION ?= 2.16.1
 KUBEFLOW_NAMESPACE ?= kubeflow
-MLOPS_NAMESPACE ?= mlops
+MLOPS_NAMESPACE ?= experiment-tracking
 
 .PHONY: help
 help:
@@ -44,6 +44,7 @@ help:
 	@echo "  make mlops-install-kfp        Install standalone Kubeflow Pipelines"
 	@echo "  make mlops-install-kuberay    Install KubeRay operator"
 	@echo "  make mlops-install-stack      Install MLflow/runtime Helm charts"
+	@echo "  make mlops-install-serving    Install KServe/Triton and API serving chart"
 	@echo "  make mlops-compile-kfp        Compile the RecSys BST Kubeflow pipeline"
 	@echo "  make mlops-helm-template      Render MLflow/runtime Helm charts"
 	@echo "  make mlops-port-forward       Port-forward KFP, MLflow, MinIO, Ray dashboards"
@@ -117,6 +118,7 @@ dataflow-test:
 mlops-images:
 	@docker build -f infra/docker/Dockerfile.base-python -t recsys-base-python:local .
 	@docker build -f apps/ml-system/Dockerfile.training -t recsys-mlops-training:local .
+	@docker build -f apps/api-serving/Dockerfile -t recsys-api-serving:local .
 	@docker build -f infra/docker/Dockerfile.mlflow -t recsys-mlflow:local .
 
 .PHONY: mlops-images-minikube
@@ -140,16 +142,21 @@ mlops-install-stack:
 	@helm upgrade --install recsys-mlflow infra/helm/mlflow-stack --namespace $(MLOPS_NAMESPACE) --create-namespace
 	@helm upgrade --install recsys-runtime infra/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
 
+.PHONY: mlops-install-serving
+mlops-install-serving:
+	@helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace
+
 .PHONY: mlops-compile-kfp
 mlops-compile-kfp:
 	@PYTHONPATH=apps/ml-system/src:apps/data-platform/src RECSYS_PIPELINE_IMAGE=$(RECSYS_PIPELINE_IMAGE) uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
 
 .PHONY: mlops-helm-template
 mlops-helm-template:
-	@helm template recsys-mlflow infra/helm/mlflow-stack --namespace mlops
+	@helm template recsys-mlflow infra/helm/mlflow-stack --namespace $(MLOPS_NAMESPACE)
 	@helm template recsys-runtime infra/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
 	@helm template recsys-ray-cpu infra/helm/ray-cluster --namespace $(KUBEFLOW_NAMESPACE)
 	@helm template recsys-ray-gpu infra/helm/ray-cluster --namespace $(KUBEFLOW_NAMESPACE) -f infra/helm/ray-cluster/values-gpu.yaml
+	@helm template recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference
 
 .PHONY: mlops-port-forward
 mlops-port-forward:
@@ -157,3 +164,4 @@ mlops-port-forward:
 	@echo "MLflow:    kubectl port-forward -n $(MLOPS_NAMESPACE) svc/mlflow 5000:5000"
 	@echo "MinIO:     kubectl port-forward -n $(MLOPS_NAMESPACE) svc/minio 9001:9001"
 	@echo "Ray UI:    kubectl port-forward -n $(KUBEFLOW_NAMESPACE) svc/recsys-bst-ray-tune-raycluster-*-head-svc 8265:8265"
+	@echo "FastAPI:   kubectl port-forward -n api-serving svc/recsys-api-serving 8088:80"

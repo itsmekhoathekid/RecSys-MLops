@@ -16,6 +16,9 @@ def test_secret_env_mapping_is_stable():
         "MLFLOW_EXPERIMENT_NAME": "MLFLOW_EXPERIMENT_NAME",
         "MLFLOW_S3_ENDPOINT_URL": "MLFLOW_S3_ENDPOINT_URL",
         "MODEL_REGISTRY_POSTGRES_URI": "MODEL_REGISTRY_POSTGRES_URI",
+        "MODEL_STORE_BUCKET": "MODEL_STORE_BUCKET",
+        "MODEL_STORE_PREFIX": "MODEL_STORE_PREFIX",
+        "PROMOTION_MANIFEST_KEY": "PROMOTION_MANIFEST_KEY",
         "AWS_ACCESS_KEY_ID": "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY": "AWS_SECRET_ACCESS_KEY",
         "AWS_DEFAULT_REGION": "AWS_DEFAULT_REGION",
@@ -155,5 +158,6 @@ def test_compile_pipeline_writes_refactored_component_commands():
     assert "/opt/recsys/apps/ml-system/src/prepare_bst_training_data.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/submit_ray_job.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/evaluate_ray_best_bst.py" in compiled
+    assert "/opt/recsys/apps/ml-system/src/model_promotion.py" in compiled
     assert "pipelines.model_pipeline" not in compiled
     assert "recsys_model_pipeline" not in compiled

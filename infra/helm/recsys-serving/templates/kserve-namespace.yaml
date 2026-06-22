@@ -1,0 +1,6 @@
+{{- if .Values.kserve.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.kserve.namespace.name }}
+{{- end }}

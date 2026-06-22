@@ -1,0 +1,16 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: {{ .Values.kserve.inferenceService.name }}
+  namespace: {{ .Values.kserve.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.kserve.inferenceService.name }}
+  annotations:
+    serving.kserve.io/deploymentMode: {{ .Values.kserve.inferenceService.deploymentMode | quote }}
+spec:
+  predictor:
+    serviceAccountName: {{ .Values.kserve.serviceAccount.name }}
+    triton:
+      storageUri: {{ .Values.kserve.inferenceService.storageUri | quote }}
+      resources:
+{{ toYaml .Values.kserve.resources | indent 8 }}

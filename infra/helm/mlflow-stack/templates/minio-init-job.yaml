@@ -22,4 +22,4 @@ spec:
                 sleep 5
               done
               mc mb --ignore-existing "local/{{ .Values.minio.bucket }}"
-
+              mc mb --ignore-existing "local/{{ .Values.minio.modelStoreBucket }}"
