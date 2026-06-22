@@ -1,0 +1,19 @@
+{
+  "api": {
+    "config": {
+      "modelVersion": "run_trial_81ea4_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0010,weight_decay=0.0000_2026-06-22_13-30-18"
+    },
+    "namespace": {
+      "name": "api-serving"
+    }
+  },
+  "kserve": {
+    "inferenceService": {
+      "name": "recsys-bst-triton",
+      "storageUri": "s3://recsys-model-store/triton/bst/run_trial_81ea4_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0010,weight_decay=0.0000_2026-06-22_13-30-18"
+    },
+    "namespace": {
+      "name": "kserve-triton-inference"
+    }
+  }
+}

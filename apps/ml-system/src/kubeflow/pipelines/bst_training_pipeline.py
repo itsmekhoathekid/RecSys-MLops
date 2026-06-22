@@ -125,6 +125,32 @@ def evaluate_bst(config_path: str, ray_result_path: str, metrics_path: str):
     )
 
 
+@dsl.container_component
+def promote_bst_model(
+    config_path: str,
+    ray_result_path: str,
+    output_dir: str,
+    manifest_path: str,
+    metric_name: str,
+):
+    return dsl.ContainerSpec(
+        image=PIPELINE_IMAGE,
+        command=["python", "/opt/recsys/apps/ml-system/src/model_promotion.py"],
+        args=[
+            "--config-path",
+            config_path,
+            "--ray-result-path",
+            ray_result_path,
+            "--output-dir",
+            output_dir,
+            "--manifest-path",
+            manifest_path,
+            "--metric-name",
+            metric_name,
+        ],
+    )
+
+
 @dsl.pipeline(
     name="recsys-bst-feature-train-evaluate",
     description="Feature engineering, BST training, evaluation, MLflow tracking, MinIO artifacts, and Postgres model config.",
@@ -142,6 +168,9 @@ def recsys_bst_pipeline(
     ray_best_result_path: str = "/workspace/recsys/data_platform/output/ml/ray/best_result.json",
     ray_status_path: str = "/workspace/recsys/data_platform/output/ml/ray/rayjob_status.json",
     eval_metrics_path: str = "/workspace/recsys/data_platform/output/ml/eval_metrics.json",
+    serving_output_dir: str = "/workspace/recsys/data_platform/output/ml/serving",
+    promotion_manifest_path: str = "/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json",
+    promotion_metric_name: str = "test_ndcg_at_10",
     pvc_name: str = "recsys-mlops-pvc",
     pvc_mount_path: str = "/workspace",
     runtime_secret_name: str = "recsys-mlops-runtime",
@@ -199,7 +228,7 @@ def recsys_bst_pipeline(
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
     ).after(prepare)
-    wire_runtime(
+    evaluate = wire_runtime(
         evaluate_bst(
             config_path=bst_config_path,
             ray_result_path=ray_best_result_path,
@@ -209,3 +238,15 @@ def recsys_bst_pipeline(
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
     ).after(tune_train)
+    wire_runtime(
+        promote_bst_model(
+            config_path=bst_config_path,
+            ray_result_path=ray_best_result_path,
+            output_dir=serving_output_dir,
+            manifest_path=promotion_manifest_path,
+            metric_name=promotion_metric_name,
+        ),
+        pvc_name=DEFAULT_PVC_NAME,
+        mount_path=DEFAULT_PVC_MOUNT_PATH,
+        secret_name=DEFAULT_RUNTIME_SECRET_NAME,
+    ).after(evaluate)

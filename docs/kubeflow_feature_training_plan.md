@@ -73,7 +73,7 @@ Install MLflow stack:
 
 ```bash
 helm upgrade --install recsys-mlflow infra/helm/mlflow-stack \
-  --namespace mlops \
+  --namespace experiment-tracking \
   --create-namespace
 ```
 

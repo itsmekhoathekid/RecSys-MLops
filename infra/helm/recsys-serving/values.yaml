@@ -1,0 +1,61 @@
+kserve:
+  namespace:
+    create: true
+    name: kserve-triton-inference
+  servingRuntime:
+    create: true
+    name: kserve-tritonserver
+    image: nvcr.io/nvidia/tritonserver:23.05-py3
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+  inferenceService:
+    name: recsys-bst-triton
+    deploymentMode: RawDeployment
+    storageUri: s3://recsys-model-store/triton/bst/latest
+  serviceAccount:
+    name: recsys-kserve-minio
+  secret:
+    name: recsys-kserve-minio
+    minioEndpoint: minio.experiment-tracking.svc.cluster.local:9000
+    minioUseHttps: "0"
+    minioRegion: us-east-1
+    accessKeyId: minio
+    secretAccessKey: minio123
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+api:
+  namespace:
+    create: true
+    name: api-serving
+  name: recsys-api-serving
+  image: recsys-api-serving:local
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 80
+    targetPort: 8080
+  config:
+    tritonUrl: recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
+    tritonModelName: bst_ensemble
+    redisHost: redis.recsys-dataflow.svc.cluster.local
+    redisPort: "6379"
+    defaultTopK: "10"
+    modelVersion: latest
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

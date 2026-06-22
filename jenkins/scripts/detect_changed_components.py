@@ -17,6 +17,7 @@ FLAGS = {
     "RUN_DOCKER_DATA_GENERATOR": False,
     "RUN_DOCKER_DATAFLOW": False,
     "RUN_DOCKER_FEATURE_STORE": False,
+    "RUN_DOCKER_API": False,
     "RUN_DOCKER_TRAINING": False,
     "RUN_PYTHON": False,
 }
@@ -64,20 +65,24 @@ def classify(paths: list[str]) -> dict[str, bool]:
                 "RUN_DATA_GENERATOR",
                 "RUN_DATA_PLATFORM",
                 "RUN_FEATURE_STORE",
+                "RUN_API",
                 "RUN_MODEL_PIPELINE",
                 "RUN_KFP",
                 "RUN_DOCKER_BASE",
                 "RUN_DOCKER_DATA_GENERATOR",
                 "RUN_DOCKER_DATAFLOW",
                 "RUN_DOCKER_FEATURE_STORE",
+                "RUN_DOCKER_API",
                 "RUN_DOCKER_TRAINING",
             )
 
         if path.startswith("configs/"):
             mark(flags, "RUN_DATA_GENERATOR", "RUN_DATA_PLATFORM", "RUN_FEATURE_STORE", "RUN_MODEL_PIPELINE")
 
-        if path.startswith("apps/api/"):
+        if path.startswith("apps/api/") or path.startswith("apps/api-serving/"):
             mark(flags, "RUN_API")
+            if path == "apps/api-serving/Dockerfile":
+                mark(flags, "RUN_DOCKER_API")
 
         if path.startswith("apps/data-platform/data-generator/") or path.startswith("tests/unit/data_generator/"):
             mark(flags, "RUN_DATA_GENERATOR")
@@ -120,7 +125,16 @@ def classify(paths: list[str]) -> dict[str, bool]:
             if parts[-1] in {"Dockerfile.base-python", "Dockerfile.training"}:
                 mark(flags, "RUN_DOCKER_BASE", "RUN_DOCKER_TRAINING", "RUN_MODEL_PIPELINE")
 
-    if flags["RUN_DATA_GENERATOR"] or flags["RUN_DATA_PLATFORM"] or flags["RUN_FEATURE_STORE"] or flags["RUN_MODEL_PIPELINE"]:
+    if flags["RUN_DOCKER_API"]:
+        flags["RUN_API"] = True
+
+    if (
+        flags["RUN_DATA_GENERATOR"]
+        or flags["RUN_DATA_PLATFORM"]
+        or flags["RUN_FEATURE_STORE"]
+        or flags["RUN_MODEL_PIPELINE"]
+        or flags["RUN_API"]
+    ):
         flags["RUN_PYTHON"] = True
     return flags
 

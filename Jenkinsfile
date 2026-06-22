@@ -5,6 +5,11 @@ pipeline {
     skipDefaultCheckout(false)
   }
 
+  parameters {
+    booleanParam(name: 'RUN_MODEL_CD', defaultValue: false, description: 'Deploy the promoted Triton model to KServe.')
+    string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'MinIO/S3 promotion manifest URI produced by the Kubeflow promotion step.')
+  }
+
   environment {
     UV_LINK_MODE = 'copy'
   }
@@ -74,7 +79,7 @@ pipeline {
         stage('API Scaffold') {
           when { expression { env.RUN_API == 'true' } }
           steps {
-            sh 'test ! -d apps/api || find apps/api -maxdepth 2 -type f -print'
+            sh 'PYTHONPATH=apps/api-serving/src uv run pytest tests/unit/api_serving -q --junitxml=reports/junit/api-serving.xml'
           }
         }
       }
@@ -90,7 +95,7 @@ pipeline {
     stage('Docker Dry-Run Builds') {
       when {
         expression {
-          env.RUN_DOCKER_BASE == 'true' || env.RUN_DOCKER_DATA_GENERATOR == 'true' || env.RUN_DOCKER_DATAFLOW == 'true' || env.RUN_DOCKER_FEATURE_STORE == 'true' || env.RUN_DOCKER_TRAINING == 'true'
+          env.RUN_DOCKER_BASE == 'true' || env.RUN_DOCKER_DATA_GENERATOR == 'true' || env.RUN_DOCKER_DATAFLOW == 'true' || env.RUN_DOCKER_FEATURE_STORE == 'true' || env.RUN_DOCKER_API == 'true' || env.RUN_DOCKER_TRAINING == 'true'
         }
       }
       steps {
@@ -110,6 +115,9 @@ pipeline {
           if (env.RUN_DOCKER_FEATURE_STORE == 'true') {
             builds['feature-store'] = { sh 'docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:ci -f apps/data-platform/feature-store/Dockerfile -t recsys-feature-store:ci .' }
           }
+          if (env.RUN_DOCKER_API == 'true') {
+            builds['api-serving'] = { sh 'docker build -f apps/api-serving/Dockerfile -t recsys-api-serving:ci .' }
+          }
           if (env.RUN_DOCKER_TRAINING == 'true') {
             builds['training'] = { sh 'docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:ci -f apps/ml-system/Dockerfile.training -t recsys-mlops-training:ci .' }
           }
@@ -123,9 +131,19 @@ pipeline {
     stage('Helm Dry-Run') {
       when { expression { env.RUN_HELM == 'true' } }
       steps {
-        sh 'helm lint infra/helm/mlflow-stack && helm template recsys-mlflow infra/helm/mlflow-stack --namespace mlops >/tmp/recsys-mlflow.yaml'
+        sh 'helm lint infra/helm/mlflow-stack && helm template recsys-mlflow infra/helm/mlflow-stack --namespace experiment-tracking >/tmp/recsys-mlflow.yaml'
         sh 'helm lint infra/helm/recsys-runtime && helm template recsys-runtime infra/helm/recsys-runtime --namespace kubeflow --set namespace.name=kubeflow >/tmp/recsys-runtime.yaml'
         sh 'helm lint infra/helm/ray-cluster && helm template recsys-ray-cpu infra/helm/ray-cluster --namespace kubeflow >/tmp/recsys-ray-cpu.yaml'
+        sh 'helm lint infra/helm/recsys-serving && helm template recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference >/tmp/recsys-serving.yaml'
+      }
+    }
+
+    stage('Model CD') {
+      when { expression { params.RUN_MODEL_CD == true } }
+      steps {
+        sh "python3 jenkins/scripts/model_cd.py --manifest-uri '${params.PROMOTION_MANIFEST_URI}' --output-dir .model-cd"
+        sh 'helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace -f .model-cd/recsys-serving-values.json'
+        sh 'kubectl wait --for=condition=Ready inferenceservice/recsys-bst-triton -n kserve-triton-inference --timeout=300s'
       }
     }
   }
@@ -133,7 +151,7 @@ pipeline {
   post {
     always {
       junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
-      archiveArtifacts allowEmptyArchive: true, artifacts: 'infra/kubeflow/compiled/*.yaml,.ci-components.env'
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'infra/kubeflow/compiled/*.yaml,.ci-components.env,.model-cd/*'
     }
   }
 }

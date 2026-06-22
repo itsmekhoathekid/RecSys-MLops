@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.api.name }}
+  namespace: {{ .Values.api.namespace.name }}
+data:
+  TRITON_URL: {{ .Values.api.config.tritonUrl | quote }}
+  TRITON_MODEL_NAME: {{ .Values.api.config.tritonModelName | quote }}
+  REDIS_HOST: {{ .Values.api.config.redisHost | quote }}
+  REDIS_PORT: {{ .Values.api.config.redisPort | quote }}
+  DEFAULT_TOP_K: {{ .Values.api.config.defaultTopK | quote }}
+  MODEL_VERSION: {{ .Values.api.config.modelVersion | quote }}

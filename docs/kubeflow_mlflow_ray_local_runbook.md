@@ -13,7 +13,7 @@ Target hien tai:
 - `minikube` profile: `recsys-mlops`
 - K8s context: `recsys-mlops`
 - Namespace KFP/KubeRay: `kubeflow`
-- Namespace MLflow stack: `mlops`
+- Namespace MLflow stack: `experiment-tracking`
 - CPU local smoke tren macOS arm64.
 - GPU overlay de danh cho Linux/NVIDIA local K8s sau nay.
 
@@ -97,7 +97,7 @@ Check readiness:
 ```bash
 kubectl get deploy -n kubeflow
 kubectl get pods -n kubeflow
-kubectl get pods -n mlops
+kubectl get pods -n experiment-tracking
 ```
 
 Critical deployments nen Ready:
@@ -349,7 +349,7 @@ Smoke run da verify:
 Port-forward MLflow UI:
 
 ```bash
-kubectl port-forward -n mlops svc/mlflow 5000:5000
+kubectl port-forward -n experiment-tracking svc/mlflow 5000:5000
 ```
 
 Mo:
@@ -361,7 +361,7 @@ http://127.0.0.1:5000
 Check MLflow runs trong Postgres:
 
 ```bash
-kubectl exec -n mlops deploy/postgres -- \
+kubectl exec -n experiment-tracking deploy/postgres -- \
   env PGPASSWORD=mlflow123 \
   psql -U mlflow -d mlflow \
   -c "select run_uuid, name, artifact_uri, status from runs order by start_time desc limit 8;"
@@ -370,7 +370,7 @@ kubectl exec -n mlops deploy/postgres -- \
 Check model registry table:
 
 ```bash
-kubectl exec -n mlops deploy/postgres -- \
+kubectl exec -n experiment-tracking deploy/postgres -- \
   env PGPASSWORD=mlflow123 \
   psql -U mlflow -d mlflow \
   -c "select model_name, model_version, artifact_uri, mlflow_run_id, created_at from model_configs order by created_at desc limit 5;"
@@ -379,7 +379,7 @@ kubectl exec -n mlops deploy/postgres -- \
 Check MinIO artifact files:
 
 ```bash
-kubectl exec -n mlops deploy/minio -- \
+kubectl exec -n experiment-tracking deploy/minio -- \
   sh -c "ls -R /data/mlflow-artifacts/1/<mlflow-run-id>/artifacts"
 ```
 
@@ -397,10 +397,10 @@ Expected artifact dirs:
 kubectl get pods -A
 kubectl get deploy -n kubeflow
 kubectl get pods -n kubeflow
-kubectl get pods -n mlops
+kubectl get pods -n experiment-tracking
 kubectl get rayjob,raycluster -A
 kubectl get events -n kubeflow --sort-by=.lastTimestamp
-kubectl get events -n mlops --sort-by=.lastTimestamp
+kubectl get events -n experiment-tracking --sort-by=.lastTimestamp
 ```
 
 ### 8.2 KFP API, UI, Workflow Logs
@@ -517,16 +517,16 @@ http://127.0.0.1:8265
 ### 8.5 MLflow, MinIO, Postgres Logs
 
 ```bash
-kubectl logs -n mlops deploy/mlflow -f
-kubectl logs -n mlops deploy/minio -f
-kubectl logs -n mlops deploy/postgres -f
+kubectl logs -n experiment-tracking deploy/mlflow -f
+kubectl logs -n experiment-tracking deploy/minio -f
+kubectl logs -n experiment-tracking deploy/postgres -f
 ```
 
 Port-forward:
 
 ```bash
-kubectl port-forward -n mlops svc/mlflow 5000:5000
-kubectl port-forward -n mlops svc/minio 9001:9001
+kubectl port-forward -n experiment-tracking svc/mlflow 5000:5000
+kubectl port-forward -n experiment-tracking svc/minio 9001:9001
 ```
 
 MLflow:

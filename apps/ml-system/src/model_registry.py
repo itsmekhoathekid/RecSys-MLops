@@ -13,6 +13,8 @@ def register_model_config(
     mlflow_run_id: str | None,
     metrics: dict[str, Any],
     config: dict[str, Any],
+    serving_artifact_uri: str | None = None,
+    promotion_manifest_uri: str | None = None,
 ) -> None:
     import psycopg
 
@@ -28,10 +30,14 @@ def register_model_config(
                     mlflow_run_id TEXT,
                     metrics JSONB NOT NULL,
                     config JSONB NOT NULL,
+                    serving_artifact_uri TEXT,
+                    promotion_manifest_uri TEXT,
                     created_at TIMESTAMPTZ NOT NULL
                 )
                 """
             )
+            cursor.execute("ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS serving_artifact_uri TEXT")
+            cursor.execute("ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS promotion_manifest_uri TEXT")
             cursor.execute(
                 """
                 INSERT INTO model_configs (
@@ -41,9 +47,11 @@ def register_model_config(
                     mlflow_run_id,
                     metrics,
                     config,
+                    serving_artifact_uri,
+                    promotion_manifest_uri,
                     created_at
                 )
-                VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
+                VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
                 """,
                 (
                     model_name,
@@ -52,8 +60,9 @@ def register_model_config(
                     mlflow_run_id,
                     json.dumps(metrics),
                     json.dumps(config),
+                    serving_artifact_uri,
+                    promotion_manifest_uri,
                     datetime.now(timezone.utc),
                 ),
             )
         conn.commit()
-

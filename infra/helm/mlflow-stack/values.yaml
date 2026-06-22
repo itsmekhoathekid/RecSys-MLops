@@ -1,6 +1,6 @@
 namespace:
   create: true
-  name: mlops
+  name: experiment-tracking
 
 storageClassName: ""
 
@@ -9,6 +9,7 @@ minio:
   rootUser: minio
   rootPassword: minio123
   bucket: mlflow-artifacts
+  modelStoreBucket: recsys-model-store
   storage: 10Gi
   resources:
     requests:
