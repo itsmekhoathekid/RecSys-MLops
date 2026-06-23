@@ -72,30 +72,27 @@ def test_serving_chart_renders_expected_namespaces():
         "port": 80,
     }
     assert api_http_scaledobject["spec"]["scalingMetric"]["requestRate"]["targetValue"] == 5
-    kserve_http_scaledobject = by_kind_name[("HTTPScaledObject", "recsys-bst-triton-http")]
-    assert kserve_http_scaledobject["metadata"]["namespace"] == "kserve-triton-inference"
-    assert kserve_http_scaledobject["metadata"]["annotations"][
-        "httpscaledobject.keda.sh/skip-scaledobject-creation"
-    ] == "true"
-    assert kserve_http_scaledobject["spec"]["hosts"] == ["recsys-bst-triton.local"]
-    assert kserve_http_scaledobject["spec"]["scaleTargetRef"]["name"] == "recsys-bst-triton-predictor"
-    assert kserve_http_scaledobject["spec"]["scaleTargetRef"]["service"] == "recsys-bst-triton-http"
-    assert kserve_http_scaledobject["spec"]["scaleTargetRef"]["port"] == 80
-    assert kserve_http_scaledobject["spec"]["scalingMetric"]["requestRate"]["targetValue"] == 3
-    kserve_keda_scaledobject = by_kind_name[("ScaledObject", "recsys-bst-triton-http")]
-    assert kserve_keda_scaledobject["metadata"]["namespace"] == "kserve-triton-inference"
-    assert kserve_keda_scaledobject["metadata"]["annotations"][
+    assert ("HTTPScaledObject", "recsys-bst-triton-http") not in by_kind_name
+    assert ("Service", "recsys-bst-triton-http") not in by_kind_name
+    kserve_resource_scaledobject = by_kind_name[("ScaledObject", "recsys-bst-triton-resource")]
+    assert kserve_resource_scaledobject["metadata"]["namespace"] == "kserve-triton-inference"
+    assert kserve_resource_scaledobject["metadata"]["annotations"][
         "scaledobject.keda.sh/transfer-hpa-ownership"
     ] == "true"
     assert (
-        kserve_keda_scaledobject["spec"]["advanced"]["horizontalPodAutoscalerConfig"]["name"]
+        kserve_resource_scaledobject["spec"]["advanced"]["horizontalPodAutoscalerConfig"]["name"]
         == "recsys-bst-triton-predictor"
     )
-    assert kserve_keda_scaledobject["spec"]["triggers"][0]["type"] == "external-push"
-    kserve_http_service = by_kind_name[("Service", "recsys-bst-triton-http")]
-    assert kserve_http_service["metadata"]["namespace"] == "kserve-triton-inference"
-    assert kserve_http_service["spec"]["selector"] == {"app": "isvc.recsys-bst-triton-predictor"}
-    assert kserve_http_service["spec"]["ports"][0]["targetPort"] == 8080
+    assert kserve_resource_scaledobject["spec"]["scaleTargetRef"]["name"] == "recsys-bst-triton-predictor"
+    assert kserve_resource_scaledobject["spec"]["minReplicaCount"] == 1
+    assert kserve_resource_scaledobject["spec"]["maxReplicaCount"] == 3
+    assert kserve_resource_scaledobject["spec"]["triggers"] == [
+        {
+            "type": "cpu",
+            "metricType": "Utilization",
+            "metadata": {"value": "50"},
+        }
+    ]
 
 
 def test_serving_chart_can_render_api_only_for_rollout_demo():
@@ -119,9 +116,9 @@ def test_serving_chart_can_render_api_only_for_rollout_demo():
 
     assert ("Deployment", "recsys-api-serving") in by_kind_name
     assert ("Service", "recsys-api-serving") in by_kind_name
-    assert ("Service", "recsys-bst-triton-http") in by_kind_name
     assert ("HTTPScaledObject", "recsys-api-serving-http") in by_kind_name
-    assert ("HTTPScaledObject", "recsys-bst-triton-http") in by_kind_name
+    assert ("HTTPScaledObject", "recsys-bst-triton-http") not in by_kind_name
+    assert ("ScaledObject", "recsys-bst-triton-resource") in by_kind_name
     assert ("InferenceService", "recsys-bst-triton") not in by_kind_name
     assert ("ClusterServingRuntime", "kserve-tritonserver") not in by_kind_name
 

@@ -82,7 +82,7 @@ autoscaling:
         window: 30s
         granularity: 1s
     kserve:
-      enabled: true
+      enabled: false
       name: recsys-bst-triton-http
       host: recsys-bst-triton.local
       deploymentName: recsys-bst-triton-predictor
@@ -100,3 +100,21 @@ autoscaling:
     limits:
       cpu: 500m
       memory: 512Mi
+  kserveResource:
+    enabled: true
+    name: recsys-bst-triton-resource
+    deploymentName: recsys-bst-triton-predictor
+    minReplicas: 1
+    maxReplicas: 3
+    pollingInterval: 15
+    cooldownPeriod: 180
+    restoreToOriginalReplicaCount: true
+    hpaName: recsys-bst-triton-predictor
+    cpu:
+      enabled: true
+      metricType: Utilization
+      value: "50"
+    memory:
+      enabled: false
+      metricType: Utilization
+      value: "70"
