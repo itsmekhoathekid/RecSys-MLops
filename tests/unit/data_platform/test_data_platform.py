@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 from feature_engineering.flink.candidate_pool_job import (
@@ -11,11 +12,17 @@ from feature_engineering.flink.item_features_job import (
     ItemFeatureState,
 )
 from feature_engineering.flink.realtime_stream_job import (
+    StreamQualityTracker,
+    build_realtime_feature_payloads,
+    build_warehouse_rows,
     normalize_event,
     parse_message,
 )
 from feature_engineering.flink.user_sequence_job import (
     UserSequenceState,
+)
+from feature_engineering.flink.user_aggregate_job import (
+    UserAggregateState,
 )
 from feature_engineering.spark.build_bst_training_table import (
     build_bst_training_table,
@@ -44,6 +51,18 @@ from validate.feature_quality_checks import (
     check_feast_feature_table,
     check_sequence_lengths,
 )
+from validate.great_expectations_runner import validate_table
+from validate.great_expectations_runner import STAGING_TABLE_CONTRACTS
+from feature_store.online_writer import dumps_feature_payload
+from feature_store.offline_to_online_sync import (
+    latest_by_entity,
+    row_payload,
+    should_overwrite,
+    sync_offline_to_online,
+)
+from warehouse.historical_loader import normalize_staging_frame
+from warehouse.schemas import STAGING_STREAM_BEHAVIOR_EVENTS
+from warehouse.writer import _normalize_value, create_table_sql, upsert_sql
 
 
 def _ts(value: str) -> pd.Timestamp:
@@ -177,6 +196,47 @@ def test_ranking_labels_and_bst_training_are_point_in_time():
     assert training["hist_item_id"].iloc[0] == [9]
 
 
+def test_item_features_use_latest_product_metadata_for_scd_rows():
+    events = pd.DataFrame(
+        [
+            {
+                "user_id": 1,
+                "product_id": 10,
+                "category_id": 2,
+                "brand_id": 3,
+                "price_bucket": 4,
+                "event_type": "view",
+                "event_type_id": 1,
+                "event_timestamp": _ts("2026-01-01T00:01:00"),
+            }
+        ]
+    )
+    products = pd.DataFrame(
+        [
+            {
+                "product_id": 10,
+                "valid_from": _ts("2025-01-01T00:00:00"),
+                "category_id": 2,
+                "brand_id": 3,
+                "price_bucket": 4,
+                "is_active": True,
+            },
+            {
+                "product_id": 10,
+                "valid_from": _ts("2026-01-01T00:00:00"),
+                "category_id": 5,
+                "brand_id": 6,
+                "price_bucket": 7,
+                "is_active": True,
+            },
+        ]
+    )
+    item = build_item_features(events, products)
+    assert item["category_id"].iloc[0] == 5
+    assert item["brand_id"].iloc[0] == 6
+    assert item["price_bucket"].iloc[0] == 7
+
+
 def test_feast_feature_table_required_columns():
     frame = pd.DataFrame(
         [
@@ -207,6 +267,22 @@ def test_streaming_payloads_and_candidate_updates():
     assert sequence_payload["sequence_length"] == 1
     assert item_payload["views_1h"] == 1
     assert ("candidate:trending:1h", 10, 1.0) in updates
+
+
+def test_user_aggregate_defaults_avg_viewed_price_without_views():
+    payload = UserAggregateState().update(
+        {
+            "user_id": 1,
+            "product_id": 10,
+            "category_id": 2,
+            "brand_id": 3,
+            "price_bucket": 4,
+            "price": 9.99,
+            "event_type": "cart",
+            "event_timestamp": "2026-01-01T00:00:00Z",
+        }
+    )
+    assert payload["avg_viewed_price_7d"] == 0.0
 
 
 def test_debezium_after_extraction_skips_deletes():
@@ -245,3 +321,174 @@ def test_realtime_stream_event_normalization_defaults_optional_dimensions():
     assert event["user_id"] == 1
     assert event["event_type_id"] == 1
     assert event["category_id"] == 0
+
+
+def test_warehouse_upsert_sql_targets_staging_contract():
+    ddl = create_table_sql(STAGING_STREAM_BEHAVIOR_EVENTS)
+    sql = upsert_sql(STAGING_STREAM_BEHAVIOR_EVENTS, list(STAGING_STREAM_BEHAVIOR_EVENTS.columns))
+    assert 'CREATE TABLE IF NOT EXISTS "staging"."stream_behavior_events"' in ddl
+    assert 'ON CONFLICT ("event_id") DO UPDATE SET' in sql
+    assert '"late_by_seconds" = EXCLUDED."late_by_seconds"' in sql
+
+
+def test_historical_staging_normalizes_nullable_user_preference_pk():
+    frame = pd.DataFrame(
+        [
+            {
+                "user_id": 1,
+                "category_id": 2,
+                "brand_id": None,
+                "preference_weight": 0.5,
+            }
+        ]
+    )
+    normalized = normalize_staging_frame("user_preferences", frame)
+    assert normalized["brand_id"].iloc[0] == 0
+
+
+def test_json_payload_serializers_replace_nan_with_null():
+    payload = {"avg_viewed_price_7d": float("nan"), "history": [1, float("inf")]}
+    assert _normalize_value(payload) == '{"avg_viewed_price_7d": null, "history": [1, null]}'
+    assert dumps_feature_payload(payload) == '{"avg_viewed_price_7d": null, "history": [1, null]}'
+
+
+def test_flink_builds_warehouse_rows_from_same_payloads_as_redis():
+    event = normalize_event(
+        {
+            "event_id": "e1",
+            "user_id": "1",
+            "product_id": "10",
+            "event_type": "view",
+            "event_timestamp": "2026-01-01T00:00:00Z",
+            "category_id": 2,
+            "brand_id": 3,
+            "price_bucket": 4,
+            "price": 9.0,
+        }
+    )
+    assert event is not None
+    sequence, aggregate, item = build_realtime_feature_payloads(
+        event,
+        UserSequenceState(max_history_length=2),
+        UserAggregateState(),
+        ItemFeatureState(),
+    )
+    rows = build_warehouse_rows(event, sequence, aggregate, item, "cdc.behavior_events", 60)
+    assert rows["stream_behavior_events"][0]["event_id"] == "e1"
+    assert rows["stream_user_sequence_features"][0]["sequence_length"] == 1
+    assert rows["stream_item_features"][0]["views_1h"] == 1
+
+
+def test_stream_quality_tracker_marks_bursty_and_late_windows():
+    tracker = StreamQualityTracker("cdc.behavior_events", window_seconds=60, burst_threshold_event_count=2)
+    assert tracker.update("2026-01-01T00:00:01Z", 10.0, False) == []
+    assert tracker.update("2026-01-01T00:00:02Z", 120.0, True) == []
+    flushed = tracker.flush()
+    assert len(flushed) == 1
+    assert flushed[0].is_bursty is True
+    assert flushed[0].late_event_count == 1
+
+
+def test_great_expectations_runner_catches_duplicate_and_skew():
+    frame = pd.DataFrame(
+        [
+            {"event_id": "e1", "event_timestamp": _ts("2026-01-01T00:00:00"), "user_id": 1, "product_id": 10, "event_type": "view", "category_id": 1},
+            {"event_id": "e1", "event_timestamp": _ts("2026-01-01T00:01:00"), "user_id": 2, "product_id": 11, "event_type": "view", "category_id": 1},
+        ]
+    )
+    result = validate_table(
+        "staging.stream_behavior_events",
+        frame,
+        required_columns=["event_id", "event_timestamp", "user_id", "product_id", "event_type"],
+        unique_columns=["event_id"],
+        categorical_columns=["event_type", "category_id"],
+        freshness_column="event_timestamp",
+        max_top_value_ratio=0.5,
+        max_unique_ratio=1.0,
+    )
+    assert not result.passed
+    assert result.metrics["duplicate_count"] == 1
+    assert any("skewed" in error for error in result.errors)
+
+
+def test_great_expectations_does_not_treat_feature_version_as_skew_dimension():
+    assert STAGING_TABLE_CONTRACTS["staging.stream_user_sequence_features"]["categorical_columns"] == []
+    assert STAGING_TABLE_CONTRACTS["staging.stream_user_aggregate_features"]["categorical_columns"] == []
+
+
+class FakeRedis:
+    def __init__(self):
+        self.values = {}
+        self.ttls = {}
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def set(self, key, value, ex=None):
+        self.values[key] = value
+        self.ttls[key] = ex
+
+
+def test_offline_sync_uses_latest_entity_rows_and_serving_keys(monkeypatch, tmp_path):
+    frames = {
+        "user_sequence_features": pd.DataFrame(
+            [
+                {"user_id": 1, "event_timestamp": _ts("2026-01-01T00:00:00"), "hist_length": 1},
+                {"user_id": 1, "event_timestamp": _ts("2026-01-01T00:05:00"), "hist_length": 2},
+            ]
+        ),
+        "user_aggregate_features": pd.DataFrame(
+            [{"user_id": 1, "event_timestamp": _ts("2026-01-01T00:05:00"), "views_30m": 3}]
+        ),
+        "item_features": pd.DataFrame(
+            [{"product_id": 10, "event_timestamp": _ts("2026-01-01T00:05:00"), "views_1h": 4}]
+        ),
+    }
+
+    def fake_read(path):
+        return frames[path.rstrip("/").split("/")[-1]]
+
+    monkeypatch.setattr("feature_store.offline_to_online_sync.read_feature_table", fake_read)
+    redis = FakeRedis()
+    result = sync_offline_to_online("memory://offline", redis, run_id=None, write_monitoring=False)
+    assert result["user_sequence_features"]["scanned_rows"] == 2
+    assert result["user_sequence_features"]["synced_rows"] == 1
+    assert "fs:user_sequence:1" in redis.values
+    assert "fs:user_aggregate:1" in redis.values
+    assert "fs:item:10" in redis.values
+    assert '"hist_length": 2' in redis.values["fs:user_sequence:1"]
+
+
+def test_offline_sync_row_payload_serializes_array_values():
+    payload = row_payload(
+        pd.Series(
+            {
+                "user_id": 1,
+                "event_timestamp": _ts("2026-01-01T00:00:00"),
+                "hist_item_ids": np.array([10, 11]),
+                "optional": np.nan,
+            }
+        )
+    )
+    assert payload["hist_item_ids"] == [10, 11]
+    assert payload["optional"] is None
+
+
+def test_offline_sync_conflict_policy_skips_newer_redis_payload():
+    existing = {"event_timestamp": "2026-01-01T00:10:00Z"}
+    incoming = {"event_timestamp": "2026-01-01T00:05:00Z"}
+    assert should_overwrite(existing, incoming, "event_timestamp") is False
+    assert should_overwrite(existing, {"event_timestamp": "2026-01-01T00:15:00Z"}, "event_timestamp") is True
+    assert should_overwrite({}, incoming, "event_timestamp") is True
+
+
+def test_latest_by_entity_keeps_latest_timestamp():
+    frame = pd.DataFrame(
+        [
+            {"user_id": 1, "event_timestamp": _ts("2026-01-01T00:00:00"), "value": 1},
+            {"user_id": 1, "event_timestamp": _ts("2026-01-01T00:02:00"), "value": 2},
+            {"user_id": 2, "event_timestamp": _ts("2026-01-01T00:01:00"), "value": 3},
+        ]
+    )
+    latest = latest_by_entity(frame, "user_id", "event_timestamp")
+    assert latest.sort_values("user_id")["value"].tolist() == [2, 3]

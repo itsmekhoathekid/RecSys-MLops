@@ -37,6 +37,16 @@ help:
 	@echo "  make dataflow-trigger         Trigger full_dataflow_local_dag"
 	@echo "  make dataflow-test            Run local unit tests"
 	@echo ""
+	@echo "K8s Data Platform:"
+	@echo "  make data-platform-images-minikube Build data platform images inside minikube"
+	@echo "  make data-platform-template        Render recsys-data-platform Helm chart"
+	@echo "  make data-platform-install         Install recsys-data-platform Helm chart"
+	@echo "  make data-platform-trigger         Trigger k8s_data_platform_dag"
+	@echo "  make data-platform-e2e             Install, wait, trigger, and print run status"
+	@echo "  make data-platform-run-status      Print Airflow DAG run status"
+	@echo "  make data-platform-verify-e2e      Verify MinIO, warehouse, Redis, dbt/offline outputs"
+	@echo "  make data-platform-port-forward    Show port-forward commands"
+	@echo ""
 	@echo "Kubeflow/MLflow:"
 	@echo "  make mlops-local-up           Start local minikube profile"
 	@echo "  make mlops-images             Build training and MLflow images"
@@ -113,6 +123,78 @@ dataflow-realtime-down:
 dataflow-test:
 	@PYTHONPATH=apps/data-platform/data-generator/src uv run pytest tests/unit/data_generator -q
 	@PYTHONPATH=apps/data-platform/src:apps/data-platform/data-generator/src uv run pytest tests/unit/data_platform tests/contract -q
+
+.PHONY: data-platform-images-minikube
+data-platform-images-minikube:
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f infra/docker/Dockerfile.base-python -t recsys-base-python:local .
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f apps/data-platform/Dockerfile.dataflow-cli -t recsys-dataflow-cli:local .
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f apps/data-platform/Dockerfile.spark -t recsys-spark:local .
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f apps/data-platform/Dockerfile.flink -t recsys-flink:local .
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f infra/docker/Dockerfile.kafka-connect -t recsys-kafka-connect:local .
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f infra/docker/Dockerfile.airflow -t recsys-airflow:local .
+
+.PHONY: data-platform-template
+data-platform-template:
+	@helm template recsys-data-platform infra/helm/recsys-data-platform --namespace recsys-dataflow
+
+.PHONY: data-platform-install
+data-platform-install:
+	@helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform --namespace recsys-dataflow --create-namespace
+
+.PHONY: data-platform-trigger
+data-platform-trigger:
+	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags unpause k8s_data_platform_dag
+	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags trigger k8s_data_platform_dag
+
+.PHONY: data-platform-e2e
+data-platform-e2e: data-platform-install
+	@kubectl wait --for=condition=ready pod -l app=data-platform-minio -n recsys-dataflow --timeout=240s
+	@kubectl wait --for=condition=ready pod -l app=kafka -n recsys-dataflow --timeout=240s
+	@kubectl wait --for=condition=ready pod -l app=kafka-connect -n recsys-dataflow --timeout=300s
+	@kubectl wait --for=condition=ready pod -l app=warehouse-postgres -n recsys-dataflow --timeout=180s
+	@kubectl wait --for=condition=ready pod -l app=redis -n recsys-dataflow --timeout=180s
+	@kubectl wait --for=condition=ready pod -l app=airflow-webserver -n recsys-dataflow --timeout=240s
+	@$(MAKE) data-platform-trigger
+	@$(MAKE) data-platform-run-status
+
+.PHONY: data-platform-run-status
+data-platform-run-status:
+	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags list-runs -d k8s_data_platform_dag
+
+.PHONY: data-platform-verify-e2e
+data-platform-verify-e2e:
+	@kubectl run recsys-data-platform-verify -n recsys-dataflow --rm -i --restart=Never --image=recsys-dataflow-cli:local --image-pull-policy=IfNotPresent \
+		--env=PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys \
+		--env=MINIO_ENDPOINT=http://data-platform-minio:9000 \
+		--env=MINIO_ROOT_USER=minio \
+		--env=MINIO_ROOT_PASSWORD=minio123 \
+		--env=AWS_ACCESS_KEY_ID=minio \
+		--env=AWS_SECRET_ACCESS_KEY=minio123 \
+		--env=AWS_DEFAULT_REGION=us-east-1 \
+		--env=LAKE_BUCKET=recsys-lake \
+		--env=FEATURE_STORE_BUCKET=recsys-feature-store \
+		--env=WAREHOUSE_POSTGRES_HOST=warehouse-postgres \
+		--env=WAREHOUSE_POSTGRES_PORT=5432 \
+		--env=WAREHOUSE_POSTGRES_DB=recsys_warehouse \
+		--env=WAREHOUSE_POSTGRES_USER=recsys \
+		--env=WAREHOUSE_POSTGRES_PASSWORD=recsys \
+		--env=REDIS_HOST=redis \
+		--env=REDIS_PORT=6379 \
+		-- python -m local.verify_k8s_data_platform_e2e
+
+.PHONY: data-platform-smoke
+data-platform-smoke:
+	@kubectl get pods -n recsys-dataflow
+	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags list | rg k8s_data_platform_dag
+
+.PHONY: data-platform-port-forward
+data-platform-port-forward:
+	@echo "Airflow: kubectl port-forward -n recsys-dataflow svc/airflow-webserver 8080:8080"
+	@echo "Flink:   kubectl port-forward -n recsys-dataflow svc/flink-jobmanager 8082:8081"
+	@echo "Data Platform MinIO: kubectl port-forward -n recsys-dataflow svc/data-platform-minio 9002:9001"
+	@echo "Redis:   kubectl port-forward -n recsys-dataflow svc/redis 6379:6379"
+	@echo "Source Postgres:    kubectl port-forward -n recsys-dataflow svc/source-postgres 5432:5432"
+	@echo "Warehouse Postgres: kubectl port-forward -n recsys-dataflow svc/warehouse-postgres 5433:5432"
 
 .PHONY: mlops-images
 mlops-images:

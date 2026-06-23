@@ -1,9 +1,10 @@
-{{- if .Values.kserve.servingRuntime.create }}
+{{- if and .Values.kserve.enabled .Values.kserve.servingRuntime.create }}
 apiVersion: serving.kserve.io/v1alpha1
 kind: ClusterServingRuntime
 metadata:
   name: {{ .Values.kserve.servingRuntime.name }}
   annotations:
+    "helm.sh/resource-policy": keep
     serving.kserve.io/server-type: tritonserver
 spec:
   annotations:

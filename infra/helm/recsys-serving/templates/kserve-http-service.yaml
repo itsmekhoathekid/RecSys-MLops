@@ -1,0 +1,18 @@
+{{- if and .Values.autoscaling.http.enabled .Values.autoscaling.http.kserve.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.autoscaling.http.kserve.serviceName }}
+  namespace: {{ .Values.kserve.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.kserve.inferenceService.name }}
+    app.kubernetes.io/component: http-autoscaling
+spec:
+  selector:
+{{ toYaml .Values.autoscaling.http.kserve.targetServiceSelector | indent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+{{- end }}

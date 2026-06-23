@@ -15,12 +15,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 ENV JAVA_HOME=/opt/java/openjdk \
-    PATH=/opt/java/openjdk/bin:${PATH}
+    PATH=/opt/java/openjdk/bin:${PATH} \
+    TMPDIR=/opt/recsys/tmp \
+    PIP_CACHE_DIR=/opt/recsys/pip-cache
 
-RUN pip3 install --no-cache-dir pandas pyarrow pyyaml redis kafka-python requests apache-flink==1.19.0 \
-    && curl -fsSL \
-      -o /opt/flink/lib/flink-sql-connector-kafka-3.2.0-1.19.jar \
-      https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.2.0-1.19/flink-sql-connector-kafka-3.2.0-1.19.jar
+RUN mkdir -p "${TMPDIR}" "${PIP_CACHE_DIR}" \
+    && chmod 1777 "${TMPDIR}" \
+    && python3 -m pip install --upgrade pip setuptools wheel \
+    && python3 -m pip install --no-cache-dir pycodestyle
+
+RUN python3 -m pip install --no-cache-dir pandas pyarrow pyyaml redis kafka-python requests psycopg[binary]
 
 COPY . /opt/recsys
 

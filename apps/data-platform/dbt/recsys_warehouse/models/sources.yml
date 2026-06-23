@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: staging
+    schema: staging
+    tables:
+      - name: behavior_events
+      - name: impressions
+      - name: orders
+      - name: order_items
+      - name: products
+      - name: product_snapshots
+      - name: stream_behavior_events
+      - name: stream_user_sequence_features
+      - name: stream_user_aggregate_features
+      - name: stream_item_features
+

@@ -1,4 +1,5 @@
 kserve:
+  enabled: true
   namespace:
     create: true
     name: kserve-triton-inference
@@ -41,7 +42,12 @@ api:
   name: recsys-api-serving
   image: recsys-api-serving:local
   imagePullPolicy: IfNotPresent
-  replicas: 1
+  replicas: 2
+  rollout:
+    maxSurge: 1
+    maxUnavailable: 0
+    minReadySeconds: 10
+    progressDeadlineSeconds: 120
   service:
     port: 80
     targetPort: 8080
@@ -52,10 +58,44 @@ api:
     redisPort: "6379"
     defaultTopK: "10"
     modelVersion: latest
+    forceNotReady: "0"
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
+
+autoscaling:
+  http:
+    enabled: true
+    externalScalerAddress: keda-add-ons-http-external-scaler.keda:9090
+    api:
+      enabled: true
+      name: recsys-api-serving-http
+      host: recsys-api-serving.local
+      pathPrefix: /
+      minReplicas: 1
+      maxReplicas: 5
+      scaledownPeriod: 120
+      requestRate:
+        targetValue: 5
+        window: 30s
+        granularity: 1s
+    kserve:
+      enabled: true
+      name: recsys-bst-triton-http
+      host: recsys-bst-triton.local
+      deploymentName: recsys-bst-triton-predictor
+      serviceName: recsys-bst-triton-http
+      targetServiceSelector:
+        app: isvc.recsys-bst-triton-predictor
+      pathPrefix: /
+      minReplicas: 1
+      maxReplicas: 3
+      scaledownPeriod: 180
+      requestRate:
+        targetValue: 3
+        window: 30s
+        granularity: 1s
     limits:
       cpu: 500m
       memory: 512Mi

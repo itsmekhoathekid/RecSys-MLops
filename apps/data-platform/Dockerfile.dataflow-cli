@@ -15,7 +15,11 @@ RUN uv pip install --no-cache \
     redis \
     kafka-python \
     requests \
-    feast
+    feast \
+    great_expectations \
+    dbt-core \
+    dbt-postgres \
+    evidently
 
 COPY . /opt/recsys
 

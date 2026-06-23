@@ -119,6 +119,98 @@ def test_full_dataflow_dag_declares_historical_and_realtime_task_groups():
     assert "python3 apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py" in dag_source
 
 
+def test_k8s_data_platform_dag_declares_required_order():
+    dag_source = (
+        ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
+    ).read_text()
+    for task_id in [
+        "init_data_platform_minio",
+        "init_source_schema",
+        "init_warehouse",
+        "register_debezium_connector",
+        "register_kafka_minio_sink",
+        "generate_historical_to_lake_raw",
+        "load_realtime_to_source_postgres",
+        "wait_for_cdc_to_bronze",
+        "ingest_historical_to_staging",
+        "run_flink_processing",
+        "ge_validate_staging",
+        "dbt_transform_production",
+        "write_offline_feature_store",
+        "validate_offline_feature_store",
+        "sync_offline_to_online_store",
+        "evidently_feature_drift",
+        "datahub_ingest",
+        "final_smoke",
+    ]:
+        assert task_id in dag_source
+    assert "KubernetesPodOperator" in dag_source
+    assert "--warehouse-enabled" in dag_source
+    assert "feature_store.offline_to_online_sync" in dag_source
+    assert "ingest.register_k8s_connectors --connector debezium" in dag_source
+    assert "generate_historical_to_minio.py" in dag_source
+    assert "validate_bronze_cdc.py" in dag_source
+
+
+def test_dbt_project_uses_production_schema_without_target_prefix():
+    macro = (
+        ROOT / "apps/data-platform/dbt/recsys_warehouse/macros/generate_schema_name.sql"
+    ).read_text()
+    assert "{{ custom_schema_name | trim }}" in macro
+    assert "target.schema ~" not in macro
+
+
+def test_k8s_data_platform_helm_chart_declares_core_services():
+    chart = ROOT / "infra/helm/recsys-data-platform"
+    values = yaml.safe_load((chart / "values.yaml").read_text())
+    assert values["warehousePostgres"]["name"] == "warehouse-postgres"
+    assert values["images"]["airflow"] == "recsys-airflow:local"
+    assert values["images"]["kafkaConnect"] == "recsys-kafka-connect:local"
+    assert values["kafkaConnect"]["name"] == "kafka-connect"
+    assert values["minio"]["name"] == "data-platform-minio"
+    assert values["minio"]["endpoint"] == "http://data-platform-minio:9000"
+    rendered_sources = (chart / "values.yaml").read_text() + "\n".join(
+        path.read_text() for path in (chart / "templates").glob("*.yaml")
+    )
+    for expected in [
+        "warehouse-postgres",
+        "source-postgres",
+        "airflow-postgres",
+        "flink-jobmanager",
+        "flink-taskmanager",
+        "redis",
+        "kafka",
+        "kafka-connect",
+        "data-platform-minio",
+        "init-data-platform-minio",
+        "init-warehouse",
+    ]:
+        assert expected in rendered_sources
+    assert "minio.experiment-tracking" not in rendered_sources
+
+
+def test_mlflow_stack_keeps_separate_model_artifact_minio():
+    values = yaml.safe_load((ROOT / "infra/helm/mlflow-stack/values.yaml").read_text())
+    assert values["namespace"]["name"] == "experiment-tracking"
+    assert values["minio"]["bucket"] == "mlflow-artifacts"
+    assert values["minio"]["modelStoreBucket"] == "recsys-model-store"
+
+
+def test_dbt_project_defines_staging_sources_and_production_models():
+    dbt_root = ROOT / "apps/data-platform/dbt/recsys_warehouse"
+    project = yaml.safe_load((dbt_root / "dbt_project.yml").read_text())
+    assert project["profile"] == "recsys_warehouse"
+    sources = (dbt_root / "models/sources.yml").read_text()
+    assert "stream_behavior_events" in sources
+    for model in [
+        "fact_behavior_events.sql",
+        "fact_impressions.sql",
+        "fact_orders.sql",
+        "dim_products_scd.sql",
+    ]:
+        assert (dbt_root / "models/production" / model).exists()
+
+
 def test_makefile_exposes_pipeline_operation_targets():
     makefile = (ROOT / "Makefile").read_text()
     for target in [
@@ -126,9 +218,13 @@ def test_makefile_exposes_pipeline_operation_targets():
         "dataflow-ingest-lake",
         "dataflow-realtime-up",
         "dataflow-realtime-down",
+        "data-platform-e2e",
+        "data-platform-run-status",
+        "data-platform-verify-e2e",
     ]:
         assert f".PHONY: {target}" in makefile
         assert f"{target}:" in makefile
+    assert "recsys-kafka-connect:local" in makefile
 
 
 def test_dataflow_operation_scripts_are_executable_and_use_expected_entrypoints():

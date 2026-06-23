@@ -29,3 +29,7 @@ minio-data/
 postgres-data/
 redis-data/
 spark-warehouse/
+graphify-out/
+.codex/
+.model-cd/
+AGENTS.md

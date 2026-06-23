@@ -1,0 +1,29 @@
+{{- if and .Values.autoscaling.http.enabled .Values.autoscaling.http.kserve.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.autoscaling.http.kserve.name }}
+  namespace: {{ .Values.kserve.namespace.name }}
+  annotations:
+    scaledobject.keda.sh/transfer-hpa-ownership: "true"
+  labels:
+    app.kubernetes.io/name: {{ .Values.kserve.inferenceService.name }}
+    app.kubernetes.io/component: http-autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.autoscaling.http.kserve.deploymentName }}
+  minReplicaCount: {{ .Values.autoscaling.http.kserve.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.http.kserve.maxReplicas }}
+  cooldownPeriod: {{ .Values.autoscaling.http.kserve.scaledownPeriod }}
+  advanced:
+    restoreToOriginalReplicaCount: true
+    horizontalPodAutoscalerConfig:
+      name: {{ .Values.autoscaling.http.kserve.deploymentName }}
+  triggers:
+    - type: external-push
+      metadata:
+        httpScaledObject: {{ .Values.autoscaling.http.kserve.name }}
+        scalerAddress: {{ .Values.autoscaling.http.externalScalerAddress | quote }}
+{{- end }}

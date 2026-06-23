@@ -20,8 +20,8 @@ HISTORY_FIELDS = {
 
 
 class RecommendationRequest(BaseModel):
-    user_id: int
-    candidate_item_ids: list[int] | None = None
+    user_id: int = Field(ge=1)
+    candidate_item_ids: list[int] | None = Field(default=None, min_length=1, max_length=500)
     top_k: int = Field(default=10, ge=1, le=100)
 
 

@@ -6,7 +6,16 @@ metadata:
   labels:
     app.kubernetes.io/name: {{ .Values.api.name }}
 spec:
+{{- if not (and .Values.autoscaling.http.enabled .Values.autoscaling.http.api.enabled) }}
   replicas: {{ .Values.api.replicas }}
+{{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.api.rollout.maxUnavailable }}
+      maxSurge: {{ .Values.api.rollout.maxSurge }}
+  minReadySeconds: {{ .Values.api.rollout.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.api.rollout.progressDeadlineSeconds }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ .Values.api.name }}
@@ -14,6 +23,8 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ .Values.api.name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/api-configmap.yaml") . | sha256sum }}
     spec:
       containers:
         - name: api
@@ -25,17 +36,27 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.api.service.targetPort }}
-          readinessProbe:
+          startupProbe:
             httpGet:
               path: /healthz
               port: http
+            failureThreshold: 30
+            periodSeconds: 2
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
             initialDelaySeconds: 5
-            periodSeconds: 10
+            periodSeconds: 5
+            failureThreshold: 2
+
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
             initialDelaySeconds: 15
             periodSeconds: 20
+            failureThreshold: 3
           resources:
 {{ toYaml .Values.api.resources | indent 12 }}

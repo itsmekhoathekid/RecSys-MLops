@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: fact_behavior_events
+    columns:
+      - name: event_id
+        tests: [not_null, unique]
+      - name: user_id
+        tests: [not_null]
+      - name: product_id
+        tests: [not_null]
+      - name: event_type
+        tests:
+          - accepted_values:
+              values: ["view", "cart", "purchase"]
+  - name: fact_impressions
+    columns:
+      - name: impression_id
+        tests: [not_null, unique]
+      - name: user_id
+        tests: [not_null]
+  - name: fact_orders
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+  - name: dim_products_scd
+    columns:
+      - name: product_id
+        tests: [not_null]
+

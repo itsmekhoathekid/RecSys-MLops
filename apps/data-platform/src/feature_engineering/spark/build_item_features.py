@@ -5,6 +5,22 @@ from datetime import datetime, timezone
 import pandas as pd
 
 
+def latest_product_metadata(products: pd.DataFrame) -> pd.DataFrame:
+    if products.empty or "product_id" not in products.columns:
+        return products
+    sort_columns = [
+        column
+        for column in ("valid_from", "created_ts")
+        if column in products.columns
+    ]
+    latest = products.copy()
+    for column in sort_columns:
+        latest[column] = pd.to_datetime(latest[column], utc=True)
+    if sort_columns:
+        latest = latest.sort_values(sort_columns)
+    return latest.drop_duplicates("product_id", keep="last")
+
+
 def build_item_features(
     clean_events: pd.DataFrame,
     products: pd.DataFrame,
@@ -16,7 +32,7 @@ def build_item_features(
         return pd.DataFrame()
     events = clean_events.copy()
     events["event_timestamp"] = pd.to_datetime(events["event_timestamp"], utc=True)
-    product_meta = products.set_index("product_id")
+    product_meta = latest_product_metadata(products).set_index("product_id")
     rows: list[dict] = []
     for product_id, group in events.sort_values("event_timestamp").groupby("product_id"):
         group = group.reset_index(drop=True)
@@ -61,4 +77,3 @@ def build_item_features(
                 }
             )
     return pd.DataFrame(rows)
-

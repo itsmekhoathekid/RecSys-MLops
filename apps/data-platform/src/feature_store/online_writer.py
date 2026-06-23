@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,8 +13,18 @@ class RedisKeyTemplate:
     item_features: str = "fs:item:{product_id}"
 
 
+def json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
 def dumps_feature_payload(payload: dict[str, Any]) -> str:
-    return json.dumps(payload, default=str, sort_keys=True)
+    return json.dumps(json_safe(payload), allow_nan=False, default=str, sort_keys=True)
 
 
 class RedisOnlineWriter:
@@ -35,4 +46,3 @@ class RedisOnlineWriter:
         key = self.keys.item_features.format(product_id=product_id)
         self.redis_client.set(key, dumps_feature_payload(payload), ex=ttl_seconds)
         return key
-

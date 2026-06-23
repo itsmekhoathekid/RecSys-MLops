@@ -8,6 +8,7 @@ USER airflow
 RUN pip install --no-cache-dir \
     apache-airflow-providers-docker \
     apache-airflow-providers-http \
+    apache-airflow-providers-cncf-kubernetes \
     apache-airflow-providers-postgres \
     requests \
     pyyaml \
