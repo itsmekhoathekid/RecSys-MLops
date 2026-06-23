@@ -11,3 +11,4 @@ data:
   DEFAULT_TOP_K: {{ .Values.api.config.defaultTopK | quote }}
   MODEL_VERSION: {{ .Values.api.config.modelVersion | quote }}
   FORCE_NOT_READY: {{ .Values.api.config.forceNotReady | quote }}
+  ALLOW_FEATURE_FALLBACK: {{ .Values.api.config.allowFeatureFallback | quote }}

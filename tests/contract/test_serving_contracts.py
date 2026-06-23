@@ -60,6 +60,7 @@ def test_serving_chart_renders_expected_namespaces():
     assert api_container["livenessProbe"]["httpGet"]["path"] == "/healthz"
     api_config = by_kind_name[("ConfigMap", "recsys-api-serving")]
     assert api_config["data"]["FORCE_NOT_READY"] == "0"
+    assert api_config["data"]["ALLOW_FEATURE_FALLBACK"] == "0"
     api_http_scaledobject = by_kind_name[("HTTPScaledObject", "recsys-api-serving-http")]
     assert api_http_scaledobject["metadata"]["namespace"] == "api-serving"
     assert api_http_scaledobject["spec"]["hosts"] == ["recsys-api-serving.local"]
