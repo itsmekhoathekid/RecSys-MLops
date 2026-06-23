@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import os
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Path, Query, status
 
 from serving import (
     FeatureClient,
+    OnlineFeaturesResponse,
     RecommendationRequest,
     RecommendationResponse,
     TritonRanker,
+    get_online_features,
     recommend,
 )
 
@@ -51,6 +53,24 @@ async def version() -> dict[str, str]:
         "service": "recsys-api-serving",
         "model_version": os.getenv("MODEL_VERSION", "latest"),
     }
+
+
+@app.get("/online-features/{user_id}", response_model=OnlineFeaturesResponse)
+async def online_features(
+    user_id: int = Path(ge=1),
+    candidate_item_ids: list[int] | None = Query(default=None),
+    top_k: int = Query(default=10, ge=1, le=100),
+) -> OnlineFeaturesResponse:
+    try:
+        return await asyncio.to_thread(
+            get_online_features,
+            user_id=user_id,
+            candidate_item_ids=candidate_item_ids,
+            top_k=top_k,
+            feature_client=feature_client(),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"online feature fetch failed: {exc}") from exc
 
 
 @app.post("/recommendations", response_model=RecommendationResponse)

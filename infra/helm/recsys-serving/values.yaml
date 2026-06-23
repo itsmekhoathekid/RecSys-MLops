@@ -59,6 +59,7 @@ api:
     defaultTopK: "10"
     modelVersion: latest
     forceNotReady: "0"
+    allowFeatureFallback: "0"
   resources:
     requests:
       cpu: 100m

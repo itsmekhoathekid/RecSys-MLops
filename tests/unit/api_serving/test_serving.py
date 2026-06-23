@@ -6,6 +6,7 @@ from serving import (
     RecommendationRequest,
     build_triton_payload,
     format_top_k,
+    get_online_features,
     recommend,
 )
 
@@ -72,6 +73,29 @@ def test_recommend_uses_fallback_candidates_and_ranker_scores():
     assert [item.item_id for item in response.items] == [11]
 
 
+def test_get_online_features_reads_candidates_sequence_and_items():
+    class Features:
+        def candidates(self, user_id, limit):
+            return [10, 11]
+
+        def user_sequence(self, user_id):
+            return {"hist_item_ids": [1], "hist_event_type_ids": [1]}
+
+        def item_features(self, item_id):
+            return {"category_id": item_id, "brand_id": 1, "price_bucket": 2}
+
+    response = get_online_features(
+        user_id=1,
+        candidate_item_ids=None,
+        top_k=1,
+        feature_client=Features(),
+    )
+
+    assert response.candidate_item_ids == [10, 11]
+    assert response.user_sequence["hist_item_ids"] == [1]
+    assert response.item_features["10"]["category_id"] == 10
+
+
 def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkeypatch):
     import serving
 
@@ -95,7 +119,7 @@ def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkey
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fake_import)
-    client = serving.FeatureClient()
+    client = serving.FeatureClient(allow_fallback=True)
 
     assert client.user_sequence(1) == {}
     assert client.item_features(1) == {}

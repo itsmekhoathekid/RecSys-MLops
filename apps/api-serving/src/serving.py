@@ -36,6 +36,13 @@ class RecommendationResponse(BaseModel):
     items: list[RecommendationItem]
 
 
+class OnlineFeaturesResponse(BaseModel):
+    user_id: int
+    candidate_item_ids: list[int]
+    user_sequence: dict[str, Any]
+    item_features: dict[str, dict[str, Any]]
+
+
 @dataclass(frozen=True)
 class ItemFeatures:
     item_id: int
@@ -123,9 +130,12 @@ def format_top_k(
 
 
 class FeatureClient:
-    def __init__(self) -> None:
+    def __init__(self, allow_fallback: bool | None = None) -> None:
         import redis
 
+        if allow_fallback is None:
+            allow_fallback = os.getenv("ALLOW_FEATURE_FALLBACK", "0") == "1"
+        self.allow_fallback = allow_fallback
         self.client = redis.Redis(
             host=os.getenv("REDIS_HOST", "localhost"),
             port=int(os.getenv("REDIS_PORT", "6379")),
@@ -135,21 +145,30 @@ class FeatureClient:
     def user_sequence(self, user_id: int) -> dict[str, Any]:
         try:
             return parse_json_bytes(self.client.get(f"fs:user_sequence:{user_id}"))
-        except Exception:
-            return {}
+        except Exception as exc:
+            if self.allow_fallback:
+                return {}
+            raise RuntimeError(f"failed to fetch user sequence from Redis for user_id={user_id}") from exc
 
     def item_features(self, item_id: int) -> dict[str, Any]:
         try:
             return parse_json_bytes(self.client.get(f"fs:item:{item_id}"))
-        except Exception:
-            return {}
+        except Exception as exc:
+            if self.allow_fallback:
+                return {}
+            raise RuntimeError(f"failed to fetch item features from Redis for item_id={item_id}") from exc
 
     def candidates(self, user_id: int, limit: int) -> list[int]:
         try:
             raw = self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
-            return [int(item.decode("utf-8") if isinstance(item, bytes) else item) for item in raw]
-        except Exception:
-            return list(range(1, limit + 1))
+            candidates = [int(item.decode("utf-8") if isinstance(item, bytes) else item) for item in raw]
+            if candidates or self.allow_fallback:
+                return candidates
+            raise RuntimeError("candidate:popular:global returned no candidates")
+        except Exception as exc:
+            if self.allow_fallback:
+                return list(range(1, limit + 1))
+            raise RuntimeError("failed to fetch candidate item IDs from Redis") from exc
 
 
 class TritonRanker:
@@ -182,14 +201,17 @@ def recommend(
     ranker: TritonRanker,
     model_version: str,
 ) -> RecommendationResponse:
-    candidate_item_ids = request.candidate_item_ids or feature_client.candidates(
-        request.user_id,
-        max(request.top_k * 5, request.top_k),
+    online_features = get_online_features(
+        user_id=request.user_id,
+        candidate_item_ids=request.candidate_item_ids,
+        top_k=request.top_k,
+        feature_client=feature_client,
     )
+    candidate_item_ids = online_features.candidate_item_ids
     if not candidate_item_ids:
         return RecommendationResponse(user_id=request.user_id, model_version=model_version, items=[])
-    sequence_row = feature_client.user_sequence(request.user_id)
-    item_rows = {item_id: feature_client.item_features(item_id) for item_id in candidate_item_ids}
+    sequence_row = online_features.user_sequence
+    item_rows = {int(item_id): row for item_id, row in online_features.item_features.items()}
     payload = build_triton_payload(sequence_row, item_rows, candidate_item_ids)
     scored_item_ids, scores = ranker.score(payload)
     return format_top_k(
@@ -198,4 +220,20 @@ def recommend(
         candidate_item_ids=scored_item_ids,
         scores=scores,
         top_k=request.top_k,
+    )
+
+
+def get_online_features(
+    user_id: int,
+    candidate_item_ids: list[int] | None,
+    top_k: int,
+    feature_client: FeatureClient,
+) -> OnlineFeaturesResponse:
+    candidates = candidate_item_ids or feature_client.candidates(user_id, max(top_k * 5, top_k))
+    item_rows = {str(item_id): feature_client.item_features(item_id) for item_id in candidates}
+    return OnlineFeaturesResponse(
+        user_id=user_id,
+        candidate_item_ids=candidates,
+        user_sequence=feature_client.user_sequence(user_id),
+        item_features=item_rows,
     )
