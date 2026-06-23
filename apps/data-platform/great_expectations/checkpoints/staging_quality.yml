@@ -1,0 +1,15 @@
+name: staging_quality
+config_version: 1.0
+class_name: Checkpoint
+validations:
+  - batch_request:
+      datasource_name: recsys_warehouse
+      data_connector_name: postgres_runtime
+      data_asset_name: staging.stream_behavior_events
+    expectation_suite_name: staging_stream_behavior_events
+  - batch_request:
+      datasource_name: recsys_warehouse
+      data_connector_name: postgres_runtime
+      data_asset_name: staging.stream_user_sequence_features
+    expectation_suite_name: staging_stream_user_sequence_features
+

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: recsys-data-platform
+description: Local Kubernetes data platform for RecSys staging validation, dbt production, and feature stores.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

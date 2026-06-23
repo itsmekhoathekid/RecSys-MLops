@@ -22,6 +22,7 @@ class UserAggregateState:
         rows = list(history)
         frame = pd.DataFrame(rows)
         frame["event_timestamp"] = pd.to_datetime(frame["event_timestamp"], utc=True)
+        viewed_prices = frame.loc[frame["event_type"] == "view", "price"].astype(float)
         w30m = ts - pd.Timedelta(minutes=30)
         w24h = ts - pd.Timedelta(hours=24)
         h30 = frame[frame["event_timestamp"] > w30m]
@@ -34,14 +35,9 @@ class UserAggregateState:
             "carts_30m": int((h30["event_type"] == "cart").sum()),
             "purchases_24h": int((h24["event_type"] == "purchase").sum()),
             "distinct_categories_7d": int(frame["category_id"].nunique()),
-            "avg_viewed_price_7d": float(
-                frame.loc[frame["event_type"] == "view", "price"].astype(float).mean()
-                if not frame.empty
-                else 0.0
-            ),
+            "avg_viewed_price_7d": float(viewed_prices.mean()) if not viewed_prices.empty else 0.0,
             "cart_to_purchase_ratio_7d": float(purchases_7d / carts_7d) if carts_7d else 0.0,
             "last_event_age_seconds": 0,
             "updated_at": ts.isoformat(),
             "feature_version": "user_aggregate_v1",
         }
-

@@ -1,0 +1,77 @@
+namespace:
+  create: true
+  name: recsys-dataflow
+
+images:
+  dataflowCli: recsys-dataflow-cli:local
+  spark: recsys-spark:local
+  flink: recsys-flink:local
+  minio: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+  minioClient: minio/mc:RELEASE.2025-04-16T18-13-26Z
+  postgres: postgres:16
+  redis: redis:latest
+  zookeeper: confluentinc/cp-zookeeper:7.5.0
+  kafka: confluentinc/cp-kafka:7.5.0
+  kafkaConnect: recsys-kafka-connect:local
+  airflow: recsys-airflow:local
+  pullPolicy: IfNotPresent
+
+storageClassName: ""
+
+sourcePostgres:
+  name: source-postgres
+  database: recsys
+  user: recsys
+  password: recsys
+  storage: 5Gi
+
+warehousePostgres:
+  name: warehouse-postgres
+  database: recsys_warehouse
+  user: recsys
+  password: recsys
+  storage: 10Gi
+
+airflowPostgres:
+  name: airflow-postgres
+  database: airflow
+  user: airflow
+  password: airflow
+  storage: 5Gi
+
+minio:
+  name: data-platform-minio
+  endpoint: http://data-platform-minio:9000
+  rootUser: minio
+  rootPassword: minio123
+  lakeBucket: recsys-lake
+  featureStoreBucket: recsys-feature-store
+  storage: 20Gi
+  service:
+    apiPort: 9000
+    consolePort: 9001
+
+kafka:
+  name: kafka
+  bootstrapServers: kafka:29092
+
+kafkaConnect:
+  name: kafka-connect
+  port: 8083
+
+redis:
+  name: redis
+  port: 6379
+
+airflow:
+  dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
+
+streaming:
+  watermarkDelayMinutes: 60
+  qualityWindowSeconds: 60
+  burstThresholdEventCount: 500
+
+validation:
+  geMaxTopValueRatio: "0.95"
+  geMaxUniqueRatio: "0.98"
+  evidentlyPsiThreshold: "0.15"

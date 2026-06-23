@@ -1,0 +1,30 @@
+{{- if and .Values.autoscaling.http.enabled .Values.autoscaling.http.api.enabled }}
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: {{ .Values.autoscaling.http.api.name }}
+  namespace: {{ .Values.api.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.api.name }}
+    app.kubernetes.io/component: http-autoscaling
+spec:
+  hosts:
+    - {{ .Values.autoscaling.http.api.host | quote }}
+  pathPrefixes:
+    - {{ .Values.autoscaling.http.api.pathPrefix | quote }}
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.api.name }}
+    service: {{ .Values.api.name }}
+    port: {{ .Values.api.service.port }}
+  replicas:
+    min: {{ .Values.autoscaling.http.api.minReplicas }}
+    max: {{ .Values.autoscaling.http.api.maxReplicas }}
+  scaledownPeriod: {{ .Values.autoscaling.http.api.scaledownPeriod }}
+  scalingMetric:
+    requestRate:
+      targetValue: {{ .Values.autoscaling.http.api.requestRate.targetValue }}
+      window: {{ .Values.autoscaling.http.api.requestRate.window | quote }}
+      granularity: {{ .Values.autoscaling.http.api.requestRate.granularity | quote }}
+{{- end }}

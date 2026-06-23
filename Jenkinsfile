@@ -142,7 +142,7 @@ pipeline {
       when { expression { params.RUN_MODEL_CD == true } }
       steps {
         sh "python3 jenkins/scripts/model_cd.py --manifest-uri '${params.PROMOTION_MANIFEST_URI}' --output-dir .model-cd"
-        sh 'helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace -f .model-cd/recsys-serving-values.json'
+        sh 'helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace --atomic --timeout 300s -f .model-cd/recsys-serving-values.json'
         sh 'kubectl wait --for=condition=Ready inferenceservice/recsys-bst-triton -n kserve-triton-inference --timeout=300s'
       }
     }

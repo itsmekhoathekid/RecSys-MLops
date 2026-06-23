@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-data-platform-minio
+  namespace: {{ .Values.namespace.name }}
+spec:
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: {{ .Values.images.minioClient }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              until mc alias set data-platform "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+                sleep 5
+              done
+              mc mb --ignore-existing "data-platform/{{ .Values.minio.lakeBucket }}"
+              mc mb --ignore-existing "data-platform/{{ .Values.minio.featureStoreBucket }}"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-warehouse
+  namespace: {{ .Values.namespace.name }}
+spec:
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: init-warehouse
+          image: {{ .Values.images.dataflowCli }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["python", "-m", "warehouse.init_warehouse"]
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret

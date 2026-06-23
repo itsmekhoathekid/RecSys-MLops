@@ -1,6 +1,8 @@
-{{- if .Values.kserve.namespace.create }}
+{{- if and .Values.kserve.enabled .Values.kserve.namespace.create }}
 apiVersion: v1
 kind: Namespace
 metadata:
   name: {{ .Values.kserve.namespace.name }}
+  annotations:
+    "helm.sh/resource-policy": keep
 {{- end }}

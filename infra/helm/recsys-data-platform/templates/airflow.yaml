@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-webserver
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-webserver
+  template:
+    metadata:
+      labels:
+        app: airflow-webserver
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: default
+      containers:
+        - name: airflow-webserver
+          image: {{ .Values.images.airflow }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args: ["airflow db migrate && airflow users create --username admin --password admin --firstname RecSys --lastname Admin --role Admin --email admin@example.com || true && airflow webserver"]
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: "postgresql+psycopg2://{{ .Values.airflowPostgres.user }}:{{ .Values.airflowPostgres.password }}@{{ .Values.airflowPostgres.name }}:5432/{{ .Values.airflowPostgres.database }}"
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__CORE__DAGS_FOLDER
+              value: {{ .Values.airflow.dagsPath | quote }}
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+          ports:
+            - containerPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-scheduler
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-scheduler
+  template:
+    metadata:
+      labels:
+        app: airflow-scheduler
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: default
+      containers:
+        - name: airflow-scheduler
+          image: {{ .Values.images.airflow }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args: ["airflow db migrate && airflow scheduler"]
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: "postgresql+psycopg2://{{ .Values.airflowPostgres.user }}:{{ .Values.airflowPostgres.password }}@{{ .Values.airflowPostgres.name }}:5432/{{ .Values.airflowPostgres.database }}"
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__CORE__DAGS_FOLDER
+              value: {{ .Values.airflow.dagsPath | quote }}
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-webserver
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - port: 8080
+      targetPort: 8080
+  selector:
+    app: airflow-webserver

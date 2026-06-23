@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-data-platform-config
+  namespace: {{ .Values.namespace.name }}
+data:
+  PYTHONPATH: /opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys
+  DATA_PLATFORM_MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
+  DATA_PLATFORM_MINIO_ROOT_USER: {{ .Values.minio.rootUser | quote }}
+  DATA_PLATFORM_MINIO_ROOT_PASSWORD: {{ .Values.minio.rootPassword | quote }}
+  MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
+  AWS_ACCESS_KEY_ID: {{ .Values.minio.rootUser | quote }}
+  AWS_SECRET_ACCESS_KEY: {{ .Values.minio.rootPassword | quote }}
+  AWS_DEFAULT_REGION: us-east-1
+  LAKE_BUCKET: {{ .Values.minio.lakeBucket | quote }}
+  FEATURE_STORE_BUCKET: {{ .Values.minio.featureStoreBucket | quote }}
+  POSTGRES_HOST: {{ .Values.sourcePostgres.name | quote }}
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: {{ .Values.sourcePostgres.database | quote }}
+  WAREHOUSE_POSTGRES_HOST: {{ .Values.warehousePostgres.name | quote }}
+  WAREHOUSE_POSTGRES_PORT: "5432"
+  WAREHOUSE_POSTGRES_DB: {{ .Values.warehousePostgres.database | quote }}
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
+  KAFKA_CONNECT_URL: "http://{{ .Values.kafkaConnect.name }}:{{ .Values.kafkaConnect.port }}"
+  REDIS_HOST: {{ .Values.redis.name | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+  FEAST_OFFLINE_ROOT: "s3://{{ .Values.minio.featureStoreBucket }}/offline"
+  ML_ARTIFACT_ROOT: "s3://{{ .Values.minio.lakeBucket }}/silver/ml"
+  WAREHOUSE_ENABLED: "true"
+  STREAM_WATERMARK_DELAY_MINUTES: {{ .Values.streaming.watermarkDelayMinutes | quote }}
+  STREAM_QUALITY_WINDOW_SECONDS: {{ .Values.streaming.qualityWindowSeconds | quote }}
+  STREAM_BURST_THRESHOLD_EVENT_COUNT: {{ .Values.streaming.burstThresholdEventCount | quote }}
+  GE_MAX_TOP_VALUE_RATIO: {{ .Values.validation.geMaxTopValueRatio | quote }}
+  GE_MAX_UNIQUE_RATIO: {{ .Values.validation.geMaxUniqueRatio | quote }}
+  EVIDENTLY_PSI_THRESHOLD: {{ .Values.validation.evidentlyPsiThreshold | quote }}

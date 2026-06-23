@@ -10,3 +10,4 @@ data:
   REDIS_PORT: {{ .Values.api.config.redisPort | quote }}
   DEFAULT_TOP_K: {{ .Values.api.config.defaultTopK | quote }}
   MODEL_VERSION: {{ .Values.api.config.modelVersion | quote }}
+  FORCE_NOT_READY: {{ .Values.api.config.forceNotReady | quote }}

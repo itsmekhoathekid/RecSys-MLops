@@ -102,6 +102,9 @@ def deploy(values_path: Path, timeout: str) -> None:
             "--namespace",
             "kserve-triton-inference",
             "--create-namespace",
+            "--atomic",
+            "--timeout",
+            timeout,
             "-f",
             str(values_path),
         ]

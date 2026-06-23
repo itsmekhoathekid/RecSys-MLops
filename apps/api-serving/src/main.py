@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 
 from serving import (
     FeatureClient,
@@ -33,14 +34,30 @@ def ranker() -> TritonRanker:
 
 
 @app.get("/healthz")
-def healthz() -> dict[str, str]:
+async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/ready")
+async def ready() -> dict[str, str]:
+    if os.getenv("FORCE_NOT_READY") == "1":
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="forced not ready")
+    return {"status": "ready"}
+
+
+@app.get("/version")
+async def version() -> dict[str, str]:
+    return {
+        "service": "recsys-api-serving",
+        "model_version": os.getenv("MODEL_VERSION", "latest"),
+    }
+
+
 @app.post("/recommendations", response_model=RecommendationResponse)
-def recommendations(request: RecommendationRequest) -> RecommendationResponse:
+async def recommendations(request: RecommendationRequest) -> RecommendationResponse:
     try:
-        return recommend(
+        return await asyncio.to_thread(
+            recommend,
             request=request,
             feature_client=feature_client(),
             ranker=ranker(),
