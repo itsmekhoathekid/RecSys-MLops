@@ -17,7 +17,7 @@ runtime:
 
 entrypoint:
   baseConfigPath: /opt/recsys/configs/local/bst.yaml
-  splitDir: /workspace/recsys/notebooks/data/bst_split
+  splitDir: /workspace/recsys/data_platform/output/ml/bst_split
   outputDir: /workspace/recsys/data_platform/output/ml/ray
   bestResultPath: /workspace/recsys/data_platform/output/ml/ray/best_result.json
   trainingPercent: 0.01
@@ -45,4 +45,3 @@ gpu:
   limit: 1
   nodeSelector:
     nvidia.com/gpu.present: "true"
-

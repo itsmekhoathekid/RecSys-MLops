@@ -1,0 +1,81 @@
+acryl-datahub-actions:
+  enabled: false
+
+datahub-gms:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "768Mi"
+    limits:
+      memory: "1536Mi"
+  livenessProbe:
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 20
+  readinessProbe:
+    initialDelaySeconds: 120
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 20
+  service:
+    type: ClusterIP
+
+datahub-frontend:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "384Mi"
+    limits:
+      memory: "1Gi"
+  service:
+    type: ClusterIP
+  defaultUserCredentials:
+    manualValues: |
+      datahub:datahub
+
+datahubSystemUpdate:
+  nonblocking:
+    enabled: false
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "768Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1536Mi"
+
+global:
+  datahub_analytics_enabled: false
+  datahub_standalone_consumers_enabled: false
+  datahub:
+    metadata_service_authentication:
+      enabled: false
+  elasticsearch:
+    host: "opensearch-cluster-master"
+    port: "9200"
+    useSSL: "false"
+    insecure: "false"
+    skipcheck: "false"
+    engineType: "OPENSEARCH_2"
+    autoDetect: "false"
+    implementation: "opensearch"
+  kafka:
+    bootstrap:
+      server: "kafka.recsys-dataflow.svc.cluster.local:29092"
+    precreateTopics: true
+    schemaregistry:
+      type: INTERNAL
+  sql:
+    datasource:
+      host: "prerequisites-mysql:3306"
+      hostForMysqlClient: "prerequisites-mysql"
+      port: "3306"
+      url: "jdbc:mysql://prerequisites-mysql:3306/datahub?verifyServerCertificate=false&useSSL=false&useUnicode=yes&characterEncoding=UTF-8"
+      driver: "com.mysql.cj.jdbc.Driver"
+      database: "datahub"
+      username: "root"
+      password:
+        secretRef: mysql-secrets
+        secretKey: mysql-root-password

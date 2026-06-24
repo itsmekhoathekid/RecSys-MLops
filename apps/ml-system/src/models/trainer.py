@@ -109,7 +109,7 @@ class Trainer:
         )
     
     def save_model(self, epoch, best_score):
-        base_path = self.model_args.get("save_path", "./notebooks/data/")
+        base_path = self.model_args.get("save_path", "./data_platform/output/ml/checkpoints")
         os.makedirs(base_path, exist_ok=True)
         checkpoint_path = os.path.join(base_path, self.model.model_name)
         
@@ -277,7 +277,7 @@ class Trainer:
         )
 
         if self.model_args.get("reload_model", False):
-            base_path = self.model_args.get("save_path", "./notebooks/data/")
+            base_path = self.model_args.get("save_path", "./data_platform/output/ml/checkpoints")
             checkpoint_path = os.path.join(base_path, self.model.model_name)
             checkpoint = torch.load(checkpoint_path, map_location="cpu")
             model.load_state_dict(checkpoint["model_state_dict"])

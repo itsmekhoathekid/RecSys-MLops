@@ -48,8 +48,9 @@ def container_spec(
         "imagePullPolicy": "IfNotPresent",
         "resources": resources,
         "env": [
-            {"name": "RAY_DASHBOARD_SUBPROCESS_MODULE_WAIT_READY_TIMEOUT", "value": "120"},
+            {"name": "RAY_DASHBOARD_SUBPROCESS_MODULE_WAIT_READY_TIMEOUT", "value": "300"},
             {"name": "RAY_USAGE_STATS_ENABLED", "value": "0"},
+            {"name": "RAY_memory_usage_threshold", "value": "0.99"},
         ],
         "envFrom": [{"secretRef": {"name": runtime_secret_name}}],
         "volumeMounts": [{"name": "recsys-workspace", "mountPath": "/workspace"}],
@@ -107,6 +108,8 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
         "--best-result-path",
         args.best_result_path,
     ]
+    if getattr(args, "dataset_metadata_path", ""):
+        ray_args.extend(["--dataset-metadata-path", args.dataset_metadata_path])
     head = container_spec(
         name="ray-head",
         image=args.image,
@@ -149,6 +152,8 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
                     "rayStartParams": {
                         "dashboard-host": "0.0.0.0",
                         "num-cpus": "0",
+                        "memory": args.head_ray_memory_bytes,
+                        "object-store-memory": args.head_object_store_memory_bytes,
                     },
                     "template": pod_template(head, args.pvc_name, use_gpu=False),
                 },
@@ -158,7 +163,10 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
                         "replicas": args.worker_replicas,
                         "minReplicas": args.worker_replicas,
                         "maxReplicas": args.worker_replicas,
-                        "rayStartParams": {},
+                        "rayStartParams": {
+                            "memory": args.worker_ray_memory_bytes,
+                            "object-store-memory": args.worker_object_store_memory_bytes,
+                        },
                         "template": pod_template(worker, args.pvc_name, use_gpu=args.use_gpu),
                     }
                 ],
@@ -188,7 +196,14 @@ def wait_for_completion(api, namespace: str, name: str, timeout_seconds: int) ->
     deadline = time.time() + timeout_seconds
     last_status: dict[str, Any] = {}
     while time.time() < deadline:
-        payload = api.get_namespaced_custom_object(GROUP, VERSION, namespace, PLURAL, name)
+        try:
+            payload = api.get_namespaced_custom_object(GROUP, VERSION, namespace, PLURAL, name)
+        except Exception as exc:
+            if getattr(exc, "status", None) in {500, 502, 503, 504}:
+                print(json.dumps({"transientKubernetesApiError": getattr(exc, "status", None)}))
+                time.sleep(10)
+                continue
+            raise
         last_status = payload.get("status", {})
         job_status = last_status.get("jobStatus")
         deployment_status = last_status.get("jobDeploymentStatus")
@@ -201,6 +216,48 @@ def wait_for_completion(api, namespace: str, name: str, timeout_seconds: int) ->
     raise TimeoutError(f"Timed out waiting for RayJob {name}; last status: {last_status}")
 
 
+def _load_json(path: str) -> dict[str, Any] | None:
+    if not path:
+        return None
+    target = Path(path)
+    if not target.exists():
+        return None
+    try:
+        return json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _dataset_versions_match(best_result: dict[str, Any], dataset_metadata: dict[str, Any] | None) -> bool:
+    if not dataset_metadata:
+        return True
+    expected = dataset_metadata.get("splits", {})
+    actual = best_result.get("dataset_versions", {})
+    if not expected or not actual:
+        return False
+    for split, expected_version in expected.items():
+        actual_version = actual.get(split)
+        if not actual_version:
+            return False
+        for key in ("table", "snapshot_id", "tag", "row_count"):
+            if actual_version.get(key) != expected_version.get(key):
+                return False
+    return True
+
+
+def reusable_best_result(best_result_path: str, dataset_metadata_path: str = "") -> dict[str, Any] | None:
+    best_result = _load_json(best_result_path)
+    if not best_result or not best_result.get("mlflow_run_id"):
+        return None
+    checkpoint_path = best_result.get("checkpoint_path")
+    if checkpoint_path and not Path(checkpoint_path).exists():
+        return None
+    dataset_metadata = _load_json(dataset_metadata_path)
+    if not _dataset_versions_match(best_result, dataset_metadata):
+        return None
+    return best_result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit and wait for a KubeRay RayJob")
     parser.add_argument("--namespace", default="kubeflow")
@@ -209,9 +266,10 @@ def main() -> int:
     parser.add_argument("--pvc-name", default="recsys-mlops-pvc")
     parser.add_argument("--runtime-secret-name", default="recsys-mlops-runtime")
     parser.add_argument("--base-config-path", default="/opt/recsys/configs/local/bst.yaml")
-    parser.add_argument("--split-dir", default="/workspace/recsys/notebooks/data/bst_split")
+    parser.add_argument("--split-dir", default="/workspace/recsys/data_platform/output/ml/bst_split")
     parser.add_argument("--ray-output-dir", default="/workspace/recsys/data_platform/output/ml/ray")
     parser.add_argument("--best-result-path", default="/workspace/recsys/data_platform/output/ml/ray/best_result.json")
+    parser.add_argument("--dataset-metadata-path", default="")
     parser.add_argument("--training-percent", type=float, default=0.01)
     parser.add_argument("--num-epochs", type=int, default=1)
     parser.add_argument("--max-trials", type=int, default=2)
@@ -220,13 +278,17 @@ def main() -> int:
     parser.add_argument("--gpus-per-trial", type=float, default=0.0)
     parser.add_argument("--worker-replicas", type=int, default=1)
     parser.add_argument("--head-cpu-request", default="500m")
-    parser.add_argument("--head-cpu-limit", default="1")
-    parser.add_argument("--head-memory-request", default="1Gi")
-    parser.add_argument("--head-memory-limit", default="2Gi")
-    parser.add_argument("--worker-cpu-request", default="1")
+    parser.add_argument("--head-cpu-limit", default="2")
+    parser.add_argument("--head-memory-request", default="768Mi")
+    parser.add_argument("--head-memory-limit", default="3Gi")
+    parser.add_argument("--head-ray-memory-bytes", default="1073741824")
+    parser.add_argument("--head-object-store-memory-bytes", default="268435456")
+    parser.add_argument("--worker-cpu-request", default="500m")
     parser.add_argument("--worker-cpu-limit", default="2")
-    parser.add_argument("--worker-memory-request", default="2Gi")
-    parser.add_argument("--worker-memory-limit", default="4Gi")
+    parser.add_argument("--worker-memory-request", default="1Gi")
+    parser.add_argument("--worker-memory-limit", default="3Gi")
+    parser.add_argument("--worker-ray-memory-bytes", default="1073741824")
+    parser.add_argument("--worker-object-store-memory-bytes", default="268435456")
     parser.add_argument("--use-gpu", action="store_true")
     parser.add_argument("--use-gpu-value", default="false")
     parser.add_argument("--gpu-limit", type=int, default=1)
@@ -235,6 +297,20 @@ def main() -> int:
     parser.add_argument("--status-path", default="")
     args = parser.parse_args()
     args.use_gpu = args.use_gpu or args.use_gpu_value.lower() in {"1", "true", "yes"}
+
+    existing_result = reusable_best_result(args.best_result_path, args.dataset_metadata_path)
+    if existing_result:
+        status = {
+            "jobStatus": "SUCCEEDED",
+            "jobDeploymentStatus": "ReusedExistingResult",
+            "bestResultPath": args.best_result_path,
+            "mlflow_run_id": existing_result.get("mlflow_run_id"),
+        }
+        if args.status_path:
+            Path(args.status_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.status_path).write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
+        print(json.dumps(status, sort_keys=True))
+        return 0
 
     api = load_kubernetes()
     delete_if_exists(api, args.namespace, args.job_name)

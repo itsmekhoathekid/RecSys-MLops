@@ -8,6 +8,16 @@ DATAFLOW_INGEST_BUCKET ?= recsys-lake
 DATAFLOW_INGEST_PREFIX ?= raw
 RECSYS_PIPELINE_IMAGE ?= recsys-mlops-training:local
 MINIKUBE_PROFILE ?= recsys-mlops
+MINIKUBE_CPUS ?= 8
+MINIKUBE_MEMORY_MB ?= 16384
+MINIKUBE_DISK_SIZE ?= 40g
+DATA_PLATFORM_NAMESPACE ?= recsys-dataflow
+DATA_PLATFORM_REALTIME_PRODUCER ?= realtime-event-producer
+DATA_PLATFORM_REALTIME_PRODUCER_REPLICAS ?= 1
+DATAHUB_NAMESPACE ?= datahub
+DATAHUB_FRONTEND_PORT ?= 9002
+DATAHUB_GMS_PORT ?= 8088
+DATAHUB_GMS_URL ?= http://127.0.0.1:$(DATAHUB_GMS_PORT)
 KFP_VERSION ?= 2.16.1
 KUBEFLOW_NAMESPACE ?= kubeflow
 MLOPS_NAMESPACE ?= experiment-tracking
@@ -45,10 +55,22 @@ help:
 	@echo "  make data-platform-e2e             Install, wait, trigger, and print run status"
 	@echo "  make data-platform-run-status      Print Airflow DAG run status"
 	@echo "  make data-platform-verify-e2e      Verify MinIO, warehouse, Redis, dbt/offline outputs"
+	@echo "  make data-platform-stream-generator-start  Start realtime data generator"
+	@echo "  make data-platform-stream-generator-stop   Stop realtime data generator"
+	@echo "  make data-platform-stream-generator-status Show realtime data generator status"
 	@echo "  make data-platform-port-forward    Show port-forward commands"
+	@echo ""
+	@echo "DataHub Governance:"
+	@echo "  make datahub-install               Install local DataHub and prerequisites"
+	@echo "  make datahub-status                Show DataHub pods, jobs, and Helm releases"
+	@echo "  make datahub-port-forward          Show DataHub port-forward commands"
+	@echo "  make datahub-ingest-governance     Ingest DP1/DP2/DP3 lineage, validation, and contract metadata"
 	@echo ""
 	@echo "Kubeflow/MLflow:"
 	@echo "  make mlops-local-up           Start local minikube profile"
+	@echo "  make mlops-cluster-up         Start minikube and wait for the full RecSys MLOps service stack"
+	@echo "  make mlops-cluster-down       Stop the full minikube cluster and all services"
+	@echo "  make mlops-cluster-status     Show cluster memory and full service status"
 	@echo "  make mlops-images             Build training and MLflow images"
 	@echo "  make mlops-images-minikube    Build images inside minikube Docker daemon"
 	@echo "  make mlops-install-kfp        Install standalone Kubeflow Pipelines"
@@ -58,11 +80,29 @@ help:
 	@echo "  make mlops-compile-kfp        Compile the RecSys BST Kubeflow pipeline"
 	@echo "  make mlops-helm-template      Render MLflow/runtime Helm charts"
 	@echo "  make mlops-port-forward       Port-forward KFP, MLflow, MinIO, Ray dashboards"
+	@echo ""
+	@echo "Observability:"
+	@echo "  make observability-template      Render observability Helm chart"
+	@echo "  make observability-install       Install Prometheus/Grafana/Loki/Tempo stack"
+	@echo "  make observability-port-forward  Show Grafana/Prometheus/Loki/Tempo forwards"
+	@echo "  make observability-demo-traffic  Generate API traffic for dashboards"
+	@echo "  make observability-smoke         Check observability pods and services"
 
 .PHONY: mlops-local-up
 mlops-local-up:
-	@minikube start --profile $(MINIKUBE_PROFILE) --driver=docker --cpus=6 --memory=12288 --disk-size=40g
-	@kubectl config use-context $(MINIKUBE_PROFILE)
+	@$(MAKE) mlops-cluster-up
+
+.PHONY: mlops-cluster-up
+mlops-cluster-up:
+	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) MINIKUBE_CPUS=$(MINIKUBE_CPUS) MINIKUBE_MEMORY_MB=$(MINIKUBE_MEMORY_MB) MINIKUBE_DISK_SIZE=$(MINIKUBE_DISK_SIZE) infra/k8s/scripts/mlops_cluster_up.sh
+
+.PHONY: mlops-cluster-down
+mlops-cluster-down:
+	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) infra/k8s/scripts/mlops_cluster_down.sh
+
+.PHONY: mlops-cluster-status
+mlops-cluster-status:
+	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) infra/k8s/scripts/mlops_cluster_status.sh
 
 .PHONY: dataflow-build
 dataflow-build:
@@ -182,6 +222,20 @@ data-platform-verify-e2e:
 		--env=REDIS_PORT=6379 \
 		-- python -m local.verify_k8s_data_platform_e2e
 
+.PHONY: data-platform-stream-generator-start
+data-platform-stream-generator-start:
+	@kubectl scale deploy/$(DATA_PLATFORM_REALTIME_PRODUCER) -n $(DATA_PLATFORM_NAMESPACE) --replicas=$(DATA_PLATFORM_REALTIME_PRODUCER_REPLICAS)
+	@kubectl rollout status deploy/$(DATA_PLATFORM_REALTIME_PRODUCER) -n $(DATA_PLATFORM_NAMESPACE) --timeout=180s
+
+.PHONY: data-platform-stream-generator-stop
+data-platform-stream-generator-stop:
+	@kubectl scale deploy/$(DATA_PLATFORM_REALTIME_PRODUCER) -n $(DATA_PLATFORM_NAMESPACE) --replicas=0
+
+.PHONY: data-platform-stream-generator-status
+data-platform-stream-generator-status:
+	@kubectl get deploy/$(DATA_PLATFORM_REALTIME_PRODUCER) -n $(DATA_PLATFORM_NAMESPACE)
+	@kubectl get pods -n $(DATA_PLATFORM_NAMESPACE) -l app=$(DATA_PLATFORM_REALTIME_PRODUCER)
+
 .PHONY: data-platform-smoke
 data-platform-smoke:
 	@kubectl get pods -n recsys-dataflow
@@ -195,6 +249,43 @@ data-platform-port-forward:
 	@echo "Redis:   kubectl port-forward -n recsys-dataflow svc/redis 6379:6379"
 	@echo "Source Postgres:    kubectl port-forward -n recsys-dataflow svc/source-postgres 5432:5432"
 	@echo "Warehouse Postgres: kubectl port-forward -n recsys-dataflow svc/warehouse-postgres 5433:5432"
+
+.PHONY: datahub-install
+datahub-install:
+	@helm repo add datahub https://helm.datahubproject.io/ || true
+	@helm repo update datahub
+	@kubectl create namespace $(DATAHUB_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl create secret generic mysql-secrets -n $(DATAHUB_NAMESPACE) --from-literal=mysql-root-password=datahub --from-literal=mysql-replication-password=datahub --from-literal=mysql-password=datahub --from-literal=mysql-cdc-password=datahub --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl create secret generic datahub-encryption-secrets -n $(DATAHUB_NAMESPACE) --from-literal=encryption_key_secret=datahub-encryption-key-local --dry-run=client -o yaml | kubectl apply -f -
+	@helm upgrade --install prerequisites datahub/datahub-prerequisites -n $(DATAHUB_NAMESPACE) -f infra/helm/datahub-local/prerequisites-values.yaml --timeout 12m
+	@kubectl apply -f infra/helm/datahub-local/kafka-alias.yaml
+	@helm upgrade --install datahub datahub/datahub -n $(DATAHUB_NAMESPACE) -f infra/helm/datahub-local/datahub-values.yaml --timeout 12m
+	@kubectl rollout status deploy/datahub-datahub-gms -n $(DATAHUB_NAMESPACE) --timeout=240s
+	@kubectl rollout status deploy/datahub-datahub-frontend -n $(DATAHUB_NAMESPACE) --timeout=240s
+
+.PHONY: datahub-status
+datahub-status:
+	@helm status prerequisites -n $(DATAHUB_NAMESPACE)
+	@helm status datahub -n $(DATAHUB_NAMESPACE)
+	@kubectl get pods,jobs,svc -n $(DATAHUB_NAMESPACE) -o wide
+
+.PHONY: datahub-port-forward
+datahub-port-forward:
+	@echo "DataHub UI:  kubectl port-forward -n $(DATAHUB_NAMESPACE) svc/datahub-datahub-frontend $(DATAHUB_FRONTEND_PORT):9002"
+	@echo "DataHub GMS: kubectl port-forward -n $(DATAHUB_NAMESPACE) svc/datahub-datahub-gms $(DATAHUB_GMS_PORT):8080"
+
+.PHONY: datahub-ingest-governance
+datahub-ingest-governance:
+	@set -euo pipefail; \
+	kubectl port-forward -n $(DATAHUB_NAMESPACE) svc/datahub-datahub-gms $(DATAHUB_GMS_PORT):8080 >/tmp/recsys-datahub-gms-port-forward.log 2>&1 & \
+	pf_pid=$$!; \
+	trap 'kill $$pf_pid >/dev/null 2>&1 || true' EXIT; \
+	for _ in $$(seq 1 30); do \
+	if curl -fsS $(DATAHUB_GMS_URL)/health >/dev/null 2>&1; then break; fi; \
+		sleep 1; \
+	done; \
+	curl -fsS $(DATAHUB_GMS_URL)/health >/dev/null; \
+	PYTHONPATH=apps/data-platform/src uv run python -m metadata.ingest_datahub_governance --gms-url $(DATAHUB_GMS_URL)
 
 .PHONY: mlops-images
 mlops-images:
@@ -247,3 +338,33 @@ mlops-port-forward:
 	@echo "MinIO:     kubectl port-forward -n $(MLOPS_NAMESPACE) svc/minio 9001:9001"
 	@echo "Ray UI:    kubectl port-forward -n $(KUBEFLOW_NAMESPACE) svc/recsys-bst-ray-tune-raycluster-*-head-svc 8265:8265"
 	@echo "FastAPI:   kubectl port-forward -n api-serving svc/recsys-api-serving 8088:80"
+
+.PHONY: observability-template
+observability-template:
+	@helm template recsys-observability infra/helm/recsys-observability --namespace observability
+
+.PHONY: observability-install
+observability-install:
+	@helm upgrade --install recsys-observability infra/helm/recsys-observability --namespace observability --create-namespace
+
+.PHONY: observability-port-forward
+observability-port-forward:
+	@echo "Grafana:    kubectl port-forward -n observability svc/recsys-grafana 3000:3000"
+	@echo "Prometheus: kubectl port-forward -n observability svc/recsys-prometheus 9090:9090"
+	@echo "Loki:       kubectl port-forward -n observability svc/recsys-loki 3100:3100"
+	@echo "Tempo:      kubectl port-forward -n observability svc/recsys-tempo 3200:3200"
+	@echo "PushGateway:kubectl port-forward -n observability svc/recsys-pushgateway 9091:9091"
+
+.PHONY: observability-smoke
+observability-smoke:
+	@kubectl get pods,svc -n observability
+	@kubectl get deploy -n api-serving recsys-api-serving
+	@kubectl get svc -n recsys-dataflow monitoring-sql-exporter
+
+.PHONY: observability-demo-traffic
+observability-demo-traffic:
+	@for i in $$(seq 1 25); do \
+		curl -fsS -X POST http://127.0.0.1:8088/recommendations \
+			-H 'Content-Type: application/json' \
+			-d '{"user_id":1,"candidate_item_ids":[1,2,3,4,5],"top_k":3}' >/dev/null || true; \
+	done

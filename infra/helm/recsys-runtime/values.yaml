@@ -20,6 +20,9 @@ secret:
   modelStoreBucket: recsys-model-store
   modelStorePrefix: triton/bst
   promotionManifestKey: promotions/bst/latest.json
+  icebergEnabled: "true"
+  icebergCatalogName: recsys
+  icebergWarehouse: s3a://recsys-lake/silver/ml/iceberg
 
 rbac:
   create: true

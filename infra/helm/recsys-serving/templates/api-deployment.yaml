@@ -25,6 +25,9 @@ spec:
         app.kubernetes.io/name: {{ .Values.api.name }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/api-configmap.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ .Values.api.service.targetPort | quote }}
     spec:
       containers:
         - name: api

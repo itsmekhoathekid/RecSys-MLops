@@ -73,6 +73,7 @@ def main() -> int:
     )
     with psycopg.connect(conninfo) as connection:
         with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtext('recsys_source_schema_init'))")
             cursor.execute(build_all_ddl())
         connection.commit()
     print("Postgres source schema initialized.")
@@ -81,4 +82,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

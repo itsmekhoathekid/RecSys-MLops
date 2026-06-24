@@ -4,20 +4,26 @@ kserve:
     create: true
     name: kserve-triton-inference
   servingRuntime:
-    create: true
+    create: false
     name: kserve-tritonserver
     image: nvcr.io/nvidia/tritonserver:23.05-py3
     resources:
       requests:
         cpu: "1"
-        memory: 2Gi
+        memory: 4Gi
       limits:
-        cpu: "1"
-        memory: 2Gi
+        cpu: "3"
+        memory: 6Gi
   inferenceService:
     name: recsys-bst-triton
     deploymentMode: RawDeployment
     storageUri: s3://recsys-model-store/triton/bst/latest
+  grpcService:
+    name: recsys-bst-triton-grpc
+    port: 9000
+    targetPort: 9000
+    selector:
+      app: isvc.recsys-bst-triton-predictor
   serviceAccount:
     name: recsys-kserve-minio
   secret:
@@ -29,11 +35,11 @@ kserve:
     secretAccessKey: minio123
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: "1"
+      memory: 2Gi
     limits:
-      cpu: "2"
-      memory: 4Gi
+      cpu: "3"
+      memory: 6Gi
 
 api:
   namespace:
@@ -52,7 +58,7 @@ api:
     port: 80
     targetPort: 8080
   config:
-    tritonUrl: recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
+    tritonUrl: recsys-bst-triton-grpc.kserve-triton-inference.svc.cluster.local:9000
     tritonModelName: bst_ensemble
     redisHost: redis.recsys-dataflow.svc.cluster.local
     redisPort: "6379"
@@ -60,10 +66,23 @@ api:
     modelVersion: latest
     forceNotReady: "0"
     allowFeatureFallback: "0"
+    modelItemNum: "22700"
+    modelCategoryNum: "30"
+    modelBrandNum: "740"
+    modelPriceBucketNum: "10"
+    modelEventTypeNum: "3"
+    modelTimeBucketNum: "9"
+    jsonLogs: "1"
+    otelEnabled: "1"
+    otelServiceName: recsys-api-serving
+    otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
 
 autoscaling:
   http:
@@ -118,3 +137,9 @@ autoscaling:
       enabled: false
       metricType: Utilization
       value: "70"
+
+observability:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s

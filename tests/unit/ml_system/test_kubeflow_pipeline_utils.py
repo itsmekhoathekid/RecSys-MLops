@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 
 from kubeflow.components import runtime
 from kubeflow.pipelines.compile_training_pipeline import compile_pipeline
-from submit_ray_job import build_rayjob, container_spec, pod_template
+from submit_ray_job import build_rayjob, container_spec, pod_template, reusable_best_result
 
 
 def test_secret_env_mapping_is_stable():
@@ -22,6 +23,9 @@ def test_secret_env_mapping_is_stable():
         "AWS_ACCESS_KEY_ID": "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY": "AWS_SECRET_ACCESS_KEY",
         "AWS_DEFAULT_REGION": "AWS_DEFAULT_REGION",
+        "ICEBERG_ENABLED": "ICEBERG_ENABLED",
+        "ICEBERG_CATALOG_NAME": "ICEBERG_CATALOG_NAME",
+        "ICEBERG_WAREHOUSE": "ICEBERG_WAREHOUSE",
     }
 
 
@@ -86,6 +90,7 @@ def test_rayjob_container_spec_cpu_contract():
         "limits": {"cpu": "1", "memory": "2Gi"},
     }
     assert spec["envFrom"] == [{"secretRef": {"name": "runtime-secret"}}]
+    assert {"name": "RAY_memory_usage_threshold", "value": "0.99"} in spec["env"]
     assert spec["volumeMounts"] == [{"name": "recsys-workspace", "mountPath": "/workspace"}]
 
 
@@ -115,7 +120,7 @@ def test_rayjob_gpu_worker_template_contract():
 def test_build_rayjob_uses_refactored_training_module():
     args = argparse.Namespace(
         base_config_path="/opt/recsys/configs/local/bst.yaml",
-        split_dir="/workspace/recsys/notebooks/data/bst_split",
+        split_dir="/workspace/recsys/data_platform/output/ml/bst_split",
         ray_output_dir="/workspace/recsys/data_platform/output/ml/ray",
         training_percent=0.01,
         num_epochs=1,
@@ -130,13 +135,18 @@ def test_build_rayjob_uses_refactored_training_module():
         head_cpu_limit="1",
         head_memory_request="1Gi",
         head_memory_limit="2Gi",
+        head_ray_memory_bytes="1073741824",
+        head_object_store_memory_bytes="268435456",
         pvc_name="recsys-pvc",
         runtime_secret_name="runtime-secret",
         worker_cpu_request="1",
         worker_cpu_limit="2",
         worker_memory_request="2Gi",
         worker_memory_limit="4Gi",
+        worker_ray_memory_bytes="2147483648",
+        worker_object_store_memory_bytes="536870912",
         gpu_limit=1,
+        dataset_metadata_path="/workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json",
         job_name="recsys-bst-ray-tune",
         namespace="kubeflow",
         ttl_seconds_after_finished=300,
@@ -147,6 +157,48 @@ def test_build_rayjob_uses_refactored_training_module():
 
     assert "python /opt/recsys/apps/ml-system/src/ray_tune_train_bst.py" in rayjob["spec"]["entrypoint"]
     assert "pipelines.model_pipeline" not in rayjob["spec"]["entrypoint"]
+    assert rayjob["spec"]["rayClusterSpec"]["headGroupSpec"]["rayStartParams"]["memory"] == "1073741824"
+    worker_group = rayjob["spec"]["rayClusterSpec"]["workerGroupSpecs"][0]
+    assert worker_group["rayStartParams"]["object-store-memory"] == "536870912"
+
+
+def test_reusable_best_result_requires_matching_dataset_versions(tmp_path):
+    checkpoint = tmp_path / "checkpoints" / "BST"
+    checkpoint.parent.mkdir()
+    checkpoint.write_text("model", encoding="utf-8")
+    metadata = {
+        "splits": {
+            "train": {
+                "table": "recsys.ml.bst_training_samples",
+                "snapshot_id": 11,
+                "tag": "bst_training_run_1",
+                "row_count": 100,
+            }
+        }
+    }
+    best_result = {
+        "mlflow_run_id": "run-1",
+        "checkpoint_path": str(checkpoint),
+        "dataset_versions": {
+            "train": {
+                "table": "recsys.ml.bst_training_samples",
+                "snapshot_id": 11,
+                "tag": "bst_training_run_1",
+                "row_count": 100,
+            }
+        },
+    }
+    metadata_path = tmp_path / "dataset_version_meta.json"
+    best_result_path = tmp_path / "best_result.json"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    best_result_path.write_text(json.dumps(best_result), encoding="utf-8")
+
+    assert reusable_best_result(str(best_result_path), str(metadata_path)) == best_result
+
+    metadata["splits"]["train"]["snapshot_id"] = 12
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    assert reusable_best_result(str(best_result_path), str(metadata_path)) is None
 
 
 def test_compile_pipeline_writes_refactored_component_commands():
@@ -155,7 +207,14 @@ def test_compile_pipeline_writes_refactored_component_commands():
 
     assert package_path.name == "bst_training_pipeline.yaml"
     assert "/opt/recsys/apps/ml-system/src/run_feature_engineering.py" in compiled
+    assert "/opt/spark/bin/spark-submit" in compiled
+    assert "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12" in compiled
     assert "/opt/recsys/apps/ml-system/src/prepare_bst_training_data.py" in compiled
+    assert "--entity-input-path" in compiled
+    assert "--iceberg-enabled" in compiled
+    assert "--dataset-metadata-path" in compiled
+    assert "training_entity_path" in compiled
+    assert "training_table_path" not in compiled
     assert "/opt/recsys/apps/ml-system/src/submit_ray_job.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/evaluate_ray_best_bst.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/model_promotion.py" in compiled

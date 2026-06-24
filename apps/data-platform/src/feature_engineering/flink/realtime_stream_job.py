@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -27,6 +28,11 @@ from ingest.bronze_cdc_reader import extract_debezium_after
 
 
 EVENT_TYPE_IDS = {"view": 1, "cart": 2, "purchase": 3}
+
+
+def emit_progress(payload: dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(payload, sort_keys=True) + "\n")
+    sys.stdout.flush()
 
 
 @dataclass
@@ -318,12 +324,13 @@ def maybe_init_pyflink() -> str:
     return f"pyflink_parallelism={env.get_parallelism()}"
 
 
-def run_bounded_stream(args: argparse.Namespace) -> StreamJobStats:
+def run_bounded_stream(args: argparse.Namespace, emit_runtime_status: bool = True) -> StreamJobStats:
     import redis
     from kafka import KafkaConsumer
 
-    pyflink_status = maybe_init_pyflink()
-    print(json.dumps({"status": pyflink_status, "topic": args.topic}))
+    if emit_runtime_status:
+        pyflink_status = maybe_init_pyflink()
+        print(json.dumps({"status": pyflink_status, "topic": args.topic}), flush=True)
 
     redis_client = redis.Redis(host=args.redis_host, port=args.redis_port, decode_responses=True)
     writer = RedisOnlineWriter(redis_client)
@@ -332,6 +339,7 @@ def run_bounded_stream(args: argparse.Namespace) -> StreamJobStats:
     item_state = ItemFeatureState()
     seen_event_ids: set[str] = set()
     stats = StreamJobStats()
+    last_progress_log = time.monotonic()
     warehouse_connection = None
     quality_tracker = StreamQualityTracker(
         args.topic,
@@ -409,6 +417,23 @@ def run_bounded_stream(args: argparse.Namespace) -> StreamJobStats:
                         stats.warehouse_writes += write_warehouse_rows(warehouse_connection, rows)
                         stats.warehouse_writes += write_quality_windows(warehouse_connection, emitted_windows)
                     stats.consumed += 1
+                    should_log_by_events = (
+                        args.progress_log_events > 0
+                        and stats.consumed % args.progress_log_events == 0
+                    )
+                    should_log_by_time = (
+                        args.progress_log_seconds > 0
+                        and time.monotonic() - last_progress_log >= args.progress_log_seconds
+                    )
+                    if should_log_by_events or should_log_by_time:
+                        emit_progress(
+                            {
+                                "status": "running",
+                                "topic": args.topic,
+                                **stats.__dict__,
+                            }
+                        )
+                        last_progress_log = time.monotonic()
                     if not continuous and stats.consumed >= args.max_events:
                         break
                 if not continuous and stats.consumed >= args.max_events:
@@ -426,8 +451,28 @@ def run_bounded_stream(args: argparse.Namespace) -> StreamJobStats:
     return stats
 
 
+def run_pyflink_stream(args: argparse.Namespace) -> None:
+    from pyflink.common import Types
+    from pyflink.datastream import StreamExecutionEnvironment
+    from pyflink.datastream.functions import MapFunction
+
+    class RealtimeConsumerFunction(MapFunction):
+        def map(self, value: int) -> str:
+            stats = run_bounded_stream(args, emit_runtime_status=False)
+            return json.dumps(stats.__dict__, sort_keys=True)
+
+    env = StreamExecutionEnvironment.get_execution_environment()
+    env.set_parallelism(1)
+    env.from_collection([0], type_info=Types.INT()).map(
+        RealtimeConsumerFunction(),
+        output_type=Types.STRING(),
+    ).name("consume-cdc-behavior-events-to-online-features").print()
+    env.execute("recsys-realtime-feature-consumer")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Bounded local PyFlink realtime feature job.")
+    parser.add_argument("--runner", choices=["direct", "pyflink"], default=os.getenv("STREAM_RUNNER", "direct"))
     parser.add_argument("--topic", default="cdc.behavior_events")
     parser.add_argument("--bootstrap-servers", default=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"))
     parser.add_argument("--redis-host", default=os.getenv("REDIS_HOST", "redis"))
@@ -443,7 +488,13 @@ def main() -> int:
     parser.add_argument("--watermark-delay-minutes", type=int, default=int(os.getenv("STREAM_WATERMARK_DELAY_MINUTES", "60")))
     parser.add_argument("--quality-window-seconds", type=int, default=int(os.getenv("STREAM_QUALITY_WINDOW_SECONDS", "60")))
     parser.add_argument("--burst-threshold-event-count", type=int, default=int(os.getenv("STREAM_BURST_THRESHOLD_EVENT_COUNT", "500")))
+    parser.add_argument("--progress-log-events", type=int, default=int(os.getenv("STREAM_PROGRESS_LOG_EVENTS", "100")))
+    parser.add_argument("--progress-log-seconds", type=int, default=int(os.getenv("STREAM_PROGRESS_LOG_SECONDS", "30")))
     args = parser.parse_args()
+
+    if args.runner == "pyflink":
+        run_pyflink_stream(args)
+        return 0
 
     stats = run_bounded_stream(args)
     print(json.dumps(stats.__dict__, indent=2, sort_keys=True))

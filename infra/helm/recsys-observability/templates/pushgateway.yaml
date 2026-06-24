@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-pushgateway
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recsys-pushgateway
+  template:
+    metadata:
+      labels:
+        app: recsys-pushgateway
+    spec:
+      containers:
+        - name: pushgateway
+          image: {{ .Values.images.pushgateway }}
+          ports:
+            - name: http
+              containerPort: 9091
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-pushgateway
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    app: recsys-pushgateway
+  ports:
+    - name: http
+      port: 9091
+      targetPort: http

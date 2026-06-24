@@ -4,7 +4,7 @@ metadata:
   name: recsys-data-platform-config
   namespace: {{ .Values.namespace.name }}
 data:
-  PYTHONPATH: /opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys
+  PYTHONPATH: /opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys
   DATA_PLATFORM_MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
   DATA_PLATFORM_MINIO_ROOT_USER: {{ .Values.minio.rootUser | quote }}
   DATA_PLATFORM_MINIO_ROOT_PASSWORD: {{ .Values.minio.rootPassword | quote }}
@@ -24,6 +24,27 @@ data:
   KAFKA_CONNECT_URL: "http://{{ .Values.kafkaConnect.name }}:{{ .Values.kafkaConnect.port }}"
   REDIS_HOST: {{ .Values.redis.name | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
+  PUSHGATEWAY_URL: {{ .Values.observability.pushgatewayUrl | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.observability.otelEndpoint | quote }}
+  OFFLINE_FEATURE_DRIFT_REPORT_PATH: "s3://{{ .Values.minio.lakeBucket }}/monitoring/offline_feature_drift/report.json"
+  KFP_ENDPOINT: {{ .Values.observability.kfpEndpoint | quote }}
+  KFP_EXPERIMENT_NAME: {{ .Values.observability.kfpExperimentName | quote }}
+  KFP_PIPELINE_PACKAGE_PATH: {{ .Values.observability.kfpPipelinePackagePath | quote }}
+  RETRAIN_ON_DRIFT: {{ .Values.observability.retrainOnDrift | quote }}
+  RETRAIN_PSI_THRESHOLD: {{ .Values.observability.retrainPsiThreshold | quote }}
+  RECSYS_JSON_LOGS: "1"
+  REALTIME_INTERVAL_SECONDS: {{ .Values.realtimeProducer.intervalSeconds | quote }}
+  REALTIME_EVENTS_PER_TICK: {{ .Values.realtimeProducer.eventsPerTick | quote }}
+  REALTIME_MAX_EVENTS: {{ .Values.realtimeProducer.maxEvents | quote }}
+  REALTIME_N_USERS: {{ .Values.realtimeProducer.nUsers | quote }}
+  REALTIME_N_PRODUCTS: {{ .Values.realtimeProducer.nProducts | quote }}
+  REALTIME_STREAM_TOPIC: {{ .Values.realtimeFlinkConsumer.topic | quote }}
+  REALTIME_STREAM_GROUP_ID: {{ .Values.realtimeFlinkConsumer.groupId | quote }}
+  REALTIME_STREAM_MIN_EVENTS: {{ .Values.realtimeFlinkConsumer.minEvents | quote }}
+  REALTIME_STREAM_MAX_POLL_RECORDS: {{ .Values.realtimeFlinkConsumer.maxPollRecords | quote }}
+  REALTIME_STREAM_MAX_HISTORY_LENGTH: {{ .Values.realtimeFlinkConsumer.maxHistoryLength | quote }}
+  STREAM_PROGRESS_LOG_EVENTS: {{ .Values.realtimeFlinkConsumer.progressLogEvents | quote }}
+  STREAM_PROGRESS_LOG_SECONDS: {{ .Values.realtimeFlinkConsumer.progressLogSeconds | quote }}
   FEAST_OFFLINE_ROOT: "s3://{{ .Values.minio.featureStoreBucket }}/offline"
   ML_ARTIFACT_ROOT: "s3://{{ .Values.minio.lakeBucket }}/silver/ml"
   WAREHOUSE_ENABLED: "true"
@@ -33,3 +54,5 @@ data:
   GE_MAX_TOP_VALUE_RATIO: {{ .Values.validation.geMaxTopValueRatio | quote }}
   GE_MAX_UNIQUE_RATIO: {{ .Values.validation.geMaxUniqueRatio | quote }}
   EVIDENTLY_PSI_THRESHOLD: {{ .Values.validation.evidentlyPsiThreshold | quote }}
+  FEAST_REPO_PATH: "/opt/recsys/apps/data-platform/feature-store/feature_repo"
+  FEAST_REGISTRY_BACKUP_URI: "s3://{{ .Values.minio.featureStoreBucket }}/registry/registry.db"

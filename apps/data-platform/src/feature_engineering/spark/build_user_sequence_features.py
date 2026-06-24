@@ -43,7 +43,7 @@ def build_user_sequence_features(
                     "hist_category_ids": [int(row["category_id"]) for row in window],
                     "hist_brand_ids": [int(row["brand_id"]) for row in window],
                     "hist_price_bucket_ids": [int(row["price_bucket"]) for row in window],
-                    "hist_event_timestamps": [row["event_timestamp"] for row in window],
+                    "hist_event_timestamps": [pd.Timestamp(row["event_timestamp"]).isoformat() for row in window],
                     "hist_request_ids": [str(row.get("request_id") or "") for row in window],
                     "hist_impression_ids": [str(row.get("impression_id") or "") for row in window],
                     "hist_length": len(window),
@@ -52,4 +52,3 @@ def build_user_sequence_features(
                 }
             )
     return pd.DataFrame(rows)
-

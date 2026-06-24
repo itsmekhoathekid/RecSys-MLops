@@ -242,8 +242,8 @@ def main() -> int:
     parser.add_argument("--interval-seconds", type=float, default=float(os.getenv("REALTIME_INTERVAL_SECONDS", "2")))
     parser.add_argument("--events-per-tick", type=int, default=int(os.getenv("REALTIME_EVENTS_PER_TICK", "5")))
     parser.add_argument("--max-events", type=int, default=int(os.getenv("REALTIME_MAX_EVENTS", "0")))
-    parser.add_argument("--n-users", type=int, default=20)
-    parser.add_argument("--n-products", type=int, default=50)
+    parser.add_argument("--n-users", type=int, default=int(os.getenv("REALTIME_N_USERS", "20")))
+    parser.add_argument("--n-products", type=int, default=int(os.getenv("REALTIME_N_PRODUCTS", "50")))
     args = parser.parse_args()
 
     counter = 0

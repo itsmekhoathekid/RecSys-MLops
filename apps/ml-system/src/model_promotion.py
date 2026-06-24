@@ -92,7 +92,7 @@ def _load_model(config: dict[str, Any], checkpoint_path: str) -> BST:
     return model
 
 
-def dummy_inputs(config: dict[str, Any], batch_size: int = 2) -> tuple[torch.Tensor, ...]:
+def sample_onnx_inputs(config: dict[str, Any], batch_size: int = 2) -> tuple[torch.Tensor, ...]:
     data_args = config["data_args"]
     max_history_len = int(data_args.get("max_history_len", config["model_args"].get("seq_len", 50)))
     history = tuple(torch.zeros((batch_size, max_history_len), dtype=torch.long) for _ in HISTORY_INPUTS)
@@ -110,7 +110,7 @@ def export_onnx(config: dict[str, Any], checkpoint_path: str, target_path: str |
     dynamic_axes["logits"] = {0: "batch"}
     torch.onnx.export(
         model,
-        dummy_inputs(config),
+        sample_onnx_inputs(config),
         str(target),
         input_names=ONNX_INPUTS,
         output_names=["logits"],
@@ -473,6 +473,7 @@ def build_manifest(
     model_version: str,
     metric_name: str,
     triton_storage_uri: str,
+    serving_storage_uri: str,
     promotion_manifest_uri: str,
 ) -> dict[str, Any]:
     triton_metric_name = metric_to_triton_name(metric_name)
@@ -485,6 +486,7 @@ def build_manifest(
         "source_checkpoint_uri": best_payload.get("artifact_uri") or best_payload.get("checkpoint_path"),
         "source_checkpoint_path": best_payload.get("checkpoint_path"),
         "triton_storage_uri": triton_storage_uri,
+        "serving_storage_uri": serving_storage_uri,
         "promotion_manifest_uri": promotion_manifest_uri,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "tensor_schema": {
@@ -529,8 +531,11 @@ def promote_best_model(
         repository=repo_path,
         skip_onnx_export=skip_onnx_export,
     )
-    storage_prefix = f"{model_prefix.strip('/')}/{version}"
+    model_prefix = model_prefix.strip("/")
+    storage_prefix = f"{model_prefix}/{version}"
+    serving_prefix = f"{model_prefix}/latest"
     triton_uri = s3_uri(model_bucket, storage_prefix)
+    serving_uri = s3_uri(model_bucket, serving_prefix)
     manifest_uri = s3_uri(model_bucket, promotion_key)
     manifest = build_manifest(
         best_payload=best_payload,
@@ -538,6 +543,7 @@ def promote_best_model(
         model_version=version,
         metric_name=metric_name,
         triton_storage_uri=triton_uri,
+        serving_storage_uri=serving_uri,
         promotion_manifest_uri=manifest_uri,
     )
     local_manifest = Path(manifest_path or Path(output_dir) / "promotion_manifest.json")
@@ -545,6 +551,8 @@ def promote_best_model(
     local_manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     if upload:
         upload_directory_to_s3(repo_path, model_bucket, storage_prefix)
+        if serving_prefix != storage_prefix:
+            upload_directory_to_s3(repo_path, model_bucket, serving_prefix)
         upload_manifest(manifest, model_bucket, promotion_key)
         versioned_key = f"promotions/bst/{version}.json"
         upload_manifest(manifest, model_bucket, versioned_key)
@@ -558,7 +566,7 @@ def promote_best_model(
             mlflow_run_id=best_payload.get("mlflow_run_id"),
             metrics={manifest["metric_name"]: manifest["metric_value"]},
             config=config,
-            serving_artifact_uri=triton_uri,
+            serving_artifact_uri=serving_uri,
             promotion_manifest_uri=manifest_uri,
         )
     return PromotionResult(

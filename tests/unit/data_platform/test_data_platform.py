@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -53,12 +55,25 @@ from validate.feature_quality_checks import (
 )
 from validate.great_expectations_runner import validate_table
 from validate.great_expectations_runner import STAGING_TABLE_CONTRACTS
+from validate.offline_feature_drift import (
+    analyze_feature_view,
+    pushgateway_samples,
+    split_reference_current,
+)
+from monitoring.pushgateway import render_samples
+from mlops.trigger_kubeflow_retrain import failed_features, trigger_retrain
 from feature_store.online_writer import dumps_feature_payload
 from feature_store.offline_to_online_sync import (
     latest_by_entity,
     row_payload,
     should_overwrite,
     sync_offline_to_online,
+)
+from feature_store.feast_registry import (
+    apply_and_materialize_incremental,
+    backup_registry,
+    registry_path,
+    restore_registry_backup,
 )
 from warehouse.historical_loader import normalize_staging_frame
 from warehouse.schemas import STAGING_STREAM_BEHAVIOR_EVENTS
@@ -119,6 +134,10 @@ def test_user_sequence_feature_contract_and_length():
     features = build_user_sequence_features(events, max_history_length=2)
     assert features["hist_length"].max() == 2
     assert features.iloc[-1]["hist_item_ids"] == [11, 12]
+    assert features.iloc[-1]["hist_event_timestamps"] == [
+        "2026-01-01T00:01:00+00:00",
+        "2026-01-01T00:02:00+00:00",
+    ]
     assert check_sequence_lengths(features, 2).passed
 
 
@@ -492,3 +511,134 @@ def test_latest_by_entity_keeps_latest_timestamp():
     )
     latest = latest_by_entity(frame, "user_id", "event_timestamp")
     assert latest.sort_values("user_id")["value"].tolist() == [2, 3]
+
+
+def test_feast_registry_backup_round_trips_via_s3_client(monkeypatch, tmp_path):
+    repo = tmp_path / "feature_repo"
+    repo.mkdir()
+    (repo / "feature_store.yaml").write_text("project: test\n", encoding="utf-8")
+
+    class FakeS3:
+        uploaded: str | None = None
+
+        def download_file(self, bucket, key, target):
+            assert (bucket, key) == ("bucket", "registry.db")
+            Path(target).write_text("restored-registry", encoding="utf-8")
+
+        def upload_file(self, source, bucket, key):
+            assert (bucket, key) == ("bucket", "registry.db")
+            self.uploaded = Path(source).read_text(encoding="utf-8")
+
+    fake_s3 = FakeS3()
+    monkeypatch.setattr("feature_store.feast_registry._s3_client", lambda: fake_s3)
+
+    assert restore_registry_backup(repo, "s3://bucket/registry.db") is True
+    assert registry_path(repo).read_text(encoding="utf-8") == "restored-registry"
+    assert backup_registry(repo, "s3://bucket/registry.db") is True
+    assert fake_s3.uploaded == "restored-registry"
+
+
+def test_feast_apply_and_materialize_incremental_preserves_registry_checkpoint(monkeypatch, tmp_path):
+    repo = tmp_path / "feature_repo"
+    repo.mkdir()
+    (repo / "feature_store.yaml").write_text("project: test\n", encoding="utf-8")
+    calls = []
+
+    class Result:
+        def __init__(self, stdout: str):
+            self.stdout = stdout
+            self.stderr = ""
+
+    def fake_apply(path):
+        calls.append(("apply", Path(path)))
+        return Result("applied")
+
+    def fake_materialize(end_ts, path):
+        calls.append(("materialize-incremental", end_ts, Path(path)))
+        registry_path(path).parent.mkdir(parents=True, exist_ok=True)
+        registry_path(path).write_text("updated-registry", encoding="utf-8")
+        return Result("materialized")
+
+    monkeypatch.setattr("feature_store.feast_registry.restore_registry_backup", lambda *args: True)
+    monkeypatch.setattr("feature_store.feast_registry.apply_feature_repo", fake_apply)
+    monkeypatch.setattr("feature_store.feast_registry.materialize_incremental", fake_materialize)
+    monkeypatch.setattr("feature_store.feast_registry.backup_registry", lambda *args: True)
+
+    result = apply_and_materialize_incremental("2026-01-01T00:00:00Z", repo)
+    assert calls == [
+        ("apply", repo),
+        ("materialize-incremental", "2026-01-01T00:00:00Z", repo),
+    ]
+    assert result["registry_restored"] is True
+    assert result["registry_backed_up"] is True
+    assert result["apply_stdout"] == "applied"
+    assert result["materialize_stdout"] == "materialized"
+
+
+def test_offline_feature_drift_splits_windows_and_builds_pushgateway_metrics():
+    frame = pd.DataFrame(
+        [
+            {"event_timestamp": _ts("2026-01-01T00:00:00"), "views_30m": 1.0, "user_id": 1},
+            {"event_timestamp": _ts("2026-01-02T00:00:00"), "views_30m": 2.0, "user_id": 2},
+            {"event_timestamp": _ts("2026-01-10T00:00:00"), "views_30m": 10.0, "user_id": 3},
+            {"event_timestamp": _ts("2026-01-11T00:00:00"), "views_30m": 11.0, "user_id": 4},
+        ]
+    )
+    reference, current = split_reference_current(frame, current_days=7)
+    results = analyze_feature_view(frame, "user_aggregate_features", threshold=0.15, current_days=7)
+    payload = render_samples(pushgateway_samples("run-1", results))
+
+    assert len(reference) == 2
+    assert len(current) == 2
+    assert results[0].feature == "views_30m"
+    assert "recsys_ml_feature_drift_psi" in payload
+    assert 'feature_view="user_aggregate_features"' in payload
+
+
+def test_trigger_retrain_skips_when_drift_passes(tmp_path):
+    report = tmp_path / "drift.json"
+    report.write_text(json.dumps({"run_id": "run-1", "passed": True, "features": []}), encoding="utf-8")
+
+    result = trigger_retrain(str(report), "http://kfp", "exp", "pipeline.yaml", pushgateway_url=None)
+
+    assert result.triggered is False
+    assert result.reason == "drift_passed"
+
+
+def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
+    report = tmp_path / "drift.json"
+    report.write_text(
+        json.dumps(
+            {
+                "run_id": "run-2",
+                "passed": False,
+                "features": [{"feature_view": "item_features", "feature": "views_1h", "passed": False}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class Experiment:
+        experiment_id = "experiment-1"
+
+    class Run:
+        run_id = "run-kfp-1"
+
+    class Client:
+        def __init__(self, host):
+            assert host == "http://kfp"
+
+        def create_experiment(self, name):
+            assert name == "exp"
+            return Experiment()
+
+        def create_run_from_pipeline_package(self, **kwargs):
+            assert kwargs["pipeline_file"] == "pipeline.yaml"
+            return Run()
+
+    monkeypatch.setitem(__import__("sys").modules, "kfp", type("Kfp", (), {"Client": Client}))
+    result = trigger_retrain(str(report), "http://kfp", "exp", "pipeline.yaml", pushgateway_url=None)
+
+    assert failed_features(json.loads(report.read_text(encoding="utf-8"))) == ["item_features.views_1h"]
+    assert result.triggered is True
+    assert result.kfp_run_id == "run-kfp-1"

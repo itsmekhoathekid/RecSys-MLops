@@ -119,6 +119,15 @@ def test_full_dataflow_dag_declares_historical_and_realtime_task_groups():
     assert "python3 apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py" in dag_source
 
 
+def test_single_streaming_dag_runs_real_stream_job_without_masking_failures():
+    dag_source = (
+        ROOT / "apps/data-platform/src/orchestration/airflow/dags/streaming_feature_pipeline_dag.py"
+    ).read_text()
+
+    assert "feature_engineering/flink/realtime_stream_job.py" in dag_source
+    assert "|| true" not in dag_source
+
+
 def test_k8s_data_platform_dag_declares_required_order():
     dag_source = (
         ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
@@ -146,10 +155,16 @@ def test_k8s_data_platform_dag_declares_required_order():
         assert task_id in dag_source
     assert "KubernetesPodOperator" in dag_source
     assert "--warehouse-enabled" in dag_source
-    assert "feature_store.offline_to_online_sync" in dag_source
+    assert "materialize_offline_to_online.py" in dag_source
+    assert "FEAST_REGISTRY_BACKUP_URI" in dag_source
     assert "ingest.register_k8s_connectors --connector debezium" in dag_source
     assert "generate_historical_to_minio.py" in dag_source
     assert "validate_bronze_cdc.py" in dag_source
+    materialize_source = (ROOT / "apps/data-platform/feature-store/src/materialize_offline_to_online.py").read_text()
+    feature_view_source = (ROOT / "apps/data-platform/feature-store/feature_repo/feature_views.py").read_text()
+    assert "apply_and_materialize_incremental" in materialize_source
+    assert "Array(Int64)" in feature_view_source
+    assert "Array(String)" in feature_view_source
 
 
 def test_dbt_project_uses_production_schema_without_target_prefix():
@@ -169,6 +184,10 @@ def test_k8s_data_platform_helm_chart_declares_core_services():
     assert values["kafkaConnect"]["name"] == "kafka-connect"
     assert values["minio"]["name"] == "data-platform-minio"
     assert values["minio"]["endpoint"] == "http://data-platform-minio:9000"
+    assert values["realtimeProducer"]["enabled"] is True
+    assert values["realtimeProducer"]["name"] == "realtime-event-producer"
+    assert values["realtimeFlinkConsumer"]["enabled"] is True
+    assert values["realtimeFlinkConsumer"]["name"] == "realtime-flink-consumer"
     rendered_sources = (chart / "values.yaml").read_text() + "\n".join(
         path.read_text() for path in (chart / "templates").glob("*.yaml")
     )
@@ -184,8 +203,41 @@ def test_k8s_data_platform_helm_chart_declares_core_services():
         "data-platform-minio",
         "init-data-platform-minio",
         "init-warehouse",
+        "init-source-schema",
+        "helm.sh/hook-weight",
+        "register-realtime-cdc-connector",
+        "ingest.register_k8s_connectors",
+        "realtime-event-producer",
+        "set -euo pipefail",
+        "init_postgres_schema.py",
+        "run_realtime_postgres_producer.py",
+        "realtime-flink-consumer",
+        "flink run -m flink-jobmanager:8081",
+        "realtime_stream_job.py",
+        "--runner pyflink",
+        "--continuous",
+        "blob.server.port: 6124",
+        "name: blob",
+        "pyflink-udf-runner.sh",
+        "py4j-0.10.9.7-src.zip",
     ]:
         assert expected in rendered_sources
+    assert "REALTIME_MAX_EVENTS" in rendered_sources
+    assert "REALTIME_STREAM_GROUP_ID" in rendered_sources
+    assert "FEAST_REGISTRY_BACKUP_URI" in rendered_sources
+    assert "PUSHGATEWAY_URL" in rendered_sources
+    assert "trigger_kubeflow_retrain" in (ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py").read_text()
+    assert "monitoring-sql-exporter" in rendered_sources
+    assert "PYTHONPATH: /opt/flink/opt/python:" in rendered_sources
+    dockerfile_flink = (ROOT / "apps/data-platform/Dockerfile.flink").read_text()
+    assert "/opt/flink/opt/python/pyflink.zip" in dockerfile_flink
+    assert "python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip" in dockerfile_flink
+    assert "/usr/local/bin/python" in dockerfile_flink
+    assert "apache-beam==2.48.0" in dockerfile_flink
+    assert "avro-python3==1.10.2" in dockerfile_flink
+    assert "py4j==0.10.9.7" in dockerfile_flink
+    init_source_schema = (ROOT / "infra/docker/scripts/init_postgres_schema.py").read_text()
+    assert "pg_advisory_xact_lock" in init_source_schema
     assert "minio.experiment-tracking" not in rendered_sources
 
 
@@ -221,10 +273,45 @@ def test_makefile_exposes_pipeline_operation_targets():
         "data-platform-e2e",
         "data-platform-run-status",
         "data-platform-verify-e2e",
+        "data-platform-stream-generator-start",
+        "data-platform-stream-generator-stop",
+        "data-platform-stream-generator-status",
+        "observability-template",
+        "observability-install",
+        "observability-port-forward",
+        "observability-demo-traffic",
     ]:
         assert f".PHONY: {target}" in makefile
         assert f"{target}:" in makefile
     assert "recsys-kafka-connect:local" in makefile
+    assert "DATA_PLATFORM_REALTIME_PRODUCER ?= realtime-event-producer" in makefile
+
+
+def test_observability_helm_chart_declares_rubric_stack():
+    chart = ROOT / "infra/helm/recsys-observability"
+    values = yaml.safe_load((chart / "values.yaml").read_text())
+    assert values["namespace"]["name"] == "observability"
+    rendered_sources = (chart / "values.yaml").read_text() + "\n".join(
+        path.read_text() for path in (chart / "templates").glob("*.yaml")
+    )
+    for expected in [
+        "recsys-prometheus",
+        "recsys-grafana",
+        "recsys-loki",
+        "recsys-tempo",
+        "recsys-promtail",
+        "recsys-pushgateway",
+        "redis-exporter",
+        "warehouse-postgres-exporter",
+        "Web API Overview",
+        "Compute Telemetry",
+        "Logs Overview",
+        "Traces Overview",
+        "ML Drift & Retrain",
+        "recsys_api_requests_total",
+        "recsys_ml_feature_drift_psi",
+    ]:
+        assert expected in rendered_sources
 
 
 def test_dataflow_operation_scripts_are_executable_and_use_expected_entrypoints():

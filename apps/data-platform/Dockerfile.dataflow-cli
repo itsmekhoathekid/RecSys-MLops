@@ -19,7 +19,8 @@ RUN uv pip install --no-cache \
     great_expectations \
     dbt-core \
     dbt-postgres \
-    evidently
+    evidently \
+    kfp
 
 COPY . /opt/recsys
 

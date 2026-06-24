@@ -1,0 +1,18 @@
+{{- if .Values.kserve.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.kserve.grpcService.name }}
+  namespace: {{ .Values.kserve.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.kserve.inferenceService.name }}
+    app.kubernetes.io/component: grpc-serving
+spec:
+  selector:
+{{ toYaml .Values.kserve.grpcService.selector | indent 4 }}
+  ports:
+    - name: grpc
+      port: {{ .Values.kserve.grpcService.port }}
+      targetPort: {{ .Values.kserve.grpcService.targetPort }}
+      protocol: TCP
+{{- end }}

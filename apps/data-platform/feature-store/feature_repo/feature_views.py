@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import timedelta
 
 try:
-    from feast import FeatureView, Field
-    from feast.types import Bool, Float32, Int64, String
+    from feast import FeatureService, FeatureView, Field
+    from feast.types import Array, Bool, Float32, Int64, String
 except ImportError:  # pragma: no cover
-    FeatureView = Field = Bool = Float32 = Int64 = String = None
+    FeatureService = FeatureView = Field = Array = Bool = Float32 = Int64 = String = None
 
 from data_sources import item_features_source, user_aggregate_source, user_sequence_source
 from entities import product, user
@@ -18,12 +18,14 @@ if FeatureView is not None:
         entities=[user],
         ttl=timedelta(days=90),
         schema=[
-            Field(name="hist_item_ids", dtype=String),
-            Field(name="hist_event_type_ids", dtype=String),
-            Field(name="hist_category_ids", dtype=String),
-            Field(name="hist_brand_ids", dtype=String),
-            Field(name="hist_price_bucket_ids", dtype=String),
-            Field(name="hist_event_timestamps", dtype=String),
+            Field(name="hist_item_ids", dtype=Array(Int64)),
+            Field(name="hist_event_type_ids", dtype=Array(Int64)),
+            Field(name="hist_category_ids", dtype=Array(Int64)),
+            Field(name="hist_brand_ids", dtype=Array(Int64)),
+            Field(name="hist_price_bucket_ids", dtype=Array(Int64)),
+            Field(name="hist_event_timestamps", dtype=Array(String)),
+            Field(name="hist_request_ids", dtype=Array(String)),
+            Field(name="hist_impression_ids", dtype=Array(String)),
             Field(name="hist_length", dtype=Int64),
             Field(name="max_history_length", dtype=Int64),
             Field(name="feature_version", dtype=String),
@@ -72,6 +74,9 @@ if FeatureView is not None:
         online=True,
         source=item_features_source,
     )
+    bst_ranking_v1 = FeatureService(
+        name="bst_ranking_v1",
+        features=[user_sequence_features, user_aggregate_features, item_features],
+    )
 else:
-    user_sequence_features = user_aggregate_features = item_features = None
-
+    user_sequence_features = user_aggregate_features = item_features = bst_ranking_v1 = None
