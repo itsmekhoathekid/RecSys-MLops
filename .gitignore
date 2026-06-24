@@ -32,4 +32,5 @@ spark-warehouse/
 graphify-out/
 .codex/
 .model-cd/
+.gateway-auth/
 AGENTS.md
