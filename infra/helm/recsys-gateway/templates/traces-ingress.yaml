@@ -1,0 +1,36 @@
+{{- if .Values.traces.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recsys-traces-gateway
+  namespace: {{ .Values.traces.namespace }}
+  annotations:
+    {{- if .Values.auth.enabled }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ .Values.auth.secretName }}
+    nginx.ingress.kubernetes.io/auth-realm: {{ .Values.auth.realm | quote }}
+    {{- end }}
+    {{- if .Values.tls.enabled }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: {{ .Values.tls.clusterIssuerName | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.gateway.ingressClassName }}
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.traces.host }}
+      secretName: {{ .Values.tls.secretNames.traces }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.traces.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.traces.service.name }}
+                port:
+                  number: {{ .Values.traces.service.port }}
+{{- end }}

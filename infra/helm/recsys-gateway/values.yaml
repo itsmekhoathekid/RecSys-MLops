@@ -1,0 +1,65 @@
+gateway:
+  ingressClassName: nginx
+  domain: recsys.local
+
+auth:
+  enabled: true
+  createSecret: true
+  secretName: recsys-gateway-basic-auth
+  realm: RecSys Gateway
+  # Default demo credential is recsys:recsys. Override with:
+  #   --set-file auth.htpasswd=.gateway-auth/auth
+  htpasswd: "recsys:$apr1$N4f11ApR$L6Z5IGFzrKP88UmiqpzLb/"
+
+tls:
+  enabled: true
+  clusterIssuerName: letsencrypt-staging
+  issuer:
+    create: false
+    name: letsencrypt-staging
+    email: change-me@example.com
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    privateKeySecretName: letsencrypt-staging-account-key
+  secretNames:
+    api: recsys-api-tls
+    grafana: recsys-grafana-tls
+    logs: recsys-logs-tls
+    traces: recsys-traces-tls
+
+api:
+  enabled: true
+  namespace: api-serving
+  host: api.recsys.local
+  service:
+    name: recsys-api-serving
+    port: 80
+  rateLimit:
+    enabled: true
+    rps: "5"
+    rpm: "120"
+    connections: "10"
+    statusCode: "429"
+
+grafana:
+  enabled: true
+  namespace: observability
+  host: grafana.recsys.local
+  service:
+    name: recsys-grafana
+    port: 3000
+
+logs:
+  enabled: true
+  namespace: observability
+  host: logs.recsys.local
+  service:
+    name: recsys-loki
+    port: 3100
+
+traces:
+  enabled: true
+  namespace: observability
+  host: traces.recsys.local
+  service:
+    name: recsys-tempo
+    port: 3200

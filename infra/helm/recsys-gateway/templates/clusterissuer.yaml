@@ -1,0 +1,16 @@
+{{- if and .Values.tls.enabled .Values.tls.issuer.create }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.tls.issuer.name }}
+spec:
+  acme:
+    email: {{ .Values.tls.issuer.email | quote }}
+    server: {{ .Values.tls.issuer.server | quote }}
+    privateKeySecretRef:
+      name: {{ .Values.tls.issuer.privateKeySecretName }}
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: {{ .Values.gateway.ingressClassName }}
+{{- end }}

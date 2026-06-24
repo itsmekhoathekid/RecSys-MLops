@@ -21,6 +21,19 @@ DATAHUB_GMS_URL ?= http://127.0.0.1:$(DATAHUB_GMS_PORT)
 KFP_VERSION ?= 2.16.1
 KUBEFLOW_NAMESPACE ?= kubeflow
 MLOPS_NAMESPACE ?= experiment-tracking
+GATEWAY_NAMESPACE ?= ingress-nginx
+GATEWAY_DOMAIN ?= recsys.local
+GATEWAY_USER ?= recsys
+GATEWAY_PASSWORD ?= recsys
+GATEWAY_AUTH_USER ?= $(if $(filter command line,$(origin USER)),$(USER),$(GATEWAY_USER))
+GATEWAY_AUTH_PASSWORD ?= $(if $(filter command line,$(origin PASSWORD)),$(PASSWORD),$(GATEWAY_PASSWORD))
+GATEWAY_AUTH_FILE ?= .gateway-auth/auth
+GATEWAY_API_HOST ?= api.$(GATEWAY_DOMAIN)
+GATEWAY_GRAFANA_HOST ?= grafana.$(GATEWAY_DOMAIN)
+GATEWAY_LOGS_HOST ?= logs.$(GATEWAY_DOMAIN)
+GATEWAY_TRACES_HOST ?= traces.$(GATEWAY_DOMAIN)
+GATEWAY_SCHEME ?= https
+GATEWAY_CURL_FLAGS ?= -k
 
 .PHONY: help
 help:
@@ -87,6 +100,13 @@ help:
 	@echo "  make observability-port-forward  Show Grafana/Prometheus/Loki/Tempo forwards"
 	@echo "  make observability-demo-traffic  Generate API traffic for dashboards"
 	@echo "  make observability-smoke         Check observability pods and services"
+	@echo ""
+	@echo "Gateway:"
+	@echo "  make gateway-template            Render NGINX gateway Helm chart"
+	@echo "  make gateway-install-controller  Install ingress-nginx controller"
+	@echo "  make gateway-create-auth         Create local htpasswd file for Basic Auth"
+	@echo "  make gateway-install             Install recsys-gateway Helm chart"
+	@echo "  make gateway-smoke               Check gateway auth, API, and rate-limit behavior"
 
 .PHONY: mlops-local-up
 mlops-local-up:
@@ -368,3 +388,67 @@ observability-demo-traffic:
 			-H 'Content-Type: application/json' \
 			-d '{"user_id":1,"candidate_item_ids":[1,2,3,4,5],"top_k":3}' >/dev/null || true; \
 	done
+
+.PHONY: gateway-template
+gateway-template:
+	@helm template recsys-gateway infra/helm/recsys-gateway --namespace api-serving \
+		--set gateway.domain=$(GATEWAY_DOMAIN) \
+		--set api.host=$(GATEWAY_API_HOST) \
+		--set grafana.host=$(GATEWAY_GRAFANA_HOST) \
+		--set logs.host=$(GATEWAY_LOGS_HOST) \
+		--set traces.host=$(GATEWAY_TRACES_HOST)
+
+.PHONY: gateway-install-controller
+gateway-install-controller:
+	@helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx || true
+	@helm repo update ingress-nginx
+	@helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --namespace $(GATEWAY_NAMESPACE) --create-namespace \
+		--set controller.service.type=LoadBalancer \
+		--set controller.config.limit-req-status-code=429 \
+		--set controller.config.limit-conn-status-code=429
+	@kubectl rollout status deploy/ingress-nginx-controller -n $(GATEWAY_NAMESPACE) --timeout=240s
+
+.PHONY: gateway-create-auth
+gateway-create-auth:
+	@mkdir -p "$$(dirname "$(GATEWAY_AUTH_FILE)")"
+	@hash=$$(openssl passwd -apr1 "$(GATEWAY_AUTH_PASSWORD)"); \
+		printf '%s:%s\n' "$(GATEWAY_AUTH_USER)" "$$hash" > "$(GATEWAY_AUTH_FILE)"; \
+		chmod 600 "$(GATEWAY_AUTH_FILE)"
+	@echo "Created $(GATEWAY_AUTH_FILE) for user $(GATEWAY_AUTH_USER)"
+
+.PHONY: gateway-install
+gateway-install:
+	@set -euo pipefail; \
+	extra=""; \
+	if [ -f "$(GATEWAY_AUTH_FILE)" ]; then extra="--set-file auth.htpasswd=$(GATEWAY_AUTH_FILE)"; fi; \
+	helm upgrade --install recsys-gateway infra/helm/recsys-gateway \
+		--namespace api-serving \
+		--create-namespace \
+		--set gateway.domain=$(GATEWAY_DOMAIN) \
+		--set api.host=$(GATEWAY_API_HOST) \
+		--set grafana.host=$(GATEWAY_GRAFANA_HOST) \
+		--set logs.host=$(GATEWAY_LOGS_HOST) \
+		--set traces.host=$(GATEWAY_TRACES_HOST) \
+		$$extra
+
+.PHONY: gateway-smoke
+gateway-smoke:
+	@set -euo pipefail; \
+	base="$(GATEWAY_SCHEME)://$(GATEWAY_API_HOST)"; \
+	unauth_status=$$(curl $(GATEWAY_CURL_FLAGS) -sS -o /dev/null -w '%{http_code}' "$$base/healthz" || true); \
+	echo "Unauthenticated /healthz -> $$unauth_status"; \
+	test "$$unauth_status" = "401"; \
+	auth_status=$$(curl $(GATEWAY_CURL_FLAGS) -sS -u "$(GATEWAY_AUTH_USER):$(GATEWAY_AUTH_PASSWORD)" -o /dev/null -w '%{http_code}' "$$base/healthz"); \
+	echo "Authenticated /healthz -> $$auth_status"; \
+	test "$$auth_status" = "200"; \
+	recs_status=$$(curl $(GATEWAY_CURL_FLAGS) -sS -u "$(GATEWAY_AUTH_USER):$(GATEWAY_AUTH_PASSWORD)" -o /dev/null -w '%{http_code}' \
+		-X POST "$$base/recommendations" \
+		-H 'Content-Type: application/json' \
+		-d '{"user_id":1,"candidate_item_ids":[1,2,3],"top_k":2}'); \
+	echo "Authenticated /recommendations -> $$recs_status"; \
+	test "$$recs_status" = "200"; \
+	rate_codes=$$(for _ in $$(seq 1 100); do \
+		curl $(GATEWAY_CURL_FLAGS) -sS -u "$(GATEWAY_AUTH_USER):$(GATEWAY_AUTH_PASSWORD)" -o /dev/null -w '%{http_code}\n' "$$base/healthz" || true; \
+	done | sort | uniq -c); \
+	echo "$$rate_codes"; \
+	if ! echo "$$rate_codes" | rg '429' >/dev/null; then echo "Warning: no 429 observed; check ingress replica count and configured burst behavior."; fi
