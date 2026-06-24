@@ -157,6 +157,56 @@ data:
               severity: warning
             annotations:
               summary: Data quality validation failed.
+          - alert: RecSysABCandidateErrorRegression
+            expr: |
+              (
+                sum(rate(model_predictions_total{ab_variant="candidate",status="error"}[5m]))
+                / clamp_min(sum(rate(model_predictions_total{ab_variant="candidate"}[5m])), 0.001)
+              )
+              >
+              (
+                sum(rate(model_predictions_total{ab_variant="control",status="error"}[5m]))
+                / clamp_min(sum(rate(model_predictions_total{ab_variant="control"}[5m])), 0.001)
+                + 0.02
+              )
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: Candidate model error rate is higher than control.
+          - alert: RecSysABCandidateLatencyRegression
+            expr: |
+              histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{ab_variant="candidate"}[5m])) by (le))
+              >
+              (
+                histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{ab_variant="control"}[5m])) by (le))
+                * 1.5
+              )
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: Candidate model p95 latency is significantly worse than control.
+          - alert: RecSysABCandidateTrafficMissing
+            expr: |
+              sum(rate(model_predictions_total{ab_variant="candidate"}[5m])) == 0
+              and sum(rate(model_predictions_total{ab_variant="control"}[5m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: Candidate A/B traffic is missing while control traffic is present.
+          - alert: RecSysABCandidateEmptyResponseSpike
+            expr: |
+              (
+                sum(rate(model_predictions_total{ab_variant="candidate",status="empty"}[5m]))
+                / clamp_min(sum(rate(model_predictions_total{ab_variant="candidate"}[5m])), 0.001)
+              ) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: Candidate model is returning too many empty recommendation responses.
 ---
 apiVersion: apps/v1
 kind: Deployment

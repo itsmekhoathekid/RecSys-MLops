@@ -16,14 +16,19 @@ kserve:
         memory: 6Gi
   inferenceService:
     name: recsys-bst-triton
+    candidateName: recsys-bst-triton-candidate
     deploymentMode: RawDeployment
     storageUri: s3://recsys-model-store/triton/bst/latest
+    candidateStorageUri: ""
   grpcService:
     name: recsys-bst-triton-grpc
+    candidateName: recsys-bst-triton-candidate-grpc
     port: 9000
     targetPort: 9000
     selector:
       app: isvc.recsys-bst-triton-predictor
+    candidateSelector:
+      app: isvc.recsys-bst-triton-candidate-predictor
   serviceAccount:
     name: recsys-kserve-minio
   secret:
@@ -122,13 +127,16 @@ autoscaling:
   kserveResource:
     enabled: true
     name: recsys-bst-triton-resource
+    candidateName: recsys-bst-triton-candidate-resource
     deploymentName: recsys-bst-triton-predictor
+    candidateDeploymentName: recsys-bst-triton-candidate-predictor
     minReplicas: 1
     maxReplicas: 3
     pollingInterval: 15
     cooldownPeriod: 180
     restoreToOriginalReplicaCount: true
     hpaName: recsys-bst-triton-predictor
+    candidateHpaName: recsys-bst-triton-candidate-predictor
     cpu:
       enabled: true
       metricType: Utilization
@@ -143,3 +151,12 @@ observability:
   serviceMonitor:
     enabled: true
     interval: 15s
+
+abTest:
+  enabled: false
+  experimentId: ""
+  candidateWeightPercent: 0
+  controlModelVersion: latest
+  candidateModelVersion: ""
+  controlTritonUrl: recsys-bst-triton-grpc.kserve-triton-inference.svc.cluster.local:9000
+  candidateTritonUrl: recsys-bst-triton-candidate-grpc.kserve-triton-inference.svc.cluster.local:9000

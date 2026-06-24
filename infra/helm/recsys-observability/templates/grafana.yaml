@@ -1,3 +1,7 @@
+{{- $dashboardChecksum := "" -}}
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" -}}
+{{- $dashboardChecksum = printf "%s%s:%s\n" $dashboardChecksum $path ($.Files.Get $path | sha256sum) -}}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,42 +12,37 @@ data:
     apiVersion: 1
     datasources:
       - name: Prometheus
+        uid: Prometheus
         type: prometheus
         access: proxy
         url: http://recsys-prometheus:9090
         isDefault: true
       - name: Loki
+        uid: Loki
         type: loki
         access: proxy
         url: http://recsys-loki:3100
       - name: Tempo
+        uid: Tempo
         type: tempo
         access: proxy
         url: http://recsys-tempo:3200
 ---
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: recsys-grafana-dashboards
-  namespace: {{ .Values.namespace.name }}
+  name: recsys-grafana-dashboard-{{ base $path | trimSuffix ".json" | replace "_" "-" | replace "." "-" | trunc 50 | trimSuffix "-" }}
+  namespace: {{ $.Values.namespace.name }}
   labels:
     grafana_dashboard: "1"
+    app.kubernetes.io/name: recsys-grafana
+    recsys.io/dashboard-folder: RecSys
 data:
-  web-api-overview.json: |
-    {"title":"Web API Overview","schemaVersion":39,"panels":[{"type":"timeseries","title":"Requests/sec","targets":[{"expr":"sum(rate(recsys_api_requests_total[1m]))"}]},{"type":"stat","title":"Total Requests","targets":[{"expr":"sum(recsys_api_requests_total)"}]},{"type":"stat","title":"Failures","targets":[{"expr":"sum(recsys_api_failures_total)"}]},{"type":"timeseries","title":"API Latency","targets":[{"expr":"rate(recsys_api_request_duration_seconds_sum[5m]) / rate(recsys_api_request_duration_seconds_count[5m])"}]},{"type":"timeseries","title":"Redis/Triton Breakdown","targets":[{"expr":"rate(recsys_api_redis_operation_duration_seconds_sum[5m]) / rate(recsys_api_redis_operation_duration_seconds_count[5m])"},{"expr":"rate(recsys_api_triton_inference_duration_seconds_sum[5m]) / rate(recsys_api_triton_inference_duration_seconds_count[5m])"}]}]}
-  compute-telemetry.json: |
-    {"title":"Compute Telemetry","schemaVersion":39,"panels":[{"type":"timeseries","title":"Pod CPU","targets":[{"expr":"sum(rate(container_cpu_usage_seconds_total{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}[5m])) by (namespace,pod)"}]},{"type":"timeseries","title":"Pod Memory","targets":[{"expr":"sum(container_memory_working_set_bytes{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}) by (namespace,pod)"}]},{"type":"timeseries","title":"Restarts","targets":[{"expr":"sum(kube_pod_container_status_restarts_total) by (namespace,pod)"}]}]}
-  logs-overview.json: |
-    {"title":"Logs Overview","schemaVersion":39,"panels":[{"type":"logs","title":"Recent Errors","targets":[{"expr":"{namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking\"} |= \"ERROR\""}]},{"type":"logs","title":"Retrain Trigger Logs","targets":[{"expr":"{namespace=\"recsys-dataflow\"} |= \"trigger_kubeflow_retrain\""}]}]}
-  traces-overview.json: |
-    {"title":"Traces Overview","schemaVersion":39,"panels":[{"type":"traces","title":"Recommendation Traces","targets":[{"query":"resource.service.name=\"recsys-api-serving\""}]}]}
-  data-pipeline-observability.json: |
-    {"title":"Data Pipeline Observability","schemaVersion":39,"panels":[{"type":"timeseries","title":"Streaming Events","targets":[{"expr":"recsys_streaming_event_count"}]},{"type":"timeseries","title":"Late Events","targets":[{"expr":"recsys_streaming_late_event_count"}]},{"type":"stat","title":"Data Quality Passed","targets":[{"expr":"min(recsys_data_quality_passed)"}]},{"type":"timeseries","title":"Online Store Sync","targets":[{"expr":"recsys_online_store_sync_synced_rows"},{"expr":"recsys_online_store_sync_skipped_rows"}]}]}
-  ml-drift-retrain.json: |
-    {"title":"ML Drift & Retrain","schemaVersion":39,"panels":[{"type":"timeseries","title":"Feature PSI","targets":[{"expr":"recsys_ml_feature_drift_psi"}]},{"type":"stat","title":"Drift Passed","targets":[{"expr":"min(recsys_ml_feature_drift_passed)"}]},{"type":"timeseries","title":"Current vs Reference Rows","targets":[{"expr":"recsys_ml_feature_drift_current_rows"},{"expr":"recsys_ml_feature_drift_reference_rows"}]},{"type":"stat","title":"Retrain Triggered","targets":[{"expr":"sum(recsys_ml_retrain_triggered_total)"}]}]}
-  model-serving-promotion.json: |
-    {"title":"Model Serving & Promotion","schemaVersion":39,"panels":[{"type":"stat","title":"Model Build Info","targets":[{"expr":"recsys_observability_build_info"}]},{"type":"timeseries","title":"Triton Errors","targets":[{"expr":"sum(rate(recsys_api_triton_errors_total[5m]))"}]}]}
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
 ---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -56,6 +55,9 @@ spec:
       app: recsys-grafana
   template:
     metadata:
+      annotations:
+        checksum/grafana-dashboards: {{ $dashboardChecksum | sha256sum | quote }}
+        checksum/grafana-datasources: {{ printf "%s-%s-%s" .Values.images.grafana .Values.namespace.name "datasources-v1" | sha256sum | quote }}
       labels:
         app: recsys-grafana
     spec:
@@ -84,8 +86,15 @@ spec:
           configMap:
             name: recsys-grafana-datasources
         - name: dashboards
-          configMap:
-            name: recsys-grafana-dashboards
+          projected:
+            sources:
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+              - configMap:
+                  name: recsys-grafana-dashboard-{{ base $path | trimSuffix ".json" | replace "_" "-" | replace "." "-" | trunc 50 | trimSuffix "-" }}
+                  items:
+                    - key: {{ base $path }}
+                      path: {{ base $path }}
+{{- end }}
         - name: dashboard-provider
           configMap:
             name: recsys-grafana-dashboard-provider

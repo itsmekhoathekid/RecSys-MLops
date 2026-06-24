@@ -1,0 +1,59 @@
+{
+  "uid": "recsys-traces",
+  "title": "Traces Overview",
+  "tags": ["recsys", "traces", "tempo"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "15s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Recommendation Traffic",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(recsys_api_requests_total{route=\"/recommendations\"}[5m]))", "legendFormat": "req/s" }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }, { "color": "green", "value": 0.1 }, { "color": "orange", "value": 5 }] } } },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "gauge",
+      "title": "Recommendation Avg Latency",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(recsys_api_request_duration_seconds_sum{route=\"/recommendations\"}[5m])) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count{route=\"/recommendations\"}[5m])), 0.001)", "legendFormat": "avg" }],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "min": 0, "max": 1, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.2 }, { "color": "red", "value": 0.5 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Trace Context: API Latency and Failures",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(recsys_api_request_duration_seconds_sum[5m])) by (route) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count[5m])) by (route), 0.001)", "legendFormat": "latency {{route}}" },
+        { "expr": "sum(rate(recsys_api_failures_total[5m])) by (route,status)", "legendFormat": "failures {{route}} {{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 4,
+      "type": "traces",
+      "title": "Tempo Search: recsys-api-serving",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 12 },
+      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "targets": [{ "query": "{resource.service.name=\"recsys-api-serving\"}", "queryType": "traceql", "refId": "A" }]
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Logs With Trace IDs",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [{ "expr": "{namespace=\"api-serving\"} |= \"trace_id\"" }],
+      "options": { "showLabels": true, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    }
+  ]
+}
