@@ -1,0 +1,35 @@
+{{- if .Values.realtimeProducer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.realtimeProducer.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: {{ .Values.realtimeProducer.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.realtimeProducer.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.realtimeProducer.name }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: realtime-event-producer
+          image: {{ .Values.images.dataflowCli }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
+              python infra/docker/scripts/init_postgres_schema.py
+              PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
+              python apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+{{- end }}

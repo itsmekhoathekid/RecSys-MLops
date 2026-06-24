@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from mlflow_dataset_lineage import dataset_versions, load_dataset_metadata, log_dataset_lineage
 from models import *
 from model_registry import register_model_config
 
@@ -21,7 +22,7 @@ def _mlflow_metric_name(name):
     return name.replace("@", "_at_")
 
 
-def _log_to_mlflow(config, metrics, checkpoint_path):
+def _log_to_mlflow(config, metrics, checkpoint_path, dataset_metadata=None):
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
     if not tracking_uri:
         return None, None
@@ -31,6 +32,11 @@ def _log_to_mlflow(config, metrics, checkpoint_path):
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", "recsys-bst-ranking"))
     with mlflow.start_run(run_name=os.getenv("MLFLOW_RUN_NAME", "bst-training")) as run:
+        log_dataset_lineage(
+            mlflow,
+            dataset_metadata,
+            {"train": "training", "val": "validation"},
+        )
         for name, value in _flatten("", config).items():
             if isinstance(value, (str, int, float, bool)) or value is None:
                 mlflow.log_param(name, value)
@@ -69,8 +75,13 @@ def run_training(
     training_percent=None,
     num_epochs=None,
     metrics_path=None,
+    dataset_metadata_path=None,
 ):
     config = load_config(config_path)
+    metadata_path = dataset_metadata_path or config.get("data_args", {}).get("dataset_metadata_path") or os.getenv(
+        "DATASET_VERSION_METADATA_PATH"
+    )
+    dataset_metadata = load_dataset_metadata(metadata_path)
     if num_epochs is not None:
         config["training_args"]["num_epochs"] = num_epochs
 
@@ -117,7 +128,7 @@ def run_training(
             trainer.get_best_score(),
         )
 
-    run_id, artifact_uri = _log_to_mlflow(config, final_metrics, best_checkpoint_path)
+    run_id, artifact_uri = _log_to_mlflow(config, final_metrics, best_checkpoint_path, dataset_metadata=dataset_metadata)
     _maybe_register_config(config, final_metrics, best_checkpoint_path, run_id, artifact_uri)
 
     result = {
@@ -125,6 +136,7 @@ def run_training(
         "mlflow_run_id": run_id,
         "artifact_uri": artifact_uri or best_checkpoint_path,
         "metrics": final_metrics,
+        "dataset_versions": dataset_versions(dataset_metadata),
     }
     if metrics_path:
         Path(metrics_path).parent.mkdir(parents=True, exist_ok=True)
@@ -139,12 +151,14 @@ def train():
     args.add_argument("--training-percent", type=float, default=None)
     args.add_argument("--num-epochs", type=int, default=None)
     args.add_argument("--metrics-path", default="")
+    args.add_argument("--dataset-metadata-path", default="")
     parsed = args.parse_args()
     run_training(
         config_path=parsed.config_path,
         training_percent=parsed.training_percent,
         num_epochs=parsed.num_epochs,
         metrics_path=parsed.metrics_path or None,
+        dataset_metadata_path=parsed.dataset_metadata_path or None,
     )
 
 

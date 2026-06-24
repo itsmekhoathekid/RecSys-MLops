@@ -1,0 +1,223 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-loki
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recsys-loki
+  template:
+    metadata:
+      labels:
+        app: recsys-loki
+    spec:
+      containers:
+        - name: loki
+          image: {{ .Values.images.loki }}
+          args: ["-config.file=/etc/loki/local-config.yaml"]
+          ports:
+            - name: http
+              containerPort: 3100
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-loki
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    app: recsys-loki
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-tempo
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recsys-tempo
+  template:
+    metadata:
+      labels:
+        app: recsys-tempo
+    spec:
+      containers:
+        - name: tempo
+          image: {{ .Values.images.tempo }}
+          args: ["-config.file=/etc/tempo.yaml"]
+          ports:
+            - name: http
+              containerPort: 3200
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+          volumeMounts:
+            - name: config
+              mountPath: /etc/tempo.yaml
+              subPath: tempo.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: recsys-tempo-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-tempo-config
+  namespace: {{ .Values.namespace.name }}
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /tmp/tempo/traces
+    compactor:
+      compaction:
+        block_retention: 24h
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-tempo
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    app: recsys-tempo
+  ports:
+    - name: http
+      port: 3200
+      targetPort: http
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: recsys-promtail
+  namespace: {{ .Values.namespace.name }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: recsys-promtail
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    matchLabels:
+      app: recsys-promtail
+  template:
+    metadata:
+      labels:
+        app: recsys-promtail
+    spec:
+      serviceAccountName: recsys-promtail
+      containers:
+        - name: promtail
+          image: {{ .Values.images.promtail }}
+          args:
+            - -config.file=/etc/promtail/promtail.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/promtail
+            - name: pods
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: containers
+              mountPath: /var/log/containers
+              readOnly: true
+            - name: docker-containers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: recsys-promtail-config
+        - name: pods
+          hostPath:
+            path: /var/log/pods
+        - name: containers
+          hostPath:
+            path: /var/log/containers
+        - name: docker-containers
+          hostPath:
+            path: /var/lib/docker/containers
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-promtail-config
+  namespace: {{ .Values.namespace.name }}
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+    clients:
+      - url: http://recsys-loki:3100/loki/api/v1/push
+    positions:
+      filename: /tmp/positions.yaml
+    scrape_configs:
+      - job_name: kubernetes-pods
+        static_configs:
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
+              namespace: {{ .Values.targets.apiNamespace }}
+              __path__: /var/log/containers/*_{{ .Values.targets.apiNamespace }}_*.log
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
+              namespace: {{ .Values.targets.dataNamespace }}
+              __path__: /var/log/containers/*_{{ .Values.targets.dataNamespace }}_*.log
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
+              namespace: {{ .Values.targets.kserveNamespace }}
+              __path__: /var/log/containers/*_{{ .Values.targets.kserveNamespace }}_*.log
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
+              namespace: {{ .Values.targets.mlflowNamespace }}
+              __path__: /var/log/containers/*_{{ .Values.targets.mlflowNamespace }}_*.log
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
+              namespace: {{ .Values.targets.kubeflowNamespace }}
+              __path__: /var/log/containers/*_{{ .Values.targets.kubeflowNamespace }}_*.log
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
+              namespace: {{ .Values.namespace.name }}
+              __path__: /var/log/containers/*_{{ .Values.namespace.name }}_*.log
+        pipeline_stages:
+          - cri: {}
+          - regex:
+              source: filename
+              expression: /var/log/containers/(?P<pod>[^_]+)_(?P<namespace>[^_]+)_(?P<container>.+)-(?P<container_id>[a-f0-9]{64})\.log
+          - labels:
+              namespace:
+              pod:
+              container:

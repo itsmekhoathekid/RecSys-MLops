@@ -9,6 +9,7 @@ from serving import (
     get_online_features,
     recommend,
 )
+from observability import METRICS, metrics_text
 
 
 def test_build_triton_payload_maps_feature_rows_to_tensors():
@@ -32,6 +33,38 @@ def test_build_triton_payload_maps_feature_rows_to_tensors():
     assert payload["candidate_item_id"].tolist() == [10, 11]
     assert payload["candidate_category"].tolist() == [2, 5]
     assert payload["candidate_brand"].dtype == np.int64
+
+
+def test_build_triton_payload_maps_raw_online_ids_to_embedding_space(monkeypatch):
+    monkeypatch.setenv("MODEL_ITEM_NUM", "100")
+    monkeypatch.setenv("MODEL_CATEGORY_NUM", "30")
+    monkeypatch.setenv("MODEL_BRAND_NUM", "740")
+    monkeypatch.setenv("MODEL_PRICE_BUCKET_NUM", "10")
+    monkeypatch.setenv("MODEL_EVENT_TYPE_NUM", "3")
+
+    payload = build_triton_payload(
+        sequence_row={
+            "hist_item_ids": [800046],
+            "hist_event_type_ids": [3],
+            "hist_category_ids": [9001],
+            "hist_brand_ids": [8004],
+            "hist_price_bucket_ids": [16],
+        },
+        item_rows={
+            800038: {"category_id": 9003, "brand_id": 8003, "price_bucket": 18},
+        },
+        candidate_item_ids=[800038],
+    )
+
+    assert payload["hist_item_id"].tolist() == [46]
+    assert payload["hist_event_type"].tolist() == [0]
+    assert payload["hist_category"].tolist() == [1]
+    assert payload["hist_brand"].tolist() == [604]
+    assert payload["hist_price_bucket"].tolist() == [6]
+    assert payload["candidate_item_id"].tolist() == [38]
+    assert payload["candidate_category"].tolist() == [3]
+    assert payload["candidate_brand"].tolist() == [603]
+    assert payload["candidate_price_bucket"].tolist() == [8]
 
 
 def test_format_top_k_sorts_scores_descending():
@@ -124,3 +157,15 @@ def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkey
     assert client.user_sequence(1) == {}
     assert client.item_features(1) == {}
     assert client.candidates(1, 3) == [1, 2, 3]
+
+
+def test_observability_metrics_expose_api_redis_and_triton_series():
+    METRICS.inc("recsys_api_requests_total", labels={"route": "/recommendations", "method": "POST", "status": "200"})
+    METRICS.inc("recsys_api_redis_errors_total", labels={"operation": "user_sequence"})
+    METRICS.inc("recsys_api_triton_errors_total", labels={"model_name": "bst_ensemble"})
+    text = metrics_text()
+
+    assert "recsys_api_requests_total" in text
+    assert 'route="/recommendations"' in text
+    assert "recsys_api_redis_errors_total" in text
+    assert "recsys_api_triton_errors_total" in text

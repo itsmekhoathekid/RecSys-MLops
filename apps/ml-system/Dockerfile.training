@@ -9,7 +9,7 @@ ENV PYTHONPATH=/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src
 
 RUN uv pip install --no-cache \
     boto3 \
-    feast \
+    "feast[redis]" \
     kfp \
     kfp-kubernetes \
     kubernetes \

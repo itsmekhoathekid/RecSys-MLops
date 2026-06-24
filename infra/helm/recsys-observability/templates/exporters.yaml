@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      containers:
+        - name: redis-exporter
+          image: {{ .Values.images.redisExporter }}
+          env:
+            - name: REDIS_ADDR
+              value: redis://redis.{{ .Values.targets.dataNamespace }}.svc.cluster.local:6379
+          ports:
+            - name: metrics
+              containerPort: 9121
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    app: redis-exporter
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: warehouse-postgres-exporter
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: warehouse-postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: warehouse-postgres-exporter
+    spec:
+      containers:
+        - name: postgres-exporter
+          image: {{ .Values.images.postgresExporter }}
+          env:
+            - name: DATA_SOURCE_NAME
+              value: postgresql://recsys:recsys@warehouse-postgres.{{ .Values.targets.dataNamespace }}.svc.cluster.local:5432/recsys_warehouse?sslmode=disable
+          ports:
+            - name: metrics
+              containerPort: 9187
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: warehouse-postgres-exporter
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    app: warehouse-postgres-exporter
+  ports:
+    - name: metrics
+      port: 9187
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: source-postgres-exporter
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: source-postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: source-postgres-exporter
+    spec:
+      containers:
+        - name: postgres-exporter
+          image: {{ .Values.images.postgresExporter }}
+          env:
+            - name: DATA_SOURCE_NAME
+              value: postgresql://recsys:recsys@source-postgres.{{ .Values.targets.dataNamespace }}.svc.cluster.local:5432/recsys?sslmode=disable
+          ports:
+            - name: metrics
+              containerPort: 9187
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: source-postgres-exporter
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    app: source-postgres-exporter
+  ports:
+    - name: metrics
+      port: 9187
+      targetPort: metrics

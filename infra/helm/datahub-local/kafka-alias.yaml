@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: datahub
+spec:
+  type: ExternalName
+  externalName: kafka.recsys-dataflow.svc.cluster.local
+  ports:
+    - name: broker
+      port: 29092
+      targetPort: 29092

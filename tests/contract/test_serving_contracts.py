@@ -61,6 +61,9 @@ def test_serving_chart_renders_expected_namespaces():
     api_config = by_kind_name[("ConfigMap", "recsys-api-serving")]
     assert api_config["data"]["FORCE_NOT_READY"] == "0"
     assert api_config["data"]["ALLOW_FEATURE_FALLBACK"] == "0"
+    assert api_config["data"]["RECSYS_JSON_LOGS"] == "1"
+    assert api_config["data"]["OTEL_SERVICE_NAME"] == "recsys-api-serving"
+    assert ("ServiceMonitor", "recsys-api-serving") in by_kind_name
     api_http_scaledobject = by_kind_name[("HTTPScaledObject", "recsys-api-serving-http")]
     assert api_http_scaledobject["metadata"]["namespace"] == "api-serving"
     assert api_http_scaledobject["spec"]["hosts"] == ["recsys-api-serving.local"]

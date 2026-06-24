@@ -1,0 +1,51 @@
+{{- if .Values.realtimeFlinkConsumer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.realtimeFlinkConsumer.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: {{ .Values.realtimeFlinkConsumer.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.realtimeFlinkConsumer.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.realtimeFlinkConsumer.name }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: realtime-flink-consumer
+          image: {{ .Values.images.flink }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              if [ ! -x /opt/flink/opt/python/pyflink/bin/pyflink-udf-runner.sh ]; then
+                python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python
+                chmod +x /opt/flink/opt/python/pyflink/bin/*.sh
+              fi
+              if [ ! -d /opt/flink/opt/python/py4j ]; then
+                python3 -m zipfile -e /opt/flink/opt/python/py4j-0.10.9.7-src.zip /opt/flink/opt/python
+              fi
+              PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
+              flink run -m flink-jobmanager:8081 \
+                -py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py \
+                -- \
+                --runner pyflink \
+                --topic "$REALTIME_STREAM_TOPIC" \
+                --group-id "$REALTIME_STREAM_GROUP_ID" \
+                --continuous \
+                --min-events "$REALTIME_STREAM_MIN_EVENTS" \
+                --max-poll-records "$REALTIME_STREAM_MAX_POLL_RECORDS" \
+                --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
+                --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
+                --progress-log-seconds "$STREAM_PROGRESS_LOG_SECONDS" \
+                --warehouse-enabled
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+{{- end }}

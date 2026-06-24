@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, Field
+
+from observability import METRICS, observe_redis, observe_triton, span
 
 
 HISTORY_FIELDS = {
@@ -16,6 +19,15 @@ HISTORY_FIELDS = {
     "hist_brand": "hist_brand_ids",
     "hist_price_bucket": "hist_price_bucket_ids",
     "hist_time": "hist_time_ids",
+}
+
+CARDINALITY_ENV = {
+    "item": ("MODEL_ITEM_NUM", 22700),
+    "category": ("MODEL_CATEGORY_NUM", 30),
+    "brand": ("MODEL_BRAND_NUM", 740),
+    "price_bucket": ("MODEL_PRICE_BUCKET_NUM", 10),
+    "event_type": ("MODEL_EVENT_TYPE_NUM", 3),
+    "time": ("MODEL_TIME_BUCKET_NUM", 9),
 }
 
 
@@ -71,20 +83,36 @@ def as_int_list(value: Any) -> list[int]:
     return [int(item) for item in value if item is not None]
 
 
+def embedding_index(value: Any, kind: str) -> int:
+    env_name, default = CARDINALITY_ENV[kind]
+    cardinality = max(1, int(os.getenv(env_name, str(default))))
+    return max(0, int(value or 0)) % cardinality
+
+
 def normalize_sequence_features(row: dict[str, Any]) -> dict[str, list[int]]:
-    normalized = {}
-    for triton_name, feature_name in HISTORY_FIELDS.items():
-        normalized[triton_name] = [max(0, value) for value in as_int_list(row.get(feature_name))]
-    return normalized
+    return {
+        "hist_item_id": [embedding_index(value, "item") for value in as_int_list(row.get("hist_item_ids"))],
+        "hist_event_type": [
+            embedding_index(value, "event_type") for value in as_int_list(row.get("hist_event_type_ids"))
+        ],
+        "hist_category": [
+            embedding_index(value, "category") for value in as_int_list(row.get("hist_category_ids"))
+        ],
+        "hist_brand": [embedding_index(value, "brand") for value in as_int_list(row.get("hist_brand_ids"))],
+        "hist_price_bucket": [
+            embedding_index(value, "price_bucket") for value in as_int_list(row.get("hist_price_bucket_ids"))
+        ],
+        "hist_time": [embedding_index(value, "time") for value in as_int_list(row.get("hist_time_ids"))],
+    }
 
 
 def normalize_item_features(item_id: int, row: dict[str, Any] | None) -> ItemFeatures:
     row = row or {}
     return ItemFeatures(
-        item_id=int(item_id),
-        category=max(0, int(row.get("category_id", 0) or 0)),
-        brand=max(0, int(row.get("brand_id", 0) or 0)),
-        price_bucket=max(0, int(row.get("price_bucket", 0) or 0)),
+        item_id=embedding_index(item_id, "item"),
+        category=embedding_index(row.get("category_id", 0), "category"),
+        brand=embedding_index(row.get("brand_id", 0), "brand"),
+        price_bucket=embedding_index(row.get("price_bucket", 0), "price_bucket"),
     )
 
 
@@ -143,29 +171,47 @@ class FeatureClient:
         )
 
     def user_sequence(self, user_id: int) -> dict[str, Any]:
+        start = time.perf_counter()
         try:
-            return parse_json_bytes(self.client.get(f"fs:user_sequence:{user_id}"))
+            with span("redis.user_sequence", operation="user_sequence"):
+                payload = parse_json_bytes(self.client.get(f"fs:user_sequence:{user_id}"))
+            observe_redis("user_sequence", time.perf_counter() - start)
+            if not payload:
+                METRICS.inc("recsys_api_empty_feature_total", labels={"feature": "user_sequence"})
+            return payload
         except Exception as exc:
+            observe_redis("user_sequence", time.perf_counter() - start, error=True)
             if self.allow_fallback:
                 return {}
             raise RuntimeError(f"failed to fetch user sequence from Redis for user_id={user_id}") from exc
 
     def item_features(self, item_id: int) -> dict[str, Any]:
+        start = time.perf_counter()
         try:
-            return parse_json_bytes(self.client.get(f"fs:item:{item_id}"))
+            with span("redis.item_features", operation="item_features"):
+                payload = parse_json_bytes(self.client.get(f"fs:item:{item_id}"))
+            observe_redis("item_features", time.perf_counter() - start)
+            if not payload:
+                METRICS.inc("recsys_api_empty_feature_total", labels={"feature": "item_features"})
+            return payload
         except Exception as exc:
+            observe_redis("item_features", time.perf_counter() - start, error=True)
             if self.allow_fallback:
                 return {}
             raise RuntimeError(f"failed to fetch item features from Redis for item_id={item_id}") from exc
 
     def candidates(self, user_id: int, limit: int) -> list[int]:
+        start = time.perf_counter()
         try:
-            raw = self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
+            with span("redis.candidates", operation="candidates", limit=limit):
+                raw = self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
             candidates = [int(item.decode("utf-8") if isinstance(item, bytes) else item) for item in raw]
+            observe_redis("candidates", time.perf_counter() - start)
             if candidates or self.allow_fallback:
                 return candidates
             raise RuntimeError("candidate:popular:global returned no candidates")
         except Exception as exc:
+            observe_redis("candidates", time.perf_counter() - start, error=True)
             if self.allow_fallback:
                 return list(range(1, limit + 1))
             raise RuntimeError("failed to fetch candidate item IDs from Redis") from exc
@@ -180,6 +226,7 @@ class TritonRanker:
         self.model_name = os.getenv("TRITON_MODEL_NAME", "bst_ensemble")
 
     def score(self, payload: dict[str, np.ndarray]) -> tuple[list[int], list[float]]:
+        start = time.perf_counter()
         inputs = []
         for name, values in payload.items():
             infer_input = self.grpcclient.InferInput(name, values.shape, "INT64")
@@ -189,10 +236,16 @@ class TritonRanker:
             self.grpcclient.InferRequestedOutput("candidate_item_id_out"),
             self.grpcclient.InferRequestedOutput("score"),
         ]
-        result = self.client.infer(model_name=self.model_name, inputs=inputs, outputs=outputs)
-        item_ids = result.as_numpy("candidate_item_id_out").astype(np.int64).reshape(-1).tolist()
-        scores = result.as_numpy("score").astype(np.float32).reshape(-1).tolist()
-        return item_ids, scores
+        try:
+            with span("triton.infer", model_name=self.model_name, input_count=len(inputs)):
+                result = self.client.infer(model_name=self.model_name, inputs=inputs, outputs=outputs)
+            item_ids = result.as_numpy("candidate_item_id_out").astype(np.int64).reshape(-1).tolist()
+            scores = result.as_numpy("score").astype(np.float32).reshape(-1).tolist()
+            observe_triton(self.model_name, time.perf_counter() - start)
+            return item_ids, scores
+        except Exception:
+            observe_triton(self.model_name, time.perf_counter() - start, error=True)
+            raise
 
 
 def recommend(
@@ -201,26 +254,33 @@ def recommend(
     ranker: TritonRanker,
     model_version: str,
 ) -> RecommendationResponse:
-    online_features = get_online_features(
-        user_id=request.user_id,
-        candidate_item_ids=request.candidate_item_ids,
-        top_k=request.top_k,
-        feature_client=feature_client,
-    )
+    with span("recommend.get_online_features", top_k=request.top_k):
+        online_features = get_online_features(
+            user_id=request.user_id,
+            candidate_item_ids=request.candidate_item_ids,
+            top_k=request.top_k,
+            feature_client=feature_client,
+        )
     candidate_item_ids = online_features.candidate_item_ids
+    METRICS.set_gauge("recsys_api_candidate_count", len(candidate_item_ids))
     if not candidate_item_ids:
+        METRICS.inc("recsys_api_empty_recommendations_total")
         return RecommendationResponse(user_id=request.user_id, model_version=model_version, items=[])
     sequence_row = online_features.user_sequence
     item_rows = {int(item_id): row for item_id, row in online_features.item_features.items()}
-    payload = build_triton_payload(sequence_row, item_rows, candidate_item_ids)
-    scored_item_ids, scores = ranker.score(payload)
-    return format_top_k(
-        user_id=request.user_id,
-        model_version=model_version,
-        candidate_item_ids=scored_item_ids,
-        scores=scores,
-        top_k=request.top_k,
-    )
+    with span("recommend.build_triton_payload", candidate_count=len(candidate_item_ids)):
+        payload = build_triton_payload(sequence_row, item_rows, candidate_item_ids)
+    _, scores = ranker.score(payload)
+    with span("recommend.format_top_k", top_k=request.top_k):
+        response = format_top_k(
+            user_id=request.user_id,
+            model_version=model_version,
+            candidate_item_ids=candidate_item_ids,
+            scores=scores,
+            top_k=request.top_k,
+        )
+    METRICS.set_gauge("recsys_api_recommendation_items_count", len(response.items))
+    return response
 
 
 def get_online_features(

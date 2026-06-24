@@ -10,7 +10,7 @@ model_args:
   layer_norm_eps: 1e-12
   padding_idx: -1
   reload_model: False
-  save_path: "./notebooks/data"
+  save_path: "./data_platform/output/ml/checkpoints"
 
   item_num: 22700
   category_num: 30
@@ -22,14 +22,14 @@ model_args:
 
 
 data_args:
-  data_path: "./notebooks/data/2019-Oct-bst-ranking-1m.json"
+  data_path: "./data_platform/output/ml/bst_split/train.jsonl"
   num_workers: 4
   shuffle: True
   max_history_len: 5
 
-  train_data_path: "./notebooks/data/bst_split/train.jsonl"
-  val_data_path: "./notebooks/data/bst_split/val.jsonl"
-  test_data_path: "./notebooks/data/bst_split/test.jsonl"
+  train_data_path: "./data_platform/output/ml/bst_split/train.jsonl"
+  val_data_path: "./data_platform/output/ml/bst_split/val.jsonl"
+  test_data_path: "./data_platform/output/ml/bst_split/test.jsonl"
 
   padding_idx: -1
 
@@ -40,7 +40,6 @@ training_args:
   weight_decay: 0.00001
   batch_size: 16
   num_workers: 4
-
 
 
 

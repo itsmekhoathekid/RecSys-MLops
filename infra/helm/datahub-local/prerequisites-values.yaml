@@ -1,0 +1,60 @@
+opensearch:
+  enabled: true
+  singleNode: true
+  opensearchJavaOpts: "-Xms512m -Xmx512m"
+  persistence:
+    enabled: true
+    size: 2Gi
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "768Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1536Mi"
+  config:
+    opensearch.yml: |
+      plugins:
+        security:
+          disabled: true
+      discovery.type: single-node
+
+elasticsearch:
+  enabled: false
+
+neo4j:
+  enabled: false
+
+mysql:
+  enabled: true
+  auth:
+    existingSecret: mysql-secrets
+  primary:
+    persistence:
+      enabled: true
+      size: 2Gi
+    livenessProbe:
+      timeoutSeconds: 10
+      failureThreshold: 6
+    readinessProbe:
+      timeoutSeconds: 10
+      failureThreshold: 6
+    startupProbe:
+      timeoutSeconds: 10
+      failureThreshold: 20
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "384Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+
+postgresql:
+  enabled: false
+
+kafka:
+  enabled: false
+
+cp-helm-charts:
+  enabled: false

@@ -12,3 +12,13 @@ data:
   MODEL_VERSION: {{ .Values.api.config.modelVersion | quote }}
   FORCE_NOT_READY: {{ .Values.api.config.forceNotReady | quote }}
   ALLOW_FEATURE_FALLBACK: {{ .Values.api.config.allowFeatureFallback | quote }}
+  MODEL_ITEM_NUM: {{ .Values.api.config.modelItemNum | quote }}
+  MODEL_CATEGORY_NUM: {{ .Values.api.config.modelCategoryNum | quote }}
+  MODEL_BRAND_NUM: {{ .Values.api.config.modelBrandNum | quote }}
+  MODEL_PRICE_BUCKET_NUM: {{ .Values.api.config.modelPriceBucketNum | quote }}
+  MODEL_EVENT_TYPE_NUM: {{ .Values.api.config.modelEventTypeNum | quote }}
+  MODEL_TIME_BUCKET_NUM: {{ .Values.api.config.modelTimeBucketNum | quote }}
+  RECSYS_JSON_LOGS: {{ .Values.api.config.jsonLogs | quote }}
+  RECSYS_OTEL_ENABLED: {{ .Values.api.config.otelEnabled | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.api.config.otelServiceName | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.api.config.otelEndpoint | quote }}

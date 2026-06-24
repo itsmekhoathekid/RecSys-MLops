@@ -46,3 +46,62 @@ spec:
                 name: recsys-data-platform-config
             - secretRef:
                 name: recsys-data-platform-secret
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-source-schema
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: init-source-schema
+          image: {{ .Values.images.dataflowCli }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              until PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
+                python infra/docker/scripts/init_postgres_schema.py; do
+                sleep 5
+              done
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: register-realtime-cdc-connector
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: register-debezium
+          image: {{ .Values.images.dataflowCli }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["python", "-m", "ingest.register_k8s_connectors"]
+          args: ["--connector", "debezium", "--wait-timeout-seconds", "300"]
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret

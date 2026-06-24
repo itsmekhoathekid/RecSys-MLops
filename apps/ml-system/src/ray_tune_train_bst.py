@@ -87,6 +87,7 @@ def build_trial_config(
     trial_dir: Path,
     split_dir: str,
     num_epochs: int,
+    dataset_metadata_path: str | None = None,
 ) -> str:
     config = json.loads(json.dumps(base_config))
     config["training_args"]["learning_rate"] = float(trial_config["learning_rate"])
@@ -106,6 +107,8 @@ def build_trial_config(
     config["data_args"]["val_data_path"] = str(Path(split_dir) / "val.jsonl")
     config["data_args"]["test_data_path"] = str(Path(split_dir) / "test.jsonl")
     config["data_args"]["padding_idx"] = 0
+    if dataset_metadata_path:
+        config["data_args"]["dataset_metadata_path"] = dataset_metadata_path
     return write_config(config, trial_dir / "bst_trial.yaml")
 
 
@@ -127,6 +130,7 @@ def run_trial(
     split_dir: str,
     training_percent: float,
     num_epochs: int,
+    dataset_metadata_path: str | None = None,
 ) -> dict[str, Any]:
     from ray import tune
 
@@ -139,6 +143,7 @@ def run_trial(
         trial_dir=trial_dir,
         split_dir=split_dir,
         num_epochs=num_epochs,
+        dataset_metadata_path=dataset_metadata_path,
     )
     metrics_path = trial_dir / "training_result.json"
     with patched_env(
@@ -152,6 +157,7 @@ def run_trial(
             training_percent=training_percent,
             num_epochs=num_epochs,
             metrics_path=str(metrics_path),
+            dataset_metadata_path=dataset_metadata_path,
         )
 
     report = {
@@ -160,6 +166,7 @@ def run_trial(
         "artifact_uri": result.get("artifact_uri") or result["checkpoint_path"],
         "config_path": config_path,
         "metrics_path": str(metrics_path),
+        "mlflow_run_id": result.get("mlflow_run_id") or "",
     }
     tune.report(report)
     return report
@@ -185,7 +192,7 @@ def register_best_result(best_payload: dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Tune and train BST with Ray Tune")
     parser.add_argument("--base-config-path", default="/opt/recsys/configs/local/bst.yaml")
-    parser.add_argument("--split-dir", default="/workspace/recsys/notebooks/data/bst_split")
+    parser.add_argument("--split-dir", default="/workspace/recsys/data_platform/output/ml/bst_split")
     parser.add_argument("--output-dir", default="/workspace/recsys/data_platform/output/ml/ray")
     parser.add_argument("--training-percent", type=float, default=0.01)
     parser.add_argument("--num-epochs", type=int, default=1)
@@ -195,6 +202,7 @@ def main() -> int:
     parser.add_argument("--gpus-per-trial", type=float, default=0.0)
     parser.add_argument("--ray-address", default="auto")
     parser.add_argument("--best-result-path", default="")
+    parser.add_argument("--dataset-metadata-path", default="")
     args = parser.parse_args()
 
     import ray
@@ -218,6 +226,7 @@ def main() -> int:
             split_dir=args.split_dir,
             training_percent=args.training_percent,
             num_epochs=args.num_epochs,
+            dataset_metadata_path=args.dataset_metadata_path or None,
         ),
         resources={"cpu": args.cpus_per_trial, "gpu": args.gpus_per_trial},
     )
@@ -241,6 +250,8 @@ def main() -> int:
         "best_config_path": best.metrics["config_path"],
         "checkpoint_path": best.metrics["checkpoint_path"],
         "artifact_uri": best.metrics["artifact_uri"],
+        "mlflow_run_id": training_result.get("mlflow_run_id") or best.metrics.get("mlflow_run_id"),
+        "dataset_versions": training_result.get("dataset_versions", {}),
         "metrics": training_result.get("metrics", {}),
         "ray_metrics": {
             key: value

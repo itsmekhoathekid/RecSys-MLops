@@ -1,0 +1,29 @@
+namespace:
+  create: true
+  name: observability
+
+images:
+  prometheus: prom/prometheus:v2.55.1
+  grafana: grafana/grafana:11.4.0
+  loki: grafana/loki:3.3.2
+  promtail: grafana/promtail:3.3.2
+  tempo: grafana/tempo:2.6.1
+  pushgateway: prom/pushgateway:v1.10.0
+  redisExporter: oliver006/redis_exporter:v1.67.0
+  postgresExporter: prometheuscommunity/postgres-exporter:v0.16.0
+
+retention:
+  prometheus: 7d
+
+storage:
+  prometheus: 10Gi
+  grafana: 2Gi
+  loki: 10Gi
+  tempo: 5Gi
+
+targets:
+  apiNamespace: api-serving
+  dataNamespace: recsys-dataflow
+  kserveNamespace: kserve-triton-inference
+  mlflowNamespace: experiment-tracking
+  kubeflowNamespace: kubeflow

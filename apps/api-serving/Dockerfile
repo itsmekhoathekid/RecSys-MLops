@@ -9,7 +9,12 @@ WORKDIR /opt/recsys
 RUN pip install --no-cache-dir \
     fastapi \
     numpy \
+    opentelemetry-api \
+    opentelemetry-exporter-otlp \
+    opentelemetry-instrumentation-fastapi \
+    opentelemetry-sdk \
     pydantic \
+    prometheus-client \
     redis \
     tritonclient[grpc] \
     uvicorn

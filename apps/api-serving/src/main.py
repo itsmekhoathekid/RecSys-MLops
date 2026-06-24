@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import time
 
-from fastapi import FastAPI, HTTPException, Path, Query, status
+from fastapi import FastAPI, HTTPException, Path, Query, Request, Response, status
 
+from observability import configure_logging, configure_tracing, log_event, metrics_text, observe_request
 from serving import (
     FeatureClient,
     OnlineFeaturesResponse,
@@ -17,8 +20,45 @@ from serving import (
 
 
 app = FastAPI(title="RecSys API Serving", version="0.1.0")
+configure_logging()
+configure_tracing(app)
 _feature_client: FeatureClient | None = None
 _ranker: TritonRanker | None = None
+
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    route = request.scope.get("path", request.url.path)
+    method = request.method
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    except Exception as exc:
+        log_event(
+            "api request failed",
+            logging.ERROR,
+            component="api",
+            route=route,
+            method=method,
+            status=status_code,
+            error_type=exc.__class__.__name__,
+        )
+        raise
+    finally:
+        duration = time.perf_counter() - start
+        observe_request(route, method, status_code, duration)
+        log_event(
+            "api request completed",
+            component="api",
+            route=route,
+            method=method,
+            status=status_code,
+            duration_ms=round(duration * 1000, 3),
+            model_version=os.getenv("MODEL_VERSION", "latest"),
+        )
 
 
 def feature_client() -> FeatureClient:
@@ -53,6 +93,11 @@ async def version() -> dict[str, str]:
         "service": "recsys-api-serving",
         "model_version": os.getenv("MODEL_VERSION", "latest"),
     }
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(metrics_text(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 @app.get("/online-features/{user_id}", response_model=OnlineFeaturesResponse)
