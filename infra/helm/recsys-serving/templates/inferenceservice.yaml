@@ -16,4 +16,26 @@ spec:
       storageUri: {{ .Values.kserve.inferenceService.storageUri | quote }}
       resources:
 {{ toYaml .Values.kserve.resources | indent 8 }}
+{{- if and .Values.abTest.enabled .Values.kserve.inferenceService.candidateStorageUri }}
+---
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: {{ .Values.kserve.inferenceService.candidateName }}
+  namespace: {{ .Values.kserve.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.kserve.inferenceService.candidateName }}
+    app.kubernetes.io/part-of: {{ .Values.kserve.inferenceService.name }}
+    recsys.ai/ab-variant: candidate
+  annotations:
+    "helm.sh/resource-policy": keep
+    serving.kserve.io/deploymentMode: {{ .Values.kserve.inferenceService.deploymentMode | quote }}
+spec:
+  predictor:
+    serviceAccountName: {{ .Values.kserve.serviceAccount.name }}
+    triton:
+      storageUri: {{ .Values.kserve.inferenceService.candidateStorageUri | quote }}
+      resources:
+{{ toYaml .Values.kserve.resources | indent 8 }}
+{{- end }}
 {{- end }}

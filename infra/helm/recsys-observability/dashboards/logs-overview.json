@@ -1,0 +1,70 @@
+{
+  "uid": "recsys-logs",
+  "title": "Logs Overview",
+  "tags": ["recsys", "logs", "loki"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Error Logs",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [{ "expr": "sum(count_over_time({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking\"} |= \"ERROR\" [5m]))", "legendFormat": "errors" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] } } },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "API Log Volume",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [{ "expr": "sum(count_over_time({namespace=\"api-serving\"}[5m]))", "legendFormat": "lines" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "palette-classic" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Log Volume by Namespace",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [{ "expr": "sum by (namespace) (rate({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking|observability\"}[1m]))", "legendFormat": "{{namespace}}" }],
+      "fieldConfig": { "defaults": { "unit": "logs/s", "custom": { "drawStyle": "bars", "fillOpacity": 35, "stacking": { "mode": "normal", "group": "A" } } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Errors Over Time",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [{ "expr": "sum by (namespace, pod) (rate({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking\"} |= \"ERROR\" [1m]))", "legendFormat": "{{namespace}}/{{pod}}" }],
+      "fieldConfig": { "defaults": { "unit": "logs/s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Recent API Errors",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 9 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [{ "expr": "{namespace=\"api-serving\"} |= \"ERROR\"" }],
+      "options": { "showLabels": true, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "Airflow, Drift, and Retrain Logs",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 13 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [{ "expr": "{namespace=\"recsys-dataflow\"} |~ \"ERROR|drift|trigger_kubeflow_retrain|retrain\"" }],
+      "options": { "showLabels": true, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    }
+  ]
+}

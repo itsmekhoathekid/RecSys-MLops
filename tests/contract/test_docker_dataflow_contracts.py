@@ -266,6 +266,9 @@ def test_dbt_project_defines_staging_sources_and_production_models():
 def test_makefile_exposes_pipeline_operation_targets():
     makefile = (ROOT / "Makefile").read_text()
     for target in [
+        "cluster-up",
+        "cluster-down",
+        "cluster-status",
         "dataflow-e2e",
         "dataflow-ingest-lake",
         "dataflow-realtime-up",
@@ -285,6 +288,55 @@ def test_makefile_exposes_pipeline_operation_targets():
         assert f"{target}:" in makefile
     assert "recsys-kafka-connect:local" in makefile
     assert "DATA_PLATFORM_REALTIME_PRODUCER ?= realtime-event-producer" in makefile
+    assert "cluster-up: mlops-cluster-up" in makefile
+    assert "cluster-down: mlops-cluster-down" in makefile
+    assert "cluster-status: mlops-cluster-status" in makefile
+
+
+def test_cluster_lifecycle_scripts_manage_full_service_stack():
+    up_script = (ROOT / "infra/k8s/scripts/mlops_cluster_up.sh").read_text()
+    down_script = (ROOT / "infra/k8s/scripts/mlops_cluster_down.sh").read_text()
+    readme = (ROOT / "README.md").read_text()
+
+    for expected in [
+        "install_kfp_if_needed",
+        "install_kuberay_if_needed",
+        "install_keda_if_needed",
+        "install_kserve_if_needed",
+        "run_make observability-install",
+        "run_make mlops-install-stack",
+        "run_make data-platform-install",
+        "run_make mlops-install-serving",
+        "run_make gateway-install-controller",
+        "run_make gateway-install",
+        "Verify Required Deployments",
+        "Verify Required Services",
+        "recsys-api-serving",
+        "recsys-grafana",
+        "keda-add-ons-http-interceptor",
+    ]:
+        assert expected in up_script
+
+    for expected in [
+        "uninstall_release recsys-gateway api-serving",
+        "uninstall_release recsys-serving kserve-triton-inference",
+        "uninstall_release recsys-observability observability",
+        "uninstall_release recsys-data-platform recsys-dataflow",
+        "uninstall_release recsys-mlflow experiment-tracking",
+        "delete_namespace",
+        "Verify Services Removed",
+        "minikube -p \"${PROFILE}\" stop",
+    ]:
+        assert expected in down_script
+
+    for expected in [
+        "make cluster-up",
+        "make cluster-down",
+        "RECSYS_CLUSTER_BUILD_IMAGES=1 make cluster-up",
+        "RECSYS_CLUSTER_INSTALL_DATAHUB=1 make cluster-up",
+        "RECSYS_CLUSTER_DELETE_PROFILE=1 make cluster-down",
+    ]:
+        assert expected in readme
 
 
 def test_observability_helm_chart_declares_rubric_stack():
@@ -293,6 +345,8 @@ def test_observability_helm_chart_declares_rubric_stack():
     assert values["namespace"]["name"] == "observability"
     rendered_sources = (chart / "values.yaml").read_text() + "\n".join(
         path.read_text() for path in (chart / "templates").glob("*.yaml")
+    ) + "\n".join(
+        path.read_text() for path in (chart / "dashboards").glob("*.json")
     )
     for expected in [
         "recsys-prometheus",
@@ -310,8 +364,20 @@ def test_observability_helm_chart_declares_rubric_stack():
         "ML Drift & Retrain",
         "recsys_api_requests_total",
         "recsys_ml_feature_drift_psi",
+        "gridPos",
+        "bargauge",
+        "gauge",
+        "traces",
+        "Loki",
+        "Tempo",
+        "Model A/B Testing",
+        "model_predictions_total",
+        "model_prediction_latency_seconds",
+        "model_prediction_confidence",
     ]:
         assert expected in rendered_sources
+    dashboards = sorted((chart / "dashboards").glob("*.json"))
+    assert len(dashboards) >= 8
 
 
 def test_dataflow_operation_scripts_are_executable_and_use_expected_entrypoints():

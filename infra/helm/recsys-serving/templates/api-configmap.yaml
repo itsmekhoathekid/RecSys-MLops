@@ -10,6 +10,13 @@ data:
   REDIS_PORT: {{ .Values.api.config.redisPort | quote }}
   DEFAULT_TOP_K: {{ .Values.api.config.defaultTopK | quote }}
   MODEL_VERSION: {{ .Values.api.config.modelVersion | quote }}
+  AB_TEST_ENABLED: {{ ternary "1" "0" .Values.abTest.enabled | quote }}
+  AB_EXPERIMENT_ID: {{ .Values.abTest.experimentId | quote }}
+  AB_CANDIDATE_WEIGHT_PERCENT: {{ .Values.abTest.candidateWeightPercent | quote }}
+  AB_CONTROL_MODEL_VERSION: {{ .Values.abTest.controlModelVersion | quote }}
+  AB_CANDIDATE_MODEL_VERSION: {{ .Values.abTest.candidateModelVersion | quote }}
+  AB_CONTROL_TRITON_URL: {{ .Values.abTest.controlTritonUrl | quote }}
+  AB_CANDIDATE_TRITON_URL: {{ .Values.abTest.candidateTritonUrl | quote }}
   FORCE_NOT_READY: {{ .Values.api.config.forceNotReady | quote }}
   ALLOW_FEATURE_FALLBACK: {{ .Values.api.config.allowFeatureFallback | quote }}
   MODEL_ITEM_NUM: {{ .Values.api.config.modelItemNum | quote }}

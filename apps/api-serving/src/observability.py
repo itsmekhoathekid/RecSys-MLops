@@ -28,6 +28,7 @@ class MetricsStore:
     counters: dict[str, dict[tuple[tuple[str, str], ...], float]] = field(default_factory=dict)
     gauges: dict[str, dict[tuple[tuple[str, str], ...], float]] = field(default_factory=dict)
     summaries: dict[str, dict[tuple[tuple[str, str], ...], dict[str, float]]] = field(default_factory=dict)
+    histograms: dict[str, dict[tuple[tuple[str, str], ...], dict[str, Any]]] = field(default_factory=dict)
 
     def inc(self, name: str, value: float = 1.0, labels: dict[str, str] | None = None) -> None:
         series = self.counters.setdefault(name, {})
@@ -43,6 +44,25 @@ class MetricsStore:
         bucket["count"] += 1.0
         bucket["sum"] += value
         bucket["max"] = max(bucket["max"], value)
+
+    def observe_histogram(
+        self,
+        name: str,
+        value: float,
+        labels: dict[str, str] | None = None,
+        buckets: tuple[float, ...] = (),
+    ) -> None:
+        series = self.histograms.setdefault(name, {})
+        key = _label_key(labels)
+        bucket = series.setdefault(
+            key,
+            {"buckets": {boundary: 0.0 for boundary in buckets}, "count": 0.0, "sum": 0.0},
+        )
+        bucket["count"] += 1.0
+        bucket["sum"] += value
+        for boundary in buckets:
+            if value <= boundary:
+                bucket["buckets"][boundary] += 1.0
 
     def render(self) -> str:
         lines = [
@@ -65,10 +85,25 @@ class MetricsStore:
                 lines.append(f"{name}_count{rendered} {values['count']}")
                 lines.append(f"{name}_sum{rendered} {values['sum']}")
                 lines.append(f"{name}_max{rendered} {values['max']}")
+        for name in sorted(self.histograms):
+            lines.append(f"# TYPE {name} histogram")
+            for labels, values in sorted(self.histograms[name].items()):
+                for boundary, count in sorted(values["buckets"].items()):
+                    bucket_labels = dict(labels)
+                    bucket_labels["le"] = str(boundary)
+                    lines.append(f"{name}_bucket{_format_labels(_label_key(bucket_labels))} {count}")
+                inf_labels = dict(labels)
+                inf_labels["le"] = "+Inf"
+                lines.append(f"{name}_bucket{_format_labels(_label_key(inf_labels))} {values['count']}")
+                rendered = _format_labels(labels)
+                lines.append(f"{name}_count{rendered} {values['count']}")
+                lines.append(f"{name}_sum{rendered} {values['sum']}")
         return "\n".join(lines) + "\n"
 
 
 METRICS = MetricsStore()
+LATENCY_BUCKETS = (0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 2.5, 5.0)
+CONFIDENCE_BUCKETS = (0.0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 1.0)
 
 
 class JsonFormatter(logging.Formatter):
@@ -174,10 +209,44 @@ def observe_redis(operation: str, duration_seconds: float, error: bool = False) 
         METRICS.inc("recsys_api_redis_errors_total", labels={"operation": operation})
 
 
-def observe_triton(model_name: str, duration_seconds: float, error: bool = False) -> None:
-    METRICS.observe("recsys_api_triton_inference_duration_seconds", duration_seconds, {"model_name": model_name})
+def observe_triton(
+    model_name: str,
+    duration_seconds: float,
+    error: bool = False,
+    labels: dict[str, str] | None = None,
+) -> None:
+    metric_labels = {"model_name": model_name}
+    metric_labels.update(labels or {})
+    METRICS.observe("recsys_api_triton_inference_duration_seconds", duration_seconds, metric_labels)
     if error:
-        METRICS.inc("recsys_api_triton_errors_total", labels={"model_name": model_name})
+        METRICS.inc("recsys_api_triton_errors_total", labels=metric_labels)
+
+
+def observe_model_prediction(
+    model_version: str,
+    duration_seconds: float,
+    confidence: float | None,
+    status: str,
+    labels: dict[str, str] | None = None,
+) -> None:
+    metric_labels = {"model_version": model_version, "status": status}
+    metric_labels.update(labels or {})
+    METRICS.inc("model_predictions_total", labels=metric_labels)
+    histogram_labels = {"model_version": model_version}
+    histogram_labels.update(labels or {})
+    METRICS.observe_histogram(
+        "model_prediction_latency_seconds",
+        duration_seconds,
+        labels=histogram_labels,
+        buckets=LATENCY_BUCKETS,
+    )
+    if confidence is not None:
+        METRICS.observe_histogram(
+            "model_prediction_confidence",
+            max(0.0, min(1.0, confidence)),
+            labels=histogram_labels,
+            buckets=CONFIDENCE_BUCKETS,
+        )
 
 
 def metrics_text() -> str:

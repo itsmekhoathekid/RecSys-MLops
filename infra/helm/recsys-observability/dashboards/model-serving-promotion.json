@@ -1,0 +1,97 @@
+{
+  "uid": "recsys-model-serving",
+  "title": "Model Serving & Promotion",
+  "tags": ["recsys", "model-serving", "triton"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "15s",
+  "graphTooltip": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Serving Build Info",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "recsys_observability_build_info", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } } },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Triton Error Rate",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(recsys_api_triton_errors_total[5m])) or vector(0)", "legendFormat": "errors/s" }],
+      "fieldConfig": { "defaults": { "unit": "ops", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.1 }] } } },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Triton Avg Latency",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(recsys_api_triton_inference_duration_seconds_sum[5m])) / clamp_min(sum(rate(recsys_api_triton_inference_duration_seconds_count[5m])), 0.001)", "legendFormat": "avg" }],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "min": 0, "max": 1, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.2 }, { "color": "red", "value": 0.5 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Recommendation Items",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "avg(recsys_api_recommendation_items_count) or vector(0)", "legendFormat": "items" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1, "color": { "mode": "palette-classic" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Triton Latency by Model",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum(rate(recsys_api_triton_inference_duration_seconds_sum[5m])) by (model_name) / clamp_min(sum(rate(recsys_api_triton_inference_duration_seconds_count[5m])) by (model_name), 0.001)", "legendFormat": "{{model_name}}" }],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Redis Feature Lookup Latency",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum(rate(recsys_api_redis_operation_duration_seconds_sum[5m])) by (operation) / clamp_min(sum(rate(recsys_api_redis_operation_duration_seconds_count[5m])) by (operation), 0.001)", "legendFormat": "{{operation}}" }],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Feature Fallback / Empty Feature Count",
+      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 7 },
+      "targets": [{ "expr": "sum(recsys_api_empty_feature_total) by (feature) or vector(0)", "legendFormat": "{{feature}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Candidate and Recommendation Counts",
+      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 7 },
+      "targets": [
+        { "expr": "recsys_api_candidate_count", "legendFormat": "candidates" },
+        { "expr": "recsys_api_recommendation_items_count", "legendFormat": "recommendations" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 } } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "Promotion / Serving Logs",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 7 },
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [{ "expr": "{namespace=~\"api-serving|experiment-tracking|kubeflow\"} |~ \"model_version|promotion|triton|ERROR\"" }],
+      "options": { "showLabels": true, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    }
+  ]
+}

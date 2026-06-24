@@ -4,6 +4,7 @@ import numpy as np
 
 from serving import (
     RecommendationRequest,
+    TritonABRouter,
     build_triton_payload,
     format_top_k,
     get_online_features,
@@ -104,6 +105,93 @@ def test_recommend_uses_fallback_candidates_and_ranker_scores():
 
     assert response.model_version == "trial-001"
     assert [item.item_id for item in response.items] == [11]
+
+
+def test_ab_assignment_is_deterministic_and_respects_weight():
+    class Ranker:
+        def score(self, payload):
+            return [], []
+
+    router = TritonABRouter(
+        control_ranker=Ranker(),
+        control_model_version="stable",
+        candidate_ranker=Ranker(),
+        candidate_model_version="candidate",
+        enabled=True,
+        candidate_weight_percent=10,
+        experiment_id="exp-1",
+    )
+
+    assert router.assign(42) == router.assign(42)
+    assignments = [router.assign(user_id) for user_id in range(1, 1001)]
+    candidate_ratio = assignments.count("candidate") / len(assignments)
+    assert 0.07 <= candidate_ratio <= 0.13
+
+
+def test_ab_disabled_uses_control_route():
+    class Ranker:
+        def score(self, payload):
+            return [], []
+
+    router = TritonABRouter(
+        control_ranker=Ranker(),
+        control_model_version="stable",
+        candidate_ranker=Ranker(),
+        candidate_model_version="candidate",
+        enabled=False,
+        candidate_weight_percent=100,
+        experiment_id="exp-1",
+    )
+
+    route = router.route(1)
+
+    assert route.ab_variant is None
+    assert route.model_version == "stable"
+
+
+def test_recommend_ab_router_returns_variant_metadata_and_metrics():
+    class Features:
+        def candidates(self, user_id, limit):
+            return [10, 11]
+
+        def user_sequence(self, user_id):
+            return {"hist_item_ids": [1], "hist_event_type_ids": [1]}
+
+        def item_features(self, item_id):
+            return {"category_id": item_id, "brand_id": 1, "price_bucket": 2}
+
+    class Ranker:
+        def score(self, payload):
+            return payload["candidate_item_id"].tolist(), [0.1, 0.8]
+
+    router = TritonABRouter(
+        control_ranker=Ranker(),
+        control_model_version="stable",
+        candidate_ranker=Ranker(),
+        candidate_model_version="candidate",
+        enabled=True,
+        candidate_weight_percent=100,
+        experiment_id="exp-1",
+    )
+
+    response = recommend(
+        request=RecommendationRequest(user_id=1, top_k=1),
+        feature_client=Features(),
+        ranker=router,
+        model_version="stable",
+    )
+    text = metrics_text()
+
+    assert response.model_version == "candidate"
+    assert response.ab_variant == "candidate"
+    assert response.ab_experiment_id == "exp-1"
+    assert 'ab_variant="candidate"' in text
+    assert 'model_version="candidate"' in text
+    assert 'experiment_id="exp-1"' in text
+    assert "recsys_api_score_mean" in text
+    assert "model_predictions_total" in text
+    assert "model_prediction_latency_seconds_bucket" in text
+    assert "model_prediction_confidence_bucket" in text
 
 
 def test_get_online_features_reads_candidates_sequence_and_items():

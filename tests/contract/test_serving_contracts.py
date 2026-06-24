@@ -126,6 +126,50 @@ def test_serving_chart_can_render_api_only_for_rollout_demo():
     assert ("ClusterServingRuntime", "kserve-tritonserver") not in by_kind_name
 
 
+def test_serving_chart_renders_candidate_for_ab_testing():
+    if shutil.which("helm") is None:
+        pytest.skip("helm is not installed")
+    rendered = subprocess.check_output(
+        [
+            "helm",
+            "template",
+            "recsys-serving",
+            "infra/helm/recsys-serving",
+            "--namespace",
+            "kserve-triton-inference",
+            "--set",
+            "abTest.enabled=true",
+            "--set",
+            "abTest.experimentId=exp-1",
+            "--set",
+            "abTest.candidateWeightPercent=10",
+            "--set",
+            "abTest.controlModelVersion=stable-001",
+            "--set",
+            "abTest.candidateModelVersion=candidate-001",
+            "--set",
+            "kserve.inferenceService.candidateStorageUri=s3://recsys-model-store/triton/bst/candidate-001",
+        ],
+        text=True,
+    )
+    docs = _documents(rendered)
+    by_kind_name = {(doc["kind"], doc["metadata"]["name"]): doc for doc in docs}
+
+    candidate = by_kind_name[("InferenceService", "recsys-bst-triton-candidate")]
+    assert candidate["spec"]["predictor"]["triton"]["storageUri"] == (
+        "s3://recsys-model-store/triton/bst/candidate-001"
+    )
+    candidate_grpc = by_kind_name[("Service", "recsys-bst-triton-candidate-grpc")]
+    assert candidate_grpc["spec"]["selector"] == {"app": "isvc.recsys-bst-triton-candidate-predictor"}
+    candidate_scaledobject = by_kind_name[("ScaledObject", "recsys-bst-triton-candidate-resource")]
+    assert candidate_scaledobject["spec"]["scaleTargetRef"]["name"] == "recsys-bst-triton-candidate-predictor"
+    api_config = by_kind_name[("ConfigMap", "recsys-api-serving")]
+    assert api_config["data"]["AB_TEST_ENABLED"] == "1"
+    assert api_config["data"]["AB_CANDIDATE_WEIGHT_PERCENT"] == "10"
+    assert api_config["data"]["AB_CONTROL_MODEL_VERSION"] == "stable-001"
+    assert api_config["data"]["AB_CANDIDATE_MODEL_VERSION"] == "candidate-001"
+
+
 def test_model_cd_validates_local_manifest_and_writes_values(tmp_path, monkeypatch):
     model_repo = tmp_path / "model-repo"
     for relative in REQUIRED_MODEL_FILES:
@@ -161,6 +205,169 @@ def test_model_cd_validates_local_manifest_and_writes_values(tmp_path, monkeypat
     assert values["kserve"]["namespace"]["name"] == "kserve-triton-inference"
     assert values["api"]["namespace"]["name"] == "api-serving"
     assert values["api"]["config"]["modelVersion"] == "trial-001"
+    assert values["abTest"]["enabled"] is False
+
+
+def test_model_cd_writes_ab_start_values(tmp_path, monkeypatch):
+    control_repo = tmp_path / "control-repo"
+    candidate_repo = tmp_path / "candidate-repo"
+    for root in [control_repo, candidate_repo]:
+        for relative in REQUIRED_MODEL_FILES:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"test")
+    control_manifest = tmp_path / "control.json"
+    candidate_manifest = tmp_path / "candidate.json"
+    control_manifest.write_text(
+        json.dumps(
+            {
+                "model_name": "bst",
+                "model_version": "stable-001",
+                "triton_storage_uri": str(control_repo),
+                "serving_storage_uri": str(control_repo),
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate_manifest.write_text(
+        json.dumps(
+            {
+                "model_name": "bst",
+                "model_version": "candidate-001",
+                "triton_storage_uri": str(candidate_repo),
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "model_cd.py",
+            "--stage",
+            "ab-start",
+            "--control-manifest-uri",
+            str(control_manifest),
+            "--candidate-manifest-uri",
+            str(candidate_manifest),
+            "--candidate-weight-percent",
+            "10",
+            "--experiment-id",
+            "exp-1",
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert model_cd_main() == 0
+    values = json.loads((output_dir / "recsys-serving-values.json").read_text(encoding="utf-8"))
+
+    assert values["kserve"]["inferenceService"]["storageUri"] == str(control_repo)
+    assert values["kserve"]["inferenceService"]["candidateStorageUri"] == str(candidate_repo)
+    assert values["abTest"]["enabled"] is True
+    assert values["abTest"]["candidateWeightPercent"] == 10
+    assert values["abTest"]["experimentId"] == "exp-1"
+    assert values["abTest"]["controlModelVersion"] == "stable-001"
+    assert values["abTest"]["candidateModelVersion"] == "candidate-001"
+
+
+def test_model_cd_rollback_disables_ab_values(tmp_path, monkeypatch):
+    model_repo = tmp_path / "model-repo"
+    for relative in REQUIRED_MODEL_FILES:
+        path = model_repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"test")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "model_name": "bst",
+                "model_version": "stable-001",
+                "triton_storage_uri": str(model_repo),
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "model_cd.py",
+            "--stage",
+            "rollback",
+            "--manifest-uri",
+            str(manifest),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert model_cd_main() == 0
+    values = json.loads((output_dir / "recsys-serving-values.json").read_text(encoding="utf-8"))
+
+    assert values["abTest"]["enabled"] is False
+    assert values["abTest"]["candidateWeightPercent"] == 0
+
+
+def test_model_cd_promote_dry_run_renders_candidate_as_stable(tmp_path, monkeypatch):
+    control_repo = tmp_path / "control-repo"
+    candidate_repo = tmp_path / "candidate-repo"
+    for root in [control_repo, candidate_repo]:
+        for relative in REQUIRED_MODEL_FILES:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"test")
+    control_manifest = tmp_path / "control.json"
+    candidate_manifest = tmp_path / "candidate.json"
+    latest_repo = tmp_path / "latest"
+    control_manifest.write_text(
+        json.dumps(
+            {
+                "model_name": "bst",
+                "model_version": "stable-001",
+                "triton_storage_uri": str(control_repo),
+                "serving_storage_uri": str(latest_repo),
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate_manifest.write_text(
+        json.dumps(
+            {
+                "model_name": "bst",
+                "model_version": "candidate-001",
+                "triton_storage_uri": str(candidate_repo),
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "model_cd.py",
+            "--stage",
+            "promote",
+            "--control-manifest-uri",
+            str(control_manifest),
+            "--candidate-manifest-uri",
+            str(candidate_manifest),
+            "--manifest-uri",
+            str(tmp_path / "latest.json"),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert model_cd_main() == 0
+    values = json.loads((output_dir / "recsys-serving-values.json").read_text(encoding="utf-8"))
+
+    assert values["kserve"]["inferenceService"]["storageUri"] == str(latest_repo)
+    assert values["api"]["config"]["modelVersion"] == "candidate-001"
+    assert values["abTest"]["enabled"] is False
 
 
 def test_model_cd_deploy_uses_atomic_helm_upgrade(monkeypatch, tmp_path):

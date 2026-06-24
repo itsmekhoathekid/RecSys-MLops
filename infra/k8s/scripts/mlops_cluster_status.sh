@@ -26,7 +26,7 @@ if kubectl config current-context >/dev/null 2>&1 && kubectl get node "${PROFILE
   kubectl describe node "${PROFILE}" | rg 'Capacity:|Allocatable:|MemoryPressure|memory|cpu' || true
 
   section "Service Pods"
-  for namespace in kubeflow experiment-tracking recsys-dataflow kserve-triton-inference api-serving keda; do
+  for namespace in kubeflow experiment-tracking recsys-dataflow kserve kserve-triton-inference api-serving observability ingress-nginx keda datahub; do
     if kubectl get namespace "${namespace}" >/dev/null 2>&1; then
       echo "--- ${namespace}"
       kubectl get pods -n "${namespace}"

@@ -114,5 +114,5 @@ def test_promote_best_model_writes_manifest_without_upload(tmp_path):
     assert result.manifest["model_version"] == "trial-001"
     assert result.manifest["metric_value"] == 0.42
     assert result.manifest["triton_storage_uri"] == "s3://recsys-model-store/triton/bst/trial-001"
-    assert result.manifest["serving_storage_uri"] == "s3://recsys-model-store/triton/bst/latest"
-    assert result.manifest["promotion_manifest_uri"] == "s3://recsys-model-store/promotions/bst/latest.json"
+    assert result.manifest["serving_storage_uri"] == "s3://recsys-model-store/triton/bst/trial-001"
+    assert result.manifest["promotion_manifest_uri"] == "s3://recsys-model-store/promotions/bst/trial-001.json"

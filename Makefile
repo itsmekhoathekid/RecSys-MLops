@@ -80,6 +80,9 @@ help:
 	@echo "  make datahub-ingest-governance     Ingest DP1/DP2/DP3 lineage, validation, and contract metadata"
 	@echo ""
 	@echo "Kubeflow/MLflow:"
+	@echo "  make cluster-up             Start minikube and install/wait the full RecSys service stack"
+	@echo "  make cluster-down           Uninstall the full RecSys service stack and stop minikube"
+	@echo "  make cluster-status         Show cluster memory and full service status"
 	@echo "  make mlops-local-up           Start local minikube profile"
 	@echo "  make mlops-cluster-up         Start minikube and wait for the full RecSys MLOps service stack"
 	@echo "  make mlops-cluster-down       Stop the full minikube cluster and all services"
@@ -111,6 +114,15 @@ help:
 .PHONY: mlops-local-up
 mlops-local-up:
 	@$(MAKE) mlops-cluster-up
+
+.PHONY: cluster-up
+cluster-up: mlops-cluster-up
+
+.PHONY: cluster-down
+cluster-down: mlops-cluster-down
+
+.PHONY: cluster-status
+cluster-status: mlops-cluster-status
 
 .PHONY: mlops-cluster-up
 mlops-cluster-up:
@@ -337,7 +349,18 @@ mlops-install-stack:
 
 .PHONY: mlops-install-serving
 mlops-install-serving:
-	@helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace
+	@set -euo pipefail; \
+	helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace \
+		--set observability.serviceMonitor.enabled=false \
+		--set autoscaling.kserveResource.enabled=false; \
+	for _ in $$(seq 1 60); do \
+		if kubectl get deploy/recsys-bst-triton-predictor -n kserve-triton-inference >/dev/null 2>&1; then break; fi; \
+		sleep 5; \
+	done; \
+	kubectl get deploy/recsys-bst-triton-predictor -n kserve-triton-inference >/dev/null; \
+	helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace \
+		--set observability.serviceMonitor.enabled=false \
+		--set autoscaling.kserveResource.enabled=true
 
 .PHONY: mlops-compile-kfp
 mlops-compile-kfp:

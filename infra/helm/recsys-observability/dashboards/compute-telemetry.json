@@ -1,0 +1,97 @@
+{
+  "uid": "recsys-compute",
+  "title": "Compute Telemetry",
+  "tags": ["recsys", "kubernetes", "compute"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "15s",
+  "graphTooltip": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "CPU Cores Used",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}[5m]))", "legendFormat": "cores" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 2, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 4 }, { "color": "red", "value": 7 }] } } },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Memory Working Set",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(container_memory_working_set_bytes{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"})", "legendFormat": "memory" }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "decimals": 1, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 8589934592 }, { "color": "red", "value": 12884901888 }] } } },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Pod Restarts",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}[1h])) or vector(0)", "legendFormat": "restarts" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 3 }] } } },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4,
+      "type": "gauge",
+      "title": "Pods Ready",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(kube_pod_status_ready{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\",condition=\"true\"}) / clamp_min(count(kube_pod_status_ready{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\",condition=\"true\"}), 1)", "legendFormat": "ready" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "max": 1, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "green", "value": 0.95 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "CPU by Namespace",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}[5m])) by (namespace)", "legendFormat": "{{namespace}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 2, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal", "group": "A" } } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Memory by Namespace",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum(container_memory_working_set_bytes{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}) by (namespace)", "legendFormat": "{{namespace}}" }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "decimals": 1, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal", "group": "A" } } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Top Pods by CPU",
+      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 7 },
+      "targets": [{ "expr": "topk(10, sum(rate(container_cpu_usage_seconds_total{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}[5m])) by (namespace,pod))", "legendFormat": "{{namespace}}/{{pod}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 2, "color": { "mode": "continuous-GrYlRd" } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Top Pods by Memory",
+      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 7 },
+      "targets": [{ "expr": "topk(10, sum(container_memory_working_set_bytes{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}) by (namespace,pod))", "legendFormat": "{{namespace}}/{{pod}}" }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "decimals": 1, "color": { "mode": "continuous-BlPu" } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Network I/O",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 7 },
+      "targets": [
+        { "expr": "sum(rate(container_network_receive_bytes_total{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}[5m])) by (namespace)", "legendFormat": "rx {{namespace}}" },
+        { "expr": "sum(rate(container_network_transmit_bytes_total{namespace=~\"api-serving|recsys-dataflow|kserve-triton-inference|experiment-tracking|kubeflow\"}[5m])) by (namespace)", "legendFormat": "tx {{namespace}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    }
+  ]
+}

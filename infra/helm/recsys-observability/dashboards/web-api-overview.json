@@ -1,0 +1,150 @@
+{
+  "uid": "recsys-web-api",
+  "title": "Web API Overview",
+  "tags": ["recsys", "api", "golden-signals"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "graphTooltip": 1,
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Live Traffic",
+      "gridPos": { "x": 0, "y": 0, "w": 5, "h": 4 },
+      "targets": [{ "expr": "sum(rate(recsys_api_requests_total[1m]))", "legendFormat": "req/s" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }, { "color": "green", "value": 1 }, { "color": "orange", "value": 5 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Requests",
+      "gridPos": { "x": 5, "y": 0, "w": 5, "h": 4 },
+      "targets": [{ "expr": "sum(recsys_api_requests_total)", "legendFormat": "requests" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "palette-classic" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "5xx Failure Rate",
+      "gridPos": { "x": 10, "y": 0, "w": 5, "h": 4 },
+      "targets": [{ "expr": "sum(rate(recsys_api_failures_total[5m])) / clamp_min(sum(rate(recsys_api_requests_total[5m])), 0.001)", "legendFormat": "5xx" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.05 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4,
+      "type": "gauge",
+      "title": "Avg API Latency",
+      "gridPos": { "x": 15, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sum(rate(recsys_api_request_duration_seconds_sum[5m])) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count[5m])), 0.001)", "legendFormat": "avg" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "min": 0,
+          "max": 1,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.2 }, { "color": "red", "value": 0.5 }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Empty Responses",
+      "gridPos": { "x": 19, "y": 0, "w": 5, "h": 4 },
+      "targets": [{ "expr": "sum(recsys_api_empty_recommendations_total) or vector(0)", "legendFormat": "empty" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Traffic by Route and Status",
+      "gridPos": { "x": 0, "y": 4, "w": 14, "h": 8 },
+      "targets": [{ "expr": "sum(rate(recsys_api_requests_total[1m])) by (route,status)", "legendFormat": "{{route}} {{status}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 35, "stacking": { "mode": "normal", "group": "A" } } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Latency: API vs Redis vs Triton",
+      "gridPos": { "x": 14, "y": 4, "w": 10, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(recsys_api_request_duration_seconds_sum[5m])) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count[5m])), 0.001)", "legendFormat": "api avg" },
+        { "expr": "sum(rate(recsys_api_redis_operation_duration_seconds_sum[5m])) by (operation) / clamp_min(sum(rate(recsys_api_redis_operation_duration_seconds_count[5m])) by (operation), 0.001)", "legendFormat": "redis {{operation}}" },
+        { "expr": "sum(rate(recsys_api_triton_inference_duration_seconds_sum[5m])) by (model_name) / clamp_min(sum(rate(recsys_api_triton_inference_duration_seconds_count[5m])) by (model_name), 0.001)", "legendFormat": "triton {{model_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 12 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Errors by Dependency",
+      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 6 },
+      "targets": [
+        { "expr": "sum(increase(recsys_api_redis_errors_total[30m])) by (operation)", "legendFormat": "redis {{operation}}" },
+        { "expr": "sum(increase(recsys_api_triton_errors_total[30m])) by (model_name)", "legendFormat": "triton {{model_name}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] }
+        }
+      },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Payload Shape",
+      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 6 },
+      "targets": [
+        { "expr": "avg(recsys_api_candidate_count) or vector(0)", "legendFormat": "candidate count" },
+        { "expr": "avg(recsys_api_recommendation_items_count) or vector(0)", "legendFormat": "returned item count" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 } } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Status Code Snapshot",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 6 },
+      "targets": [{ "expr": "sum(increase(recsys_api_requests_total[30m])) by (route,method,status)", "legendFormat": "{{route}} {{status}}", "format": "table", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+      "options": { "showHeader": true, "cellHeight": "sm" }
+    }
+  ]
+}

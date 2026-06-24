@@ -15,4 +15,24 @@ spec:
       port: {{ .Values.kserve.grpcService.port }}
       targetPort: {{ .Values.kserve.grpcService.targetPort }}
       protocol: TCP
+{{- if and .Values.abTest.enabled .Values.kserve.inferenceService.candidateStorageUri }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.kserve.grpcService.candidateName }}
+  namespace: {{ .Values.kserve.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.kserve.inferenceService.candidateName }}
+    app.kubernetes.io/component: grpc-serving
+    recsys.ai/ab-variant: candidate
+spec:
+  selector:
+{{ toYaml .Values.kserve.grpcService.candidateSelector | indent 4 }}
+  ports:
+    - name: grpc
+      port: {{ .Values.kserve.grpcService.port }}
+      targetPort: {{ .Values.kserve.grpcService.targetPort }}
+      protocol: TCP
+{{- end }}
 {{- end }}

@@ -13,7 +13,7 @@ from serving import (
     OnlineFeaturesResponse,
     RecommendationRequest,
     RecommendationResponse,
-    TritonRanker,
+    TritonABRouter,
     get_online_features,
     recommend,
 )
@@ -23,7 +23,7 @@ app = FastAPI(title="RecSys API Serving", version="0.1.0")
 configure_logging()
 configure_tracing(app)
 _feature_client: FeatureClient | None = None
-_ranker: TritonRanker | None = None
+_ranker: TritonABRouter | None = None
 
 
 @app.middleware("http")
@@ -68,10 +68,10 @@ def feature_client() -> FeatureClient:
     return _feature_client
 
 
-def ranker() -> TritonRanker:
+def ranker() -> TritonABRouter:
     global _ranker
     if _ranker is None:
-        _ranker = TritonRanker()
+        _ranker = TritonABRouter.from_env()
     return _ranker
 
 

@@ -1,0 +1,685 @@
+{
+  "uid": "recsys-model-ab-testing",
+  "title": "Model A/B Testing",
+  "description": "BST rollout dashboard for control vs candidate Triton inference. Uses proxy and ops metrics only; no groundtruth labels are required.",
+  "tags": ["recsys", "bst", "ab-test", "triton", "rollout"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "graphTooltip": 1,
+  "editable": true,
+  "style": "dark",
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m"],
+    "time_options": ["15m", "1h", "6h", "12h", "24h"]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "experiment",
+        "label": "Experiment",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "query": "label_values(model_predictions_total, experiment_id)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "sort": 1,
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "rate_window",
+        "label": "Rate Window",
+        "type": "custom",
+        "query": "1m,5m,15m",
+        "current": { "selected": true, "text": "5m", "value": "5m" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 3 },
+      "options": {
+        "mode": "markdown",
+        "content": "<div style=\"font-size:22px;font-weight:700;line-height:1.2\">BST A/B Rollout Control Room</div><div style=\"color:#9CA3AF;margin-top:6px\">Traffic split, latency, errors, empty responses, confidence, score shape, and Triton pod health for control vs candidate.</div>"
+      },
+      "transparent": true
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Prediction Rate",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 3, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window]))",
+          "legendFormat": "rps"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "color": { "mode": "palette-classic" },
+          "mappings": [{ "type": "special", "options": { "match": "null", "result": { "text": "no traffic" } } }]
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Candidate Share",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 4, "y": 3, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])), 0.001)",
+          "legendFormat": "candidate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 0.09 },
+              { "color": "orange", "value": 0.55 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Error Delta",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 8, "y": 3, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\",status=\"error\"}[$rate_window])) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])), 0.001)) - (sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"control\",status=\"error\"}[$rate_window])) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"control\"}[$rate_window])), 0.001))",
+          "legendFormat": "candidate - control"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "red", "value": 0.03 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "P95 Latency Delta",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 12, "y": 3, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) by (le)) - histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\",ab_variant=\"control\"}[$rate_window])) by (le))",
+          "legendFormat": "candidate - control"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.05 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Candidate Empty Rate",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 16, "y": 3, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\",status=\"empty\"}[$rate_window])) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])), 0.001)",
+          "legendFormat": "empty"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Avg Confidence",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 20, "y": 3, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_prediction_confidence_sum{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) / clamp_min(sum(rate(model_prediction_confidence_count{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])), 0.001)",
+          "legendFormat": "candidate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "color": { "mode": "continuous-GrYlRd" }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Traffic And Assignment",
+      "gridPos": { "x": 0, "y": 7, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Prediction Rate by Variant, Version, Status",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 8, "w": 16, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version,status)",
+          "legendFormat": "{{ab_variant}} / {{model_version}} / {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 35,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 10,
+      "type": "piechart",
+      "title": "Current Traffic Split",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant)",
+          "legendFormat": "{{ab_variant}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single", "sort": "none" }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Router Assignment Count",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_api_ab_assignments_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version)",
+          "legendFormat": "{{ab_variant}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 18,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Latency And Errors",
+      "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Model P95 Latency",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version,le))",
+          "legendFormat": "{{ab_variant}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Triton Mean and Max Latency",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_api_triton_inference_duration_seconds_sum{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(recsys_api_triton_inference_duration_seconds_count{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
+          "legendFormat": "mean {{ab_variant}} / {{model_version}}"
+        },
+        {
+          "expr": "max(recsys_api_triton_inference_duration_seconds_max{experiment_id=~\"$experiment\"}) by (ab_variant,model_version)",
+          "legendFormat": "max {{ab_variant}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Error Rate",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\",status=\"error\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
+          "legendFormat": "{{ab_variant}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Empty Recommendation Rate",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\",status=\"empty\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
+          "legendFormat": "{{ab_variant}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "Proxy Quality",
+      "gridPos": { "x": 0, "y": 40, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Confidence Average",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 41, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_prediction_confidence_sum{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(model_prediction_confidence_count{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
+          "legendFormat": "{{ab_variant}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 19,
+      "type": "heatmap",
+      "title": "Candidate Confidence Distribution",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 12, "y": 41, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(model_prediction_confidence_bucket{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) by (le)",
+          "format": "heatmap",
+          "legendFormat": "{{le}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "custom": { "hideFrom": { "tooltip": false, "viz": false, "legend": false } }
+        }
+      },
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "cellValues": {},
+        "color": { "mode": "scheme", "scheme": "Spectral", "steps": 64 },
+        "exemplars": { "color": "rgba(255,0,255,0.7)" },
+        "legend": { "show": true },
+        "rowsFrame": { "layout": "auto" },
+        "tooltip": { "mode": "single", "showColorScale": false },
+        "yAxis": { "axisPlacement": "left", "reverse": false, "unit": "short" }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Score Shape",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 49, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_api_score_mean_sum{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(recsys_api_score_mean_count{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
+          "legendFormat": "mean {{ab_variant}} / {{model_version}}"
+        },
+        {
+          "expr": "max(recsys_api_score_max{experiment_id=~\"$experiment\"}) by (ab_variant,model_version)",
+          "legendFormat": "max {{ab_variant}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 16 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 21,
+      "type": "bargauge",
+      "title": "Candidates And Returned Items",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 12, "y": 49, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "avg(recsys_api_candidate_count{experiment_id=~\"$experiment\"}) by (ab_variant,model_version)",
+          "legendFormat": "candidates {{ab_variant}} / {{model_version}}"
+        },
+        {
+          "expr": "avg(recsys_api_recommendation_items_count{experiment_id=~\"$experiment\"}) by (ab_variant,model_version)",
+          "legendFormat": "items {{ab_variant}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "color": { "mode": "continuous-GrYlRd" }
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "Triton Pods",
+      "gridPos": { "x": 0, "y": 57, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Triton Pod CPU",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 58, "w": 8, "h": 7 },
+      "targets": [
+        {
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"kserve-triton-inference\",pod=~\".*recsys-bst-triton.*\"}[5m])) by (pod)",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Triton Pod Memory",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 8, "y": 58, "w": 8, "h": 7 },
+      "targets": [
+        {
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"kserve-triton-inference\",pod=~\".*recsys-bst-triton.*\"}) by (pod)",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 25,
+      "type": "bargauge",
+      "title": "Triton Restarts",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 16, "y": 58, "w": 8, "h": 7 },
+      "targets": [
+        {
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"kserve-triton-inference\",pod=~\".*recsys-bst-triton.*\"}[1h])) by (pod) or vector(0)",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      }
+    }
+  ]
+}

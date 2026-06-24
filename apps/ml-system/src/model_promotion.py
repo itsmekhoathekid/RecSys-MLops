@@ -518,6 +518,7 @@ def promote_best_model(
     upload: bool = True,
     skip_onnx_export: bool = False,
     manifest_path: str | None = None,
+    promote_latest: bool = False,
 ) -> PromotionResult:
     best_payload = _read_json(ray_result_path)
     config = load_config(best_payload.get("best_config_path") or config_path)
@@ -535,8 +536,9 @@ def promote_best_model(
     storage_prefix = f"{model_prefix}/{version}"
     serving_prefix = f"{model_prefix}/latest"
     triton_uri = s3_uri(model_bucket, storage_prefix)
-    serving_uri = s3_uri(model_bucket, serving_prefix)
-    manifest_uri = s3_uri(model_bucket, promotion_key)
+    serving_uri = s3_uri(model_bucket, serving_prefix) if promote_latest else triton_uri
+    versioned_key = f"promotions/bst/{version}.json"
+    manifest_uri = s3_uri(model_bucket, promotion_key if promote_latest else versioned_key)
     manifest = build_manifest(
         best_payload=best_payload,
         config=config,
@@ -551,11 +553,11 @@ def promote_best_model(
     local_manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     if upload:
         upload_directory_to_s3(repo_path, model_bucket, storage_prefix)
-        if serving_prefix != storage_prefix:
+        if promote_latest and serving_prefix != storage_prefix:
             upload_directory_to_s3(repo_path, model_bucket, serving_prefix)
-        upload_manifest(manifest, model_bucket, promotion_key)
-        versioned_key = f"promotions/bst/{version}.json"
         upload_manifest(manifest, model_bucket, versioned_key)
+        if promote_latest:
+            upload_manifest(manifest, model_bucket, promotion_key)
     postgres_uri = os.getenv("MODEL_REGISTRY_POSTGRES_URI") or os.getenv("POSTGRES_MODEL_REGISTRY_URI")
     if postgres_uri:
         register_model_config(
@@ -589,6 +591,7 @@ def main() -> int:
     parser.add_argument("--metric-name", default=os.getenv("PROMOTION_METRIC_NAME", DEFAULT_OBJECTIVE_METRIC))
     parser.add_argument("--model-version", default=os.getenv("MODEL_VERSION", ""))
     parser.add_argument("--manifest-path", default="")
+    parser.add_argument("--promote-latest", action="store_true")
     parser.add_argument("--no-upload", action="store_true")
     parser.add_argument("--skip-onnx-export", action="store_true")
     args = parser.parse_args()
@@ -604,6 +607,7 @@ def main() -> int:
         upload=not args.no_upload,
         skip_onnx_export=args.skip_onnx_export,
         manifest_path=args.manifest_path or None,
+        promote_latest=args.promote_latest,
     )
     print(json.dumps(result.manifest, indent=2, sort_keys=True))
     return 0

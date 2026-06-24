@@ -1,0 +1,88 @@
+{
+  "uid": "recsys-ml-drift",
+  "title": "ML Drift & Retrain",
+  "tags": ["recsys", "ml", "drift", "retrain"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "30s",
+  "graphTooltip": 1,
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Latest Drift Run Age",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "time() - max(recsys_ml_feature_drift_run_timestamp_seconds) or vector(0)", "legendFormat": "age" }],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 86400 }, { "color": "red", "value": 172800 }] } } },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "gauge",
+      "title": "Feature Drift Pass Rate",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "avg(recsys_ml_feature_drift_passed) or vector(0)", "legendFormat": "pass rate" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "decimals": 2, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "green", "value": 1 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": true, "showThresholdMarkers": true }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Retrain Triggered",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(recsys_ml_retrain_triggered_total) or vector(0)", "legendFormat": "triggered" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }, { "color": "orange", "value": 1 }] } } },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Retrain Failures",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(recsys_ml_retrain_trigger_failed_total) or vector(0)", "legendFormat": "failed" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Feature PSI Leaderboard",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 9 },
+      "targets": [{ "expr": "topk(20, recsys_ml_feature_drift_psi)", "legendFormat": "{{feature_view}}/{{feature}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.1 }, { "color": "red", "value": 0.15 }] } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "PSI Over Time",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 9 },
+      "targets": [{ "expr": "recsys_ml_feature_drift_psi", "legendFormat": "{{feature_view}}/{{feature}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 3, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Current vs Reference Rows",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "recsys_ml_feature_drift_current_rows", "legendFormat": "current {{feature_view}}" },
+        { "expr": "recsys_ml_feature_drift_reference_rows", "legendFormat": "reference {{feature_view}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 35 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Feature Drift Status",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "targets": [{ "expr": "recsys_ml_feature_drift_passed", "format": "table", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } } },
+      "options": { "showHeader": true, "cellHeight": "sm" }
+    }
+  ]
+}
