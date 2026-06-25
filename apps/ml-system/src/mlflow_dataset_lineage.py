@@ -22,6 +22,7 @@ def dataset_versions(metadata: dict[str, Any] | None) -> dict[str, Any]:
         split: {
             "table": payload.get("table", ""),
             "snapshot_id": payload.get("snapshot_id"),
+            "commit_time": payload.get("commit_time"),
             "tag": payload.get("tag", ""),
             "row_count": payload.get("row_count", 0),
             "jsonl_path": payload.get("jsonl_path", ""),
@@ -50,6 +51,10 @@ def log_dataset_lineage(mlflow, metadata: dict[str, Any] | None, split_contexts:
     for name, value in shared_params.items():
         if value not in {None, ""}:
             mlflow.log_param(name, value)
+    latency = metadata.get("versioning_latency_ms") or metadata.get("hudi", {}).get("latency_ms", {})
+    for name, value in latency.items():
+        if value not in {None, ""}:
+            mlflow.log_param(f"dataset.versioning_latency_ms.{name}", value)
 
     splits = metadata.get("splits", {})
     for split, contexts in split_contexts.items():
@@ -62,9 +67,9 @@ def log_dataset_lineage(mlflow, metadata: dict[str, Any] | None, split_contexts:
             prefix = f"dataset.{context}"
             params = {
                 f"{prefix}.split": split,
-                f"{prefix}.iceberg_table": payload.get("table", ""),
-                f"{prefix}.iceberg_snapshot_id": payload.get("snapshot_id"),
-                f"{prefix}.iceberg_tag": payload.get("tag", ""),
+                f"{prefix}.hudi_table": payload.get("table", ""),
+                f"{prefix}.hudi_commit_time": payload.get("commit_time") or payload.get("snapshot_id"),
+                f"{prefix}.hudi_tag": payload.get("tag", ""),
                 f"{prefix}.row_count": payload.get("row_count", 0),
                 f"{prefix}.jsonl_path": payload.get("jsonl_path", ""),
             }

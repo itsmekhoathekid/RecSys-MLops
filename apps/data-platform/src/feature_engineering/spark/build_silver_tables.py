@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from feature_engineering.spark.session import read_parquet_table, write_parquet
+from feature_engineering.spark.session import read_iceberg_table, read_parquet_table, write_iceberg_table
+from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES, create_spark_namespace
 
 
 def _ensure_column(frame: Any, column: str, expression: Any):
@@ -70,22 +71,15 @@ def build_product_scd(product_snapshots: Any, products: Any) -> Any:
     )
 
 
-def build_silver_tables(spark: Any, run_path: str, output_path: str) -> dict[str, Any]:
-    raw = {
-        table: read_parquet_table(spark, run_path, table)
-        for table in [
-            "users",
-            "user_preferences",
-            "products",
-            "product_snapshots",
-            "sessions",
-            "recommendation_requests",
-            "impressions",
-            "behavior_events",
-            "orders",
-            "order_items",
-        ]
-    }
+def read_raw_parquet_tables(spark: Any, run_path: str) -> dict[str, Any]:
+    return {table: read_parquet_table(spark, run_path, table) for table in RAW_GENERATOR_TABLES}
+
+
+def read_raw_lakehouse_tables(spark: Any, catalog: IcebergCatalogConfig) -> dict[str, Any]:
+    return {table: read_iceberg_table(spark, catalog.lakehouse_table(table)) for table in RAW_GENERATOR_TABLES}
+
+
+def build_silver_tables_from_raw(raw: dict[str, Any], catalog: IcebergCatalogConfig) -> dict[str, Any]:
     clean_events, rejected_events = build_clean_behavior_events(raw["behavior_events"])
     silver = {
         "clean_behavior_events": clean_events,
@@ -99,5 +93,22 @@ def build_silver_tables(spark: Any, run_path: str, output_path: str) -> dict[str
         "user_preferences": raw["user_preferences"],
     }
     for name, frame in silver.items():
-        write_parquet(frame, f"{output_path.rstrip('/')}/{name}")
+        write_iceberg_table(frame, catalog.lakehouse_table(f"silver_{name}"), mode="overwrite")
     return silver
+
+
+def build_silver_tables(
+    spark: Any,
+    run_path: str | None = None,
+    catalog: IcebergCatalogConfig | None = None,
+    source: str = "lakehouse",
+) -> dict[str, Any]:
+    catalog = catalog or IcebergCatalogConfig()
+    create_spark_namespace(spark, catalog)
+    if source == "parquet":
+        if run_path is None:
+            raise ValueError("run_path is required when Spark batch source is parquet")
+        raw = read_raw_parquet_tables(spark, run_path)
+    else:
+        raw = read_raw_lakehouse_tables(spark, catalog)
+    return build_silver_tables_from_raw(raw, catalog)

@@ -11,10 +11,11 @@ from kubeflow.components.runtime import (
 
 
 PIPELINE_IMAGE = os.getenv("RECSYS_PIPELINE_IMAGE", "recsys-mlops-training:local")
-SPARK_IMAGE = os.getenv("RECSYS_SPARK_IMAGE", "recsys-spark:local")
+SPARK_IMAGE = os.getenv("RECSYS_SPARK_IMAGE", "recsys-mlops-spark:local")
 SPARK_PACKAGES = os.getenv(
     "RECSYS_SPARK_PACKAGES",
     "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2,"
+    "org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.2,"
     "org.apache.hadoop:hadoop-aws:3.3.4,"
     "com.amazonaws:aws-java-sdk-bundle:1.12.262",
 )
@@ -40,15 +41,15 @@ def feature_engineering(config_path: str, output_base: str, run_path: str, summa
 
 @dsl.container_component
 def prepare_training_data(
-    training_entity_path: str,
+    offline_feature_table: str,
     output_dir: str,
     max_history_len: int,
-    feast_repo_path: str,
-    feast_offline_root: str,
     dataset_metadata_path: str,
     feature_service_name: str,
     iceberg_catalog_name: str,
     iceberg_warehouse: str,
+    hudi_catalog_name: str,
+    hudi_warehouse: str,
 ):
     return dsl.ContainerSpec(
         image=SPARK_IMAGE,
@@ -59,20 +60,22 @@ def prepare_training_data(
             "--packages",
             SPARK_PACKAGES,
             "/opt/recsys/apps/ml-system/src/prepare_bst_training_data.py",
-            "--entity-input-path",
-            training_entity_path,
+            "--feature-source",
+            "offline_feature_store",
+            "--offline-feature-table",
+            offline_feature_table,
             "--output-dir",
             output_dir,
             "--max-history-len",
             max_history_len,
-            "--feast-repo-path",
-            feast_repo_path,
-            "--feast-offline-root",
-            feast_offline_root,
             "--feature-service-name",
             feature_service_name,
-            "--iceberg-enabled",
+            "--hudi-enabled",
             "true",
+            "--hudi-catalog-name",
+            hudi_catalog_name,
+            "--hudi-warehouse",
+            hudi_warehouse,
             "--iceberg-catalog-name",
             iceberg_catalog_name,
             "--iceberg-warehouse",
@@ -85,6 +88,7 @@ def prepare_training_data(
 
 @dsl.container_component
 def submit_rayjob(
+    pipeline_run_id: str,
     namespace: str,
     job_name: str,
     image: str,
@@ -106,6 +110,8 @@ def submit_rayjob(
         image=PIPELINE_IMAGE,
         command=["python", "/opt/recsys/apps/ml-system/src/submit_ray_job.py"],
         args=[
+            "--pipeline-run-id",
+            pipeline_run_id,
             "--namespace",
             namespace,
             "--job-name",
@@ -193,15 +199,14 @@ def promote_bst_model(
     description="Feature engineering, BST training, evaluation, MLflow tracking, MinIO artifacts, and Postgres model config.",
 )
 def recsys_bst_pipeline(
+    pipeline_run_id: str = "manual",
     config_path: str = "configs/local/spark_batch.yaml",
     bst_config_path: str = "configs/local/bst.yaml",
     source_run_path: str = "apps/data-platform/data-generator/src/output/test_10k_seed42",
     workspace_root: str = "/workspace/recsys",
     output_base: str = "/workspace/recsys/data_platform/output",
     feature_summary_path: str = "/workspace/recsys/data_platform/output/feature_summary.json",
-    training_entity_path: str = "/workspace/recsys/data_platform/output/ml/offline/ml_ranking_labels",
-    feast_repo_path: str = "/opt/recsys/apps/data-platform/feature-store/feature_repo",
-    feast_offline_root: str = "/workspace/recsys/data_platform/output/feature_store/offline",
+    offline_feature_table: str = "recsys_features.feature_store.ml_bst_training",
     split_output_dir: str = "/workspace/recsys/data_platform/output/ml/bst_split",
     dataset_metadata_path: str = "/workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json",
     ray_output_dir: str = "/workspace/recsys/data_platform/output/ml/ray",
@@ -218,8 +223,10 @@ def recsys_bst_pipeline(
     ray_job_name: str = "recsys-bst-ray-tune",
     ray_image: str = "recsys-mlops-training:local",
     feature_service_name: str = "bst_ranking_v1",
-    iceberg_catalog_name: str = "recsys",
-    iceberg_warehouse: str = "s3a://recsys-lake/silver/ml/iceberg",
+    iceberg_catalog_name: str = "recsys_features",
+    iceberg_warehouse: str = "s3a://recsys-offline-feature-store/warehouse",
+    hudi_catalog_name: str = "recsys_features",
+    hudi_warehouse: str = "s3a://recsys-offline-feature-store/warehouse",
     max_history_len: int = 50,
     training_percent: float = 0.01,
     num_epochs: int = 1,
@@ -228,35 +235,25 @@ def recsys_bst_pipeline(
     use_gpu: bool = False,
     gpu_limit: int = 1,
 ):
-    features = wire_runtime(
-        feature_engineering(
-            config_path=config_path,
-            output_base=output_base,
-            run_path=source_run_path,
-            summary_path=feature_summary_path,
+    prepare = wire_runtime(
+        prepare_training_data(
+            offline_feature_table=offline_feature_table,
+            output_dir=split_output_dir,
+            max_history_len=max_history_len,
+            dataset_metadata_path=dataset_metadata_path,
+            feature_service_name=feature_service_name,
+            iceberg_catalog_name=iceberg_catalog_name,
+            iceberg_warehouse=iceberg_warehouse,
+            hudi_catalog_name=hudi_catalog_name,
+            hudi_warehouse=hudi_warehouse,
         ),
         pvc_name=DEFAULT_PVC_NAME,
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
     )
-    prepare = wire_runtime(
-        prepare_training_data(
-            training_entity_path=training_entity_path,
-            output_dir=split_output_dir,
-            max_history_len=max_history_len,
-            feast_repo_path=feast_repo_path,
-            feast_offline_root=feast_offline_root,
-            dataset_metadata_path=dataset_metadata_path,
-            feature_service_name=feature_service_name,
-            iceberg_catalog_name=iceberg_catalog_name,
-            iceberg_warehouse=iceberg_warehouse,
-        ),
-        pvc_name=DEFAULT_PVC_NAME,
-        mount_path=DEFAULT_PVC_MOUNT_PATH,
-        secret_name=DEFAULT_RUNTIME_SECRET_NAME,
-    ).after(features)
     tune_train = wire_runtime(
         submit_rayjob(
+            pipeline_run_id=pipeline_run_id,
             namespace=ray_namespace,
             job_name=ray_job_name,
             image=ray_image,

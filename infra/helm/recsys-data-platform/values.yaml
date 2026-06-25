@@ -22,34 +22,33 @@ sourcePostgres:
   name: source-postgres
   database: recsys
   user: recsys
-  password: recsys
+  password: ""
   storage: 5Gi
-
-warehousePostgres:
-  name: warehouse-postgres
-  database: recsys_warehouse
-  user: recsys
-  password: recsys
-  storage: 10Gi
 
 airflowPostgres:
   name: airflow-postgres
   database: airflow
   user: airflow
-  password: airflow
+  password: ""
   storage: 5Gi
 
 minio:
   name: data-platform-minio
   endpoint: http://data-platform-minio:9000
   rootUser: minio
-  rootPassword: minio123
-  lakeBucket: recsys-lake
-  featureStoreBucket: recsys-feature-store
+  rootPassword: ""
+  lakeBucket: recsys-lakehouse
+  offlineFeatureBucket: recsys-offline-feature-store
   storage: 20Gi
   service:
     apiPort: 9000
     consolePort: 9001
+
+lakehouse:
+  catalog: recsys
+  lakehouseNamespace: lakehouse
+  offlineFeatureCatalog: recsys_features
+  featureNamespace: feature_store
 
 kafka:
   name: kafka
@@ -84,6 +83,7 @@ realtimeFlinkConsumer:
   parallelism: "1"
   maxHistoryLength: "50"
   progressLogEvents: "100"
+  checkpointIntervalSeconds: "30"
 
 airflow:
   dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
@@ -95,17 +95,8 @@ streaming:
   stateTtlSeconds: 604800
   dedupStateTtlSeconds: 86400
 
-validation:
-  geMaxTopValueRatio: "0.95"
-  geMaxUniqueRatio: "0.98"
-  evidentlyPsiThreshold: "0.15"
-
 observability:
   enabled: true
-  sqlExporter:
-    enabled: true
-    name: monitoring-sql-exporter
-    port: 9102
   pushgatewayUrl: http://recsys-pushgateway.observability.svc.cluster.local:9091
   otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317
   kfpEndpoint: http://ml-pipeline.kubeflow.svc.cluster.local:8888
@@ -113,3 +104,6 @@ observability:
   kfpPipelinePackagePath: /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
   retrainOnDrift: "true"
   retrainPsiThreshold: "0.15"
+
+secret:
+  create: false

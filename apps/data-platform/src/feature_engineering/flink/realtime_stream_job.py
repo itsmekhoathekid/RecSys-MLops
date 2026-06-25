@@ -22,8 +22,8 @@ from feature_engineering.flink.user_sequence_job import (
     UserSequenceState,
 )
 from feature_engineering.flink.time_utils import isoformat_utc, parse_event_time
-from feature_store.online_writer import RedisOnlineWriter
-from ingest.bronze_cdc_reader import extract_debezium_after
+from feature_store.online_writer import RedisOnlineWriter, dumps_feature_payload
+from ingest.debezium import extract_debezium_after
 
 
 EVENT_TYPE_IDS = {"view": 1, "cart": 2, "purchase": 3}
@@ -34,13 +34,21 @@ def emit_progress(payload: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
+def flink_timestamp(value: Any) -> datetime:
+    dt = parse_event_time(value) if isinstance(value, str) else value
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    microsecond = (dt.microsecond // 1000) * 1000
+    return dt.replace(microsecond=microsecond)
+
+
 @dataclass
 class StreamJobStats:
     consumed: int = 0
     skipped: int = 0
     duplicate: int = 0
     redis_writes: int = 0
-    warehouse_writes: int = 0
+    offline_writes: int = 0
     late_events: int = 0
     bursty_windows: int = 0
 
@@ -90,9 +98,9 @@ class StreamQualityTracker:
         is_duplicate: bool = False,
     ) -> list[StreamQualityWindow]:
         ts = parse_event_time(event_timestamp)
-        epoch = int(ts.timestamp())
-        window_start_epoch = epoch - (epoch % self.window_seconds)
-        window_start = datetime.fromtimestamp(window_start_epoch, tz=timezone.utc)
+        event_unix_seconds = int(ts.timestamp())
+        window_start_seconds = event_unix_seconds - (event_unix_seconds % self.window_seconds)
+        window_start = datetime.fromtimestamp(window_start_seconds, tz=timezone.utc)
         window_end = window_start + timedelta(seconds=self.window_seconds)
         emitted: list[StreamQualityWindow] = []
         if self.current is not None and self.current.window_start != window_start:
@@ -222,7 +230,7 @@ def late_arrival_metrics(event: dict[str, Any], watermark_delay_minutes: int) ->
     return late_by_seconds, late_by_seconds > watermark_delay_minutes * 60
 
 
-def build_warehouse_rows(
+def build_offline_feature_rows(
     event: dict[str, Any],
     sequence_payload: dict[str, Any],
     aggregate_payload: dict[str, Any],
@@ -291,32 +299,7 @@ def build_warehouse_rows(
     }
 
 
-def write_warehouse_rows(connection: Any, rows: dict[str, list[dict[str, Any]]]) -> int:
-    from warehouse.schemas import (
-        STAGING_STREAM_BEHAVIOR_EVENTS,
-        STAGING_STREAM_ITEM_FEATURES,
-        STAGING_STREAM_USER_AGGREGATE_FEATURES,
-        STAGING_STREAM_USER_SEQUENCE_FEATURES,
-    )
-    from warehouse.writer import upsert_rows
-
-    return (
-        upsert_rows(connection, STAGING_STREAM_BEHAVIOR_EVENTS, rows["stream_behavior_events"])
-        + upsert_rows(connection, STAGING_STREAM_USER_SEQUENCE_FEATURES, rows["stream_user_sequence_features"])
-        + upsert_rows(connection, STAGING_STREAM_USER_AGGREGATE_FEATURES, rows["stream_user_aggregate_features"])
-        + upsert_rows(connection, STAGING_STREAM_ITEM_FEATURES, rows["stream_item_features"])
-    )
-
-
-def write_quality_windows(connection: Any, windows: list[StreamQualityWindow]) -> int:
-    from warehouse.schemas import MONITORING_STREAMING_QUALITY_WINDOWS
-    from warehouse.writer import upsert_rows
-
-    return upsert_rows(
-        connection,
-        MONITORING_STREAMING_QUALITY_WINDOWS,
-        [window.as_row() for window in windows],
-    )
+build_warehouse_rows = build_offline_feature_rows
 
 
 def apply_state_ttl(descriptor: Any, ttl_seconds: int) -> Any:
@@ -369,16 +352,28 @@ def item_payload_from_history(
     return payload, list(state.events_by_product[product_id])
 
 
+def kafka_offsets_initializer(name: str):
+    from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer
+
+    if name == "earliest":
+        return KafkaOffsetsInitializer.earliest()
+    if name == "latest":
+        return KafkaOffsetsInitializer.latest()
+    if name == "committed-offsets":
+        return KafkaOffsetsInitializer.committed_offsets()
+    raise ValueError(f"Unsupported Kafka starting offsets: {name}")
+
+
 def build_kafka_source(args: argparse.Namespace):
     from pyflink.common.serialization import SimpleStringSchema
-    from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaSource
+    from pyflink.datastream.connectors.kafka import KafkaSource
 
     builder = (
         KafkaSource.builder()
         .set_bootstrap_servers(args.bootstrap_servers)
         .set_topics(args.topic)
         .set_group_id(args.group_id)
-        .set_starting_offsets(KafkaOffsetsInitializer.earliest())
+        .set_starting_offsets(kafka_offsets_initializer(args.starting_offsets))
         .set_value_only_deserializer(SimpleStringSchema())
         .set_client_id_prefix("recsys-native-pyflink")
     )
@@ -519,32 +514,125 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 sort_keys=True,
             )
 
-    class WarehouseFeatureWriter(MapFunction):
-        def open(self, runtime_context):
-            self.connection = None
-            if args.warehouse_enabled:
-                from warehouse.connection import connect
-                from warehouse.writer import ensure_warehouse
+    class RedisFeaturePassthrough(RedisFeatureWriter):
+        def map(self, envelope: dict[str, Any]) -> dict[str, Any]:
+            super().map(envelope)
+            return envelope
 
-                self.connection = connect()
-                ensure_warehouse(self.connection)
+    class KeepRows(FilterFunction):
+        def filter(self, value: Any | None) -> bool:
+            return value is not None
 
-        def map(self, envelope: dict[str, Any]) -> str:
-            if self.connection is None:
-                return json.dumps({"status": "warehouse_disabled"}, sort_keys=True)
+    class StreamBehaviorEventRow(MapFunction):
+        def map(self, envelope: dict[str, Any]):
+            from pyflink.common import Row
+
             event = envelope["event"]
             if event.get("_is_duplicate"):
-                return json.dumps({"status": "warehouse_duplicate_skipped", "event_id": event["event_id"]}, sort_keys=True)
-            rows = build_warehouse_rows(
+                return None
+            row = build_offline_feature_rows(
                 event,
                 envelope["sequence_payload"],
                 envelope["aggregate_payload"],
                 envelope["item_payload"],
                 args.topic,
                 args.watermark_delay_minutes,
+            )["stream_behavior_events"][0]
+            return Row(
+                row["event_id"],
+                flink_timestamp(row["event_timestamp"]),
+                flink_timestamp(row["processed_timestamp"]),
+                row["user_id"],
+                row["product_id"],
+                row["event_type"],
+                row["event_type_id"],
+                row["category_id"],
+                row["brand_id"],
+                row["price"],
+                row["price_bucket"],
+                row["payload_hash"],
+                row["source_topic"],
+                row["late_by_seconds"],
+                row["is_late"],
             )
-            writes = write_warehouse_rows(self.connection, rows)
-            return json.dumps({"status": "warehouse_written", "event_id": event["event_id"], "writes": writes}, sort_keys=True)
+
+    class UserSequenceFeatureRow(MapFunction):
+        def map(self, envelope: dict[str, Any]):
+            from pyflink.common import Row
+
+            event = envelope["event"]
+            if event.get("_is_duplicate"):
+                return None
+            row = build_offline_feature_rows(
+                event,
+                envelope["sequence_payload"],
+                envelope["aggregate_payload"],
+                envelope["item_payload"],
+                args.topic,
+                args.watermark_delay_minutes,
+            )["stream_user_sequence_features"][0]
+            return Row(
+                row["user_id"],
+                flink_timestamp(row["feature_timestamp"]),
+                row["sequence_length"],
+                row["max_history_length"],
+                dumps_feature_payload(row["feature_payload"]),
+                row["feature_version"],
+            )
+
+    class UserAggregateFeatureRow(MapFunction):
+        def map(self, envelope: dict[str, Any]):
+            from pyflink.common import Row
+
+            event = envelope["event"]
+            if event.get("_is_duplicate"):
+                return None
+            row = build_offline_feature_rows(
+                event,
+                envelope["sequence_payload"],
+                envelope["aggregate_payload"],
+                envelope["item_payload"],
+                args.topic,
+                args.watermark_delay_minutes,
+            )["stream_user_aggregate_features"][0]
+            return Row(
+                row["user_id"],
+                flink_timestamp(row["feature_timestamp"]),
+                row["views_30m"],
+                row["carts_30m"],
+                row["purchases_24h"],
+                dumps_feature_payload(row["feature_payload"]),
+                row["feature_version"],
+            )
+
+    class ItemFeatureRow(MapFunction):
+        def map(self, envelope: dict[str, Any]):
+            from pyflink.common import Row
+
+            event = envelope["event"]
+            if event.get("_is_duplicate"):
+                return None
+            row = build_offline_feature_rows(
+                event,
+                envelope["sequence_payload"],
+                envelope["aggregate_payload"],
+                envelope["item_payload"],
+                args.topic,
+                args.watermark_delay_minutes,
+            )["stream_item_features"][0]
+            return Row(
+                row["product_id"],
+                flink_timestamp(row["feature_timestamp"]),
+                row["category_id"],
+                row["brand_id"],
+                row["price_bucket"],
+                row["views_1h"],
+                row["views_24h"],
+                row["purchases_24h"],
+                row["popularity_score"],
+                dumps_feature_payload(row["feature_payload"]),
+                row["feature_version"],
+            )
 
     class StreamingQualityRows(KeyedProcessFunction):
         def open(self, runtime_context):
@@ -570,9 +658,9 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         def process_element(self, event: dict[str, Any], ctx):
             late_by_seconds, is_late = late_arrival_metrics(event, args.watermark_delay_minutes)
             event_ts = parse_event_time(event["event_timestamp"])
-            epoch = int(event_ts.timestamp())
-            window_start_epoch = epoch - (epoch % args.quality_window_seconds)
-            window_start = datetime.fromtimestamp(window_start_epoch, tz=timezone.utc)
+            event_unix_seconds = int(event_ts.timestamp())
+            window_start_seconds = event_unix_seconds - (event_unix_seconds % args.quality_window_seconds)
+            window_start = datetime.fromtimestamp(window_start_seconds, tz=timezone.utc)
             window_end = window_start + timedelta(seconds=args.quality_window_seconds)
             window_start_text = isoformat_utc(window_start)
             current = self.window_state.value()
@@ -598,24 +686,21 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             for row in rows:
                 yield row
 
-    class WarehouseQualityWriter(MapFunction):
-        def open(self, runtime_context):
-            self.connection = None
-            if args.warehouse_enabled:
-                from warehouse.connection import connect
-                from warehouse.writer import ensure_warehouse
+    class QualityWindowRow(MapFunction):
+        def map(self, row: dict[str, Any]):
+            from pyflink.common import Row
 
-                self.connection = connect()
-                ensure_warehouse(self.connection)
-
-        def map(self, row: dict[str, Any]) -> str:
-            if self.connection is None:
-                return json.dumps({"status": "quality_warehouse_disabled"}, sort_keys=True, default=str)
-            from warehouse.schemas import MONITORING_STREAMING_QUALITY_WINDOWS
-            from warehouse.writer import upsert_rows
-
-            writes = upsert_rows(self.connection, MONITORING_STREAMING_QUALITY_WINDOWS, [row])
-            return json.dumps({"status": "quality_written", "writes": writes, **row}, sort_keys=True, default=str)
+            return Row(
+                flink_timestamp(row["window_start"]),
+                flink_timestamp(row["window_end"]),
+                row["topic"],
+                row["event_count"],
+                row["late_event_count"],
+                row["duplicate_event_count"],
+                row["max_late_by_seconds"],
+                row["is_bursty"],
+                flink_timestamp(row["created_timestamp"]),
+            )
 
     source = build_kafka_source(args)
     watermark = WatermarkStrategy.for_bounded_out_of_orderness(
@@ -643,13 +728,108 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         BuildItemFeatures(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
     )
-    enriched.map(RedisFeatureWriter(), output_type=Types.STRING()).name("redis-online-feature-writer").print()
-    enriched.map(WarehouseFeatureWriter(), output_type=Types.STRING()).name("warehouse-stream-feature-writer").print()
-    deduped.key_by(lambda event: "stream-quality").process(
+    if args.offline_store_enabled:
+        enriched = enriched.map(
+            RedisFeaturePassthrough(),
+            output_type=Types.PICKLED_BYTE_ARRAY(),
+        ).name("redis-online-feature-writer")
+    else:
+        enriched.map(RedisFeatureWriter(), output_type=Types.STRING()).name("redis-online-feature-writer").print()
+    quality_rows = deduped.key_by(lambda event: "stream-quality").process(
         StreamingQualityRows(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
-    ).map(WarehouseQualityWriter(), output_type=Types.STRING()).name("warehouse-stream-quality-writer").print()
-    return enriched
+    )
+    if not args.offline_store_enabled:
+        return None
+
+    from feature_engineering.flink.iceberg_feature_sink import configure_iceberg_catalog
+    from lakehouse.iceberg import IcebergCatalogConfig
+    from pyflink.table import StreamTableEnvironment
+
+    catalog = IcebergCatalogConfig(
+        catalog_name=args.iceberg_catalog,
+        offline_feature_catalog_name=args.offline_feature_catalog,
+        feature_namespace=args.iceberg_feature_namespace,
+        warehouse_uri=args.lakehouse_warehouse,
+        offline_feature_warehouse_uri=args.offline_feature_store_warehouse,
+    )
+    table_env = StreamTableEnvironment.create(env)
+    configure_iceberg_catalog(table_env, catalog)
+    statement_set = table_env.create_statement_set()
+
+    def add_insert(name: str, stream: Any) -> None:
+        table = table_env.from_data_stream(stream)
+        statement_set.add_insert(catalog.feature_table(name), table)
+
+    behavior_stream = enriched.map(
+        StreamBehaviorEventRow(),
+        output_type=Types.ROW_NAMED(
+            [
+                "event_id", "event_timestamp", "processed_timestamp", "user_id", "product_id",
+                "event_type", "event_type_id", "category_id", "brand_id", "price", "price_bucket",
+                "payload_hash", "source_topic", "late_by_seconds", "is_late",
+            ],
+            [
+                Types.STRING(), Types.SQL_TIMESTAMP(), Types.SQL_TIMESTAMP(), Types.LONG(), Types.LONG(),
+                Types.STRING(), Types.INT(), Types.INT(), Types.INT(), Types.DOUBLE(), Types.INT(),
+                Types.STRING(), Types.STRING(), Types.DOUBLE(), Types.BOOLEAN(),
+            ],
+        ),
+    ).filter(KeepRows())
+    add_insert("stream_behavior_events", behavior_stream)
+    add_insert(
+        "stream_user_sequence_features",
+        enriched.map(
+            UserSequenceFeatureRow(),
+            output_type=Types.ROW_NAMED(
+                ["user_id", "feature_timestamp", "sequence_length", "max_history_length", "feature_payload", "feature_version"],
+                [Types.LONG(), Types.SQL_TIMESTAMP(), Types.INT(), Types.INT(), Types.STRING(), Types.STRING()],
+            ),
+        ).filter(KeepRows()),
+    )
+    add_insert(
+        "stream_user_aggregate_features",
+        enriched.map(
+            UserAggregateFeatureRow(),
+            output_type=Types.ROW_NAMED(
+                ["user_id", "feature_timestamp", "views_30m", "carts_30m", "purchases_24h", "feature_payload", "feature_version"],
+                [Types.LONG(), Types.SQL_TIMESTAMP(), Types.INT(), Types.INT(), Types.INT(), Types.STRING(), Types.STRING()],
+            ),
+        ).filter(KeepRows()),
+    )
+    add_insert(
+        "stream_item_features",
+        enriched.map(
+            ItemFeatureRow(),
+            output_type=Types.ROW_NAMED(
+                [
+                    "product_id", "feature_timestamp", "category_id", "brand_id", "price_bucket",
+                    "views_1h", "views_24h", "purchases_24h", "popularity_score", "feature_payload", "feature_version",
+                ],
+                [
+                    Types.LONG(), Types.SQL_TIMESTAMP(), Types.INT(), Types.INT(), Types.INT(),
+                    Types.INT(), Types.INT(), Types.INT(), Types.DOUBLE(), Types.STRING(), Types.STRING(),
+                ],
+            ),
+        ).filter(KeepRows()),
+    )
+    add_insert(
+        "streaming_quality_windows",
+        quality_rows.map(
+            QualityWindowRow(),
+            output_type=Types.ROW_NAMED(
+                [
+                    "window_start", "window_end", "topic", "event_count", "late_event_count",
+                    "duplicate_event_count", "max_late_by_seconds", "is_bursty", "created_timestamp",
+                ],
+                [
+                    Types.SQL_TIMESTAMP(), Types.SQL_TIMESTAMP(), Types.STRING(), Types.LONG(), Types.LONG(),
+                    Types.LONG(), Types.DOUBLE(), Types.BOOLEAN(), Types.SQL_TIMESTAMP(),
+                ],
+            ),
+        ),
+    )
+    return statement_set
 
 
 def run_pyflink_stream(args: argparse.Namespace) -> None:
@@ -657,8 +837,12 @@ def run_pyflink_stream(args: argparse.Namespace) -> None:
 
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_parallelism(args.parallelism)
-    build_realtime_stream(env, args)
-    env.execute("recsys-native-pyflink-realtime-features")
+    env.enable_checkpointing(args.checkpoint_interval_seconds * 1000)
+    statement_set = build_realtime_stream(env, args)
+    if statement_set is None:
+        env.execute("recsys-native-pyflink-realtime-features")
+    else:
+        statement_set.execute().wait()
 
 
 def main() -> int:
@@ -669,18 +853,25 @@ def main() -> int:
     parser.add_argument("--redis-host", default=os.getenv("REDIS_HOST", "redis"))
     parser.add_argument("--redis-port", type=int, default=env_int("REDIS_PORT", 6379))
     parser.add_argument("--group-id", default="recsys-flink-realtime-local")
+    parser.add_argument("--starting-offsets", choices=["earliest", "latest", "committed-offsets"], default="earliest")
     parser.add_argument("--max-events", type=int, default=200)
     parser.add_argument("--min-events", type=int, default=1)
     parser.add_argument("--continuous", action="store_true")
     parser.add_argument("--parallelism", type=int, default=env_int("FLINK_PARALLELISM", 1))
     parser.add_argument("--max-history-length", type=int, default=50)
-    parser.add_argument("--warehouse-enabled", action="store_true", default=os.getenv("WAREHOUSE_ENABLED", "").lower() in {"1", "true", "yes"})
+    parser.add_argument("--offline-store-enabled", action="store_true", default=os.getenv("OFFLINE_STORE_ENABLED", "true").lower() in {"1", "true", "yes"})
+    parser.add_argument("--lakehouse-warehouse", default=os.getenv("LAKEHOUSE_WAREHOUSE", "s3a://recsys-lakehouse/warehouse"))
+    parser.add_argument("--iceberg-catalog", default=os.getenv("ICEBERG_CATALOG", "recsys"))
+    parser.add_argument("--offline-feature-catalog", default=os.getenv("OFFLINE_FEATURE_CATALOG", "recsys_features"))
+    parser.add_argument("--offline-feature-store-warehouse", default=os.getenv("OFFLINE_FEATURE_STORE_WAREHOUSE", "s3a://recsys-offline-feature-store/warehouse"))
+    parser.add_argument("--iceberg-feature-namespace", default=os.getenv("ICEBERG_FEATURE_NAMESPACE", "feature_store"))
     parser.add_argument("--watermark-delay-minutes", type=int, default=env_int("STREAM_WATERMARK_DELAY_MINUTES", 60))
     parser.add_argument("--quality-window-seconds", type=int, default=env_int("STREAM_QUALITY_WINDOW_SECONDS", 60))
     parser.add_argument("--burst-threshold-event-count", type=int, default=env_int("STREAM_BURST_THRESHOLD_EVENT_COUNT", 500))
     parser.add_argument("--state-ttl-seconds", type=int, default=env_int("STREAM_STATE_TTL_SECONDS", 7 * 24 * 60 * 60))
     parser.add_argument("--dedup-state-ttl-seconds", type=int, default=env_int("STREAM_DEDUP_STATE_TTL_SECONDS", 24 * 60 * 60))
     parser.add_argument("--progress-log-events", type=int, default=env_int("STREAM_PROGRESS_LOG_EVENTS", 100))
+    parser.add_argument("--checkpoint-interval-seconds", type=int, default=env_int("STREAM_CHECKPOINT_INTERVAL_SECONDS", 30))
     args = parser.parse_args()
 
     run_pyflink_stream(args)

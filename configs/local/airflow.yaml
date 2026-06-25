@@ -3,7 +3,6 @@ dags_path: apps/data-platform/src/orchestration/airflow/dags
 dags:
   raw_ingestion: raw_ingestion_dag
   batch_feature_pipeline: batch_feature_pipeline_dag
-  feast_materialization: feast_materialization_dag
   streaming_feature_pipeline: streaming_feature_pipeline_dag
 
 scope:
@@ -11,4 +10,3 @@ scope:
   model_training: false
   model_registry: false
   recommendation_feedback_loop: false
-

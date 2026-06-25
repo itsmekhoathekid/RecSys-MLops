@@ -1,2 +1,1 @@
-"""Data and feature quality checks."""
-
+"""Validation and monitoring jobs for the data platform."""

@@ -2,41 +2,54 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
-from feature_store.offline_writer import read_feature_table
+from feature_engineering.spark.session import spark_session
+from lakehouse.iceberg import IcebergCatalogConfig
 from monitoring.pushgateway import MetricSample, push_metrics
-from validate.evidently_feature_drift import calculate_psi
-from validate.great_expectations_runner import write_report
-from warehouse.connection import connect
-from warehouse.schemas import MONITORING_FEATURE_DRIFT_RUNS
-from warehouse.writer import upsert_rows
 
 
-DEFAULT_FEATURE_VIEWS = [
-    "user_sequence_features",
+DEFAULT_FEATURE_TABLES = [
     "user_aggregate_features",
     "item_features",
+    "ml_bst_training",
 ]
 ID_COLUMNS = {
     "user_id",
     "product_id",
-    "event_timestamp",
+    "candidate_product_id",
+    "event_type_id",
+    "event_id",
+    "session_id",
+    "request_id",
+    "order_id",
+}
+TIMESTAMP_COLUMNS = (
     "feature_timestamp",
+    "event_timestamp",
+    "prediction_timestamp",
     "created_timestamp",
     "updated_at",
-}
+)
+NUMERIC_TYPE_PREFIXES = (
+    "bigint",
+    "decimal",
+    "double",
+    "float",
+    "int",
+    "long",
+    "short",
+)
 
 
 @dataclass(frozen=True)
 class DriftFeatureResult:
-    feature_view: str
+    feature_table: str
     feature: str
     drift_score: float
     passed: bool
@@ -45,136 +58,197 @@ class DriftFeatureResult:
     threshold: float
 
 
-def split_reference_current(
-    frame: pd.DataFrame,
-    timestamp_column: str = "event_timestamp",
-    current_days: int = 7,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    if frame.empty or timestamp_column not in frame.columns:
-        midpoint = len(frame) // 2
-        return frame.iloc[:midpoint], frame.iloc[midpoint:]
-    normalized = frame.copy()
-    normalized[timestamp_column] = pd.to_datetime(normalized[timestamp_column], utc=True)
-    cutoff = normalized[timestamp_column].max() - pd.Timedelta(days=current_days)
-    reference = normalized[normalized[timestamp_column] <= cutoff]
-    current = normalized[normalized[timestamp_column] > cutoff]
-    if reference.empty or current.empty:
-        midpoint = len(normalized) // 2
-        reference = normalized.iloc[:midpoint]
-        current = normalized.iloc[midpoint:]
+def _quantile(sorted_values: list[float], q: float) -> float:
+    if not sorted_values:
+        return 0.0
+    position = (len(sorted_values) - 1) * q
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return sorted_values[int(position)]
+    weight = position - lower
+    return sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight
+
+
+def calculate_psi(expected: list[float], actual: list[float], buckets: int = 10) -> float:
+    expected_values = sorted(float(value) for value in expected if value is not None and math.isfinite(float(value)))
+    actual_values = sorted(float(value) for value in actual if value is not None and math.isfinite(float(value)))
+    if not expected_values or not actual_values:
+        return 0.0
+
+    boundaries = sorted({_quantile(expected_values, index / buckets) for index in range(buckets + 1)})
+    if len(boundaries) < 3:
+        minimum = min(expected_values[0], actual_values[0])
+        maximum = max(expected_values[-1], actual_values[-1])
+        if minimum == maximum:
+            return 0.0
+        boundaries = [minimum, (minimum + maximum) / 2.0, maximum]
+
+    expected_counts = _histogram(expected_values, boundaries)
+    actual_counts = _histogram(actual_values, boundaries)
+    epsilon = 1e-4
+    expected_total = max(sum(expected_counts), 1)
+    actual_total = max(sum(actual_counts), 1)
+    psi = 0.0
+    for expected_count, actual_count in zip(expected_counts, actual_counts, strict=True):
+        expected_pct = max(expected_count / expected_total, epsilon)
+        actual_pct = max(actual_count / actual_total, epsilon)
+        psi += (actual_pct - expected_pct) * math.log(actual_pct / expected_pct)
+    return float(psi)
+
+
+def _histogram(values: list[float], boundaries: list[float]) -> list[int]:
+    counts = [0 for _ in range(len(boundaries) - 1)]
+    for value in values:
+        for index in range(len(boundaries) - 1):
+            left = boundaries[index]
+            right = boundaries[index + 1]
+            if (index == len(boundaries) - 2 and left <= value <= right) or left <= value < right:
+                counts[index] += 1
+                break
+    return counts
+
+
+def numeric_feature_columns(frame: Any) -> list[str]:
+    columns: list[str] = []
+    for field in frame.schema.fields:
+        data_type = field.dataType.simpleString().lower()
+        if field.name in ID_COLUMNS or field.name.endswith("_id"):
+            continue
+        if data_type.startswith(NUMERIC_TYPE_PREFIXES):
+            columns.append(field.name)
+    return columns
+
+
+def timestamp_column(frame: Any) -> str | None:
+    for column in TIMESTAMP_COLUMNS:
+        if column in frame.columns:
+            return column
+    return None
+
+
+def split_reference_current(frame: Any, current_days: int) -> tuple[Any, Any]:
+    from pyspark.sql import functions as F
+
+    column = timestamp_column(frame)
+    if not column:
+        indexed = frame.withColumn("__drift_row_number", F.monotonically_increasing_id())
+        midpoint = indexed.count() // 2
+        return indexed.filter(F.col("__drift_row_number") < midpoint), indexed.filter(F.col("__drift_row_number") >= midpoint)
+    normalized = frame.withColumn("__drift_ts", F.to_timestamp(F.col(column)))
+    max_ts = normalized.select(F.max("__drift_ts").alias("max_ts")).collect()[0]["max_ts"]
+    if max_ts is None:
+        midpoint = normalized.count() // 2
+        indexed = normalized.withColumn("__drift_row_number", F.monotonically_increasing_id())
+        return indexed.filter(F.col("__drift_row_number") < midpoint), indexed.filter(F.col("__drift_row_number") >= midpoint)
+    cutoff = max_ts - timedelta(days=current_days)
+    reference = normalized.filter(F.col("__drift_ts") <= F.lit(cutoff))
+    current = normalized.filter(F.col("__drift_ts") > F.lit(cutoff))
+    if reference.limit(1).count() == 0 or current.limit(1).count() == 0:
+        indexed = normalized.withColumn("__drift_row_number", F.monotonically_increasing_id())
+        midpoint = indexed.count() // 2
+        reference = indexed.filter(F.col("__drift_row_number") < midpoint)
+        current = indexed.filter(F.col("__drift_row_number") >= midpoint)
     return reference, current
 
 
-def numeric_feature_columns(frame: pd.DataFrame) -> list[str]:
+def collect_numeric(frame: Any, column: str) -> list[float]:
+    from pyspark.sql import functions as F
+
     return [
-        column
-        for column in frame.select_dtypes(include="number").columns
-        if column not in ID_COLUMNS and not column.endswith("_id")
+        float(row[column])
+        for row in frame.select(F.col(column).cast("double").alias(column)).where(F.col(column).isNotNull()).collect()
+        if row[column] is not None
     ]
 
 
-def analyze_feature_view(
-    frame: pd.DataFrame,
-    feature_view: str,
-    threshold: float,
-    current_days: int,
-    timestamp_column: str = "event_timestamp",
-) -> list[DriftFeatureResult]:
-    reference, current = split_reference_current(frame, timestamp_column, current_days)
+def analyze_feature_table(frame: Any, table_name: str, threshold: float, current_days: int) -> list[DriftFeatureResult]:
+    reference, current = split_reference_current(frame, current_days)
+    reference_rows = int(reference.count())
+    current_rows = int(current.count())
     results: list[DriftFeatureResult] = []
     for feature in numeric_feature_columns(frame):
-        score = calculate_psi(reference[feature], current[feature])
+        score = calculate_psi(collect_numeric(reference, feature), collect_numeric(current, feature))
         results.append(
             DriftFeatureResult(
-                feature_view=feature_view,
+                feature_table=table_name,
                 feature=feature,
                 drift_score=score,
                 passed=score < threshold,
-                reference_rows=int(len(reference)),
-                current_rows=int(len(current)),
+                reference_rows=reference_rows,
+                current_rows=current_rows,
                 threshold=threshold,
             )
         )
     return results
 
 
-def monitoring_rows(run_id: str, results: list[DriftFeatureResult]) -> list[dict[str, Any]]:
-    now = datetime.now(timezone.utc)
-    return [
-        {
-            "run_id": run_id,
-            "feature_name": f"{result.feature_view}.{result.feature}",
-            "drift_score": result.drift_score,
-            "passed": result.passed,
-            "metrics": {
-                "threshold": result.threshold,
-                "reference_rows": result.reference_rows,
-                "current_rows": result.current_rows,
-                "feature_view": result.feature_view,
-                "drift_kind": "feature_drift",
-            },
-            "created_timestamp": now,
-        }
-        for result in results
-    ]
-
-
-def pushgateway_samples(run_id: str, results: list[DriftFeatureResult]) -> list[MetricSample]:
+def metric_samples(run_id: str, results: list[DriftFeatureResult]) -> list[MetricSample]:
     samples = [
         MetricSample("recsys_ml_feature_drift_run_timestamp_seconds", datetime.now(timezone.utc).timestamp(), {"run_id": run_id})
     ]
     for result in results:
-        labels = {"feature_view": result.feature_view, "feature": result.feature}
+        labels = {"feature_view": result.feature_table, "feature": result.feature}
         samples.extend(
             [
                 MetricSample("recsys_ml_feature_drift_psi", result.drift_score, labels),
                 MetricSample("recsys_ml_feature_drift_passed", 1.0 if result.passed else 0.0, labels),
-                MetricSample(
-                    "recsys_ml_feature_drift_reference_rows",
-                    result.reference_rows,
-                    {"feature_view": result.feature_view},
-                ),
-                MetricSample(
-                    "recsys_ml_feature_drift_current_rows",
-                    result.current_rows,
-                    {"feature_view": result.feature_view},
-                ),
+                MetricSample("recsys_ml_feature_drift_reference_rows", result.reference_rows, {"feature_view": result.feature_table}),
+                MetricSample("recsys_ml_feature_drift_current_rows", result.current_rows, {"feature_view": result.feature_table}),
             ]
         )
     return samples
 
 
+def write_report(path: str, report: dict[str, Any]) -> str:
+    payload = json.dumps(report, indent=2, sort_keys=True, default=str).encode("utf-8")
+    if path.startswith("s3://"):
+        import boto3
+
+        bucket, key = path.removeprefix("s3://").split("/", 1)
+        client = boto3.client(
+            "s3",
+            endpoint_url=os.getenv("MINIO_ENDPOINT", "http://data-platform-minio:9000"),
+            aws_access_key_id=os.getenv("MINIO_ROOT_USER", os.getenv("AWS_ACCESS_KEY_ID", "minio")),
+            aws_secret_access_key=os.getenv("MINIO_ROOT_PASSWORD", os.getenv("AWS_SECRET_ACCESS_KEY", "minio123")),
+            region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+        )
+        client.put_object(Bucket=bucket, Key=key, Body=payload, ContentType="application/json")
+        return path
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    return str(target)
+
+
 def run_offline_feature_drift(
     run_id: str,
-    offline_root: str,
     report_path: str,
-    feature_views: list[str] | None = None,
+    feature_tables: list[str] | None = None,
     threshold: float = 0.15,
     current_days: int = 7,
     pushgateway_url: str | None = None,
 ) -> dict[str, Any]:
+    spark = spark_session("recsys-offline-feature-drift")
+    catalog = IcebergCatalogConfig()
     results: list[DriftFeatureResult] = []
     errors: list[str] = []
-    for feature_view in feature_views or DEFAULT_FEATURE_VIEWS:
-        try:
-            frame = read_feature_table(f"{offline_root.rstrip('/')}/{feature_view}")
-            timestamp_column = "event_timestamp" if "event_timestamp" in frame.columns else "feature_timestamp"
-            results.extend(analyze_feature_view(frame, feature_view, threshold, current_days, timestamp_column))
-        except Exception as exc:
-            errors.append(f"{feature_view}: {exc}")
-
-    rows = monitoring_rows(run_id, results)
-    if rows:
-        with connect() as connection:
-            upsert_rows(connection, MONITORING_FEATURE_DRIFT_RUNS, rows)
+    try:
+        for table in feature_tables or DEFAULT_FEATURE_TABLES:
+            table_name = table if "." in table else catalog.feature_table(table)
+            try:
+                results.extend(analyze_feature_table(spark.table(table_name), table_name.split(".")[-1], threshold, current_days))
+            except Exception as exc:
+                errors.append(f"{table_name}: {exc}")
+    finally:
+        spark.stop()
 
     push_metrics(
-        pushgateway_samples(run_id, results),
+        metric_samples(run_id, results),
         job="recsys_offline_feature_drift",
         gateway_url=pushgateway_url,
         grouping_key={"run_id": run_id},
     )
-
     report = {
         "run_id": run_id,
         "drift_kind": "feature_drift",
@@ -188,14 +262,10 @@ def run_offline_feature_drift(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run offline feature drift monitoring and push metrics.")
+    parser = argparse.ArgumentParser(description="Run Iceberg offline feature drift monitoring and push metrics.")
     parser.add_argument("--run-id", default=os.getenv("FEATURE_DRIFT_RUN_ID", datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")))
-    parser.add_argument("--offline-root", default=os.getenv("FEAST_OFFLINE_ROOT", "s3://recsys-feature-store/offline"))
-    parser.add_argument(
-        "--report-path",
-        default=os.getenv("OFFLINE_FEATURE_DRIFT_REPORT_PATH", "s3://recsys-lake/monitoring/offline_feature_drift/report.json"),
-    )
-    parser.add_argument("--feature-view", action="append", dest="feature_views")
+    parser.add_argument("--report-path", default=os.getenv("OFFLINE_FEATURE_DRIFT_REPORT_PATH", "s3://recsys-offline-feature-store/monitoring/offline_feature_drift/report.json"))
+    parser.add_argument("--feature-table", action="append", dest="feature_tables")
     parser.add_argument("--threshold", type=float, default=float(os.getenv("RETRAIN_PSI_THRESHOLD", "0.15")))
     parser.add_argument("--current-days", type=int, default=int(os.getenv("FEATURE_DRIFT_CURRENT_DAYS", "7")))
     parser.add_argument("--pushgateway-url", default=os.getenv("PUSHGATEWAY_URL", ""))
@@ -203,9 +273,8 @@ def main() -> int:
     args = parser.parse_args()
     report = run_offline_feature_drift(
         args.run_id,
-        args.offline_root,
         args.report_path,
-        feature_views=args.feature_views,
+        feature_tables=args.feature_tables,
         threshold=args.threshold,
         current_days=args.current_days,
         pushgateway_url=args.pushgateway_url or None,

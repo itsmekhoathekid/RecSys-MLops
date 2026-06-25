@@ -16,6 +16,7 @@ def test_secret_env_mapping_is_stable():
         "MLFLOW_TRACKING_URI": "MLFLOW_TRACKING_URI",
         "MLFLOW_EXPERIMENT_NAME": "MLFLOW_EXPERIMENT_NAME",
         "MLFLOW_S3_ENDPOINT_URL": "MLFLOW_S3_ENDPOINT_URL",
+        "MODEL_STORE_ENDPOINT": "MODEL_STORE_ENDPOINT",
         "MODEL_REGISTRY_POSTGRES_URI": "MODEL_REGISTRY_POSTGRES_URI",
         "MODEL_STORE_BUCKET": "MODEL_STORE_BUCKET",
         "MODEL_STORE_PREFIX": "MODEL_STORE_PREFIX",
@@ -26,6 +27,9 @@ def test_secret_env_mapping_is_stable():
         "ICEBERG_ENABLED": "ICEBERG_ENABLED",
         "ICEBERG_CATALOG_NAME": "ICEBERG_CATALOG_NAME",
         "ICEBERG_WAREHOUSE": "ICEBERG_WAREHOUSE",
+        "HUDI_ENABLED": "HUDI_ENABLED",
+        "HUDI_CATALOG_NAME": "HUDI_CATALOG_NAME",
+        "HUDI_WAREHOUSE": "HUDI_WAREHOUSE",
     }
 
 
@@ -206,14 +210,16 @@ def test_compile_pipeline_writes_refactored_component_commands():
     compiled = package_path.read_text(encoding="utf-8")
 
     assert package_path.name == "bst_training_pipeline.yaml"
-    assert "/opt/recsys/apps/ml-system/src/run_feature_engineering.py" in compiled
     assert "/opt/spark/bin/spark-submit" in compiled
     assert "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12" in compiled
+    assert "org.apache.hudi:hudi-spark3.5-bundle_2.12" in compiled
     assert "/opt/recsys/apps/ml-system/src/prepare_bst_training_data.py" in compiled
-    assert "--entity-input-path" in compiled
-    assert "--iceberg-enabled" in compiled
+    assert "--feature-source" in compiled
+    assert "--offline-feature-table" in compiled
+    assert "--hudi-enabled" in compiled
     assert "--dataset-metadata-path" in compiled
-    assert "training_entity_path" in compiled
+    assert "offline_feature_table" in compiled
+    assert "recsys_features.feature_store.ml_bst_training" in compiled
     assert "training_table_path" not in compiled
     assert "/opt/recsys/apps/ml-system/src/submit_ray_job.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/evaluate_ray_best_bst.py" in compiled

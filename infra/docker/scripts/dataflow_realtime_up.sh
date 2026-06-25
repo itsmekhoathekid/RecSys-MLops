@@ -13,9 +13,6 @@ EVENTS_PER_TICK="${DATAFLOW_REALTIME_EVENTS_PER_TICK:-5}"
 "${SCRIPT_DIR}/dataflow_compose.sh" run --rm dataflow-cli \
   bash infra/docker/scripts/register_debezium_connector.sh
 
-"${SCRIPT_DIR}/dataflow_compose.sh" run --rm dataflow-cli \
-  bash infra/docker/scripts/register_minio_sink_connector.sh
-
 docker stop "${PRODUCER_NAME}" "${FLINK_NAME}" >/dev/null 2>&1 || true
 docker rm -f "${PRODUCER_NAME}" "${FLINK_NAME}" >/dev/null 2>&1 || true
 
@@ -25,7 +22,7 @@ docker rm -f "${PRODUCER_NAME}" "${FLINK_NAME}" >/dev/null 2>&1 || true
     --events-per-tick '${EVENTS_PER_TICK}'"
 
 "${SCRIPT_DIR}/dataflow_compose.sh" run -d --name "${FLINK_NAME}" flink-taskmanager \
-  bash -lc "PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys flink run -m flink-jobmanager:8081 -py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py -- --runner pyflink --topic cdc.behavior_events --continuous --min-events 0"
+  bash -lc "PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys flink run -m flink-jobmanager:8081 -py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py -- --runner pyflink --topic cdc.behavior_events --continuous --min-events 0 --offline-store-enabled --offline-feature-catalog \"\$OFFLINE_FEATURE_CATALOG\" --offline-feature-store-warehouse \"\$OFFLINE_FEATURE_STORE_WAREHOUSE\""
 
 cat <<EOF
 Realtime continuous mode is running.
@@ -39,8 +36,7 @@ Streaming container:
 Useful checks:
   docker logs -f ${PRODUCER_NAME}
   docker logs -f ${FLINK_NAME}
-  make dataflow-smoke DATAFLOW_SMOKE_PHASE=bronze
-  make dataflow-smoke DATAFLOW_SMOKE_PHASE=redis
+  docker exec recsys-dataflow-redis-1 redis-cli DBSIZE
 
 Stop it with:
   make dataflow-realtime-down

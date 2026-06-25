@@ -239,7 +239,7 @@ def _dataset_versions_match(best_result: dict[str, Any], dataset_metadata: dict[
         actual_version = actual.get(split)
         if not actual_version:
             return False
-        for key in ("table", "snapshot_id", "tag", "row_count"):
+        for key in ("table", "snapshot_id", "commit_time", "tag", "row_count"):
             if actual_version.get(key) != expected_version.get(key):
                 return False
     return True
@@ -260,6 +260,7 @@ def reusable_best_result(best_result_path: str, dataset_metadata_path: str = "")
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit and wait for a KubeRay RayJob")
+    parser.add_argument("--pipeline-run-id", default="")
     parser.add_argument("--namespace", default="kubeflow")
     parser.add_argument("--job-name", default="recsys-bst-ray-tune")
     parser.add_argument("--image", default="recsys-mlops-training:local")

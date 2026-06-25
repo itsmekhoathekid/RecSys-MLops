@@ -1,0 +1,120 @@
+{{- if .Values.istio.enabled }}
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-dataflow-allow
+  namespace: recsys-dataflow
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/recsys-dataflow/sa/default
+              - cluster.local/ns/observability/sa/recsys-prometheus
+      to:
+        - operation:
+            ports: ["5432", "6379", "8081", "8083", "8088", "9000", "9091"]
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/api-serving/sa/default
+      to:
+        - operation:
+            ports: ["6379"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-kubeflow-allow
+  namespace: kubeflow
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/recsys-dataflow/sa/default
+              - cluster.local/ns/kubeflow/sa/pipeline-runner
+              - cluster.local/ns/kubeflow/sa/default
+              - cluster.local/ns/kubeflow/sa/default-editor
+              - cluster.local/ns/observability/sa/recsys-prometheus
+      to:
+        - operation:
+            ports: ["80", "8888", "8265"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-mlflow-allow
+  namespace: experiment-tracking
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/kubeflow/sa/pipeline-runner
+              - cluster.local/ns/kubeflow/sa/default
+              - cluster.local/ns/kubeflow/sa/default-editor
+              - cluster.local/ns/kserve-triton-inference/sa/recsys-kserve-minio
+              - cluster.local/ns/observability/sa/recsys-prometheus
+      to:
+        - operation:
+            ports: ["5000", "5432", "9000"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-kserve-allow
+  namespace: kserve-triton-inference
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/api-serving/sa/default
+              - cluster.local/ns/observability/sa/recsys-prometheus
+      to:
+        - operation:
+            ports: ["80", "8080", "9000"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-api-allow
+  namespace: api-serving
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ingress-nginx/sa/ingress-nginx
+              - cluster.local/ns/observability/sa/recsys-prometheus
+      to:
+        - operation:
+            ports: ["80", "8080"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-observability-allow
+  namespace: observability
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/recsys-dataflow/sa/default
+              - cluster.local/ns/api-serving/sa/default
+              - cluster.local/ns/kubeflow/sa/pipeline-runner
+              - cluster.local/ns/kubeflow/sa/default
+              - cluster.local/ns/ingress-nginx/sa/ingress-nginx
+      to:
+        - operation:
+            ports: ["3000", "3100", "3200", "4317", "9090", "9091"]
+{{- end }}

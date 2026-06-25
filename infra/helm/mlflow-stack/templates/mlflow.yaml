@@ -30,24 +30,24 @@ spec:
                 secretKeyRef:
                   name: recsys-mlflow-secrets
                   key: MINIO_ROOT_PASSWORD
+          envFrom:
+            - secretRef:
+                name: recsys-mlflow-secrets
 {{- with .Values.mlflow.resources }}
           resources:
 {{ toYaml . | nindent 12 }}
 {{- end }}
           command:
-            - mlflow
+            - bash
+            - -lc
           args:
-            - server
-            - --host
-            - 0.0.0.0
-            - --port
-            - "{{ .Values.mlflow.service.port }}"
-            - --backend-store-uri
-            - postgresql+psycopg2://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@postgres:5432/{{ .Values.postgres.database }}
-            - --default-artifact-root
-            - s3://{{ .Values.minio.bucket }}
-            - --allowed-hosts
-            - "*"
+            - >-
+              mlflow server
+              --host 0.0.0.0
+              --port {{ .Values.mlflow.service.port }}
+              --backend-store-uri "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+              --default-artifact-root "s3://{{ .Values.minio.bucket }}"
+              --allowed-hosts "*"
           ports:
             - name: http
               containerPort: {{ .Values.mlflow.service.port }}

@@ -1,28 +1,29 @@
-environment: local_poc
+environment: local_native_lakehouse
 
-lake:
+lakehouse:
   endpoint_url: http://localhost:9000
-  lake_bucket: recsys-lake
-  feature_store_bucket: recsys-feature-store
+  bucket: recsys-lakehouse
+  warehouse: s3a://recsys-lakehouse/warehouse
+  catalog: recsys
+  lakehouse_namespace: lakehouse
   raw_prefix: raw
-  bronze_prefix: bronze
-  silver_prefix: silver
-
-feature_store_offline:
-  bucket: recsys-feature-store
-  prefix: offline
-
-ml_artifacts:
-  bucket: recsys-lake
-  prefix: silver/ml
 
 source:
   historical_run_id: test_10k_seed42
   local_generator_output: apps/data-platform/data-generator/src/output/test_10k_seed42
+  batch_lakehouse_tables:
+    - recsys.lakehouse.users
+    - recsys.lakehouse.products
+    - recsys.lakehouse.behavior_events
+    - recsys.lakehouse.impressions
+    - recsys.lakehouse.orders
 
-feature_store:
-  repo_path: apps/data-platform/feature-store/feature_repo
-  registry_path: apps/data-platform/feature-store/feature_repo/data/registry.db
+feature_stores:
+  offline_bucket: recsys-offline-feature-store
+  offline_catalog: recsys_features
+  feature_namespace: feature_store
+  offline_uri: s3a://recsys-offline-feature-store/warehouse/feature_store
+  online_store: redis
 
 orchestration:
   airflow_dags_path: apps/data-platform/src/orchestration/airflow/dags

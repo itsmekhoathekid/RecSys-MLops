@@ -42,7 +42,13 @@ spec:
                 --parallelism "$FLINK_PARALLELISM" \
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
-                --warehouse-enabled
+                --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --offline-store-enabled \
+                --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
+                --iceberg-catalog "$ICEBERG_CATALOG" \
+                --offline-feature-catalog "$OFFLINE_FEATURE_CATALOG" \
+                --offline-feature-store-warehouse "$OFFLINE_FEATURE_STORE_WAREHOUSE" \
+                --iceberg-feature-namespace "$ICEBERG_FEATURE_NAMESPACE"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

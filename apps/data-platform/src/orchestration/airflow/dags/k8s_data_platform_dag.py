@@ -4,9 +4,10 @@ try:
     from airflow import DAG
     from airflow.operators.empty import EmptyOperator
     from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+    from kubernetes.client import models as k8s
     from pendulum import datetime
 except ImportError:  # pragma: no cover
-    DAG = EmptyOperator = KubernetesPodOperator = datetime = None
+    DAG = EmptyOperator = KubernetesPodOperator = datetime = k8s = None
 
 
 NAMESPACE = "recsys-dataflow"
@@ -14,46 +15,17 @@ DATAFLOW_IMAGE = "recsys-dataflow-cli:local"
 FLINK_IMAGE = "recsys-flink:local"
 SPARK_IMAGE = "recsys-spark:local"
 COMMON_ENV = {
-    "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys",
-    "DATA_PLATFORM_MINIO_ENDPOINT": "http://data-platform-minio:9000",
-    "DATA_PLATFORM_MINIO_ROOT_USER": "minio",
-    "DATA_PLATFORM_MINIO_ROOT_PASSWORD": "minio123",
-    "MINIO_ENDPOINT": "http://data-platform-minio:9000",
-    "MINIO_ROOT_USER": "minio",
-    "MINIO_ROOT_PASSWORD": "minio123",
-    "AWS_ACCESS_KEY_ID": "minio",
-    "AWS_SECRET_ACCESS_KEY": "minio123",
-    "AWS_DEFAULT_REGION": "us-east-1",
-    "LAKE_BUCKET": "recsys-lake",
-    "FEATURE_STORE_BUCKET": "recsys-feature-store",
-    "POSTGRES_HOST": "source-postgres",
-    "POSTGRES_PORT": "5432",
-    "POSTGRES_DB": "recsys",
-    "POSTGRES_USER": "recsys",
-    "POSTGRES_PASSWORD": "recsys",
-    "WAREHOUSE_POSTGRES_HOST": "warehouse-postgres",
-    "WAREHOUSE_POSTGRES_PORT": "5432",
-    "WAREHOUSE_POSTGRES_DB": "recsys_warehouse",
-    "WAREHOUSE_POSTGRES_USER": "recsys",
-    "WAREHOUSE_POSTGRES_PASSWORD": "recsys",
-    "KAFKA_BOOTSTRAP_SERVERS": "kafka:29092",
-    "REDIS_HOST": "redis",
-    "REDIS_PORT": "6379",
-    "FEAST_OFFLINE_ROOT": "s3://recsys-feature-store/offline",
-    "FEAST_REPO_PATH": "/opt/recsys/apps/data-platform/feature-store/feature_repo",
-    "FEAST_REGISTRY_BACKUP_URI": "s3://recsys-feature-store/registry/registry.db",
-    "ML_ARTIFACT_ROOT": "s3://recsys-lake/silver/ml",
-    "WAREHOUSE_ENABLED": "true",
-    "DATAHUB_GMS_URL": "http://datahub-datahub-gms.datahub.svc.cluster.local:8080",
-    "PUSHGATEWAY_URL": "http://recsys-pushgateway.observability.svc.cluster.local:9091",
-    "OFFLINE_FEATURE_DRIFT_REPORT_PATH": "s3://recsys-lake/monitoring/offline_feature_drift/report.json",
-    "KFP_ENDPOINT": "http://ml-pipeline.kubeflow.svc.cluster.local:8888",
-    "KFP_EXPERIMENT_NAME": "recsys-observability-retrain",
-    "KFP_PIPELINE_PACKAGE_PATH": "/opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml",
-    "RETRAIN_ON_DRIFT": "true",
-    "RETRAIN_PSI_THRESHOLD": "0.15",
-    "RECSYS_JSON_LOGS": "1",
+    "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
 }
+
+
+def pod_env_from():
+    if k8s is None:
+        return []
+    return [
+        k8s.V1EnvFromSource(config_map_ref=k8s.V1ConfigMapEnvSource(name="recsys-data-platform-config")),
+        k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="recsys-data-platform-secret")),
+    ]
 
 
 def pod_task(task_id: str, image: str, command: str):
@@ -65,6 +37,8 @@ def pod_task(task_id: str, image: str, command: str):
         cmds=["bash", "-lc"],
         arguments=[command],
         env_vars=COMMON_ENV,
+        env_from=pod_env_from(),
+        annotations={"sidecar.istio.io/inject": "false"},
         get_logs=True,
         is_delete_operator_pod=True,
         in_cluster=True,
@@ -77,7 +51,7 @@ if DAG is not None:
         start_date=datetime(2026, 1, 1),
         schedule=None,
         catchup=False,
-        tags=["recsys", "k8s", "data-platform"],
+        tags=["recsys", "k8s", "native-lakehouse"],
     ) as dag:
         start = EmptyOperator(task_id="start")
         end = EmptyOperator(task_id="end")
@@ -86,11 +60,6 @@ if DAG is not None:
             "init_data_platform_minio",
             DATAFLOW_IMAGE,
             "python -m ingest.init_data_platform_minio",
-        )
-        init_warehouse = pod_task(
-            "init_warehouse",
-            DATAFLOW_IMAGE,
-            "python -m warehouse.init_warehouse",
         )
         init_source_schema = pod_task(
             "init_source_schema",
@@ -103,17 +72,20 @@ if DAG is not None:
             DATAFLOW_IMAGE,
             "python -m ingest.register_k8s_connectors --connector debezium",
         )
-        register_kafka_minio_sink = pod_task(
-            "register_kafka_minio_sink",
-            DATAFLOW_IMAGE,
-            "python -m ingest.register_k8s_connectors --connector s3-sink",
-        )
-        generate_historical_to_lake_raw = pod_task(
-            "generate_historical_to_lake_raw",
+        generate_historical_raw_files = pod_task(
+            "generate_historical_raw_files",
             DATAFLOW_IMAGE,
             "PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys "
             "python apps/data-platform/data-generator/src/scripts/generate_historical_to_minio.py "
-            "--target s3 --bucket recsys-lake --prefix raw",
+            "--target s3 --bucket recsys-lakehouse --prefix raw",
+        )
+        ingest_historical_batch_to_lakehouse = pod_task(
+            "ingest_historical_batch_to_lakehouse",
+            SPARK_IMAGE,
+            "/opt/spark/bin/spark-submit "
+            "apps/data-platform/src/ingest/batch_lakehouse_ingestion.py "
+            "--run-path s3a://recsys-lakehouse/raw/test_10k_seed42 "
+            "--mode overwrite",
         )
         load_realtime_to_source_postgres = pod_task(
             "load_realtime_to_source_postgres",
@@ -122,75 +94,30 @@ if DAG is not None:
             "python apps/data-platform/data-generator/src/scripts/load_realtime_to_postgres.py "
             "--limit-per-table 200",
         )
-        wait_for_cdc_to_bronze = pod_task(
-            "wait_for_cdc_to_bronze",
-            DATAFLOW_IMAGE,
-            "python infra/docker/scripts/validate_bronze_cdc.py "
-            "--topic cdc.behavior_events --min-records 1 --timeout-seconds 240 --poll-seconds 10",
+        run_spark_batch_to_offline_store = pod_task(
+            "run_spark_batch_to_offline_store",
+            SPARK_IMAGE,
+            "/opt/spark/bin/spark-submit "
+            "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py "
+            "--config configs/local/spark_batch.yaml",
         )
-        ingest_historical_to_staging = pod_task(
-            "ingest_historical_to_staging",
-            DATAFLOW_IMAGE,
-            "python -m warehouse.historical_loader --run-path s3://recsys-lake/raw/test_10k_seed42",
-        )
-        publish_generator_quality = pod_task(
-            "publish_generator_quality",
-            DATAFLOW_IMAGE,
-            "python -m validate.synthetic_data_quality "
-            "--run-path s3://recsys-lake/raw/test_10k_seed42 "
-            "--report-path s3://recsys-lake/monitoring/generator/offline_quality.json",
-        )
-        run_flink_processing = pod_task(
-            "run_flink_processing",
+        run_flink_stream_to_feature_stores = pod_task(
+            "run_flink_stream_to_feature_stores",
             FLINK_IMAGE,
             "flink run -m flink-jobmanager:8081 "
             "-py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py "
             "-- "
             "--runner pyflink --topic cdc.behavior_events --max-events 200 --min-events 1 "
-            "--warehouse-enabled",
+            "--offline-store-enabled "
+            "--offline-feature-catalog $OFFLINE_FEATURE_CATALOG "
+            "--offline-feature-store-warehouse $OFFLINE_FEATURE_STORE_WAREHOUSE",
         )
-        ge_validate_staging = pod_task(
-            "ge_validate_staging",
-            DATAFLOW_IMAGE,
-            "python -m validate.great_expectations_runner "
-            "--report-path s3://recsys-lake/monitoring/great_expectations/staging_validation.json",
-        )
-        dbt_transform_production = pod_task(
-            "dbt_transform_production",
-            DATAFLOW_IMAGE,
-            "cd apps/data-platform/dbt/recsys_warehouse && "
-            "dbt deps --profiles-dir . || true && "
-            "dbt build --profiles-dir .",
-        )
-        write_offline_feature_store = pod_task(
-            "write_offline_feature_store",
+        offline_feature_drift = pod_task(
+            "offline_feature_drift",
             SPARK_IMAGE,
             "/opt/spark/bin/spark-submit "
-            "--packages org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 "
-            "--conf spark.hadoop.fs.s3a.endpoint=http://data-platform-minio:9000 "
-            "--conf spark.hadoop.fs.s3a.access.key=minio "
-            "--conf spark.hadoop.fs.s3a.secret.key=minio123 "
-            "--conf spark.hadoop.fs.s3a.path.style.access=true "
-            "--conf spark.hadoop.fs.s3a.connection.ssl.enabled=false "
-            "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py "
-            "--config configs/local/spark_batch.yaml",
-        )
-        validate_offline_feature_store = pod_task(
-            "validate_offline_feature_store",
-            DATAFLOW_IMAGE,
-            "python apps/data-platform/feature-store/src/validate_feature_store.py",
-        )
-        sync_offline_to_online_store = pod_task(
-            "sync_offline_to_online_store",
-            DATAFLOW_IMAGE,
-            "python apps/data-platform/feature-store/src/materialize_offline_to_online.py",
-        )
-        evidently_feature_drift = pod_task(
-            "evidently_feature_drift",
-            DATAFLOW_IMAGE,
-            "python -m validate.offline_feature_drift "
+            "apps/data-platform/src/validate/offline_feature_drift.py "
             "--report-path $OFFLINE_FEATURE_DRIFT_REPORT_PATH "
-            "--offline-root $FEAST_OFFLINE_ROOT "
             "--threshold $RETRAIN_PSI_THRESHOLD "
             "--pushgateway-url $PUSHGATEWAY_URL",
         )
@@ -202,7 +129,8 @@ if DAG is not None:
             "--kfp-endpoint $KFP_ENDPOINT "
             "--experiment-name $KFP_EXPERIMENT_NAME "
             "--pipeline-package-path $KFP_PIPELINE_PACKAGE_PATH "
-            "--pushgateway-url $PUSHGATEWAY_URL",
+            "--pushgateway-url $PUSHGATEWAY_URL "
+            "--pipeline-arg source_run_path=s3a://recsys-lakehouse/raw/test_10k_seed42",
         )
         datahub_ingest = pod_task(
             "datahub_ingest",
@@ -211,33 +139,15 @@ if DAG is not None:
             "--gms-url $DATAHUB_GMS_URL "
             "--pushgateway-url $PUSHGATEWAY_URL",
         )
-        final_smoke = pod_task(
-            "final_smoke",
-            DATAFLOW_IMAGE,
-            "python infra/docker/scripts/smoke_check_stack.py --phase offline",
-        )
 
         (
             start
             >> init_data_platform_minio
             >> init_source_schema
-            >> init_warehouse
             >> register_debezium_connector
-            >> register_kafka_minio_sink
-            >> generate_historical_to_lake_raw
-            >> publish_generator_quality
-            >> load_realtime_to_source_postgres
-            >> wait_for_cdc_to_bronze
-            >> ingest_historical_to_staging
-            >> run_flink_processing
-            >> ge_validate_staging
-            >> dbt_transform_production
-            >> write_offline_feature_store
-            >> validate_offline_feature_store
-            >> sync_offline_to_online_store
-            >> evidently_feature_drift
-            >> trigger_kubeflow_retrain
-            >> datahub_ingest
-            >> final_smoke
-            >> end
+            >> [generate_historical_raw_files, load_realtime_to_source_postgres]
         )
+        generate_historical_raw_files >> ingest_historical_batch_to_lakehouse >> run_spark_batch_to_offline_store
+        load_realtime_to_source_postgres >> run_flink_stream_to_feature_stores
+        run_spark_batch_to_offline_store >> offline_feature_drift >> trigger_kubeflow_retrain
+        [trigger_kubeflow_retrain, run_flink_stream_to_feature_stores] >> datahub_ingest >> end

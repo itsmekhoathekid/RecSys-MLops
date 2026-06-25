@@ -11,8 +11,8 @@ def main() -> int:
     user = os.getenv("MINIO_ROOT_USER", os.getenv("AWS_ACCESS_KEY_ID", "minio"))
     password = os.getenv("MINIO_ROOT_PASSWORD", os.getenv("AWS_SECRET_ACCESS_KEY", "minio123"))
     buckets = [
-        os.getenv("LAKE_BUCKET", "recsys-lake"),
-        os.getenv("FEATURE_STORE_BUCKET", "recsys-feature-store"),
+        os.getenv("LAKE_BUCKET", "recsys-lakehouse"),
+        os.getenv("OFFLINE_FEATURE_BUCKET", "recsys-offline-feature-store"),
     ]
     client = boto3.client(
         "s3",
@@ -34,4 +34,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

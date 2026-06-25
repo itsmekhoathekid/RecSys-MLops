@@ -7,7 +7,7 @@ storageClassName: ""
 minio:
   image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
   rootUser: minio
-  rootPassword: minio123
+  rootPassword: ""
   bucket: mlflow-artifacts
   modelStoreBucket: recsys-model-store
   storage: 10Gi
@@ -23,7 +23,7 @@ postgres:
   image: postgres:16
   database: mlflow
   user: mlflow
-  password: mlflow123
+  password: ""
   storage: 10Gi
   resources:
     requests:
@@ -41,3 +41,6 @@ mlflow:
       memory: 512Mi
   service:
     port: 5000
+
+secret:
+  create: false

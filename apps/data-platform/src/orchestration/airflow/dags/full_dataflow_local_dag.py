@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 try:
     from airflow import DAG
     from airflow.operators.empty import EmptyOperator
@@ -14,38 +16,30 @@ DOCKER_NETWORK = "recsys-dataflow_recsys-dataflow"
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
     "MINIO_ENDPOINT": "http://minio:9000",
-    "MINIO_ROOT_USER": "minio",
-    "MINIO_ROOT_PASSWORD": "minio123",
-    "AWS_ACCESS_KEY_ID": "minio",
-    "AWS_SECRET_ACCESS_KEY": "minio123",
+    "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "")),
+    "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "")),
     "AWS_DEFAULT_REGION": "us-east-1",
-    "AWS_ENDPOINT_URL": "http://minio:9000",
-    "FEAST_S3_ENDPOINT": "http://minio:9000",
-    "LAKE_BUCKET": "recsys-lake",
-    "FEATURE_STORE_BUCKET": "recsys-feature-store",
+    "LAKE_BUCKET": "recsys-lakehouse",
+    "OFFLINE_FEATURE_BUCKET": "recsys-offline-feature-store",
+    "LAKEHOUSE_WAREHOUSE": "s3a://recsys-lakehouse/warehouse",
+    "ICEBERG_CATALOG": "recsys",
+    "ICEBERG_LAKEHOUSE_NAMESPACE": "lakehouse",
+    "OFFLINE_FEATURE_CATALOG": "recsys_features",
+    "OFFLINE_FEATURE_STORE_WAREHOUSE": "s3a://recsys-offline-feature-store/warehouse",
+    "ICEBERG_FEATURE_NAMESPACE": "feature_store",
+    "OFFLINE_FEATURE_STORE_URI": "s3a://recsys-offline-feature-store/warehouse/feature_store",
     "POSTGRES_HOST": "postgres",
     "POSTGRES_PORT": "5432",
     "POSTGRES_DB": "recsys",
     "POSTGRES_USER": "recsys",
-    "POSTGRES_PASSWORD": "recsys",
+    "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
     "KAFKA_BOOTSTRAP_SERVERS": "kafka:29092",
     "KAFKA_CONNECT_URL": "http://kafka-connect:8083",
     "REDIS_HOST": "redis",
     "REDIS_PORT": "6379",
-    "FEAST_OFFLINE_ROOT": "s3://recsys-feature-store/offline",
+    "OFFLINE_STORE_ENABLED": "true",
     "DATAFLOW_OUTPUT_MODE": "s3",
 }
-
-
-SPARK_SUBMIT_BASE = (
-    "/opt/spark/bin/spark-submit --master spark://spark-master:7077 "
-    "--packages org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 "
-    "--conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 "
-    "--conf spark.hadoop.fs.s3a.access.key=minio "
-    "--conf spark.hadoop.fs.s3a.secret.key=minio123 "
-    "--conf spark.hadoop.fs.s3a.path.style.access=true "
-    "--conf spark.hadoop.fs.s3a.connection.ssl.enabled=false "
-)
 
 
 def docker_task(task_id: str, image: str, command: str):
@@ -79,16 +73,12 @@ if DAG is not None:
         start_date=datetime(2026, 1, 1),
         schedule=None,
         catchup=False,
-        tags=["recsys", "full-dataflow-local"],
+        tags=["recsys", "native-lakehouse"],
     ) as dag:
         start = EmptyOperator(task_id="start")
         end = EmptyOperator(task_id="end")
 
         with TaskGroup("platform_init") as platform_init:
-            check_services = cli_task(
-                "check_services",
-                "python infra/docker/scripts/smoke_check_stack.py --phase services",
-            )
             init_postgres_schema = cli_task(
                 "init_postgres_schema",
                 "PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys "
@@ -98,105 +88,48 @@ if DAG is not None:
                 "register_debezium_connector",
                 "bash infra/docker/scripts/register_debezium_connector.sh",
             )
-            register_minio_sink = cli_task(
-                "register_kafka_minio_sink",
-                "bash infra/docker/scripts/register_minio_sink_connector.sh",
-            )
+            init_postgres_schema >> register_debezium
 
-            check_services >> init_postgres_schema >> register_debezium >> register_minio_sink
-
-        with TaskGroup("historical_bootstrap_path") as historical_bootstrap_path:
+        with TaskGroup("historical_batch_to_offline_store") as historical_batch_to_offline_store:
             generate_historical_raw = cli_task(
-                "generate_historical_to_lake_raw",
+                "generate_historical_raw_files",
                 "PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys "
                 "python apps/data-platform/data-generator/src/scripts/generate_historical_to_minio.py "
-                "--target s3 --bucket recsys-lake --prefix raw",
+                "--target s3 --bucket recsys-lakehouse --prefix raw",
+            )
+            ingest_historical_batch_to_lakehouse = spark_task(
+                "ingest_historical_batch_to_lakehouse",
+                "/opt/spark/bin/spark-submit "
+                "apps/data-platform/src/ingest/batch_lakehouse_ingestion.py "
+                "--run-path s3a://recsys-lakehouse/raw/test_10k_seed42 "
+                "--mode overwrite",
             )
             run_historical_spark_batch = spark_task(
                 "run_historical_spark_batch",
-                f"{SPARK_SUBMIT_BASE}"
+                "/opt/spark/bin/spark-submit "
                 "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py "
                 "--config configs/local/spark_batch.yaml",
             )
-            historical_feast_materialize = cli_task(
-                "historical_feast_materialize",
-                "PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys "
-                "python apps/data-platform/feature-store/src/apply_feast_repo.py && "
-                "PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys "
-                "python apps/data-platform/feature-store/src/materialize_offline_to_online.py",
-            )
+            generate_historical_raw >> ingest_historical_batch_to_lakehouse >> run_historical_spark_batch
 
-            generate_historical_raw >> run_historical_spark_batch >> historical_feast_materialize
-
-        with TaskGroup("realtime_cdc_path") as realtime_cdc_path:
+        with TaskGroup("realtime_cdc_to_feature_stores") as realtime_cdc_to_feature_stores:
             load_realtime_source = cli_task(
                 "load_realtime_to_postgres",
                 "PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys "
                 "python apps/data-platform/data-generator/src/scripts/load_realtime_to_postgres.py --limit-per-table 200",
             )
-            wait_for_cdc_to_bronze = cli_task(
-                "wait_for_cdc_to_bronze",
-                "python infra/docker/scripts/validate_bronze_cdc.py "
-                "--topic cdc.behavior_events --min-records 1",
-            )
-            validate_bronze = cli_task(
-                "validate_bronze_behavior_events",
-                "python infra/docker/scripts/smoke_check_stack.py --phase bronze",
-            )
-
-            load_realtime_source >> wait_for_cdc_to_bronze >> validate_bronze
-
-        with TaskGroup("realtime_batch_to_offline_path") as realtime_batch_to_offline_path:
-            run_realtime_spark_batch = spark_task(
-                "run_realtime_spark_bronze_batch",
-                f"{SPARK_SUBMIT_BASE}"
-                "apps/data-platform/src/feature_engineering/spark/spark_realtime_bronze_entrypoint.py "
-                "--bronze-root s3://recsys-lake/bronze/kafka "
-                "--offline-root s3://recsys-feature-store/offline "
-                "--topic cdc.behavior_events",
-            )
-            realtime_feast_materialize = cli_task(
-                "realtime_feast_materialize",
-                "PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys "
-                "python apps/data-platform/feature-store/src/apply_feast_repo.py && "
-                "PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys "
-                "python apps/data-platform/feature-store/src/materialize_offline_to_online.py",
-            )
-            validate_offline_features = cli_task(
-                "validate_offline_feature_outputs",
-                "python infra/docker/scripts/smoke_check_stack.py --phase offline",
-            )
-
-            run_realtime_spark_batch >> realtime_feast_materialize >> validate_offline_features
-
-        with TaskGroup("realtime_stream_to_online_path") as realtime_stream_to_online_path:
-            submit_pflink_stream_job = flink_task(
-                "submit_pflink_stream_job",
+            submit_pyflink_stream_job = flink_task(
+                "submit_pyflink_stream_job",
                 "PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys "
                 "flink run -m flink-jobmanager:8081 "
                 "-py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py "
-                "-- --runner pyflink --topic cdc.behavior_events --max-events 200 --min-events 1",
+                "-- --runner pyflink --topic cdc.behavior_events --max-events 200 --min-events 1 "
+                "--offline-store-enabled "
+                "--offline-feature-catalog $OFFLINE_FEATURE_CATALOG "
+                "--offline-feature-store-warehouse $OFFLINE_FEATURE_STORE_WAREHOUSE",
             )
-            validate_streaming_redis = cli_task(
-                "validate_streaming_redis_keys",
-                "python infra/docker/scripts/smoke_check_stack.py --phase redis",
-            )
-
-            submit_pflink_stream_job >> validate_streaming_redis
-
-        with TaskGroup("final_validation") as final_validation:
-            final_smoke_check = cli_task(
-                "final_smoke_check",
-                "python infra/docker/scripts/smoke_check_stack.py --phase all",
-            )
+            load_realtime_source >> submit_pyflink_stream_job
 
         start >> platform_init
-        platform_init >> [historical_bootstrap_path, realtime_cdc_path]
-        [historical_bootstrap_path, realtime_cdc_path] >> realtime_batch_to_offline_path
-        realtime_cdc_path >> realtime_stream_to_online_path
-        [
-            historical_bootstrap_path,
-            realtime_batch_to_offline_path,
-            realtime_stream_to_online_path,
-        ] >> final_validation
-        final_validation >> end
+        platform_init >> [historical_batch_to_offline_store, realtime_cdc_to_feature_stores]
+        [historical_batch_to_offline_store, realtime_cdc_to_feature_stores] >> end

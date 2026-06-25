@@ -10,19 +10,24 @@ pvc:
   storageClassName: ""
 
 secret:
+  create: false
   name: recsys-mlops-runtime
   minioEndpoint: http://minio.experiment-tracking.svc.cluster.local:9000
+  dataPlatformMinioEndpoint: http://data-platform-minio.recsys-dataflow.svc.cluster.local:9000
   minioRootUser: minio
-  minioRootPassword: minio123
+  minioRootPassword: ""
   mlflowTrackingUri: http://mlflow.experiment-tracking.svc.cluster.local:5000
   mlflowExperimentName: recsys-bst-ranking
-  modelRegistryPostgresUri: postgresql://mlflow:mlflow123@postgres.experiment-tracking.svc.cluster.local:5432/mlflow
+  modelRegistryPostgresUri: postgresql://mlflow:${POSTGRES_PASSWORD}@postgres.experiment-tracking.svc.cluster.local:5432/mlflow
   modelStoreBucket: recsys-model-store
   modelStorePrefix: triton/bst
   promotionManifestKey: promotions/bst/latest.json
   icebergEnabled: "true"
-  icebergCatalogName: recsys
-  icebergWarehouse: s3a://recsys-lake/silver/ml/iceberg
+  icebergCatalogName: recsys_features
+  icebergWarehouse: s3a://recsys-offline-feature-store/warehouse
+  hudiEnabled: "true"
+  hudiCatalogName: recsys_features
+  hudiWarehouse: s3a://recsys-offline-feature-store/warehouse
 
 rbac:
   create: true

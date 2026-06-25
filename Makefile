@@ -4,7 +4,7 @@ DATAFLOW_SCRIPTS_DIR := infra/docker/scripts
 DATAFLOW_DAG ?= full_dataflow_local_dag
 DATAFLOW_SMOKE_PHASE ?= all
 DATAFLOW_LOG_SERVICE ?=
-DATAFLOW_INGEST_BUCKET ?= recsys-lake
+DATAFLOW_INGEST_BUCKET ?= recsys-lakehouse
 DATAFLOW_INGEST_PREFIX ?= raw
 RECSYS_PIPELINE_IMAGE ?= recsys-mlops-training:local
 MINIKUBE_PROFILE ?= recsys-mlops
@@ -34,6 +34,7 @@ GATEWAY_LOGS_HOST ?= logs.$(GATEWAY_DOMAIN)
 GATEWAY_TRACES_HOST ?= traces.$(GATEWAY_DOMAIN)
 GATEWAY_SCHEME ?= https
 GATEWAY_CURL_FLAGS ?= -k
+RECSYS_CLUSTER_SECURITY_ENABLED ?= 1
 
 .PHONY: help
 help:
@@ -55,8 +56,6 @@ help:
 	@echo "  make dataflow-ingest-lake     Generate historical data into MinIO lake raw"
 	@echo "  make dataflow-realtime-up     Start continuous realtime producer + streaming consumer"
 	@echo "  make dataflow-realtime-down   Stop continuous realtime containers"
-	@echo "  make dataflow-smoke           Run smoke checks, phase defaults to all"
-	@echo "  make dataflow-smoke DATAFLOW_SMOKE_PHASE=services|buckets|connectors|bronze|offline|redis"
 	@echo "  make dataflow-trigger         Trigger full_dataflow_local_dag"
 	@echo "  make dataflow-test            Run local unit tests"
 	@echo ""
@@ -67,7 +66,7 @@ help:
 	@echo "  make data-platform-trigger         Trigger k8s_data_platform_dag"
 	@echo "  make data-platform-e2e             Install, wait, trigger, and print run status"
 	@echo "  make data-platform-run-status      Print Airflow DAG run status"
-	@echo "  make data-platform-verify-e2e      Verify MinIO, warehouse, Redis, dbt/offline outputs"
+	@echo "  make data-platform-verify-e2e      Verify Debezium, Flink, Redis, and Iceberg lakehouse runtime"
 	@echo "  make data-platform-stream-generator-start  Start realtime data generator"
 	@echo "  make data-platform-stream-generator-stop   Stop realtime data generator"
 	@echo "  make data-platform-stream-generator-status Show realtime data generator status"
@@ -84,7 +83,7 @@ help:
 	@echo "  make cluster-down           Stop minikube and keep namespaces, PVCs, data, and model weights"
 	@echo "  make cluster-destroy        Delete full service namespaces/PVCs, then stop or delete minikube"
 	@echo "  make cluster-status         Show cluster memory and full service status"
-	@echo "  make cluster-data-setup     Run full data setup and verify feature-store + Redis online store"
+	@echo "  make cluster-data-setup     Run full data setup and verify Iceberg + Redis feature stores"
 	@echo "  make cluster-mlops-serving-e2e  Run Kubeflow -> MLflow -> model CD -> Triton/FastAPI/Grafana"
 	@echo "  make mlops-local-up           Start local minikube profile"
 	@echo "  make mlops-cluster-up         Start minikube and wait for the full RecSys MLOps service stack"
@@ -107,6 +106,8 @@ help:
 	@echo "  make observability-port-forward  Show Grafana/Prometheus/Loki/Tempo forwards"
 	@echo "  make observability-demo-traffic  Generate API traffic for dashboards"
 	@echo "  make observability-smoke         Check observability pods and services"
+	@echo "  make security-template           Render Vault/ESO/Istio security chart"
+	@echo "  make security-install            Install Vault/ESO/Istio security stack"
 	@echo ""
 	@echo "Gateway:"
 	@echo "  make gateway-template            Render NGINX gateway Helm chart"
@@ -139,7 +140,7 @@ cluster-mlops-serving-e2e: mlops-cluster-serving-e2e
 
 .PHONY: mlops-cluster-up
 mlops-cluster-up:
-	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) MINIKUBE_CPUS=$(MINIKUBE_CPUS) MINIKUBE_MEMORY_MB=$(MINIKUBE_MEMORY_MB) MINIKUBE_DISK_SIZE=$(MINIKUBE_DISK_SIZE) infra/k8s/scripts/mlops_cluster_up.sh
+	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) MINIKUBE_CPUS=$(MINIKUBE_CPUS) MINIKUBE_MEMORY_MB=$(MINIKUBE_MEMORY_MB) MINIKUBE_DISK_SIZE=$(MINIKUBE_DISK_SIZE) RECSYS_CLUSTER_SECURITY_ENABLED=$(RECSYS_CLUSTER_SECURITY_ENABLED) infra/k8s/scripts/mlops_cluster_up.sh
 
 .PHONY: mlops-cluster-down
 mlops-cluster-down:
@@ -191,10 +192,6 @@ dataflow-ps:
 .PHONY: dataflow-logs
 dataflow-logs:
 	@$(DATAFLOW_SCRIPTS_DIR)/dataflow_logs.sh $(DATAFLOW_LOG_SERVICE)
-
-.PHONY: dataflow-smoke
-dataflow-smoke:
-	@$(DATAFLOW_SCRIPTS_DIR)/dataflow_smoke.sh $(DATAFLOW_SMOKE_PHASE)
 
 .PHONY: dataflow-trigger
 dataflow-trigger:
@@ -248,7 +245,6 @@ data-platform-e2e: data-platform-install
 	@kubectl wait --for=condition=ready pod -l app=data-platform-minio -n recsys-dataflow --timeout=240s
 	@kubectl wait --for=condition=ready pod -l app=kafka -n recsys-dataflow --timeout=240s
 	@kubectl wait --for=condition=ready pod -l app=kafka-connect -n recsys-dataflow --timeout=300s
-	@kubectl wait --for=condition=ready pod -l app=warehouse-postgres -n recsys-dataflow --timeout=180s
 	@kubectl wait --for=condition=ready pod -l app=redis -n recsys-dataflow --timeout=180s
 	@kubectl wait --for=condition=ready pod -l app=airflow-webserver -n recsys-dataflow --timeout=240s
 	@$(MAKE) data-platform-trigger
@@ -260,38 +256,19 @@ data-platform-run-status:
 
 .PHONY: data-platform-verify-e2e
 data-platform-verify-e2e:
-	@kubectl run recsys-data-platform-verify -n recsys-dataflow --rm -i --restart=Never --image=recsys-dataflow-cli:local --image-pull-policy=IfNotPresent \
-		--env=PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys \
-		--env=MINIO_ENDPOINT=http://data-platform-minio:9000 \
-		--env=MINIO_ROOT_USER=minio \
-		--env=MINIO_ROOT_PASSWORD=minio123 \
-		--env=AWS_ACCESS_KEY_ID=minio \
-		--env=AWS_SECRET_ACCESS_KEY=minio123 \
-		--env=AWS_DEFAULT_REGION=us-east-1 \
-		--env=LAKE_BUCKET=recsys-lake \
-		--env=FEATURE_STORE_BUCKET=recsys-feature-store \
-		--env=WAREHOUSE_POSTGRES_HOST=warehouse-postgres \
-		--env=WAREHOUSE_POSTGRES_PORT=5432 \
-		--env=WAREHOUSE_POSTGRES_DB=recsys_warehouse \
-		--env=WAREHOUSE_POSTGRES_USER=recsys \
-		--env=WAREHOUSE_POSTGRES_PASSWORD=recsys \
-		--env=REDIS_HOST=redis \
-		--env=REDIS_PORT=6379 \
-		-- python -m local.verify_k8s_data_platform_e2e
+	@DATA_PLATFORM_NAMESPACE=$(DATA_PLATFORM_NAMESPACE) infra/k8s/scripts/data_platform_verify_feature_stores.sh
 
 .PHONY: data-platform-stream-generator-start
 data-platform-stream-generator-start:
-	@kubectl scale deploy/$(DATA_PLATFORM_REALTIME_PRODUCER) -n $(DATA_PLATFORM_NAMESPACE) --replicas=$(DATA_PLATFORM_REALTIME_PRODUCER_REPLICAS)
-	@kubectl rollout status deploy/$(DATA_PLATFORM_REALTIME_PRODUCER) -n $(DATA_PLATFORM_NAMESPACE) --timeout=180s
+	@DATA_PLATFORM_NAMESPACE=$(DATA_PLATFORM_NAMESPACE) DATA_PLATFORM_REALTIME_PRODUCER=$(DATA_PLATFORM_REALTIME_PRODUCER) DATA_PLATFORM_REALTIME_PRODUCER_REPLICAS=$(DATA_PLATFORM_REALTIME_PRODUCER_REPLICAS) infra/k8s/scripts/data_platform_stream_generator.sh start
 
 .PHONY: data-platform-stream-generator-stop
 data-platform-stream-generator-stop:
-	@kubectl scale deploy/$(DATA_PLATFORM_REALTIME_PRODUCER) -n $(DATA_PLATFORM_NAMESPACE) --replicas=0
+	@DATA_PLATFORM_NAMESPACE=$(DATA_PLATFORM_NAMESPACE) DATA_PLATFORM_REALTIME_PRODUCER=$(DATA_PLATFORM_REALTIME_PRODUCER) infra/k8s/scripts/data_platform_stream_generator.sh stop
 
 .PHONY: data-platform-stream-generator-status
 data-platform-stream-generator-status:
-	@kubectl get deploy/$(DATA_PLATFORM_REALTIME_PRODUCER) -n $(DATA_PLATFORM_NAMESPACE)
-	@kubectl get pods -n $(DATA_PLATFORM_NAMESPACE) -l app=$(DATA_PLATFORM_REALTIME_PRODUCER)
+	@DATA_PLATFORM_NAMESPACE=$(DATA_PLATFORM_NAMESPACE) DATA_PLATFORM_REALTIME_PRODUCER=$(DATA_PLATFORM_REALTIME_PRODUCER) infra/k8s/scripts/data_platform_stream_generator.sh status
 
 .PHONY: data-platform-smoke
 data-platform-smoke:
@@ -305,7 +282,6 @@ data-platform-port-forward:
 	@echo "Data Platform MinIO: kubectl port-forward -n recsys-dataflow svc/data-platform-minio 9002:9001"
 	@echo "Redis:   kubectl port-forward -n recsys-dataflow svc/redis 6379:6379"
 	@echo "Source Postgres:    kubectl port-forward -n recsys-dataflow svc/source-postgres 5432:5432"
-	@echo "Warehouse Postgres: kubectl port-forward -n recsys-dataflow svc/warehouse-postgres 5433:5432"
 
 .PHONY: datahub-install
 datahub-install:
@@ -348,6 +324,7 @@ datahub-ingest-governance:
 mlops-images:
 	@docker build -f infra/docker/Dockerfile.base-python -t recsys-base-python:local .
 	@docker build -f apps/ml-system/Dockerfile.training -t recsys-mlops-training:local .
+	@docker build -f apps/ml-system/Dockerfile.spark -t recsys-mlops-spark:local .
 	@docker build -f apps/api-serving/Dockerfile -t recsys-api-serving:local .
 	@docker build -f infra/docker/Dockerfile.mlflow -t recsys-mlflow:local .
 
@@ -427,7 +404,14 @@ observability-port-forward:
 observability-smoke:
 	@kubectl get pods,svc -n observability
 	@kubectl get deploy -n api-serving recsys-api-serving
-	@kubectl get svc -n recsys-dataflow monitoring-sql-exporter
+
+.PHONY: security-template
+security-template:
+	@helm template recsys-security infra/helm/recsys-security --namespace recsys-security
+
+.PHONY: security-install
+security-install:
+	@infra/k8s/scripts/security_install.sh
 
 .PHONY: observability-demo-traffic
 observability-demo-traffic:
@@ -468,7 +452,8 @@ gateway-create-auth:
 gateway-install:
 	@set -euo pipefail; \
 	extra=""; \
-	if [ -f "$(GATEWAY_AUTH_FILE)" ]; then extra="--set-file auth.htpasswd=$(GATEWAY_AUTH_FILE)"; fi; \
+	if [ "$(RECSYS_CLUSTER_SECURITY_ENABLED)" = "1" ]; then extra="$$extra --set auth.createSecret=false"; fi; \
+	if [ -f "$(GATEWAY_AUTH_FILE)" ]; then extra="$$extra --set-file auth.htpasswd=$(GATEWAY_AUTH_FILE)"; fi; \
 	helm upgrade --install recsys-gateway infra/helm/recsys-gateway \
 		--namespace api-serving \
 		--create-namespace \

@@ -1,16 +1,17 @@
 input:
+  source: lakehouse
   run_path: apps/data-platform/data-generator/src/output/test_10k_seed42
 
 output:
   base_path: data_platform/output
-  silver_path: data_platform/output/silver
-  offline_feature_path: data_platform/output/feature_store/offline
-  ml_artifact_path: data_platform/output/ml/offline
-  lake_bucket: recsys-lake
-  feature_store_bucket: recsys-feature-store
-  lake_silver_uri: s3a://recsys-lake/silver
-  feature_store_offline_uri: s3a://recsys-feature-store/offline
-  ml_artifact_uri: s3a://recsys-lake/silver/ml
+  lakehouse_bucket: recsys-lakehouse
+  lakehouse_warehouse: s3a://recsys-lakehouse/warehouse
+  iceberg_catalog: recsys
+  iceberg_lakehouse_namespace: lakehouse
+  offline_feature_catalog: recsys_features
+  offline_feature_store_warehouse: s3a://recsys-offline-feature-store/warehouse
+  iceberg_feature_namespace: feature_store
+  offline_feature_store_uri: s3a://recsys-offline-feature-store/warehouse/feature_store
 
 features:
   max_history_length: 50
