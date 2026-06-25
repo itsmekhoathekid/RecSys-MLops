@@ -18,5 +18,8 @@ if DAG is not None:
     ) as dag:
         run_batch_features = BashOperator(
             task_id="run_batch_features",
-            bash_command="PYTHONPATH=apps/data-platform/src uv run python apps/data-platform/src/local/run_batch_features.py",
+            bash_command=(
+                "PYTHONPATH=apps/data-platform/src spark-submit "
+                "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py"
+            ),
         )

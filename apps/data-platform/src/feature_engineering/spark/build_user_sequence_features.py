@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pandas as pd
+from typing import Any
 
 
 SEQUENCE_COLUMNS = [
@@ -18,37 +16,48 @@ SEQUENCE_COLUMNS = [
 
 
 def build_user_sequence_features(
-    clean_events: pd.DataFrame,
+    clean_events: Any,
     max_history_length: int = 50,
     feature_version: str = "bst_sequence_v2",
-) -> pd.DataFrame:
-    if clean_events.empty:
-        return pd.DataFrame()
-    events = clean_events.copy()
-    events["event_timestamp"] = pd.to_datetime(events["event_timestamp"], utc=True)
-    rows: list[dict] = []
-    for user_id, group in events.sort_values("event_timestamp").groupby("user_id"):
-        history: list[dict] = []
-        for _, event in group.iterrows():
-            history.append(event.to_dict())
-            window = history[-max_history_length:]
-            rows.append(
-                {
-                    "user_id": int(user_id),
-                    "feature_timestamp": event["event_timestamp"],
-                    "event_timestamp": event["event_timestamp"],
-                    "created_timestamp": datetime.now(timezone.utc),
-                    "hist_item_ids": [int(row["product_id"]) for row in window],
-                    "hist_event_type_ids": [int(row["event_type_id"]) for row in window],
-                    "hist_category_ids": [int(row["category_id"]) for row in window],
-                    "hist_brand_ids": [int(row["brand_id"]) for row in window],
-                    "hist_price_bucket_ids": [int(row["price_bucket"]) for row in window],
-                    "hist_event_timestamps": [pd.Timestamp(row["event_timestamp"]).isoformat() for row in window],
-                    "hist_request_ids": [str(row.get("request_id") or "") for row in window],
-                    "hist_impression_ids": [str(row.get("impression_id") or "") for row in window],
-                    "hist_length": len(window),
-                    "max_history_length": max_history_length,
-                    "feature_version": feature_version,
-                }
-            )
-    return pd.DataFrame(rows)
+) -> Any:
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
+
+    events = clean_events.withColumn("event_timestamp", F.to_timestamp("event_timestamp"))
+    window = (
+        Window.partitionBy("user_id")
+        .orderBy("event_timestamp", "event_id")
+        .rowsBetween(-max_history_length + 1, 0)
+    )
+    history = F.collect_list(
+        F.struct(
+            F.col("product_id").cast("int").alias("product_id"),
+            F.col("event_type_id").cast("int").alias("event_type_id"),
+            F.col("category_id").cast("int").alias("category_id"),
+            F.col("brand_id").cast("int").alias("brand_id"),
+            F.col("price_bucket").cast("int").alias("price_bucket"),
+            F.date_format("event_timestamp", "yyyy-MM-dd'T'HH:mm:ssXXX").alias("event_timestamp"),
+            F.coalesce(F.col("request_id").cast("string"), F.lit("")).alias("request_id"),
+            F.coalesce(F.col("impression_id").cast("string"), F.lit("")).alias("impression_id"),
+        )
+    ).over(window)
+    return (
+        events.withColumn("_history", history)
+        .select(
+            F.col("user_id").cast("int"),
+            F.col("event_timestamp").alias("feature_timestamp"),
+            F.col("event_timestamp"),
+            F.current_timestamp().alias("created_timestamp"),
+            F.expr("transform(_history, x -> x.product_id)").alias("hist_item_ids"),
+            F.expr("transform(_history, x -> x.event_type_id)").alias("hist_event_type_ids"),
+            F.expr("transform(_history, x -> x.category_id)").alias("hist_category_ids"),
+            F.expr("transform(_history, x -> x.brand_id)").alias("hist_brand_ids"),
+            F.expr("transform(_history, x -> x.price_bucket)").alias("hist_price_bucket_ids"),
+            F.expr("transform(_history, x -> x.event_timestamp)").alias("hist_event_timestamps"),
+            F.expr("transform(_history, x -> x.request_id)").alias("hist_request_ids"),
+            F.expr("transform(_history, x -> x.impression_id)").alias("hist_impression_ids"),
+            F.size("_history").alias("hist_length"),
+            F.lit(max_history_length).alias("max_history_length"),
+            F.lit(feature_version).alias("feature_version"),
+        )
+    )

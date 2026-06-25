@@ -86,9 +86,12 @@ def copy_s3_prefix(source_uri: str, target_uri: str) -> None:
             relative = source_key[len(source_prefix.rstrip("/") + "/") :]
             if not relative:
                 continue
+            target_key = f"{target_prefix.rstrip('/')}/{relative}"
+            if source_bucket == target_bucket and source_key == target_key:
+                continue
             client.copy_object(
                 Bucket=target_bucket,
-                Key=f"{target_prefix.rstrip('/')}/{relative}",
+                Key=target_key,
                 CopySource={"Bucket": source_bucket, "Key": source_key},
             )
 
@@ -191,23 +194,22 @@ def run(command: list[str]) -> None:
 
 def deploy(values_path: Path, timeout: str) -> None:
     run(["helm", "lint", "infra/helm/recsys-serving", "-f", str(values_path)])
-    run(
-        [
-            "helm",
-            "upgrade",
-            "--install",
-            "recsys-serving",
-            "infra/helm/recsys-serving",
-            "--namespace",
-            "kserve-triton-inference",
-            "--create-namespace",
-            "--atomic",
-            "--timeout",
-            timeout,
-            "-f",
-            str(values_path),
-        ]
-    )
+    base_command = [
+        "helm",
+        "upgrade",
+        "--install",
+        "recsys-serving",
+        "infra/helm/recsys-serving",
+        "--namespace",
+        "kserve-triton-inference",
+        "--create-namespace",
+        "--atomic",
+        "--timeout",
+        timeout,
+        "-f",
+        str(values_path),
+    ]
+    run(base_command + ["--set", "autoscaling.kserveResource.enabled=false"])
     run(
         [
             "kubectl",
@@ -219,6 +221,18 @@ def deploy(values_path: Path, timeout: str) -> None:
             f"--timeout={timeout}",
         ]
     )
+    run(
+        [
+            "kubectl",
+            "wait",
+            "--for=condition=Available",
+            "deployment/recsys-bst-triton-predictor",
+            "-n",
+            "kserve-triton-inference",
+            f"--timeout={timeout}",
+        ]
+    )
+    run(base_command)
 
 
 def stage_manifests(args: argparse.Namespace) -> tuple[dict, dict | None]:

@@ -4,7 +4,7 @@
   "tags": ["recsys", "data-platform", "streaming"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "graphTooltip": 1,
   "time": { "from": "now-6h", "to": "now" },
@@ -52,7 +52,8 @@
       "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
       "targets": [
         { "expr": "recsys_streaming_event_count", "legendFormat": "events {{window_start}}" },
-        { "expr": "recsys_streaming_late_event_count", "legendFormat": "late {{window_start}}" }
+        { "expr": "recsys_streaming_late_event_count", "legendFormat": "late {{window_start}}" },
+        { "expr": "recsys_streaming_duplicate_event_count", "legendFormat": "duplicates {{window_start}}" }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 35, "stacking": { "mode": "normal", "group": "A" } } } },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
@@ -89,6 +90,50 @@
       "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
       "targets": [{ "expr": "recsys_feature_drift_score", "legendFormat": "{{feature}}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.1 }, { "color": "red", "value": 0.2 }] } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 9,
+      "type": "bargauge",
+      "title": "Offline Generator Volume",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "recsys_data_quality_metric{check_name=\"generator.offline.synthetic_issues\",metric_name=~\"row_count_.*\"}", "legendFormat": "{{metric_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "palette-classic" } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Offline Cardinality",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "recsys_data_quality_metric{check_name=\"generator.offline.synthetic_issues\",metric_name=~\"approx_count_distinct_.*\"}", "legendFormat": "{{metric_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "palette-classic" } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Offline Data Issues",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "recsys_data_quality_metric{check_name=\"generator.offline.synthetic_issues\",metric_name=~\"duplicate_rate_before_dedup|duplicate_rate_after_dedup|late_arrival_rate|out_of_order_rate|top_city_ratio|top_event_category_ratio\"}", "legendFormat": "{{metric_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 12,
+      "type": "bargauge",
+      "title": "Schema Evolution Nulls",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "recsys_data_quality_metric{check_name=\"generator.offline.synthetic_issues\",metric_name=~\"schema_v1_events|schema_v2_events|null_device_type_events|exact_duplicate_rows|conflicting_duplicate_event_ids\"}", "legendFormat": "{{metric_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 100 }] } } },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
     }
   ]

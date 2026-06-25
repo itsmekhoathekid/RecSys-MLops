@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+
+from monitoring.pushgateway import MetricSample, push_metrics
 
 
 ACTOR = "urn:li:corpuser:datahub"
@@ -512,7 +515,7 @@ def dp2() -> DataProduct:
             Job(
                 id="ge_validate_staging",
                 name="GE Validate Staging",
-                description="Runs Great Expectations-style staging contracts before production promotion.",
+                description="Runs Great Expectations staging contracts before production promotion.",
                 inputs=tuple(table.urn for table in staging_tables),
                 outputs=(dataset_urn("s3", "s3://recsys-lake/monitoring/great_expectations/staging_validation.json"),),
                 tags=("DP2", "DataContract", "ValidationPassed"),
@@ -627,20 +630,58 @@ def emit_products(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) ->
     return product_urns
 
 
+def datahub_metric_samples(summary: dict[str, Any]) -> list[MetricSample]:
+    ingested = 1.0 if summary.get("ingested") else 0.0
+    samples = [
+        MetricSample("recsys_datahub_ingest_success", ingested),
+        MetricSample("recsys_datahub_ingest_timestamp_seconds", float(int(time.time()))),
+        MetricSample("recsys_datahub_ingest_dataset_count", float(summary.get("datasets", 0))),
+        MetricSample("recsys_datahub_ingest_job_count", float(summary.get("jobs", 0))),
+        MetricSample("recsys_datahub_ingest_data_product_count", float(len(summary.get("data_products", [])))),
+    ]
+    for product in summary.get("data_products", []):
+        samples.append(MetricSample("recsys_datahub_ingest_data_product_present", 1.0, {"data_product": str(product)}))
+    return samples
+
+
+def push_datahub_ingest_metrics(summary: dict[str, Any], pushgateway_url: str | None) -> None:
+    push_metrics(
+        datahub_metric_samples(summary),
+        "recsys_datahub_governance",
+        gateway_url=pushgateway_url,
+        grouping_key={"gms_url": summary.get("gms_url", "unknown").replace("/", "_")},
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Ingest RecSys DP1/DP2/DP3 governance metadata into DataHub.")
     parser.add_argument("--gms-url", default="http://localhost:8088", help="DataHub GMS base URL.")
+    parser.add_argument("--pushgateway-url", default=os.getenv("PUSHGATEWAY_URL", ""), help="Optional Pushgateway URL for ingest metrics.")
+    parser.add_argument("--strict", action="store_true", default=os.getenv("DATAHUB_INGEST_STRICT", "").lower() in {"1", "true", "yes"})
     args = parser.parse_args()
     products = (dp1(), dp2(), dp3())
     emitter = DataHubEmitter(args.gms_url)
-    product_urns = emit_products(emitter, products)
+    try:
+        product_urns = emit_products(emitter, products)
+    except Exception as exc:
+        summary = {
+            "data_products": [product.id for product in products],
+            "gms_url": args.gms_url,
+            "ingested": False,
+            "error": str(exc),
+        }
+        push_datahub_ingest_metrics(summary, args.pushgateway_url or None)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 1 if args.strict else 0
     summary = {
         "data_products": [product.id for product in products],
         "data_product_entities": product_urns,
         "datasets": sum(len(product.datasets) for product in products),
         "jobs": sum(len(product.jobs) for product in products),
         "gms_url": args.gms_url,
+        "ingested": True,
     }
+    push_datahub_ingest_metrics(summary, args.pushgateway_url or None)
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 

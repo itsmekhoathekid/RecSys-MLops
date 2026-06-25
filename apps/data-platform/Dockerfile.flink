@@ -29,14 +29,17 @@ RUN python3 -m pip install --no-cache-dir \
         apache-beam==2.48.0 \
         avro-python3==1.10.2 \
         cloudpickle==2.2.1 \
-        pandas \
         pyarrow \
         py4j==0.10.9.7 \
         pyyaml \
+        ruamel.yaml \
         redis \
-        kafka-python \
         requests \
         psycopg[binary]
+
+RUN curl -fsSL \
+        https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.2.0-1.19/flink-sql-connector-kafka-3.2.0-1.19.jar \
+        -o /opt/flink/lib/flink-sql-connector-kafka-3.2.0-1.19.jar
 
 RUN python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python \
     && chmod +x /opt/flink/opt/python/pyflink/bin/*.sh

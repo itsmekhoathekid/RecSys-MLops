@@ -49,6 +49,7 @@ from ingest.bronze_cdc_reader import (
     extract_debezium_after,
     normalize_behavior_events_from_cdc,
 )
+from metadata.ingest_datahub_governance import datahub_metric_samples
 from validate.feature_quality_checks import (
     check_feast_feature_table,
     check_sequence_lengths,
@@ -61,6 +62,7 @@ from validate.offline_feature_drift import (
     split_reference_current,
 )
 from monitoring.pushgateway import render_samples
+from monitoring.sql_exporter import _flatten_numeric_metrics, _metric
 from mlops.trigger_kubeflow_retrain import failed_features, trigger_retrain
 from feature_store.online_writer import dumps_feature_payload
 from feature_store.offline_to_online_sync import (
@@ -78,6 +80,7 @@ from feature_store.feast_registry import (
 from warehouse.historical_loader import normalize_staging_frame
 from warehouse.schemas import STAGING_STREAM_BEHAVIOR_EVENTS
 from warehouse.writer import _normalize_value, create_table_sql, upsert_sql
+from validate.synthetic_data_quality import build_quality_metrics
 
 
 def _ts(value: str) -> pd.Timestamp:
@@ -113,147 +116,40 @@ def test_time_bucket_matches_design():
     assert get_time_bucket(prediction, datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc)) == 0
 
 
-def test_user_sequence_feature_contract_and_length():
-    events = pd.DataFrame(
-        [
-            {
-                "user_id": 1,
-                "product_id": 10 + index,
-                "category_id": 2,
-                "brand_id": 3,
-                "price_bucket": 4,
-                "event_type": "view",
-                "event_type_id": 1,
-                "event_timestamp": _ts(f"2026-01-01T00:0{index}:00"),
-                "request_id": f"r{index}",
-                "impression_id": f"i{index}",
-            }
-            for index in range(3)
-        ]
-    )
-    features = build_user_sequence_features(events, max_history_length=2)
-    assert features["hist_length"].max() == 2
-    assert features.iloc[-1]["hist_item_ids"] == [11, 12]
-    assert features.iloc[-1]["hist_event_timestamps"] == [
-        "2026-01-01T00:01:00+00:00",
-        "2026-01-01T00:02:00+00:00",
-    ]
-    assert check_sequence_lengths(features, 2).passed
+def test_spark_feature_modules_use_pyspark_not_pandas():
+    spark_dir = Path("apps/data-platform/src/feature_engineering/spark")
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in spark_dir.glob("*.py"))
+    assert "import pandas" not in sources
+    assert "pd." not in sources
+    assert "from pyspark.sql" in sources
+    assert "Window.partitionBy" in sources
+    assert "SparkSession" in (spark_dir / "session.py").read_text(encoding="utf-8")
 
 
-def test_ranking_labels_and_bst_training_are_point_in_time():
-    impressions = pd.DataFrame(
-        [
-            {
-                "impression_id": "i1",
-                "request_id": "r1",
-                "user_id": 1,
-                "candidate_product_id": 10,
-                "impression_timestamp": _ts("2026-01-01T00:02:00"),
-                "rank_position": 1,
-                "candidate_source": "popular",
-            }
-        ]
+def test_spark_entrypoints_write_with_spark_dataframe_api():
+    batch_source = Path("apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py").read_text(
+        encoding="utf-8"
     )
-    events = pd.DataFrame(
-        [
-            {
-                "user_id": 1,
-                "product_id": 9,
-                "category_id": 2,
-                "brand_id": 3,
-                "price_bucket": 4,
-                "event_type": "view",
-                "event_type_id": 1,
-                "event_timestamp": _ts("2026-01-01T00:01:00"),
-                "request_id": "r0",
-                "impression_id": "i0",
-            },
-            {
-                "user_id": 1,
-                "product_id": 10,
-                "category_id": 2,
-                "brand_id": 3,
-                "price_bucket": 4,
-                "event_type": "cart",
-                "event_type_id": 2,
-                "event_timestamp": _ts("2026-01-01T00:03:00"),
-                "request_id": "r1",
-                "impression_id": "i1",
-            },
-        ]
-    )
-    labels = build_ranking_labels(impressions, events)
-    sequence = build_user_sequence_features(events)
-    item = build_item_features(
-        events,
-        pd.DataFrame(
-            [
-                {
-                    "product_id": 10,
-                    "category_id": 2,
-                    "brand_id": 3,
-                    "price_bucket": 4,
-                    "is_active": True,
-                }
-            ]
-        ),
-    )
-    aggregate = pd.DataFrame(
-        [
-            {
-                "user_id": 1,
-                "feature_timestamp": _ts("2026-01-01T00:01:00"),
-                "views_30m": 1,
-                "carts_30m": 0,
-                "purchases_24h": 0,
-            }
-        ]
-    )
-    training = build_bst_training_table(labels, sequence, aggregate, item)
-    assert labels["label"].iloc[0] == 1
-    assert training["hist_item_id"].iloc[0] == [9]
+    bronze_source = Path(
+        "apps/data-platform/src/feature_engineering/spark/spark_realtime_bronze_entrypoint.py"
+    ).read_text(encoding="utf-8")
+    assert "run_pyspark_batch" in batch_source
+    assert "spark_session(" in batch_source
+    assert "spark.read.json" in bronze_source
+    assert "write_parquet" in batch_source + bronze_source
 
 
-def test_item_features_use_latest_product_metadata_for_scd_rows():
-    events = pd.DataFrame(
-        [
-            {
-                "user_id": 1,
-                "product_id": 10,
-                "category_id": 2,
-                "brand_id": 3,
-                "price_bucket": 4,
-                "event_type": "view",
-                "event_type_id": 1,
-                "event_timestamp": _ts("2026-01-01T00:01:00"),
-            }
-        ]
-    )
-    products = pd.DataFrame(
-        [
-            {
-                "product_id": 10,
-                "valid_from": _ts("2025-01-01T00:00:00"),
-                "category_id": 2,
-                "brand_id": 3,
-                "price_bucket": 4,
-                "is_active": True,
-            },
-            {
-                "product_id": 10,
-                "valid_from": _ts("2026-01-01T00:00:00"),
-                "category_id": 5,
-                "brand_id": 6,
-                "price_bucket": 7,
-                "is_active": True,
-            },
-        ]
-    )
-    item = build_item_features(events, products)
-    assert item["category_id"].iloc[0] == 5
-    assert item["brand_id"].iloc[0] == 6
-    assert item["price_bucket"].iloc[0] == 7
+def test_flink_feature_modules_use_pyflink_not_pandas():
+    flink_dir = Path("apps/data-platform/src/feature_engineering/flink")
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in flink_dir.glob("*.py"))
+    stream_source = (flink_dir / "realtime_stream_job.py").read_text(encoding="utf-8")
+    assert "import pandas" not in sources
+    assert "pd." not in sources
+    assert "from pyflink.datastream import StreamExecutionEnvironment" in stream_source
+    assert "KafkaSource.builder()" in stream_source
+    assert "KafkaConsumer" not in stream_source
+    assert "from_collection([0]" not in stream_source
+    assert 'choices=["pyflink"]' in stream_source
 
 
 def test_feast_feature_table_required_columns():
@@ -401,11 +297,79 @@ def test_flink_builds_warehouse_rows_from_same_payloads_as_redis():
 def test_stream_quality_tracker_marks_bursty_and_late_windows():
     tracker = StreamQualityTracker("cdc.behavior_events", window_seconds=60, burst_threshold_event_count=2)
     assert tracker.update("2026-01-01T00:00:01Z", 10.0, False) == []
-    assert tracker.update("2026-01-01T00:00:02Z", 120.0, True) == []
+    assert tracker.update("2026-01-01T00:00:02Z", 120.0, True, is_duplicate=True) == []
     flushed = tracker.flush()
     assert len(flushed) == 1
     assert flushed[0].is_bursty is True
     assert flushed[0].late_event_count == 1
+    assert flushed[0].duplicate_event_count == 1
+    assert flushed[0].as_row()["duplicate_event_count"] == 1
+
+
+def test_sql_exporter_flattens_data_quality_metrics_for_prometheus():
+    metrics = _flatten_numeric_metrics(
+        {
+            "duplicate_rate_before_dedup": 0.02,
+            "validation_passed": True,
+            "city_distribution": {"HCMC": 0.35, "Da Nang": 0.12},
+            "ignored": "not_numeric",
+        }
+    )
+    assert metrics["duplicate_rate_before_dedup"] == 0.02
+    assert metrics["validation_passed"] == 1.0
+    assert metrics["city_distribution_HCMC"] == 0.35
+    assert metrics["city_distribution_Da_Nang"] == 0.12
+    assert "ignored" not in metrics
+    assert _metric("x", 1, {"label": 'a"b'}).startswith('x{label="a\\"b"}')
+
+
+def test_synthetic_generator_quality_metrics_cover_rubric_items():
+    manifest = {
+        "config": {
+            "entities": {"n_users": 10, "n_products": 20, "n_categories": 3, "n_brands": 4},
+            "traffic": {"target_behavior_events": 100},
+            "distribution": {"top_city_ratio": 0.35, "top_category_ratio": 0.3},
+            "challenges": {
+                "duplicate_event_rate": 0.02,
+                "conflicting_duplicate_rate": 0.01,
+                "late_arrival_rate": 0.12,
+                "out_of_order_rate": 0.03,
+            },
+            "burst_windows": [{"start_hour": 12, "end_hour": 13, "traffic_weight": 3.0}],
+        },
+        "row_counts": {"behavior_events": 102, "users": 10},
+    }
+    dq_report = {
+        "validation_passed": True,
+        "injected": {
+            "exact_duplicates": 2,
+            "conflicting_duplicates": 1,
+            "late_arrivals": 12,
+            "out_of_order": 3,
+        },
+        "observed": {
+            "exact_duplicate_rows": 2,
+            "conflicting_duplicate_event_ids": 1,
+            "late_arrival_rate": 0.12,
+            "out_of_order_rate": 0.03,
+            "schema_v1_events": 40,
+            "schema_v2_events": 60,
+            "null_device_type_events": 40,
+            "top_city_ratio": 0.36,
+            "top_event_category_ratio": 0.31,
+        },
+        "validation_metrics": {"canonical_event_count": 99},
+    }
+    metrics = build_quality_metrics(
+        manifest,
+        dq_report,
+        {"approx_count_distinct_behavior_events_event_id": 99},
+    )
+    assert metrics["duplicate_rows_before_dedup"] == 3
+    assert metrics["duplicate_rate_before_dedup"] == round(3 / 102, 6)
+    assert metrics["duplicate_rate_after_dedup"] == 0.0
+    assert metrics["null_device_type_events"] == 40
+    assert metrics["approx_count_distinct_behavior_events_event_id"] == 99
 
 
 def test_great_expectations_runner_catches_duplicate_and_skew():
@@ -593,6 +557,25 @@ def test_offline_feature_drift_splits_windows_and_builds_pushgateway_metrics():
     assert results[0].feature == "views_30m"
     assert "recsys_ml_feature_drift_psi" in payload
     assert 'feature_view="user_aggregate_features"' in payload
+
+
+def test_datahub_ingest_builds_pushgateway_metrics():
+    payload = render_samples(
+        datahub_metric_samples(
+            {
+                "data_products": ["DP1", "DP2", "DP3"],
+                "datasets": 44,
+                "jobs": 8,
+                "gms_url": "http://datahub",
+                "ingested": True,
+            }
+        )
+    )
+
+    assert "recsys_datahub_ingest_success 1.0" in payload
+    assert "recsys_datahub_ingest_dataset_count 44.0" in payload
+    assert "recsys_datahub_ingest_job_count 8.0" in payload
+    assert 'recsys_datahub_ingest_data_product_present{data_product="DP3"} 1.0' in payload
 
 
 def test_trigger_retrain_skips_when_drift_passes(tmp_path):

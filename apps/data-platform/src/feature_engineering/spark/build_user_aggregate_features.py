@@ -1,59 +1,41 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pandas as pd
-
-
-def _count_events(frame: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, event_type: str) -> int:
-    mask = (
-        (frame["event_timestamp"] > start_ts)
-        & (frame["event_timestamp"] <= end_ts)
-        & (frame["event_type"] == event_type)
-    )
-    return int(mask.sum())
+from typing import Any
 
 
 def build_user_aggregate_features(
-    clean_events: pd.DataFrame,
+    clean_events: Any,
     feature_version: str = "user_aggregate_v1",
-) -> pd.DataFrame:
-    if clean_events.empty:
-        return pd.DataFrame()
-    events = clean_events.copy()
-    events["event_timestamp"] = pd.to_datetime(events["event_timestamp"], utc=True)
-    rows: list[dict] = []
-    for user_id, group in events.sort_values("event_timestamp").groupby("user_id"):
-        group = group.reset_index(drop=True)
-        for _, event in group.iterrows():
-            ts = event["event_timestamp"]
-            w30m = ts - pd.Timedelta(minutes=30)
-            w24h = ts - pd.Timedelta(hours=24)
-            w7d = ts - pd.Timedelta(days=7)
-            recent_7d = group[(group["event_timestamp"] > w7d) & (group["event_timestamp"] <= ts)]
-            carts_7d = int((recent_7d["event_type"] == "cart").sum())
-            purchases_7d = int((recent_7d["event_type"] == "purchase").sum())
-            rows.append(
-                {
-                    "user_id": int(user_id),
-                    "feature_timestamp": ts,
-                    "event_timestamp": ts,
-                    "views_30m": _count_events(group, w30m, ts, "view"),
-                    "carts_30m": _count_events(group, w30m, ts, "cart"),
-                    "purchases_24h": _count_events(group, w24h, ts, "purchase"),
-                    "distinct_categories_7d": int(recent_7d["category_id"].nunique()),
-                    "avg_viewed_price_7d": float(
-                        recent_7d.loc[recent_7d["event_type"] == "view", "price"].astype(float).mean()
-                        if not recent_7d.empty
-                        else 0.0
-                    ),
-                    "cart_to_purchase_ratio_7d": float(purchases_7d / carts_7d) if carts_7d else 0.0,
-                    "last_event_age_seconds": 0,
-                    "aggregation_window_end_ts": ts,
-                    "watermark_ts": ts,
-                    "created_timestamp": datetime.now(timezone.utc),
-                    "feature_version": feature_version,
-                }
-            )
-    return pd.DataFrame(rows).fillna({"avg_viewed_price_7d": 0.0})
+) -> Any:
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
 
+    events = (
+        clean_events.withColumn("event_timestamp", F.to_timestamp("event_timestamp"))
+        .withColumn("_event_seconds", F.col("event_timestamp").cast("long"))
+        .withColumn("price", F.col("price").cast("double"))
+    )
+    by_user = Window.partitionBy("user_id").orderBy("_event_seconds")
+    w30m = by_user.rangeBetween(-30 * 60, 0)
+    w24h = by_user.rangeBetween(-24 * 60 * 60, 0)
+    w7d = by_user.rangeBetween(-7 * 24 * 60 * 60, 0)
+    carts_7d = F.sum(F.when(F.col("event_type") == "cart", 1).otherwise(0)).over(w7d)
+    purchases_7d = F.sum(F.when(F.col("event_type") == "purchase", 1).otherwise(0)).over(w7d)
+    viewed_price_sum = F.sum(F.when(F.col("event_type") == "view", F.col("price")).otherwise(0.0)).over(w7d)
+    view_count_7d = F.sum(F.when(F.col("event_type") == "view", 1).otherwise(0)).over(w7d)
+    return events.select(
+        F.col("user_id").cast("int"),
+        F.col("event_timestamp").alias("feature_timestamp"),
+        F.col("event_timestamp"),
+        F.sum(F.when(F.col("event_type") == "view", 1).otherwise(0)).over(w30m).alias("views_30m"),
+        F.sum(F.when(F.col("event_type") == "cart", 1).otherwise(0)).over(w30m).alias("carts_30m"),
+        F.sum(F.when(F.col("event_type") == "purchase", 1).otherwise(0)).over(w24h).alias("purchases_24h"),
+        F.size(F.array_distinct(F.collect_list(F.col("category_id")).over(w7d))).alias("distinct_categories_7d"),
+        F.when(view_count_7d > 0, viewed_price_sum / view_count_7d).otherwise(F.lit(0.0)).alias("avg_viewed_price_7d"),
+        F.when(carts_7d > 0, purchases_7d / carts_7d).otherwise(F.lit(0.0)).alias("cart_to_purchase_ratio_7d"),
+        F.lit(0).alias("last_event_age_seconds"),
+        F.col("event_timestamp").alias("aggregation_window_end_ts"),
+        F.col("event_timestamp").alias("watermark_ts"),
+        F.current_timestamp().alias("created_timestamp"),
+        F.lit(feature_version).alias("feature_version"),
+    )

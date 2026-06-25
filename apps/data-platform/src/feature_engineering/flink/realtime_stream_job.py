@@ -4,12 +4,10 @@ import argparse
 import json
 import os
 import sys
-import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from collections import deque
 from typing import Any
-
-import pandas as pd
 
 from feature_engineering.flink.candidate_pool_job import (
     candidate_updates,
@@ -23,6 +21,7 @@ from feature_engineering.flink.user_aggregate_job import (
 from feature_engineering.flink.user_sequence_job import (
     UserSequenceState,
 )
+from feature_engineering.flink.time_utils import isoformat_utc, parse_event_time
 from feature_store.online_writer import RedisOnlineWriter
 from ingest.bronze_cdc_reader import extract_debezium_after
 
@@ -48,21 +47,23 @@ class StreamJobStats:
 
 @dataclass
 class StreamQualityWindow:
-    window_start: pd.Timestamp
-    window_end: pd.Timestamp
+    window_start: datetime
+    window_end: datetime
     topic: str
     event_count: int = 0
     late_event_count: int = 0
+    duplicate_event_count: int = 0
     max_late_by_seconds: float = 0.0
     is_bursty: bool = False
 
     def as_row(self) -> dict[str, Any]:
         return {
-            "window_start": self.window_start.to_pydatetime(),
-            "window_end": self.window_end.to_pydatetime(),
+            "window_start": self.window_start,
+            "window_end": self.window_end,
             "topic": self.topic,
             "event_count": self.event_count,
             "late_event_count": self.late_event_count,
+            "duplicate_event_count": self.duplicate_event_count,
             "max_late_by_seconds": self.max_late_by_seconds,
             "is_bursty": self.is_bursty,
             "created_timestamp": datetime.now(timezone.utc),
@@ -86,12 +87,13 @@ class StreamQualityTracker:
         event_timestamp: str,
         late_by_seconds: float,
         is_late: bool,
+        is_duplicate: bool = False,
     ) -> list[StreamQualityWindow]:
-        ts = pd.Timestamp(event_timestamp)
+        ts = parse_event_time(event_timestamp)
         epoch = int(ts.timestamp())
         window_start_epoch = epoch - (epoch % self.window_seconds)
-        window_start = pd.Timestamp(window_start_epoch, unit="s", tz="UTC")
-        window_end = window_start + pd.Timedelta(seconds=self.window_seconds)
+        window_start = datetime.fromtimestamp(window_start_epoch, tz=timezone.utc)
+        window_end = window_start + timedelta(seconds=self.window_seconds)
         emitted: list[StreamQualityWindow] = []
         if self.current is not None and self.current.window_start != window_start:
             self.current.is_bursty = self.current.event_count >= self.burst_threshold_event_count
@@ -101,6 +103,7 @@ class StreamQualityTracker:
             self.current = StreamQualityWindow(window_start, window_end, self.topic)
         self.current.event_count += 1
         self.current.late_event_count += 1 if is_late else 0
+        self.current.duplicate_event_count += 1 if is_duplicate else 0
         self.current.max_late_by_seconds = max(self.current.max_late_by_seconds, late_by_seconds)
         return emitted
 
@@ -127,6 +130,10 @@ def safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def env_int(name: str, default: int) -> int:
+    return safe_int(os.getenv(name), default)
+
+
 def parse_message(raw: bytes | str | dict[str, Any]) -> dict[str, Any] | None:
     if isinstance(raw, bytes):
         record = json.loads(raw.decode("utf-8"))
@@ -151,7 +158,7 @@ def normalize_event(after: dict[str, Any]) -> dict[str, Any] | None:
     event["price"] = safe_float(event.get("price"), float(event["price_bucket"]))
     event["user_id"] = safe_int(event["user_id"])
     event["product_id"] = safe_int(event["product_id"])
-    event["event_timestamp"] = pd.to_datetime(event["event_timestamp"], utc=True).isoformat()
+    event["event_timestamp"] = isoformat_utc(event["event_timestamp"])
     return event
 
 
@@ -209,8 +216,8 @@ def write_event_to_redis(
 
 
 def late_arrival_metrics(event: dict[str, Any], watermark_delay_minutes: int) -> tuple[float, bool]:
-    processed_ts = pd.Timestamp.now(tz="UTC")
-    event_ts = pd.Timestamp(event["event_timestamp"])
+    processed_ts = datetime.now(timezone.utc)
+    event_ts = parse_event_time(event["event_timestamp"])
     late_by_seconds = max(0.0, float((processed_ts - event_ts).total_seconds()))
     return late_by_seconds, late_by_seconds > watermark_delay_minutes * 60
 
@@ -224,7 +231,7 @@ def build_warehouse_rows(
     watermark_delay_minutes: int,
 ) -> dict[str, list[dict[str, Any]]]:
     late_by_seconds, is_late = late_arrival_metrics(event, watermark_delay_minutes)
-    feature_ts = pd.Timestamp(event["event_timestamp"]).to_pydatetime()
+    feature_ts = parse_event_time(event["event_timestamp"])
     return {
         "stream_behavior_events": [
             {
@@ -312,192 +319,371 @@ def write_quality_windows(connection: Any, windows: list[StreamQualityWindow]) -
     )
 
 
-def maybe_init_pyflink() -> str:
-    """Use PyFlink when available; local E2E can run bounded processing without it."""
-    try:
-        from pyflink.datastream import StreamExecutionEnvironment
-    except ImportError as exc:
-        return f"pyflink_unavailable={exc.__class__.__name__}"
+def apply_state_ttl(descriptor: Any, ttl_seconds: int) -> Any:
+    if ttl_seconds <= 0:
+        return descriptor
+    from pyflink.common import Time
+    from pyflink.datastream.state import StateTtlConfig
 
-    env = StreamExecutionEnvironment.get_execution_environment()
-    env.set_parallelism(1)
-    return f"pyflink_parallelism={env.get_parallelism()}"
-
-
-def run_bounded_stream(args: argparse.Namespace, emit_runtime_status: bool = True) -> StreamJobStats:
-    import redis
-    from kafka import KafkaConsumer
-
-    if emit_runtime_status:
-        pyflink_status = maybe_init_pyflink()
-        print(json.dumps({"status": pyflink_status, "topic": args.topic}), flush=True)
-
-    redis_client = redis.Redis(host=args.redis_host, port=args.redis_port, decode_responses=True)
-    writer = RedisOnlineWriter(redis_client)
-    sequence_state = UserSequenceState(max_history_length=args.max_history_length)
-    aggregate_state = UserAggregateState()
-    item_state = ItemFeatureState()
-    seen_event_ids: set[str] = set()
-    stats = StreamJobStats()
-    last_progress_log = time.monotonic()
-    warehouse_connection = None
-    quality_tracker = StreamQualityTracker(
-        args.topic,
-        window_seconds=args.quality_window_seconds,
-        burst_threshold_event_count=args.burst_threshold_event_count,
+    ttl_config = (
+        StateTtlConfig.new_builder(Time.seconds(ttl_seconds))
+        .update_ttl_on_create_and_write()
+        .never_return_expired()
+        .build()
     )
-    if args.warehouse_enabled:
-        from warehouse.connection import connect
-        from warehouse.writer import ensure_warehouse
+    descriptor.enable_time_to_live(ttl_config)
+    return descriptor
 
-        warehouse_connection = connect()
-        ensure_warehouse(warehouse_connection)
 
-    consumer = KafkaConsumer(
-        args.topic,
-        bootstrap_servers=args.bootstrap_servers,
-        group_id=args.group_id,
-        auto_offset_reset="earliest",
-        enable_auto_commit=True,
-        consumer_timeout_ms=1000,
+def user_sequence_payload_from_history(
+    event: dict[str, Any],
+    history: list[dict[str, Any]],
+    max_history_length: int,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    state = UserSequenceState(max_history_length=max_history_length)
+    user_id = int(event["user_id"])
+    state.events_by_user[user_id] = deque(history, maxlen=max_history_length)
+    payload = state.update(event)
+    return payload, list(state.events_by_user[user_id])
+
+
+def user_aggregate_payload_from_history(
+    event: dict[str, Any],
+    history: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    state = UserAggregateState()
+    user_id = int(event["user_id"])
+    state.events_by_user[user_id] = deque(history)
+    payload = state.update(event)
+    return payload, list(state.events_by_user[user_id])
+
+
+def item_payload_from_history(
+    event: dict[str, Any],
+    history: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    state = ItemFeatureState()
+    product_id = int(event["product_id"])
+    state.events_by_product[product_id] = deque(history)
+    payload = state.update(event)
+    return payload, list(state.events_by_product[product_id])
+
+
+def build_kafka_source(args: argparse.Namespace):
+    from pyflink.common.serialization import SimpleStringSchema
+    from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaSource
+
+    builder = (
+        KafkaSource.builder()
+        .set_bootstrap_servers(args.bootstrap_servers)
+        .set_topics(args.topic)
+        .set_group_id(args.group_id)
+        .set_starting_offsets(KafkaOffsetsInitializer.earliest())
+        .set_value_only_deserializer(SimpleStringSchema())
+        .set_client_id_prefix("recsys-native-pyflink")
     )
-    continuous = args.continuous or args.max_events <= 0
-    deadline = None if continuous else time.monotonic() + args.idle_timeout_seconds
-    try:
-        while continuous or stats.consumed < args.max_events:
-            records = consumer.poll(timeout_ms=1000, max_records=args.max_poll_records)
-            if not records:
-                if deadline is not None and time.monotonic() >= deadline:
-                    break
-                continue
-            if not continuous:
-                deadline = time.monotonic() + args.idle_timeout_seconds
-            for batch in records.values():
-                for message in batch:
-                    after = parse_message(message.value)
-                    if after is None:
-                        stats.skipped += 1
-                        continue
-                    event = normalize_event(after)
-                    if event is None:
-                        stats.skipped += 1
-                        continue
-                    event_id = str(event["event_id"])
-                    if event_id in seen_event_ids:
-                        stats.duplicate += 1
-                        continue
-                    seen_event_ids.add(event_id)
-                    sequence_payload, aggregate_payload, item_payload = build_realtime_feature_payloads(
-                        event,
-                        sequence_state,
-                        aggregate_state,
-                        item_state,
-                    )
-                    stats.redis_writes += write_payloads_to_redis(
-                        event,
-                        writer,
-                        redis_client,
-                        sequence_payload,
-                        aggregate_payload,
-                        item_payload,
-                    )
-                    late_by_seconds, is_late = late_arrival_metrics(event, args.watermark_delay_minutes)
-                    stats.late_events += 1 if is_late else 0
-                    emitted_windows = quality_tracker.update(event["event_timestamp"], late_by_seconds, is_late)
-                    stats.bursty_windows += sum(1 for window in emitted_windows if window.is_bursty)
-                    if warehouse_connection is not None:
-                        rows = build_warehouse_rows(
-                            event,
-                            sequence_payload,
-                            aggregate_payload,
-                            item_payload,
-                            args.topic,
-                            args.watermark_delay_minutes,
-                        )
-                        stats.warehouse_writes += write_warehouse_rows(warehouse_connection, rows)
-                        stats.warehouse_writes += write_quality_windows(warehouse_connection, emitted_windows)
-                    stats.consumed += 1
-                    should_log_by_events = (
-                        args.progress_log_events > 0
-                        and stats.consumed % args.progress_log_events == 0
-                    )
-                    should_log_by_time = (
-                        args.progress_log_seconds > 0
-                        and time.monotonic() - last_progress_log >= args.progress_log_seconds
-                    )
-                    if should_log_by_events or should_log_by_time:
-                        emit_progress(
-                            {
-                                "status": "running",
-                                "topic": args.topic,
-                                **stats.__dict__,
-                            }
-                        )
-                        last_progress_log = time.monotonic()
-                    if not continuous and stats.consumed >= args.max_events:
-                        break
-                if not continuous and stats.consumed >= args.max_events:
-                    break
-    finally:
-        consumer.close()
-        final_windows = quality_tracker.flush()
-        stats.bursty_windows += sum(1 for window in final_windows if window.is_bursty)
-        if warehouse_connection is not None:
-            stats.warehouse_writes += write_quality_windows(warehouse_connection, final_windows)
-            warehouse_connection.close()
+    if not args.continuous and args.max_events > 0:
+        builder = builder.set_bounded(KafkaOffsetsInitializer.latest())
+    return builder.build()
 
-    if stats.consumed < args.min_events:
-        raise SystemExit(f"Only consumed {stats.consumed} events from {args.topic}; need {args.min_events}")
-    return stats
+
+def build_realtime_stream(env: Any, args: argparse.Namespace):
+    from pyflink.common import Duration, Types, WatermarkStrategy
+    from pyflink.datastream.functions import FilterFunction, KeyedProcessFunction, MapFunction
+    from pyflink.datastream.state import ValueStateDescriptor
+
+    class ParseNormalizeEvent(MapFunction):
+        def map(self, raw: str) -> dict[str, Any] | None:
+            after = parse_message(raw)
+            return normalize_event(after) if after is not None else None
+
+    class KeepValidEvents(FilterFunction):
+        def filter(self, value: dict[str, Any] | None) -> bool:
+            return value is not None
+
+    class LimitEvents(KeyedProcessFunction):
+        def open(self, runtime_context):
+            descriptor = apply_state_ttl(
+                ValueStateDescriptor("native_limit_count", Types.LONG()),
+                args.state_ttl_seconds,
+            )
+            self.count_state = runtime_context.get_state(descriptor)
+
+        def process_element(self, event: dict[str, Any], ctx):
+            count = self.count_state.value() or 0
+            if args.max_events <= 0 or count < args.max_events:
+                self.count_state.update(count + 1)
+                yield event
+
+    class MarkDuplicateEvents(KeyedProcessFunction):
+        def open(self, runtime_context):
+            descriptor = apply_state_ttl(
+                ValueStateDescriptor("seen_event_id", Types.BOOLEAN()),
+                args.dedup_state_ttl_seconds,
+            )
+            self.seen = runtime_context.get_state(descriptor)
+
+        def process_element(self, event: dict[str, Any], ctx):
+            duplicate = bool(self.seen.value())
+            if not duplicate:
+                self.seen.update(True)
+            marked = dict(event)
+            marked["_is_duplicate"] = duplicate
+            yield marked
+
+    class BuildUserFeatures(KeyedProcessFunction):
+        def open(self, runtime_context):
+            sequence_descriptor = apply_state_ttl(
+                ValueStateDescriptor("user_sequence_history", Types.PICKLED_BYTE_ARRAY()),
+                args.state_ttl_seconds,
+            )
+            aggregate_descriptor = apply_state_ttl(
+                ValueStateDescriptor("user_aggregate_history", Types.PICKLED_BYTE_ARRAY()),
+                args.state_ttl_seconds,
+            )
+            self.sequence_history = runtime_context.get_state(sequence_descriptor)
+            self.aggregate_history = runtime_context.get_state(aggregate_descriptor)
+
+        def process_element(self, event: dict[str, Any], ctx):
+            if event.get("_is_duplicate"):
+                yield {"event": event, "sequence_payload": None, "aggregate_payload": None}
+                return
+            sequence_payload, sequence_history = user_sequence_payload_from_history(
+                event,
+                self.sequence_history.value() or [],
+                args.max_history_length,
+            )
+            aggregate_payload, aggregate_history = user_aggregate_payload_from_history(
+                event,
+                self.aggregate_history.value() or [],
+            )
+            self.sequence_history.update(sequence_history)
+            self.aggregate_history.update(aggregate_history)
+            yield {
+                "event": event,
+                "sequence_payload": sequence_payload,
+                "aggregate_payload": aggregate_payload,
+            }
+
+    class BuildItemFeatures(KeyedProcessFunction):
+        def open(self, runtime_context):
+            descriptor = apply_state_ttl(
+                ValueStateDescriptor("item_feature_history", Types.PICKLED_BYTE_ARRAY()),
+                args.state_ttl_seconds,
+            )
+            self.item_history = runtime_context.get_state(descriptor)
+
+        def process_element(self, envelope: dict[str, Any], ctx):
+            event = envelope["event"]
+            if event.get("_is_duplicate"):
+                yield {**envelope, "item_payload": None}
+                return
+            item_payload, item_history = item_payload_from_history(
+                event,
+                self.item_history.value() or [],
+            )
+            self.item_history.update(item_history)
+            yield {**envelope, "item_payload": item_payload}
+
+    class RedisFeatureWriter(MapFunction):
+        def open(self, runtime_context):
+            import redis
+
+            self.redis_client = redis.Redis(host=args.redis_host, port=args.redis_port, decode_responses=True)
+            self.writer = RedisOnlineWriter(self.redis_client)
+            self.writes = 0
+
+        def map(self, envelope: dict[str, Any]) -> str:
+            event = envelope["event"]
+            if event.get("_is_duplicate"):
+                return json.dumps({"status": "duplicate_skipped", "event_id": event["event_id"]}, sort_keys=True)
+            sequence_payload = envelope["sequence_payload"]
+            aggregate_payload = envelope["aggregate_payload"]
+            item_payload = envelope["item_payload"]
+            self.writes += write_payloads_to_redis(
+                event,
+                self.writer,
+                self.redis_client,
+                sequence_payload,
+                aggregate_payload,
+                item_payload,
+            )
+            if args.progress_log_events > 0 and self.writes % args.progress_log_events == 0:
+                emit_progress({"status": "running", "topic": args.topic, "redis_writes": self.writes})
+            return json.dumps(
+                {
+                    "status": "redis_written",
+                    "event_id": event["event_id"],
+                    "redis_writes": self.writes,
+                },
+                sort_keys=True,
+            )
+
+    class WarehouseFeatureWriter(MapFunction):
+        def open(self, runtime_context):
+            self.connection = None
+            if args.warehouse_enabled:
+                from warehouse.connection import connect
+                from warehouse.writer import ensure_warehouse
+
+                self.connection = connect()
+                ensure_warehouse(self.connection)
+
+        def map(self, envelope: dict[str, Any]) -> str:
+            if self.connection is None:
+                return json.dumps({"status": "warehouse_disabled"}, sort_keys=True)
+            event = envelope["event"]
+            if event.get("_is_duplicate"):
+                return json.dumps({"status": "warehouse_duplicate_skipped", "event_id": event["event_id"]}, sort_keys=True)
+            rows = build_warehouse_rows(
+                event,
+                envelope["sequence_payload"],
+                envelope["aggregate_payload"],
+                envelope["item_payload"],
+                args.topic,
+                args.watermark_delay_minutes,
+            )
+            writes = write_warehouse_rows(self.connection, rows)
+            return json.dumps({"status": "warehouse_written", "event_id": event["event_id"], "writes": writes}, sort_keys=True)
+
+    class StreamingQualityRows(KeyedProcessFunction):
+        def open(self, runtime_context):
+            descriptor = apply_state_ttl(
+                ValueStateDescriptor("stream_quality_window", Types.PICKLED_BYTE_ARRAY()),
+                args.state_ttl_seconds,
+            )
+            self.window_state = runtime_context.get_state(descriptor)
+
+        def _row(self, window: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "window_start": parse_event_time(window["window_start"]),
+                "window_end": parse_event_time(window["window_end"]),
+                "topic": args.topic,
+                "event_count": int(window["event_count"]),
+                "late_event_count": int(window["late_event_count"]),
+                "duplicate_event_count": int(window["duplicate_event_count"]),
+                "max_late_by_seconds": float(window["max_late_by_seconds"]),
+                "is_bursty": bool(window["event_count"] >= args.burst_threshold_event_count),
+                "created_timestamp": datetime.now(timezone.utc),
+            }
+
+        def process_element(self, event: dict[str, Any], ctx):
+            late_by_seconds, is_late = late_arrival_metrics(event, args.watermark_delay_minutes)
+            event_ts = parse_event_time(event["event_timestamp"])
+            epoch = int(event_ts.timestamp())
+            window_start_epoch = epoch - (epoch % args.quality_window_seconds)
+            window_start = datetime.fromtimestamp(window_start_epoch, tz=timezone.utc)
+            window_end = window_start + timedelta(seconds=args.quality_window_seconds)
+            window_start_text = isoformat_utc(window_start)
+            current = self.window_state.value()
+            rows = []
+            if current is not None and current["window_start"] != window_start_text:
+                rows.append(self._row(current))
+                current = None
+            if current is None:
+                current = {
+                    "window_start": window_start_text,
+                    "window_end": isoformat_utc(window_end),
+                    "event_count": 0,
+                    "late_event_count": 0,
+                    "duplicate_event_count": 0,
+                    "max_late_by_seconds": 0.0,
+                }
+            current["event_count"] += 1
+            current["late_event_count"] += 1 if is_late else 0
+            current["duplicate_event_count"] += 1 if event.get("_is_duplicate") else 0
+            current["max_late_by_seconds"] = max(float(current["max_late_by_seconds"]), late_by_seconds)
+            self.window_state.update(current)
+            rows.append(self._row(current))
+            for row in rows:
+                yield row
+
+    class WarehouseQualityWriter(MapFunction):
+        def open(self, runtime_context):
+            self.connection = None
+            if args.warehouse_enabled:
+                from warehouse.connection import connect
+                from warehouse.writer import ensure_warehouse
+
+                self.connection = connect()
+                ensure_warehouse(self.connection)
+
+        def map(self, row: dict[str, Any]) -> str:
+            if self.connection is None:
+                return json.dumps({"status": "quality_warehouse_disabled"}, sort_keys=True, default=str)
+            from warehouse.schemas import MONITORING_STREAMING_QUALITY_WINDOWS
+            from warehouse.writer import upsert_rows
+
+            writes = upsert_rows(self.connection, MONITORING_STREAMING_QUALITY_WINDOWS, [row])
+            return json.dumps({"status": "quality_written", "writes": writes, **row}, sort_keys=True, default=str)
+
+    source = build_kafka_source(args)
+    watermark = WatermarkStrategy.for_bounded_out_of_orderness(
+        Duration.of_minutes(args.watermark_delay_minutes)
+    )
+    raw_stream = env.from_source(source, watermark, "cdc-behavior-events-source")
+    parsed = raw_stream.map(
+        ParseNormalizeEvent(),
+        output_type=Types.PICKLED_BYTE_ARRAY(),
+    ).filter(KeepValidEvents())
+    if not args.continuous and args.max_events > 0:
+        parsed = parsed.key_by(lambda event: "native-bounded-limit").process(
+            LimitEvents(),
+            output_type=Types.PICKLED_BYTE_ARRAY(),
+        )
+    deduped = parsed.key_by(lambda event: str(event["event_id"])).process(
+        MarkDuplicateEvents(),
+        output_type=Types.PICKLED_BYTE_ARRAY(),
+    )
+    user_features = deduped.key_by(lambda event: int(event["user_id"])).process(
+        BuildUserFeatures(),
+        output_type=Types.PICKLED_BYTE_ARRAY(),
+    )
+    enriched = user_features.key_by(lambda envelope: int(envelope["event"]["product_id"])).process(
+        BuildItemFeatures(),
+        output_type=Types.PICKLED_BYTE_ARRAY(),
+    )
+    enriched.map(RedisFeatureWriter(), output_type=Types.STRING()).name("redis-online-feature-writer").print()
+    enriched.map(WarehouseFeatureWriter(), output_type=Types.STRING()).name("warehouse-stream-feature-writer").print()
+    deduped.key_by(lambda event: "stream-quality").process(
+        StreamingQualityRows(),
+        output_type=Types.PICKLED_BYTE_ARRAY(),
+    ).map(WarehouseQualityWriter(), output_type=Types.STRING()).name("warehouse-stream-quality-writer").print()
+    return enriched
 
 
 def run_pyflink_stream(args: argparse.Namespace) -> None:
-    from pyflink.common import Types
     from pyflink.datastream import StreamExecutionEnvironment
-    from pyflink.datastream.functions import MapFunction
-
-    class RealtimeConsumerFunction(MapFunction):
-        def map(self, value: int) -> str:
-            stats = run_bounded_stream(args, emit_runtime_status=False)
-            return json.dumps(stats.__dict__, sort_keys=True)
 
     env = StreamExecutionEnvironment.get_execution_environment()
-    env.set_parallelism(1)
-    env.from_collection([0], type_info=Types.INT()).map(
-        RealtimeConsumerFunction(),
-        output_type=Types.STRING(),
-    ).name("consume-cdc-behavior-events-to-online-features").print()
-    env.execute("recsys-realtime-feature-consumer")
+    env.set_parallelism(args.parallelism)
+    build_realtime_stream(env, args)
+    env.execute("recsys-native-pyflink-realtime-features")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Bounded local PyFlink realtime feature job.")
-    parser.add_argument("--runner", choices=["direct", "pyflink"], default=os.getenv("STREAM_RUNNER", "direct"))
+    parser = argparse.ArgumentParser(description="Native PyFlink Kafka realtime feature job.")
+    parser.add_argument("--runner", choices=["pyflink"], default=os.getenv("STREAM_RUNNER", "pyflink"))
     parser.add_argument("--topic", default="cdc.behavior_events")
     parser.add_argument("--bootstrap-servers", default=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"))
     parser.add_argument("--redis-host", default=os.getenv("REDIS_HOST", "redis"))
-    parser.add_argument("--redis-port", type=int, default=int(os.getenv("REDIS_PORT", "6379")))
+    parser.add_argument("--redis-port", type=int, default=env_int("REDIS_PORT", 6379))
     parser.add_argument("--group-id", default="recsys-flink-realtime-local")
     parser.add_argument("--max-events", type=int, default=200)
     parser.add_argument("--min-events", type=int, default=1)
     parser.add_argument("--continuous", action="store_true")
-    parser.add_argument("--max-poll-records", type=int, default=100)
-    parser.add_argument("--idle-timeout-seconds", type=int, default=60)
+    parser.add_argument("--parallelism", type=int, default=env_int("FLINK_PARALLELISM", 1))
     parser.add_argument("--max-history-length", type=int, default=50)
     parser.add_argument("--warehouse-enabled", action="store_true", default=os.getenv("WAREHOUSE_ENABLED", "").lower() in {"1", "true", "yes"})
-    parser.add_argument("--watermark-delay-minutes", type=int, default=int(os.getenv("STREAM_WATERMARK_DELAY_MINUTES", "60")))
-    parser.add_argument("--quality-window-seconds", type=int, default=int(os.getenv("STREAM_QUALITY_WINDOW_SECONDS", "60")))
-    parser.add_argument("--burst-threshold-event-count", type=int, default=int(os.getenv("STREAM_BURST_THRESHOLD_EVENT_COUNT", "500")))
-    parser.add_argument("--progress-log-events", type=int, default=int(os.getenv("STREAM_PROGRESS_LOG_EVENTS", "100")))
-    parser.add_argument("--progress-log-seconds", type=int, default=int(os.getenv("STREAM_PROGRESS_LOG_SECONDS", "30")))
+    parser.add_argument("--watermark-delay-minutes", type=int, default=env_int("STREAM_WATERMARK_DELAY_MINUTES", 60))
+    parser.add_argument("--quality-window-seconds", type=int, default=env_int("STREAM_QUALITY_WINDOW_SECONDS", 60))
+    parser.add_argument("--burst-threshold-event-count", type=int, default=env_int("STREAM_BURST_THRESHOLD_EVENT_COUNT", 500))
+    parser.add_argument("--state-ttl-seconds", type=int, default=env_int("STREAM_STATE_TTL_SECONDS", 7 * 24 * 60 * 60))
+    parser.add_argument("--dedup-state-ttl-seconds", type=int, default=env_int("STREAM_DEDUP_STATE_TTL_SECONDS", 24 * 60 * 60))
+    parser.add_argument("--progress-log-events", type=int, default=env_int("STREAM_PROGRESS_LOG_EVENTS", 100))
     args = parser.parse_args()
 
-    if args.runner == "pyflink":
-        run_pyflink_stream(args)
-        return 0
-
-    stats = run_bounded_stream(args)
-    print(json.dumps(stats.__dict__, indent=2, sort_keys=True))
+    run_pyflink_stream(args)
     return 0
 
 

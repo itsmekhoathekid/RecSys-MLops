@@ -1,16 +1,25 @@
 from __future__ import annotations
 
+import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 from warehouse.connection import connect
+from warehouse.writer import ensure_warehouse
+
+
+def _escape_label_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
 
 def _metric(name: str, value: float, labels: dict[str, str] | None = None) -> str:
     label_text = ""
     if labels:
-        rendered = ",".join(f'{key}="{value}"' for key, value in sorted(labels.items()))
+        rendered = ",".join(
+            f'{key}="{_escape_label_value(str(value))}"'
+            for key, value in sorted(labels.items())
+        )
         label_text = "{" + rendered + "}"
     return f"{name}{label_text} {float(value)}"
 
@@ -23,33 +32,77 @@ def _query_rows(sql: str) -> list[dict[str, Any]]:
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
+def _flatten_numeric_metrics(payload: Any, prefix: str = "") -> dict[str, float]:
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if not isinstance(payload, dict):
+        return {}
+    flattened: dict[str, float] = {}
+    for key, value in payload.items():
+        metric_key = f"{prefix}_{key}" if prefix else str(key)
+        metric_key = "".join(
+            character if character.isalnum() or character == "_" else "_"
+            for character in metric_key
+        )
+        if isinstance(value, bool):
+            flattened[metric_key] = 1.0 if value else 0.0
+        elif isinstance(value, (int, float)):
+            flattened[metric_key] = float(value)
+        elif isinstance(value, dict):
+            flattened.update(_flatten_numeric_metrics(value, metric_key))
+    return flattened
+
+
+def _ensure_monitoring_tables() -> None:
+    with connect() as connection:
+        ensure_warehouse(connection)
+
+
 def collect_metrics() -> str:
     lines = ["# TYPE recsys_monitoring_exporter_up gauge", "recsys_monitoring_exporter_up 1"]
     try:
+        _ensure_monitoring_tables()
         for row in _query_rows(
             """
-            SELECT topic, event_count, late_event_count, max_late_by_seconds, is_bursty
+            SELECT window_start, window_end, topic, event_count, late_event_count, duplicate_event_count, max_late_by_seconds, is_bursty
             FROM monitoring.streaming_quality_windows
             ORDER BY window_end DESC
             LIMIT 50
             """
         ):
-            labels = {"topic": str(row["topic"])}
+            labels = {
+                "topic": str(row["topic"]),
+                "window_start": str(row["window_start"]),
+                "window_end": str(row["window_end"]),
+            }
             lines.append(_metric("recsys_streaming_event_count", row["event_count"], labels))
             lines.append(_metric("recsys_streaming_late_event_count", row["late_event_count"], labels))
+            lines.append(_metric("recsys_streaming_duplicate_event_count", row["duplicate_event_count"], labels))
             lines.append(_metric("recsys_streaming_max_late_by_seconds", row["max_late_by_seconds"], labels))
             lines.append(_metric("recsys_streaming_bursty_window", 1.0 if row["is_bursty"] else 0.0, labels))
         for row in _query_rows(
             """
-            SELECT check_name, passed, error_count
+            SELECT run_id, check_name, passed, error_count, metrics
             FROM monitoring.data_quality_runs
             ORDER BY created_timestamp DESC
             LIMIT 50
             """
         ):
-            labels = {"check_name": str(row["check_name"])}
+            labels = {"run_id": str(row["run_id"]), "check_name": str(row["check_name"])}
             lines.append(_metric("recsys_data_quality_passed", 1.0 if row["passed"] else 0.0, labels))
             lines.append(_metric("recsys_data_quality_error_count", row["error_count"], labels))
+            for metric_name, metric_value in _flatten_numeric_metrics(row["metrics"]).items():
+                lines.append(
+                    _metric(
+                        "recsys_data_quality_metric",
+                        metric_value,
+                        {
+                            "run_id": str(row["run_id"]),
+                            "check_name": str(row["check_name"]),
+                            "metric_name": metric_name,
+                        },
+                    )
+                )
         for row in _query_rows(
             """
             SELECT feature_name, drift_score, passed

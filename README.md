@@ -26,16 +26,46 @@ The full-service stack includes Kubeflow Pipelines, KubeRay, MLflow, MinIO, Post
 RECSYS_CLUSTER_INSTALL_DATAHUB=1 make cluster-up
 ```
 
-To stop and clean up the full-service stack:
+For local macOS/arm64 stability, `cluster-up` scales optional KFP `metadata-writer` and `proxy-agent` deployments to 0 by default. To keep them enabled:
+
+```bash
+RECSYS_CLUSTER_SCALE_OPTIONAL_KFP=0 make cluster-up
+```
+
+To stop the stack while keeping data, PVCs, MLflow artifacts, MinIO buckets, and model weights:
 
 ```bash
 make cluster-down
 ```
 
-`cluster-down` uninstalls the RecSys Helm releases, deletes full-service namespaces, verifies they are gone, then stops the Minikube profile. To delete the Minikube profile entirely:
+`cluster-down` is non-destructive: it prints the retained PVCs/namespaces and stops the Minikube profile. Use it when you want to pause local services and resume later with the same data.
+
+To run the full data setup and verify that the feature store bucket plus Redis online store are populated:
 
 ```bash
-RECSYS_CLUSTER_DELETE_PROFILE=1 make cluster-down
+make cluster-data-setup
+```
+
+This starts the full-service stack if needed, triggers `k8s_data_platform_dag`, waits for the Airflow run to finish, then verifies MinIO lake data, feature-store offline paths, warehouse tables, and Redis online feature keys.
+
+To run the full ML path from Kubeflow to serving validation:
+
+```bash
+make cluster-mlops-serving-e2e
+```
+
+This submits the compiled BST Kubeflow pipeline, waits through MLflow/Ray/evaluation/promotion-manifest creation, runs model CD to Triton/KServe, sends real FastAPI recommendation traffic, and verifies Grafana plus Prometheus serving metrics.
+
+To clean up the full-service stack and delete local Kubernetes data:
+
+```bash
+make cluster-destroy
+```
+
+`cluster-destroy` uninstalls the RecSys Helm releases, deletes full-service namespaces/PVCs, verifies they are gone, then stops Minikube. To delete the Minikube profile entirely:
+
+```bash
+RECSYS_CLUSTER_DELETE_PROFILE=1 make cluster-destroy
 ```
 
 ## I coded whatever you see in this diagram
@@ -45,3 +75,5 @@ RECSYS_CLUSTER_DELETE_PROFILE=1 make cluster-down
 # Data platform
 
 ![Data platform](docs/pngs/data_flow.png)
+
+CDC ingestion details live in [apps/data-platform/README.md](apps/data-platform/README.md).

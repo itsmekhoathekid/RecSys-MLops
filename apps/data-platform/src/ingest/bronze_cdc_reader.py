@@ -3,10 +3,17 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
+
+
+def _pandas():
+    import pandas as pd
+
+    return pd
 
 
 def s3_options() -> dict[str, Any]:
@@ -20,18 +27,35 @@ def s3_options() -> dict[str, Any]:
     }
 
 
+def s3_client():
+    import boto3
+
+    return boto3.client(
+        "s3",
+        endpoint_url=os.getenv("MINIO_ENDPOINT", "http://minio:9000"),
+        aws_access_key_id=os.getenv("MINIO_ROOT_USER", "minio"),
+        aws_secret_access_key=os.getenv("MINIO_ROOT_PASSWORD", "minio123"),
+        region_name="us-east-1",
+    )
+
+
+def split_s3_uri(uri: str) -> tuple[str, str]:
+    parsed = urlparse(uri)
+    return parsed.netloc, parsed.path.lstrip("/")
+
+
 def list_json_files(path: str | Path) -> list[str]:
     raw = str(path).rstrip("/")
     if raw.startswith("s3://"):
-        import s3fs
-
-        parsed = urlparse(raw)
-        root = f"{parsed.netloc}{parsed.path}".rstrip("/")
-        filesystem = s3fs.S3FileSystem(anon=False, **s3_options())
-        return sorted(
-            f"s3://{file}" for file in filesystem.find(root)
-            if file.endswith(".json") or ".json" in Path(file).name
-        )
+        bucket, prefix = split_s3_uri(raw)
+        paginator = s3_client().get_paginator("list_objects_v2")
+        files: list[str] = []
+        for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/"):
+            for item in page.get("Contents", []):
+                key = item["Key"]
+                if key.endswith(".json") or ".json" in Path(key).name:
+                    files.append(f"s3://{bucket}/{key}")
+        return sorted(files)
     root = Path(raw)
     return [str(file) for file in sorted(root.rglob("*.json"))]
 
@@ -39,12 +63,15 @@ def list_json_files(path: str | Path) -> list[str]:
 def iter_json_records(path: str | Path):
     raw = str(path)
     if raw.startswith("s3://"):
-        import s3fs
-
-        filesystem = s3fs.S3FileSystem(anon=False, **s3_options())
-        file_path = raw.removeprefix("s3://")
-        with filesystem.open(file_path, "r") as file:
-            yield from _iter_json_lines(file)
+        bucket, key = split_s3_uri(raw)
+        response = s3_client().get_object(Bucket=bucket, Key=key)
+        for line in response["Body"].iter_lines():
+            if line:
+                payload = json.loads(line.decode("utf-8"))
+                if isinstance(payload, list):
+                    yield from payload
+                else:
+                    yield payload
         return
     with Path(raw).open("r", encoding="utf-8") as file:
         yield from _iter_json_lines(file)
@@ -76,6 +103,7 @@ def extract_debezium_after(record: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def read_bronze_cdc_table(bronze_root: str | Path, topic: str) -> pd.DataFrame:
+    pd = _pandas()
     bronze_root_text = str(bronze_root).rstrip("/")
     topic_roots = [
         f"{bronze_root_text}/{topic}",
@@ -92,6 +120,7 @@ def read_bronze_cdc_table(bronze_root: str | Path, topic: str) -> pd.DataFrame:
 
 
 def normalize_behavior_events_from_cdc(frame: pd.DataFrame) -> pd.DataFrame:
+    pd = _pandas()
     if frame.empty:
         return frame
     events = frame.copy()

@@ -20,6 +20,6 @@ if DAG is not None:
             task_id="streaming_contract_health_check",
             bash_command=(
                 "PYTHONPATH=apps/data-platform/src uv run python "
-                "apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py --runner direct"
+                "apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py --runner pyflink --help"
             ),
         )

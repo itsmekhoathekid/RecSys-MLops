@@ -16,7 +16,7 @@ RUN uv pip install --no-cache \
     kafka-python \
     requests \
     feast \
-    great_expectations \
+    great_expectations==0.18.22 \
     dbt-core \
     dbt-postgres \
     evidently \

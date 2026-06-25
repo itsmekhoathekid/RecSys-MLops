@@ -10,6 +10,7 @@ DISK_SIZE="${MINIKUBE_DISK_SIZE:-40g}"
 WAIT_TIMEOUT="${RECSYS_CLUSTER_WAIT_TIMEOUT:-600s}"
 KFP_VERSION="${KFP_VERSION:-2.16.1}"
 KSERVE_VERSION="${KSERVE_VERSION:-v0.15.2}"
+CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.16.2}"
 BUILD_IMAGES="${RECSYS_CLUSTER_BUILD_IMAGES:-0}"
 INSTALL_DATAHUB="${RECSYS_CLUSTER_INSTALL_DATAHUB:-0}"
 SCALE_OPTIONAL_KFP="${RECSYS_CLUSTER_SCALE_OPTIONAL_KFP:-1}"
@@ -88,6 +89,19 @@ helm_uninstall_if_failed() {
   fi
 }
 
+kubectl_apply_server_side_with_retries() {
+  local manifest="$1"
+  local attempts="${2:-5}"
+  for attempt in $(seq 1 "${attempts}"); do
+    if kubectl apply --server-side --force-conflicts -f "${manifest}"; then
+      return 0
+    fi
+    echo "Retrying server-side apply for ${manifest} (${attempt}/${attempts}) after webhook/API readiness delay"
+    sleep 15
+  done
+  kubectl apply --server-side --force-conflicts -f "${manifest}"
+}
+
 install_kfp_if_needed() {
   if kubectl get deploy -n kubeflow ml-pipeline >/dev/null 2>&1; then
     echo "Kubeflow Pipelines already installed"
@@ -115,7 +129,11 @@ scale_optional_kfp_components() {
     return
   fi
   if kubectl get namespace kubeflow >/dev/null 2>&1; then
-    kubectl scale deploy -n kubeflow metadata-writer proxy-agent --replicas=0 --ignore-not-found || true
+    for deployment in metadata-writer proxy-agent; do
+      if kubectl get deploy "${deployment}" -n kubeflow >/dev/null 2>&1; then
+        kubectl scale deploy "${deployment}" -n kubeflow --replicas=0
+      fi
+    done
   fi
 }
 
@@ -136,21 +154,64 @@ install_keda_if_needed() {
   helm upgrade --install keda-add-ons-http kedacore/keda-add-ons-http --namespace keda --wait --timeout 5m
 }
 
+install_cert_manager_if_needed() {
+  if kubectl get crd certificates.cert-manager.io >/dev/null 2>&1 \
+    && kubectl get deploy -n cert-manager cert-manager >/dev/null 2>&1 \
+    && kubectl get deploy -n cert-manager cert-manager-webhook >/dev/null 2>&1 \
+    && kubectl get deploy -n cert-manager cert-manager-cainjector >/dev/null 2>&1; then
+    echo "cert-manager already installed"
+  else
+    kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
+    kubectl wait --for condition=established --timeout=120s crd/certificates.cert-manager.io
+    kubectl wait --for condition=established --timeout=120s crd/issuers.cert-manager.io
+  fi
+  kubectl rollout status deploy/cert-manager -n cert-manager --timeout="${WAIT_TIMEOUT}"
+  kubectl rollout status deploy/cert-manager-webhook -n cert-manager --timeout="${WAIT_TIMEOUT}"
+  kubectl rollout status deploy/cert-manager-cainjector -n cert-manager --timeout="${WAIT_TIMEOUT}"
+  for _ in $(seq 1 60); do
+    if kubectl get endpoints cert-manager-webhook -n cert-manager \
+      -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for cert-manager webhook endpoints"
+  kubectl get endpoints cert-manager-webhook -n cert-manager || true
+  return 1
+}
+
+wait_kserve_webhook() {
+  kubectl rollout status deploy/kserve-controller-manager -n kserve --timeout="${WAIT_TIMEOUT}"
+  for _ in $(seq 1 60); do
+    if kubectl get endpoints kserve-webhook-server-service -n kserve \
+      -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for KServe webhook endpoints"
+  kubectl get endpoints kserve-webhook-server-service -n kserve || true
+  return 1
+}
+
 install_kserve_if_needed() {
   if kubectl get crd inferenceservices.serving.kserve.io >/dev/null 2>&1 \
     && kubectl get deploy -n kserve kserve-controller-manager >/dev/null 2>&1 \
-    && kubectl get mutatingwebhookconfiguration inferenceservice.serving.kserve.io >/dev/null 2>&1; then
+    && kubectl get mutatingwebhookconfiguration inferenceservice.serving.kserve.io >/dev/null 2>&1 \
+    && kubectl get certificate serving-cert -n kserve >/dev/null 2>&1 \
+    && kubectl get clusterservingruntime kserve-tritonserver >/dev/null 2>&1; then
     echo "KServe CRDs and controller already installed"
   else
-    kubectl apply --server-side --force-conflicts -f "https://github.com/kserve/kserve/releases/download/${KSERVE_VERSION}/kserve.yaml"
-    kubectl apply --server-side --force-conflicts -f "https://github.com/kserve/kserve/releases/download/${KSERVE_VERSION}/kserve-cluster-resources.yaml"
+    kubectl_apply_server_side_with_retries "https://github.com/kserve/kserve/releases/download/${KSERVE_VERSION}/kserve.yaml"
+    wait_kserve_webhook
+    kubectl_apply_server_side_with_retries "https://github.com/kserve/kserve/releases/download/${KSERVE_VERSION}/kserve-cluster-resources.yaml"
   fi
 }
 
 deployment_selector() {
   local namespace="$1"
   local deployment="$2"
-  kubectl get deploy "${deployment}" -n "${namespace}" -o jsonpath='{range $k,$v:=.spec.selector.matchLabels}{printf "%s=%s," $k $v}{end}' | sed 's/,$//'
+  kubectl get deploy "${deployment}" -n "${namespace}" -o go-template='{{range $k,$v := .spec.selector.matchLabels}}{{printf "%s=%s," $k $v}}{{end}}' | sed 's/,$//'
 }
 
 ensure_deployment_available() {
@@ -257,6 +318,7 @@ fi
 
 section "Install Cluster Dependencies"
 install_keda_if_needed
+install_cert_manager_if_needed
 install_kserve_if_needed
 ensure_dependency_rollouts
 

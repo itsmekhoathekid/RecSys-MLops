@@ -23,8 +23,10 @@ spec:
           args:
             - |
               set -euo pipefail
-              PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
-              python infra/docker/scripts/init_postgres_schema.py
+              until PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
+                python infra/docker/scripts/init_postgres_schema.py; do
+                sleep 5
+              done
               PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
               python apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py
           envFrom:

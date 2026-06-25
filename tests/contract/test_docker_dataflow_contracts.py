@@ -116,7 +116,8 @@ def test_full_dataflow_dag_declares_historical_and_realtime_task_groups():
     assert "spark_realtime_bronze_entrypoint.py" in dag_source
     assert "realtime_stream_job" in dag_source
     assert 'command=["bash", "-lc", f"{command} "]' in dag_source
-    assert "python3 apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py" in dag_source
+    assert "flink run -m flink-jobmanager:8081" in dag_source
+    assert "-py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py" in dag_source
 
 
 def test_single_streaming_dag_runs_real_stream_job_without_masking_failures():
@@ -125,6 +126,8 @@ def test_single_streaming_dag_runs_real_stream_job_without_masking_failures():
     ).read_text()
 
     assert "feature_engineering/flink/realtime_stream_job.py" in dag_source
+    assert "--runner pyflink --help" in dag_source
+    assert "--runner direct" not in dag_source
     assert "|| true" not in dag_source
 
 
@@ -268,7 +271,10 @@ def test_makefile_exposes_pipeline_operation_targets():
     for target in [
         "cluster-up",
         "cluster-down",
+        "cluster-destroy",
         "cluster-status",
+        "cluster-data-setup",
+        "cluster-mlops-serving-e2e",
         "dataflow-e2e",
         "dataflow-ingest-lake",
         "dataflow-realtime-up",
@@ -290,19 +296,32 @@ def test_makefile_exposes_pipeline_operation_targets():
     assert "DATA_PLATFORM_REALTIME_PRODUCER ?= realtime-event-producer" in makefile
     assert "cluster-up: mlops-cluster-up" in makefile
     assert "cluster-down: mlops-cluster-down" in makefile
+    assert "cluster-destroy: mlops-cluster-destroy" in makefile
+    assert "cluster-data-setup: mlops-cluster-data-setup" in makefile
+    assert "cluster-mlops-serving-e2e: mlops-cluster-serving-e2e" in makefile
     assert "cluster-status: mlops-cluster-status" in makefile
+    assert "--set observability.serviceMonitor.enabled=false" in makefile
+    assert "--set autoscaling.kserveResource.enabled=false" in makefile
+    assert "--set autoscaling.kserveResource.enabled=true" in makefile
 
 
 def test_cluster_lifecycle_scripts_manage_full_service_stack():
     up_script = (ROOT / "infra/k8s/scripts/mlops_cluster_up.sh").read_text()
     down_script = (ROOT / "infra/k8s/scripts/mlops_cluster_down.sh").read_text()
+    destroy_script = (ROOT / "infra/k8s/scripts/mlops_cluster_destroy.sh").read_text()
+    data_setup_script = (ROOT / "infra/k8s/scripts/cluster_data_setup.sh").read_text()
+    serving_e2e_script = (ROOT / "infra/k8s/scripts/cluster_mlops_serving_e2e.sh").read_text()
     readme = (ROOT / "README.md").read_text()
 
     for expected in [
         "install_kfp_if_needed",
         "install_kuberay_if_needed",
         "install_keda_if_needed",
+        "install_cert_manager_if_needed",
         "install_kserve_if_needed",
+        "certificates.cert-manager.io",
+        "kubectl apply --server-side --force-conflicts",
+        "scale_optional_kfp_components",
         "run_make observability-install",
         "run_make mlops-install-stack",
         "run_make data-platform-install",
@@ -318,23 +337,59 @@ def test_cluster_lifecycle_scripts_manage_full_service_stack():
         assert expected in up_script
 
     for expected in [
+        "cluster-down is non-destructive",
+        "kubectl get pvc -A",
+        "Current Full Service Namespaces",
+        "minikube -p \"${PROFILE}\" stop",
+    ]:
+        assert expected in down_script
+    assert "delete_namespace" not in down_script
+    assert "uninstall_release" not in down_script
+
+    for expected in [
         "uninstall_release recsys-gateway api-serving",
         "uninstall_release recsys-serving kserve-triton-inference",
         "uninstall_release recsys-observability observability",
         "uninstall_release recsys-data-platform recsys-dataflow",
         "uninstall_release recsys-mlflow experiment-tracking",
         "delete_namespace",
+        "delete_kserve_webhooks",
+        "clear_namespaced_resource_finalizers kserve-triton-inference inferenceservices.serving.kserve.io",
         "Verify Services Removed",
         "minikube -p \"${PROFILE}\" stop",
     ]:
-        assert expected in down_script
+        assert expected in destroy_script
+
+    for expected in [
+        "airflow dags trigger \"${DAG_ID}\" --run-id \"${RUN_ID}\"",
+        "wait_for_airflow_run",
+        "data-platform-verify-e2e",
+        "fs:user_sequence",
+        "Redis Online Store",
+    ]:
+        source = data_setup_script + (ROOT / "apps/data-platform/src/local/verify_k8s_data_platform_e2e.py").read_text()
+        assert expected in source
+
+    for expected in [
+        "submit_pipeline_run.py",
+        "model_cd.py",
+        "read_promotion_manifest",
+        "http://127.0.0.1:${FASTAPI_PORT}/recommendations",
+        "verify_grafana_dashboard",
+        "sum(model_predictions_total)",
+        "recsys_api_triton_inference_duration_seconds_count",
+    ]:
+        assert expected in serving_e2e_script
 
     for expected in [
         "make cluster-up",
         "make cluster-down",
+        "make cluster-destroy",
+        "make cluster-data-setup",
+        "make cluster-mlops-serving-e2e",
         "RECSYS_CLUSTER_BUILD_IMAGES=1 make cluster-up",
         "RECSYS_CLUSTER_INSTALL_DATAHUB=1 make cluster-up",
-        "RECSYS_CLUSTER_DELETE_PROFILE=1 make cluster-down",
+        "RECSYS_CLUSTER_DELETE_PROFILE=1 make cluster-destroy",
     ]:
         assert expected in readme
 

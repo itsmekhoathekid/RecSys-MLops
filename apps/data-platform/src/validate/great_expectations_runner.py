@@ -55,6 +55,109 @@ def _read_table(connection: Any, qualified_name: str) -> pd.DataFrame:
     return pd.read_sql_query(f"SELECT * FROM {qualified_name}", connection)
 
 
+def _great_expectations_validator(frame: pd.DataFrame):
+    try:
+        import great_expectations as gx
+    except ImportError:
+        return None, "not_installed"
+
+    if hasattr(gx, "from_pandas"):
+        try:
+            return gx.from_pandas(frame), "great_expectations.from_pandas"
+        except Exception as exc:
+            return None, f"from_pandas_failed:{exc.__class__.__name__}"
+    try:
+        from great_expectations.dataset import PandasDataset
+
+        return PandasDataset(frame), "great_expectations.dataset.PandasDataset"
+    except Exception as exc:
+        return None, f"pandas_dataset_failed:{exc.__class__.__name__}"
+
+
+def _run_expectation(validator: Any, expectation: str, **kwargs: Any) -> tuple[bool, dict[str, Any]]:
+    result = getattr(validator, expectation)(**kwargs)
+    payload = result.to_json_dict() if hasattr(result, "to_json_dict") else dict(result)
+    return bool(payload.get("success", False)), payload
+
+
+def _validate_with_great_expectations(
+    table_name: str,
+    frame: pd.DataFrame,
+    required_columns: list[str],
+    unique_columns: list[str],
+    categorical_columns: list[str],
+    max_unique_ratio: float,
+) -> tuple[list[str], dict[str, Any]]:
+    validator, backend = _great_expectations_validator(frame)
+    metrics: dict[str, Any] = {
+        "great_expectations_backend": backend,
+        "great_expectations_used": validator is not None,
+        "great_expectations_expectation_count": 0,
+        "great_expectations_failed_expectation_count": 0,
+    }
+    errors: list[str] = []
+    if validator is None:
+        return errors, metrics
+
+    expectations: list[tuple[str, dict[str, Any], str]] = [
+        (
+            "expect_table_columns_to_contain_set",
+            {"column_set": required_columns},
+            "required column set",
+        ),
+    ]
+    expectations.extend(
+        (
+            "expect_column_values_to_not_be_null",
+            {"column": column},
+            f"{column} non-null",
+        )
+        for column in required_columns
+        if column in frame.columns
+    )
+    if len(unique_columns) == 1 and unique_columns[0] in frame.columns:
+        expectations.append(
+            (
+                "expect_column_values_to_be_unique",
+                {"column": unique_columns[0]},
+                f"{unique_columns[0]} unique",
+            )
+        )
+    elif all(column in frame.columns for column in unique_columns):
+        expectations.append(
+            (
+                "expect_compound_columns_to_be_unique",
+                {"column_list": unique_columns},
+                f"{unique_columns} compound unique",
+            )
+        )
+    expectations.extend(
+        (
+            "expect_column_proportion_of_unique_values_to_be_between",
+            {"column": column, "max_value": max_unique_ratio},
+            f"{column} cardinality",
+        )
+        for column in categorical_columns
+        if column in frame.columns
+    )
+
+    for expectation, kwargs, label in expectations:
+        if not hasattr(validator, expectation):
+            continue
+        metrics["great_expectations_expectation_count"] += 1
+        try:
+            success, payload = _run_expectation(validator, expectation, **kwargs)
+        except Exception as exc:
+            success = False
+            payload = {"exception": exc.__class__.__name__}
+        metrics[f"ge_{label.replace(' ', '_').replace('.', '_')}_success"] = success
+        if not success:
+            metrics["great_expectations_failed_expectation_count"] += 1
+            errors.append(f"{table_name} failed GE expectation: {label}")
+
+    return errors, metrics
+
+
 def validate_table(
     table_name: str,
     frame: pd.DataFrame,
@@ -67,6 +170,16 @@ def validate_table(
 ) -> QualityCheck:
     errors: list[str] = []
     metrics: dict[str, Any] = {"row_count": int(len(frame))}
+    ge_errors, ge_metrics = _validate_with_great_expectations(
+        table_name,
+        frame,
+        required_columns=required_columns,
+        unique_columns=unique_columns,
+        categorical_columns=categorical_columns,
+        max_unique_ratio=max_unique_ratio,
+    )
+    errors.extend(ge_errors)
+    metrics.update(ge_metrics)
     missing = sorted(set(required_columns) - set(frame.columns))
     metrics["missing_column_count"] = len(missing)
     if missing:
@@ -181,7 +294,7 @@ def run_staging_validation(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run Great Expectations-style staging data validation.")
+    parser = argparse.ArgumentParser(description="Run Great Expectations staging data validation.")
     parser.add_argument("--run-id", default=os.getenv("DATA_QUALITY_RUN_ID", datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")))
     parser.add_argument(
         "--report-path",

@@ -133,12 +133,21 @@ if DAG is not None:
             DATAFLOW_IMAGE,
             "python -m warehouse.historical_loader --run-path s3://recsys-lake/raw/test_10k_seed42",
         )
+        publish_generator_quality = pod_task(
+            "publish_generator_quality",
+            DATAFLOW_IMAGE,
+            "python -m validate.synthetic_data_quality "
+            "--run-path s3://recsys-lake/raw/test_10k_seed42 "
+            "--report-path s3://recsys-lake/monitoring/generator/offline_quality.json",
+        )
         run_flink_processing = pod_task(
             "run_flink_processing",
             FLINK_IMAGE,
-            "python3 apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py "
-            "--topic cdc.behavior_events --max-events 200 --min-events 1 "
-            "--warehouse-enabled --idle-timeout-seconds 60",
+            "flink run -m flink-jobmanager:8081 "
+            "-py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py "
+            "-- "
+            "--runner pyflink --topic cdc.behavior_events --max-events 200 --min-events 1 "
+            "--warehouse-enabled",
         )
         ge_validate_staging = pod_task(
             "ge_validate_staging",
@@ -156,7 +165,15 @@ if DAG is not None:
         write_offline_feature_store = pod_task(
             "write_offline_feature_store",
             SPARK_IMAGE,
-            "python3 -m local.run_offline_features_from_warehouse",
+            "/opt/spark/bin/spark-submit "
+            "--packages org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 "
+            "--conf spark.hadoop.fs.s3a.endpoint=http://data-platform-minio:9000 "
+            "--conf spark.hadoop.fs.s3a.access.key=minio "
+            "--conf spark.hadoop.fs.s3a.secret.key=minio123 "
+            "--conf spark.hadoop.fs.s3a.path.style.access=true "
+            "--conf spark.hadoop.fs.s3a.connection.ssl.enabled=false "
+            "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py "
+            "--config configs/local/spark_batch.yaml",
         )
         validate_offline_feature_store = pod_task(
             "validate_offline_feature_store",
@@ -190,7 +207,9 @@ if DAG is not None:
         datahub_ingest = pod_task(
             "datahub_ingest",
             DATAFLOW_IMAGE,
-            "python -m metadata.ingest_datahub_governance --gms-url $DATAHUB_GMS_URL",
+            "python -m metadata.ingest_datahub_governance "
+            "--gms-url $DATAHUB_GMS_URL "
+            "--pushgateway-url $PUSHGATEWAY_URL",
         )
         final_smoke = pod_task(
             "final_smoke",
@@ -206,6 +225,7 @@ if DAG is not None:
             >> register_debezium_connector
             >> register_kafka_minio_sink
             >> generate_historical_to_lake_raw
+            >> publish_generator_quality
             >> load_realtime_to_source_postgres
             >> wait_for_cdc_to_bronze
             >> ingest_historical_to_staging

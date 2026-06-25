@@ -45,6 +45,8 @@ kserve:
     limits:
       cpu: "3"
       memory: 6Gi
+  sharedMemory:
+    sizeLimit: 256Mi
 
 api:
   namespace:
@@ -149,7 +151,7 @@ autoscaling:
 observability:
   enabled: true
   serviceMonitor:
-    enabled: true
+    enabled: false
     interval: 15s
 
 abTest:

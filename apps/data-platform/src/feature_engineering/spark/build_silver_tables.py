@@ -1,72 +1,103 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import Any
 
-import pandas as pd
-
-from ingest.minio_raw_reader import read_generator_run
-from preprocess.event_dedup import deduplicate_behavior_events
-from preprocess.schema_evolution import (
-    normalize_behavior_schema,
-    normalize_recommendation_schema,
-)
-from feature_store.offline_writer import write_feature_table
+from feature_engineering.spark.session import read_parquet_table, write_parquet
 
 
-def build_clean_behavior_events(events: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    dedup = deduplicate_behavior_events(events)
-    clean = normalize_behavior_schema(dedup.clean)
-    clean["event_timestamp"] = pd.to_datetime(clean["event_timestamp"], utc=True)
-    clean["ingestion_ts"] = pd.to_datetime(clean["ingestion_ts"], utc=True)
-    clean["event_type_id"] = clean["event_type"].map({"view": 1, "cart": 2, "purchase": 3}).fillna(0).astype("int16")
-    return clean.sort_values(["event_timestamp", "event_id"]).reset_index(drop=True), dedup.rejected
+def _ensure_column(frame: Any, column: str, expression: Any):
+    return frame if column in frame.columns else frame.withColumn(column, expression)
 
 
-def build_clean_impressions(impressions: pd.DataFrame) -> pd.DataFrame:
-    frame = impressions.copy()
-    frame["impression_timestamp"] = pd.to_datetime(frame["impression_timestamp"], utc=True)
-    return frame.drop_duplicates("impression_id").sort_values(
-        ["impression_timestamp", "impression_id"]
-    ).reset_index(drop=True)
+def build_clean_behavior_events(events: Any) -> tuple[Any, Any]:
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
+
+    normalized = _ensure_column(events, "device_type", F.lit("unknown"))
+    normalized = _ensure_column(normalized, "campaign_id", F.lit("none"))
+    normalized = normalized.withColumn("event_timestamp", F.to_timestamp("event_timestamp"))
+    normalized = normalized.withColumn("ingestion_ts", F.to_timestamp("ingestion_ts"))
+    normalized = normalized.withColumn(
+        "event_type_id",
+        F.when(F.col("event_type") == "view", F.lit(1))
+        .when(F.col("event_type") == "cart", F.lit(2))
+        .when(F.col("event_type") == "purchase", F.lit(3))
+        .otherwise(F.lit(0))
+        .cast("smallint"),
+    )
+    window = Window.partitionBy("event_id").orderBy(F.col("ingestion_ts").desc_nulls_last())
+    ranked = normalized.withColumn("_dedup_rank", F.row_number().over(window))
+    clean = ranked.filter(F.col("_dedup_rank") == 1).drop("_dedup_rank")
+    rejected = ranked.filter(F.col("_dedup_rank") > 1).drop("_dedup_rank")
+    return clean.orderBy("event_timestamp", "event_id"), rejected
 
 
-def build_order_facts(orders: pd.DataFrame, order_items: pd.DataFrame) -> pd.DataFrame:
-    facts = order_items.merge(orders, on="order_id", how="left", suffixes=("_item", "_order"))
+def build_clean_impressions(impressions: Any) -> Any:
+    from pyspark.sql import functions as F
+
+    return (
+        impressions.withColumn("impression_timestamp", F.to_timestamp("impression_timestamp"))
+        .dropDuplicates(["impression_id"])
+        .orderBy("impression_timestamp", "impression_id")
+    )
+
+
+def build_clean_recommendation_requests(requests: Any) -> Any:
+    from pyspark.sql import functions as F
+
+    frame = _ensure_column(requests, "request_context", F.lit("{}"))
+    return frame.withColumn("request_timestamp", F.to_timestamp("request_timestamp"))
+
+
+def build_order_facts(orders: Any, order_items: Any) -> Any:
+    from pyspark.sql import functions as F
+
+    facts = order_items.join(orders, on="order_id", how="left")
     if "status" in facts.columns:
-        facts["is_valid_purchase"] = ~facts["status"].isin(["cancelled", "refunded"])
-    else:
-        facts["is_valid_purchase"] = True
-    return facts
+        return facts.withColumn("is_valid_purchase", ~F.col("status").isin("cancelled", "refunded"))
+    return facts.withColumn("is_valid_purchase", F.lit(True))
 
 
-def build_product_scd(product_snapshots: pd.DataFrame, products: pd.DataFrame) -> pd.DataFrame:
-    if not product_snapshots.empty:
-        frame = product_snapshots.copy()
-        frame["valid_from"] = pd.to_datetime(frame["valid_from"], utc=True)
-        return frame.sort_values(["product_id", "valid_from"]).reset_index(drop=True)
-    frame = products.copy()
-    frame["valid_from"] = pd.to_datetime(frame["created_ts"], utc=True)
-    frame["valid_to"] = pd.NaT
-    return frame
+def build_product_scd(product_snapshots: Any, products: Any) -> Any:
+    from pyspark.sql import functions as F
+
+    if "valid_from" in product_snapshots.columns:
+        return product_snapshots.withColumn("valid_from", F.to_timestamp("valid_from")).orderBy("product_id", "valid_from")
+    return (
+        products.withColumn("valid_from", F.to_timestamp("created_ts"))
+        .withColumn("valid_to", F.lit(None).cast("timestamp"))
+        .orderBy("product_id", "valid_from")
+    )
 
 
-def build_silver_tables(run_path: str | Path, output_path: str | Path) -> dict[str, pd.DataFrame]:
-    raw = read_generator_run(run_path)
+def build_silver_tables(spark: Any, run_path: str, output_path: str) -> dict[str, Any]:
+    raw = {
+        table: read_parquet_table(spark, run_path, table)
+        for table in [
+            "users",
+            "user_preferences",
+            "products",
+            "product_snapshots",
+            "sessions",
+            "recommendation_requests",
+            "impressions",
+            "behavior_events",
+            "orders",
+            "order_items",
+        ]
+    }
     clean_events, rejected_events = build_clean_behavior_events(raw["behavior_events"])
-    clean_requests = normalize_recommendation_schema(raw["recommendation_requests"])
     silver = {
         "clean_behavior_events": clean_events,
         "rejected_behavior_events": rejected_events,
         "clean_impressions": build_clean_impressions(raw["impressions"]),
-        "clean_recommendation_requests": clean_requests,
+        "clean_recommendation_requests": build_clean_recommendation_requests(raw["recommendation_requests"]),
         "order_facts": build_order_facts(raw["orders"], raw["order_items"]),
         "product_scd": build_product_scd(raw["product_snapshots"], raw["products"]),
         "users": raw["users"],
         "products": raw["products"],
         "user_preferences": raw["user_preferences"],
     }
-    base = Path(output_path)
     for name, frame in silver.items():
-        write_feature_table(frame, base / name)
+        write_parquet(frame, f"{output_path.rstrip('/')}/{name}")
     return silver
-
