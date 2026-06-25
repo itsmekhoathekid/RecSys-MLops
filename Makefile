@@ -81,11 +81,15 @@ help:
 	@echo ""
 	@echo "Kubeflow/MLflow:"
 	@echo "  make cluster-up             Start minikube and install/wait the full RecSys service stack"
-	@echo "  make cluster-down           Uninstall the full RecSys service stack and stop minikube"
+	@echo "  make cluster-down           Stop minikube and keep namespaces, PVCs, data, and model weights"
+	@echo "  make cluster-destroy        Delete full service namespaces/PVCs, then stop or delete minikube"
 	@echo "  make cluster-status         Show cluster memory and full service status"
+	@echo "  make cluster-data-setup     Run full data setup and verify feature-store + Redis online store"
+	@echo "  make cluster-mlops-serving-e2e  Run Kubeflow -> MLflow -> model CD -> Triton/FastAPI/Grafana"
 	@echo "  make mlops-local-up           Start local minikube profile"
 	@echo "  make mlops-cluster-up         Start minikube and wait for the full RecSys MLOps service stack"
-	@echo "  make mlops-cluster-down       Stop the full minikube cluster and all services"
+	@echo "  make mlops-cluster-down       Stop minikube without deleting data"
+	@echo "  make mlops-cluster-destroy    Delete full service stack and data"
 	@echo "  make mlops-cluster-status     Show cluster memory and full service status"
 	@echo "  make mlops-images             Build training and MLflow images"
 	@echo "  make mlops-images-minikube    Build images inside minikube Docker daemon"
@@ -121,8 +125,17 @@ cluster-up: mlops-cluster-up
 .PHONY: cluster-down
 cluster-down: mlops-cluster-down
 
+.PHONY: cluster-destroy
+cluster-destroy: mlops-cluster-destroy
+
 .PHONY: cluster-status
 cluster-status: mlops-cluster-status
+
+.PHONY: cluster-data-setup
+cluster-data-setup: mlops-cluster-data-setup
+
+.PHONY: cluster-mlops-serving-e2e
+cluster-mlops-serving-e2e: mlops-cluster-serving-e2e
 
 .PHONY: mlops-cluster-up
 mlops-cluster-up:
@@ -132,9 +145,21 @@ mlops-cluster-up:
 mlops-cluster-down:
 	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) infra/k8s/scripts/mlops_cluster_down.sh
 
+.PHONY: mlops-cluster-destroy
+mlops-cluster-destroy:
+	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) infra/k8s/scripts/mlops_cluster_destroy.sh
+
 .PHONY: mlops-cluster-status
 mlops-cluster-status:
 	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) infra/k8s/scripts/mlops_cluster_status.sh
+
+.PHONY: mlops-cluster-data-setup
+mlops-cluster-data-setup:
+	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) infra/k8s/scripts/cluster_data_setup.sh
+
+.PHONY: mlops-cluster-serving-e2e
+mlops-cluster-serving-e2e:
+	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) RECSYS_PIPELINE_IMAGE=$(RECSYS_PIPELINE_IMAGE) infra/k8s/scripts/cluster_mlops_serving_e2e.sh
 
 .PHONY: dataflow-build
 dataflow-build:
@@ -211,7 +236,7 @@ data-platform-template:
 
 .PHONY: data-platform-install
 data-platform-install:
-	@helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform --namespace recsys-dataflow --create-namespace
+	@helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform --namespace recsys-dataflow --create-namespace --timeout 15m
 
 .PHONY: data-platform-trigger
 data-platform-trigger:

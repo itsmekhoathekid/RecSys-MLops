@@ -1,0 +1,167 @@
+{
+  "uid": "recsys-datahub-governance",
+  "title": "DataHub Governance",
+  "description": "Governance ingest health and DataHub runtime telemetry for the local RecSys stack.",
+  "tags": ["recsys", "datahub", "governance", "lineage"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "<div style=\"font-size:22px;font-weight:700;line-height:1.2\">DataHub Governance Control Room</div><div style=\"color:#9CA3AF;margin-top:6px\">DP1/DP2/DP3 metadata ingest, searchable assets, and DataHub pod health for the RecSys data platform.</div>"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Governance Ingest",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 3 },
+      "targets": [{ "expr": "max(recsys_datahub_ingest_success) or vector(0)", "legendFormat": "success" }],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "failed" }, "1": { "text": "ok" } } }
+          ]
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Datasets",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 3 },
+      "targets": [{ "expr": "max(recsys_datahub_ingest_dataset_count) or vector(0)", "legendFormat": "datasets" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short", "color": { "mode": "palette-classic" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Jobs",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 3 },
+      "targets": [{ "expr": "max(recsys_datahub_ingest_job_count) or vector(0)", "legendFormat": "jobs" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short", "color": { "mode": "palette-classic" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Data Products",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 3 },
+      "targets": [{ "expr": "max(recsys_datahub_ingest_data_product_count) or vector(0)", "legendFormat": "products" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short", "color": { "mode": "palette-classic" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Last Ingest Age",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 3 },
+      "targets": [{ "expr": "time() - max(recsys_datahub_ingest_timestamp_seconds) or vector(0)", "legendFormat": "age" }],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 3600 }, { "color": "red", "value": 86400 }] }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Live Containers",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 3 },
+      "targets": [{ "expr": "count(container_last_seen{namespace=\"datahub\"}) or vector(0)", "legendFormat": "containers" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short", "color": { "mode": "palette-classic" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Ingested Data Products",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
+      "targets": [{ "expr": "max(recsys_datahub_ingest_data_product_present) by (data_product)", "legendFormat": "{{data_product}}" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "DataHub CPU by Pod",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
+      "targets": [{ "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"datahub\"}[5m])) by (pod)", "legendFormat": "{{pod}}" }],
+      "fieldConfig": { "defaults": { "decimals": 2, "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 18, "lineWidth": 2 } } },
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "DataHub Memory by Pod",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+      "targets": [{ "expr": "sum(container_memory_working_set_bytes{namespace=\"datahub\"}) by (pod)", "legendFormat": "{{pod}}" }],
+      "fieldConfig": { "defaults": { "decimals": 1, "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 18, "lineWidth": 2 } } },
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "DataHub Network IO",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        { "expr": "sum(rate(container_network_receive_bytes_total{namespace=\"datahub\"}[5m])) by (pod)", "legendFormat": "rx {{pod}}" },
+        { "expr": "sum(rate(container_network_transmit_bytes_total{namespace=\"datahub\"}[5m])) by (pod)", "legendFormat": "tx {{pod}}" }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 1, "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 16, "lineWidth": 2 } } },
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Top DataHub Containers",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        { "expr": "topk(10, container_memory_working_set_bytes{namespace=\"datahub\"})", "format": "table", "instant": true }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 1, "unit": "bytes" } },
+      "options": { "showHeader": true }
+    }
+  ]
+}

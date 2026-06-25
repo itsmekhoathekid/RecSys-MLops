@@ -97,6 +97,7 @@ def main() -> int:
     parser.add_argument("--pipeline-package-path", default=os.getenv("KFP_PIPELINE_PACKAGE_PATH", "/opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml"))
     parser.add_argument("--pushgateway-url", default=os.getenv("PUSHGATEWAY_URL", ""))
     parser.add_argument("--disable-retrain", action="store_true")
+    parser.add_argument("--fail-on-trigger-error", action="store_true")
     args = parser.parse_args()
     result = trigger_retrain(
         args.drift_report_path,
@@ -107,7 +108,7 @@ def main() -> int:
         pushgateway_url=args.pushgateway_url or None,
     )
     print(json.dumps(result.__dict__, indent=2, sort_keys=True))
-    return 1 if result.error else 0
+    return 1 if args.fail_on_trigger_error and result.error else 0
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import urllib.error
+import warnings
 import urllib.request
 from dataclasses import dataclass
 
@@ -18,10 +20,14 @@ def render_samples(samples: list[MetricSample]) -> str:
         labels = sample.labels or {}
         label_text = ""
         if labels:
-            rendered = ",".join(f'{key}="{value}"' for key, value in sorted(labels.items()))
+            rendered = ",".join(f'{key}="{escape_label_value(value)}"' for key, value in sorted(labels.items()))
             label_text = "{" + rendered + "}"
         lines.append(f"{sample.name}{label_text} {float(sample.value)}")
     return "\n".join(lines) + "\n"
+
+
+def escape_label_value(value: str) -> str:
+    return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
 
 def push_metrics(
@@ -42,5 +48,9 @@ def push_metrics(
         method="PUT",
         headers={"Content-Type": "text/plain; version=0.0.4"},
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        return 200 <= response.status < 300
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return 200 <= response.status < 300
+    except (urllib.error.URLError, TimeoutError) as exc:
+        warnings.warn(f"Failed to push metrics to Pushgateway {gateway}: {exc}", RuntimeWarning)
+        return False

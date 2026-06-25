@@ -95,6 +95,7 @@ MONITORING_STREAMING_QUALITY_WINDOWS = TableSpec(
         "topic": "TEXT",
         "event_count": "INTEGER",
         "late_event_count": "INTEGER",
+        "duplicate_event_count": "INTEGER",
         "max_late_by_seconds": "DOUBLE PRECISION",
         "is_bursty": "BOOLEAN",
         "created_timestamp": "TIMESTAMPTZ",

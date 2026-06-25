@@ -1,53 +1,65 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pandas as pd
+from typing import Any
 
 
 def build_ranking_labels(
-    impressions: pd.DataFrame,
-    clean_events: pd.DataFrame,
+    impressions: Any,
+    clean_events: Any,
     label_window_hours: int = 24,
     label_version: str = "ranking_label_v1",
-) -> pd.DataFrame:
-    if impressions.empty:
-        return pd.DataFrame()
-    imps = impressions.copy()
-    events = clean_events.copy()
-    imps["impression_timestamp"] = pd.to_datetime(imps["impression_timestamp"], utc=True)
-    events["event_timestamp"] = pd.to_datetime(events["event_timestamp"], utc=True)
-    positive_events = events[events["event_type"].isin(["cart", "purchase"])].copy()
-    rows: list[dict] = []
-    for _, impression in imps.iterrows():
-        prediction_ts = impression["impression_timestamp"]
-        label_window_end = prediction_ts + pd.Timedelta(hours=label_window_hours)
-        matches = positive_events[
-            (positive_events["user_id"] == impression["user_id"])
-            & (positive_events["product_id"] == impression["candidate_product_id"])
-            & (positive_events["event_timestamp"] > prediction_ts)
-            & (positive_events["event_timestamp"] <= label_window_end)
-        ].sort_values(["event_timestamp", "event_type"])
-        positive = not matches.empty
-        first_positive = matches.iloc[0] if positive else None
-        rows.append(
-            {
-                "impression_id": str(impression["impression_id"]),
-                "request_id": str(impression["request_id"]),
-                "user_id": int(impression["user_id"]),
-                "candidate_product_id": int(impression["candidate_product_id"]),
-                "prediction_timestamp": prediction_ts,
-                "label_window_end": label_window_end,
-                "label": 1 if positive else 0,
-                "positive_event_type": first_positive["event_type"] if positive else None,
-                "positive_event_timestamp": first_positive["event_timestamp"] if positive else None,
-                "sampling_strategy": "impression",
-                "sampling_probability": 1.0,
-                "candidate_source": impression.get("candidate_source", "unknown"),
-                "rank_position": int(impression["rank_position"]) if pd.notna(impression.get("rank_position")) else None,
-                "created_timestamp": datetime.now(timezone.utc),
-                "label_version": label_version,
-            }
-        )
-    return pd.DataFrame(rows)
+) -> Any:
+    from pyspark.sql import functions as F
 
+    imps = impressions.withColumn("prediction_timestamp", F.to_timestamp("impression_timestamp")).withColumn(
+        "label_window_end",
+        F.expr(f"prediction_timestamp + INTERVAL {int(label_window_hours)} HOURS"),
+    )
+    positives = (
+        clean_events.withColumn("positive_event_timestamp", F.to_timestamp("event_timestamp"))
+        .filter(F.col("event_type").isin("cart", "purchase"))
+        .select(
+            F.col("user_id").alias("event_user_id"),
+            F.col("product_id").alias("event_product_id"),
+            F.col("event_type").alias("positive_event_type"),
+            "positive_event_timestamp",
+        )
+    )
+    joined = imps.join(
+        positives,
+        (imps.user_id == positives.event_user_id)
+        & (imps.candidate_product_id == positives.event_product_id)
+        & (positives.positive_event_timestamp > imps.prediction_timestamp)
+        & (positives.positive_event_timestamp <= imps.label_window_end),
+        "left",
+    )
+    grouped = joined.groupBy(
+        "impression_id",
+        "request_id",
+        "user_id",
+        "candidate_product_id",
+        "prediction_timestamp",
+        "label_window_end",
+        "candidate_source",
+        "rank_position",
+    ).agg(
+        F.min("positive_event_timestamp").alias("positive_event_timestamp"),
+        F.first("positive_event_type", ignorenulls=True).alias("positive_event_type"),
+    )
+    return grouped.select(
+        F.col("impression_id").cast("string"),
+        F.col("request_id").cast("string"),
+        F.col("user_id").cast("int"),
+        F.col("candidate_product_id").cast("int"),
+        "prediction_timestamp",
+        "label_window_end",
+        F.when(F.col("positive_event_timestamp").isNotNull(), 1).otherwise(0).alias("label"),
+        "positive_event_type",
+        "positive_event_timestamp",
+        F.lit("impression").alias("sampling_strategy"),
+        F.lit(1.0).alias("sampling_probability"),
+        F.coalesce(F.col("candidate_source"), F.lit("unknown")).alias("candidate_source"),
+        F.col("rank_position").cast("int"),
+        F.current_timestamp().alias("created_timestamp"),
+        F.lit(label_version).alias("label_version"),
+    )

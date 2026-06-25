@@ -41,16 +41,18 @@ data:
   REALTIME_STREAM_TOPIC: {{ .Values.realtimeFlinkConsumer.topic | quote }}
   REALTIME_STREAM_GROUP_ID: {{ .Values.realtimeFlinkConsumer.groupId | quote }}
   REALTIME_STREAM_MIN_EVENTS: {{ .Values.realtimeFlinkConsumer.minEvents | quote }}
-  REALTIME_STREAM_MAX_POLL_RECORDS: {{ .Values.realtimeFlinkConsumer.maxPollRecords | quote }}
+  REALTIME_STREAM_MAX_EVENTS: {{ .Values.realtimeFlinkConsumer.maxEvents | quote }}
+  FLINK_PARALLELISM: {{ .Values.realtimeFlinkConsumer.parallelism | quote }}
   REALTIME_STREAM_MAX_HISTORY_LENGTH: {{ .Values.realtimeFlinkConsumer.maxHistoryLength | quote }}
   STREAM_PROGRESS_LOG_EVENTS: {{ .Values.realtimeFlinkConsumer.progressLogEvents | quote }}
-  STREAM_PROGRESS_LOG_SECONDS: {{ .Values.realtimeFlinkConsumer.progressLogSeconds | quote }}
   FEAST_OFFLINE_ROOT: "s3://{{ .Values.minio.featureStoreBucket }}/offline"
   ML_ARTIFACT_ROOT: "s3://{{ .Values.minio.lakeBucket }}/silver/ml"
   WAREHOUSE_ENABLED: "true"
   STREAM_WATERMARK_DELAY_MINUTES: {{ .Values.streaming.watermarkDelayMinutes | quote }}
   STREAM_QUALITY_WINDOW_SECONDS: {{ .Values.streaming.qualityWindowSeconds | quote }}
   STREAM_BURST_THRESHOLD_EVENT_COUNT: {{ .Values.streaming.burstThresholdEventCount | quote }}
+  STREAM_STATE_TTL_SECONDS: {{ .Values.streaming.stateTtlSeconds | quote }}
+  STREAM_DEDUP_STATE_TTL_SECONDS: {{ .Values.streaming.dedupStateTtlSeconds | quote }}
   GE_MAX_TOP_VALUE_RATIO: {{ .Values.validation.geMaxTopValueRatio | quote }}
   GE_MAX_UNIQUE_RATIO: {{ .Values.validation.geMaxUniqueRatio | quote }}
   EVIDENTLY_PSI_THRESHOLD: {{ .Values.validation.evidentlyPsiThreshold | quote }}

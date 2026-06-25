@@ -12,8 +12,16 @@ metadata:
 spec:
   predictor:
     serviceAccountName: {{ .Values.kserve.serviceAccount.name }}
+    volumes:
+      - name: triton-shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: {{ .Values.kserve.sharedMemory.sizeLimit | quote }}
     triton:
       storageUri: {{ .Values.kserve.inferenceService.storageUri | quote }}
+      volumeMounts:
+        - name: triton-shm
+          mountPath: /dev/shm
       resources:
 {{ toYaml .Values.kserve.resources | indent 8 }}
 {{- if and .Values.abTest.enabled .Values.kserve.inferenceService.candidateStorageUri }}
@@ -33,8 +41,16 @@ metadata:
 spec:
   predictor:
     serviceAccountName: {{ .Values.kserve.serviceAccount.name }}
+    volumes:
+      - name: triton-shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: {{ .Values.kserve.sharedMemory.sizeLimit | quote }}
     triton:
       storageUri: {{ .Values.kserve.inferenceService.candidateStorageUri | quote }}
+      volumeMounts:
+        - name: triton-shm
+          mountPath: /dev/shm
       resources:
 {{ toYaml .Values.kserve.resources | indent 8 }}
 {{- end }}

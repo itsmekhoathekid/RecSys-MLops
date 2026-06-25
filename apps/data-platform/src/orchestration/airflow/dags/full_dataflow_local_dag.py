@@ -173,9 +173,9 @@ if DAG is not None:
             submit_pflink_stream_job = flink_task(
                 "submit_pflink_stream_job",
                 "PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys "
-                "python3 apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py "
-                "--topic cdc.behavior_events --max-events 200 --min-events 1 "
-                "--idle-timeout-seconds 60",
+                "flink run -m flink-jobmanager:8081 "
+                "-py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py "
+                "-- --runner pyflink --topic cdc.behavior_events --max-events 200 --min-events 1",
             )
             validate_streaming_redis = cli_task(
                 "validate_streaming_redis_keys",

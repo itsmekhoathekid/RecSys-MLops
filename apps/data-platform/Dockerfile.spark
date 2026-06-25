@@ -13,4 +13,4 @@ ENV AWS_ACCESS_KEY_ID=minio \
     AWS_SECRET_ACCESS_KEY=minio123 \
     AWS_REGION=us-east-1 \
     SPARK_EXTRA_CLASSPATH=/opt/spark/jars/* \
-    PYTHONPATH=/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys
+    PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys

@@ -80,10 +80,10 @@ realtimeFlinkConsumer:
   topic: cdc.behavior_events
   groupId: recsys-flink-realtime
   minEvents: "0"
-  maxPollRecords: "100"
+  maxEvents: "0"
+  parallelism: "1"
   maxHistoryLength: "50"
   progressLogEvents: "100"
-  progressLogSeconds: "30"
 
 airflow:
   dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
@@ -92,6 +92,8 @@ streaming:
   watermarkDelayMinutes: 60
   qualityWindowSeconds: 60
   burstThresholdEventCount: 500
+  stateTtlSeconds: 604800
+  dedupStateTtlSeconds: 86400
 
 validation:
   geMaxTopValueRatio: "0.95"

@@ -21,6 +21,7 @@ dependencies = [
     "torchvision>=0.26.0",
     "tqdm>=4.67.3",
     "fastapi>=0.138.0",
+    "boto3>=1.43.36",
 ]
 
 [tool.pytest.ini_options]

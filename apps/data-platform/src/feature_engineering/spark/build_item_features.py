@@ -1,79 +1,69 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pandas as pd
+from typing import Any
 
 
-def latest_product_metadata(products: pd.DataFrame) -> pd.DataFrame:
-    if products.empty or "product_id" not in products.columns:
-        return products
-    sort_columns = [
-        column
-        for column in ("valid_from", "created_ts")
-        if column in products.columns
-    ]
-    latest = products.copy()
-    for column in sort_columns:
-        latest[column] = pd.to_datetime(latest[column], utc=True)
-    if sort_columns:
-        latest = latest.sort_values(sort_columns)
-    return latest.drop_duplicates("product_id", keep="last")
+def latest_product_metadata(products: Any) -> Any:
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
+
+    order_column = "valid_from" if "valid_from" in products.columns else "created_ts"
+    ranked = products.withColumn(order_column, F.to_timestamp(order_column)).withColumn(
+        "_rank",
+        F.row_number().over(Window.partitionBy("product_id").orderBy(F.col(order_column).desc_nulls_last())),
+    )
+    return ranked.filter(F.col("_rank") == 1).drop("_rank")
 
 
 def build_item_features(
-    clean_events: pd.DataFrame,
-    products: pd.DataFrame,
+    clean_events: Any,
+    products: Any,
     alpha: float = 1.0,
     beta: float = 10.0,
     feature_version: str = "item_features_v1",
-) -> pd.DataFrame:
-    if clean_events.empty:
-        return pd.DataFrame()
-    events = clean_events.copy()
-    events["event_timestamp"] = pd.to_datetime(events["event_timestamp"], utc=True)
-    product_meta = latest_product_metadata(products).set_index("product_id")
-    rows: list[dict] = []
-    for product_id, group in events.sort_values("event_timestamp").groupby("product_id"):
-        group = group.reset_index(drop=True)
-        meta = product_meta.loc[product_id] if product_id in product_meta.index else {}
-        for _, event in group.iterrows():
-            ts = event["event_timestamp"]
-            w1h = ts - pd.Timedelta(hours=1)
-            w24h = ts - pd.Timedelta(hours=24)
-            w7d = ts - pd.Timedelta(days=7)
-            h1 = group[(group["event_timestamp"] > w1h) & (group["event_timestamp"] <= ts)]
-            h24 = group[(group["event_timestamp"] > w24h) & (group["event_timestamp"] <= ts)]
-            d7 = group[(group["event_timestamp"] > w7d) & (group["event_timestamp"] <= ts)]
-            views_7d = int((d7["event_type"] == "view").sum())
-            purchases_7d = int((d7["event_type"] == "purchase").sum())
-            conversion_rate = (purchases_7d + alpha) / (views_7d + beta)
-            popularity_score = (
-                int((h24["event_type"] == "view").sum())
-                + 3 * int((h24["event_type"] == "cart").sum())
-                + 10 * int((h24["event_type"] == "purchase").sum())
-            )
-            rows.append(
-                {
-                    "product_id": int(product_id),
-                    "feature_timestamp": ts,
-                    "event_timestamp": ts,
-                    "category_id": int(getattr(meta, "category_id", event["category_id"])),
-                    "brand_id": int(getattr(meta, "brand_id", event["brand_id"])),
-                    "price_bucket": int(getattr(meta, "price_bucket", event["price_bucket"])),
-                    "is_active": bool(getattr(meta, "is_active", True)),
-                    "views_1h": int((h1["event_type"] == "view").sum()),
-                    "views_24h": int((h24["event_type"] == "view").sum()),
-                    "carts_1h": int((h1["event_type"] == "cart").sum()),
-                    "carts_24h": int((h24["event_type"] == "cart").sum()),
-                    "purchases_24h": int((h24["event_type"] == "purchase").sum()),
-                    "purchases_7d": purchases_7d,
-                    "conversion_rate_7d": float(conversion_rate),
-                    "popularity_score": float(popularity_score),
-                    "aggregation_window_end_ts": ts,
-                    "watermark_ts": ts,
-                    "created_timestamp": datetime.now(timezone.utc),
-                    "feature_version": feature_version,
-                }
-            )
-    return pd.DataFrame(rows)
+) -> Any:
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
+
+    events = (
+        clean_events.withColumn("event_timestamp", F.to_timestamp("event_timestamp"))
+        .withColumn("_event_seconds", F.col("event_timestamp").cast("long"))
+    )
+    metadata = latest_product_metadata(products).select(
+        "product_id",
+        F.col("category_id").alias("meta_category_id"),
+        F.col("brand_id").alias("meta_brand_id"),
+        F.col("price_bucket").alias("meta_price_bucket"),
+        F.coalesce(F.col("is_active"), F.lit(True)).alias("meta_is_active"),
+    )
+    joined = events.join(metadata, on="product_id", how="left")
+    by_product = Window.partitionBy("product_id").orderBy("_event_seconds")
+    w1h = by_product.rangeBetween(-60 * 60, 0)
+    w24h = by_product.rangeBetween(-24 * 60 * 60, 0)
+    w7d = by_product.rangeBetween(-7 * 24 * 60 * 60, 0)
+    views_7d = F.sum(F.when(F.col("event_type") == "view", 1).otherwise(0)).over(w7d)
+    purchases_7d = F.sum(F.when(F.col("event_type") == "purchase", 1).otherwise(0)).over(w7d)
+    views_24h = F.sum(F.when(F.col("event_type") == "view", 1).otherwise(0)).over(w24h)
+    carts_24h = F.sum(F.when(F.col("event_type") == "cart", 1).otherwise(0)).over(w24h)
+    purchases_24h = F.sum(F.when(F.col("event_type") == "purchase", 1).otherwise(0)).over(w24h)
+    return joined.select(
+        F.col("product_id").cast("int"),
+        F.col("event_timestamp").alias("feature_timestamp"),
+        F.col("event_timestamp"),
+        F.coalesce(F.col("meta_category_id"), F.col("category_id")).cast("int").alias("category_id"),
+        F.coalesce(F.col("meta_brand_id"), F.col("brand_id")).cast("int").alias("brand_id"),
+        F.coalesce(F.col("meta_price_bucket"), F.col("price_bucket")).cast("int").alias("price_bucket"),
+        F.coalesce(F.col("meta_is_active"), F.lit(True)).alias("is_active"),
+        F.sum(F.when(F.col("event_type") == "view", 1).otherwise(0)).over(w1h).alias("views_1h"),
+        views_24h.alias("views_24h"),
+        F.sum(F.when(F.col("event_type") == "cart", 1).otherwise(0)).over(w1h).alias("carts_1h"),
+        carts_24h.alias("carts_24h"),
+        purchases_24h.alias("purchases_24h"),
+        purchases_7d.alias("purchases_7d"),
+        ((purchases_7d + F.lit(float(alpha))) / (views_7d + F.lit(float(beta)))).alias("conversion_rate_7d"),
+        (views_24h + (carts_24h * F.lit(3)) + (purchases_24h * F.lit(10))).cast("double").alias("popularity_score"),
+        F.col("event_timestamp").alias("aggregation_window_end_ts"),
+        F.col("event_timestamp").alias("watermark_ts"),
+        F.current_timestamp().alias("created_timestamp"),
+        F.lit(feature_version).alias("feature_version"),
+    )

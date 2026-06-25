@@ -39,6 +39,11 @@ def ensure_warehouse(connection: Any, tables: Iterable[TableSpec] = WAREHOUSE_TA
             cursor.execute(create_schema_sql(table.schema))
             seen_schemas.add(table.schema)
         cursor.execute(create_table_sql(table))
+        for column, data_type in table.columns.items():
+            cursor.execute(
+                f"ALTER TABLE {_qualified(table)} "
+                f"ADD COLUMN IF NOT EXISTS {_quote(column)} {data_type}"
+            )
     connection.commit()
 
 

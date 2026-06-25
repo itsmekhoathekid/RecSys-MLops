@@ -38,10 +38,10 @@ spec:
                 --group-id "$REALTIME_STREAM_GROUP_ID" \
                 --continuous \
                 --min-events "$REALTIME_STREAM_MIN_EVENTS" \
-                --max-poll-records "$REALTIME_STREAM_MAX_POLL_RECORDS" \
+                --max-events "$REALTIME_STREAM_MAX_EVENTS" \
+                --parallelism "$FLINK_PARALLELISM" \
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
-                --progress-log-seconds "$STREAM_PROGRESS_LOG_SECONDS" \
                 --warehouse-enabled
           envFrom:
             - configMapRef:
