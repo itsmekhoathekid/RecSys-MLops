@@ -1,2 +1,1 @@
-"""Airflow DAG package for data/feature-store orchestration only."""
-
+"""Airflow DAG package for native data and feature store orchestration."""

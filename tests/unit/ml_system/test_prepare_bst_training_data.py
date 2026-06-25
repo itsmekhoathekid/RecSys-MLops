@@ -5,9 +5,16 @@ import sys
 
 import pandas as pd
 
-from dataset_versioning import _spark_safe_records, sample_id_for, row_hash_for, to_versioned_samples
+from dataset_versioning import (
+    _hudi_identifier_suffix,
+    _spark_safe_records,
+    sample_id_for,
+    row_hash_for,
+    to_versioned_samples,
+)
 from prepare_bst_training_data import (
     DEFAULT_FEATURE_SERVICE_NAME,
+    DEFAULT_OFFLINE_FEATURE_TABLE,
     FEAST_FEATURE_REFS,
     build_bst_training_table_from_feast,
     prepare_bst_jsonl_splits,
@@ -193,6 +200,7 @@ def test_prepare_splits_records_feast_source(monkeypatch, tmp_path):
         max_history_len=2,
         feast_repo_path="/repo",
         feast_offline_root="/features",
+        feature_source="feast",
     )
 
     assert metadata["feature_source"] == "feast"
@@ -203,9 +211,137 @@ def test_prepare_splits_records_feast_source(monkeypatch, tmp_path):
     assert metadata["train_rows"] == 3
     assert metadata["val_rows"] == 1
     assert metadata["test_rows"] == 1
-    assert metadata["iceberg"]["enabled"] is False
+    assert metadata["hudi"]["enabled"] is False
     assert (tmp_path / "splits" / "dataset_version_meta.json").exists()
     assert (tmp_path / "splits" / "train.jsonl").exists()
+
+
+def test_prepare_splits_reads_default_offline_feature_store(monkeypatch, tmp_path):
+    captured: dict = {}
+
+    def fake_offline_reader(table, iceberg_catalog_name, iceberg_warehouse):
+        captured["table"] = table
+        captured["catalog"] = iceberg_catalog_name
+        captured["warehouse"] = iceberg_warehouse
+        return pd.DataFrame(
+            [
+                {
+                    "impression_id": f"imp-{index}",
+                    "request_id": f"req-{index}",
+                    "user_id": 7,
+                    "hist_item_id": [9, 10],
+                    "hist_event_type": [1, 2],
+                    "hist_category": [3, 4],
+                    "hist_brand": [5, 6],
+                    "hist_price_bucket": [7, 8],
+                    "hist_time": [1, 2],
+                    "target_item_id": 11 + index,
+                    "target_category": 22,
+                    "target_brand": 33,
+                    "target_price_bucket": 44,
+                    "event_time": 1767226200 + index,
+                    "prediction_timestamp": pd.Timestamp("2026-01-01T00:10:00Z") + pd.Timedelta(minutes=index),
+                    "label": index % 2,
+                }
+                for index in range(5)
+            ]
+        )
+
+    monkeypatch.setattr(
+        "prepare_bst_training_data.build_bst_training_table_from_offline_feature_store",
+        fake_offline_reader,
+    )
+
+    metadata = prepare_bst_jsonl_splits(
+        entity_input_path="ignored-for-offline-feature-store",
+        output_dir=tmp_path / "splits",
+        train_ratio=0.6,
+        val_ratio=0.2,
+        max_history_len=2,
+    )
+
+    assert captured["table"] == DEFAULT_OFFLINE_FEATURE_TABLE
+    assert captured["catalog"] == "recsys_features"
+    assert captured["warehouse"] == "s3a://recsys-offline-feature-store/warehouse"
+    assert metadata["feature_source"] == "offline_feature_store"
+    assert metadata["offline_feature_table"] == DEFAULT_OFFLINE_FEATURE_TABLE
+    assert metadata["train_rows"] == 3
+    assert metadata["val_rows"] == 1
+    assert metadata["test_rows"] == 1
+
+
+def test_prepare_splits_records_hudi_latency_when_versioning_enabled(monkeypatch, tmp_path):
+    def fake_offline_reader(table, iceberg_catalog_name, iceberg_warehouse):
+        return pd.DataFrame(
+            [
+                {
+                    "impression_id": f"imp-{index}",
+                    "request_id": f"req-{index}",
+                    "user_id": 7,
+                    "hist_item_id": [9, 10],
+                    "hist_event_type": [1, 2],
+                    "hist_category": [3, 4],
+                    "hist_brand": [5, 6],
+                    "hist_price_bucket": [7, 8],
+                    "hist_time": [1, 2],
+                    "target_item_id": 11 + index,
+                    "target_category": 22,
+                    "target_brand": 33,
+                    "target_price_bucket": 44,
+                    "event_time": 1767226200 + index,
+                    "prediction_timestamp": pd.Timestamp("2026-01-01T00:10:00Z") + pd.Timedelta(minutes=index),
+                    "label": index % 2,
+                }
+                for index in range(5)
+            ]
+        )
+
+    def fake_commit_samples_to_hudi(samples, output_dir, dataset_run_id, config):
+        for split in ("train", "val", "test"):
+            (tmp_path / "splits" / f"{split}.jsonl").write_text("", encoding="utf-8")
+        return {
+            "enabled": True,
+            "storage": "hudi",
+            "tables": {
+                "training": {
+                    "name": "recsys_features.ml.bst_training_samples",
+                    "snapshot_id": "001",
+                    "commit_time": "001",
+                    "tag": "bst_training_run_1",
+                    "row_count": 4,
+                    "splits": ["train", "val"],
+                },
+                "evaluation": {
+                    "name": "recsys_features.ml.bst_evaluation_samples",
+                    "snapshot_id": "002",
+                    "commit_time": "002",
+                    "tag": "bst_evaluation_run_1",
+                    "row_count": 1,
+                    "splits": ["test"],
+                },
+            },
+            "jsonl_counts": {"train": 3, "val": 1, "test": 1},
+            "latency_ms": {"training_commit": 12.5, "evaluation_commit": 6.5, "jsonl_export": 3.0, "total": 22.0},
+        }
+
+    monkeypatch.setattr(
+        "prepare_bst_training_data.build_bst_training_table_from_offline_feature_store",
+        fake_offline_reader,
+    )
+    monkeypatch.setattr("prepare_bst_training_data.commit_samples_to_hudi", fake_commit_samples_to_hudi)
+
+    metadata = prepare_bst_jsonl_splits(
+        entity_input_path="ignored-for-offline-feature-store",
+        output_dir=tmp_path / "splits",
+        train_ratio=0.6,
+        val_ratio=0.2,
+        max_history_len=2,
+        hudi_enabled=True,
+    )
+
+    assert metadata["hudi"]["storage"] == "hudi"
+    assert metadata["versioning_latency_ms"]["total"] == 22.0
+    assert metadata["hudi"]["tables"]["training"]["commit_time"] == "001"
 
 
 def test_versioned_samples_use_stable_sample_id_and_split_routes():
@@ -278,3 +414,8 @@ def test_spark_safe_records_convert_timezone_aware_timestamps():
     assert record["event_timestamp"].tzinfo is None
     assert record["created_at"].tzinfo is None
     assert record["updated_at"].tzinfo is None
+
+
+def test_hudi_identifier_suffix_sanitizes_dataset_run_id():
+    assert _hudi_identifier_suffix("smoke-offline-feature-store") == "smoke_offline_feature_store"
+    assert _hudi_identifier_suffix("2026.06.25") == "run_2026_06_25"

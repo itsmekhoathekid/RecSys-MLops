@@ -27,8 +27,15 @@ x-minio-env: &minio-env
   AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
   AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio123}
   AWS_DEFAULT_REGION: us-east-1
-  LAKE_BUCKET: ${LAKE_BUCKET:-recsys-lake}
-  FEATURE_STORE_BUCKET: ${FEATURE_STORE_BUCKET:-recsys-feature-store}
+  LAKE_BUCKET: ${LAKE_BUCKET:-recsys-lakehouse}
+  OFFLINE_FEATURE_BUCKET: ${OFFLINE_FEATURE_BUCKET:-recsys-offline-feature-store}
+  LAKEHOUSE_WAREHOUSE: ${LAKEHOUSE_WAREHOUSE:-s3a://recsys-lakehouse/warehouse}
+  ICEBERG_CATALOG: ${ICEBERG_CATALOG:-recsys}
+  ICEBERG_LAKEHOUSE_NAMESPACE: ${ICEBERG_LAKEHOUSE_NAMESPACE:-lakehouse}
+  OFFLINE_FEATURE_CATALOG: ${OFFLINE_FEATURE_CATALOG:-recsys_features}
+  OFFLINE_FEATURE_STORE_WAREHOUSE: ${OFFLINE_FEATURE_STORE_WAREHOUSE:-s3a://recsys-offline-feature-store/warehouse}
+  ICEBERG_FEATURE_NAMESPACE: ${ICEBERG_FEATURE_NAMESPACE:-feature_store}
+  OFFLINE_FEATURE_STORE_URI: ${OFFLINE_FEATURE_STORE_URI:-s3a://recsys-offline-feature-store/warehouse/feature_store}
 
 services:
   base-python:
@@ -162,8 +169,6 @@ services:
       kafka:
         condition: service_healthy
       postgres:
-        condition: service_healthy
-      minio:
         condition: service_healthy
     environment:
       CONNECT_BOOTSTRAP_SERVERS: kafka:29092

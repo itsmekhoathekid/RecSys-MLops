@@ -5,6 +5,9 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
@@ -24,28 +27,7 @@ spec:
                 sleep 5
               done
               mc mb --ignore-existing "data-platform/{{ .Values.minio.lakeBucket }}"
-              mc mb --ignore-existing "data-platform/{{ .Values.minio.featureStoreBucket }}"
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: init-warehouse
-  namespace: {{ .Values.namespace.name }}
-spec:
-  template:
-    spec:
-      enableServiceLinks: false
-      restartPolicy: OnFailure
-      containers:
-        - name: init-warehouse
-          image: {{ .Values.images.dataflowCli }}
-          imagePullPolicy: {{ .Values.images.pullPolicy }}
-          command: ["python", "-m", "warehouse.init_warehouse"]
-          envFrom:
-            - configMapRef:
-                name: recsys-data-platform-config
-            - secretRef:
-                name: recsys-data-platform-secret
+              mc mb --ignore-existing "data-platform/{{ .Values.minio.offlineFeatureBucket }}"
 ---
 apiVersion: batch/v1
 kind: Job
@@ -59,6 +41,9 @@ metadata:
 spec:
   backoffLimit: 6
   template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
@@ -91,6 +76,9 @@ metadata:
 spec:
   backoffLimit: 6
   template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure

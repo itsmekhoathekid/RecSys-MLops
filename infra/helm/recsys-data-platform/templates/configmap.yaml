@@ -4,29 +4,31 @@ metadata:
   name: recsys-data-platform-config
   namespace: {{ .Values.namespace.name }}
 data:
-  PYTHONPATH: /opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys
+  PYTHONPATH: /opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys
   DATA_PLATFORM_MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
-  DATA_PLATFORM_MINIO_ROOT_USER: {{ .Values.minio.rootUser | quote }}
-  DATA_PLATFORM_MINIO_ROOT_PASSWORD: {{ .Values.minio.rootPassword | quote }}
   MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
-  AWS_ACCESS_KEY_ID: {{ .Values.minio.rootUser | quote }}
-  AWS_SECRET_ACCESS_KEY: {{ .Values.minio.rootPassword | quote }}
   AWS_DEFAULT_REGION: us-east-1
   LAKE_BUCKET: {{ .Values.minio.lakeBucket | quote }}
-  FEATURE_STORE_BUCKET: {{ .Values.minio.featureStoreBucket | quote }}
+  OFFLINE_FEATURE_BUCKET: {{ .Values.minio.offlineFeatureBucket | quote }}
+  LAKEHOUSE_WAREHOUSE: "s3a://{{ .Values.minio.lakeBucket }}/warehouse"
+  ICEBERG_CATALOG: {{ .Values.lakehouse.catalog | quote }}
+  ICEBERG_LAKEHOUSE_NAMESPACE: {{ .Values.lakehouse.lakehouseNamespace | quote }}
+  OFFLINE_FEATURE_CATALOG: {{ .Values.lakehouse.offlineFeatureCatalog | quote }}
+  OFFLINE_FEATURE_STORE_WAREHOUSE: "s3a://{{ .Values.minio.offlineFeatureBucket }}/warehouse"
+  ICEBERG_FEATURE_NAMESPACE: {{ .Values.lakehouse.featureNamespace | quote }}
+  OFFLINE_FEATURE_STORE_URI: "s3a://{{ .Values.minio.offlineFeatureBucket }}/warehouse/{{ .Values.lakehouse.featureNamespace }}"
   POSTGRES_HOST: {{ .Values.sourcePostgres.name | quote }}
   POSTGRES_PORT: "5432"
   POSTGRES_DB: {{ .Values.sourcePostgres.database | quote }}
-  WAREHOUSE_POSTGRES_HOST: {{ .Values.warehousePostgres.name | quote }}
-  WAREHOUSE_POSTGRES_PORT: "5432"
-  WAREHOUSE_POSTGRES_DB: {{ .Values.warehousePostgres.database | quote }}
   KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
   KAFKA_CONNECT_URL: "http://{{ .Values.kafkaConnect.name }}:{{ .Values.kafkaConnect.port }}"
   REDIS_HOST: {{ .Values.redis.name | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
+  OFFLINE_STORE_ENABLED: "true"
+  OFFLINE_FEATURE_DRIFT_REPORT_PATH: "s3://{{ .Values.minio.offlineFeatureBucket }}/monitoring/offline_feature_drift/report.json"
   PUSHGATEWAY_URL: {{ .Values.observability.pushgatewayUrl | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.observability.otelEndpoint | quote }}
-  OFFLINE_FEATURE_DRIFT_REPORT_PATH: "s3://{{ .Values.minio.lakeBucket }}/monitoring/offline_feature_drift/report.json"
+  DATAHUB_GMS_URL: "http://datahub-datahub-gms.datahub.svc.cluster.local:8080"
   KFP_ENDPOINT: {{ .Values.observability.kfpEndpoint | quote }}
   KFP_EXPERIMENT_NAME: {{ .Values.observability.kfpExperimentName | quote }}
   KFP_PIPELINE_PACKAGE_PATH: {{ .Values.observability.kfpPipelinePackagePath | quote }}
@@ -45,16 +47,9 @@ data:
   FLINK_PARALLELISM: {{ .Values.realtimeFlinkConsumer.parallelism | quote }}
   REALTIME_STREAM_MAX_HISTORY_LENGTH: {{ .Values.realtimeFlinkConsumer.maxHistoryLength | quote }}
   STREAM_PROGRESS_LOG_EVENTS: {{ .Values.realtimeFlinkConsumer.progressLogEvents | quote }}
-  FEAST_OFFLINE_ROOT: "s3://{{ .Values.minio.featureStoreBucket }}/offline"
-  ML_ARTIFACT_ROOT: "s3://{{ .Values.minio.lakeBucket }}/silver/ml"
-  WAREHOUSE_ENABLED: "true"
+  STREAM_CHECKPOINT_INTERVAL_SECONDS: {{ .Values.realtimeFlinkConsumer.checkpointIntervalSeconds | quote }}
   STREAM_WATERMARK_DELAY_MINUTES: {{ .Values.streaming.watermarkDelayMinutes | quote }}
   STREAM_QUALITY_WINDOW_SECONDS: {{ .Values.streaming.qualityWindowSeconds | quote }}
   STREAM_BURST_THRESHOLD_EVENT_COUNT: {{ .Values.streaming.burstThresholdEventCount | quote }}
   STREAM_STATE_TTL_SECONDS: {{ .Values.streaming.stateTtlSeconds | quote }}
   STREAM_DEDUP_STATE_TTL_SECONDS: {{ .Values.streaming.dedupStateTtlSeconds | quote }}
-  GE_MAX_TOP_VALUE_RATIO: {{ .Values.validation.geMaxTopValueRatio | quote }}
-  GE_MAX_UNIQUE_RATIO: {{ .Values.validation.geMaxUniqueRatio | quote }}
-  EVIDENTLY_PSI_THRESHOLD: {{ .Values.validation.evidentlyPsiThreshold | quote }}
-  FEAST_REPO_PATH: "/opt/recsys/apps/data-platform/feature-store/feature_repo"
-  FEAST_REGISTRY_BACKUP_URI: "s3://{{ .Values.minio.featureStoreBucket }}/registry/registry.db"

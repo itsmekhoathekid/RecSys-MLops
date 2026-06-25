@@ -14,19 +14,17 @@ import pandas as pd
 from dataset_versioning import (
     DEFAULT_CATALOG_NAME,
     DEFAULT_WAREHOUSE,
-    IcebergConfig,
-    commit_samples_to_iceberg,
+    HudiConfig,
+    commit_samples_to_hudi,
     local_dataset_version_metadata,
     processing_code_version as resolve_processing_code_version,
     schema_hash_for,
     timestamp_run_id,
     to_versioned_samples,
 )
-from feature_store.offline_writer import read_feature_table
-from preprocess.point_in_time import get_time_buckets
-
 
 DEFAULT_FEATURE_SERVICE_NAME = "bst_ranking_v1"
+DEFAULT_OFFLINE_FEATURE_TABLE = "recsys_features.feature_store.ml_bst_training"
 
 MODEL_COLUMNS = [
     "user_id",
@@ -67,6 +65,14 @@ FEAST_FEATURE_REFS = [
     "item_features:brand_id",
     "item_features:price_bucket",
 ]
+
+
+def get_time_buckets(prediction_ts: datetime, history_timestamps: list[datetime]) -> list[int]:
+    buckets: list[int] = []
+    for timestamp in history_timestamps:
+        delta_seconds = max(int((prediction_ts - timestamp).total_seconds()), 0)
+        buckets.append(min(delta_seconds // 300 + 1, 24 * 12 * 365))
+    return buckets
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -124,6 +130,15 @@ def _canonical_entity_frame(frame: pd.DataFrame) -> pd.DataFrame:
     entity["event_timestamp"] = _prediction_timestamps(frame)
     entity["label"] = frame["label"].fillna(0).astype(int) if "label" in frame.columns else 0
     return entity
+
+
+def _read_feature_table(path: str) -> pd.DataFrame:
+    source = Path(path)
+    if source.is_dir():
+        return pd.read_parquet(source)
+    if source.exists():
+        return pd.read_parquet(source)
+    raise FileNotFoundError(f"Feature table path does not exist: {path}")
 
 
 def _feature_col(feature_view: str, feature_name: str) -> str:
@@ -221,7 +236,7 @@ def build_bst_training_table_from_feast(
 
     from feast import FeatureStore
 
-    entities = _canonical_entity_frame(read_feature_table(entity_input_path))
+    entities = _canonical_entity_frame(_read_feature_table(entity_input_path))
     store = FeatureStore(repo_path=str(feast_repo_path))
     features: Any = FEAST_FEATURE_REFS
     if feature_service_name:
@@ -237,6 +252,45 @@ def build_bst_training_table_from_feast(
         full_feature_names=True,
     ).to_df()
     return _feast_historical_to_bst_frame(entities, historical, max_history_len=max_history_len)
+
+
+def _spark_session_for_offline_features(catalog_name: str, warehouse: str):
+    from pyspark.sql import SparkSession
+
+    return (
+        SparkSession.builder.appName("recsys-read-offline-feature-store-for-bst")
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config(f"spark.sql.catalog.{catalog_name}", "org.apache.iceberg.spark.SparkCatalog")
+        .config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
+        .config(f"spark.sql.catalog.{catalog_name}.warehouse", warehouse)
+        .config("spark.hadoop.fs.s3a.endpoint", os.getenv("MINIO_ENDPOINT", "http://minio:9000"))
+        .config("spark.hadoop.fs.s3a.access.key", os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "minio")))
+        .config(
+            "spark.hadoop.fs.s3a.secret.key",
+            os.getenv("AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minio123")),
+        )
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+        .getOrCreate()
+    )
+
+
+def build_bst_training_table_from_offline_feature_store(
+    offline_feature_table: str = DEFAULT_OFFLINE_FEATURE_TABLE,
+    *,
+    iceberg_catalog_name: str = DEFAULT_CATALOG_NAME,
+    iceberg_warehouse: str = DEFAULT_WAREHOUSE,
+) -> pd.DataFrame:
+    spark = _spark_session_for_offline_features(iceberg_catalog_name, iceberg_warehouse)
+    try:
+        frame = spark.table(offline_feature_table)
+        missing = [column for column in MODEL_COLUMNS if column not in frame.columns]
+        if missing:
+            raise ValueError(f"Offline feature table {offline_feature_table} is missing BST columns: {missing}")
+        selected = frame.select(*MODEL_COLUMNS, "impression_id", "request_id", "prediction_timestamp")
+        return selected.toPandas()
+    finally:
+        spark.stop()
 
 
 def _normalize_row(row: pd.Series, max_history_len: int) -> dict[str, Any]:
@@ -306,16 +360,19 @@ def _dataset_metadata(
     feature_service_name: str,
     processing_code: str,
     split_counts: dict[str, int],
-    iceberg: dict[str, Any],
+    hudi: dict[str, Any],
     max_history_len: int,
+    feature_source: str,
+    offline_feature_table: str,
 ) -> dict[str, Any]:
-    training_table = iceberg["tables"]["training"]
-    evaluation_table = iceberg["tables"]["evaluation"]
+    training_table = hudi["tables"]["training"]
+    evaluation_table = hudi["tables"]["evaluation"]
     return {
         "dataset_run_id": dataset_run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "entity_input_path": entity_input_path,
-        "feature_source": "feast",
+        "feature_source": feature_source,
+        "offline_feature_table": offline_feature_table,
         "feature_service_name": feature_service_name,
         "feast_repo_path": str(feast_repo_path),
         "feast_registry_path": _registry_path(feast_repo_path),
@@ -324,13 +381,14 @@ def _dataset_metadata(
         "schema_hash": schema_hash_for(),
         "split_strategy": "temporal",
         "max_history_len": max_history_len,
-        "iceberg": iceberg,
+        "hudi": hudi,
         "splits": {
             "train": {
                 "row_count": split_counts.get("train", 0),
                 "jsonl_path": str(output_dir / "train.jsonl"),
                 "table": training_table["name"],
                 "snapshot_id": training_table["snapshot_id"],
+                "commit_time": training_table.get("commit_time"),
                 "tag": training_table["tag"],
             },
             "val": {
@@ -338,6 +396,7 @@ def _dataset_metadata(
                 "jsonl_path": str(output_dir / "val.jsonl"),
                 "table": training_table["name"],
                 "snapshot_id": training_table["snapshot_id"],
+                "commit_time": training_table.get("commit_time"),
                 "tag": training_table["tag"],
             },
             "test": {
@@ -345,6 +404,7 @@ def _dataset_metadata(
                 "jsonl_path": str(output_dir / "test.jsonl"),
                 "table": evaluation_table["name"],
                 "snapshot_id": evaluation_table["snapshot_id"],
+                "commit_time": evaluation_table.get("commit_time"),
                 "tag": evaluation_table["tag"],
             },
         },
@@ -361,21 +421,35 @@ def prepare_bst_jsonl_splits(
     feast_offline_root: str | None = None,
     apply_feast_repo: bool = True,
     feature_service_name: str = DEFAULT_FEATURE_SERVICE_NAME,
-    iceberg_enabled: bool = False,
+    feature_source: str = "offline_feature_store",
+    offline_feature_table: str = DEFAULT_OFFLINE_FEATURE_TABLE,
+    hudi_enabled: bool = False,
+    hudi_warehouse: str = DEFAULT_WAREHOUSE,
+    hudi_catalog_name: str = DEFAULT_CATALOG_NAME,
+    iceberg_enabled: bool | None = None,
     iceberg_catalog_name: str = DEFAULT_CATALOG_NAME,
     iceberg_warehouse: str = DEFAULT_WAREHOUSE,
     dataset_run_id: str | None = None,
     dataset_metadata_path: str | Path | None = None,
     processing_code_version: str | None = None,
 ) -> dict[str, Any]:
-    frame = build_bst_training_table_from_feast(
-        entity_input_path=entity_input_path,
-        feast_repo_path=feast_repo_path,
-        max_history_len=max_history_len,
-        feast_offline_root=feast_offline_root,
-        apply_feast_repo=apply_feast_repo,
-        feature_service_name=feature_service_name,
-    )
+    if feature_source == "offline_feature_store":
+        frame = build_bst_training_table_from_offline_feature_store(
+            offline_feature_table,
+            iceberg_catalog_name=iceberg_catalog_name,
+            iceberg_warehouse=iceberg_warehouse,
+        )
+    elif feature_source == "feast":
+        frame = build_bst_training_table_from_feast(
+            entity_input_path=entity_input_path,
+            feast_repo_path=feast_repo_path,
+            max_history_len=max_history_len,
+            feast_offline_root=feast_offline_root,
+            apply_feast_repo=apply_feast_repo,
+            feature_service_name=feature_service_name,
+        )
+    else:
+        raise ValueError(f"Unsupported feature_source: {feature_source}")
     if frame.empty:
         raise ValueError(f"No rows found in BST training data from {entity_input_path}")
 
@@ -389,6 +463,7 @@ def prepare_bst_jsonl_splits(
     val_end = train_end + int(len(rows) * val_ratio)
 
     output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
     splits = {
         "train": rows[:train_end],
         "val": rows[train_end:val_end],
@@ -396,23 +471,24 @@ def prepare_bst_jsonl_splits(
     }
     run_id = dataset_run_id or timestamp_run_id()
     processing_code = processing_code_version or resolve_processing_code_version()
-    if iceberg_enabled:
+    versioning_enabled = hudi_enabled if iceberg_enabled is None else hudi_enabled or iceberg_enabled
+    if versioning_enabled:
         samples = to_versioned_samples(
             splits,
             dataset_run_id=run_id,
             feature_service_version=feature_service_name,
             processing_code=processing_code,
         )
-        iceberg_metadata = commit_samples_to_iceberg(
+        hudi_metadata = commit_samples_to_hudi(
             samples=samples,
             output_dir=output,
             dataset_run_id=run_id,
-            config=IcebergConfig(catalog_name=iceberg_catalog_name, warehouse=iceberg_warehouse),
+            config=HudiConfig(catalog_name=hudi_catalog_name, warehouse=hudi_warehouse),
         )
     else:
         for split, split_rows in splits.items():
             _write_jsonl(split_rows, output / f"{split}.jsonl")
-        iceberg_metadata = local_dataset_version_metadata(output, splits)
+        hudi_metadata = local_dataset_version_metadata(output, splits)
 
     dataset_metadata = _dataset_metadata(
         output_dir=output,
@@ -423,8 +499,10 @@ def prepare_bst_jsonl_splits(
         feature_service_name=feature_service_name,
         processing_code=processing_code,
         split_counts={split: len(split_rows) for split, split_rows in splits.items()},
-        iceberg=iceberg_metadata,
+        hudi=hudi_metadata,
         max_history_len=max_history_len,
+        feature_source=feature_source,
+        offline_feature_table=offline_feature_table,
     )
     dataset_meta_target = Path(dataset_metadata_path) if dataset_metadata_path else output / "dataset_version_meta.json"
     _write_json(dataset_meta_target, dataset_metadata)
@@ -432,7 +510,8 @@ def prepare_bst_jsonl_splits(
     metadata = {
         "entity_input_path": entity_input_path,
         "output_dir": str(output),
-        "feature_source": "feast",
+        "feature_source": feature_source,
+        "offline_feature_table": offline_feature_table,
         "feature_service_name": feature_service_name,
         "feast_repo_path": str(feast_repo_path),
         "feast_registry_path": _registry_path(feast_repo_path),
@@ -442,7 +521,8 @@ def prepare_bst_jsonl_splits(
         "dataset_metadata_path": str(dataset_meta_target),
         "processing_code_version": processing_code,
         "schema_hash": dataset_metadata["schema_hash"],
-        "iceberg": iceberg_metadata,
+        "hudi": hudi_metadata,
+        "versioning_latency_ms": hudi_metadata.get("latency_ms", {}),
         "total_rows": len(rows),
         "train_rows": len(splits["train"]),
         "val_rows": len(splits["val"]),
@@ -455,7 +535,7 @@ def prepare_bst_jsonl_splits(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prepare BST JSONL splits from Feast historical features")
+    parser = argparse.ArgumentParser(description="Prepare BST JSONL splits from the offline feature store")
     parser.add_argument(
         "--entity-input-path",
         default="data_platform/output/ml/offline/ml_ranking_labels",
@@ -473,7 +553,12 @@ def main() -> int:
     parser.add_argument("--max-history-len", type=int, default=50)
     parser.add_argument("--metadata-path", default="")
     parser.add_argument("--feature-service-name", default=DEFAULT_FEATURE_SERVICE_NAME)
-    parser.add_argument("--iceberg-enabled", default=os.getenv("ICEBERG_ENABLED", "false"))
+    parser.add_argument("--feature-source", choices=["offline_feature_store", "feast"], default="offline_feature_store")
+    parser.add_argument("--offline-feature-table", default=os.getenv("OFFLINE_FEATURE_TABLE", DEFAULT_OFFLINE_FEATURE_TABLE))
+    parser.add_argument("--hudi-enabled", default=os.getenv("HUDI_ENABLED", os.getenv("ICEBERG_ENABLED", "false")))
+    parser.add_argument("--hudi-warehouse", default=os.getenv("HUDI_WAREHOUSE", DEFAULT_WAREHOUSE))
+    parser.add_argument("--hudi-catalog-name", default=os.getenv("HUDI_CATALOG_NAME", DEFAULT_CATALOG_NAME))
+    parser.add_argument("--iceberg-enabled", default=None)
     parser.add_argument("--iceberg-catalog-name", default=os.getenv("ICEBERG_CATALOG_NAME", DEFAULT_CATALOG_NAME))
     parser.add_argument("--iceberg-warehouse", default=os.getenv("ICEBERG_WAREHOUSE", DEFAULT_WAREHOUSE))
     parser.add_argument("--dataset-run-id", default="")
@@ -491,7 +576,12 @@ def main() -> int:
         feast_offline_root=args.feast_offline_root or None,
         apply_feast_repo=not args.skip_feast_apply,
         feature_service_name=args.feature_service_name,
-        iceberg_enabled=_bool_flag(args.iceberg_enabled, default=False),
+        feature_source=args.feature_source,
+        offline_feature_table=args.offline_feature_table,
+        hudi_enabled=_bool_flag(args.hudi_enabled, default=False),
+        hudi_warehouse=args.hudi_warehouse,
+        hudi_catalog_name=args.hudi_catalog_name,
+        iceberg_enabled=_bool_flag(args.iceberg_enabled, default=False) if args.iceberg_enabled is not None else None,
         iceberg_catalog_name=args.iceberg_catalog_name,
         iceberg_warehouse=args.iceberg_warehouse,
         dataset_run_id=args.dataset_run_id or None,

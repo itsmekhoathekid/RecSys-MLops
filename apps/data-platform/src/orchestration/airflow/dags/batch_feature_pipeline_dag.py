@@ -16,6 +16,15 @@ if DAG is not None:
         catchup=False,
         tags=["recsys", "features"],
     ) as dag:
+        ingest_batch_to_lakehouse = BashOperator(
+            task_id="ingest_batch_to_lakehouse",
+            bash_command=(
+                "PYTHONPATH=apps/data-platform/src spark-submit "
+                "apps/data-platform/src/ingest/batch_lakehouse_ingestion.py "
+                "--run-path apps/data-platform/data-generator/src/output/test_10k_seed42 "
+                "--mode overwrite"
+            ),
+        )
         run_batch_features = BashOperator(
             task_id="run_batch_features",
             bash_command=(
@@ -23,3 +32,4 @@ if DAG is not None:
                 "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py"
             ),
         )
+        ingest_batch_to_lakehouse >> run_batch_features

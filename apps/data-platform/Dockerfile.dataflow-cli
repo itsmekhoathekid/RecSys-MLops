@@ -3,23 +3,18 @@ FROM ${RECSYS_BASE_IMAGE}
 
 WORKDIR /opt/recsys
 COPY pyproject.toml uv.lock* /opt/recsys/
-ENV PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys
+ENV PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys
 
 RUN uv pip install --no-cache \
-    pandas \
     pyarrow \
     pyyaml \
+    pydantic \
+    numpy \
     boto3 \
     s3fs \
     psycopg[binary] \
     redis \
-    kafka-python \
     requests \
-    feast \
-    great_expectations==0.18.22 \
-    dbt-core \
-    dbt-postgres \
-    evidently \
     kfp
 
 COPY . /opt/recsys

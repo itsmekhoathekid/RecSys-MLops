@@ -1,2 +1,1 @@
-"""Data ingestion, feature engineering, and feature-store pipeline code."""
-
+"""Data ingestion, feature engineering, and native feature store pipeline code."""

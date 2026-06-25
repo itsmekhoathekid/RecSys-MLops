@@ -1,0 +1,49 @@
+vault:
+  server: http://vault.vault.svc.cluster.local:8200
+  mountPath: recsys
+  auth:
+    mountPath: kubernetes
+    role: recsys-external-secrets
+    serviceAccount:
+      name: external-secrets
+      namespace: external-secrets
+
+secretStore:
+  name: recsys-vault
+
+externalSecrets:
+  refreshInterval: 1h
+  dataPlatform:
+    namespace: recsys-dataflow
+    secretName: recsys-data-platform-secret
+    vaultPath: data-platform
+  mlflow:
+    namespace: experiment-tracking
+    secretName: recsys-mlflow-secrets
+    vaultPath: mlflow
+  runtime:
+    namespace: kubeflow
+    secretName: recsys-mlops-runtime
+    vaultPath: runtime
+  kserve:
+    namespace: kserve-triton-inference
+    secretName: recsys-kserve-minio
+    vaultPath: kserve-minio
+  gateway:
+    namespace: api-serving
+    secretName: recsys-gateway-basic-auth
+    vaultPath: gateway
+  gatewayObservability:
+    namespace: observability
+    secretName: recsys-gateway-basic-auth
+    vaultPath: gateway
+
+istio:
+  enabled: true
+  namespaces:
+    - recsys-dataflow
+    - kubeflow
+    - experiment-tracking
+    - kserve-triton-inference
+    - api-serving
+    - observability

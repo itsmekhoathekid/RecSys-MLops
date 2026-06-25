@@ -35,10 +35,11 @@ def test_mlflow_dataset_lineage_logs_all_contexts():
         "schema_hash": "hash",
         "processing_code_version": "abc123",
         "split_strategy": "temporal",
+        "versioning_latency_ms": {"total": 22.0},
         "splits": {
-            "train": {"table": "recsys.ml.bst_training_samples", "snapshot_id": 1, "tag": "bst_training_run_1", "row_count": 3, "jsonl_path": "/split/train.jsonl"},
-            "val": {"table": "recsys.ml.bst_training_samples", "snapshot_id": 1, "tag": "bst_training_run_1", "row_count": 1, "jsonl_path": "/split/val.jsonl"},
-            "test": {"table": "recsys.ml.bst_evaluation_samples", "snapshot_id": 2, "tag": "bst_evaluation_run_1", "row_count": 1, "jsonl_path": "/split/test.jsonl"},
+            "train": {"table": "recsys.ml.bst_training_samples", "snapshot_id": "001", "commit_time": "001", "tag": "bst_training_run_1", "row_count": 3, "jsonl_path": "/split/train.jsonl"},
+            "val": {"table": "recsys.ml.bst_training_samples", "snapshot_id": "001", "commit_time": "001", "tag": "bst_training_run_1", "row_count": 1, "jsonl_path": "/split/val.jsonl"},
+            "test": {"table": "recsys.ml.bst_evaluation_samples", "snapshot_id": "002", "commit_time": "002", "tag": "bst_evaluation_run_1", "row_count": 1, "jsonl_path": "/split/test.jsonl"},
         },
     }
     fake = FakeMLflow()
@@ -50,8 +51,9 @@ def test_mlflow_dataset_lineage_logs_all_contexts():
     )
 
     assert fake.params["feast_feature_service"] == "bst_ranking_v1"
-    assert fake.params["dataset.training.iceberg_table"] == "recsys.ml.bst_training_samples"
-    assert fake.params["dataset.evaluation.iceberg_snapshot_id"] == 2
+    assert fake.params["dataset.versioning_latency_ms.total"] == 22.0
+    assert fake.params["dataset.training.hudi_table"] == "recsys.ml.bst_training_samples"
+    assert fake.params["dataset.evaluation.hudi_commit_time"] == "002"
     assert set(fake.inputs) == {
         ("training", "bst_train_samples"),
         ("validation", "bst_val_samples"),

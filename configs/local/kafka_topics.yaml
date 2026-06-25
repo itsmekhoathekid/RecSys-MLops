@@ -11,9 +11,3 @@ topics:
   behavior_events: cdc.behavior_events
   orders: cdc.orders
   order_items: cdc.order_items
-
-raw_sink:
-  lake_bucket: recsys-lake
-  feature_store_bucket: recsys-feature-store
-  prefix: bronze/kafka
-  partition_field: event_date

@@ -40,7 +40,7 @@ def bootstrap_dimensions(cursor: Any, now: datetime, n_users: int, n_products: i
                 "signup_channel": "continuous_local",
                 "city": "HCMC",
                 "country": "VN",
-                "segment": "local_poc",
+                "segment": "native_lakehouse",
                 "age_bucket": 3,
                 "preferred_category_id": category_id,
                 "preferred_brand_id": brand_id,

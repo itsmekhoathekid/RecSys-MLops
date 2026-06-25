@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-security
+description: Vault-backed secrets and Istio service-to-service authorization for RecSys MLOps.
+type: application
+version: 0.1.0
+appVersion: "1.0"

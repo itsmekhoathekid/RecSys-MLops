@@ -69,7 +69,7 @@ fi
 kubectl wait --for=condition=ready pod -l app=data-platform-minio -n "${NAMESPACE}" --timeout=240s
 kubectl wait --for=condition=ready pod -l app=kafka -n "${NAMESPACE}" --timeout=240s
 kubectl wait --for=condition=ready pod -l app=kafka-connect -n "${NAMESPACE}" --timeout=300s
-kubectl wait --for=condition=ready pod -l app=warehouse-postgres -n "${NAMESPACE}" --timeout=180s
+kubectl wait --for=condition=ready pod -l app=source-postgres -n "${NAMESPACE}" --timeout=180s
 kubectl wait --for=condition=ready pod -l app=redis -n "${NAMESPACE}" --timeout=180s
 kubectl wait --for=condition=ready pod -l app=airflow-webserver -n "${NAMESPACE}" --timeout=240s
 

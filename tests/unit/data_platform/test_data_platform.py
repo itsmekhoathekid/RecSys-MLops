@@ -1,203 +1,25 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import math
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-
-from feature_engineering.flink.candidate_pool_job import (
-    candidate_updates,
-)
-from feature_engineering.flink.item_features_job import (
-    ItemFeatureState,
-)
+from feature_engineering.flink.candidate_pool_job import candidate_updates
+from feature_engineering.flink.item_features_job import ItemFeatureState
 from feature_engineering.flink.realtime_stream_job import (
     StreamQualityTracker,
+    build_offline_feature_rows,
     build_realtime_feature_payloads,
-    build_warehouse_rows,
     normalize_event,
     parse_message,
 )
-from feature_engineering.flink.user_sequence_job import (
-    UserSequenceState,
-)
-from feature_engineering.flink.user_aggregate_job import (
-    UserAggregateState,
-)
-from feature_engineering.spark.build_bst_training_table import (
-    build_bst_training_table,
-)
-from feature_engineering.spark.build_item_features import (
-    build_item_features,
-)
-from feature_engineering.spark.build_ranking_labels import (
-    build_ranking_labels,
-)
-from feature_engineering.spark.build_user_sequence_features import (
-    build_user_sequence_features,
-)
-from preprocess.event_dedup import (
-    deduplicate_behavior_events,
-)
-from preprocess.point_in_time import get_time_bucket
-from preprocess.schema_evolution import (
-    normalize_behavior_schema,
-)
-from ingest.bronze_cdc_reader import (
-    extract_debezium_after,
-    normalize_behavior_events_from_cdc,
-)
-from metadata.ingest_datahub_governance import datahub_metric_samples
-from validate.feature_quality_checks import (
-    check_feast_feature_table,
-    check_sequence_lengths,
-)
-from validate.great_expectations_runner import validate_table
-from validate.great_expectations_runner import STAGING_TABLE_CONTRACTS
-from validate.offline_feature_drift import (
-    analyze_feature_view,
-    pushgateway_samples,
-    split_reference_current,
-)
-from monitoring.pushgateway import render_samples
-from monitoring.sql_exporter import _flatten_numeric_metrics, _metric
-from mlops.trigger_kubeflow_retrain import failed_features, trigger_retrain
+from feature_engineering.flink.user_aggregate_job import UserAggregateState
+from feature_engineering.flink.user_sequence_job import UserSequenceState
 from feature_store.online_writer import dumps_feature_payload
-from feature_store.offline_to_online_sync import (
-    latest_by_entity,
-    row_payload,
-    should_overwrite,
-    sync_offline_to_online,
-)
-from feature_store.feast_registry import (
-    apply_and_materialize_incremental,
-    backup_registry,
-    registry_path,
-    restore_registry_backup,
-)
-from warehouse.historical_loader import normalize_staging_frame
-from warehouse.schemas import STAGING_STREAM_BEHAVIOR_EVENTS
-from warehouse.writer import _normalize_value, create_table_sql, upsert_sql
-from validate.synthetic_data_quality import build_quality_metrics
-
-
-def _ts(value: str) -> pd.Timestamp:
-    return pd.Timestamp(value, tz="UTC")
-
-
-def test_deduplicate_behavior_events_keeps_latest_conflict():
-    events = pd.DataFrame(
-        [
-            {"event_id": "e1", "payload_hash": "a", "ingestion_ts": _ts("2026-01-01T00:01:00")},
-            {"event_id": "e1", "payload_hash": "b", "ingestion_ts": _ts("2026-01-01T00:02:00")},
-            {"event_id": "e2", "payload_hash": "c", "ingestion_ts": _ts("2026-01-01T00:03:00")},
-            {"event_id": "e2", "payload_hash": "c", "ingestion_ts": _ts("2026-01-01T00:04:00")},
-        ]
-    )
-    result = deduplicate_behavior_events(events)
-    assert len(result.clean) == 2
-    assert result.conflicting_duplicate_count == 1
-    assert result.exact_duplicate_count == 1
-    assert result.clean.loc[result.clean["event_id"] == "e1", "payload_hash"].iloc[0] == "b"
-
-
-def test_schema_evolution_defaults_missing_optional_fields():
-    normalized = normalize_behavior_schema(pd.DataFrame([{"event_id": "e1"}]))
-    assert normalized["device_type"].iloc[0] == "unknown"
-    assert normalized["campaign_id"].iloc[0] == "none"
-
-
-def test_time_bucket_matches_design():
-    prediction = datetime(2026, 1, 1, 1, 0, tzinfo=timezone.utc)
-    assert get_time_bucket(prediction, datetime(2026, 1, 1, 0, 58, tzinfo=timezone.utc)) == 1
-    assert get_time_bucket(prediction, datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)) == 3
-    assert get_time_bucket(prediction, datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc)) == 0
-
-
-def test_spark_feature_modules_use_pyspark_not_pandas():
-    spark_dir = Path("apps/data-platform/src/feature_engineering/spark")
-    sources = "\n".join(path.read_text(encoding="utf-8") for path in spark_dir.glob("*.py"))
-    assert "import pandas" not in sources
-    assert "pd." not in sources
-    assert "from pyspark.sql" in sources
-    assert "Window.partitionBy" in sources
-    assert "SparkSession" in (spark_dir / "session.py").read_text(encoding="utf-8")
-
-
-def test_spark_entrypoints_write_with_spark_dataframe_api():
-    batch_source = Path("apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py").read_text(
-        encoding="utf-8"
-    )
-    bronze_source = Path(
-        "apps/data-platform/src/feature_engineering/spark/spark_realtime_bronze_entrypoint.py"
-    ).read_text(encoding="utf-8")
-    assert "run_pyspark_batch" in batch_source
-    assert "spark_session(" in batch_source
-    assert "spark.read.json" in bronze_source
-    assert "write_parquet" in batch_source + bronze_source
-
-
-def test_flink_feature_modules_use_pyflink_not_pandas():
-    flink_dir = Path("apps/data-platform/src/feature_engineering/flink")
-    sources = "\n".join(path.read_text(encoding="utf-8") for path in flink_dir.glob("*.py"))
-    stream_source = (flink_dir / "realtime_stream_job.py").read_text(encoding="utf-8")
-    assert "import pandas" not in sources
-    assert "pd." not in sources
-    assert "from pyflink.datastream import StreamExecutionEnvironment" in stream_source
-    assert "KafkaSource.builder()" in stream_source
-    assert "KafkaConsumer" not in stream_source
-    assert "from_collection([0]" not in stream_source
-    assert 'choices=["pyflink"]' in stream_source
-
-
-def test_feast_feature_table_required_columns():
-    frame = pd.DataFrame(
-        [
-            {
-                "user_id": 1,
-                "event_timestamp": _ts("2026-01-01T00:00:00"),
-                "views_30m": 1,
-            }
-        ]
-    )
-    assert check_feast_feature_table(frame, ["user_id"], ["views_30m"], "user_aggregate").passed
-
-
-def test_streaming_payloads_and_candidate_updates():
-    event = {
-        "user_id": 1,
-        "product_id": 10,
-        "category_id": 2,
-        "brand_id": 3,
-        "price_bucket": 4,
-        "price": 9.99,
-        "event_type": "view",
-        "event_timestamp": "2026-01-01T00:00:00Z",
-    }
-    sequence_payload = UserSequenceState(max_history_length=2).update(event)
-    item_payload = ItemFeatureState().update(event)
-    updates = candidate_updates(item_payload)
-    assert sequence_payload["sequence_length"] == 1
-    assert item_payload["views_1h"] == 1
-    assert ("candidate:trending:1h", 10, 1.0) in updates
-
-
-def test_user_aggregate_defaults_avg_viewed_price_without_views():
-    payload = UserAggregateState().update(
-        {
-            "user_id": 1,
-            "product_id": 10,
-            "category_id": 2,
-            "brand_id": 3,
-            "price_bucket": 4,
-            "price": 9.99,
-            "event_type": "cart",
-            "event_timestamp": "2026-01-01T00:00:00Z",
-        }
-    )
-    assert payload["avg_viewed_price_7d"] == 0.0
+from ingest.debezium import extract_debezium_after
+from lakehouse.iceberg import IcebergCatalogConfig, create_flink_catalog_sql, spark_iceberg_conf
+from mlops.trigger_kubeflow_retrain import default_pipeline_arguments, failed_features, parse_pipeline_args, trigger_retrain
+from validate.offline_feature_drift import calculate_psi
 
 
 def test_debezium_after_extraction_skips_deletes():
@@ -205,21 +27,6 @@ def test_debezium_after_extraction_skips_deletes():
     after = extract_debezium_after({"payload": {"op": "c", "after": {"event_id": "e2"}}})
     assert after == {"event_id": "e2"}
     assert parse_message(b'{"payload":{"op":"c","after":{"event_id":"e3"}}}') == {"event_id": "e3"}
-
-
-def test_bronze_behavior_normalization_adds_event_type_id():
-    frame = pd.DataFrame(
-        [
-            {
-                "event_id": "e1",
-                "event_type": "purchase",
-                "event_timestamp": "2026-01-01T00:00:00Z",
-            }
-        ]
-    )
-    normalized = normalize_behavior_events_from_cdc(frame)
-    assert normalized["event_type_id"].iloc[0] == 3
-    assert str(normalized["event_timestamp"].dt.tz) == "UTC"
 
 
 def test_realtime_stream_event_normalization_defaults_optional_dimensions():
@@ -238,42 +45,13 @@ def test_realtime_stream_event_normalization_defaults_optional_dimensions():
     assert event["category_id"] == 0
 
 
-def test_warehouse_upsert_sql_targets_staging_contract():
-    ddl = create_table_sql(STAGING_STREAM_BEHAVIOR_EVENTS)
-    sql = upsert_sql(STAGING_STREAM_BEHAVIOR_EVENTS, list(STAGING_STREAM_BEHAVIOR_EVENTS.columns))
-    assert 'CREATE TABLE IF NOT EXISTS "staging"."stream_behavior_events"' in ddl
-    assert 'ON CONFLICT ("event_id") DO UPDATE SET' in sql
-    assert '"late_by_seconds" = EXCLUDED."late_by_seconds"' in sql
-
-
-def test_historical_staging_normalizes_nullable_user_preference_pk():
-    frame = pd.DataFrame(
-        [
-            {
-                "user_id": 1,
-                "category_id": 2,
-                "brand_id": None,
-                "preference_weight": 0.5,
-            }
-        ]
-    )
-    normalized = normalize_staging_frame("user_preferences", frame)
-    assert normalized["brand_id"].iloc[0] == 0
-
-
-def test_json_payload_serializers_replace_nan_with_null():
-    payload = {"avg_viewed_price_7d": float("nan"), "history": [1, float("inf")]}
-    assert _normalize_value(payload) == '{"avg_viewed_price_7d": null, "history": [1, null]}'
-    assert dumps_feature_payload(payload) == '{"avg_viewed_price_7d": null, "history": [1, null]}'
-
-
-def test_flink_builds_warehouse_rows_from_same_payloads_as_redis():
+def test_streaming_payloads_candidate_updates_and_offline_rows():
     event = normalize_event(
         {
             "event_id": "e1",
             "user_id": "1",
             "product_id": "10",
-            "event_type": "view",
+            "event_type": "cart",
             "event_timestamp": "2026-01-01T00:00:00Z",
             "category_id": 2,
             "brand_id": 3,
@@ -288,10 +66,12 @@ def test_flink_builds_warehouse_rows_from_same_payloads_as_redis():
         UserAggregateState(),
         ItemFeatureState(),
     )
-    rows = build_warehouse_rows(event, sequence, aggregate, item, "cdc.behavior_events", 60)
+    rows = build_offline_feature_rows(event, sequence, aggregate, item, "cdc.behavior_events", 60)
     assert rows["stream_behavior_events"][0]["event_id"] == "e1"
     assert rows["stream_user_sequence_features"][0]["sequence_length"] == 1
-    assert rows["stream_item_features"][0]["views_1h"] == 1
+    assert rows["stream_user_aggregate_features"][0]["carts_30m"] == 1
+    assert rows["stream_item_features"][0]["popularity_score"] == item["popularity_score"]
+    assert ("candidate:trending:1h", 10, item["views_1h"] + item["carts_1h"] * 3.0) in candidate_updates(item)
 
 
 def test_stream_quality_tracker_marks_bursty_and_late_windows():
@@ -303,279 +83,69 @@ def test_stream_quality_tracker_marks_bursty_and_late_windows():
     assert flushed[0].is_bursty is True
     assert flushed[0].late_event_count == 1
     assert flushed[0].duplicate_event_count == 1
-    assert flushed[0].as_row()["duplicate_event_count"] == 1
 
 
-def test_sql_exporter_flattens_data_quality_metrics_for_prometheus():
-    metrics = _flatten_numeric_metrics(
-        {
-            "duplicate_rate_before_dedup": 0.02,
-            "validation_passed": True,
-            "city_distribution": {"HCMC": 0.35, "Da Nang": 0.12},
-            "ignored": "not_numeric",
-        }
-    )
-    assert metrics["duplicate_rate_before_dedup"] == 0.02
-    assert metrics["validation_passed"] == 1.0
-    assert metrics["city_distribution_HCMC"] == 0.35
-    assert metrics["city_distribution_Da_Nang"] == 0.12
-    assert "ignored" not in metrics
-    assert _metric("x", 1, {"label": 'a"b'}).startswith('x{label="a\\"b"}')
+def test_online_payload_serializer_replaces_nonfinite_values():
+    payload = {"avg_viewed_price_7d": float("nan"), "history": [1, float("inf")]}
+    rendered = dumps_feature_payload(payload)
+    assert "NaN" not in rendered
+    assert "Infinity" not in rendered
+    assert '"avg_viewed_price_7d": null' in rendered
 
 
-def test_synthetic_generator_quality_metrics_cover_rubric_items():
-    manifest = {
-        "config": {
-            "entities": {"n_users": 10, "n_products": 20, "n_categories": 3, "n_brands": 4},
-            "traffic": {"target_behavior_events": 100},
-            "distribution": {"top_city_ratio": 0.35, "top_category_ratio": 0.3},
-            "challenges": {
-                "duplicate_event_rate": 0.02,
-                "conflicting_duplicate_rate": 0.01,
-                "late_arrival_rate": 0.12,
-                "out_of_order_rate": 0.03,
-            },
-            "burst_windows": [{"start_hour": 12, "end_hour": 13, "traffic_weight": 3.0}],
-        },
-        "row_counts": {"behavior_events": 102, "users": 10},
-    }
-    dq_report = {
-        "validation_passed": True,
-        "injected": {
-            "exact_duplicates": 2,
-            "conflicting_duplicates": 1,
-            "late_arrivals": 12,
-            "out_of_order": 3,
-        },
-        "observed": {
-            "exact_duplicate_rows": 2,
-            "conflicting_duplicate_event_ids": 1,
-            "late_arrival_rate": 0.12,
-            "out_of_order_rate": 0.03,
-            "schema_v1_events": 40,
-            "schema_v2_events": 60,
-            "null_device_type_events": 40,
-            "top_city_ratio": 0.36,
-            "top_event_category_ratio": 0.31,
-        },
-        "validation_metrics": {"canonical_event_count": 99},
-    }
-    metrics = build_quality_metrics(
-        manifest,
-        dq_report,
-        {"approx_count_distinct_behavior_events_event_id": 99},
-    )
-    assert metrics["duplicate_rows_before_dedup"] == 3
-    assert metrics["duplicate_rate_before_dedup"] == round(3 / 102, 6)
-    assert metrics["duplicate_rate_after_dedup"] == 0.0
-    assert metrics["null_device_type_events"] == 40
-    assert metrics["approx_count_distinct_behavior_events_event_id"] == 99
+def test_iceberg_catalog_defaults_and_spark_conf():
+    config = IcebergCatalogConfig()
+    assert config.lakehouse_database == "recsys.lakehouse"
+    assert config.lakehouse_table("behavior_events") == "recsys.lakehouse.behavior_events"
+    assert config.feature_database == "recsys_features.feature_store"
+    assert config.feature_table("item_features") == "recsys_features.feature_store.item_features"
+    spark_conf = spark_iceberg_conf(config)
+    assert spark_conf["spark.sql.catalog.recsys"] == "org.apache.iceberg.spark.SparkCatalog"
+    assert spark_conf["spark.sql.catalog.recsys.warehouse"] == "s3a://recsys-lakehouse/warehouse"
+    assert spark_conf["spark.sql.catalog.recsys_features.warehouse"] == "s3a://recsys-offline-feature-store/warehouse"
+    assert "CREATE CATALOG recsys" in create_flink_catalog_sql(config)
 
 
-def test_great_expectations_runner_catches_duplicate_and_skew():
-    frame = pd.DataFrame(
-        [
-            {"event_id": "e1", "event_timestamp": _ts("2026-01-01T00:00:00"), "user_id": 1, "product_id": 10, "event_type": "view", "category_id": 1},
-            {"event_id": "e1", "event_timestamp": _ts("2026-01-01T00:01:00"), "user_id": 2, "product_id": 11, "event_type": "view", "category_id": 1},
-        ]
-    )
-    result = validate_table(
-        "staging.stream_behavior_events",
-        frame,
-        required_columns=["event_id", "event_timestamp", "user_id", "product_id", "event_type"],
-        unique_columns=["event_id"],
-        categorical_columns=["event_type", "category_id"],
-        freshness_column="event_timestamp",
-        max_top_value_ratio=0.5,
-        max_unique_ratio=1.0,
-    )
-    assert not result.passed
-    assert result.metrics["duplicate_count"] == 1
-    assert any("skewed" in error for error in result.errors)
+def test_spark_feature_path_is_native_iceberg_not_pandas_or_parquet_writer():
+    spark_dir = Path("apps/data-platform/src/feature_engineering/spark")
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in spark_dir.glob("*.py"))
+    batch_source = (spark_dir / "spark_batch_entrypoint.py").read_text(encoding="utf-8")
+    assert "import pandas" not in sources
+    assert "pd." not in sources
+    assert "from pyspark.sql" in sources
+    assert 'source", os.getenv("SPARK_BATCH_SOURCE", "lakehouse")' in batch_source
+    assert "write_iceberg_table" in batch_source
+    assert "write_parquet(" not in batch_source
+    assert not (spark_dir / "spark_realtime_bronze_entrypoint.py").exists()
 
 
-def test_great_expectations_does_not_treat_feature_version_as_skew_dimension():
-    assert STAGING_TABLE_CONTRACTS["staging.stream_user_sequence_features"]["categorical_columns"] == []
-    assert STAGING_TABLE_CONTRACTS["staging.stream_user_aggregate_features"]["categorical_columns"] == []
+def test_flink_feature_path_is_native_kafka_state_and_iceberg():
+    flink_dir = Path("apps/data-platform/src/feature_engineering/flink")
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in flink_dir.glob("*.py"))
+    stream_source = (flink_dir / "realtime_stream_job.py").read_text(encoding="utf-8")
+    assert "import pandas" not in sources
+    assert "pd." not in sources
+    assert "KafkaSource.builder()" in stream_source
+    assert "KafkaConsumer" not in stream_source
+    assert "from_collection([0]" not in stream_source
+    assert "--offline-store-enabled" in stream_source
+    assert "StreamTableEnvironment" in stream_source
 
 
-class FakeRedis:
-    def __init__(self):
-        self.values = {}
-        self.ttls = {}
+def test_offline_feature_drift_calculates_psi_for_shifted_distribution():
+    score = calculate_psi([1, 1, 2, 2, 3, 3, 4, 4], [10, 10, 11, 11, 12, 12, 13, 13], buckets=4)
 
-    def get(self, key):
-        return self.values.get(key)
-
-    def set(self, key, value, ex=None):
-        self.values[key] = value
-        self.ttls[key] = ex
+    assert score > 0.15
 
 
-def test_offline_sync_uses_latest_entity_rows_and_serving_keys(monkeypatch, tmp_path):
-    frames = {
-        "user_sequence_features": pd.DataFrame(
-            [
-                {"user_id": 1, "event_timestamp": _ts("2026-01-01T00:00:00"), "hist_length": 1},
-                {"user_id": 1, "event_timestamp": _ts("2026-01-01T00:05:00"), "hist_length": 2},
-            ]
-        ),
-        "user_aggregate_features": pd.DataFrame(
-            [{"user_id": 1, "event_timestamp": _ts("2026-01-01T00:05:00"), "views_30m": 3}]
-        ),
-        "item_features": pd.DataFrame(
-            [{"product_id": 10, "event_timestamp": _ts("2026-01-01T00:05:00"), "views_1h": 4}]
-        ),
-    }
+def test_pipeline_arg_parser_and_default_retrain_arguments():
+    parsed = parse_pipeline_args(["source_run_path=s3a://lake/raw/run1", "training_percent=0.02"])
+    defaults = default_pipeline_arguments("run-1")
 
-    def fake_read(path):
-        return frames[path.rstrip("/").split("/")[-1]]
-
-    monkeypatch.setattr("feature_store.offline_to_online_sync.read_feature_table", fake_read)
-    redis = FakeRedis()
-    result = sync_offline_to_online("memory://offline", redis, run_id=None, write_monitoring=False)
-    assert result["user_sequence_features"]["scanned_rows"] == 2
-    assert result["user_sequence_features"]["synced_rows"] == 1
-    assert "fs:user_sequence:1" in redis.values
-    assert "fs:user_aggregate:1" in redis.values
-    assert "fs:item:10" in redis.values
-    assert '"hist_length": 2' in redis.values["fs:user_sequence:1"]
-
-
-def test_offline_sync_row_payload_serializes_array_values():
-    payload = row_payload(
-        pd.Series(
-            {
-                "user_id": 1,
-                "event_timestamp": _ts("2026-01-01T00:00:00"),
-                "hist_item_ids": np.array([10, 11]),
-                "optional": np.nan,
-            }
-        )
-    )
-    assert payload["hist_item_ids"] == [10, 11]
-    assert payload["optional"] is None
-
-
-def test_offline_sync_conflict_policy_skips_newer_redis_payload():
-    existing = {"event_timestamp": "2026-01-01T00:10:00Z"}
-    incoming = {"event_timestamp": "2026-01-01T00:05:00Z"}
-    assert should_overwrite(existing, incoming, "event_timestamp") is False
-    assert should_overwrite(existing, {"event_timestamp": "2026-01-01T00:15:00Z"}, "event_timestamp") is True
-    assert should_overwrite({}, incoming, "event_timestamp") is True
-
-
-def test_latest_by_entity_keeps_latest_timestamp():
-    frame = pd.DataFrame(
-        [
-            {"user_id": 1, "event_timestamp": _ts("2026-01-01T00:00:00"), "value": 1},
-            {"user_id": 1, "event_timestamp": _ts("2026-01-01T00:02:00"), "value": 2},
-            {"user_id": 2, "event_timestamp": _ts("2026-01-01T00:01:00"), "value": 3},
-        ]
-    )
-    latest = latest_by_entity(frame, "user_id", "event_timestamp")
-    assert latest.sort_values("user_id")["value"].tolist() == [2, 3]
-
-
-def test_feast_registry_backup_round_trips_via_s3_client(monkeypatch, tmp_path):
-    repo = tmp_path / "feature_repo"
-    repo.mkdir()
-    (repo / "feature_store.yaml").write_text("project: test\n", encoding="utf-8")
-
-    class FakeS3:
-        uploaded: str | None = None
-
-        def download_file(self, bucket, key, target):
-            assert (bucket, key) == ("bucket", "registry.db")
-            Path(target).write_text("restored-registry", encoding="utf-8")
-
-        def upload_file(self, source, bucket, key):
-            assert (bucket, key) == ("bucket", "registry.db")
-            self.uploaded = Path(source).read_text(encoding="utf-8")
-
-    fake_s3 = FakeS3()
-    monkeypatch.setattr("feature_store.feast_registry._s3_client", lambda: fake_s3)
-
-    assert restore_registry_backup(repo, "s3://bucket/registry.db") is True
-    assert registry_path(repo).read_text(encoding="utf-8") == "restored-registry"
-    assert backup_registry(repo, "s3://bucket/registry.db") is True
-    assert fake_s3.uploaded == "restored-registry"
-
-
-def test_feast_apply_and_materialize_incremental_preserves_registry_checkpoint(monkeypatch, tmp_path):
-    repo = tmp_path / "feature_repo"
-    repo.mkdir()
-    (repo / "feature_store.yaml").write_text("project: test\n", encoding="utf-8")
-    calls = []
-
-    class Result:
-        def __init__(self, stdout: str):
-            self.stdout = stdout
-            self.stderr = ""
-
-    def fake_apply(path):
-        calls.append(("apply", Path(path)))
-        return Result("applied")
-
-    def fake_materialize(end_ts, path):
-        calls.append(("materialize-incremental", end_ts, Path(path)))
-        registry_path(path).parent.mkdir(parents=True, exist_ok=True)
-        registry_path(path).write_text("updated-registry", encoding="utf-8")
-        return Result("materialized")
-
-    monkeypatch.setattr("feature_store.feast_registry.restore_registry_backup", lambda *args: True)
-    monkeypatch.setattr("feature_store.feast_registry.apply_feature_repo", fake_apply)
-    monkeypatch.setattr("feature_store.feast_registry.materialize_incremental", fake_materialize)
-    monkeypatch.setattr("feature_store.feast_registry.backup_registry", lambda *args: True)
-
-    result = apply_and_materialize_incremental("2026-01-01T00:00:00Z", repo)
-    assert calls == [
-        ("apply", repo),
-        ("materialize-incremental", "2026-01-01T00:00:00Z", repo),
-    ]
-    assert result["registry_restored"] is True
-    assert result["registry_backed_up"] is True
-    assert result["apply_stdout"] == "applied"
-    assert result["materialize_stdout"] == "materialized"
-
-
-def test_offline_feature_drift_splits_windows_and_builds_pushgateway_metrics():
-    frame = pd.DataFrame(
-        [
-            {"event_timestamp": _ts("2026-01-01T00:00:00"), "views_30m": 1.0, "user_id": 1},
-            {"event_timestamp": _ts("2026-01-02T00:00:00"), "views_30m": 2.0, "user_id": 2},
-            {"event_timestamp": _ts("2026-01-10T00:00:00"), "views_30m": 10.0, "user_id": 3},
-            {"event_timestamp": _ts("2026-01-11T00:00:00"), "views_30m": 11.0, "user_id": 4},
-        ]
-    )
-    reference, current = split_reference_current(frame, current_days=7)
-    results = analyze_feature_view(frame, "user_aggregate_features", threshold=0.15, current_days=7)
-    payload = render_samples(pushgateway_samples("run-1", results))
-
-    assert len(reference) == 2
-    assert len(current) == 2
-    assert results[0].feature == "views_30m"
-    assert "recsys_ml_feature_drift_psi" in payload
-    assert 'feature_view="user_aggregate_features"' in payload
-
-
-def test_datahub_ingest_builds_pushgateway_metrics():
-    payload = render_samples(
-        datahub_metric_samples(
-            {
-                "data_products": ["DP1", "DP2", "DP3"],
-                "datasets": 44,
-                "jobs": 8,
-                "gms_url": "http://datahub",
-                "ingested": True,
-            }
-        )
-    )
-
-    assert "recsys_datahub_ingest_success 1.0" in payload
-    assert "recsys_datahub_ingest_dataset_count 44.0" in payload
-    assert "recsys_datahub_ingest_job_count 8.0" in payload
-    assert 'recsys_datahub_ingest_data_product_present{data_product="DP3"} 1.0' in payload
+    assert parsed["source_run_path"] == "s3a://lake/raw/run1"
+    assert defaults["pipeline_run_id"] == "retrain-run-1"
+    assert defaults["ray_job_name"] == "recsys-bst-ray-retrain-run-1"
+    assert defaults["split_output_dir"].endswith("/retrain-run-1/ml/bst_split")
 
 
 def test_trigger_retrain_skips_when_drift_passes(tmp_path):
@@ -595,7 +165,7 @@ def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
             {
                 "run_id": "run-2",
                 "passed": False,
-                "features": [{"feature_view": "item_features", "feature": "views_1h", "passed": False}],
+                "features": [{"feature_table": "item_features", "feature": "views_1h", "passed": False}],
             }
         ),
         encoding="utf-8",
@@ -617,11 +187,49 @@ def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
 
         def create_run_from_pipeline_package(self, **kwargs):
             assert kwargs["pipeline_file"] == "pipeline.yaml"
+            assert kwargs["run_name"] == "recsys-drift-retrain-run-2"
+            assert kwargs["arguments"]["pipeline_run_id"] == "retrain-run-2"
+            assert kwargs["arguments"]["source_run_path"] == "s3a://lake/raw/run2"
             return Run()
 
     monkeypatch.setitem(__import__("sys").modules, "kfp", type("Kfp", (), {"Client": Client}))
-    result = trigger_retrain(str(report), "http://kfp", "exp", "pipeline.yaml", pushgateway_url=None)
+    result = trigger_retrain(
+        str(report),
+        "http://kfp",
+        "exp",
+        "pipeline.yaml",
+        pushgateway_url=None,
+        pipeline_arguments={"source_run_path": "s3a://lake/raw/run2"},
+    )
 
     assert failed_features(json.loads(report.read_text(encoding="utf-8"))) == ["item_features.views_1h"]
     assert result.triggered is True
     assert result.kfp_run_id == "run-kfp-1"
+
+
+def test_trigger_retrain_kfp_error_is_non_blocking(monkeypatch, tmp_path):
+    report = tmp_path / "drift.json"
+    report.write_text(
+        json.dumps(
+            {
+                "run_id": "run-3",
+                "passed": False,
+                "features": [{"feature_table": "item_features", "feature": "views_1h", "passed": False}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class Client:
+        def __init__(self, host):
+            pass
+
+        def create_experiment(self, name):
+            raise RuntimeError("kfp unavailable")
+
+    monkeypatch.setitem(__import__("sys").modules, "kfp", type("Kfp", (), {"Client": Client}))
+    result = trigger_retrain(str(report), "http://kfp", "exp", "pipeline.yaml", pushgateway_url=None)
+
+    assert result.triggered is False
+    assert result.reason == "feature_drift"
+    assert result.error == "kfp unavailable"

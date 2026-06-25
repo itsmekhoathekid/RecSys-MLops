@@ -7,7 +7,7 @@ from pathlib import Path
 def copy_run_to_minio_layout(local_run_path: str | Path, lake_root: str | Path, run_id: str | None = None) -> Path:
     """Copy a local generator run into the local MinIO-mounted lake layout.
 
-    This local helper mirrors s3://recsys-lake/raw/<run_id>/... without needing
+    This local helper mirrors s3://recsys-lakehouse/raw/<run_id>/... without needing
     an S3 client during unit tests.
     """
     source = Path(local_run_path)
@@ -23,7 +23,7 @@ def copy_run_to_minio_layout(local_run_path: str | Path, lake_root: str | Path, 
 
 def upload_run_to_minio(
     local_run_path: str | Path,
-    bucket: str = "recsys-lake",
+    bucket: str = "recsys-lakehouse",
     prefix: str = "raw",
     run_id: str | None = None,
     endpoint_url: str = "http://minio:9000",

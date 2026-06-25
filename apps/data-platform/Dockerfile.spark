@@ -5,12 +5,25 @@ COPY . /opt/recsys
 
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3-pip \
+    && apt-get install -y --no-install-recommends curl python3-pip \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir pandas numpy pyarrow pyyaml boto3 s3fs==0.4.2 psycopg[binary] redis "feast[redis]"
+    && pip3 install --no-cache-dir pyyaml boto3 psycopg[binary] redis
+
+RUN curl -fsSL \
+        https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.7.1/iceberg-spark-runtime-3.5_2.12-1.7.1.jar \
+        -o /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.7.1.jar \
+    && curl -fsSL \
+        https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3.5-bundle_2.12/1.0.2/hudi-spark3.5-bundle_2.12-1.0.2.jar \
+        -o /opt/spark/jars/hudi-spark3.5-bundle_2.12-1.0.2.jar \
+    && curl -fsSL \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar \
+        -o /opt/spark/jars/hadoop-aws-3.3.4.jar \
+    && curl -fsSL \
+        https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
+        -o /opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar
 
 ENV AWS_ACCESS_KEY_ID=minio \
     AWS_SECRET_ACCESS_KEY=minio123 \
     AWS_REGION=us-east-1 \
     SPARK_EXTRA_CLASSPATH=/opt/spark/jars/* \
-    PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys
+    PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys

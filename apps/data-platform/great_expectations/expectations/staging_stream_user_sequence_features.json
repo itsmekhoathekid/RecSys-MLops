@@ -1,9 +1,0 @@
-{
-  "expectation_suite_name": "staging_stream_user_sequence_features",
-  "expectations": [
-    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "user_id"}},
-    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "feature_timestamp"}},
-    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "sequence_length", "min_value": 1, "max_value": 50}}
-  ]
-}
-

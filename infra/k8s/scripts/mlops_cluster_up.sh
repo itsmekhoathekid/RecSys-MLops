@@ -14,6 +14,7 @@ CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.16.2}"
 BUILD_IMAGES="${RECSYS_CLUSTER_BUILD_IMAGES:-0}"
 INSTALL_DATAHUB="${RECSYS_CLUSTER_INSTALL_DATAHUB:-0}"
 SCALE_OPTIONAL_KFP="${RECSYS_CLUSTER_SCALE_OPTIONAL_KFP:-1}"
+SECURITY_ENABLED="${RECSYS_CLUSTER_SECURITY_ENABLED:-1}"
 
 TARGET_NAMESPACES=(
   kubeflow
@@ -25,6 +26,10 @@ TARGET_NAMESPACES=(
   observability
   ingress-nginx
   keda
+  external-secrets
+  vault
+  istio-system
+  recsys-security
 )
 
 REQUIRED_DEPLOYMENTS=(
@@ -321,6 +326,14 @@ install_keda_if_needed
 install_cert_manager_if_needed
 install_kserve_if_needed
 ensure_dependency_rollouts
+
+if [[ "${SECURITY_ENABLED}" == "1" ]]; then
+  section "Install Security Stack"
+  run_make security-install
+else
+  section "Install Security Stack"
+  echo "Skipping security stack. Set RECSYS_CLUSTER_SECURITY_ENABLED=1 to enable Vault/ESO/Istio."
+fi
 
 section "Install Kubeflow And KubeRay"
 install_kfp_if_needed

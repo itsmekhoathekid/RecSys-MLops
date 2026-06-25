@@ -364,11 +364,10 @@ def dp1() -> DataProduct:
                 "DP1 source OLTP table captured by Debezium CDC. "
                 "Data contract is defined in ingest.postgres_cdc_contracts with primary-key and topic mapping."
             ),
-            tags=("DP1", "DataContract", "ValidationPassed"),
+            tags=("DP1", "DataContract", "NativePipeline"),
             custom_properties={
                 "data_product": "DP1",
                 "contract": "SourceTableContract primary key plus Debezium topic mapping",
-                "validation": "validate_bronze_cdc waits for CDC records before downstream promotion",
             },
         )
         for table in source_tables
@@ -378,28 +377,12 @@ def dp1() -> DataProduct:
             urn=dataset_urn("kafka", f"recsys-dataflow.cdc.{table}"),
             name=f"cdc.{table}",
             description="DP1 Kafka CDC topic emitted by the Debezium source connector.",
-            tags=("DP1", "DataContract", "ValidationPassed"),
+            tags=("DP1", "DataContract", "NativePipeline"),
             custom_properties={
                 "data_product": "DP1",
                 "contract": "Debezium envelope keyed by source table primary key",
-                "validation": "Kafka Connect connector status RUNNING and bronze CDC record-count smoke check",
             },
             upstreams=(dataset_urn("postgres", f"source_postgres.recsys.public.{table}"),),
-        )
-        for table in source_tables
-    )
-    bronze = tuple(
-        Dataset(
-            urn=dataset_urn("s3", f"s3://recsys-lake/bronze/kafka/cdc.{table}"),
-            name=f"recsys-lake.bronze.kafka.cdc.{table}",
-            description="DP1 immutable bronze CDC files written by Kafka Connect S3/MinIO sink.",
-            tags=("DP1", "DataContract", "ValidationPassed"),
-            custom_properties={
-                "data_product": "DP1",
-                "contract": "Raw CDC payload retained with source topic and offset lineage",
-                "validation": "infra/docker/scripts/validate_bronze_cdc.py checks minimum records in bronze",
-            },
-            upstreams=(dataset_urn("kafka", f"recsys-dataflow.cdc.{table}"),),
         )
         for table in source_tables
     )
@@ -407,9 +390,9 @@ def dp1() -> DataProduct:
         id="DP1",
         flow_id="DP1_CDC_Ingestion",
         flow_name="DP1 CDC Ingestion",
-        description="Source Postgres to Kafka CDC to MinIO bronze ingestion for realtime RecSys events and dimensions.",
-        tags=("DP1", "DataContract", "ValidationPassed"),
-        datasets=source + topics + bronze,
+        description="Source Postgres WAL captured by Debezium and published to cdc.* Kafka topics.",
+        tags=("DP1", "DataContract", "NativePipeline"),
+        datasets=source + topics,
         jobs=(
             Job(
                 id="register_debezium_connector",
@@ -417,190 +400,137 @@ def dp1() -> DataProduct:
                 description="Creates the Postgres CDC connector and links source tables to cdc.* Kafka topics.",
                 inputs=tuple(item.urn for item in source),
                 outputs=tuple(item.urn for item in topics),
-                tags=("DP1", "DataContract", "ValidationPassed"),
+                tags=("DP1", "DataContract", "NativePipeline"),
                 custom_properties={"contract": "ingest.postgres_cdc_contracts.SOURCE_TABLE_CONTRACTS"},
-            ),
-            Job(
-                id="register_kafka_minio_sink",
-                name="Register Kafka MinIO Raw Sink",
-                description="Persists cdc.* Kafka topics into the bronze MinIO lake.",
-                inputs=tuple(item.urn for item in topics),
-                outputs=tuple(item.urn for item in bronze),
-                tags=("DP1", "DataContract", "ValidationPassed"),
-                custom_properties={"validation": "validate_bronze_cdc.py min-record gate"},
             ),
         ),
     )
 
 
 def dp2() -> DataProduct:
-    bronze_behavior = dataset_urn("s3", "s3://recsys-lake/bronze/kafka/cdc.behavior_events")
-    staging_tables = (
+    behavior_topic = dataset_urn("kafka", "recsys-dataflow.cdc.behavior_events")
+    stream_tables = (
         Dataset(
-            urn=dataset_urn("postgres", "warehouse_postgres.recsys_warehouse.staging.stream_behavior_events"),
-            name="staging.stream_behavior_events",
-            description="DP2 staging table populated by the Flink realtime stream job.",
-            tags=("DP2", "DataContract", "ValidationPassed"),
-            custom_properties={
-                "contract": "STAGING_STREAM_BEHAVIOR_EVENTS TableSpec",
-                "validation": "Great Expectations staging contract: required columns, uniqueness, freshness, skew checks",
-            },
-            upstreams=(bronze_behavior,),
+            urn=dataset_urn("s3", "s3://recsys-offline-feature-store/warehouse/feature_store/stream_behavior_events"),
+            name="iceberg.recsys_features.feature_store.stream_behavior_events",
+            description="DP2 Iceberg stream event table written by native PyFlink.",
+            tags=("DP2", "DataContract", "NativePipeline"),
+            custom_properties={"contract": "Iceberg stream_behavior_events table"},
+            upstreams=(behavior_topic,),
         ),
         Dataset(
-            urn=dataset_urn("postgres", "warehouse_postgres.recsys_warehouse.staging.stream_user_sequence_features"),
-            name="staging.stream_user_sequence_features",
-            description="DP2 staging sequence feature table from streaming feature engineering.",
-            tags=("DP2", "DataContract", "ValidationPassed"),
-            custom_properties={
-                "contract": "STAGING_STREAM_USER_SEQUENCE_FEATURES TableSpec",
-                "validation": "Great Expectations staging contract",
-            },
-            upstreams=(bronze_behavior,),
+            urn=dataset_urn("s3", "s3://recsys-offline-feature-store/warehouse/feature_store/stream_user_sequence_features"),
+            name="iceberg.recsys_features.feature_store.stream_user_sequence_features",
+            description="DP2 Iceberg user sequence feature table written by native PyFlink.",
+            tags=("DP2", "DataContract", "NativePipeline"),
+            custom_properties={"contract": "Iceberg stream_user_sequence_features table"},
+            upstreams=(behavior_topic,),
         ),
         Dataset(
-            urn=dataset_urn("postgres", "warehouse_postgres.recsys_warehouse.staging.stream_user_aggregate_features"),
-            name="staging.stream_user_aggregate_features",
-            description="DP2 staging aggregate feature table from streaming feature engineering.",
-            tags=("DP2", "DataContract", "ValidationPassed"),
-            custom_properties={
-                "contract": "STAGING_STREAM_USER_AGGREGATE_FEATURES TableSpec",
-                "validation": "Great Expectations staging contract",
-            },
-            upstreams=(bronze_behavior,),
+            urn=dataset_urn("s3", "s3://recsys-offline-feature-store/warehouse/feature_store/stream_user_aggregate_features"),
+            name="iceberg.recsys_features.feature_store.stream_user_aggregate_features",
+            description="DP2 Iceberg user aggregate feature table written by native PyFlink.",
+            tags=("DP2", "DataContract", "NativePipeline"),
+            custom_properties={"contract": "Iceberg stream_user_aggregate_features table"},
+            upstreams=(behavior_topic,),
         ),
         Dataset(
-            urn=dataset_urn("postgres", "warehouse_postgres.recsys_warehouse.staging.stream_item_features"),
-            name="staging.stream_item_features",
-            description="DP2 staging item feature table from streaming feature engineering.",
-            tags=("DP2", "DataContract", "ValidationPassed"),
-            custom_properties={
-                "contract": "STAGING_STREAM_ITEM_FEATURES TableSpec",
-                "validation": "Great Expectations staging contract",
-            },
-            upstreams=(bronze_behavior,),
+            urn=dataset_urn("s3", "s3://recsys-offline-feature-store/warehouse/feature_store/stream_item_features"),
+            name="iceberg.recsys_features.feature_store.stream_item_features",
+            description="DP2 Iceberg item feature table written by native PyFlink.",
+            tags=("DP2", "DataContract", "NativePipeline"),
+            custom_properties={"contract": "Iceberg stream_item_features table"},
+            upstreams=(behavior_topic,),
         ),
-    )
-    production = tuple(
-        Dataset(
-            urn=dataset_urn("postgres", f"warehouse_postgres.recsys_warehouse.production.{name}"),
-            name=f"production.{name}",
-            description="DP2 dbt production model with dbt schema.yml tests for not-null, uniqueness, and accepted values.",
-            tags=("DP2", "DataContract", "ValidationPassed"),
-            custom_properties={
-                "contract": "apps/data-platform/dbt/recsys_warehouse/models/production/schema.yml",
-                "validation": "dbt build tests plus upstream Great Expectations staging gate",
-            },
-            upstreams=tuple(table.urn for table in staging_tables),
-        )
-        for name in ("fact_behavior_events", "fact_impressions", "fact_orders", "dim_products_scd")
     )
     return DataProduct(
         id="DP2",
-        flow_id="DP2_Warehouse_Transform",
-        flow_name="DP2 Warehouse Transform",
-        description="Bronze/staging data quality gate and dbt production warehouse transform.",
-        tags=("DP2", "DataContract", "ValidationPassed"),
-        datasets=staging_tables + production,
+        flow_id="DP2_Stream_Lakehouse_Features",
+        flow_name="DP2 Stream Lakehouse Features",
+        description="Native PyFlink stream processing from Kafka into Iceberg offline feature tables.",
+        tags=("DP2", "DataContract", "NativePipeline"),
+        datasets=stream_tables,
         jobs=(
             Job(
-                id="run_flink_processing",
-                name="Run Flink Processing",
-                description="Consumes cdc.behavior_events and writes realtime staging feature tables.",
-                inputs=(bronze_behavior,),
-                outputs=tuple(table.urn for table in staging_tables),
-                tags=("DP2", "DataContract", "ValidationPassed"),
-                custom_properties={"validation": "Long-running Flink consumer plus warehouse staging row checks"},
-            ),
-            Job(
-                id="ge_validate_staging",
-                name="GE Validate Staging",
-                description="Runs Great Expectations staging contracts before production promotion.",
-                inputs=tuple(table.urn for table in staging_tables),
-                outputs=(dataset_urn("s3", "s3://recsys-lake/monitoring/great_expectations/staging_validation.json"),),
-                tags=("DP2", "DataContract", "ValidationPassed"),
-                custom_properties={"contract": "STAGING_TABLE_CONTRACTS"},
-            ),
-            Job(
-                id="dbt_transform_production",
-                name="dbt Transform Production",
-                description="Builds production fact and dimension models from validated staging inputs.",
-                inputs=tuple(table.urn for table in staging_tables),
-                outputs=tuple(table.urn for table in production),
-                tags=("DP2", "DataContract", "ValidationPassed"),
-                custom_properties={"contract": "dbt schema.yml tests"},
+                id="run_flink_stream_to_feature_stores",
+                name="Run Flink Stream To Feature Stores",
+                description="Consumes cdc.behavior_events and writes Iceberg offline feature tables plus Redis online keys.",
+                inputs=(behavior_topic,),
+                outputs=tuple(table.urn for table in stream_tables),
+                tags=("DP2", "DataContract", "NativePipeline"),
+                custom_properties={"engine": "PyFlink DataStream plus Iceberg Table API"},
             ),
         ),
     )
 
 
 def dp3() -> DataProduct:
-    production_inputs = tuple(
-        dataset_urn("postgres", f"warehouse_postgres.recsys_warehouse.production.{name}")
-        for name in ("fact_behavior_events", "fact_impressions", "fact_orders", "dim_products_scd")
+    batch_lakehouse = tuple(
+        Dataset(
+            urn=dataset_urn("s3", f"s3://recsys-lakehouse/warehouse/lakehouse/{name}"),
+            name=f"iceberg.recsys.lakehouse.{name}",
+            description="Historical generator batch table ingested into the Iceberg data lakehouse.",
+            tags=("DP3", "DataContract", "NativePipeline"),
+            custom_properties={"contract": "Iceberg lakehouse raw generator table"},
+        )
+        for name in ("users", "products", "behavior_events", "impressions", "orders")
     )
     offline = tuple(
         Dataset(
-            urn=dataset_urn("s3", f"s3://recsys-feature-store/offline/{name}"),
-            name=f"feast_offline.{name}",
-            description="DP3 Feast offline feature parquet generated from warehouse production models.",
-            tags=("DP3", "DataContract", "ValidationPassed"),
-            custom_properties={
-                "contract": "Feast FileSource plus FeatureView schema",
-                "validation": "validate_feature_store.py verifies offline feature columns before materialization",
-            },
-            upstreams=production_inputs,
+            urn=dataset_urn("s3", f"s3://recsys-offline-feature-store/warehouse/feature_store/{name}"),
+            name=f"iceberg.recsys_features.feature_store.{name}",
+            description="DP3 Iceberg offline feature table generated by native PySpark batch.",
+            tags=("DP3", "DataContract", "NativePipeline"),
+            custom_properties={"contract": "Iceberg offline feature table"},
+            upstreams=tuple(table.urn for table in batch_lakehouse),
         )
         for name in ("user_sequence_features", "user_aggregate_features", "item_features")
     )
     online = tuple(
         Dataset(
-            urn=dataset_urn("redis", f"redis://redis.recsys-dataflow.svc.cluster.local:6379/feast/{name}"),
-            name=f"feast_online.{name}",
-            description="DP3 Feast online feature view materialized incrementally into Redis serving keys.",
-            tags=("DP3", "DataContract", "ValidationPassed"),
-            custom_properties={
-                "contract": "Feast FeatureView online=True schema",
-                "validation": "materialize-incremental run plus registry backup checkpoint",
-            },
-            upstreams=(dataset_urn("s3", f"s3://recsys-feature-store/offline/{name}"),),
+            urn=dataset_urn("redis", f"redis://redis.recsys-dataflow.svc.cluster.local:6379/{name}"),
+            name=f"redis_online.{name}",
+            description="DP3 Redis online feature keys written directly by native PyFlink.",
+            tags=("DP3", "DataContract", "NativePipeline"),
+            custom_properties={"contract": "feature_store.online_writer.RedisOnlineWriter"},
+            upstreams=(dataset_urn("kafka", "recsys-dataflow.cdc.behavior_events"),),
         )
         for name in ("user_sequence_features", "user_aggregate_features", "item_features")
     )
     return DataProduct(
         id="DP3",
-        flow_id="DP3_Feature_Store_Materialization",
-        flow_name="DP3 Feature Store Materialization",
-        description="Production warehouse to Feast offline store to Redis online feature store sync.",
-        tags=("DP3", "DataContract", "ValidationPassed"),
-        datasets=offline + online,
+        flow_id="DP3_Native_Feature_Stores",
+        flow_name="DP3 Native Feature Stores",
+        description="Generator batch ingestion writes Iceberg lakehouse raw tables; PySpark batch writes Iceberg offline feature store; PyFlink stream writes Redis online feature store.",
+        tags=("DP3", "DataContract", "NativePipeline"),
+        datasets=batch_lakehouse + offline + online,
         jobs=(
             Job(
-                id="write_offline_feature_store",
-                name="Write Offline Feature Store",
-                description="Exports Feast offline feature parquet from dbt production warehouse tables.",
-                inputs=production_inputs,
-                outputs=tuple(item.urn for item in offline),
-                tags=("DP3", "DataContract", "ValidationPassed"),
-                custom_properties={"contract": "feature_repo/data_sources.py and feature_views.py"},
+                id="ingest_historical_batch_to_lakehouse",
+                name="Ingest Historical Batch To Lakehouse",
+                description="Loads generated historical parquet into Iceberg raw lakehouse tables.",
+                inputs=(),
+                outputs=tuple(item.urn for item in batch_lakehouse),
+                tags=("DP3", "DataContract", "NativePipeline"),
+                custom_properties={"engine": "PySpark plus Iceberg Spark writer"},
             ),
             Job(
-                id="validate_offline_feature_store",
-                name="Validate Offline Feature Store",
-                description="Checks Feast offline datasets satisfy expected feature columns.",
-                inputs=tuple(item.urn for item in offline),
+                id="run_spark_batch_to_offline_store",
+                name="Run Spark Batch To Offline Store",
+                description="Reads Iceberg lakehouse tables, builds batch feature views with PySpark, and writes Iceberg offline feature tables.",
+                inputs=tuple(item.urn for item in batch_lakehouse),
                 outputs=tuple(item.urn for item in offline),
-                tags=("DP3", "DataContract", "ValidationPassed"),
-                custom_properties={"validation": "apps/data-platform/feature-store/src/validate_feature_store.py"},
+                tags=("DP3", "DataContract", "NativePipeline"),
+                custom_properties={"engine": "PySpark plus Iceberg Spark writer"},
             ),
             Job(
-                id="sync_offline_to_online_store",
-                name="Sync Offline To Online Store",
-                description="Runs Feast apply and materialize-incremental to sync offline features into Redis.",
-                inputs=tuple(item.urn for item in offline),
+                id="run_flink_stream_to_online_store",
+                name="Run Flink Stream To Online Store",
+                description="Updates Redis online feature keys directly from the native PyFlink stream.",
+                inputs=(dataset_urn("kafka", "recsys-dataflow.cdc.behavior_events"),),
                 outputs=tuple(item.urn for item in online),
-                tags=("DP3", "DataContract", "ValidationPassed"),
-                custom_properties={"materialization": "feast materialize-incremental"},
+                tags=("DP3", "DataContract", "NativePipeline"),
+                custom_properties={"engine": "PyFlink DataStream plus Redis sink"},
             ),
         ),
     )
@@ -608,11 +538,11 @@ def dp3() -> DataProduct:
 
 def emit_products(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) -> dict[str, str]:
     for tag, description, color in (
-        ("DP1", "Data product DP1: CDC ingestion from source Postgres to Kafka and bronze lake.", "#2E7D32"),
-        ("DP2", "Data product DP2: staging validation and production warehouse transform.", "#1565C0"),
-        ("DP3", "Data product DP3: Feast offline to Redis online feature materialization.", "#6A1B9A"),
+        ("DP1", "Data product DP1: CDC ingestion from source Postgres to Kafka.", "#2E7D32"),
+        ("DP2", "Data product DP2: native Flink stream to Iceberg lakehouse.", "#1565C0"),
+        ("DP3", "Data product DP3: Iceberg offline and Redis online feature stores.", "#6A1B9A"),
         ("DataContract", "Entity has an explicit schema or pipeline contract in the RecSys data platform repo.", "#455A64"),
-        ("ValidationPassed", "Entity is protected by validation gates such as CDC smoke checks, Great Expectations, dbt tests, or Feast checks.", "#00897B"),
+        ("NativePipeline", "Entity is produced by Spark, Flink, Debezium, Iceberg, or Redis native runtime.", "#00897B"),
     ):
         emit_tag(emitter, tag, description, color)
 
