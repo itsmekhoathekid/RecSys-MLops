@@ -468,10 +468,10 @@ def dp3() -> DataProduct:
     batch_lakehouse = tuple(
         Dataset(
             urn=dataset_urn("s3", f"s3://recsys-lakehouse/warehouse/lakehouse/{name}"),
-            name=f"iceberg.recsys.lakehouse.{name}",
-            description="Historical generator batch table ingested into the Iceberg data lakehouse.",
+            name=f"parquet.recsys_lakehouse.lakehouse.{name}",
+            description="Historical generator batch table ingested into the Parquet data lakehouse.",
             tags=("DP3", "DataContract", "NativePipeline"),
-            custom_properties={"contract": "Iceberg lakehouse raw generator table"},
+            custom_properties={"contract": "Parquet lakehouse raw generator table"},
         )
         for name in ("users", "products", "behavior_events", "impressions", "orders")
     )
@@ -501,23 +501,23 @@ def dp3() -> DataProduct:
         id="DP3",
         flow_id="DP3_Native_Feature_Stores",
         flow_name="DP3 Native Feature Stores",
-        description="Generator batch ingestion writes Iceberg lakehouse raw tables; PySpark batch writes Iceberg offline feature store; PyFlink stream writes Redis online feature store.",
+        description="Python batch ingestion writes Parquet lakehouse raw tables; PySpark batch writes Iceberg offline feature store; PyFlink stream writes Redis online feature store.",
         tags=("DP3", "DataContract", "NativePipeline"),
         datasets=batch_lakehouse + offline + online,
         jobs=(
             Job(
                 id="ingest_historical_batch_to_lakehouse",
                 name="Ingest Historical Batch To Lakehouse",
-                description="Loads generated historical parquet into Iceberg raw lakehouse tables.",
+                description="Loads generated historical parquet into Parquet raw lakehouse tables.",
                 inputs=(),
                 outputs=tuple(item.urn for item in batch_lakehouse),
                 tags=("DP3", "DataContract", "NativePipeline"),
-                custom_properties={"engine": "PySpark plus Iceberg Spark writer"},
+                custom_properties={"engine": "Python pyarrow parquet writer"},
             ),
             Job(
                 id="run_spark_batch_to_offline_store",
                 name="Run Spark Batch To Offline Store",
-                description="Reads Iceberg lakehouse tables, builds batch feature views with PySpark, and writes Iceberg offline feature tables.",
+                description="Reads Parquet lakehouse tables, builds batch feature views with PySpark, and writes Iceberg offline feature tables.",
                 inputs=tuple(item.urn for item in batch_lakehouse),
                 outputs=tuple(item.urn for item in offline),
                 tags=("DP3", "DataContract", "NativePipeline"),

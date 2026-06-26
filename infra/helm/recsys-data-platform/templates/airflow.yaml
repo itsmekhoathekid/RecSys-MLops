@@ -5,6 +5,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: airflow-webserver
@@ -22,8 +24,7 @@ spec:
           command: ["bash", "-lc"]
           args:
             - >-
-              airflow db migrate &&
-              (airflow users create --username admin --password admin --firstname RecSys --lastname Admin --role Admin --email admin@example.com || true) &&
+              airflow users create --username admin --password admin --firstname RecSys --lastname Admin --role Admin --email admin@example.com || true;
               airflow webserver
           env:
             - name: AIRFLOW_POSTGRES_USER
@@ -43,7 +44,13 @@ spec:
             - name: AIRFLOW__CORE__DAGS_FOLDER
               value: {{ .Values.airflow.dagsPath | quote }}
             - name: AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT
-              value: "120"
+              value: "900"
+            - name: AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT
+              value: "900"
+            - name: AIRFLOW__DAG_PROCESSOR__DAG_FILE_PROCESSOR_TIMEOUT
+              value: "900"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
@@ -76,7 +83,7 @@ spec:
           command: ["bash", "-lc"]
           args:
             - >-
-              airflow db migrate &&
+              timeout 120 airflow db check-migrations --migration-wait-timeout 120 || true;
               airflow scheduler
           env:
             - name: AIRFLOW_POSTGRES_USER
@@ -96,7 +103,13 @@ spec:
             - name: AIRFLOW__CORE__DAGS_FOLDER
               value: {{ .Values.airflow.dagsPath | quote }}
             - name: AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT
-              value: "120"
+              value: "900"
+            - name: AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT
+              value: "900"
+            - name: AIRFLOW__DAG_PROCESSOR__DAG_FILE_PROCESSOR_TIMEOUT
+              value: "900"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

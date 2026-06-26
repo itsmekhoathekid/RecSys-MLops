@@ -21,7 +21,7 @@ def connect_url() -> str:
 
 
 def debezium_config() -> dict[str, Any]:
-    return {
+    config = {
         "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
         "database.hostname": os.getenv("POSTGRES_HOST", "source-postgres"),
         "database.port": os.getenv("POSTGRES_PORT", "5432"),
@@ -30,9 +30,9 @@ def debezium_config() -> dict[str, Any]:
         "database.dbname": os.getenv("POSTGRES_DB", "recsys"),
         "topic.prefix": "cdc",
         "plugin.name": "pgoutput",
-        "slot.name": "recsys_slot",
+        "slot.name": os.getenv("DEBEZIUM_SLOT_NAME", "recsys_slot"),
         "publication.autocreate.mode": "filtered",
-        "table.include.list": TABLE_INCLUDE_LIST,
+        "table.include.list": os.getenv("DEBEZIUM_TABLE_INCLUDE_LIST", TABLE_INCLUDE_LIST),
         "tombstones.on.delete": "false",
         "include.schema.changes": "false",
         "transforms": "route",
@@ -40,6 +40,10 @@ def debezium_config() -> dict[str, Any]:
         "transforms.route.regex": r"cdc\.public\.([^.]+)",
         "transforms.route.replacement": r"cdc.$1",
     }
+    snapshot_mode = os.getenv("DEBEZIUM_SNAPSHOT_MODE")
+    if snapshot_mode:
+        config["snapshot.mode"] = snapshot_mode
+    return config
 
 
 CONNECTORS = {

@@ -107,6 +107,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ .Values.kafkaConnect.name }}
@@ -217,6 +219,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: flink-jobmanager
@@ -233,17 +237,10 @@ spec:
           command: ["bash", "-lc"]
           args:
             - |
-              if [ ! -x /opt/flink/opt/python/pyflink/bin/pyflink-udf-runner.sh ]; then
-                python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python
-                chmod +x /opt/flink/opt/python/pyflink/bin/*.sh
-              fi
-              if [ ! -d /opt/flink/opt/python/py4j ]; then
-                python3 -m zipfile -e /opt/flink/opt/python/py4j-0.10.9.7-src.zip /opt/flink/opt/python
-              fi
               /docker-entrypoint.sh jobmanager
           env:
             - name: FLINK_PROPERTIES
-              value: "jobmanager.rpc.address: flink-jobmanager\nblob.server.port: 6124"
+              value: "jobmanager.rpc.address: flink-jobmanager\njobmanager.rpc.port: 6123\nblob.server.port: 6124\nquery.server.port: 6125\npekko.remote.startup-timeout: 60 s"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
@@ -261,6 +258,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: flink-taskmanager
@@ -277,19 +276,16 @@ spec:
           command: ["bash", "-lc"]
           args:
             - |
-              if [ ! -x /opt/flink/opt/python/pyflink/bin/pyflink-udf-runner.sh ]; then
-                python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python
-                chmod +x /opt/flink/opt/python/pyflink/bin/*.sh
-              fi
-              if [ ! -d /opt/flink/opt/python/py4j ]; then
-                python3 -m zipfile -e /opt/flink/opt/python/py4j-0.10.9.7-src.zip /opt/flink/opt/python
-              fi
               /docker-entrypoint.sh taskmanager
           env:
             - name: FLINK_PROPERTIES
-              value: "jobmanager.rpc.address: flink-jobmanager"
+              value: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.data.port: 6121\ntaskmanager.rpc.port: 6122\nquery.server.port: 6125\npekko.remote.startup-timeout: 60 s"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
             - secretRef:
                 name: recsys-data-platform-secret
+          ports:
+            - containerPort: 6121
+            - containerPort: 6122
+            - containerPort: 6125

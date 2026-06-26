@@ -4,4 +4,3 @@ kind: Namespace
 metadata:
   name: {{ .Values.namespace.name }}
 {{- end }}
-

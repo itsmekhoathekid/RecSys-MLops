@@ -19,8 +19,7 @@ if DAG is not None:
         ingest_batch_to_lakehouse = BashOperator(
             task_id="ingest_batch_to_lakehouse",
             bash_command=(
-                "PYTHONPATH=apps/data-platform/src spark-submit "
-                "apps/data-platform/src/ingest/batch_lakehouse_ingestion.py "
+                "PYTHONPATH=apps/data-platform/src python -m ingest.batch_lakehouse_ingestion "
                 "--run-path apps/data-platform/data-generator/src/output/test_10k_seed42 "
                 "--mode overwrite"
             ),

@@ -4,11 +4,14 @@
 # Inputs:
 #    bst_config_path: str [Default: 'configs/local/bst.yaml']
 #    config_path: str [Default: 'configs/local/spark_batch.yaml']
+#    cpus_per_trial: float [Default: 1.0]
 #    dataset_metadata_path: str [Default: '/workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json']
 #    eval_metrics_path: str [Default: '/workspace/recsys/data_platform/output/ml/eval_metrics.json']
 #    feature_service_name: str [Default: 'bst_ranking_v1']
 #    feature_summary_path: str [Default: '/workspace/recsys/data_platform/output/feature_summary.json']
 #    gpu_limit: int [Default: 1.0]
+#    gpus_per_trial: float [Default: 0.0]
+#    head_ray_num_cpus: str [Default: '0']
 #    hudi_catalog_name: str [Default: 'recsys_features']
 #    hudi_warehouse: str [Default: 's3a://recsys-offline-feature-store/warehouse']
 #    iceberg_catalog_name: str [Default: 'recsys_features']
@@ -36,6 +39,7 @@
 #    split_output_dir: str [Default: '/workspace/recsys/data_platform/output/ml/bst_split']
 #    training_percent: float [Default: 0.01]
 #    use_gpu: bool [Default: False]
+#    worker_replicas: int [Default: 1.0]
 #    workspace_root: str [Default: '/workspace/recsys']
 components:
   comp-evaluate-bst:
@@ -92,10 +96,16 @@ components:
       parameters:
         best_result_path:
           parameterType: STRING
+        cpus_per_trial:
+          parameterType: NUMBER_DOUBLE
         dataset_metadata_path:
           parameterType: STRING
         gpu_limit:
           parameterType: NUMBER_INTEGER
+        gpus_per_trial:
+          parameterType: NUMBER_DOUBLE
+        head_ray_num_cpus:
+          parameterType: STRING
         image:
           parameterType: STRING
         job_name:
@@ -124,6 +134,8 @@ components:
           parameterType: NUMBER_DOUBLE
         use_gpu:
           parameterType: BOOLEAN
+        worker_replicas:
+          parameterType: NUMBER_INTEGER
 deploymentSpec:
   executors:
     exec-evaluate-bst:
@@ -222,6 +234,14 @@ deploymentSpec:
         - '{{$.inputs.parameters[''max_trials'']}}'
         - --parallel-trials
         - '{{$.inputs.parameters[''parallel_trials'']}}'
+        - --cpus-per-trial
+        - '{{$.inputs.parameters[''cpus_per_trial'']}}'
+        - --gpus-per-trial
+        - '{{$.inputs.parameters[''gpus_per_trial'']}}'
+        - --worker-replicas
+        - '{{$.inputs.parameters[''worker_replicas'']}}'
+        - --head-ray-num-cpus
+        - '{{$.inputs.parameters[''head_ray_num_cpus'']}}'
         - --use-gpu-value
         - '{{$.inputs.parameters[''use_gpu'']}}'
         - --gpu-limit
@@ -315,10 +335,16 @@ root:
           parameters:
             best_result_path:
               componentInputParameter: ray_best_result_path
+            cpus_per_trial:
+              componentInputParameter: cpus_per_trial
             dataset_metadata_path:
               componentInputParameter: dataset_metadata_path
             gpu_limit:
               componentInputParameter: gpu_limit
+            gpus_per_trial:
+              componentInputParameter: gpus_per_trial
+            head_ray_num_cpus:
+              componentInputParameter: head_ray_num_cpus
             image:
               componentInputParameter: ray_image
             job_name:
@@ -347,6 +373,8 @@ root:
               componentInputParameter: training_percent
             use_gpu:
               componentInputParameter: use_gpu
+            worker_replicas:
+              componentInputParameter: worker_replicas
         taskInfo:
           name: submit-rayjob
   inputDefinitions:
@@ -359,6 +387,10 @@ root:
         defaultValue: configs/local/spark_batch.yaml
         isOptional: true
         parameterType: STRING
+      cpus_per_trial:
+        defaultValue: 1.0
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
       dataset_metadata_path:
         defaultValue: /workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json
         isOptional: true
@@ -379,6 +411,14 @@ root:
         defaultValue: 1.0
         isOptional: true
         parameterType: NUMBER_INTEGER
+      gpus_per_trial:
+        defaultValue: 0.0
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      head_ray_num_cpus:
+        defaultValue: '0'
+        isOptional: true
+        parameterType: STRING
       hudi_catalog_name:
         defaultValue: recsys_features
         isOptional: true
@@ -487,6 +527,10 @@ root:
         defaultValue: false
         isOptional: true
         parameterType: BOOLEAN
+      worker_replicas:
+        defaultValue: 1.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
       workspace_root:
         defaultValue: /workspace/recsys
         isOptional: true

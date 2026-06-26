@@ -10,6 +10,7 @@ RUN uv pip install --no-cache \
     pyyaml \
     pydantic \
     numpy \
+    evidently \
     boto3 \
     s3fs \
     psycopg[binary] \

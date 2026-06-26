@@ -6,10 +6,14 @@ DATAFLOW_SMOKE_PHASE ?= all
 DATAFLOW_LOG_SERVICE ?=
 DATAFLOW_INGEST_BUCKET ?= recsys-lakehouse
 DATAFLOW_INGEST_PREFIX ?= raw
+RETRAIN_SMOKE_WORKDIR ?= /tmp/recsys-retrain-smoke
+RETRAIN_SMOKE_KFP_ENDPOINT ?= http://127.0.0.1:8888
+RETRAIN_SMOKE_EXPERIMENT ?= recsys-observability-retrain
+RETRAIN_SMOKE_PIPELINE_PACKAGE ?= infra/kubeflow/compiled/bst_training_pipeline.yaml
 RECSYS_PIPELINE_IMAGE ?= recsys-mlops-training:local
 MINIKUBE_PROFILE ?= recsys-mlops
 MINIKUBE_CPUS ?= 8
-MINIKUBE_MEMORY_MB ?= 16384
+MINIKUBE_MEMORY_MB ?= 17920
 MINIKUBE_DISK_SIZE ?= 40g
 DATA_PLATFORM_NAMESPACE ?= recsys-dataflow
 DATA_PLATFORM_REALTIME_PRODUCER ?= realtime-event-producer
@@ -65,6 +69,7 @@ help:
 	@echo "  make data-platform-install         Install recsys-data-platform Helm chart"
 	@echo "  make data-platform-trigger         Trigger k8s_data_platform_dag"
 	@echo "  make data-platform-e2e             Install, wait, trigger, and print run status"
+	@echo "  make data-platform-retrain-smoke   Generate smoke feature data, run drift, and trigger KFP retrain"
 	@echo "  make data-platform-run-status      Print Airflow DAG run status"
 	@echo "  make data-platform-verify-e2e      Verify Debezium, Flink, Redis, and Iceberg lakehouse runtime"
 	@echo "  make data-platform-stream-generator-start  Start realtime data generator"
@@ -257,6 +262,14 @@ data-platform-run-status:
 .PHONY: data-platform-verify-e2e
 data-platform-verify-e2e:
 	@DATA_PLATFORM_NAMESPACE=$(DATA_PLATFORM_NAMESPACE) infra/k8s/scripts/data_platform_verify_feature_stores.sh
+
+.PHONY: data-platform-retrain-smoke
+data-platform-retrain-smoke:
+	@PYTHONPATH=apps/data-platform/src uv run python -m mlops.retrain_smoke \
+		--workdir "$(RETRAIN_SMOKE_WORKDIR)" \
+		--kfp-endpoint "$(RETRAIN_SMOKE_KFP_ENDPOINT)" \
+		--experiment-name "$(RETRAIN_SMOKE_EXPERIMENT)" \
+		--pipeline-package-path "$(RETRAIN_SMOKE_PIPELINE_PACKAGE)"
 
 .PHONY: data-platform-stream-generator-start
 data-platform-stream-generator-start:

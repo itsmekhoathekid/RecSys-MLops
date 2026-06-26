@@ -34,3 +34,5 @@ graphify-out/
 .model-cd/
 .gateway-auth/
 AGENTS.md
+.uv-cache/
+

@@ -97,11 +97,11 @@ if DAG is not None:
                 "python apps/data-platform/data-generator/src/scripts/generate_historical_to_minio.py "
                 "--target s3 --bucket recsys-lakehouse --prefix raw",
             )
-            ingest_historical_batch_to_lakehouse = spark_task(
+            ingest_historical_batch_to_lakehouse = cli_task(
                 "ingest_historical_batch_to_lakehouse",
-                "/opt/spark/bin/spark-submit "
-                "apps/data-platform/src/ingest/batch_lakehouse_ingestion.py "
+                "python -m ingest.batch_lakehouse_ingestion "
                 "--run-path s3a://recsys-lakehouse/raw/test_10k_seed42 "
+                "--lakehouse-warehouse $LAKEHOUSE_WAREHOUSE "
                 "--mode overwrite",
             )
             run_historical_spark_batch = spark_task(

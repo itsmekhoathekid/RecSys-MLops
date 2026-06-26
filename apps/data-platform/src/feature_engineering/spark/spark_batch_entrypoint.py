@@ -4,13 +4,16 @@ import argparse
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from feature_engineering.spark.build_bst_training_table import build_bst_training_table
 from feature_engineering.spark.build_item_features import build_item_features
 from feature_engineering.spark.build_ranking_labels import build_ranking_labels
-from feature_engineering.spark.build_silver_tables import build_silver_tables
+from feature_engineering.spark.build_silver_tables import (
+    build_silver_tables,
+)
 from feature_engineering.spark.build_user_aggregate_features import build_user_aggregate_features
 from feature_engineering.spark.build_user_sequence_features import build_user_sequence_features
 from feature_engineering.spark.session import row_count, spark_session, write_iceberg_table
@@ -20,6 +23,56 @@ from lakehouse.iceberg import IcebergCatalogConfig, create_spark_namespace
 def load_config(config_path: str | Path) -> dict:
     with Path(config_path).open("r", encoding="utf-8") as file:
         return yaml.safe_load(file)
+
+
+def _batch_source_path(input_config: dict, output: dict) -> tuple[str, str]:
+    source = input_config.get("source", os.getenv("SPARK_BATCH_SOURCE", "lakehouse"))
+    configured_run_path = str(input_config.get("run_path", "apps/data-platform/data-generator/src/output/test_10k_seed42"))
+    if os.getenv("DATAFLOW_OUTPUT_MODE") == "s3" and not configured_run_path.startswith(("s3://", "s3a://")):
+        return source, f"s3a://{output['lakehouse_bucket']}/raw/{Path(configured_run_path).name}"
+    return source, configured_run_path
+
+
+def _build_feature_outputs(
+    silver: dict[str, Any],
+    *,
+    catalog: IcebergCatalogConfig,
+    features: dict,
+) -> dict[str, Any]:
+    user_sequence = build_user_sequence_features(
+        silver["clean_behavior_events"],
+        max_history_length=features["max_history_length"],
+    )
+    user_aggregate = build_user_aggregate_features(silver["clean_behavior_events"])
+    item_features = build_item_features(
+        silver["clean_behavior_events"],
+        silver["product_scd"],
+        alpha=features["conversion_smoothing_alpha"],
+        beta=features["conversion_smoothing_beta"],
+    )
+    labels = build_ranking_labels(
+        silver["clean_impressions"],
+        silver["clean_behavior_events"],
+        label_window_hours=features["label_window_hours"],
+    )
+    training = build_bst_training_table(
+        labels,
+        user_sequence,
+        user_aggregate,
+        item_features,
+        max_history_length=features["max_history_length"],
+    )
+    return {
+        catalog.feature_table("user_sequence_features"): user_sequence,
+        catalog.feature_table("user_aggregate_features"): user_aggregate,
+        catalog.feature_table("item_features"): item_features,
+        catalog.feature_table("ml_ranking_labels"): labels,
+        catalog.feature_table("ml_bst_training"): training,
+    }
+
+
+def _output_summary(outputs: dict[str, Any]) -> dict[str, int]:
+    return {table_name.rsplit(".", 1)[-1]: row_count(frame) for table_name, frame in outputs.items()}
 
 
 def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml") -> dict[str, int]:
@@ -46,58 +99,18 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
         ),
     )
     create_spark_namespace(spark, catalog)
-    source = input_config.get("source", os.getenv("SPARK_BATCH_SOURCE", "lakehouse"))
-    configured_run_path = Path(input_config.get("run_path", "apps/data-platform/data-generator/src/output/test_10k_seed42"))
-    if os.getenv("DATAFLOW_OUTPUT_MODE") == "s3":
-        run_path = f"s3a://{output['lakehouse_bucket']}/raw/{configured_run_path.name}"
-    else:
-        run_path = str(configured_run_path)
+    source, run_path = _batch_source_path(input_config, output)
 
-    silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source)
-    user_sequence = build_user_sequence_features(
-        silver["clean_behavior_events"],
-        max_history_length=features["max_history_length"],
-    )
-    user_aggregate = build_user_aggregate_features(silver["clean_behavior_events"])
-    item_features = build_item_features(
-        silver["clean_behavior_events"],
-        silver["product_scd"],
-        alpha=features["conversion_smoothing_alpha"],
-        beta=features["conversion_smoothing_beta"],
-    )
-    labels = build_ranking_labels(
-        silver["clean_impressions"],
-        silver["clean_behavior_events"],
-        label_window_hours=features["label_window_hours"],
-    )
-    training = build_bst_training_table(
-        labels,
-        user_sequence,
-        user_aggregate,
-        item_features,
-        max_history_length=features["max_history_length"],
-    )
-
-    outputs = {
-        catalog.feature_table("user_sequence_features"): user_sequence,
-        catalog.feature_table("user_aggregate_features"): user_aggregate,
-        catalog.feature_table("item_features"): item_features,
-        catalog.feature_table("ml_ranking_labels"): labels,
-        catalog.feature_table("ml_bst_training"): training,
-    }
-    for table_name, frame in outputs.items():
-        write_iceberg_table(frame, table_name, mode="overwrite")
-
-    summary = {
-        "clean_behavior_events": row_count(silver["clean_behavior_events"]),
-        "user_sequence_features": row_count(user_sequence),
-        "user_aggregate_features": row_count(user_aggregate),
-        "item_features": row_count(item_features),
-        "ml_ranking_labels": row_count(labels),
-        "ml_bst_training": row_count(training),
-    }
-    spark.stop()
-    return summary
+    try:
+        silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source)
+        outputs = _build_feature_outputs(silver, catalog=catalog, features=features)
+        for table_name, frame in outputs.items():
+            write_iceberg_table(frame, table_name, mode="overwrite")
+        summary = {"clean_behavior_events": row_count(silver["clean_behavior_events"])}
+        summary.update(_output_summary(outputs))
+        return summary
+    finally:
+        spark.stop()
 
 
 def main() -> int:

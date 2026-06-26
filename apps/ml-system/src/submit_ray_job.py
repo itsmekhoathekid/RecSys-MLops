@@ -80,7 +80,14 @@ def pod_template(
                 "effect": "NoSchedule",
             }
         ]
-    return {"spec": spec}
+    return {
+        "metadata": {
+            "annotations": {
+                "sidecar.istio.io/inject": "false",
+            }
+        },
+        "spec": spec,
+    }
 
 
 def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
@@ -134,13 +141,14 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
         use_gpu=args.use_gpu,
         gpu_limit=args.gpu_limit,
     )
-    return {
+    rayjob = {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "RayJob",
         "metadata": {
             "name": args.job_name,
             "namespace": args.namespace,
             "labels": {"app.kubernetes.io/name": "recsys-ray-tune"},
+            "annotations": {"sidecar.istio.io/inject": "false"},
         },
         "spec": {
             "entrypoint": " ".join(ray_args),
@@ -151,28 +159,31 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
                     "serviceType": "ClusterIP",
                     "rayStartParams": {
                         "dashboard-host": "0.0.0.0",
-                        "num-cpus": "0",
+                        "num-cpus": args.head_ray_num_cpus,
                         "memory": args.head_ray_memory_bytes,
                         "object-store-memory": args.head_object_store_memory_bytes,
                     },
                     "template": pod_template(head, args.pvc_name, use_gpu=False),
                 },
-                "workerGroupSpecs": [
-                    {
-                        "groupName": "cpu-or-gpu-workers",
-                        "replicas": args.worker_replicas,
-                        "minReplicas": args.worker_replicas,
-                        "maxReplicas": args.worker_replicas,
-                        "rayStartParams": {
-                            "memory": args.worker_ray_memory_bytes,
-                            "object-store-memory": args.worker_object_store_memory_bytes,
-                        },
-                        "template": pod_template(worker, args.pvc_name, use_gpu=args.use_gpu),
-                    }
-                ],
+                "workerGroupSpecs": [],
             },
         },
     }
+    if args.worker_replicas > 0:
+        rayjob["spec"]["rayClusterSpec"]["workerGroupSpecs"].append(
+            {
+                "groupName": "cpu-or-gpu-workers",
+                "replicas": args.worker_replicas,
+                "minReplicas": args.worker_replicas,
+                "maxReplicas": args.worker_replicas,
+                "rayStartParams": {
+                    "memory": args.worker_ray_memory_bytes,
+                    "object-store-memory": args.worker_object_store_memory_bytes,
+                },
+                "template": pod_template(worker, args.pvc_name, use_gpu=args.use_gpu),
+            }
+        )
+    return rayjob
 
 
 def delete_if_exists(api, namespace: str, name: str) -> None:
@@ -278,6 +289,7 @@ def main() -> int:
     parser.add_argument("--cpus-per-trial", type=float, default=1.0)
     parser.add_argument("--gpus-per-trial", type=float, default=0.0)
     parser.add_argument("--worker-replicas", type=int, default=1)
+    parser.add_argument("--head-ray-num-cpus", default="0")
     parser.add_argument("--head-cpu-request", default="500m")
     parser.add_argument("--head-cpu-limit", default="2")
     parser.add_argument("--head-memory-request", default="768Mi")

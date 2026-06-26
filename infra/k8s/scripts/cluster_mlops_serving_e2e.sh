@@ -68,7 +68,7 @@ start_port_forward() {
 read_promotion_manifest() {
   local pod_name="recsys-read-promotion-manifest-$(date -u +%s)"
   local overrides
-  overrides="$(printf '{"spec":{"securityContext":{"seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"workspace","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}],"containers":[{"name":"%s","image":"%s","imagePullPolicy":"IfNotPresent","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"workspace","mountPath":"/workspace"}]}]}}' "${pod_name}" "${PIPELINE_IMAGE}")"
+  overrides="$(printf '{"metadata":{"annotations":{"sidecar.istio.io/inject":"false"}},"spec":{"securityContext":{"seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"workspace","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}],"containers":[{"name":"%s","image":"%s","imagePullPolicy":"IfNotPresent","command":["sh","-lc","cat %s"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"workspace","mountPath":"/workspace"}]}]}}' "${pod_name}" "${PIPELINE_IMAGE}" "${PROMOTION_MANIFEST_PATH}")"
   kubectl run "${pod_name}" \
     -n kubeflow \
     --rm \
@@ -78,7 +78,6 @@ read_promotion_manifest() {
     --image="${PIPELINE_IMAGE}" \
     --image-pull-policy=IfNotPresent \
     --overrides="${overrides}" \
-    -- sh -lc "cat '${PROMOTION_MANIFEST_PATH}'" \
     | python3 -c 'import sys; text=sys.stdin.read(); start=text.find("{"); end=text.rfind("}"); print(text[start:end + 1] if start >= 0 and end >= start else text)'
 }
 
@@ -106,6 +105,7 @@ promote_and_deploy() {
   export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-${MINIO_ROOT_USER}}"
   export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-${MINIO_ROOT_PASSWORD}}"
   export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+  export RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-0}"
 
   if uv run python jenkins/scripts/model_cd.py \
     --stage promote \

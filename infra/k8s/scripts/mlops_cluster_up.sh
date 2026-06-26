@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 PROFILE="${MINIKUBE_PROFILE:-recsys-mlops}"
 CPUS="${MINIKUBE_CPUS:-8}"
-MEMORY_MB="${MINIKUBE_MEMORY_MB:-16384}"
+MEMORY_MB="${MINIKUBE_MEMORY_MB:-17920}"
 DISK_SIZE="${MINIKUBE_DISK_SIZE:-40g}"
 WAIT_TIMEOUT="${RECSYS_CLUSTER_WAIT_TIMEOUT:-600s}"
 KFP_VERSION="${KFP_VERSION:-2.16.1}"
@@ -266,8 +266,27 @@ wait_rollouts_in_namespace() {
   echo "--- ${namespace}: statefulsets"
   while IFS= read -r resource; do
     [[ -z "${resource}" ]] && continue
-    kubectl -n "${namespace}" rollout status "${resource}" --timeout="${WAIT_TIMEOUT}"
+    wait_statefulset_available "${namespace}" "${resource}"
   done < <(kubectl -n "${namespace}" get statefulset -o name)
+}
+
+wait_statefulset_available() {
+  local namespace="$1"
+  local resource="$2"
+  local strategy
+  strategy="$(kubectl -n "${namespace}" get "${resource}" -o jsonpath='{.spec.updateStrategy.type}')"
+  if [[ "${strategy}" == "RollingUpdate" ]]; then
+    kubectl -n "${namespace}" rollout status "${resource}" --timeout="${WAIT_TIMEOUT}"
+    return
+  fi
+
+  local replicas
+  replicas="$(kubectl -n "${namespace}" get "${resource}" -o jsonpath='{.spec.replicas}')"
+  replicas="${replicas:-1}"
+  echo "Waiting for ${namespace}/${resource} ready replicas (${strategy:-non-RollingUpdate})"
+  kubectl -n "${namespace}" wait "${resource}" \
+    --for=jsonpath='{.status.readyReplicas}'="${replicas}" \
+    --timeout="${WAIT_TIMEOUT}"
 }
 
 verify_required_deployment() {
@@ -278,7 +297,7 @@ verify_required_deployment() {
     return
   fi
   if kubectl get statefulset "${workload}" -n "${namespace}" >/dev/null 2>&1; then
-    kubectl rollout status "statefulset/${workload}" -n "${namespace}" --timeout="${WAIT_TIMEOUT}"
+    wait_statefulset_available "${namespace}" "statefulset/${workload}"
     return
   fi
   echo "Required workload ${namespace}/${workload} not found as Deployment or StatefulSet"
