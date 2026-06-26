@@ -63,6 +63,7 @@ spec:
                 name: recsys-data-platform-config
             - secretRef:
                 name: recsys-data-platform-secret
+{{- if .Values.realtimeCdcConnector.enabled }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -86,10 +87,13 @@ spec:
         - name: register-debezium
           image: {{ .Values.images.dataflowCli }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
-          command: ["python", "-m", "ingest.register_k8s_connectors"]
-          args: ["--connector", "debezium", "--wait-timeout-seconds", "300"]
+          command: ["bash", "-lc"]
+          args:
+            - |
+              python -m ingest.register_k8s_connectors --connector debezium --wait-timeout-seconds 900
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
             - secretRef:
                 name: recsys-data-platform-secret
+{{- end }}

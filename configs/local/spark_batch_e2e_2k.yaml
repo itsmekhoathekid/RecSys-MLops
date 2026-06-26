@@ -2,9 +2,6 @@ input:
   source: parquet
   run_path: s3a://recsys-lakehouse/warehouse/lakehouse
 
-processing:
-  mode: whole_run
-
 output:
   base_path: data_platform/output
   lakehouse_bucket: recsys-lakehouse

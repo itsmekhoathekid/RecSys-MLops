@@ -152,7 +152,7 @@ autoscaling:
 observability:
   enabled: true
   serviceMonitor:
-    enabled: false
+    enabled: true
     interval: 15s
 
 abTest:

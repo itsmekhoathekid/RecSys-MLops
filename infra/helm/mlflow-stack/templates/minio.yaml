@@ -10,6 +10,8 @@ spec:
       app: minio
   template:
     metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
       labels:
         app: minio
     spec:

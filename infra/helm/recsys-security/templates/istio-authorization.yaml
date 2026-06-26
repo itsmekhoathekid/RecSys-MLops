@@ -1,4 +1,5 @@
 {{- if .Values.istio.enabled }}
+{{- if has "recsys-dataflow" .Values.istio.namespaces }}
 ---
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
@@ -15,7 +16,7 @@ spec:
               - cluster.local/ns/observability/sa/recsys-prometheus
       to:
         - operation:
-            ports: ["5432", "6379", "8081", "8083", "8088", "9000", "9091"]
+            ports: ["2181", "5432", "6121", "6122", "6123", "6124", "6125", "6379", "8081", "8083", "8088", "9000", "9091", "29092"]
     - from:
         - source:
             principals:
@@ -23,6 +24,7 @@ spec:
       to:
         - operation:
             ports: ["6379"]
+{{- end }}
 ---
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
@@ -34,15 +36,60 @@ spec:
   rules:
     - from:
         - source:
+            namespaces:
+              - kubeflow
+        - source:
             principals:
               - cluster.local/ns/recsys-dataflow/sa/default
-              - cluster.local/ns/kubeflow/sa/pipeline-runner
-              - cluster.local/ns/kubeflow/sa/default
-              - cluster.local/ns/kubeflow/sa/default-editor
               - cluster.local/ns/observability/sa/recsys-prometheus
       to:
         - operation:
-            ports: ["80", "8888", "8265"]
+            ports: ["80", "3306", "6379", "8000", "8080", "8265", "8887", "8888", "9000", "10001", "10002"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-kubeflow-ml-pipeline-api-allow
+  namespace: kubeflow
+spec:
+  selector:
+    matchLabels:
+      app: ml-pipeline
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["8887", "8888"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-kubeflow-metadata-grpc-allow
+  namespace: kubeflow
+spec:
+  selector:
+    matchLabels:
+      component: metadata-grpc-server
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["8080"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-kubeflow-seaweedfs-allow
+  namespace: kubeflow
+spec:
+  selector:
+    matchLabels:
+      app: seaweedfs
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["9000"]
 ---
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy

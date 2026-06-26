@@ -50,6 +50,30 @@ lakehouse:
   offlineFeatureCatalog: recsys_features
   featureNamespace: feature_store
 
+dataSetup:
+  generatorConfig: configs/local/data_generator_e2e_1k.yaml
+  generatorRunId: test_1k_seed42
+  sparkBatchConfig: configs/local/spark_batch_e2e_1k.yaml
+  realtimeLimitPerTable: "200"
+
+e2e:
+  realtimeEnabled: "true"
+  datahubIngestEnabled: "false"
+
+spark:
+  k8sMaster: k8s://https://kubernetes.default.svc
+  serviceAccountName: default
+  driverMemory: 768m
+  driverMemoryOverhead: 128m
+  driverCores: "1"
+  executorInstances: "1"
+  executorMemory: 768m
+  executorMemoryOverhead: 128m
+  executorCores: "1"
+  sqlShufflePartitions: "4"
+  connectionTimeout: "60000"
+  requestTimeout: "180000"
+
 kafka:
   name: kafka
   bootstrapServers: kafka:29092
@@ -68,7 +92,7 @@ realtimeProducer:
   replicas: 1
   intervalSeconds: "2"
   eventsPerTick: "5"
-  maxEvents: "0"
+  maxEvents: "1000"
   nUsers: "20"
   nProducts: "50"
 
@@ -85,8 +109,23 @@ realtimeFlinkConsumer:
   progressLogEvents: "100"
   checkpointIntervalSeconds: "30"
 
+realtimeCdcConnector:
+  enabled: true
+  tableIncludeList: public.behavior_events
+  snapshotMode: never
+  slotName: recsys_slot_e2e
+
 airflow:
   dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
+  schedule: "@daily"
+
+drift:
+  currentRoot: "s3a://recsys-offline-feature-store/warehouse/feature_store"
+  baselinePath: "s3://recsys-offline-feature-store/monitoring/offline_feature_drift/reference_baseline"
+  currentDays: "7"
+  sampleRows: "1000"
+  featureTables: "user_aggregate_features,item_features,ml_bst_training"
+  bootstrapBaseline: "true"
 
 streaming:
   watermarkDelayMinutes: 60

@@ -17,4 +17,42 @@ metadata:
   namespace: {{ . }}
 spec: {}
 {{- end }}
+{{- if has "kubeflow" .Values.istio.namespaces }}
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-kubeflow-ml-pipeline-permissive
+  namespace: kubeflow
+spec:
+  selector:
+    matchLabels:
+      app: ml-pipeline
+  mtls:
+    mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-kubeflow-metadata-grpc-permissive
+  namespace: kubeflow
+spec:
+  selector:
+    matchLabels:
+      component: metadata-grpc-server
+  mtls:
+    mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-kubeflow-seaweedfs-permissive
+  namespace: kubeflow
+spec:
+  selector:
+    matchLabels:
+      app: seaweedfs
+  mtls:
+    mode: PERMISSIVE
+{{- end }}
 {{- end }}

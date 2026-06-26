@@ -192,8 +192,24 @@ def run(command: list[str]) -> None:
     subprocess.check_call(command)
 
 
+def crd_exists(name: str) -> bool:
+    return (
+        subprocess.run(
+            ["kubectl", "get", "crd", name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
 def deploy(values_path: Path, timeout: str) -> None:
     run(["helm", "lint", "infra/helm/recsys-serving", "-f", str(values_path)])
+    set_args = ["--set", "autoscaling.kserveResource.enabled=false"]
+    if not crd_exists("servicemonitors.monitoring.coreos.com"):
+        set_args.extend(["--set", "observability.serviceMonitor.enabled=false"])
+    atomic_enabled = os.getenv("RECSYS_MODEL_CD_ATOMIC", "1").lower() not in {"0", "false", "no"}
     base_command = [
         "helm",
         "upgrade",
@@ -203,13 +219,14 @@ def deploy(values_path: Path, timeout: str) -> None:
         "--namespace",
         "kserve-triton-inference",
         "--create-namespace",
-        "--atomic",
         "--timeout",
         timeout,
         "-f",
         str(values_path),
     ]
-    run(base_command + ["--set", "autoscaling.kserveResource.enabled=false"])
+    if atomic_enabled:
+        base_command.insert(8, "--atomic")
+    run(base_command + set_args)
     run(
         [
             "kubectl",
@@ -232,7 +249,7 @@ def deploy(values_path: Path, timeout: str) -> None:
             f"--timeout={timeout}",
         ]
     )
-    run(base_command)
+    run(base_command + set_args)
 
 
 def stage_manifests(args: argparse.Namespace) -> tuple[dict, dict | None]:

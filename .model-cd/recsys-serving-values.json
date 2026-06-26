@@ -2,13 +2,13 @@
   "abTest": {
     "candidateModelVersion": "",
     "candidateWeightPercent": 0,
-    "controlModelVersion": "run_trial_673d1_00000_0_hidden_dropout_prob=0.1000,learning_rate=0.0005,weight_decay=0.0000_2026-06-25_05-55-04",
+    "controlModelVersion": "run_trial_9b77f_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0005,weight_decay=0.0000_2026-06-26_13-33-26",
     "enabled": false,
-    "experimentId": "bst-1782368115"
+    "experimentId": "bst-1782482745"
   },
   "api": {
     "config": {
-      "modelVersion": "run_trial_673d1_00000_0_hidden_dropout_prob=0.1000,learning_rate=0.0005,weight_decay=0.0000_2026-06-25_05-55-04"
+      "modelVersion": "run_trial_9b77f_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0005,weight_decay=0.0000_2026-06-26_13-33-26"
     },
     "namespace": {
       "name": "api-serving"
@@ -17,7 +17,7 @@
   "kserve": {
     "inferenceService": {
       "name": "recsys-bst-triton",
-      "storageUri": "s3://recsys-model-store/triton/bst/run_trial_673d1_00000_0_hidden_dropout_prob=0.1000,learning_rate=0.0005,weight_decay=0.0000_2026-06-25_05-55-04"
+      "storageUri": "s3://recsys-model-store/triton/bst/run_trial_9b77f_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0005,weight_decay=0.0000_2026-06-26_13-33-26"
     },
     "namespace": {
       "name": "kserve-triton-inference"

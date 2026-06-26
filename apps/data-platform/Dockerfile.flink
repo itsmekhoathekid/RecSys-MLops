@@ -58,7 +58,10 @@ RUN curl -fsSL \
         -o /opt/flink/lib/commons-logging-1.2.jar \
     && curl -fsSL \
         https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
-        -o /opt/flink/lib/aws-java-sdk-bundle-1.12.262.jar
+        -o /opt/flink/lib/aws-java-sdk-bundle-1.12.262.jar \
+    && curl -fsSL \
+        https://repo1.maven.org/maven2/org/scala-lang/scala-library/2.12.18/scala-library-2.12.18.jar \
+        -o /opt/flink/lib/scala-library-2.12.18.jar
 
 RUN python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python \
     && chmod +x /opt/flink/opt/python/pyflink/bin/*.sh

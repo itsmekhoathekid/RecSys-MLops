@@ -17,9 +17,12 @@ from feature_engineering.flink.user_aggregate_job import UserAggregateState
 from feature_engineering.flink.user_sequence_job import UserSequenceState
 from feature_store.online_writer import dumps_feature_payload
 from ingest.debezium import extract_debezium_after
+from ingest.batch_lakehouse_ingestion import LakehouseParquetLayout, load_generator_run_to_lakehouse
 from lakehouse.iceberg import IcebergCatalogConfig, create_flink_catalog_sql, spark_iceberg_conf
+from lakehouse.iceberg import RAW_GENERATOR_TABLES
 from mlops.trigger_kubeflow_retrain import default_pipeline_arguments, failed_features, parse_pipeline_args, trigger_retrain
-from validate.offline_feature_drift import calculate_psi
+from monitoring.pushgateway import MetricSample, push_metrics
+from validate.offline_feature_drift import calculate_psi, run_offline_feature_drift
 
 
 def test_debezium_after_extraction_skips_deletes():
@@ -27,6 +30,25 @@ def test_debezium_after_extraction_skips_deletes():
     after = extract_debezium_after({"payload": {"op": "c", "after": {"event_id": "e2"}}})
     assert after == {"event_id": "e2"}
     assert parse_message(b'{"payload":{"op":"c","after":{"event_id":"e3"}}}') == {"event_id": "e3"}
+
+
+def test_python_batch_ingestion_writes_parquet_lakehouse_layout(tmp_path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    run_path = tmp_path / "raw" / "test_run"
+    for table_name in RAW_GENERATOR_TABLES:
+        table_path = run_path / table_name
+        table_path.mkdir(parents=True)
+        pq.write_table(pa.table({"id": [1], "value": [table_name]}), table_path / "part-00000.parquet")
+
+    layout = LakehouseParquetLayout(warehouse_uri=str(tmp_path / "warehouse"), namespace="lakehouse")
+    counts = load_generator_run_to_lakehouse(run_path, layout=layout, mode="overwrite")
+
+    assert counts == {table_name: 1 for table_name in RAW_GENERATOR_TABLES}
+    output = pq.read_table(tmp_path / "warehouse" / "lakehouse" / "behavior_events")
+    assert output.column("source_run_id").to_pylist() == ["test_run"]
+    assert "lakehouse_ingestion_ts" in output.column_names
 
 
 def test_realtime_stream_event_normalization_defaults_optional_dimensions():
@@ -138,6 +160,72 @@ def test_offline_feature_drift_calculates_psi_for_shifted_distribution():
     assert score > 0.15
 
 
+def test_offline_feature_drift_reads_sampled_parquet_baseline_without_spark(tmp_path):
+    import pandas as pd
+
+    baseline = tmp_path / "baseline" / "item_features"
+    current = tmp_path / "current" / "item_features"
+    baseline.mkdir(parents=True)
+    current.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "item_id": range(60),
+            "views_1h": [1 + index % 4 for index in range(60)],
+            "popularity_score": [0.1 + index * 0.001 for index in range(60)],
+        }
+    ).to_parquet(baseline / "part-00000.parquet", index=False)
+    pd.DataFrame(
+        {
+            "item_id": range(60),
+            "views_1h": [100 + index % 4 for index in range(60)],
+            "popularity_score": [0.9 + index * 0.001 for index in range(60)],
+        }
+    ).to_parquet(current / "part-00000.parquet", index=False)
+
+    report = run_offline_feature_drift(
+        "run-psi",
+        str(tmp_path / "report.json"),
+        feature_tables=["item_features"],
+        current_feature_root=str(tmp_path / "current"),
+        baseline_path=str(tmp_path / "baseline"),
+        threshold=0.15,
+        sample_rows=20,
+        pushgateway_url=None,
+        bootstrap_baseline=False,
+    )
+
+    failed = {f"{item['feature_table']}.{item['feature']}" for item in report["features"] if not item["passed"]}
+    assert report["passed"] is False
+    assert "item_features.views_1h" in failed
+    assert report["features"][0]["feature_view"] == "item_features"
+    assert "spark" not in report["drift_engine"].lower()
+
+
+def test_offline_feature_drift_bootstraps_missing_reference_baseline(tmp_path):
+    import pandas as pd
+
+    current = tmp_path / "current" / "item_features"
+    current.mkdir(parents=True)
+    pd.DataFrame({"item_id": [1, 2, 3], "views_1h": [1.0, 2.0, 3.0]}).to_parquet(
+        current / "part-00000.parquet",
+        index=False,
+    )
+
+    report = run_offline_feature_drift(
+        "run-bootstrap",
+        str(tmp_path / "report.json"),
+        feature_tables=["item_features"],
+        current_feature_root=str(tmp_path / "current"),
+        baseline_path=str(tmp_path / "baseline"),
+        pushgateway_url=None,
+        bootstrap_baseline=True,
+    )
+
+    assert report["passed"] is True
+    assert report["baseline_bootstrapped"] == ["item_features"]
+    assert (tmp_path / "baseline" / "item_features" / "part-run-bootstrap.parquet").exists()
+
+
 def test_pipeline_arg_parser_and_default_retrain_arguments():
     parsed = parse_pipeline_args(["source_run_path=s3a://lake/raw/run1", "training_percent=0.02"])
     defaults = default_pipeline_arguments("run-1")
@@ -233,3 +321,12 @@ def test_trigger_retrain_kfp_error_is_non_blocking(monkeypatch, tmp_path):
     assert result.triggered is False
     assert result.reason == "feature_drift"
     assert result.error == "kfp unavailable"
+
+
+def test_pushgateway_connection_reset_is_non_blocking(monkeypatch):
+    def fail_urlopen(*args, **kwargs):
+        raise ConnectionResetError("reset")
+
+    monkeypatch.setattr("urllib.request.urlopen", fail_urlopen)
+
+    assert push_metrics([MetricSample("recsys_test_metric", 1.0)], "recsys_test", gateway_url="http://pushgateway") is False

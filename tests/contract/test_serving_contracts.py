@@ -377,6 +377,7 @@ def test_model_cd_deploy_uses_atomic_helm_upgrade(monkeypatch, tmp_path):
         commands.append(command)
 
     monkeypatch.setattr(model_cd, "run", fake_run)
+    monkeypatch.setattr(model_cd, "crd_exists", lambda _: True)
     values_path = tmp_path / "values.json"
     values_path.write_text("{}", encoding="utf-8")
 
@@ -386,3 +387,22 @@ def test_model_cd_deploy_uses_atomic_helm_upgrade(monkeypatch, tmp_path):
     assert helm_upgrade[:4] == ["helm", "upgrade", "--install", "recsys-serving"]
     assert "--atomic" in helm_upgrade
     assert helm_upgrade[helm_upgrade.index("--timeout") + 1] == "90s"
+
+
+def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_path):
+    commands = []
+
+    def fake_run(command: list[str]) -> None:
+        commands.append(command)
+
+    monkeypatch.setenv("RECSYS_MODEL_CD_ATOMIC", "0")
+    monkeypatch.setattr(model_cd, "run", fake_run)
+    monkeypatch.setattr(model_cd, "crd_exists", lambda _: False)
+    values_path = tmp_path / "values.json"
+    values_path.write_text("{}", encoding="utf-8")
+
+    model_cd.deploy(values_path, timeout="90s")
+
+    helm_upgrade = commands[1]
+    assert "--atomic" not in helm_upgrade
+    assert "observability.serviceMonitor.enabled=false" in helm_upgrade

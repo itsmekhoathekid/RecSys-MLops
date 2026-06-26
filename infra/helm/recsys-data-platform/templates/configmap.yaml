@@ -17,6 +17,28 @@ data:
   OFFLINE_FEATURE_STORE_WAREHOUSE: "s3a://{{ .Values.minio.offlineFeatureBucket }}/warehouse"
   ICEBERG_FEATURE_NAMESPACE: {{ .Values.lakehouse.featureNamespace | quote }}
   OFFLINE_FEATURE_STORE_URI: "s3a://{{ .Values.minio.offlineFeatureBucket }}/warehouse/{{ .Values.lakehouse.featureNamespace }}"
+  DATA_GENERATOR_CONFIG: {{ .Values.dataSetup.generatorConfig | quote }}
+  DATA_GENERATOR_RUN_ID: {{ .Values.dataSetup.generatorRunId | quote }}
+  SPARK_BATCH_CONFIG: {{ .Values.dataSetup.sparkBatchConfig | quote }}
+  REALTIME_LIMIT_PER_TABLE: {{ .Values.dataSetup.realtimeLimitPerTable | quote }}
+  DATA_PLATFORM_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
+  REALTIME_E2E_ENABLED: {{ .Values.e2e.realtimeEnabled | quote }}
+  DATAHUB_INGEST_ENABLED: {{ .Values.e2e.datahubIngestEnabled | quote }}
+  SPARK_K8S_MASTER: {{ .Values.spark.k8sMaster | quote }}
+  SPARK_K8S_NAMESPACE: {{ .Values.namespace.name | quote }}
+  SPARK_K8S_IMAGE: {{ .Values.images.spark | quote }}
+  SPARK_K8S_IMAGE_PULL_POLICY: {{ .Values.images.pullPolicy | quote }}
+  SPARK_K8S_SERVICE_ACCOUNT: {{ .Values.spark.serviceAccountName | quote }}
+  SPARK_K8S_DRIVER_MEMORY: {{ .Values.spark.driverMemory | quote }}
+  SPARK_K8S_DRIVER_MEMORY_OVERHEAD: {{ .Values.spark.driverMemoryOverhead | quote }}
+  SPARK_K8S_DRIVER_CORES: {{ .Values.spark.driverCores | quote }}
+  SPARK_K8S_EXECUTOR_INSTANCES: {{ .Values.spark.executorInstances | quote }}
+  SPARK_K8S_EXECUTOR_MEMORY: {{ .Values.spark.executorMemory | quote }}
+  SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD: {{ .Values.spark.executorMemoryOverhead | quote }}
+  SPARK_K8S_EXECUTOR_CORES: {{ .Values.spark.executorCores | quote }}
+  SPARK_K8S_CONNECTION_TIMEOUT: {{ .Values.spark.connectionTimeout | quote }}
+  SPARK_K8S_REQUEST_TIMEOUT: {{ .Values.spark.requestTimeout | quote }}
+  SPARK_SQL_SHUFFLE_PARTITIONS: {{ .Values.spark.sqlShufflePartitions | quote }}
   POSTGRES_HOST: {{ .Values.sourcePostgres.name | quote }}
   POSTGRES_PORT: "5432"
   POSTGRES_DB: {{ .Values.sourcePostgres.database | quote }}
@@ -26,6 +48,12 @@ data:
   REDIS_PORT: {{ .Values.redis.port | quote }}
   OFFLINE_STORE_ENABLED: "true"
   OFFLINE_FEATURE_DRIFT_REPORT_PATH: "s3://{{ .Values.minio.offlineFeatureBucket }}/monitoring/offline_feature_drift/report.json"
+  OFFLINE_FEATURE_DRIFT_CURRENT_ROOT: {{ .Values.drift.currentRoot | quote }}
+  OFFLINE_FEATURE_DRIFT_BASELINE_PATH: {{ .Values.drift.baselinePath | quote }}
+  OFFLINE_FEATURE_DRIFT_CURRENT_DAYS: {{ .Values.drift.currentDays | quote }}
+  OFFLINE_FEATURE_DRIFT_SAMPLE_ROWS: {{ .Values.drift.sampleRows | quote }}
+  OFFLINE_FEATURE_DRIFT_TABLES: {{ .Values.drift.featureTables | quote }}
+  OFFLINE_FEATURE_DRIFT_BOOTSTRAP_BASELINE: {{ .Values.drift.bootstrapBaseline | quote }}
   PUSHGATEWAY_URL: {{ .Values.observability.pushgatewayUrl | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.observability.otelEndpoint | quote }}
   DATAHUB_GMS_URL: "http://datahub-datahub-gms.datahub.svc.cluster.local:8080"
@@ -44,6 +72,9 @@ data:
   REALTIME_STREAM_GROUP_ID: {{ .Values.realtimeFlinkConsumer.groupId | quote }}
   REALTIME_STREAM_MIN_EVENTS: {{ .Values.realtimeFlinkConsumer.minEvents | quote }}
   REALTIME_STREAM_MAX_EVENTS: {{ .Values.realtimeFlinkConsumer.maxEvents | quote }}
+  DEBEZIUM_TABLE_INCLUDE_LIST: {{ .Values.realtimeCdcConnector.tableIncludeList | quote }}
+  DEBEZIUM_SNAPSHOT_MODE: {{ .Values.realtimeCdcConnector.snapshotMode | quote }}
+  DEBEZIUM_SLOT_NAME: {{ .Values.realtimeCdcConnector.slotName | quote }}
   FLINK_PARALLELISM: {{ .Values.realtimeFlinkConsumer.parallelism | quote }}
   REALTIME_STREAM_MAX_HISTORY_LENGTH: {{ .Values.realtimeFlinkConsumer.maxHistoryLength | quote }}
   STREAM_PROGRESS_LOG_EVENTS: {{ .Values.realtimeFlinkConsumer.progressLogEvents | quote }}

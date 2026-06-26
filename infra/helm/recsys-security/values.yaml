@@ -41,7 +41,6 @@ externalSecrets:
 istio:
   enabled: true
   namespaces:
-    - recsys-dataflow
     - kubeflow
     - experiment-tracking
     - kserve-triton-inference
