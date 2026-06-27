@@ -1,13 +1,13 @@
 # Autoscale
 
-## namespace api-serving (FastAPI)
+## api-serving namespace (FastAPI)
 
 ### Config evidence
 
-Xem chính ở Helm chart này:
+The main configuration is defined in this Helm values file:
 [infra/helm/recsys-serving/values.yaml line 95](../../../infra/helm/recsys-serving/values.yaml#95)
 
-API serving autoscale nằm ở:
+The API serving autoscaling configuration is:
 
 ```yaml
 autoscaling:
@@ -22,16 +22,16 @@ autoscaling:
         targetValue: 5
 ```
 
-Nó render ra KEDA `HTTPScaledObject` ở:
+This renders a KEDA `HTTPScaledObject` from:
 [infra/helm/recsys-serving/templates/api-http-scaledobject.yaml line 1](../../../infra/helm/recsys-serving/templates/api-http-scaledobject.yaml#1)
 
-Tức là API scale theo request rate, target 5 req/s.
+This means the FastAPI service scales by HTTP request rate. The target is 5 requests per second, with a minimum of 1 replica and a maximum of 5 replicas.
 
-## Triton inference service (kserve)
+## Triton inference service (KServe)
 
-### Config evidence 
+### Config evidence
 
-Triton/KServe autoscale nằm ở:
+The Triton/KServe autoscaling configuration is defined in:
 [infra/helm/recsys-serving/values.yaml line 130](../../../infra/helm/recsys-serving/values.yaml#130)
 
 ```yaml
@@ -48,14 +48,14 @@ autoscaling:
       value: "50"
 ```
 
-Nó render ra KEDA `ScaledObject` ở:
+This renders a KEDA `ScaledObject` from:
 [infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml line 1](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#1)
 
-Tức là Triton scale theo CPU utilization, target 50%.
+This means Triton scales by CPU utilization. The target is 50% CPU utilization, with a minimum of 1 replica and a maximum of 3 replicas.
 
 ## 2. Runtime object proof
 
-Show object đã deploy thật trong cluster:
+The following commands show the actual autoscaling objects deployed in the cluster:
 
 ```bash
 kubectl get httpscaledobject -n api-serving
@@ -65,7 +65,7 @@ kubectl get hpa -A
 
 ![Data & ML system](../../pngs/get_scale_object.png)
 
-Rồi describe:
+Then describe the objects for detailed configuration and runtime status:
 
 ```bash
 kubectl describe httpscaledobject -n api-serving recsys-api-serving-http
@@ -82,56 +82,92 @@ kubectl describe scaledobject -n kserve-triton-inference recsys-bst-triton-resou
 
 ## 3. Metrics proof
 
-Vì Triton scale theo CPU, show `metrics-server` đang hoạt động:
+Because Triton scales by CPU utilization, the Kubernetes `metrics-server` must be working. These commands verify that CPU and memory metrics are available:
 
 ```bash
 kubectl top pods -n kserve-triton-inference
 kubectl top pods -n api-serving
 ```
 
-Nếu command này có CPU/RAM data là ổn.
+![Data & ML system](../../pngs/top_pods_service.png)
 
-## 4. Baseline proof trước load
+If these commands return CPU and memory values, the resource metrics pipeline is available for the Triton HPA.
 
-Show ban đầu đang ít replica:
+## 4. Visual scaling proof
+
+### Load proof
+
+#### Port forward first
 
 ```bash
-kubectl get deploy -n api-serving recsys-api-serving
-kubectl get deploy -n kserve-triton-inference recsys-bst-triton-predictor
-kubectl get hpa -A
+kubectl -n keda port-forward svc/keda-add-ons-http-interceptor-proxy 18081:8080
 ```
 
-Expected:
+This port-forward exposes the KEDA HTTP interceptor locally on port `18081`. Traffic must go through this interceptor for KEDA to count API request rate and scale the FastAPI deployment.
 
-```text
-api-serving: 1/1
-triton predictor: 1/1
-HPA target thấp hoặc 0
+#### Test the curl
+
+```bash
+curl -i -X POST http://127.0.0.1:18081/recommendations \
+  -H 'Host: recsys-api-serving.local' \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":50,"candidate_item_ids":[456,379,287,194,157],"top_k":3}'
 ```
 
-## 5. Load proof
+This request validates that the interceptor can route traffic to the FastAPI service. The `Host` header is required because the `HTTPScaledObject` is configured for `recsys-api-serving.local`.
 
-Show Locust command và output:
+#### Run Locust stress test
+
+The command below generates API traffic through the KEDA HTTP interceptor:
 
 ```bash
 RECSYS_LOAD_TARGET=api \
 RECSYS_HOST_HEADER=recsys-api-serving.local \
-RECSYS_CANDIDATE_COUNT=200 \
+RECSYS_CANDIDATE_COUNT=50 \
 RECSYS_TOP_K=10 \
 uv run --with locust locust \
   -f tests/load/locustfile_serving.py \
   --host http://127.0.0.1:18081 \
   --headless \
-  -u 160 \
-  -r 40 \
-  -t 3m \
+  -u 20 \
+  -r 5 \
+  -t 2m \
   --only-summary
 ```
 
-Proof tốt nhất ở đây là:
+#### Explain the config of the running command above
 
-```text
-requests > 0
-failures = 0
-req/s cao hơn target 5 req/s
-```
+- `RECSYS_LOAD_TARGET=api`: tells the Locust file to call the FastAPI `/recommendations` endpoint instead of Triton's direct HTTP inference endpoint.
+- `RECSYS_HOST_HEADER=recsys-api-serving.local`: sends the host value expected by the KEDA `HTTPScaledObject`. Without this header, the interceptor may not match the API route correctly and KEDA may not count the request rate.
+- `RECSYS_CANDIDATE_COUNT=50`: sends 50 candidate item IDs per recommendation request. A larger candidate count increases inference work because FastAPI sends a larger ranking payload to Triton.
+- `RECSYS_TOP_K=10`: asks the service to return the top 10 ranked recommendations.
+- `uv run --with locust locust`: runs Locust in the project environment while installing the `locust` package for this command.
+- `-f tests/load/locustfile_serving.py`: points Locust to the project load-test file.
+- `--host http://127.0.0.1:18081`: sends all requests to the local KEDA interceptor port-forward.
+- `--headless`: runs Locust without the web UI.
+- `-u 20`: runs 20 concurrent simulated users.
+- `-r 5`: ramps users up at 5 users per second.
+- `-t 2m`: keeps the test running for 2 minutes.
+- `--only-summary`: prints only the final summary table.
+
+Expected scaling behavior:
+
+- FastAPI scales by KEDA HTTP request-rate metrics when traffic goes through `18081` with the correct `Host` header.
+- Triton scales separately by CPU utilization because FastAPI calls Triton through gRPC.
+- If the HPA desired replica count increases but pods remain `Pending`, the cluster does not have enough schedulable CPU or memory.
+
+#### Before running Locust
+
+![Data & ML system](../../pngs/before_scaling.png)
+
+#### Scaling api-serving up
+
+![Data & ML system](../../pngs/api-serving-scaling-up.png)
+
+#### Scaling Triton inference up
+
+![Data & ML system](../../pngs/triton-inference-scaling-later.png)
+
+#### Fully scaled up
+
+![Data & ML system](../../pngs/fully_scaled.png)
