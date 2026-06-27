@@ -1,0 +1,3 @@
+pvc:
+  storage: 50Gi
+  storageClassName: standard-rwo

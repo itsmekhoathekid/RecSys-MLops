@@ -384,9 +384,12 @@ def test_model_cd_deploy_uses_atomic_helm_upgrade(monkeypatch, tmp_path):
     model_cd.deploy(values_path, timeout="90s")
 
     helm_upgrade = commands[1]
+    final_helm_upgrade = commands[-1]
     assert helm_upgrade[:4] == ["helm", "upgrade", "--install", "recsys-serving"]
     assert "--atomic" in helm_upgrade
     assert helm_upgrade[helm_upgrade.index("--timeout") + 1] == "90s"
+    assert "autoscaling.kserveResource.enabled=false" in helm_upgrade
+    assert "autoscaling.kserveResource.enabled=true" in final_helm_upgrade
 
 
 def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_path):
@@ -404,8 +407,11 @@ def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_
     model_cd.deploy(values_path, timeout="90s")
 
     helm_upgrade = commands[1]
+    final_helm_upgrade = commands[-1]
     assert "--atomic" not in helm_upgrade
     assert "observability.serviceMonitor.enabled=false" in helm_upgrade
+    assert "autoscaling.kserveResource.enabled=true" in final_helm_upgrade
+    assert "observability.serviceMonitor.enabled=false" in final_helm_upgrade
 
 
 def test_model_cd_s3_helpers_copy_upload_and_read(monkeypatch):

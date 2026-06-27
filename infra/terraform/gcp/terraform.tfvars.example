@@ -1,0 +1,39 @@
+project_id = "your-gcp-project-id"
+
+# Vietnam/Singapore latency-friendly default. Make sure the zone has quota for your GPU.
+region = "asia-southeast1"
+zone   = "asia-southeast1-b"
+
+name_prefix = "recsys-mlops"
+
+# Moderate cost/latency defaults:
+# - CPU pool is non-Spot because Kafka/Postgres/Airflow/Redis are stateful.
+# - GPU pool keeps 1 warm T4 node for Triton latency and caps at 2 for cost.
+cpu_machine_type = "e2-standard-4"
+cpu_min_nodes    = 2
+cpu_max_nodes    = 5
+cpu_spot         = false
+
+gpu_machine_type      = "n1-standard-8"
+gpu_accelerator_type  = "nvidia-tesla-t4"
+gpu_accelerator_count = 1
+gpu_min_nodes         = 1
+gpu_max_nodes         = 2
+gpu_spot              = false
+
+artifact_registry_repository = "recsys"
+image_tag                    = "gcp"
+
+# Optional: point specific services to already-built images.
+# image_overrides = {
+#   api                 = "asia-southeast1-docker.pkg.dev/your-gcp-project-id/recsys/recsys-api-serving:gcp"
+#   training_repository = "asia-southeast1-docker.pkg.dev/your-gcp-project-id/recsys/recsys-mlops-training"
+# }
+
+deploy_ray_job = true
+deploy_gateway = false
+
+# Recommended if you use the public GKE API endpoint:
+# master_authorized_cidr_blocks = [
+#   { cidr_block = "203.0.113.10/32", display_name = "office" }
+# ]

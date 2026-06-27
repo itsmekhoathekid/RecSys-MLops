@@ -12,6 +12,14 @@ metadata:
 spec:
   predictor:
     serviceAccountName: {{ .Values.kserve.serviceAccount.name }}
+    {{- if .Values.kserve.nodeSelector }}
+    nodeSelector:
+{{ toYaml .Values.kserve.nodeSelector | indent 6 }}
+    {{- end }}
+    {{- if .Values.kserve.tolerations }}
+    tolerations:
+{{ toYaml .Values.kserve.tolerations | indent 6 }}
+    {{- end }}
     volumes:
       - name: triton-shm
         emptyDir:
@@ -41,6 +49,14 @@ metadata:
 spec:
   predictor:
     serviceAccountName: {{ .Values.kserve.serviceAccount.name }}
+    {{- if .Values.kserve.nodeSelector }}
+    nodeSelector:
+{{ toYaml .Values.kserve.nodeSelector | indent 6 }}
+    {{- end }}
+    {{- if .Values.kserve.tolerations }}
+    tolerations:
+{{ toYaml .Values.kserve.tolerations | indent 6 }}
+    {{- end }}
     volumes:
       - name: triton-shm
         emptyDir:

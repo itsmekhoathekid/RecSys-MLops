@@ -35,4 +35,5 @@ graphify-out/
 .gateway-auth/
 AGENTS.md
 .uv-cache/
+.ci-image-manifest/
 

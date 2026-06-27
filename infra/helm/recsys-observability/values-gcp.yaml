@@ -1,0 +1,8 @@
+retention:
+  prometheus: 7d
+
+storage:
+  prometheus: 20Gi
+  grafana: 5Gi
+  loki: 20Gi
+  tempo: 10Gi

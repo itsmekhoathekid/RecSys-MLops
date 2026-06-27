@@ -1,0 +1,26 @@
+entrypoint:
+  trainingPercent: 0.1
+  numEpochs: 3
+  maxTrials: 4
+  parallelTrials: 1
+  cpusPerTrial: 2
+  gpusPerTrial: 1
+
+gpu:
+  enabled: true
+  limit: 1
+  nodeSelector:
+    cloud.google.com/gke-accelerator: nvidia-tesla-t4
+
+head:
+  cpuRequest: "1"
+  cpuLimit: "2"
+  memoryRequest: 2Gi
+  memoryLimit: 4Gi
+
+worker:
+  replicas: 1
+  cpuRequest: "2"
+  cpuLimit: "4"
+  memoryRequest: 8Gi
+  memoryLimit: 12Gi

@@ -1,0 +1,45 @@
+storageClassName: standard-rwo
+
+images:
+  pullPolicy: IfNotPresent
+
+sourcePostgres:
+  storage: 20Gi
+
+airflowPostgres:
+  storage: 20Gi
+
+minio:
+  storage: 100Gi
+
+dataSetup:
+  generatorConfig: configs/local/data_generator_e2e_2k.yaml
+  generatorRunId: gcp_seed42
+  sparkBatchConfig: configs/local/spark_batch_e2e_2k.yaml
+  realtimeLimitPerTable: "1000"
+
+spark:
+  driverMemory: 2g
+  driverMemoryOverhead: 512m
+  driverCores: "1"
+  executorInstances: "2"
+  executorMemory: 2g
+  executorMemoryOverhead: 512m
+  executorCores: "1"
+  sqlShufflePartitions: "16"
+
+realtimeProducer:
+  replicas: 1
+  intervalSeconds: "1"
+  eventsPerTick: "10"
+  maxEvents: "0"
+  nUsers: "1000"
+  nProducts: "5000"
+
+realtimeFlinkConsumer:
+  replicas: 1
+  parallelism: "2"
+  checkpointIntervalSeconds: "30"
+
+drift:
+  sampleRows: "5000"
