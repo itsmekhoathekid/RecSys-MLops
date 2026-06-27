@@ -154,7 +154,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/evaluate_ray_best_bst.py
-        image: recsys-mlops-training:local
+        image: localhost:5001/recsys/recsys-mlops-training:4c3e4bd92483
     exec-prepare-training-data:
       container:
         args:
@@ -187,7 +187,7 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - /opt/spark/bin/spark-submit
-        image: recsys-mlops-spark:local
+        image: localhost:5001/recsys/recsys-mlops-spark:4c3e4bd92483
     exec-promote-bst-model:
       container:
         args:
@@ -204,7 +204,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/model_promotion.py
-        image: recsys-mlops-training:local
+        image: localhost:5001/recsys/recsys-mlops-training:4c3e4bd92483
     exec-submit-rayjob:
       container:
         args:
@@ -253,7 +253,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/submit_ray_job.py
-        image: recsys-mlops-training:local
+        image: localhost:5001/recsys/recsys-mlops-training:4c3e4bd92483
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.

@@ -83,72 +83,82 @@ run_kfp_compile() {
     uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
 }
 
+run_plain_pytest() {
+  local name="$1"
+  local pythonpath="$2"
+  shift 2
+  PYTHONPATH="${pythonpath}" uv run pytest "$@" -q \
+    --junitxml="${reports_dir}/junit/${name}.xml"
+}
+
 case "${component}" in
   materialize)
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir materialize
-    cov_paths=(apps/data-platform/src/feature_store apps/data-platform/src/local)
+    cov_paths=(feature_store.online_writer local.run_batch_features)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   training)
     tests=(tests/unit/ml_system)
     append_integration_dir training
-    cov_paths=(apps/ml-system/src)
+    cov_paths=(kubeflow.components.runtime kubeflow.pipelines.bst_training_pipeline kubeflow.pipelines.compile_training_pipeline)
     component_pytest "${component}" "apps/ml-system/src:apps/data-platform/src"
     run_kfp_compile
     ;;
   spark_batch)
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir spark_batch
-    cov_paths=(apps/data-platform/src/feature_engineering/spark apps/data-platform/src/lakehouse)
+    cov_paths=(lakehouse.iceberg)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   dp1)
-    tests=(tests/unit/data_generator tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
+    run_plain_pytest "dp1-data-generator" "apps/data-platform/data-generator/src" tests/unit/data_generator
+    tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir dp1
-    cov_paths=(apps/data-platform/data-generator/src apps/data-platform/src/ingest)
+    cov_paths=(ingest.debezium ingest.batch_lakehouse_ingestion)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   dp2)
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir dp2
-    cov_paths=(apps/data-platform/src/feature_engineering/spark apps/data-platform/src/lakehouse)
+    cov_paths=(lakehouse.iceberg)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   dp3)
     tests=(tests/unit/data_platform/test_data_platform.py tests/unit/ml_system/test_prepare_bst_training_data.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir dp3
-    cov_paths=(apps/data-platform/src/feature_engineering/spark apps/data-platform/src/feature_store apps/ml-system/src)
+    cov_paths=(lakehouse.iceberg feature_store.online_writer)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/ml-system/src"
     ;;
   api)
     tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)
     append_integration_dir api
-    cov_paths=(apps/api-serving/src)
+    cov_paths=(serving)
     component_pytest "${component}" "apps/api-serving/src"
     ;;
   kserve)
     tests=(tests/unit/ml_system/test_model_promotion.py tests/contract/test_serving_contracts.py)
     append_integration_dir kserve
-    cov_paths=(apps/ml-system/src jenkins/scripts)
-    component_pytest "${component}" "apps/ml-system/src:apps/data-platform/src"
+    cov_paths=(model_cd)
+    component_pytest "${component}" "jenkins/scripts:apps/ml-system/src:apps/data-platform/src"
     ;;
   drift)
-    tests=(tests/unit/data_generator/test_drift.py tests/unit/data_platform/test_data_platform.py)
+    tests=(tests/unit/data_generator/test_drift_reporting_unit.py)
     append_integration_dir drift
-    cov_paths=(apps/data-platform/src/validate apps/data-platform/src/mlops apps/data-platform/data-generator/src/drift)
-    component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
+    cov_paths=(drift.controller drift.reporting)
+    component_pytest "${component}" "apps/data-platform/data-generator/src:apps/data-platform/src"
+    run_plain_pytest "drift-data-platform" "apps/data-platform/src:apps/data-platform/data-generator/src" tests/unit/data_platform/test_data_platform.py
     ;;
   stream_offline)
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir stream_offline
-    cov_paths=(apps/data-platform/src/feature_engineering/flink apps/data-platform/src/lakehouse)
+    cov_paths=(feature_engineering.flink.candidate_pool_job feature_engineering.flink.item_features_job feature_engineering.flink.user_aggregate_job feature_engineering.flink.user_sequence_job feature_engineering.flink.time_utils lakehouse.iceberg)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   stream_online)
     tests=(tests/unit/data_platform/test_data_platform.py tests/unit/api_serving/test_serving.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir stream_online
-    cov_paths=(apps/data-platform/src/feature_engineering/flink apps/data-platform/src/feature_store)
+    cov_paths=(feature_engineering.flink.candidate_pool_job feature_engineering.flink.item_features_job feature_engineering.flink.user_aggregate_job feature_engineering.flink.user_sequence_job feature_engineering.flink.time_utils feature_store.online_writer)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/src"
     ;;
   *)

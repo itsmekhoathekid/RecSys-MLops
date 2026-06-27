@@ -1,0 +1,153 @@
+{{- if .Values.jenkins.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.jenkins.pvc.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  {{- if .Values.jenkins.pvc.volumeName }}
+  volumeName: {{ .Values.jenkins.pvc.volumeName }}
+  {{- end }}
+  accessModes:
+{{ toYaml .Values.jenkins.pvc.accessModes | indent 4 }}
+  {{- if .Values.jenkins.pvc.storageClassName }}
+  storageClassName: {{ .Values.jenkins.pvc.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.jenkins.pvc.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-jenkins
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-jenkins
+    app.kubernetes.io/part-of: recsys-ci
+spec:
+  replicas: {{ .Values.jenkins.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recsys-jenkins
+  template:
+    metadata:
+      annotations:
+{{ toYaml .Values.serviceMesh.jenkinsPodAnnotations | indent 8 }}
+      labels:
+        app.kubernetes.io/name: recsys-jenkins
+        app.kubernetes.io/part-of: recsys-ci
+    spec:
+      serviceAccountName: {{ .Values.rbac.serviceAccountName }}
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: fix-jenkins-home-permissions
+          image: {{ .Values.jenkins.image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - chown -R 1000:1000 /var/jenkins_home
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: /var/jenkins_home
+      containers:
+        - name: jenkins
+          image: {{ .Values.jenkins.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: agent
+              containerPort: 50000
+          env:
+            - name: IMAGE_PUSH_REGISTRY
+              value: {{ .Values.jenkins.imagePushRegistry }}
+            - name: IMAGE_PULL_REGISTRY
+              value: {{ .Values.jenkins.imagePullRegistry }}
+            - name: DOCKER_HOST
+              value: tcp://localhost:2375
+            - name: UV_LINK_MODE
+              value: copy
+            - name: JAVA_OPTS
+              value: {{ .Values.jenkins.javaOpts | quote }}
+            - name: JENKINS_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.jenkins.adminSecretName }}
+                  key: username
+            - name: JENKINS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.jenkins.adminSecretName }}
+                  key: password
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: /var/jenkins_home
+            - name: jenkins-init
+              mountPath: /var/jenkins_home/init.groovy.d
+              readOnly: true
+          {{- with .Values.jenkins.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
+        {{- if .Values.jenkins.dind.enabled }}
+        - name: docker
+          image: {{ .Values.jenkins.dind.image }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          args:
+            - --host=tcp://0.0.0.0:2375
+            - --host=unix:///var/run/docker.sock
+            - --tls=false
+            - --storage-driver={{ .Values.jenkins.dind.storageDriver }}
+            {{- range .Values.jenkins.dind.insecureRegistries }}
+            - --insecure-registry={{ . }}
+            {{- end }}
+          volumeMounts:
+            - name: docker-graph-storage
+              mountPath: /var/lib/docker
+          {{- with .Values.jenkins.dind.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
+        {{- end }}
+      volumes:
+        - name: jenkins-home
+          persistentVolumeClaim:
+            claimName: {{ .Values.jenkins.pvc.name }}
+        - name: docker-graph-storage
+          emptyDir: {}
+        - name: jenkins-init
+          configMap:
+            name: recsys-jenkins-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.jenkins.service.name }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-jenkins
+    app.kubernetes.io/part-of: recsys-ci
+spec:
+  type: {{ .Values.jenkins.service.type }}
+  selector:
+    app.kubernetes.io/name: recsys-jenkins
+  ports:
+    - name: http
+      port: {{ .Values.jenkins.service.httpPort }}
+      targetPort: http
+    - name: agent
+      port: {{ .Values.jenkins.service.agentPort }}
+      targetPort: agent
+{{- end }}

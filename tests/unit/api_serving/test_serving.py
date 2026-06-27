@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import sys
+import types
+
 import numpy as np
 
 from serving import (
+    FeatureClient,
     RecommendationRequest,
+    TritonRanker,
     TritonABRouter,
+    as_int_list,
     build_triton_payload,
+    embedding_index,
     format_top_k,
     get_online_features,
+    normalize_item_features,
+    normalize_sequence_features,
+    parse_json_bytes,
     recommend,
 )
 from observability import METRICS, metrics_text
@@ -34,6 +44,32 @@ def test_build_triton_payload_maps_feature_rows_to_tensors():
     assert payload["candidate_item_id"].tolist() == [10, 11]
     assert payload["candidate_category"].tolist() == [2, 5]
     assert payload["candidate_brand"].dtype == np.int64
+
+
+def test_json_and_embedding_helpers_handle_empty_and_invalid_values(monkeypatch):
+    monkeypatch.setenv("MODEL_ITEM_NUM", "10")
+
+    assert parse_json_bytes(None) == {}
+    assert parse_json_bytes(b"") == {}
+    assert parse_json_bytes(b'{"a": 1}') == {"a": 1}
+    assert as_int_list(None) == []
+    assert as_int_list("not-json") == []
+    assert as_int_list("[1, null, 3]") == [1, 3]
+    assert as_int_list(("4", 5)) == [4, 5]
+    assert embedding_index(27, "item") == 7
+    assert normalize_item_features(27, None).item_id == 7
+
+    sequence = normalize_sequence_features(
+        {
+            "hist_item_ids": "[11, 12]",
+            "hist_event_type_ids": [1],
+            "hist_category_ids": [2],
+            "hist_brand_ids": [3],
+            "hist_price_bucket_ids": [4],
+            "hist_time_ids": [5],
+        }
+    )
+    assert sequence["hist_item_id"] == [1, 2]
 
 
 def test_build_triton_payload_maps_raw_online_ids_to_embedding_space(monkeypatch):
@@ -245,6 +281,130 @@ def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkey
     assert client.user_sequence(1) == {}
     assert client.item_features(1) == {}
     assert client.candidates(1, 3) == [1, 2, 3]
+
+
+def test_feature_client_success_and_error_without_fallback(monkeypatch):
+    import serving
+
+    class RedisClient:
+        def get(self, key):
+            if key == "fs:user_sequence:1":
+                return b'{"hist_item_ids": [1]}'
+            if key == "fs:item:10":
+                return '{"category_id": 2}'
+            raise OSError("missing")
+
+        def zrevrange(self, key, start, end):
+            return [b"10", "11"]
+
+    monkeypatch.setattr(serving, "redis", type("RedisModule", (), {"Redis": lambda *args, **kwargs: RedisClient()}), raising=False)
+
+    original_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "redis":
+            return type("RedisModule", (), {"Redis": lambda *a, **k: RedisClient()})
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    client = FeatureClient(allow_fallback=False)
+
+    assert client.user_sequence(1) == {"hist_item_ids": [1]}
+    assert client.item_features(10) == {"category_id": 2}
+    assert client.candidates(1, 2) == [10, 11]
+
+    try:
+        client.item_features(99)
+    except RuntimeError as exc:
+        assert "failed to fetch item features" in str(exc)
+    else:
+        raise AssertionError("expected item feature Redis failure")
+
+
+def test_triton_ranker_scores_and_records_errors(monkeypatch):
+    class InferInput:
+        def __init__(self, name, shape, dtype):
+            self.name = name
+            self.shape = shape
+            self.dtype = dtype
+            self.values = None
+
+        def set_data_from_numpy(self, values):
+            self.values = values
+
+    class InferRequestedOutput:
+        def __init__(self, name):
+            self.name = name
+
+    class Result:
+        def as_numpy(self, name):
+            if name == "candidate_item_id_out":
+                return np.asarray([1, 2], dtype=np.int64)
+            return np.asarray([0.2, 0.8], dtype=np.float32)
+
+    class Client:
+        should_fail = False
+
+        def __init__(self, url):
+            self.url = url
+
+        def infer(self, model_name, inputs, outputs):
+            if self.should_fail:
+                raise RuntimeError("triton down")
+            assert model_name == "bst_ensemble"
+            assert inputs[0].dtype == "INT64"
+            assert outputs[0].name == "candidate_item_id_out"
+            return Result()
+
+    grpc = types.SimpleNamespace(
+        InferInput=InferInput,
+        InferRequestedOutput=InferRequestedOutput,
+        InferenceServerClient=Client,
+    )
+    monkeypatch.setitem(sys.modules, "tritonclient", types.SimpleNamespace(grpc=grpc))
+    monkeypatch.setitem(sys.modules, "tritonclient.grpc", grpc)
+
+    ranker = TritonRanker(url="localhost:9000", model_name="bst_ensemble", model_version="v1")
+    item_ids, scores = ranker.score({"candidate_item_id": np.asarray([1, 2], dtype=np.int64)})
+    assert item_ids == [1, 2]
+    assert len(scores) == 2
+
+    Client.should_fail = True
+    try:
+        ranker.score({"candidate_item_id": np.asarray([1], dtype=np.int64)})
+    except RuntimeError as exc:
+        assert "triton down" in str(exc)
+    else:
+        raise AssertionError("expected triton failure")
+
+
+def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
+    import serving
+
+    created = []
+
+    class FakeRanker:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+        def score(self, payload):
+            return [], []
+
+    monkeypatch.setattr(serving, "TritonRanker", FakeRanker)
+    monkeypatch.setenv("AB_TEST_ENABLED", "1")
+    monkeypatch.setenv("AB_CANDIDATE_TRITON_URL", "candidate:9000")
+    monkeypatch.setenv("AB_CANDIDATE_MODEL_VERSION", "candidate-v1")
+    monkeypatch.setenv("AB_CANDIDATE_WEIGHT_PERCENT", "25")
+    monkeypatch.setenv("AB_EXPERIMENT_ID", "exp-env")
+    monkeypatch.setenv("MODEL_VERSION", "stable-v1")
+
+    router = TritonABRouter.from_env()
+
+    assert router.enabled is True
+    assert router.candidate_weight_percent == 25
+    assert router.experiment_id == "exp-env"
+    assert created[0]["model_version"] == "stable-v1"
+    assert created[1]["model_version"] == "candidate-v1"
 
 
 def test_observability_metrics_expose_api_redis_and_triton_series():
