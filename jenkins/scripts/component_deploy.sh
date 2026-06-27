@@ -2,7 +2,7 @@
 set -euo pipefail
 
 component="${1:?component is required}"
-image_registry="${IMAGE_REGISTRY:-localhost:5001/recsys}"
+image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_REGISTRY:-localhost:5001/recsys}}"
 image_registry="${image_registry%/}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-}}"
 namespace_data="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
@@ -32,6 +32,14 @@ deploy_data_platform() {
 }
 
 deploy_api() {
+  local rollout_args=()
+  if [[ -n "${API_ROLLOUT_MAX_SURGE:-}" ]]; then
+    rollout_args+=(--set "api.rollout.maxSurge=${API_ROLLOUT_MAX_SURGE}")
+  fi
+  if [[ -n "${API_ROLLOUT_MAX_UNAVAILABLE:-}" ]]; then
+    rollout_args+=(--set "api.rollout.maxUnavailable=${API_ROLLOUT_MAX_UNAVAILABLE}")
+  fi
+
   helm upgrade --install recsys-serving infra/helm/recsys-serving \
     --namespace "${namespace_kserve}" \
     --create-namespace \
@@ -39,7 +47,8 @@ deploy_api() {
     --timeout "${timeout}" \
     --set "api.namespace.name=${namespace_api}" \
     --set "api.image=$(image recsys-api-serving)" \
-    --set "api.imagePullPolicy=Always"
+    --set "api.imagePullPolicy=Always" \
+    "${rollout_args[@]}"
   kubectl rollout status "deployment/recsys-api-serving" -n "${namespace_api}" --timeout="${timeout}"
 }
 
@@ -53,6 +62,8 @@ deploy_training_refs() {
     --namespace "${namespace_kubeflow}" \
     --create-namespace \
     --timeout "${timeout}" \
+    --take-ownership \
+    --force-conflicts \
     --set "image.repository=${image_registry}/recsys-mlops-training" \
     --set "image.tag=${image_tag}" \
     --set "image.pullPolicy=Always"

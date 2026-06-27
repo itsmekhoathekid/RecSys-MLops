@@ -139,6 +139,7 @@ def test_build_rayjob_uses_refactored_training_module():
         head_cpu_limit="1",
         head_memory_request="1Gi",
         head_memory_limit="2Gi",
+        head_ray_num_cpus="0",
         head_ray_memory_bytes="1073741824",
         head_object_store_memory_bytes="268435456",
         pvc_name="recsys-pvc",

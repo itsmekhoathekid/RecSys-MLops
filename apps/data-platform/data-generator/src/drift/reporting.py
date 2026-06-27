@@ -79,15 +79,28 @@ def calculate_psi(
     if np.array_equal(np.sort(expected_array), np.sort(actual_array)):
         return 0.0
 
-    quantiles = np.quantile(expected_array, np.linspace(0, 1, buckets + 1))
+    sorted_expected = np.sort(expected_array)
+    last_index = sorted_expected.size - 1
+    quantiles = []
+    for index in range(buckets + 1):
+        position = last_index * index / buckets
+        lower = int(position)
+        upper = min(lower + 1, last_index)
+        fraction = position - lower
+        quantiles.append(
+            float(sorted_expected[lower])
+            + (float(sorted_expected[upper]) - float(sorted_expected[lower])) * fraction
+        )
+    quantiles = np.asarray(quantiles, dtype=np.float64)
     internal = np.unique(quantiles[1:-1])
-    minimum = float(expected_array.min())
-    maximum = float(expected_array.max())
+    minimum = float(sorted_expected[0])
+    maximum = float(sorted_expected[-1])
     internal = internal[(internal > minimum) & (internal < maximum)]
 
     if internal.size == 0:
-        combined_min = float(min(expected_array.min(), actual_array.min()))
-        combined_max = float(max(expected_array.max(), actual_array.max()))
+        sorted_actual = np.sort(actual_array)
+        combined_min = min(float(sorted_expected[0]), float(sorted_actual[0]))
+        combined_max = max(float(sorted_expected[-1]), float(sorted_actual[-1]))
         if combined_min == combined_max:
             return 0.0
         internal = np.asarray([(combined_min + combined_max) / 2.0])

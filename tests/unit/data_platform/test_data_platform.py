@@ -4,6 +4,8 @@ import json
 import math
 from pathlib import Path
 
+import pytest
+
 from feature_engineering.flink.candidate_pool_job import candidate_updates
 from feature_engineering.flink.item_features_job import ItemFeatureState
 from feature_engineering.flink.realtime_stream_job import (
@@ -15,9 +17,15 @@ from feature_engineering.flink.realtime_stream_job import (
 )
 from feature_engineering.flink.user_aggregate_job import UserAggregateState
 from feature_engineering.flink.user_sequence_job import UserSequenceState
-from feature_store.online_writer import dumps_feature_payload
+from feature_store.online_writer import RedisKeyTemplate, RedisOnlineWriter, dumps_feature_payload
+from local.run_batch_features import main as run_batch_features_main
+from local.run_batch_features import run_batch_features
 from ingest.debezium import extract_debezium_after
-from ingest.batch_lakehouse_ingestion import LakehouseParquetLayout, load_generator_run_to_lakehouse
+from ingest.batch_lakehouse_ingestion import (
+    LakehouseParquetLayout,
+    infer_run_id,
+    load_generator_run_to_lakehouse,
+)
 from lakehouse.iceberg import IcebergCatalogConfig, create_flink_catalog_sql, spark_iceberg_conf
 from lakehouse.iceberg import RAW_GENERATOR_TABLES
 from mlops.trigger_kubeflow_retrain import default_pipeline_arguments, failed_features, parse_pipeline_args, trigger_retrain
@@ -27,9 +35,44 @@ from validate.offline_feature_drift import calculate_psi, run_offline_feature_dr
 
 def test_debezium_after_extraction_skips_deletes():
     assert extract_debezium_after({"payload": {"op": "d", "after": {"event_id": "e1"}}}) is None
+    assert extract_debezium_after({"payload": {"op": "t", "after": {"event_id": "e1"}}}) is None
     after = extract_debezium_after({"payload": {"op": "c", "after": {"event_id": "e2"}}})
     assert after == {"event_id": "e2"}
+    assert extract_debezium_after({"schema": {}, "payload": {"op": "c", "after": None}}) is None
+    assert extract_debezium_after({"event_id": "raw"}) == {"event_id": "raw"}
     assert parse_message(b'{"payload":{"op":"c","after":{"event_id":"e3"}}}') == {"event_id": "e3"}
+
+
+def test_batch_ingestion_uri_helpers_and_column_replacement(monkeypatch):
+    import pyarrow as pa
+    import pyarrow.fs as pafs
+    import ingest.batch_lakehouse_ingestion as ingestion
+
+    assert infer_run_id("/runs/source-1/") == "source-1"
+    assert infer_run_id("/runs/source-1", "manual") == "manual"
+    assert ingestion._normalise_uri("s3a://bucket/raw") == "s3://bucket/raw"
+
+    monkeypatch.setenv("MINIO_ENDPOINT", "minio:9000")
+    assert ingestion._s3_endpoint() == ("http", "minio:9000")
+    monkeypatch.setenv("MINIO_ENDPOINT", "https://minio.example:9443")
+    assert ingestion._s3_endpoint() == ("https", "minio.example:9443")
+
+    filesystem, path = ingestion._filesystem_and_path(str(Path("warehouse") / "table"))
+    assert isinstance(filesystem, pafs.LocalFileSystem)
+    assert path.endswith("warehouse/table")
+    with pytest.raises(ValueError, match="Unsupported lakehouse URI scheme"):
+        ingestion._filesystem_and_path("gs://bucket/table")
+
+    table = pa.table({"source_run_id": ["old"], "value": [1]})
+    enriched = ingestion._enrich_table(table, source_run_id="run-2", ingestion_ts=ingestion.datetime.now(ingestion.timezone.utc))
+    assert enriched.column("source_run_id").to_pylist() == ["run-2"]
+    assert ingestion._part_name("behavior_events", "raw/run id!") == "part-raw-run-id-behavior_events.parquet"
+
+    class MissingDirFilesystem:
+        def delete_dir(self, path):
+            raise FileNotFoundError(path)
+
+    ingestion._delete_dir_if_exists(MissingDirFilesystem(), "missing")
 
 
 def test_python_batch_ingestion_writes_parquet_lakehouse_layout(tmp_path):
@@ -49,6 +92,44 @@ def test_python_batch_ingestion_writes_parquet_lakehouse_layout(tmp_path):
     output = pq.read_table(tmp_path / "warehouse" / "lakehouse" / "behavior_events")
     assert output.column("source_run_id").to_pylist() == ["test_run"]
     assert "lakehouse_ingestion_ts" in output.column_names
+
+
+def test_python_batch_ingestion_cli_delegates_to_loader(monkeypatch, capsys):
+    import ingest.batch_lakehouse_ingestion as ingestion
+
+    captured = {}
+
+    def fake_load_generator_run_to_lakehouse(run_path, *, layout, mode, run_id):
+        captured["run_path"] = run_path
+        captured["layout"] = layout
+        captured["mode"] = mode
+        captured["run_id"] = run_id
+        return {"behavior_events": 2}
+
+    monkeypatch.setattr(ingestion, "load_generator_run_to_lakehouse", fake_load_generator_run_to_lakehouse)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "batch_lakehouse_ingestion",
+            "--run-path",
+            "raw/run",
+            "--run-id",
+            "explicit-run",
+            "--mode",
+            "append",
+            "--lakehouse-warehouse",
+            "s3a://lake/warehouse",
+            "--iceberg-lakehouse-namespace",
+            "bronze",
+        ],
+    )
+
+    assert ingestion.main() == 0
+    assert captured["run_path"] == "raw/run"
+    assert captured["layout"] == LakehouseParquetLayout("s3a://lake/warehouse", "bronze")
+    assert captured["mode"] == "append"
+    assert captured["run_id"] == "explicit-run"
+    assert json.loads(capsys.readouterr().out) == {"behavior_events": 2}
 
 
 def test_realtime_stream_event_normalization_defaults_optional_dimensions():
@@ -113,6 +194,46 @@ def test_online_payload_serializer_replaces_nonfinite_values():
     assert "NaN" not in rendered
     assert "Infinity" not in rendered
     assert '"avg_viewed_price_7d": null' in rendered
+
+
+def test_online_writer_writes_all_feature_key_templates():
+    class Redis:
+        def __init__(self):
+            self.calls = []
+
+        def set(self, key, value, ex):
+            self.calls.append((key, json.loads(value), ex))
+
+    redis = Redis()
+    writer = RedisOnlineWriter(redis, RedisKeyTemplate(user_sequence="seq:{user_id}", user_aggregate="agg:{user_id}", item_features="item:{product_id}"))
+
+    assert writer.write_user_sequence(7, {"items": [1, float("nan")]}, 60) == "seq:7"
+    assert writer.write_user_aggregate(7, {"views": 2}, 120) == "agg:7"
+    assert writer.write_item_features(9, {"score": 0.5}, 180) == "item:9"
+    assert redis.calls == [
+        ("seq:7", {"items": [1, None]}, 60),
+        ("agg:7", {"views": 2}, 120),
+        ("item:9", {"score": 0.5}, 180),
+    ]
+
+
+def test_local_batch_runner_delegates_to_spark_entrypoint(monkeypatch, capsys):
+    import local.run_batch_features as module
+
+    captured = {}
+
+    def fake_run_pyspark_batch(config_path):
+        captured["config_path"] = config_path
+        return {"silver": 2, "features": 3}
+
+    monkeypatch.setattr(module, "run_pyspark_batch", fake_run_pyspark_batch)
+
+    assert run_batch_features("config.yaml") == {"silver": 2, "features": 3}
+    assert captured["config_path"] == "config.yaml"
+
+    monkeypatch.setattr("sys.argv", ["run_batch_features", "--config", "cli.yaml"])
+    assert run_batch_features_main() == 0
+    assert '"features": 3' in capsys.readouterr().out
 
 
 def test_iceberg_catalog_defaults_and_spark_conf():

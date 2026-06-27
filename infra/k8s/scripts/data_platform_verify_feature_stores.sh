@@ -4,6 +4,8 @@ set -euo pipefail
 NAMESPACE="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
 VERIFY_JOB="recsys-feature-store-verify"
 SPARK_IMAGE="${DATA_PLATFORM_SPARK_IMAGE:-recsys-spark:local}"
+VERIFY_IMAGE="${DATA_PLATFORM_VERIFY_IMAGE:-${SPARK_IMAGE}}"
+SECRET_NAME="${DATA_PLATFORM_SECRET_NAME:-recsys-data-platform-secret}"
 TIMEOUT_SECONDS="${DATA_PLATFORM_VERIFY_TIMEOUT_SECONDS:-240}"
 SLEEP_SECONDS="${DATA_PLATFORM_VERIFY_SLEEP_SECONDS:-10}"
 
@@ -98,23 +100,24 @@ spec:
       restartPolicy: Never
       containers:
         - name: verify
-          image: ${SPARK_IMAGE}
+          image: ${VERIFY_IMAGE}
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
+            - secretRef:
+                name: ${SECRET_NAME}
           command: ["/bin/bash", "-lc"]
           args:
             - |
               cd /opt/recsys
-              export PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys
               cat >/tmp/verify_stream_feature_store.py <<'PY'
               import json
-              from feature_engineering.spark.session import spark_session
-              from lakehouse.iceberg import IcebergCatalogConfig
+              import os
 
-              spark = spark_session("recsys-verify-stream-feature-store")
-              catalog = IcebergCatalogConfig()
+              import boto3
+
+
               tables = [
                   "stream_behavior_events",
                   "stream_user_sequence_features",
@@ -122,18 +125,47 @@ spec:
                   "stream_item_features",
                   "streaming_quality_windows",
               ]
-              counts = {}
-              try:
-                  for table in tables:
-                      counts[table] = spark.table(catalog.feature_table(table)).count()
-              finally:
-                  spark.stop()
-              missing = {table: count for table, count in counts.items() if count <= 0}
+              bucket = os.environ.get("OFFLINE_FEATURE_BUCKET", "recsys-offline-feature-store")
+              namespace = os.environ.get("ICEBERG_FEATURE_NAMESPACE", "feature_store").strip("/")
+              warehouse = os.environ.get("OFFLINE_FEATURE_STORE_WAREHOUSE", "s3a://recsys-offline-feature-store/warehouse")
+              warehouse_prefix = warehouse.split(f"{bucket}/", 1)[-1].strip("/")
+              endpoint = os.environ.get("MINIO_ENDPOINT") or os.environ.get("DATA_PLATFORM_MINIO_ENDPOINT")
+              client = boto3.client(
+                  "s3",
+                  endpoint_url=endpoint,
+                  aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("MINIO_ROOT_USER"),
+                  aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY") or os.environ.get("MINIO_ROOT_PASSWORD"),
+                  region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+              )
+
+              def count_prefix(prefix: str, suffix: str = "") -> int:
+                  paginator = client.get_paginator("list_objects_v2")
+                  count = 0
+                  for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                      for item in page.get("Contents", []):
+                          if not suffix or item["Key"].endswith(suffix):
+                              count += 1
+                              if count:
+                                  return count
+                  return count
+
+              checks = {}
+              for table in tables:
+                  root = f"{warehouse_prefix}/{namespace}/{table}".strip("/")
+                  checks[table] = {
+                      "metadata_files": count_prefix(f"{root}/metadata/"),
+                      "data_files": count_prefix(f"{root}/data/", ".parquet"),
+                  }
+              missing = {
+                  table: result
+                  for table, result in checks.items()
+                  if result["metadata_files"] <= 0 or result["data_files"] <= 0
+              }
               if missing:
-                  raise SystemExit(f"Iceberg stream feature tables are empty: {missing}; counts={counts}")
-              print(json.dumps(counts, sort_keys=True))
+                  raise SystemExit(f"Iceberg stream feature table files are missing: {missing}; checks={checks}")
+              print(json.dumps(checks, sort_keys=True))
               PY
-              /opt/spark/bin/spark-submit /tmp/verify_stream_feature_store.py
+              python /tmp/verify_stream_feature_store.py
 YAML
 
 if ! kubectl wait -n "${NAMESPACE}" --for=condition=complete "job/${VERIFY_JOB}" --timeout="${TIMEOUT_SECONDS}s"; then

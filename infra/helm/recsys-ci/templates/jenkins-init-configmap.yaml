@@ -1,0 +1,29 @@
+{{- if .Values.jenkins.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-jenkins-init
+  namespace: {{ .Values.namespace.name }}
+data:
+  basic-security.groovy: |
+    import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
+    import hudson.security.HudsonPrivateSecurityRealm
+    import jenkins.model.Jenkins
+
+    def instance = Jenkins.get()
+    def username = System.getenv("JENKINS_ADMIN_USER") ?: "admin"
+    def password = System.getenv("JENKINS_ADMIN_PASSWORD")
+
+    if (password?.trim()) {
+      def realm = new HudsonPrivateSecurityRealm(false)
+      if (realm.getUser(username) == null) {
+        realm.createAccount(username, password)
+      }
+      instance.setSecurityRealm(realm)
+
+      def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+      strategy.setAllowAnonymousRead(false)
+      instance.setAuthorizationStrategy(strategy)
+      instance.save()
+    }
+{{- end }}

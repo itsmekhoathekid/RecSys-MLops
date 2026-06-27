@@ -2,7 +2,7 @@
 set -euo pipefail
 
 component="${1:?component is required}"
-image_registry="${IMAGE_REGISTRY:-localhost:5001/recsys}"
+image_registry="${IMAGE_PUSH_REGISTRY:-${IMAGE_REGISTRY:-localhost:5001/recsys}}"
 image_registry="${image_registry%/}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-}}"
 publish_images="${PUBLISH_IMAGES:-1}"

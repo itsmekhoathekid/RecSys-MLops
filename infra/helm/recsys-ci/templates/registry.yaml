@@ -1,0 +1,79 @@
+{{- if .Values.registry.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.registry.pvc.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  {{- if .Values.registry.pvc.volumeName }}
+  volumeName: {{ .Values.registry.pvc.volumeName }}
+  {{- end }}
+  accessModes:
+{{ toYaml .Values.registry.pvc.accessModes | indent 4 }}
+  {{- if .Values.registry.pvc.storageClassName }}
+  storageClassName: {{ .Values.registry.pvc.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.registry.pvc.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-registry
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-registry
+    app.kubernetes.io/part-of: recsys-ci
+spec:
+  replicas: {{ .Values.registry.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recsys-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: recsys-registry
+        app.kubernetes.io/part-of: recsys-ci
+    spec:
+      containers:
+        - name: registry
+          image: {{ .Values.registry.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: registry
+              containerPort: 5000
+          env:
+            - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
+              value: /var/lib/registry
+            - name: REGISTRY_STORAGE_DELETE_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: registry-data
+              mountPath: /var/lib/registry
+          resources:
+{{ toYaml .Values.registry.resources | indent 12 }}
+      volumes:
+        - name: registry-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.registry.pvc.name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.registry.service.name }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-registry
+    app.kubernetes.io/part-of: recsys-ci
+spec:
+  type: {{ .Values.registry.service.type }}
+  selector:
+    app.kubernetes.io/name: recsys-registry
+  ports:
+    - name: registry
+      port: {{ .Values.registry.service.port }}
+      targetPort: registry
+{{- end }}

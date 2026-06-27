@@ -32,11 +32,16 @@ Each changed component follows the same sequence:
 2. Component integration tests from `tests/integration/<component>/` when present.
 3. Existing contract tests relevant to the component.
 4. Docker build and immutable image tag with `GIT_COMMIT`.
-5. Optional push to `IMAGE_REGISTRY`, default `localhost:5001/recsys`.
+5. Optional push to `IMAGE_PUSH_REGISTRY`, default `localhost:5001/recsys`.
 6. Deploy/update only on `main` unless `FORCE_DEPLOY=true`.
 
 Services should pull the pushed registry image in CI/CD. The pipeline does not
 deploy `*:local` tags.
+
+For the in-cluster Jenkins setup in `infra/helm/recsys-ci`, Jenkins pushes to
+`recsys-registry.ci.svc.cluster.local:5000/recsys`, while workloads pull from
+`localhost:5001/recsys` through the registry node proxy. The registry itself is
+backed by a PVC inside the cluster.
 
 ## Secrets
 

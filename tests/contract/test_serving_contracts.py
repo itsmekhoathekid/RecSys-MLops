@@ -406,3 +406,128 @@ def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_
     helm_upgrade = commands[1]
     assert "--atomic" not in helm_upgrade
     assert "observability.serviceMonitor.enabled=false" in helm_upgrade
+
+
+def test_model_cd_s3_helpers_copy_upload_and_read(monkeypatch):
+    class Body:
+        def read(self):
+            return b'{"model_name": "bst"}'
+
+    class Paginator:
+        def paginate(self, Bucket, Prefix):
+            assert Bucket == "source"
+            assert Prefix == "models/"
+            return [{"Contents": [{"Key": "models/a.pb"}, {"Key": "models/nested/b.pb"}]}]
+
+    class Client:
+        def __init__(self):
+            self.copied = []
+            self.uploads = []
+            self.heads = []
+
+        def get_object(self, Bucket, Key):
+            assert (Bucket, Key) == ("bucket", "manifest.json")
+            return {"Body": Body()}
+
+        def head_object(self, Bucket, Key):
+            self.heads.append((Bucket, Key))
+
+        def get_paginator(self, name):
+            assert name == "list_objects_v2"
+            return Paginator()
+
+        def copy_object(self, Bucket, Key, CopySource):
+            self.copied.append((Bucket, Key, CopySource))
+
+        def put_object(self, **kwargs):
+            self.uploads.append(kwargs)
+
+    client = Client()
+    monkeypatch.setattr(model_cd, "s3_client", lambda: client)
+
+    assert model_cd.parse_s3_uri("s3://bucket/manifest.json") == ("bucket", "manifest.json")
+    with pytest.raises(ValueError):
+        model_cd.parse_s3_uri("file:///tmp/model")
+    assert model_cd.read_manifest("s3://bucket/manifest.json") == {"model_name": "bst"}
+
+    model_cd.verify_model_repository("s3://bucket/model")
+    assert len(client.heads) == len(REQUIRED_MODEL_FILES)
+
+    model_cd.copy_s3_prefix("s3://source/models", "s3://target/prod")
+    assert client.copied == [
+        ("target", "prod/a.pb", {"Bucket": "source", "Key": "models/a.pb"}),
+        ("target", "prod/nested/b.pb", {"Bucket": "source", "Key": "models/nested/b.pb"}),
+    ]
+
+    model_cd.upload_manifest({"version": "v1"}, "s3://target/latest.json")
+    assert client.uploads[0]["Bucket"] == "target"
+    assert client.uploads[0]["Key"] == "latest.json"
+
+
+def test_model_cd_missing_local_repository_and_latest_uri(tmp_path, monkeypatch):
+    with pytest.raises(FileNotFoundError):
+        model_cd.verify_model_repository(str(tmp_path / "missing"))
+
+    assert model_cd.latest_storage_uri({"serving_storage_uri": "s3://store/prod"}, {"model_version": "v1"}) == "s3://store/prod"
+    monkeypatch.setenv("MODEL_STORE_BUCKET", "bucket")
+    monkeypatch.setenv("MODEL_STORE_PREFIX", "models/bst")
+    assert model_cd.latest_storage_uri(None, {"model_version": "v1"}) == "s3://bucket/models/bst/latest"
+
+
+def test_model_cd_prometheus_gates(monkeypatch):
+    values = {
+        "candidate_error": 0.01,
+        "control_error": 0.02,
+        "candidate_latency": 0.10,
+        "control_latency": 0.10,
+    }
+
+    def fake_query(_url, query):
+        if 'status="error"' in query and 'ab_variant="candidate"' in query:
+            return values["candidate_error"]
+        if 'status="error"' in query and 'ab_variant="control"' in query:
+            return values["control_error"]
+        if 'ab_variant="candidate"' in query:
+            return values["candidate_latency"]
+        return values["control_latency"]
+
+    monkeypatch.setattr(model_cd, "query_prometheus", fake_query)
+    model_cd.assert_promote_gates("http://prometheus", "10m")
+
+    values["candidate_error"] = 0.20
+    with pytest.raises(RuntimeError, match="candidate error gate failed"):
+        model_cd.assert_promote_gates("http://prometheus", "10m")
+
+    values["candidate_error"] = 0.01
+    values["candidate_latency"] = 1.0
+    with pytest.raises(RuntimeError, match="candidate latency gate failed"):
+        model_cd.assert_promote_gates("http://prometheus", "10m")
+
+
+def test_model_cd_query_prometheus_and_crd_exists(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"data": {"result": [{"value": [1, "2.5"]}]}}'
+
+    requested = {}
+
+    def fake_urlopen(url, timeout):
+        requested["url"] = url
+        requested["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(model_cd.urllib.request, "urlopen", fake_urlopen)
+    assert model_cd.query_prometheus("http://prometheus", "sum(rate(x[5m]))") == 2.5
+    assert "sum%28rate%28x%5B5m%5D%29%29" in requested["url"]
+    assert requested["timeout"] == 15
+
+    monkeypatch.setattr(model_cd.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 0})())
+    assert model_cd.crd_exists("servicemonitors.monitoring.coreos.com") is True
+    monkeypatch.setattr(model_cd.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 1})())
+    assert model_cd.crd_exists("missing.example.com") is False

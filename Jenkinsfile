@@ -51,7 +51,9 @@ pipeline {
   }
 
   parameters {
-    string(name: 'IMAGE_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used for component images.')
+    string(name: 'IMAGE_PUSH_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used by Jenkins when pushing component images.')
+    string(name: 'IMAGE_PULL_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used by Kubernetes workloads when pulling component images.')
+    string(name: 'IMAGE_REGISTRY', defaultValue: '', description: 'Deprecated fallback used when IMAGE_PUSH_REGISTRY or IMAGE_PULL_REGISTRY is empty.')
     booleanParam(name: 'PUBLISH_IMAGES', defaultValue: true, description: 'Push images after successful component CI.')
     booleanParam(name: 'DEPLOY_CHANGED_COMPONENTS', defaultValue: true, description: 'Deploy/update changed components on main only.')
     booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'Allow deploy/update from a non-main branch.')
@@ -113,7 +115,8 @@ pipeline {
       when { expression { env.RUN_COMPONENT_BUILD == 'true' && params.PUBLISH_IMAGES && params.REGISTRY_CREDENTIALS_ID?.trim() } }
       steps {
         script {
-          def registryHost = params.IMAGE_REGISTRY.tokenize('/')[0]
+          def pushRegistry = params.IMAGE_PUSH_REGISTRY?.trim() ?: params.IMAGE_REGISTRY
+          def registryHost = pushRegistry.tokenize('/')[0]
           withCredentials([usernamePassword(credentialsId: params.REGISTRY_CREDENTIALS_ID, usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
             sh "echo \"\\$REGISTRY_PASSWORD\" | docker login '${registryHost}' --username \"\\$REGISTRY_USERNAME\" --password-stdin"
           }
@@ -125,9 +128,10 @@ pipeline {
       when { expression { env.RUN_COMPONENT_BUILD == 'true' } }
       steps {
         script {
+          def pushRegistry = params.IMAGE_PUSH_REGISTRY?.trim() ?: params.IMAGE_REGISTRY
           runComponentBranches(
             'jenkins/scripts/component_build_publish.sh',
-            "IMAGE_REGISTRY='${params.IMAGE_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}'"
+            "IMAGE_PUSH_REGISTRY='${pushRegistry}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}'"
           )
         }
       }
@@ -137,7 +141,8 @@ pipeline {
       when { expression { shouldDeployChangedComponents() } }
       steps {
         script {
-          def commandEnv = "IMAGE_REGISTRY='${params.IMAGE_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}'"
+          def pullRegistry = params.IMAGE_PULL_REGISTRY?.trim() ?: params.IMAGE_REGISTRY
+          def commandEnv = "IMAGE_PULL_REGISTRY='${pullRegistry}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}'"
           if (params.KUBECONFIG_CREDENTIALS_ID?.trim()) {
             withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
               runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)

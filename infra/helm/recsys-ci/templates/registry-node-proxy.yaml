@@ -1,0 +1,34 @@
+{{- if and .Values.registry.enabled .Values.registry.nodeProxy.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: recsys-registry-node-proxy
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-registry-node-proxy
+    app.kubernetes.io/part-of: recsys-ci
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recsys-registry-node-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: recsys-registry-node-proxy
+        app.kubernetes.io/part-of: recsys-ci
+    spec:
+      containers:
+        - name: registry-proxy
+          image: {{ .Values.registry.nodeProxy.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: REGISTRY_HOST
+              value: {{ .Values.registry.service.name }}.{{ .Values.namespace.name }}.svc.cluster.local
+            - name: REGISTRY_PORT
+              value: "{{ .Values.registry.service.port }}"
+          ports:
+            - name: registry
+              containerPort: 80
+              hostPort: {{ .Values.registry.nodeProxy.hostPort }}
+              protocol: TCP
+{{- end }}

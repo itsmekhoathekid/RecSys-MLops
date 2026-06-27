@@ -40,9 +40,9 @@ def _normalise_uri(uri: str | Path) -> str:
 
 def _s3_endpoint() -> tuple[str, str]:
     endpoint = os.getenv("MINIO_ENDPOINT", os.getenv("DATA_PLATFORM_MINIO_ENDPOINT", "http://data-platform-minio:9000"))
-    parsed = urlparse(endpoint)
-    if not parsed.scheme:
+    if "://" not in endpoint:
         return "http", endpoint
+    parsed = urlparse(endpoint)
     return parsed.scheme, parsed.netloc
 
 

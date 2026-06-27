@@ -1,0 +1,37 @@
+{{- if .Values.staticVolumes.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.jenkins.pvc.volumeName }}
+  labels:
+    app.kubernetes.io/name: recsys-jenkins
+    app.kubernetes.io/part-of: recsys-ci
+spec:
+  capacity:
+    storage: {{ .Values.jenkins.pvc.storage }}
+  accessModes:
+{{ toYaml .Values.jenkins.pvc.accessModes | indent 4 }}
+  storageClassName: {{ .Values.jenkins.pvc.storageClassName }}
+  persistentVolumeReclaimPolicy: {{ .Values.staticVolumes.reclaimPolicy }}
+  hostPath:
+    path: {{ .Values.staticVolumes.jenkinsHostPath }}
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.registry.pvc.volumeName }}
+  labels:
+    app.kubernetes.io/name: recsys-registry
+    app.kubernetes.io/part-of: recsys-ci
+spec:
+  capacity:
+    storage: {{ .Values.registry.pvc.storage }}
+  accessModes:
+{{ toYaml .Values.registry.pvc.accessModes | indent 4 }}
+  storageClassName: {{ .Values.registry.pvc.storageClassName }}
+  persistentVolumeReclaimPolicy: {{ .Values.staticVolumes.reclaimPolicy }}
+  hostPath:
+    path: {{ .Values.staticVolumes.registryHostPath }}
+    type: DirectoryOrCreate
+{{- end }}
