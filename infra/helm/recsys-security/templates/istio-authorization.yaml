@@ -160,8 +160,11 @@ spec:
               - cluster.local/ns/api-serving/sa/default
               - cluster.local/ns/kubeflow/sa/pipeline-runner
               - cluster.local/ns/kubeflow/sa/default
+              - cluster.local/ns/observability/sa/default
+              - cluster.local/ns/observability/sa/recsys-prometheus
+              - cluster.local/ns/observability/sa/recsys-promtail
               - cluster.local/ns/ingress-nginx/sa/ingress-nginx
       to:
         - operation:
-            ports: ["3000", "3100", "3200", "4317", "9090", "9091"]
+            ports: ["3000", "3100", "3200", "4317", "9090", "9091", "9121", "9187"]
 {{- end }}

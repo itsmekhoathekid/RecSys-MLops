@@ -33,7 +33,7 @@
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
       "targets": [
         { "expr": "sum(rate(recsys_api_request_duration_seconds_sum[5m])) by (route) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count[5m])) by (route), 0.001)", "legendFormat": "latency {{route}}" },
-        { "expr": "sum(rate(recsys_api_failures_total[5m])) by (route,status)", "legendFormat": "failures {{route}} {{status}}" }
+        { "expr": "sum(rate(recsys_api_failures_total[5m])) by (route,status) or vector(0)", "legendFormat": "failures {{route}} {{status}}" }
       ],
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }

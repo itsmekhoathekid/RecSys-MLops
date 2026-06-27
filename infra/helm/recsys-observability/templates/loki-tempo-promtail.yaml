@@ -152,6 +152,8 @@ spec:
             - name: docker-containers
               mountPath: /var/lib/docker/containers
               readOnly: true
+            - name: positions
+              mountPath: /run/promtail
       volumes:
         - name: config
           configMap:
@@ -165,6 +167,10 @@ spec:
         - name: docker-containers
           hostPath:
             path: /var/lib/docker/containers
+        - name: positions
+          hostPath:
+            path: /var/lib/recsys-promtail
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -178,7 +184,7 @@ data:
     clients:
       - url: http://recsys-loki:3100/loki/api/v1/push
     positions:
-      filename: /tmp/positions.yaml
+      filename: /run/promtail/positions.yaml
     scrape_configs:
       - job_name: kubernetes-pods
         static_configs:

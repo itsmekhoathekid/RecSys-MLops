@@ -78,8 +78,8 @@
       "title": "Candidate and Recommendation Counts",
       "gridPos": { "x": 8, "y": 12, "w": 8, "h": 7 },
       "targets": [
-        { "expr": "recsys_api_candidate_count", "legendFormat": "candidates" },
-        { "expr": "recsys_api_recommendation_items_count", "legendFormat": "recommendations" }
+        { "expr": "recsys_api_candidate_count or vector(0)", "legendFormat": "candidates" },
+        { "expr": "recsys_api_recommendation_items_count or vector(0)", "legendFormat": "recommendations" }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 } } },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }

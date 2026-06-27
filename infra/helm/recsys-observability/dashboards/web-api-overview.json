@@ -39,7 +39,7 @@
       "type": "stat",
       "title": "5xx Failure Rate",
       "gridPos": { "x": 10, "y": 0, "w": 5, "h": 4 },
-      "targets": [{ "expr": "sum(rate(recsys_api_failures_total[5m])) / clamp_min(sum(rate(recsys_api_requests_total[5m])), 0.001)", "legendFormat": "5xx" }],
+      "targets": [{ "expr": "sum(rate(recsys_api_failures_total[5m])) / clamp_min(sum(rate(recsys_api_requests_total[5m])), 0.001) or vector(0)", "legendFormat": "5xx" }],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -112,8 +112,8 @@
       "title": "Errors by Dependency",
       "gridPos": { "x": 0, "y": 12, "w": 8, "h": 6 },
       "targets": [
-        { "expr": "sum(increase(recsys_api_redis_errors_total[30m])) by (operation)", "legendFormat": "redis {{operation}}" },
-        { "expr": "sum(increase(recsys_api_triton_errors_total[30m])) by (model_name)", "legendFormat": "triton {{model_name}}" }
+        { "expr": "sum(increase(recsys_api_redis_errors_total[30m])) by (operation) or vector(0)", "legendFormat": "redis {{operation}}" },
+        { "expr": "sum(increase(recsys_api_triton_errors_total[30m])) by (model_name) or vector(0)", "legendFormat": "triton {{model_name}}" }
       ],
       "fieldConfig": {
         "defaults": {
