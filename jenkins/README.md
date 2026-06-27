@@ -1,5 +1,64 @@
-# Jenkins CI/CD
+# Jenkins Path-Based CI/CD
 
-Root `Jenkinsfile` is the Jenkins entrypoint. Helper scripts in `jenkins/scripts/`
-mirror the same dry-run checks for local validation.
+Root `Jenkinsfile` is the component-aware CI/CD entrypoint. It detects changed
+paths, runs only the affected component gates, pushes only the affected images,
+and updates only the affected deployed component on `main`.
 
+## Components
+
+| Component | Trigger paths | Published artifacts |
+| --- | --- | --- |
+| `materialize` | `feature_store/`, `local/`, materialize DAG/config | `recsys-dataflow-cli` |
+| `training` | `apps/ml-system/`, `infra/kubeflow/`, `configs/local/bst.yaml` | `recsys-mlops-training`, `recsys-mlops-spark`, compiled KFP YAML |
+| `spark_batch` | `feature_engineering/spark/`, `Dockerfile.spark`, `spark_batch*.yaml` | `recsys-spark`, `recsys-airflow` |
+| `dp1` | raw ingestion, data generator, source CDC config | `recsys-data-generator`, `recsys-dataflow-cli`, `recsys-airflow`, `recsys-kafka-connect` |
+| `dp2` | silver/gold Spark transforms and DAG/config | `recsys-spark`, `recsys-airflow` |
+| `dp3` | offline feature builders and feature store config | `recsys-spark`, `recsys-dataflow-cli`, `recsys-airflow` |
+| `api` | `apps/api-serving/`, API tests, serving chart | `recsys-api-serving` |
+| `kserve` | `infra/helm/recsys-serving/`, `model_cd.py`, model promotion serving code | production model manifest update |
+| `drift` | `validate/`, `mlops/`, future Knative/KServe drift manifests | `recsys-dataflow-cli` |
+| `stream_offline` | Flink stream jobs and Iceberg sink code | `recsys-flink` |
+| `stream_online` | Flink stream jobs, Redis/online writer code | `recsys-flink`, `recsys-dataflow-cli` |
+
+`jenkins/scripts/detect_changed_components.py` is the source of truth for path
+classification. It writes `.ci-components.env` so Jenkins can run the matching
+component stages.
+
+## Stage Contract
+
+Each changed component follows the same sequence:
+
+1. Component unit tests with `pytest-cov` and `COVERAGE_MIN`, default `90`.
+2. Component integration tests from `tests/integration/<component>/` when present.
+3. Existing contract tests relevant to the component.
+4. Docker build and immutable image tag with `GIT_COMMIT`.
+5. Optional push to `IMAGE_REGISTRY`, default `localhost:5001/recsys`.
+6. Deploy/update only on `main` unless `FORCE_DEPLOY=true`.
+
+Services should pull the pushed registry image in CI/CD. The pipeline does not
+deploy `*:local` tags.
+
+## Secrets
+
+Keep secrets in Jenkins credentials or injected environment variables:
+
+- `REGISTRY_CREDENTIALS_ID`: optional username/password for `docker login`.
+- `KUBECONFIG_CREDENTIALS_ID`: optional kubeconfig file credential for deploy.
+- MinIO/S3, MLflow, and model registry credentials for KServe/model CD should be
+  injected by Jenkins as environment variables consumed by `model_cd.py`.
+
+Do not commit secret values into Jenkinsfile, Helm values, or scripts.
+
+## Post-CD E2E
+
+Full service E2E is intentionally separate from the main CI/CD pipeline.
+
+Use `jenkins/post-deploy-e2e/Jenkinsfile` or run:
+
+```bash
+jenkins/scripts/post_deploy_e2e.sh
+```
+
+The post-CD job does not build, push, or deploy. It verifies already-running
+services: FastAPI, KServe, Spark/data outputs, stream offline store, Redis online
+store, drift/metrics, and observability smoke checks.

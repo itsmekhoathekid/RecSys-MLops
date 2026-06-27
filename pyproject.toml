@@ -22,6 +22,7 @@ dependencies = [
     "tqdm>=4.67.3",
     "fastapi>=0.138.0",
     "boto3>=1.43.36",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.pytest.ini_options]
