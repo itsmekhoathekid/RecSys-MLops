@@ -1,0 +1,53 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-grafana-ingress-permissive
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: recsys-grafana
+  mtls:
+    mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-grafana-ingress-allow
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: recsys-grafana
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["3000"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-api-ingress-permissive
+  namespace: api-serving
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recsys-api-serving
+  mtls:
+    mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-api-ingress-allow
+  namespace: api-serving
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recsys-api-serving
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["80", "8080"]

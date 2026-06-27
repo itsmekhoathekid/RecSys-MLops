@@ -114,7 +114,7 @@
       "title": "Ingested Data Products",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
-      "targets": [{ "expr": "max(recsys_datahub_ingest_data_product_present) by (data_product)", "legendFormat": "{{data_product}}" }],
+      "targets": [{ "expr": "max(recsys_datahub_ingest_data_product_present) by (data_product) or vector(0)", "legendFormat": "{{data_product}}" }],
       "fieldConfig": { "defaults": { "decimals": 0, "unit": "short", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } } },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
     },
@@ -124,7 +124,7 @@
       "title": "DataHub CPU by Pod",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
-      "targets": [{ "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"datahub\"}[5m])) by (pod)", "legendFormat": "{{pod}}" }],
+      "targets": [{ "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"datahub\"}[5m])) by (pod) or vector(0)", "legendFormat": "{{pod}}" }],
       "fieldConfig": { "defaults": { "decimals": 2, "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 18, "lineWidth": 2 } } },
       "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
@@ -134,7 +134,7 @@
       "title": "DataHub Memory by Pod",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
-      "targets": [{ "expr": "sum(container_memory_working_set_bytes{namespace=\"datahub\"}) by (pod)", "legendFormat": "{{pod}}" }],
+      "targets": [{ "expr": "sum(container_memory_working_set_bytes{namespace=\"datahub\"}) by (pod) or vector(0)", "legendFormat": "{{pod}}" }],
       "fieldConfig": { "defaults": { "decimals": 1, "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 18, "lineWidth": 2 } } },
       "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
@@ -145,8 +145,8 @@
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 14 },
       "targets": [
-        { "expr": "sum(rate(container_network_receive_bytes_total{namespace=\"datahub\"}[5m])) by (pod)", "legendFormat": "rx {{pod}}" },
-        { "expr": "sum(rate(container_network_transmit_bytes_total{namespace=\"datahub\"}[5m])) by (pod)", "legendFormat": "tx {{pod}}" }
+        { "expr": "sum(rate(container_network_receive_bytes_total{id=\"/\",interface!~\"lo|veth.*|tunl.*|gre.*|gretap.*|erspan.*|ip6.*|sit.*\"}[5m])) by (interface) or vector(0)", "legendFormat": "rx {{interface}}" },
+        { "expr": "sum(rate(container_network_transmit_bytes_total{id=\"/\",interface!~\"lo|veth.*|tunl.*|gre.*|gretap.*|erspan.*|ip6.*|sit.*\"}[5m])) by (interface) or vector(0)", "legendFormat": "tx {{interface}}" }
       ],
       "fieldConfig": { "defaults": { "decimals": 1, "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 16, "lineWidth": 2 } } },
       "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
@@ -158,7 +158,7 @@
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 14 },
       "targets": [
-        { "expr": "topk(10, container_memory_working_set_bytes{namespace=\"datahub\"})", "format": "table", "instant": true }
+        { "expr": "topk(10, container_memory_working_set_bytes{namespace=\"datahub\"}) or vector(0)", "format": "table", "instant": true }
       ],
       "fieldConfig": { "defaults": { "decimals": 1, "unit": "bytes" } },
       "options": { "showHeader": true }

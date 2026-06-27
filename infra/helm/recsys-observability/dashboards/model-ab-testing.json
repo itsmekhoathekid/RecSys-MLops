@@ -133,7 +133,7 @@
       "gridPos": { "x": 8, "y": 3, "w": 4, "h": 4 },
       "targets": [
         {
-          "expr": "(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\",status=\"error\"}[$rate_window])) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])), 0.001)) - (sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"control\",status=\"error\"}[$rate_window])) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"control\"}[$rate_window])), 0.001))",
+          "expr": "((sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\",status=\"error\"}[$rate_window])) or vector(0)) / clamp_min((sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) or vector(0)), 0.001)) - ((sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"control\",status=\"error\"}[$rate_window])) or vector(0)) / clamp_min((sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"control\"}[$rate_window])) or vector(0)), 0.001))",
           "legendFormat": "candidate - control"
         }
       ],
@@ -201,7 +201,7 @@
       "gridPos": { "x": 16, "y": 3, "w": 4, "h": 4 },
       "targets": [
         {
-          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\",status=\"empty\"}[$rate_window])) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])), 0.001)",
+          "expr": "(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\",status=\"empty\"}[$rate_window])) or vector(0)) / clamp_min((sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) or vector(0)), 0.001)",
           "legendFormat": "empty"
         }
       ],
@@ -389,7 +389,7 @@
           "legendFormat": "mean {{ab_variant}} / {{model_version}}"
         },
         {
-          "expr": "max(recsys_api_triton_inference_duration_seconds_max{experiment_id=~\"$experiment\"}) by (ab_variant,model_version)",
+          "expr": "max(recsys_api_triton_inference_duration_seconds_max{experiment_id=~\"$experiment\"}) by (ab_variant,model_version) or vector(0)",
           "legendFormat": "max {{ab_variant}} / {{model_version}}"
         }
       ],
@@ -413,7 +413,7 @@
       "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\",status=\"error\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
+          "expr": "(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",status=\"error\"}[$rate_window])) by (ab_variant,model_version) or (0 * sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version))) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
           "legendFormat": "{{ab_variant}} / {{model_version}}"
         }
       ],
@@ -445,7 +445,7 @@
       "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\",status=\"empty\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
+          "expr": "(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",status=\"empty\"}[$rate_window])) by (ab_variant,model_version) or (0 * sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version))) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
           "legendFormat": "{{ab_variant}} / {{model_version}}"
         }
       ],
@@ -545,7 +545,7 @@
           "legendFormat": "mean {{ab_variant}} / {{model_version}}"
         },
         {
-          "expr": "max(recsys_api_score_max{experiment_id=~\"$experiment\"}) by (ab_variant,model_version)",
+          "expr": "max(recsys_api_score_max{experiment_id=~\"$experiment\"}) by (ab_variant,model_version) or vector(0)",
           "legendFormat": "max {{ab_variant}} / {{model_version}}"
         }
       ],
@@ -569,11 +569,11 @@
       "gridPos": { "x": 12, "y": 49, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "avg(recsys_api_candidate_count{experiment_id=~\"$experiment\"}) by (ab_variant,model_version)",
+          "expr": "avg(recsys_api_candidate_count{experiment_id=~\"$experiment\"}) by (ab_variant,model_version) or vector(0)",
           "legendFormat": "candidates {{ab_variant}} / {{model_version}}"
         },
         {
-          "expr": "avg(recsys_api_recommendation_items_count{experiment_id=~\"$experiment\"}) by (ab_variant,model_version)",
+          "expr": "avg(recsys_api_recommendation_items_count{experiment_id=~\"$experiment\"}) by (ab_variant,model_version) or vector(0)",
           "legendFormat": "items {{ab_variant}} / {{model_version}}"
         }
       ],
@@ -607,7 +607,7 @@
       "gridPos": { "x": 0, "y": 58, "w": 8, "h": 7 },
       "targets": [
         {
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"kserve-triton-inference\",pod=~\".*recsys-bst-triton.*\"}[5m])) by (pod)",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"kserve-triton-inference\",pod=~\".*recsys-bst-triton.*\"}[5m])) by (pod) or vector(0)",
           "legendFormat": "{{pod}}"
         }
       ],
@@ -631,7 +631,7 @@
       "gridPos": { "x": 8, "y": 58, "w": 8, "h": 7 },
       "targets": [
         {
-          "expr": "sum(container_memory_working_set_bytes{namespace=\"kserve-triton-inference\",pod=~\".*recsys-bst-triton.*\"}) by (pod)",
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"kserve-triton-inference\",pod=~\".*recsys-bst-triton.*\"}) by (pod) or vector(0)",
           "legendFormat": "{{pod}}"
         }
       ],

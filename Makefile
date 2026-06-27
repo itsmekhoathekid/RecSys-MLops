@@ -22,6 +22,8 @@ DATAHUB_NAMESPACE ?= datahub
 DATAHUB_FRONTEND_PORT ?= 9002
 DATAHUB_GMS_PORT ?= 8088
 DATAHUB_GMS_URL ?= http://127.0.0.1:$(DATAHUB_GMS_PORT)
+PUSHGATEWAY_PORT ?= 19091
+PUSHGATEWAY_URL ?= http://127.0.0.1:$(PUSHGATEWAY_PORT)
 KFP_VERSION ?= 2.16.1
 KUBEFLOW_NAMESPACE ?= kubeflow
 MLOPS_NAMESPACE ?= experiment-tracking
@@ -265,11 +267,21 @@ data-platform-verify-e2e:
 
 .PHONY: data-platform-retrain-smoke
 data-platform-retrain-smoke:
-	@PYTHONPATH=apps/data-platform/src uv run python -m mlops.retrain_smoke \
+	@set -euo pipefail; \
+	kubectl port-forward -n observability svc/recsys-pushgateway $(PUSHGATEWAY_PORT):9091 >/tmp/recsys-pushgateway-port-forward.log 2>&1 & \
+	pushgateway_pf_pid=$$!; \
+	trap 'kill $$pushgateway_pf_pid >/dev/null 2>&1 || true' EXIT; \
+	for _ in $$(seq 1 30); do \
+	if curl -fsS $(PUSHGATEWAY_URL)/-/ready >/dev/null 2>&1; then break; fi; \
+		sleep 1; \
+	done; \
+	curl -fsS $(PUSHGATEWAY_URL)/-/ready >/dev/null; \
+	PYTHONPATH=apps/data-platform/src uv run python -m mlops.retrain_smoke \
 		--workdir "$(RETRAIN_SMOKE_WORKDIR)" \
 		--kfp-endpoint "$(RETRAIN_SMOKE_KFP_ENDPOINT)" \
 		--experiment-name "$(RETRAIN_SMOKE_EXPERIMENT)" \
-		--pipeline-package-path "$(RETRAIN_SMOKE_PIPELINE_PACKAGE)"
+		--pipeline-package-path "$(RETRAIN_SMOKE_PIPELINE_PACKAGE)" \
+		--pushgateway-url "$(PUSHGATEWAY_URL)"
 
 .PHONY: data-platform-stream-generator-start
 data-platform-stream-generator-start:
@@ -324,14 +336,21 @@ datahub-port-forward:
 datahub-ingest-governance:
 	@set -euo pipefail; \
 	kubectl port-forward -n $(DATAHUB_NAMESPACE) svc/datahub-datahub-gms $(DATAHUB_GMS_PORT):8080 >/tmp/recsys-datahub-gms-port-forward.log 2>&1 & \
-	pf_pid=$$!; \
-	trap 'kill $$pf_pid >/dev/null 2>&1 || true' EXIT; \
+	gms_pf_pid=$$!; \
+	kubectl port-forward -n observability svc/recsys-pushgateway $(PUSHGATEWAY_PORT):9091 >/tmp/recsys-pushgateway-port-forward.log 2>&1 & \
+	pushgateway_pf_pid=$$!; \
+	trap 'kill $$gms_pf_pid $$pushgateway_pf_pid >/dev/null 2>&1 || true' EXIT; \
 	for _ in $$(seq 1 30); do \
 	if curl -fsS $(DATAHUB_GMS_URL)/health >/dev/null 2>&1; then break; fi; \
 		sleep 1; \
 	done; \
 	curl -fsS $(DATAHUB_GMS_URL)/health >/dev/null; \
-	PYTHONPATH=apps/data-platform/src uv run python -m metadata.ingest_datahub_governance --gms-url $(DATAHUB_GMS_URL)
+	for _ in $$(seq 1 30); do \
+	if curl -fsS $(PUSHGATEWAY_URL)/-/ready >/dev/null 2>&1; then break; fi; \
+		sleep 1; \
+	done; \
+	curl -fsS $(PUSHGATEWAY_URL)/-/ready >/dev/null; \
+	PYTHONPATH=apps/data-platform/src uv run python -m metadata.ingest_datahub_governance --gms-url $(DATAHUB_GMS_URL) --pushgateway-url $(PUSHGATEWAY_URL)
 
 .PHONY: mlops-images
 mlops-images:
@@ -447,6 +466,8 @@ gateway-template:
 gateway-install-controller:
 	@helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx || true
 	@helm repo update ingress-nginx
+	@kubectl create namespace $(GATEWAY_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl label namespace $(GATEWAY_NAMESPACE) istio-injection=enabled --overwrite
 	@helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --namespace $(GATEWAY_NAMESPACE) --create-namespace \
 		--set controller.service.type=LoadBalancer \
 		--set controller.config.limit-req-status-code=429 \

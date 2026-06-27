@@ -50,7 +50,7 @@
       "type": "bargauge",
       "title": "Feature PSI Leaderboard",
       "gridPos": { "x": 0, "y": 4, "w": 12, "h": 9 },
-      "targets": [{ "expr": "topk(20, recsys_ml_feature_drift_psi)", "legendFormat": "{{feature_view}}/{{feature}}" }],
+      "targets": [{ "expr": "topk(20, recsys_ml_feature_drift_psi) or vector(0)", "legendFormat": "{{feature_view}}/{{feature}}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.1 }, { "color": "red", "value": 0.15 }] } } },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
     },
@@ -59,7 +59,7 @@
       "type": "timeseries",
       "title": "PSI Over Time",
       "gridPos": { "x": 12, "y": 4, "w": 12, "h": 9 },
-      "targets": [{ "expr": "recsys_ml_feature_drift_psi", "legendFormat": "{{feature_view}}/{{feature}}" }],
+      "targets": [{ "expr": "recsys_ml_feature_drift_psi or vector(0)", "legendFormat": "{{feature_view}}/{{feature}}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 3, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
@@ -69,8 +69,8 @@
       "title": "Current vs Reference Rows",
       "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
       "targets": [
-        { "expr": "recsys_ml_feature_drift_current_rows", "legendFormat": "current {{feature_view}}" },
-        { "expr": "recsys_ml_feature_drift_reference_rows", "legendFormat": "reference {{feature_view}}" }
+        { "expr": "recsys_ml_feature_drift_current_rows or vector(0)", "legendFormat": "current {{feature_view}}" },
+        { "expr": "recsys_ml_feature_drift_reference_rows or vector(0)", "legendFormat": "reference {{feature_view}}" }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 35 } } },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
@@ -80,7 +80,7 @@
       "type": "table",
       "title": "Feature Drift Status",
       "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
-      "targets": [{ "expr": "recsys_ml_feature_drift_passed", "format": "table", "instant": true }],
+      "targets": [{ "expr": "recsys_ml_feature_drift_passed or vector(0)", "format": "table", "instant": true }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } } },
       "options": { "showHeader": true, "cellHeight": "sm" }
     }

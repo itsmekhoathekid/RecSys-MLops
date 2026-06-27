@@ -10,6 +10,7 @@ metadata:
     nginx.ingress.kubernetes.io/auth-secret: {{ .Values.auth.secretName }}
     nginx.ingress.kubernetes.io/auth-realm: {{ .Values.auth.realm | quote }}
     {{- end }}
+    nginx.ingress.kubernetes.io/service-upstream: "true"
     {{- if .Values.api.rateLimit.enabled }}
     nginx.ingress.kubernetes.io/limit-rps: {{ .Values.api.rateLimit.rps | quote }}
     nginx.ingress.kubernetes.io/limit-rpm: {{ .Values.api.rateLimit.rpm | quote }}
