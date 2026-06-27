@@ -206,9 +206,11 @@ def crd_exists(name: str) -> bool:
 
 def deploy(values_path: Path, timeout: str) -> None:
     run(["helm", "lint", "infra/helm/recsys-serving", "-f", str(values_path)])
-    set_args = ["--set", "autoscaling.kserveResource.enabled=false"]
+    bootstrap_set_args = ["--set", "autoscaling.kserveResource.enabled=false"]
+    final_set_args = ["--set", "autoscaling.kserveResource.enabled=true"]
     if not crd_exists("servicemonitors.monitoring.coreos.com"):
-        set_args.extend(["--set", "observability.serviceMonitor.enabled=false"])
+        bootstrap_set_args.extend(["--set", "observability.serviceMonitor.enabled=false"])
+        final_set_args.extend(["--set", "observability.serviceMonitor.enabled=false"])
     atomic_enabled = os.getenv("RECSYS_MODEL_CD_ATOMIC", "1").lower() not in {"0", "false", "no"}
     base_command = [
         "helm",
@@ -227,7 +229,7 @@ def deploy(values_path: Path, timeout: str) -> None:
     ]
     if atomic_enabled:
         base_command.insert(8, "--atomic")
-    run(base_command + set_args)
+    run(base_command + bootstrap_set_args)
     run(
         [
             "kubectl",
@@ -250,7 +252,7 @@ def deploy(values_path: Path, timeout: str) -> None:
             f"--timeout={timeout}",
         ]
     )
-    run(base_command + set_args)
+    run(base_command + final_set_args)
 
 
 def stage_manifests(args: argparse.Namespace) -> tuple[dict, dict | None]:
