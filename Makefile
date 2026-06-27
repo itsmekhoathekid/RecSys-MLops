@@ -122,6 +122,7 @@ help:
 	@echo "  make gateway-create-auth         Create local htpasswd file for Basic Auth"
 	@echo "  make gateway-install             Install recsys-gateway Helm chart"
 	@echo "  make gateway-smoke               Check gateway auth, API, and rate-limit behavior"
+	@echo "  make post-deploy-e2e             Verify live services after CI/CD deploy"
 
 .PHONY: mlops-local-up
 mlops-local-up:
@@ -519,3 +520,7 @@ gateway-smoke:
 	done | sort | uniq -c); \
 	echo "$$rate_codes"; \
 	if ! echo "$$rate_codes" | rg '429' >/dev/null; then echo "Warning: no 429 observed; check ingress replica count and configured burst behavior."; fi
+
+.PHONY: post-deploy-e2e
+post-deploy-e2e:
+	@jenkins/scripts/post_deploy_e2e.sh

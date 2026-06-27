@@ -1,3 +1,48 @@
+def componentDefinitions() {
+  return [
+    [flag: 'RUN_MATERIALIZE', name: 'materialize', label: 'Materialize Pipeline'],
+    [flag: 'RUN_TRAINING', name: 'training', label: 'Training Pipeline'],
+    [flag: 'RUN_SPARK_BATCH', name: 'spark_batch', label: 'Spark Batch Processing'],
+    [flag: 'RUN_DP1', name: 'dp1', label: 'DP1 Raw To Bronze'],
+    [flag: 'RUN_DP2', name: 'dp2', label: 'DP2 Bronze To Silver Gold'],
+    [flag: 'RUN_DP3', name: 'dp3', label: 'DP3 Offline Feature Table'],
+    [flag: 'RUN_API', name: 'api', label: 'FastAPI Web API'],
+    [flag: 'RUN_KSERVE', name: 'kserve', label: 'KServe Inference Engine'],
+    [flag: 'RUN_DRIFT', name: 'drift', label: 'Realtime Drift Detection'],
+    [flag: 'RUN_STREAM_OFFLINE', name: 'stream_offline', label: 'Stream Features To Offline Store'],
+    [flag: 'RUN_STREAM_ONLINE', name: 'stream_online', label: 'Stream Features To Online Store'],
+  ]
+}
+
+def runComponentBranches(String scriptPath, String extraEnv) {
+  def branches = [:]
+  componentDefinitions().each { component ->
+    if (env[component.flag] == 'true') {
+      def componentName = component.name
+      def componentLabel = component.label
+      branches[componentLabel] = {
+        sh "${extraEnv} ${scriptPath} ${componentName}"
+      }
+    }
+  }
+  if (branches) {
+    parallel branches
+  } else {
+    echo 'No component changes detected for this stage.'
+  }
+}
+
+def shouldDeployChangedComponents() {
+  return params.DEPLOY_CHANGED_COMPONENTS &&
+    env.RUN_COMPONENT_DEPLOY == 'true' &&
+    (
+      params.FORCE_DEPLOY ||
+      env.BRANCH_NAME == 'main' ||
+      env.GIT_BRANCH == 'main' ||
+      env.GIT_BRANCH == 'origin/main'
+    )
+}
+
 pipeline {
   agent any
 
@@ -6,8 +51,14 @@ pipeline {
   }
 
   parameters {
-    booleanParam(name: 'RUN_MODEL_CD', defaultValue: false, description: 'Deploy the promoted Triton model to KServe.')
-    string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'MinIO/S3 promotion manifest URI produced by the Kubeflow promotion step.')
+    string(name: 'IMAGE_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used for component images.')
+    booleanParam(name: 'PUBLISH_IMAGES', defaultValue: true, description: 'Push images after successful component CI.')
+    booleanParam(name: 'DEPLOY_CHANGED_COMPONENTS', defaultValue: true, description: 'Deploy/update changed components on main only.')
+    booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'Allow deploy/update from a non-main branch.')
+    string(name: 'REGISTRY_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins username/password credential for docker login.')
+    string(name: 'KUBECONFIG_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins file credential containing kubeconfig.')
+    string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/production.json', description: 'Production model manifest URI for KServe CD.')
+    string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
   }
 
   environment {
@@ -22,7 +73,7 @@ pipeline {
       }
     }
 
-    stage('Detect Changes') {
+    stage('Detect Changed Components') {
       steps {
         script {
           def baseRef = env.CHANGE_TARGET ? "origin/${env.CHANGE_TARGET}" : 'HEAD~1'
@@ -39,111 +90,62 @@ pipeline {
     }
 
     stage('Python Env') {
-      when { expression { env.RUN_PYTHON == 'true' || env.RUN_KFP == 'true' } }
+      when { expression { env.RUN_PYTHON == 'true' } }
       steps {
         sh 'uv sync'
-        sh 'mkdir -p reports/junit'
+        sh 'mkdir -p reports/junit reports/coverage'
       }
     }
 
-    stage('Unit Tests') {
-      parallel {
-        stage('Data Generator') {
-          when { expression { env.RUN_DATA_GENERATOR == 'true' } }
-          steps {
-            sh 'PYTHONPATH=apps/data-platform/data-generator/src uv run pytest tests/unit/data_generator -q --junitxml=reports/junit/data-generator.xml'
-          }
-        }
-
-        stage('Data Platform') {
-          when { expression { env.RUN_DATA_PLATFORM == 'true' } }
-          steps {
-            sh 'PYTHONPATH=apps/data-platform/src:apps/data-platform/data-generator/src uv run pytest tests/unit/data_platform tests/contract -q --junitxml=reports/junit/data-platform.xml'
-          }
-        }
-
-        stage('Feature Store') {
-          when { expression { env.RUN_FEATURE_STORE == 'true' } }
-          steps {
-            sh 'PYTHONPATH=apps/data-platform/src:apps/data-platform/feature-store/src uv run python -c "from pathlib import Path; assert Path(\\"apps/data-platform/feature-store/feature_repo/feature_store.yaml\\").exists(); import validate_feature_store; import feature_store.feast_registry"'
-          }
-        }
-
-        stage('Kubeflow Utils') {
-          when { expression { env.RUN_MODEL_PIPELINE == 'true' || env.RUN_KFP == 'true' } }
-          steps {
-            sh 'PYTHONPATH=apps/ml-system/src:apps/data-platform/src uv run pytest tests/unit/ml_system -q --junitxml=reports/junit/kubeflow-utils.xml'
-          }
-        }
-
-        stage('API Scaffold') {
-          when { expression { env.RUN_API == 'true' } }
-          steps {
-            sh 'PYTHONPATH=apps/api-serving/src uv run pytest tests/unit/api_serving -q --junitxml=reports/junit/api-serving.xml'
-          }
-        }
-      }
-    }
-
-    stage('Kubeflow Compile') {
-      when { expression { env.RUN_KFP == 'true' || env.RUN_MODEL_PIPELINE == 'true' } }
-      steps {
-        sh 'PYTHONPATH=apps/ml-system/src:apps/data-platform/src uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py'
-      }
-    }
-
-    stage('Docker Dry-Run Builds') {
-      when {
-        expression {
-          env.RUN_DOCKER_BASE == 'true' || env.RUN_DOCKER_DATA_GENERATOR == 'true' || env.RUN_DOCKER_DATAFLOW == 'true' || env.RUN_DOCKER_FEATURE_STORE == 'true' || env.RUN_DOCKER_API == 'true' || env.RUN_DOCKER_TRAINING == 'true'
-        }
-      }
+    stage('Component CI') {
+      when { expression { env.RUN_COMPONENT_CI == 'true' } }
       steps {
         script {
-          if (env.RUN_DOCKER_BASE == 'true' || env.RUN_DOCKER_DATA_GENERATOR == 'true' || env.RUN_DOCKER_FEATURE_STORE == 'true' || env.RUN_DOCKER_TRAINING == 'true') {
-            sh 'docker build -f infra/docker/Dockerfile.base-python -t recsys-base-python:ci .'
-          }
-          def builds = [:]
-          if (env.RUN_DOCKER_DATA_GENERATOR == 'true') {
-            builds['data-generator'] = { sh 'docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:ci -f apps/data-platform/data-generator/Dockerfile -t recsys-data-generator:ci .' }
-          }
-          if (env.RUN_DOCKER_DATAFLOW == 'true') {
-            builds['spark'] = { sh 'docker build -f apps/data-platform/Dockerfile.spark -t recsys-spark:ci .' }
-            builds['flink'] = { sh 'docker build -f apps/data-platform/Dockerfile.flink -t recsys-flink:ci .' }
-            builds['dataflow-cli'] = { sh 'docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:ci -f apps/data-platform/Dockerfile.dataflow-cli -t recsys-dataflow-cli:ci .' }
-          }
-          if (env.RUN_DOCKER_FEATURE_STORE == 'true') {
-            builds['feature-store'] = { sh 'docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:ci -f apps/data-platform/feature-store/Dockerfile -t recsys-feature-store:ci .' }
-          }
-          if (env.RUN_DOCKER_API == 'true') {
-            builds['api-serving'] = { sh 'docker build -f apps/api-serving/Dockerfile -t recsys-api-serving:ci .' }
-          }
-          if (env.RUN_DOCKER_TRAINING == 'true') {
-            builds['training'] = { sh 'docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:ci -f apps/ml-system/Dockerfile.training -t recsys-mlops-training:ci .' }
-          }
-          if (builds) {
-            parallel builds
+          runComponentBranches(
+            'jenkins/scripts/component_ci.sh',
+            "COVERAGE_MIN='${params.COVERAGE_MIN}'"
+          )
+        }
+      }
+    }
+
+    stage('Docker Login') {
+      when { expression { env.RUN_COMPONENT_BUILD == 'true' && params.PUBLISH_IMAGES && params.REGISTRY_CREDENTIALS_ID?.trim() } }
+      steps {
+        script {
+          def registryHost = params.IMAGE_REGISTRY.tokenize('/')[0]
+          withCredentials([usernamePassword(credentialsId: params.REGISTRY_CREDENTIALS_ID, usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
+            sh "echo \"\\$REGISTRY_PASSWORD\" | docker login '${registryHost}' --username \"\\$REGISTRY_USERNAME\" --password-stdin"
           }
         }
       }
     }
 
-    stage('Helm Dry-Run') {
-      when { expression { env.RUN_HELM == 'true' } }
+    stage('Component Build And Publish') {
+      when { expression { env.RUN_COMPONENT_BUILD == 'true' } }
       steps {
-        sh 'helm lint infra/helm/mlflow-stack && helm template recsys-mlflow infra/helm/mlflow-stack --namespace experiment-tracking >/tmp/recsys-mlflow.yaml'
-        sh 'helm lint infra/helm/recsys-runtime && helm template recsys-runtime infra/helm/recsys-runtime --namespace kubeflow --set namespace.name=kubeflow >/tmp/recsys-runtime.yaml'
-        sh 'helm lint infra/helm/ray-cluster && helm template recsys-ray-cpu infra/helm/ray-cluster --namespace kubeflow >/tmp/recsys-ray-cpu.yaml'
-        sh 'helm lint infra/helm/recsys-serving && helm template recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference >/tmp/recsys-serving.yaml'
+        script {
+          runComponentBranches(
+            'jenkins/scripts/component_build_publish.sh',
+            "IMAGE_REGISTRY='${params.IMAGE_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}'"
+          )
+        }
       }
     }
 
-    stage('Model CD') {
-      when { expression { params.RUN_MODEL_CD == true } }
+    stage('Component Deploy Or Update') {
+      when { expression { shouldDeployChangedComponents() } }
       steps {
-        sh "python3 jenkins/scripts/model_cd.py --manifest-uri '${params.PROMOTION_MANIFEST_URI}' --output-dir .model-cd"
-        sh 'helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace --atomic --timeout 300s -f .model-cd/recsys-serving-values.json'
-        sh 'kubectl wait --for=condition=Ready inferenceservice/recsys-bst-triton -n kserve-triton-inference --timeout=300s'
+        script {
+          def commandEnv = "IMAGE_REGISTRY='${params.IMAGE_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}'"
+          if (params.KUBECONFIG_CREDENTIALS_ID?.trim()) {
+            withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+              runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+            }
+          } else {
+            runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+          }
+        }
       }
     }
   }
@@ -151,7 +153,7 @@ pipeline {
   post {
     always {
       junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
-      archiveArtifacts allowEmptyArchive: true, artifacts: 'infra/kubeflow/compiled/*.yaml,.ci-components.env,.model-cd/*'
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,infra/kubeflow/compiled/*.yaml,.ci-components.env,.ci-image-manifest/*,.model-cd/*'
     }
   }
 }

@@ -1,0 +1,53 @@
+pipeline {
+  agent any
+
+  options {
+    skipDefaultCheckout(false)
+  }
+
+  parameters {
+    string(name: 'KUBECONFIG_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins file credential containing kubeconfig.')
+    string(name: 'FASTAPI_PORT', defaultValue: '8088', description: 'Local port used for FastAPI port-forward during validation.')
+    booleanParam(name: 'RUN_FEATURE_STORE_VERIFY', defaultValue: true, description: 'Verify streaming offline and online feature stores.')
+    booleanParam(name: 'RUN_OBSERVABILITY_SMOKE', defaultValue: true, description: 'Run observability smoke checks after service validation.')
+  }
+
+  environment {
+    UV_LINK_MODE = 'copy'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Python Env') {
+      steps {
+        sh 'uv sync'
+      }
+    }
+
+    stage('Post-CD E2E') {
+      steps {
+        script {
+          def command = "FASTAPI_PORT='${params.FASTAPI_PORT}' RUN_FEATURE_STORE_VERIFY='${params.RUN_FEATURE_STORE_VERIFY ? '1' : '0'}' RUN_OBSERVABILITY_SMOKE='${params.RUN_OBSERVABILITY_SMOKE ? '1' : '0'}' jenkins/scripts/post_deploy_e2e.sh"
+          if (params.KUBECONFIG_CREDENTIALS_ID?.trim()) {
+            withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+              sh command
+            }
+          } else {
+            sh command
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
+    }
+  }
+}
