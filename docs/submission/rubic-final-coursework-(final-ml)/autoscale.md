@@ -171,3 +171,4 @@ Expected scaling behavior:
 #### Fully scaled up
 
 ![Data & ML system](../../pngs/fully_scaled.png)
+

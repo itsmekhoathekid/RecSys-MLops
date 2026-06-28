@@ -158,7 +158,7 @@ pipeline {
   post {
     always {
       junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
-      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,infra/kubeflow/compiled/*.yaml,.ci-components.env,.ci-image-manifest/*,.model-cd/*'
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,infra/kubeflow/compiled/*.yaml,.ci-components.env,.ci-image-manifest/*,.model-cd/*'
     }
   }
 }
