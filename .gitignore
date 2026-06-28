@@ -36,4 +36,6 @@ graphify-out/
 AGENTS.md
 .uv-cache/
 .ci-image-manifest/
-
+.hypothesis/
+data_platform/
+output
