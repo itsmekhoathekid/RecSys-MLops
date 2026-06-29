@@ -16,7 +16,7 @@ from features.spark.build_silver_tables import (
 )
 from features.spark.build_user_aggregate_features import build_user_aggregate_features
 from features.spark.build_user_sequence_features import build_user_sequence_features
-from features.spark.session import row_count, spark_session, write_iceberg_table
+from features.spark.session import row_count, spark_session, write_iceberg_table, write_parquet
 from lakehouse.iceberg import IcebergCatalogConfig, create_spark_namespace
 
 
@@ -106,6 +106,13 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
         outputs = _build_feature_outputs(silver, catalog=catalog, features=features)
         for table_name, frame in outputs.items():
             write_iceberg_table(frame, table_name, mode="overwrite")
+        feast_offline_root = output.get("feast_offline_store_uri")
+        if feast_offline_root:
+            for table_name in ("user_aggregate_features", "item_features"):
+                write_parquet(
+                    outputs[catalog.feature_table(table_name)],
+                    f"{feast_offline_root.rstrip('/')}/{table_name}",
+                )
         summary = {"clean_behavior_events": row_count(silver["clean_behavior_events"])}
         summary.update(_output_summary(outputs))
         return summary

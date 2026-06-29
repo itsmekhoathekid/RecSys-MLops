@@ -258,7 +258,8 @@ def test_spark_feature_path_is_native_iceberg_not_pandas_or_parquet_writer():
     assert "from pyspark.sql" in sources
     assert 'source", os.getenv("SPARK_BATCH_SOURCE", "lakehouse")' in batch_source
     assert "write_iceberg_table" in batch_source
-    assert "write_parquet(" not in batch_source
+    assert "feast_offline_store_uri" in batch_source
+    assert "write_parquet(" in batch_source
     assert not (spark_dir / "spark_realtime_bronze_entrypoint.py").exists()
 
 

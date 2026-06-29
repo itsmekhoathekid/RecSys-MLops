@@ -1,0 +1,11 @@
+project: recsys
+provider: local
+registry: data/registry.db
+entity_key_serialization_version: 2
+
+offline_store:
+  type: file
+
+online_store:
+  type: redis
+  connection_string: redis:6379

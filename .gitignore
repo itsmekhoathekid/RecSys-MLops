@@ -41,3 +41,4 @@ AGENTS.md
 .hypothesis/
 data_platform/
 output
+notebooks/models/

@@ -241,7 +241,7 @@ data-platform-template:
 
 .PHONY: data-platform-install
 data-platform-install:
-	@helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform --namespace recsys-dataflow --create-namespace --timeout 15m
+	@helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform --namespace recsys-dataflow --create-namespace --timeout 15m --reset-values
 
 .PHONY: data-platform-trigger
 data-platform-trigger:

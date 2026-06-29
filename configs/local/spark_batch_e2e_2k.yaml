@@ -12,6 +12,7 @@ output:
   offline_feature_store_warehouse: s3a://recsys-offline-feature-store/warehouse
   iceberg_feature_namespace: feature_store
   offline_feature_store_uri: s3a://recsys-offline-feature-store/warehouse/feature_store
+  feast_offline_store_uri: s3a://recsys-offline-feature-store/feast/offline
 
 features:
   max_history_length: 50
