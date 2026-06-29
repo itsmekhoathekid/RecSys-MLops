@@ -21,11 +21,11 @@ def test_api_change_routes_only_api_component():
 
 def test_training_change_routes_training_and_model_promotion_routes_kserve():
     assert "TRAINING" in enabled(["apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py"])
-    assert {"TRAINING", "KSERVE"} <= enabled(["apps/ml-system/src/model_promotion.py"])
+    assert {"TRAINING", "KSERVE"} <= enabled(["apps/ml-system/src/registry/model_promotion.py"])
 
 
 def test_spark_batch_paths_route_spark_batch_dp2_dp3():
-    components = enabled(["apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py"])
+    components = enabled(["apps/data-platform/src/features/spark/spark_batch_entrypoint.py"])
     assert {"SPARK_BATCH", "DP2", "DP3"} <= components
     assert "API" not in components
 
@@ -37,7 +37,7 @@ def test_dp1_paths_route_raw_to_bronze_only():
 
 
 def test_streaming_paths_route_offline_and_online_stream_jobs():
-    components = enabled(["apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py"])
+    components = enabled(["apps/data-platform/src/features/flink/realtime_stream_job.py"])
     assert {"STREAM_OFFLINE", "STREAM_ONLINE"} <= components
 
 

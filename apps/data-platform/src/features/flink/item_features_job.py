@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
-from feature_engineering.flink.time_utils import isoformat_utc, parse_event_time
+from features.flink.time_utils import isoformat_utc, parse_event_time
 
 
 @dataclass

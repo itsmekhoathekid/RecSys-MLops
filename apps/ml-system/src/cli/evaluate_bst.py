@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch
 
-from mlflow_dataset_lineage import load_dataset_metadata, log_dataset_lineage
+from lineage.mlflow_dataset_lineage import load_dataset_metadata, log_dataset_lineage
 from models import Trainer, load_config, recommenderDataset
 
 

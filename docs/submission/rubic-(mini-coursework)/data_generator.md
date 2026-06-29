@@ -8,6 +8,44 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/cli.py validate --config configs/local/data_generator_test.yaml
 ```
 
+## Document Config Generator
+
+- Config file:
+  - [configs/local/data_generator_test.yaml line 1](../../../configs/local/data_generator_test.yaml#1)
+  - [configs/local/data_generator_drift.yaml line 1](../../../configs/local/data_generator_drift.yaml#1)
+- Config schema reference:
+  - [apps/data-platform/data-generator/src/config.py line 10](../../../apps/data-platform/data-generator/src/config.py#10)
+  - [apps/data-platform/data-generator/src/config.py line 18](../../../apps/data-platform/data-generator/src/config.py#18)
+  - [apps/data-platform/data-generator/src/config.py line 45](../../../apps/data-platform/data-generator/src/config.py#45)
+  - [apps/data-platform/data-generator/src/config.py line 58](../../../apps/data-platform/data-generator/src/config.py#58)
+  - [apps/data-platform/data-generator/src/config.py line 73](../../../apps/data-platform/data-generator/src/config.py#73)
+  - [apps/data-platform/data-generator/src/config.py line 83](../../../apps/data-platform/data-generator/src/config.py#83)
+  - [apps/data-platform/data-generator/src/config.py line 122](../../../apps/data-platform/data-generator/src/config.py#122)
+
+| Config group | Purpose | Example key |
+| --- | --- | --- |
+| `seed`, `history_start_date`, `history_days` | deterministic run and history window | `seed: 42` |
+| `entities` | entity volume and cardinality | `n_users`, `n_products`, `n_categories` |
+| `traffic` | target event volume and session/request shape | `target_behavior_events` |
+| `session_behavior` | click/cart/purchase probability controls | `purchase_after_cart_base` |
+| `distribution` | skew controls | `top_city_ratio`, `top_category_ratio` |
+| `challenges` | duplicates, late arrivals, out-of-order events | `duplicate_event_rate`, `late_arrival_rate` |
+| `burst_windows` | streaming burst simulation | `traffic_weight` |
+| `schema_evolution` | old/new schema boundary | `change_date` |
+| `drift` | drift scenario and drift strength | `purchase_probability_multiplier` |
+| `output` | run output path and overwrite behavior | `run_id`, `base_path` |
+
+### Running Command
+
+```bash
+PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py --config configs/local/data_generator_test.yaml --lake-root data_platform/lake | awk '/## Generator Config/{flag=1} /^## Data Volume/{flag=0} flag'
+PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py --config configs/local/data_generator_drift.yaml | awk '/## Generator Configuration/{flag=1} /^## Drift Health/{flag=0} flag'
+```
+
+### Image Proof
+
+TODO: screenshot generator configuration output.
+
 ## Offline Data Problems
 
 ### Simulate Skew
@@ -109,3 +147,34 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 ### Image Proof
 
 ![Data & ML system](../../pngs/stream_data_problems.png)
+
+## Data Drift And Label Merge
+
+### Simulate Data Drift
+
+- Code reference:
+  - [configs/local/data_generator_drift.yaml line 60](../../../configs/local/data_generator_drift.yaml#60)
+  - [apps/data-platform/data-generator/src/drift/controller.py line 8](../../../apps/data-platform/data-generator/src/drift/controller.py#8)
+  - [apps/data-platform/data-generator/src/drift/reporting.py line 137](../../../apps/data-platform/data-generator/src/drift/reporting.py#137)
+  - [apps/data-platform/data-generator/src/drift/reporting.py line 161](../../../apps/data-platform/data-generator/src/drift/reporting.py#161)
+
+### Create Label Table And Merge With Features
+
+- Code reference:
+  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 46](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#46)
+  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 84](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#84)
+  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 95](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#95)
+  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 175](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#175)
+  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 183](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#183)
+
+### Running Command
+
+```bash
+cd /Users/KHOAI/anhkhoa/RecSys-MLops
+PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/cli.py generate --config configs/local/data_generator_drift.yaml
+PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py --config configs/local/data_generator_drift.yaml
+```
+
+### Image Proof
+
+TODO: screenshot output showing generator configuration, label table `user_id,label`, and merged features with labels.

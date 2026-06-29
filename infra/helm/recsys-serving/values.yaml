@@ -4,8 +4,8 @@ kserve:
     create: true
     name: kserve-triton-inference
   servingRuntime:
-    create: false
-    name: kserve-tritonserver
+    create: true
+    name: recsys-tritonserver
     image: nvcr.io/nvidia/tritonserver:23.05-py3
     resources:
       requests:

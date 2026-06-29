@@ -8,15 +8,15 @@ from typing import Any
 
 import yaml
 
-from feature_engineering.spark.build_bst_training_table import build_bst_training_table
-from feature_engineering.spark.build_item_features import build_item_features
-from feature_engineering.spark.build_ranking_labels import build_ranking_labels
-from feature_engineering.spark.build_silver_tables import (
+from features.spark.build_bst_training_table import build_bst_training_table
+from features.spark.build_item_features import build_item_features
+from features.spark.build_ranking_labels import build_ranking_labels
+from features.spark.build_silver_tables import (
     build_silver_tables,
 )
-from feature_engineering.spark.build_user_aggregate_features import build_user_aggregate_features
-from feature_engineering.spark.build_user_sequence_features import build_user_sequence_features
-from feature_engineering.spark.session import row_count, spark_session, write_iceberg_table
+from features.spark.build_user_aggregate_features import build_user_aggregate_features
+from features.spark.build_user_sequence_features import build_user_sequence_features
+from features.spark.session import row_count, spark_session, write_iceberg_table
 from lakehouse.iceberg import IcebergCatalogConfig, create_spark_namespace
 
 

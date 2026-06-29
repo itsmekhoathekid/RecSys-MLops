@@ -9,9 +9,11 @@ notebooks/data/
 .ipynb_checkpoints/
 data_generator/output/
 apps/data-generator/src/output/
+apps/data-platform/data-generator/src/output/
 coursework/
 data_pipeline/output/
 data_pipeline/lake/
+data_platform/lake/
 feature_store/feature_repo/data/
 apps/feature-store/feature_repo/data/
 outputs/

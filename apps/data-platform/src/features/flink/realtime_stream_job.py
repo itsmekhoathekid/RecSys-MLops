@@ -9,19 +9,19 @@ from datetime import datetime, timedelta, timezone
 from collections import deque
 from typing import Any
 
-from feature_engineering.flink.candidate_pool_job import (
+from features.flink.candidate_pool_job import (
     candidate_updates,
 )
-from feature_engineering.flink.item_features_job import (
+from features.flink.item_features_job import (
     ItemFeatureState,
 )
-from feature_engineering.flink.user_aggregate_job import (
+from features.flink.user_aggregate_job import (
     UserAggregateState,
 )
-from feature_engineering.flink.user_sequence_job import (
+from features.flink.user_sequence_job import (
     UserSequenceState,
 )
-from feature_engineering.flink.time_utils import isoformat_utc, parse_event_time
+from features.flink.time_utils import isoformat_utc, parse_event_time
 from feature_store.online_writer import RedisOnlineWriter, dumps_feature_payload
 from ingest.debezium import extract_debezium_after
 
@@ -742,7 +742,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
     if not args.offline_store_enabled:
         return None
 
-    from feature_engineering.flink.iceberg_feature_sink import configure_iceberg_catalog
+    from features.flink.iceberg_feature_sink import configure_iceberg_catalog
     from lakehouse.iceberg import IcebergCatalogConfig
     from pyflink.table import StreamTableEnvironment
 

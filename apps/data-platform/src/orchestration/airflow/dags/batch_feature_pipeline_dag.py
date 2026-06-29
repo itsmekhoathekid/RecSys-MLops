@@ -28,7 +28,7 @@ if DAG is not None:
             task_id="run_batch_features",
             bash_command=(
                 "PYTHONPATH=apps/data-platform/src spark-submit "
-                "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py"
+                "apps/data-platform/src/features/spark/spark_batch_entrypoint.py"
             ),
         )
         ingest_batch_to_lakehouse >> run_batch_features

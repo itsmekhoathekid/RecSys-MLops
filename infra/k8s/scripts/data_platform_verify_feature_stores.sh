@@ -165,7 +165,7 @@ spec:
                   raise SystemExit(f"Iceberg stream feature table files are missing: {missing}; checks={checks}")
               print(json.dumps(checks, sort_keys=True))
               PY
-              python /tmp/verify_stream_feature_store.py
+              python3 /tmp/verify_stream_feature_store.py
 YAML
 
 if ! kubectl wait -n "${NAMESPACE}" --for=condition=complete "job/${VERIFY_JOB}" --timeout="${TIMEOUT_SECONDS}s"; then

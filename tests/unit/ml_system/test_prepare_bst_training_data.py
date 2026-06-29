@@ -5,14 +5,14 @@ import sys
 
 import pandas as pd
 
-from dataset_versioning import (
+from lineage.dataset_versioning import (
     _hudi_identifier_suffix,
     _spark_safe_records,
     sample_id_for,
     row_hash_for,
     to_versioned_samples,
 )
-from prepare_bst_training_data import (
+from cli.prepare_bst_training_data import (
     DEFAULT_FEATURE_SERVICE_NAME,
     DEFAULT_OFFLINE_FEATURE_TABLE,
     FEAST_FEATURE_REFS,
@@ -50,7 +50,7 @@ def _install_fake_feast(monkeypatch, historical: pd.DataFrame, captured: dict, f
             return FakeRetrieval()
 
     monkeypatch.setitem(sys.modules, "feast", SimpleNamespace(FeatureStore=FakeFeatureStore))
-    monkeypatch.setattr("prepare_bst_training_data._apply_feast_repo", lambda repo_path: None)
+    monkeypatch.setattr("cli.prepare_bst_training_data._apply_feast_repo", lambda repo_path: None)
 
 
 def test_build_bst_training_table_from_feast_maps_historical_features(monkeypatch, tmp_path):
@@ -248,7 +248,7 @@ def test_prepare_splits_reads_default_offline_feature_store(monkeypatch, tmp_pat
         )
 
     monkeypatch.setattr(
-        "prepare_bst_training_data.build_bst_training_table_from_offline_feature_store",
+        "cli.prepare_bst_training_data.build_bst_training_table_from_offline_feature_store",
         fake_offline_reader,
     )
 
@@ -325,10 +325,10 @@ def test_prepare_splits_records_hudi_latency_when_versioning_enabled(monkeypatch
         }
 
     monkeypatch.setattr(
-        "prepare_bst_training_data.build_bst_training_table_from_offline_feature_store",
+        "cli.prepare_bst_training_data.build_bst_training_table_from_offline_feature_store",
         fake_offline_reader,
     )
-    monkeypatch.setattr("prepare_bst_training_data.commit_samples_to_hudi", fake_commit_samples_to_hudi)
+    monkeypatch.setattr("cli.prepare_bst_training_data.commit_samples_to_hudi", fake_commit_samples_to_hudi)
 
     metadata = prepare_bst_jsonl_splits(
         entity_input_path="ignored-for-offline-feature-store",

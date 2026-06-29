@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from feature_engineering.spark.session import read_iceberg_table, read_parquet_table, write_iceberg_table
+from features.spark.session import read_iceberg_table, read_parquet_table, write_iceberg_table
 from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES, create_spark_namespace
 
 

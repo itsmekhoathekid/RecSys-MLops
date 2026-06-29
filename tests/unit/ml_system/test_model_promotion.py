@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from model_promotion import (
+from registry.model_promotion import (
     DEFAULT_OBJECTIVE_METRIC,
     build_triton_repository,
     promote_best_model,

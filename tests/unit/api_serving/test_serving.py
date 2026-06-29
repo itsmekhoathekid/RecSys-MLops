@@ -4,6 +4,7 @@ import sys
 import types
 
 import numpy as np
+import pytest
 
 from serving import (
     FeatureClient,
@@ -20,7 +21,7 @@ from serving import (
     parse_json_bytes,
     recommend,
 )
-from observability import METRICS, metrics_text
+from observability import METRICS, metrics_text, span
 
 
 def test_build_triton_payload_maps_feature_rows_to_tensors():
@@ -115,6 +116,12 @@ def test_format_top_k_sorts_scores_descending():
 
     assert [item.item_id for item in response.items] == [11, 12]
     assert [item.score for item in response.items] == [0.9, 0.5]
+
+
+def test_span_preserves_body_exceptions():
+    with pytest.raises(RuntimeError, match="boom"):
+        with span("unit.test.span"):
+            raise RuntimeError("boom")
 
 
 def test_recommend_uses_fallback_candidates_and_ranker_scores():
@@ -379,7 +386,7 @@ def test_triton_ranker_scores_and_records_errors(monkeypatch):
 
 
 def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
-    import serving
+    import ab_testing
 
     created = []
 
@@ -390,7 +397,7 @@ def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
         def score(self, payload):
             return [], []
 
-    monkeypatch.setattr(serving, "TritonRanker", FakeRanker)
+    monkeypatch.setattr(ab_testing, "TritonRanker", FakeRanker)
     monkeypatch.setenv("AB_TEST_ENABLED", "1")
     monkeypatch.setenv("AB_CANDIDATE_TRITON_URL", "candidate:9000")
     monkeypatch.setenv("AB_CANDIDATE_MODEL_VERSION", "candidate-v1")

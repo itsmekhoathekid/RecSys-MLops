@@ -4,9 +4,9 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from mlflow_dataset_lineage import dataset_versions, load_dataset_metadata, log_dataset_lineage
+from lineage.mlflow_dataset_lineage import dataset_versions, load_dataset_metadata, log_dataset_lineage
 from models import *
-from model_registry import register_model_config
+from registry.model_registry import register_model_config
 
 
 def _flatten(prefix, value):

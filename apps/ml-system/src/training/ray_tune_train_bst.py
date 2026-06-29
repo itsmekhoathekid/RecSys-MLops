@@ -9,8 +9,8 @@ from typing import Any
 
 import yaml
 
-from model_registry import register_model_config
-from train import run_training
+from registry.model_registry import register_model_config
+from training.train import run_training
 
 
 OBJECTIVE_METRIC = "val/ndcg@10"

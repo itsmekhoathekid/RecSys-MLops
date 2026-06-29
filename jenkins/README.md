@@ -10,7 +10,7 @@ and updates only the affected deployed component on `main`.
 | --- | --- | --- |
 | `materialize` | `feature_store/`, `local/`, materialize DAG/config | `recsys-dataflow-cli` |
 | `training` | `apps/ml-system/`, `infra/kubeflow/`, `configs/local/bst.yaml` | `recsys-mlops-training`, `recsys-mlops-spark`, compiled KFP YAML |
-| `spark_batch` | `feature_engineering/spark/`, `Dockerfile.spark`, `spark_batch*.yaml` | `recsys-spark`, `recsys-airflow` |
+| `spark_batch` | `features/spark/`, `Dockerfile.spark`, `spark_batch*.yaml` | `recsys-spark`, `recsys-airflow` |
 | `dp1` | raw ingestion, data generator, source CDC config | `recsys-data-generator`, `recsys-dataflow-cli`, `recsys-airflow`, `recsys-kafka-connect` |
 | `dp2` | silver/gold Spark transforms and DAG/config | `recsys-spark`, `recsys-airflow` |
 | `dp3` | offline feature builders and feature store config | `recsys-spark`, `recsys-dataflow-cli`, `recsys-airflow` |
@@ -74,7 +74,7 @@ Rubric evidence for API validation can be generated after component CI:
 
 ```bash
 COVERAGE_MIN=90 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/component_ci.sh api
-MUTATION_TARGETS=apps/api-serving/src/serving.py MUTATION_MUTANT_NAMES='serving.x_format_top_k* serving.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh
+MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' MUTATION_MUTANT_NAMES='ranking.x_format_top_k* online_features.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh
 RECSYS_LOAD_HOST=http://127.0.0.1:8088 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_load_test.sh
 bash jenkins/scripts/validation_evidence.sh
 ```

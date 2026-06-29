@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from dataset_versioning import (
+from lineage.dataset_versioning import (
     DEFAULT_CATALOG_NAME,
     DEFAULT_WAREHOUSE,
     HudiConfig,

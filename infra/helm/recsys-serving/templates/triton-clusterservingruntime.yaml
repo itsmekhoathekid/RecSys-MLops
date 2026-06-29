@@ -14,11 +14,11 @@ spec:
     - name: triton
       version: "2"
       autoSelect: true
-      priority: 1
+      priority: 10
     - name: onnx
       version: "1"
       autoSelect: true
-      priority: 1
+      priority: 10
   protocolVersions:
     - v2
     - grpc-v2

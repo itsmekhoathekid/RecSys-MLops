@@ -25,7 +25,7 @@ SPARK_PACKAGES = os.getenv(
 def feature_engineering(config_path: str, output_base: str, run_path: str, summary_path: str):
     return dsl.ContainerSpec(
         image=PIPELINE_IMAGE,
-        command=["python", "/opt/recsys/apps/ml-system/src/run_feature_engineering.py"],
+        command=["python", "/opt/recsys/apps/ml-system/src/run_features.py"],
         args=[
             "--source-config",
             config_path,
@@ -59,7 +59,7 @@ def prepare_training_data(
             "local[*]",
             "--packages",
             SPARK_PACKAGES,
-            "/opt/recsys/apps/ml-system/src/prepare_bst_training_data.py",
+            "/opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py",
             "--feature-source",
             "offline_feature_store",
             "--offline-feature-table",
@@ -112,7 +112,7 @@ def submit_rayjob(
 ):
     return dsl.ContainerSpec(
         image=PIPELINE_IMAGE,
-        command=["python", "/opt/recsys/apps/ml-system/src/submit_ray_job.py"],
+        command=["python", "/opt/recsys/apps/ml-system/src/cli/submit_ray_job.py"],
         args=[
             "--pipeline-run-id",
             pipeline_run_id,
@@ -164,7 +164,7 @@ def submit_rayjob(
 def evaluate_bst(config_path: str, ray_result_path: str, metrics_path: str, dataset_metadata_path: str):
     return dsl.ContainerSpec(
         image=PIPELINE_IMAGE,
-        command=["python", "/opt/recsys/apps/ml-system/src/evaluate_ray_best_bst.py"],
+        command=["python", "/opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py"],
         args=[
             "--config-path",
             config_path,
@@ -190,7 +190,7 @@ def promote_bst_model(
 ):
     return dsl.ContainerSpec(
         image=PIPELINE_IMAGE,
-        command=["python", "/opt/recsys/apps/ml-system/src/model_promotion.py"],
+        command=["python", "/opt/recsys/apps/ml-system/src/registry/model_promotion.py"],
         args=[
             "--config-path",
             config_path,

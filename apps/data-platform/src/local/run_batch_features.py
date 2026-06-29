@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from feature_engineering.spark.spark_batch_entrypoint import run_pyspark_batch
+from features.spark.spark_batch_entrypoint import run_pyspark_batch
 
 
 def run_batch_features(config_path: str | Path = "configs/local/spark_batch.yaml") -> dict[str, int]:

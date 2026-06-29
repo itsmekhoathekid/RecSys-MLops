@@ -8,15 +8,10 @@ import time
 from fastapi import FastAPI, HTTPException, Path, Query, Request, Response, status
 
 from observability import configure_logging, configure_tracing, log_event, metrics_text, observe_request
-from serving import (
-    FeatureClient,
-    OnlineFeaturesResponse,
-    RecommendationRequest,
-    RecommendationResponse,
-    TritonABRouter,
-    get_online_features,
-    recommend,
-)
+from ab_testing import TritonABRouter
+from online_features import FeatureClient, get_online_features
+from ranking import recommend
+from api_schemas import OnlineFeaturesResponse, RecommendationRequest, RecommendationResponse
 
 
 app = FastAPI(title="RecSys API Serving", version="0.1.0")

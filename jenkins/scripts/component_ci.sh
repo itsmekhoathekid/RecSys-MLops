@@ -133,7 +133,7 @@ case "${component}" in
   api)
     tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)
     append_integration_dir api
-    cov_paths=(serving)
+    cov_paths=(ab_testing api_schemas online_features ranking serving triton)
     component_pytest "${component}" "apps/api-serving/src"
     ;;
   kserve)
@@ -152,13 +152,13 @@ case "${component}" in
   stream_offline)
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir stream_offline
-    cov_paths=(feature_engineering.flink.candidate_pool_job feature_engineering.flink.item_features_job feature_engineering.flink.user_aggregate_job feature_engineering.flink.user_sequence_job feature_engineering.flink.time_utils lakehouse.iceberg)
+    cov_paths=(features.flink.candidate_pool_job features.flink.item_features_job features.flink.user_aggregate_job features.flink.user_sequence_job features.flink.time_utils lakehouse.iceberg)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   stream_online)
     tests=(tests/unit/data_platform/test_data_platform.py tests/unit/api_serving/test_serving.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir stream_online
-    cov_paths=(feature_engineering.flink.candidate_pool_job feature_engineering.flink.item_features_job feature_engineering.flink.user_aggregate_job feature_engineering.flink.user_sequence_job feature_engineering.flink.time_utils feature_store.online_writer)
+    cov_paths=(features.flink.candidate_pool_job features.flink.item_features_job features.flink.user_aggregate_job features.flink.user_sequence_job features.flink.time_utils feature_store.online_writer)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/src"
     ;;
   *)
