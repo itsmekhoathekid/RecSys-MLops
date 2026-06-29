@@ -16,9 +16,9 @@ Source: [apps/api-serving/src/main.py line 1](../../../apps/api-serving/src/main
 Lines to show:
 
 - [apps/api-serving/src/main.py line 8](../../../apps/api-serving/src/main.py#8): imports `FastAPI`.
-- [apps/api-serving/src/main.py line 22](../../../apps/api-serving/src/main.py#22): creates the app with `app = FastAPI(...)`.
-- [apps/api-serving/src/main.py line 103](../../../apps/api-serving/src/main.py#103): exposes the online feature pull endpoint.
-- [apps/api-serving/src/main.py line 121](../../../apps/api-serving/src/main.py#121): exposes the recommendation endpoint that sends features to inference.
+- [apps/api-serving/src/main.py line 17](../../../apps/api-serving/src/main.py#17): creates the app with `app = FastAPI(...)`.
+- [apps/api-serving/src/main.py line 98](../../../apps/api-serving/src/main.py#98): exposes the online feature pull endpoint.
+- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#116): exposes the recommendation endpoint that sends features to inference.
 
 
 
@@ -28,13 +28,13 @@ Lines to show:
 
 ## 2. Pydantic Validation
 
-Source: [apps/api-serving/src/serving.py line 1](../../../apps/api-serving/src/serving.py#1)
+Source: [apps/api-serving/src/api_schemas.py line 1](../../../apps/api-serving/src/api_schemas.py#1)
 
 Lines to show:
 
-- [apps/api-serving/src/serving.py line 11](../../../apps/api-serving/src/serving.py#11): imports `BaseModel` and `Field`.
-- [apps/api-serving/src/serving.py line 35-38](../../../apps/api-serving/src/serving.py#35): validates `RecommendationRequest`.
-- [apps/api-serving/src/serving.py line 46-58](../../../apps/api-serving/src/serving.py#46): defines response schemas.
+- [apps/api-serving/src/api_schemas.py line 5](../../../apps/api-serving/src/api_schemas.py#5): imports `BaseModel` and `Field`.
+- [apps/api-serving/src/api_schemas.py line 8](../../../apps/api-serving/src/api_schemas.py#8): validates `RecommendationRequest`.
+- [apps/api-serving/src/api_schemas.py line 14](../../../apps/api-serving/src/api_schemas.py#14): defines response schemas.
 
 ### Key code evidence:
 
@@ -46,14 +46,14 @@ Source: [apps/api-serving/src/main.py line 1](../../../apps/api-serving/src/main
 
 Lines to show:
 
-- [apps/api-serving/src/main.py line 30](../../../apps/api-serving/src/main.py#30): async middleware.
-- [apps/api-serving/src/main.py line 79](../../../apps/api-serving/src/main.py#79): async health endpoint.
-- [apps/api-serving/src/main.py line 84](../../../apps/api-serving/src/main.py#84): async readiness endpoint.
-- [apps/api-serving/src/main.py line 99](../../../apps/api-serving/src/main.py#99): async metrics endpoint.
-- [apps/api-serving/src/main.py line 104](../../../apps/api-serving/src/main.py#104): async online feature pull endpoint.
-- [apps/api-serving/src/main.py line 122](../../../apps/api-serving/src/main.py#122): async recommendation endpoint.
-- [apps/api-serving/src/main.py line 110-116](../../../apps/api-serving/src/main.py#110): uses `await asyncio.to_thread(...)` for feature retrieval.
-- [apps/api-serving/src/main.py line 124-130](../../../apps/api-serving/src/main.py#124): uses `await asyncio.to_thread(...)` for recommendation/inference flow.
+- [apps/api-serving/src/main.py line 24](../../../apps/api-serving/src/main.py#24): async middleware.
+- [apps/api-serving/src/main.py line 73](../../../apps/api-serving/src/main.py#73): async health endpoint.
+- [apps/api-serving/src/main.py line 78](../../../apps/api-serving/src/main.py#78): async readiness endpoint.
+- [apps/api-serving/src/main.py line 93](../../../apps/api-serving/src/main.py#93): async metrics endpoint.
+- [apps/api-serving/src/main.py line 98](../../../apps/api-serving/src/main.py#98): async online feature pull endpoint.
+- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#116): async recommendation endpoint.
+- [apps/api-serving/src/main.py line 105-111](../../../apps/api-serving/src/main.py#105): uses `await asyncio.to_thread(...)` for feature retrieval.
+- [apps/api-serving/src/main.py line 119-125](../../../apps/api-serving/src/main.py#119): uses `await asyncio.to_thread(...)` for recommendation/inference flow.
 
 ### Key code evidence:
 
@@ -61,16 +61,16 @@ Lines to show:
 
 ## 4. Pull Data From Online Feature Store
 
-Source: [apps/api-serving/src/serving.py line 1](../../../apps/api-serving/src/serving.py#1)
+Source: [apps/api-serving/src/online_features.py line 1](../../../apps/api-serving/src/online_features.py#1)
 
 Lines to show:
 
-- [apps/api-serving/src/serving.py line 203](../../../apps/api-serving/src/serving.py#203): `FeatureClient`.
-- [apps/api-serving/src/serving.py line 210-214](../../../apps/api-serving/src/serving.py#210): connects to Redis online store.
-- [apps/api-serving/src/serving.py line 216-229](../../../apps/api-serving/src/serving.py#216): pulls user sequence by `user_id`.
-- [apps/api-serving/src/serving.py line 231-244](../../../apps/api-serving/src/serving.py#231): pulls item features by `item_id`.
-- [apps/api-serving/src/serving.py line 246-260](../../../apps/api-serving/src/serving.py#246): pulls candidate item ids.
-- [apps/api-serving/src/serving.py line 489-502](../../../apps/api-serving/src/serving.py#489): builds `OnlineFeaturesResponse`.
+- [apps/api-serving/src/online_features.py line 22](../../../apps/api-serving/src/online_features.py#22): `FeatureClient`.
+- [apps/api-serving/src/online_features.py line 29](../../../apps/api-serving/src/online_features.py#29): connects to Redis online store.
+- [apps/api-serving/src/online_features.py line 35](../../../apps/api-serving/src/online_features.py#35): pulls user sequence by `user_id`.
+- [apps/api-serving/src/online_features.py line 50](../../../apps/api-serving/src/online_features.py#50): pulls item features by `item_id`.
+- [apps/api-serving/src/online_features.py line 65](../../../apps/api-serving/src/online_features.py#65): pulls candidate item ids.
+- [apps/api-serving/src/online_features.py line 82](../../../apps/api-serving/src/online_features.py#82): builds `OnlineFeaturesResponse`.
 
 ### Key Evidence
 
@@ -99,8 +99,5 @@ Key lines:
 - [Jenkinsfile line 141](../../../Jenkinsfile#141): runs deploy only when changed components should deploy.
 
 ![Data & ML system](../../pngs/atomic-auto-fall-back.png)
-
-
-
 
 

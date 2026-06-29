@@ -166,11 +166,12 @@ def span(name: str, **attributes: Any) -> Iterator[None]:
         from opentelemetry import trace
 
         tracer = trace.get_tracer(SERVICE_NAME)
-        with tracer.start_as_current_span(name) as active_span:
-            for key, value in attributes.items():
-                active_span.set_attribute(key, value)
-            yield
     except Exception:
+        yield
+        return
+    with tracer.start_as_current_span(name) as active_span:
+        for key, value in attributes.items():
+            active_span.set_attribute(key, value)
         yield
 
 

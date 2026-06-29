@@ -198,7 +198,7 @@ if DAG is not None:
             SPARK_IMAGE,
             spark_native_submit(
                 "run_spark_batch_to_offline_store",
-                "local:///opt/recsys/apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py",
+                "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
                 "--config $SPARK_BATCH_CONFIG",
             ),
         )

@@ -24,7 +24,7 @@ spec:
             - |
               PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
               flink run -m flink-jobmanager:8081 \
-                -py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py \
+                -py apps/data-platform/src/features/flink/realtime_stream_job.py \
                 -- \
                 --runner pyflink \
                 --topic "$REALTIME_STREAM_TOPIC" \

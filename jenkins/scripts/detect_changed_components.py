@@ -114,9 +114,9 @@ def classify_data_platform_source(flags: dict[str, bool], path: str) -> None:
         mark(flags, "MATERIALIZE")
     elif path.startswith("apps/data-platform/src/ingest/"):
         mark(flags, "DP1")
-    elif path.startswith("apps/data-platform/src/feature_engineering/spark/"):
+    elif path.startswith("apps/data-platform/src/features/spark/"):
         mark(flags, "SPARK_BATCH", "DP2", "DP3")
-    elif path.startswith("apps/data-platform/src/feature_engineering/flink/"):
+    elif path.startswith("apps/data-platform/src/features/flink/"):
         mark(flags, "STREAM_OFFLINE", "STREAM_ONLINE")
     elif path.startswith("apps/data-platform/src/validate/") or path.startswith("apps/data-platform/src/mlops/"):
         mark(flags, "DRIFT")

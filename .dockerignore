@@ -1,16 +1,25 @@
 .git
 .venv
+.uv-cache
 .pytest_cache
+.hypothesis
 __pycache__
 *.pyc
 .DS_Store
+.coverage
+.ci-image-manifest
+graphify-out
+reports
 
+notebooks
 notebooks/data
 notebooks/**/*.ipynb
 data_generator/output
 apps/data-generator/src/output
+apps/data-platform/data-generator/src/output
 data_pipeline/output
 data_pipeline/lake
+data_platform/lake
 feature_store/feature_repo/data
 apps/feature-store/feature_repo/data
 outputs

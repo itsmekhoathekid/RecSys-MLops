@@ -2,13 +2,13 @@
   "abTest": {
     "candidateModelVersion": "",
     "candidateWeightPercent": 0,
-    "controlModelVersion": "run_trial_9b77f_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0005,weight_decay=0.0000_2026-06-26_13-33-26",
+    "controlModelVersion": "run_trial_4388a_00000_0_hidden_dropout_prob=0.1000,learning_rate=0.0005,weight_decay=0.0001_2026-06-29_08-19-37",
     "enabled": false,
-    "experimentId": "bst-1782482745"
+    "experimentId": "bst-1782721967"
   },
   "api": {
     "config": {
-      "modelVersion": "run_trial_9b77f_00000_0_hidden_dropout_prob=0.2000,learning_rate=0.0005,weight_decay=0.0000_2026-06-26_13-33-26"
+      "modelVersion": "run_trial_4388a_00000_0_hidden_dropout_prob=0.1000,learning_rate=0.0005,weight_decay=0.0001_2026-06-29_08-19-37"
     },
     "namespace": {
       "name": "api-serving"

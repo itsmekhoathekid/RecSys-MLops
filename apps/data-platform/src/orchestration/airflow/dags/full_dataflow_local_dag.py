@@ -107,7 +107,7 @@ if DAG is not None:
             run_historical_spark_batch = spark_task(
                 "run_historical_spark_batch",
                 "/opt/spark/bin/spark-submit "
-                "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py "
+                "apps/data-platform/src/features/spark/spark_batch_entrypoint.py "
                 "--config configs/local/spark_batch.yaml",
             )
             generate_historical_raw >> ingest_historical_batch_to_lakehouse >> run_historical_spark_batch
@@ -122,7 +122,7 @@ if DAG is not None:
                 "submit_pyflink_stream_job",
                 "PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys "
                 "flink run -m flink-jobmanager:8081 "
-                "-py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py "
+                "-py apps/data-platform/src/features/flink/realtime_stream_job.py "
                 "-- --runner pyflink --topic cdc.behavior_events --max-events 200 --min-events 1 "
                 "--offline-store-enabled "
                 "--offline-feature-catalog $OFFLINE_FEATURE_CATALOG "

@@ -112,7 +112,7 @@ def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
         "spark.kubernetes.submission.waitAppCompletion=true",
         "spark.kubernetes.submission.connectionTimeout=${SPARK_K8S_CONNECTION_TIMEOUT:-60000}",
         "spark.kubernetes.submission.requestTimeout=${SPARK_K8S_REQUEST_TIMEOUT:-180000}",
-        "local:///opt/recsys/apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py",
+        "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
         "optional_command(",
         "REALTIME_E2E_ENABLED",
         "DATAHUB_INGEST_ENABLED",
@@ -314,7 +314,7 @@ def test_spark_batch_config_reads_python_ingested_parquet_lakehouse():
 
 
 def test_spark_batch_entrypoint_processes_the_whole_run_in_one_commit():
-    source = (ROOT / "apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py").read_text()
+    source = (ROOT / "apps/data-platform/src/features/spark/spark_batch_entrypoint.py").read_text()
     assert "batch_chunk_count" not in source
     assert "batch_chunk_commits" not in source
     assert "batch_commit_id" not in source
@@ -329,6 +329,6 @@ def test_deleted_legacy_artifacts_are_absent():
         "apps/data-platform/great_expectations",
         "apps/data-platform/dbt",
         "apps/data-platform/feature-store",
-        "apps/data-platform/src/feature_engineering/spark/spark_realtime_bronze_entrypoint.py",
+        "apps/data-platform/src/features/spark/spark_realtime_bronze_entrypoint.py",
     ]:
         assert not (ROOT / relative).exists()

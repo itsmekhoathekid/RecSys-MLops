@@ -28,7 +28,7 @@
 
 ```bash
 COVERAGE_MIN=90 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/component_ci.sh api
-MUTATION_TARGETS=apps/api-serving/src/serving.py MUTATION_MUTANT_NAMES='serving.x_format_top_k* serving.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh
+MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' MUTATION_MUTANT_NAMES='ranking.x_format_top_k* online_features.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh
 RECSYS_LOAD_HOST=http://127.0.0.1:8088 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_load_test.sh
 bash jenkins/scripts/validation_evidence.sh
 ```
@@ -53,8 +53,8 @@ bash jenkins/scripts/validation_evidence.sh
 - Timeout: 0
 - Suspicious: 0
 - No tests: 0
-- Targets: apps/api-serving/src/serving.py
-- Mutant filters: serving.x_format_top_k*, serving.x_get_online_features*
+- Targets: apps/api-serving/src/ranking.py, apps/api-serving/src/online_features.py
+- Mutant filters: ranking.x_format_top_k*, online_features.x_get_online_features*
 
 
 ## Locust Summary
@@ -69,4 +69,3 @@ bash jenkins/scripts/validation_evidence.sh
 - p95 latency: 39.00 ms
 - SLA: failure rate 0%, p95 < 1000 ms, throughput >= 5 req/s
 - Result: PASS
-

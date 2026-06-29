@@ -9,7 +9,7 @@ spec:
   shutdownAfterJobFinishes: {{ .Values.job.shutdownAfterJobFinishes }}
   ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
   entrypoint: >-
-    python /opt/recsys/apps/ml-system/src/ray_tune_train_bst.py
+    python /opt/recsys/apps/ml-system/src/training/ray_tune_train_bst.py
     --base-config-path {{ .Values.entrypoint.baseConfigPath }}
     --split-dir {{ .Values.entrypoint.splitDir }}
     --output-dir {{ .Values.entrypoint.outputDir }}

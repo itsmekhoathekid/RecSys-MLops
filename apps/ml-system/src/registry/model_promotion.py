@@ -12,7 +12,7 @@ from typing import Any
 import torch
 
 from models import BST, load_config
-from model_registry import register_model_config
+from registry.model_registry import register_model_config
 
 
 MODEL_NAME = "bst"

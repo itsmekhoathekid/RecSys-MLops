@@ -23,15 +23,15 @@ Nhung de train BST trong `apps/ml-system/src/models/`, can them cac buoc sau:
 
 Code moi da them:
 
-- `apps/ml-system/src/prepare_bst_training_data.py`: doc `ml_bst_training` parquet tu local/S3 MinIO va tao `train.jsonl`, `val.jsonl`, `test.jsonl`.
-- `apps/ml-system/src/evaluate_bst.py`: load checkpoint BST va tinh metric tren split test.
-- `apps/ml-system/src/train.py`: them metrics output, MLflow logging, MinIO artifact logging qua MLflow artifact store, va Postgres model config registry.
+- `apps/ml-system/src/cli/prepare_bst_training_data.py`: doc `ml_bst_training` parquet tu local/S3 MinIO va tao `train.jsonl`, `val.jsonl`, `test.jsonl`.
+- `apps/ml-system/src/cli/evaluate_bst.py`: load checkpoint BST va tinh metric tren split test.
+- `apps/ml-system/src/training/train.py`: them metrics output, MLflow logging, MinIO artifact logging qua MLflow artifact store, va Postgres model config registry.
 
 ## Kubeflow Flow
 
 Target flow:
 
-1. `feature_engineering`: chay `recsys_data_platform.local.run_batch_features` de tao silver tables, Feast offline features, labels va `ml_bst_training`.
+1. `feature_engineering`: chay `apps/data-platform/src/local/run_batch_features.py` de tao silver tables, Feast offline features, labels va `ml_bst_training`.
 2. `prepare_training_data`: convert `ml_bst_training` parquet sang JSONL split cho `apps/ml-system/src/models/dataset.py`.
 3. `submit_rayjob`: submit KubeRay `RayJob`; Ray Tune chay HPO va Ray workers train BST trials.
 4. `evaluate_bst`: evaluate best Ray checkpoint tren test split, log test metrics vao MLflow run.

@@ -5,7 +5,7 @@ import json
 
 from kubeflow.components import runtime
 from kubeflow.pipelines.compile_training_pipeline import compile_pipeline
-from submit_ray_job import build_rayjob, container_spec, pod_template, reusable_best_result
+from cli.submit_ray_job import build_rayjob, container_spec, pod_template, reusable_best_result
 
 
 def test_secret_env_mapping_is_stable():
@@ -160,7 +160,7 @@ def test_build_rayjob_uses_refactored_training_module():
 
     rayjob = build_rayjob(args)
 
-    assert "python /opt/recsys/apps/ml-system/src/ray_tune_train_bst.py" in rayjob["spec"]["entrypoint"]
+    assert "python /opt/recsys/apps/ml-system/src/training/ray_tune_train_bst.py" in rayjob["spec"]["entrypoint"]
     assert "pipelines.model_pipeline" not in rayjob["spec"]["entrypoint"]
     assert rayjob["spec"]["rayClusterSpec"]["headGroupSpec"]["rayStartParams"]["memory"] == "1073741824"
     worker_group = rayjob["spec"]["rayClusterSpec"]["workerGroupSpecs"][0]
@@ -214,7 +214,7 @@ def test_compile_pipeline_writes_refactored_component_commands():
     assert "/opt/spark/bin/spark-submit" in compiled
     assert "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12" in compiled
     assert "org.apache.hudi:hudi-spark3.5-bundle_2.12" in compiled
-    assert "/opt/recsys/apps/ml-system/src/prepare_bst_training_data.py" in compiled
+    assert "/opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py" in compiled
     assert "--feature-source" in compiled
     assert "--offline-feature-table" in compiled
     assert "--hudi-enabled" in compiled
@@ -222,8 +222,8 @@ def test_compile_pipeline_writes_refactored_component_commands():
     assert "offline_feature_table" in compiled
     assert "recsys_features.feature_store.ml_bst_training" in compiled
     assert "training_table_path" not in compiled
-    assert "/opt/recsys/apps/ml-system/src/submit_ray_job.py" in compiled
-    assert "/opt/recsys/apps/ml-system/src/evaluate_ray_best_bst.py" in compiled
-    assert "/opt/recsys/apps/ml-system/src/model_promotion.py" in compiled
+    assert "/opt/recsys/apps/ml-system/src/cli/submit_ray_job.py" in compiled
+    assert "/opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py" in compiled
+    assert "/opt/recsys/apps/ml-system/src/registry/model_promotion.py" in compiled
     assert "pipelines.model_pipeline" not in compiled
     assert "recsys_model_pipeline" not in compiled

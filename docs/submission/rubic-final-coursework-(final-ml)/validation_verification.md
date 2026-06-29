@@ -31,8 +31,8 @@ COVERAGE_MIN=90 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/component_ci.sh api
 
 Source references:
 
-- [apps/api-serving/src/main.py line 121](../../../apps/api-serving/src/main.py#121): `POST /recommendations` FastAPI route.
-- [apps/api-serving/src/serving.py line 35](../../../apps/api-serving/src/serving.py#35): `RecommendationRequest` validation model.
+- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#116): `POST /recommendations` FastAPI route.
+- [apps/api-serving/src/api_schemas.py line 8](../../../apps/api-serving/src/api_schemas.py#8): `RecommendationRequest` validation model.
 - [tests/unit/api_serving/test_validation_verification.py line 4](../../../tests/unit/api_serving/test_validation_verification.py#4): FastAPI `TestClient` import.
 - [tests/unit/api_serving/test_validation_verification.py line 42](../../../tests/unit/api_serving/test_validation_verification.py#42): pytest fixture definition.
 - [tests/unit/api_serving/test_validation_verification.py line 46](../../../tests/unit/api_serving/test_validation_verification.py#46): feature client mock via `monkeypatch`.
@@ -67,9 +67,9 @@ UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src uv run pytest tests/unit/
 
 Source references:
 
-- [apps/api-serving/src/serving.py line 36](../../../apps/api-serving/src/serving.py#36): `user_id` lower bound.
-- [apps/api-serving/src/serving.py line 37](../../../apps/api-serving/src/serving.py#37): `candidate_item_ids` length bounds.
-- [apps/api-serving/src/serving.py line 38](../../../apps/api-serving/src/serving.py#38): `top_k` lower and upper bounds.
+- [apps/api-serving/src/api_schemas.py line 9](../../../apps/api-serving/src/api_schemas.py#9): `user_id` lower bound.
+- [apps/api-serving/src/api_schemas.py line 10](../../../apps/api-serving/src/api_schemas.py#10): `candidate_item_ids` length bounds.
+- [apps/api-serving/src/api_schemas.py line 11](../../../apps/api-serving/src/api_schemas.py#11): `top_k` lower and upper bounds.
 - [tests/unit/api_serving/test_validation_verification.py line 52](../../../tests/unit/api_serving/test_validation_verification.py#52): parametrized valid EP/BVA cases.
 - [tests/unit/api_serving/test_validation_verification.py line 80](../../../tests/unit/api_serving/test_validation_verification.py#80): parametrized invalid boundary cases.
 
@@ -117,8 +117,8 @@ UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src uv run pytest \
 - Requirement: use mutation testing to evaluate test effectiveness.
 - Mutation score gate: `> 80%`.
 - Mutate only changed code: mutation targets are either detected from changed files or explicitly provided through `MUTATION_TARGETS`.
-- Target file(s): `apps/api-serving/src/serving.py`.
-- Target function pattern(s): `serving.x_format_top_k*` and `serving.x_get_online_features*`.
+- Target file(s): `apps/api-serving/src/ranking.py` and `apps/api-serving/src/online_features.py`.
+- Target function pattern(s): `ranking.x_format_top_k*` and `online_features.x_get_online_features*`.
 
 Source references:
 
@@ -136,8 +136,8 @@ Source references:
 ### 4.2 Command used
 
 ```bash
-MUTATION_TARGETS=apps/api-serving/src/serving.py \
-MUTATION_MUTANT_NAMES='serving.x_format_top_k* serving.x_get_online_features*' \
+MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' \
+MUTATION_MUTANT_NAMES='ranking.x_format_top_k* online_features.x_get_online_features*' \
 UV_CACHE_DIR=.uv-cache \
 bash jenkins/scripts/validation_mutation.sh
 ```
@@ -276,4 +276,3 @@ Evidence files:
 ### 6.4 Screenshot proof
 
 ![Data & ML system](../../pngs/locust_test.png)
-

@@ -55,7 +55,7 @@ content = [
     "",
     "```bash",
     "COVERAGE_MIN=90 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/component_ci.sh api",
-    "MUTATION_TARGETS=apps/api-serving/src/serving.py MUTATION_MUTANT_NAMES='serving.x_format_top_k* serving.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh",
+    "MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' MUTATION_MUTANT_NAMES='ranking.x_format_top_k* online_features.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh",
     "RECSYS_LOAD_HOST=http://127.0.0.1:8088 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_load_test.sh",
     "bash jenkins/scripts/validation_evidence.sh",
     "```",

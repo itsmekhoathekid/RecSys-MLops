@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from feature_engineering.flink.candidate_pool_job import candidate_updates
-from feature_engineering.flink.item_features_job import ItemFeatureState
-from feature_engineering.flink.realtime_stream_job import (
+from features.flink.candidate_pool_job import candidate_updates
+from features.flink.item_features_job import ItemFeatureState
+from features.flink.realtime_stream_job import (
     StreamQualityTracker,
     build_offline_feature_rows,
     build_realtime_feature_payloads,
     normalize_event,
     parse_message,
 )
-from feature_engineering.flink.user_aggregate_job import UserAggregateState
-from feature_engineering.flink.user_sequence_job import UserSequenceState
+from features.flink.user_aggregate_job import UserAggregateState
+from features.flink.user_sequence_job import UserSequenceState
 from feature_store.online_writer import RedisKeyTemplate, RedisOnlineWriter, dumps_feature_payload
 from local.run_batch_features import main as run_batch_features_main
 from local.run_batch_features import run_batch_features
@@ -250,7 +250,7 @@ def test_iceberg_catalog_defaults_and_spark_conf():
 
 
 def test_spark_feature_path_is_native_iceberg_not_pandas_or_parquet_writer():
-    spark_dir = Path("apps/data-platform/src/feature_engineering/spark")
+    spark_dir = Path("apps/data-platform/src/features/spark")
     sources = "\n".join(path.read_text(encoding="utf-8") for path in spark_dir.glob("*.py"))
     batch_source = (spark_dir / "spark_batch_entrypoint.py").read_text(encoding="utf-8")
     assert "import pandas" not in sources
@@ -263,7 +263,7 @@ def test_spark_feature_path_is_native_iceberg_not_pandas_or_parquet_writer():
 
 
 def test_flink_feature_path_is_native_kafka_state_and_iceberg():
-    flink_dir = Path("apps/data-platform/src/feature_engineering/flink")
+    flink_dir = Path("apps/data-platform/src/features/flink")
     sources = "\n".join(path.read_text(encoding="utf-8") for path in flink_dir.glob("*.py"))
     stream_source = (flink_dir / "realtime_stream_job.py").read_text(encoding="utf-8")
     assert "import pandas" not in sources

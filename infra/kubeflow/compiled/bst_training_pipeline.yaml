@@ -153,8 +153,8 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - python
-        - /opt/recsys/apps/ml-system/src/evaluate_ray_best_bst.py
-        image: localhost:5001/recsys/recsys-mlops-training:4c3e4bd92483
+        - /opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py
+        image: recsys-mlops-training:local
     exec-prepare-training-data:
       container:
         args:
@@ -162,7 +162,7 @@ deploymentSpec:
         - local[*]
         - --packages
         - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2,org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.2,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262
-        - /opt/recsys/apps/ml-system/src/prepare_bst_training_data.py
+        - /opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py
         - --feature-source
         - offline_feature_store
         - --offline-feature-table
@@ -187,7 +187,7 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - /opt/spark/bin/spark-submit
-        image: localhost:5001/recsys/recsys-mlops-spark:4c3e4bd92483
+        image: recsys-mlops-spark:local
     exec-promote-bst-model:
       container:
         args:
@@ -203,8 +203,8 @@ deploymentSpec:
         - '{{$.inputs.parameters[''metric_name'']}}'
         command:
         - python
-        - /opt/recsys/apps/ml-system/src/model_promotion.py
-        image: localhost:5001/recsys/recsys-mlops-training:4c3e4bd92483
+        - /opt/recsys/apps/ml-system/src/registry/model_promotion.py
+        image: recsys-mlops-training:local
     exec-submit-rayjob:
       container:
         args:
@@ -252,8 +252,8 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - python
-        - /opt/recsys/apps/ml-system/src/submit_ray_job.py
-        image: localhost:5001/recsys/recsys-mlops-training:4c3e4bd92483
+        - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
+        image: recsys-mlops-training:local
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.

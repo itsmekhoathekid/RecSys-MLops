@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from evaluate_bst import evaluate_bst
+from cli.evaluate_bst import evaluate_bst
 
 
 def main() -> int:

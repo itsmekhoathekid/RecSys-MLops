@@ -17,10 +17,10 @@ Source: [apps/api-serving/src/main.py line 1](../../../apps/api-serving/src/main
 Lines to show:
 
 - [apps/api-serving/src/main.py line 8](../../../apps/api-serving/src/main.py#8): imports `FastAPI`.
-- [apps/api-serving/src/main.py line 22](../../../apps/api-serving/src/main.py#22): creates the FastAPI app.
-- [apps/api-serving/src/main.py line 71-75](../../../apps/api-serving/src/main.py#71): initializes the Triton ranker/router from environment config.
-- [apps/api-serving/src/main.py line 121](../../../apps/api-serving/src/main.py#121): exposes the prediction endpoint `POST /recommendations`.
-- [apps/api-serving/src/main.py line 122-130](../../../apps/api-serving/src/main.py#122): runs the prediction flow and returns `RecommendationResponse`.
+- [apps/api-serving/src/main.py line 17](../../../apps/api-serving/src/main.py#17): creates the FastAPI app.
+- [apps/api-serving/src/main.py line 66](../../../apps/api-serving/src/main.py#66): initializes the Triton ranker/router from environment config.
+- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#116): exposes the prediction endpoint `POST /recommendations`.
+- [apps/api-serving/src/main.py line 119](../../../apps/api-serving/src/main.py#119): runs the prediction flow and returns `RecommendationResponse`.
 
 ### Key Evidence
 
@@ -29,13 +29,13 @@ Lines to show:
 
 ## 2. Pydantic Validation
 
-Source: [apps/api-serving/src/serving.py line 1](../../../apps/api-serving/src/serving.py#1)
+Source: [apps/api-serving/src/api_schemas.py line 1](../../../apps/api-serving/src/api_schemas.py#1)
 
 Lines to show:
 
-- [apps/api-serving/src/serving.py line 11](../../../apps/api-serving/src/serving.py#11): imports `BaseModel` and `Field`.
-- [apps/api-serving/src/serving.py line 35-38](../../../apps/api-serving/src/serving.py#35): validates `RecommendationRequest`.
-- [apps/api-serving/src/serving.py line 41-51](../../../apps/api-serving/src/serving.py#41): defines prediction item and response schemas.
+- [apps/api-serving/src/api_schemas.py line 5](../../../apps/api-serving/src/api_schemas.py#5): imports `BaseModel` and `Field`.
+- [apps/api-serving/src/api_schemas.py line 8](../../../apps/api-serving/src/api_schemas.py#8): validates `RecommendationRequest`.
+- [apps/api-serving/src/api_schemas.py line 14](../../../apps/api-serving/src/api_schemas.py#14): defines prediction item and response schemas.
 
 ### Key Evidence
 
@@ -48,8 +48,8 @@ Source: [apps/api-serving/src/main.py line 1](../../../apps/api-serving/src/main
 
 Lines to show:
 
-- [apps/api-serving/src/main.py line 122](../../../apps/api-serving/src/main.py#122): `async def recommendations(...)`.
-- [apps/api-serving/src/main.py line 124-130](../../../apps/api-serving/src/main.py#124): uses `await asyncio.to_thread(...)` so the FastAPI handler stays async while the blocking prediction flow runs in a worker thread.
+- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#116): `async def recommendations(...)`.
+- [apps/api-serving/src/main.py line 119-125](../../../apps/api-serving/src/main.py#119): uses `await asyncio.to_thread(...)` so the FastAPI handler stays async while the blocking prediction flow runs in a worker thread.
 
 ### Key Evidence
 
@@ -57,27 +57,27 @@ Lines to show:
 
 ## 4. Model Prediction Flow
 
-Source: [apps/api-serving/src/serving.py line 1](../../../apps/api-serving/src/serving.py#1)
+Source: [apps/api-serving/src/ranking.py line 1](../../../apps/api-serving/src/ranking.py#1)
 
 Lines to show:
 
-- [apps/api-serving/src/serving.py line 407](../../../apps/api-serving/src/serving.py#407): `recommend(...)` starts the prediction flow.
-- [apps/api-serving/src/serving.py line 413](../../../apps/api-serving/src/serving.py#413): selects the Triton route/model.
-- [apps/api-serving/src/serving.py line 419](../../../apps/api-serving/src/serving.py#419): calls `_recommend_with_route(...)`.
-- [apps/api-serving/src/serving.py line 449-455](../../../apps/api-serving/src/serving.py#449): pulls online features for the request user.
-- [apps/api-serving/src/serving.py line 469-471](../../../apps/api-serving/src/serving.py#469): builds the Triton payload and scores it with `route.ranker.score(payload)`.
-- [apps/api-serving/src/serving.py line 475-486](../../../apps/api-serving/src/serving.py#475): formats the top-k prediction response.
+- [apps/api-serving/src/ranking.py line 122](../../../apps/api-serving/src/ranking.py#122): `recommend(...)` starts the prediction flow.
+- [apps/api-serving/src/ranking.py line 128](../../../apps/api-serving/src/ranking.py#128): selects the Triton route/model.
+- [apps/api-serving/src/ranking.py line 134](../../../apps/api-serving/src/ranking.py#134): calls `_recommend_with_route(...)`.
+- [apps/api-serving/src/ranking.py line 164](../../../apps/api-serving/src/ranking.py#164): pulls online features for the request user.
+- [apps/api-serving/src/ranking.py line 184](../../../apps/api-serving/src/ranking.py#184): builds the Triton payload and scores it with `route.ranker.score(payload)`.
+- [apps/api-serving/src/ranking.py line 190](../../../apps/api-serving/src/ranking.py#190): formats the top-k prediction response.
 
 ## 5. Triton Inference Engine
 
-Source: [apps/api-serving/src/serving.py line 1](../../../apps/api-serving/src/serving.py#1)
+Source: [apps/api-serving/src/triton.py line 1](../../../apps/api-serving/src/triton.py#1)
 
 Lines to show:
 
-- [apps/api-serving/src/serving.py line 263](../../../apps/api-serving/src/serving.py#263): `TritonRanker`.
-- [apps/api-serving/src/serving.py line 272-276](../../../apps/api-serving/src/serving.py#272): creates `tritonclient.grpc.InferenceServerClient`.
-- [apps/api-serving/src/serving.py line 281-291](../../../apps/api-serving/src/serving.py#281): builds Triton input/output tensors.
-- [apps/api-serving/src/serving.py line 293-296](../../../apps/api-serving/src/serving.py#293): calls `client.infer(...)` and reads prediction scores.
+- [apps/api-serving/src/triton.py line 18](../../../apps/api-serving/src/triton.py#18): `TritonRanker`.
+- [apps/api-serving/src/triton.py line 27](../../../apps/api-serving/src/triton.py#27): creates `tritonclient.grpc.InferenceServerClient`.
+- [apps/api-serving/src/triton.py line 35](../../../apps/api-serving/src/triton.py#35): builds Triton input/output tensors.
+- [apps/api-serving/src/triton.py line 46](../../../apps/api-serving/src/triton.py#46): calls `client.infer(...)` and reads prediction scores.
 
 ![Data & ML system](../../pngs/triton-ranker.png)
 
@@ -98,7 +98,7 @@ kubectl run recsys-serving-e2e -n api-serving --rm -i --restart=Never \
   --image=curlimages/curl:8.10.1 -- \
   curl -fsS -X POST http://recsys-api-serving/recommendations \
   -H 'Content-Type: application/json' \
-  -d '{"user_id":1,"top_k":5}'
+  -d '{"user_id":1,"candidate_item_ids":[1,2,3,4,5,6,7,8,9,10],"top_k":5}'
 ```
 
 ## 8. Helm RollingUpdate + Healthcheck for K8s

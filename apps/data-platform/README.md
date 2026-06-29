@@ -46,8 +46,8 @@ flowchart TD
 | CDC topic contracts | `apps/data-platform/src/ingest/postgres_cdc_contracts.py`, `apps/data-platform/src/ingest/kafka_raw_reader.py` |
 | Iceberg lakehouse config | `apps/data-platform/src/lakehouse/iceberg.py`, `configs/local/spark_batch.yaml` |
 | Batch generator ingestion | `apps/data-platform/src/ingest/batch_lakehouse_ingestion.py` |
-| PySpark offline processing | `apps/data-platform/src/feature_engineering/spark/spark_batch_entrypoint.py` |
-| PyFlink realtime feature consumer | `apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py` |
+| PySpark offline processing | `apps/data-platform/src/features/spark/spark_batch_entrypoint.py` |
+| PyFlink realtime feature consumer | `apps/data-platform/src/features/flink/realtime_stream_job.py` |
 | Redis online writer | `apps/data-platform/src/feature_store/online_writer.py` |
 | Airflow orchestration | `apps/data-platform/src/orchestration/airflow/dags/` |
 | Governance lineage | `apps/data-platform/src/metadata/ingest_datahub_governance.py` |
@@ -85,7 +85,7 @@ Run bounded native Flink stream:
 kubectl exec -n recsys-dataflow deploy/flink-jobmanager -- \
   bash -lc 'PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
   flink run -m flink-jobmanager:8081 \
-  -py apps/data-platform/src/feature_engineering/flink/realtime_stream_job.py -- \
+  -py apps/data-platform/src/features/flink/realtime_stream_job.py -- \
   --runner pyflink --topic cdc.behavior_events --max-events 20 --min-events 1 \
   --offline-store-enabled'
 ```

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mlflow_dataset_lineage import dataset_versions, log_dataset_lineage
+from lineage.mlflow_dataset_lineage import dataset_versions, log_dataset_lineage
 
 
 class FakeData:

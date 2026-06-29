@@ -93,7 +93,7 @@ def pod_template(
 def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
     ray_args = [
         "python",
-        "/opt/recsys/apps/ml-system/src/ray_tune_train_bst.py",
+        "/opt/recsys/apps/ml-system/src/training/ray_tune_train_bst.py",
         "--base-config-path",
         args.base_config_path,
         "--split-dir",
@@ -201,6 +201,20 @@ def delete_if_exists(api, namespace: str, name: str) -> None:
                 return
             raise
         time.sleep(2)
+    raise TimeoutError(f"Timed out waiting for existing RayJob {name} to be deleted")
+
+
+def create_rayjob(api, namespace: str, name: str, rayjob: dict[str, Any]) -> None:
+    deadline = time.time() + 120
+    while True:
+        try:
+            api.create_namespaced_custom_object(GROUP, VERSION, namespace, PLURAL, rayjob)
+            return
+        except Exception as exc:
+            if getattr(exc, "status", None) != 409 or time.time() >= deadline:
+                raise
+            print(json.dumps({"rayJobCreateConflict": name, "retryInSeconds": 5}))
+            time.sleep(5)
 
 
 def wait_for_completion(api, namespace: str, name: str, timeout_seconds: int) -> dict[str, Any]:
@@ -328,7 +342,7 @@ def main() -> int:
     api = load_kubernetes()
     delete_if_exists(api, args.namespace, args.job_name)
     rayjob = build_rayjob(args)
-    api.create_namespaced_custom_object(GROUP, VERSION, args.namespace, PLURAL, rayjob)
+    create_rayjob(api, args.namespace, args.job_name, rayjob)
     status = wait_for_completion(api, args.namespace, args.job_name, args.timeout_seconds)
     if args.status_path:
         Path(args.status_path).parent.mkdir(parents=True, exist_ok=True)
