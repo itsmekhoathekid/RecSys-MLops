@@ -16,7 +16,8 @@ RUN uv pip install --no-cache \
     psycopg[binary] \
     redis \
     requests \
-    kfp
+    kfp \
+    "feast[redis]"
 
 COPY . /opt/recsys
 

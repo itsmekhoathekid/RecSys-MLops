@@ -202,6 +202,15 @@ if DAG is not None:
                 "--config $SPARK_BATCH_CONFIG",
             ),
         )
+        feast_materialize_incremental = pod_task(
+            "feast_materialize_incremental",
+            DATAFLOW_IMAGE,
+            "cd /opt/recsys/apps/data-platform/feature-store/feature_repo && "
+            "export FEAST_OFFLINE_ROOT=${FEAST_OFFLINE_ROOT:-s3://$OFFLINE_FEATURE_BUCKET/feast/offline} && "
+            "export AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-${MINIO_ENDPOINT:-$DATA_PLATFORM_MINIO_ENDPOINT}} && "
+            "feast apply && "
+            "feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)",
+        )
         run_flink_stream_to_feature_stores = pod_task(
             "run_flink_stream_to_feature_stores",
             DATAFLOW_IMAGE,
@@ -259,5 +268,5 @@ if DAG is not None:
         )
         generate_historical_raw_files >> ingest_historical_batch_to_lakehouse >> run_spark_batch_to_offline_store
         load_realtime_to_source_postgres >> run_flink_stream_to_feature_stores
-        run_spark_batch_to_offline_store >> offline_feature_drift >> trigger_kubeflow_retrain
+        run_spark_batch_to_offline_store >> feast_materialize_incremental >> offline_feature_drift >> trigger_kubeflow_retrain
         [trigger_kubeflow_retrain, run_flink_stream_to_feature_stores] >> datahub_ingest >> end

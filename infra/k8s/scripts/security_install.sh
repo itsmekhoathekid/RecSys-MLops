@@ -100,6 +100,14 @@ install_istio() {
   kubectl delete validatingwebhookconfiguration "istio-validator-${ISTIO_NAMESPACE}" istiod-default-validator --ignore-not-found
 }
 
+stabilize_external_secrets() {
+  section "Stabilize External Secrets Webhook"
+  kubectl rollout restart deploy/external-secrets deploy/external-secrets-cert-controller deploy/external-secrets-webhook -n "${ESO_NAMESPACE}"
+  kubectl rollout status deploy/external-secrets -n "${ESO_NAMESPACE}" --timeout="${WAIT_TIMEOUT}"
+  kubectl rollout status deploy/external-secrets-cert-controller -n "${ESO_NAMESPACE}" --timeout="${WAIT_TIMEOUT}"
+  kubectl rollout status deploy/external-secrets-webhook -n "${ESO_NAMESPACE}" --timeout="${WAIT_TIMEOUT}"
+}
+
 prepare_namespaces_for_mesh() {
   section "Prepare Namespaces For Security Resources"
   for namespace in "${TARGET_NAMESPACES[@]}"; do
@@ -140,6 +148,7 @@ install_vault
 configure_vault_kubernetes_auth
 seed_vault_secrets
 install_istio
+stabilize_external_secrets
 prepare_namespaces_for_mesh
 install_security_chart
 wait_external_secrets

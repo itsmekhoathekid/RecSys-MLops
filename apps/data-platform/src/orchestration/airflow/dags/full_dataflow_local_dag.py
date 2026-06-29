@@ -110,7 +110,15 @@ if DAG is not None:
                 "apps/data-platform/src/features/spark/spark_batch_entrypoint.py "
                 "--config configs/local/spark_batch.yaml",
             )
-            generate_historical_raw >> ingest_historical_batch_to_lakehouse >> run_historical_spark_batch
+            feast_materialize_incremental = cli_task(
+                "feast_materialize_incremental",
+                "cd apps/data-platform/feature-store/feature_repo && "
+                "export FEAST_OFFLINE_ROOT=${FEAST_OFFLINE_ROOT:-s3://$OFFLINE_FEATURE_BUCKET/feast/offline} && "
+                "export AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-$MINIO_ENDPOINT} && "
+                "feast apply && "
+                "feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)",
+            )
+            generate_historical_raw >> ingest_historical_batch_to_lakehouse >> run_historical_spark_batch >> feast_materialize_incremental
 
         with TaskGroup("realtime_cdc_to_feature_stores") as realtime_cdc_to_feature_stores:
             load_realtime_source = cli_task(

@@ -1,0 +1,24 @@
+job:
+  engine: spark
+  version: baseline
+
+data:
+  seed: 42
+  event_count: 12000
+  user_count: 1500
+  product_count: 4000
+  category_count: 40
+  brand_count: 120
+  campaign_count: 2500
+  hot_product_id: 1
+  hot_product_ratio: 0.58
+  old_schema_ratio: 0.45
+  duplicate_rate: 0.03
+
+spark:
+  shuffle_partitions: 8
+  adaptive_enabled: false
+  skew_salt_enabled: false
+  high_cardinality_bucketing_enabled: false
+  schema_evolution_defaults_enabled: false
+

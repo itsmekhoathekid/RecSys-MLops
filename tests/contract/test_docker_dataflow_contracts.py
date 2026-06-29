@@ -83,20 +83,23 @@ def test_airflow_dags_run_native_lakehouse_tasks_only():
         assert "ingest_historical_batch_to_lakehouse" in source
         assert "python -m ingest.batch_lakehouse_ingestion" in source
         assert "spark_batch_entrypoint.py" in source
+        assert "feast_materialize_incremental" in source
+        assert "feast materialize-incremental" in source
         if name == "k8s":
             assert "offline_feature_drift" in source
             assert "trigger_kubeflow_retrain" in source
-            assert "offline_feature_drift >> trigger_kubeflow_retrain" in source
+            assert "feast_materialize_incremental >> offline_feature_drift >> trigger_kubeflow_retrain" in source
             assert "python -m validate.offline_feature_drift" in source
             assert '"offline_feature_drift",\n            DATAFLOW_IMAGE,' in source
+            assert "feast apply" in source
             assert "http://flink-jobmanager:8081/jobs/overview" in source
             assert "No RUNNING Flink jobs found" in source
         else:
             assert "realtime_stream_job.py" in source
             assert "--offline-store-enabled" in source
             assert "flink run -m flink-jobmanager:8081" in source
+            assert "feature_repo" in source
         assert "validate_" not in source
-        assert "materialize_offline_to_online" not in source
 
 
 def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
@@ -325,10 +328,10 @@ def test_deleted_legacy_artifacts_are_absent():
     for relative in [
         "infra/docker/debezium/kafka-connect-s3-sink.json",
         "infra/docker/scripts/register_minio_sink_connector.sh",
-        "infra/docker/scripts/validate_bronze_cdc.py",
-        "apps/data-platform/great_expectations",
-        "apps/data-platform/dbt",
-        "apps/data-platform/feature-store",
-        "apps/data-platform/src/features/spark/spark_realtime_bronze_entrypoint.py",
-    ]:
-        assert not (ROOT / relative).exists()
+            "infra/docker/scripts/validate_bronze_cdc.py",
+            "apps/data-platform/great_expectations",
+            "apps/data-platform/dbt",
+            "apps/data-platform/src/features/spark/spark_realtime_bronze_entrypoint.py",
+        ]:
+            assert not (ROOT / relative).exists()
+    assert (ROOT / "apps/data-platform/feature-store/feature_repo/feature_store.yaml").exists()

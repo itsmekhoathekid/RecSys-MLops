@@ -4,5 +4,5 @@ kind: Namespace
 metadata:
   name: {{ .Values.namespace.name }}
   labels:
-    istio-injection: disabled
+    istio-injection: enabled
 {{- end }}
