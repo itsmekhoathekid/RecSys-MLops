@@ -135,6 +135,10 @@ spec:
         app: recsys-promtail
     spec:
       serviceAccountName: recsys-promtail
+      {{- with .Values.promtail.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       containers:
         - name: promtail
           image: {{ .Values.images.promtail }}

@@ -1,14 +1,14 @@
 storageClassName: standard-rwo
 
 minio:
-  storage: 50Gi
+  storage: 10Gi
   resources:
     requests:
       cpu: 250m
       memory: 1Gi
 
 postgres:
-  storage: 20Gi
+  storage: 5Gi
   resources:
     requests:
       cpu: 250m

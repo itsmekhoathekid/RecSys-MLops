@@ -86,6 +86,9 @@ redis:
   name: redis
   port: 6379
 
+flinkTaskManager:
+  replicas: 1
+
 realtimeProducer:
   enabled: true
   name: realtime-event-producer
@@ -108,6 +111,7 @@ realtimeFlinkConsumer:
   maxHistoryLength: "50"
   progressLogEvents: "100"
   checkpointIntervalSeconds: "30"
+  offlineStoreEnabled: true
 
 realtimeCdcConnector:
   enabled: true

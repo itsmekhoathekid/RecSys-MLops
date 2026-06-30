@@ -1,0 +1,116 @@
+substitutions:
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _TAG: gcp
+
+options:
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 7200s
+
+steps:
+  - id: base-python
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/docker/Dockerfile.base-python
+      - -t
+      - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - .
+
+  - id: dataflow-cli
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - -f
+      - apps/data-platform/Dockerfile.dataflow-cli
+      - -t
+      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+      - .
+
+  - id: training
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - -f
+      - apps/ml-system/Dockerfile.training
+      - -t
+      - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+      - .
+
+  - id: api-serving
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/api-serving/Dockerfile
+      - -t
+      - ${_IMAGE_REPO}/recsys-api-serving:${_TAG}
+      - .
+
+  - id: kafka-connect
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/docker/Dockerfile.kafka-connect
+      - -t
+      - ${_IMAGE_REPO}/recsys-kafka-connect:${_TAG}
+      - .
+
+  - id: mlflow
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/docker/Dockerfile.mlflow
+      - -t
+      - ${_IMAGE_REPO}/recsys-mlflow:${_TAG}
+      - .
+
+  - id: airflow
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/docker/Dockerfile.airflow
+      - -t
+      - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
+      - .
+
+  - id: spark
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/data-platform/Dockerfile.spark
+      - -t
+      - ${_IMAGE_REPO}/recsys-spark:${_TAG}
+      - .
+
+  - id: flink
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/data-platform/Dockerfile.flink
+      - -t
+      - ${_IMAGE_REPO}/recsys-flink:${_TAG}
+      - .
+
+images:
+  - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
+  - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+  - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+  - ${_IMAGE_REPO}/recsys-api-serving:${_TAG}
+  - ${_IMAGE_REPO}/recsys-kafka-connect:${_TAG}
+  - ${_IMAGE_REPO}/recsys-mlflow:${_TAG}
+  - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
+  - ${_IMAGE_REPO}/recsys-spark:${_TAG}
+  - ${_IMAGE_REPO}/recsys-flink:${_TAG}

@@ -1,0 +1,49 @@
+kserve:
+  resources:
+    requests:
+      cpu: "750m"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  servingRuntime:
+    resources:
+      requests:
+        cpu: "750m"
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+  sharedMemory:
+    sizeLimit: 512Mi
+
+api:
+  replicas: 1
+  imagePullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+autoscaling:
+  http:
+    api:
+      minReplicas: 1
+      maxReplicas: 3
+      requestRate:
+        targetValue: 10
+        window: 30s
+        granularity: 1s
+  kserveResource:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 2
+    pollingInterval: 15
+    cooldownPeriod: 240
+    cpu:
+      enabled: true
+      metricType: Utilization
+      value: "60"

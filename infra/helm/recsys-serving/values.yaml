@@ -93,6 +93,8 @@ api:
     limits:
       cpu: 500m
       memory: 1Gi
+  nodeSelector: {}
+  tolerations: []
 
 autoscaling:
   http:

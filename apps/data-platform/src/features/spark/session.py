@@ -62,5 +62,17 @@ def write_iceberg_table(frame: Any, table_name: str, mode: str = "append") -> No
         writer.create()
 
 
+def compact_iceberg_table(spark: Any, table_name: str, target_file_size_bytes: int = 134_217_728) -> None:
+    catalog = table_name.split(".", 1)[0]
+    spark.sql(
+        f"""
+        CALL {catalog}.system.rewrite_data_files(
+          table => '{table_name}',
+          options => map('target-file-size-bytes', '{target_file_size_bytes}')
+        )
+        """
+    )
+
+
 def row_count(frame: Any) -> int:
     return int(frame.count())

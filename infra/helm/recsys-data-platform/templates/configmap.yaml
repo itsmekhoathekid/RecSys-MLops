@@ -46,7 +46,7 @@ data:
   KAFKA_CONNECT_URL: "http://{{ .Values.kafkaConnect.name }}:{{ .Values.kafkaConnect.port }}"
   REDIS_HOST: {{ .Values.redis.name | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
-  OFFLINE_STORE_ENABLED: "true"
+  OFFLINE_STORE_ENABLED: {{ .Values.realtimeFlinkConsumer.offlineStoreEnabled | quote }}
   OFFLINE_FEATURE_DRIFT_REPORT_PATH: "s3://{{ .Values.minio.offlineFeatureBucket }}/monitoring/offline_feature_drift/report.json"
   OFFLINE_FEATURE_DRIFT_CURRENT_ROOT: {{ .Values.drift.currentRoot | quote }}
   OFFLINE_FEATURE_DRIFT_BASELINE_PATH: {{ .Values.drift.baselinePath | quote }}

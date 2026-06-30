@@ -32,6 +32,7 @@ image_tag                    = "gcp"
 
 deploy_ray_job = true
 deploy_gateway = false
+deploy_service_mesh = true
 
 # Recommended if you use the public GKE API endpoint:
 # master_authorized_cidr_blocks = [

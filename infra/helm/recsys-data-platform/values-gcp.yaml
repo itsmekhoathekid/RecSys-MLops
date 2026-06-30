@@ -4,13 +4,13 @@ images:
   pullPolicy: IfNotPresent
 
 sourcePostgres:
-  storage: 20Gi
+  storage: 5Gi
 
 airflowPostgres:
-  storage: 20Gi
+  storage: 5Gi
 
 minio:
-  storage: 100Gi
+  storage: 20Gi
 
 dataSetup:
   generatorConfig: configs/local/data_generator_e2e_2k.yaml
@@ -36,10 +36,14 @@ realtimeProducer:
   nUsers: "1000"
   nProducts: "5000"
 
+flinkTaskManager:
+  replicas: 2
+
 realtimeFlinkConsumer:
   replicas: 1
-  parallelism: "2"
+  parallelism: "1"
   checkpointIntervalSeconds: "30"
+  offlineStoreEnabled: false
 
 drift:
   sampleRows: "5000"

@@ -10,6 +10,7 @@ resource "null_resource" "cluster_credentials" {
 
   depends_on = [
     google_container_node_pool.cpu,
+    google_container_node_pool.ml_system,
     google_container_node_pool.gpu,
   ]
 }
@@ -54,6 +55,25 @@ resource "helm_release" "keda_http" {
   depends_on = [helm_release.keda]
 }
 
+resource "helm_release" "external_secrets" {
+  count = var.deploy_service_mesh ? 1 : 0
+
+  name             = "external-secrets"
+  repository       = "https://charts.external-secrets.io"
+  chart            = "external-secrets"
+  namespace        = "external-secrets"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  set {
+    name  = "installCRDs"
+    value = "true"
+  }
+
+  depends_on = [google_container_node_pool.cpu]
+}
+
 resource "helm_release" "kuberay_operator" {
   name             = "kuberay-operator"
   repository       = "https://ray-project.github.io/kuberay-helm/"
@@ -64,6 +84,43 @@ resource "helm_release" "kuberay_operator" {
   timeout          = 600
 
   depends_on = [google_container_node_pool.cpu]
+}
+
+resource "helm_release" "istio_base" {
+  count = var.deploy_service_mesh ? 1 : 0
+
+  name             = "istio-base"
+  repository       = "https://istio-release.storage.googleapis.com/charts"
+  chart            = "base"
+  namespace        = "istio-system"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  depends_on = [
+    google_container_node_pool.cpu,
+    null_resource.cluster_credentials,
+  ]
+}
+
+resource "helm_release" "istiod" {
+  count = var.deploy_service_mesh ? 1 : 0
+
+  name       = "istiod"
+  repository = "https://istio-release.storage.googleapis.com/charts"
+  chart      = "istiod"
+  namespace  = "istio-system"
+  wait       = true
+  timeout    = 600
+
+  set {
+    name  = "global.configValidation"
+    value = "false"
+  }
+
+  depends_on = [
+    helm_release.istio_base,
+  ]
 }
 
 resource "helm_release" "ingress_nginx" {
@@ -80,6 +137,16 @@ resource "helm_release" "ingress_nginx" {
   set {
     name  = "controller.service.type"
     value = "LoadBalancer"
+  }
+
+  set {
+    name  = "controller.config.limit-req-status-code"
+    value = "429"
+  }
+
+  set {
+    name  = "controller.config.limit-conn-status-code"
+    value = "429"
   }
 
   depends_on = [google_container_node_pool.cpu]

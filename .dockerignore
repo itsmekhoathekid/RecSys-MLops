@@ -6,6 +6,10 @@
 __pycache__
 *.pyc
 .DS_Store
+.env
+.gateway-auth
+.codex
+.model-cd
 .coverage
 .ci-image-manifest
 graphify-out

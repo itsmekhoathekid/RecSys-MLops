@@ -100,6 +100,36 @@ variable "cpu_spot" {
   default     = false
 }
 
+variable "ml_machine_type" {
+  description = "Machine type for the dedicated ML system node pool used by MLflow, API serving, and Triton/KServe."
+  type        = string
+  default     = "e2-standard-4"
+}
+
+variable "ml_min_nodes" {
+  description = "Minimum ML system nodes."
+  type        = number
+  default     = 1
+}
+
+variable "ml_max_nodes" {
+  description = "Maximum ML system nodes."
+  type        = number
+  default     = 1
+}
+
+variable "ml_disk_size_gb" {
+  description = "Boot disk size for ML system nodes."
+  type        = number
+  default     = 30
+}
+
+variable "ml_spot" {
+  description = "Use Spot VMs for the ML system node pool."
+  type        = bool
+  default     = false
+}
+
 variable "gpu_machine_type" {
   description = "GPU node machine type. n1-standard-8 plus one T4 is a moderate cost/latency default."
   type        = string
@@ -196,10 +226,28 @@ variable "deploy_ray_job" {
   default     = true
 }
 
+variable "deploy_serving" {
+  description = "Deploy the KServe/Triton GPU serving chart. Disable when GPU billing/quota is unavailable."
+  type        = bool
+  default     = true
+}
+
 variable "deploy_gateway" {
   description = "Deploy ingress-nginx and the public RecSys gateway. Requires DNS/TLS planning."
   type        = bool
   default     = false
+}
+
+variable "deploy_datahub" {
+  description = "Deploy DataHub metadata governance services and prerequisites."
+  type        = bool
+  default     = false
+}
+
+variable "deploy_service_mesh" {
+  description = "Deploy Istio service mesh control plane and RecSys mTLS/authorization policies."
+  type        = bool
+  default     = true
 }
 
 variable "gateway_domain" {

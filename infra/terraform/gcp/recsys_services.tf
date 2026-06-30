@@ -2,7 +2,7 @@ resource "helm_release" "recsys_observability" {
   name             = "recsys-observability"
   chart            = "${local.helm_dir}/recsys-observability"
   namespace        = "observability"
-  create_namespace = true
+  create_namespace = false
   wait             = true
   timeout          = 900
 
@@ -10,14 +10,42 @@ resource "helm_release" "recsys_observability" {
     file("${local.helm_dir}/recsys-observability/values-gcp.yaml"),
   ]
 
-  depends_on = [google_container_node_pool.cpu]
+  set {
+    name  = "namespace.create"
+    value = "false"
+  }
+
+  set {
+    name  = "promtail.tolerations[0].key"
+    value = "recsys.ai/workload"
+  }
+
+  set {
+    name  = "promtail.tolerations[0].operator"
+    value = "Equal"
+  }
+
+  set {
+    name  = "promtail.tolerations[0].value"
+    value = "ml-system"
+  }
+
+  set {
+    name  = "promtail.tolerations[0].effect"
+    value = "NoSchedule"
+  }
+
+  depends_on = [
+    google_container_node_pool.cpu,
+    kubernetes_namespace.observability,
+  ]
 }
 
 resource "helm_release" "recsys_mlflow" {
   name             = "recsys-mlflow"
   chart            = "${local.helm_dir}/mlflow-stack"
   namespace        = "experiment-tracking"
-  create_namespace = true
+  create_namespace = false
   wait             = true
   timeout          = 900
 
@@ -26,7 +54,7 @@ resource "helm_release" "recsys_mlflow" {
   ]
 
   dynamic "set" {
-    for_each = local.mlflow_sets
+    for_each = merge(local.mlflow_sets, local.ml_system_sets)
     content {
       name  = set.key
       value = set.value
@@ -43,15 +71,18 @@ resource "helm_release" "recsys_mlflow" {
     value = random_password.mlflow_postgres.result
   }
 
-  depends_on = [google_container_node_pool.cpu]
+  depends_on = [
+    google_container_node_pool.ml_system,
+    kubernetes_namespace.experiment_tracking,
+  ]
 }
 
 resource "helm_release" "recsys_runtime" {
   name             = "recsys-runtime"
   chart            = "${local.helm_dir}/recsys-runtime"
   namespace        = "kubeflow"
-  create_namespace = true
-  wait             = true
+  create_namespace = false
+  wait             = false
   timeout          = 600
 
   values = [
@@ -86,7 +117,7 @@ resource "helm_release" "recsys_data_platform" {
   name             = "recsys-data-platform"
   chart            = "${local.helm_dir}/recsys-data-platform"
   namespace        = "recsys-dataflow"
-  create_namespace = true
+  create_namespace = false
   wait             = true
   timeout          = 1200
 
@@ -120,19 +151,22 @@ resource "helm_release" "recsys_data_platform" {
   depends_on = [
     helm_release.recsys_observability,
     google_container_node_pool.cpu,
+    kubernetes_namespace.recsys_dataflow,
   ]
 }
 
 resource "helm_release" "recsys_serving" {
+  count = var.deploy_serving ? 1 : 0
+
   name             = "recsys-serving"
   chart            = "${local.helm_dir}/recsys-serving"
   namespace        = "kserve-triton-inference"
-  create_namespace = true
+  create_namespace = false
   wait             = true
   timeout          = 1200
 
   values = [
-    file("${local.helm_dir}/recsys-serving/values-gcp-gpu.yaml"),
+    file("${local.helm_dir}/recsys-serving/values-gcp-cpu.yaml"),
   ]
 
   dynamic "set" {
@@ -153,7 +187,9 @@ resource "helm_release" "recsys_serving" {
     helm_release.recsys_mlflow,
     helm_release.recsys_data_platform,
     null_resource.kserve,
-    google_container_node_pool.gpu,
+    google_container_node_pool.ml_system,
+    kubernetes_namespace.api_serving,
+    kubernetes_namespace.kserve_triton_inference,
   ]
 }
 
@@ -193,7 +229,7 @@ resource "helm_release" "recsys_gateway" {
   name             = "recsys-gateway"
   chart            = "${local.helm_dir}/recsys-gateway"
   namespace        = "api-serving"
-  create_namespace = true
+  create_namespace = false
   wait             = true
   timeout          = 600
 
@@ -208,6 +244,11 @@ resource "helm_release" "recsys_gateway" {
   }
 
   set {
+    name  = "api.upstreamHost"
+    value = "recsys-api-serving.api-serving.svc.cluster.local"
+  }
+
+  set {
     name  = "grafana.host"
     value = "grafana.${var.gateway_domain}"
   }
@@ -218,13 +259,62 @@ resource "helm_release" "recsys_gateway" {
   }
 
   set {
+    name  = "logs.upstreamHost"
+    value = "recsys-loki.observability.svc.cluster.local"
+  }
+
+  set {
     name  = "traces.host"
     value = "traces.${var.gateway_domain}"
+  }
+
+  set {
+    name  = "traces.upstreamHost"
+    value = "recsys-tempo.observability.svc.cluster.local"
+  }
+
+  set {
+    name  = "tls.enabled"
+    value = "false"
   }
 
   depends_on = [
     helm_release.ingress_nginx,
     helm_release.recsys_serving,
     helm_release.recsys_observability,
+    kubernetes_namespace.api_serving,
+  ]
+}
+
+resource "helm_release" "recsys_security" {
+  count = var.deploy_service_mesh ? 1 : 0
+
+  name             = "recsys-security"
+  chart            = "${local.helm_dir}/recsys-security"
+  namespace        = "recsys-security"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  dynamic "set" {
+    for_each = local.service_mesh_sets
+    content {
+      name  = set.key
+      value = set.value
+    }
+  }
+
+  depends_on = [
+    helm_release.external_secrets,
+    helm_release.istiod,
+    helm_release.recsys_mlflow,
+    helm_release.recsys_data_platform,
+    helm_release.recsys_observability,
+    null_resource.kubeflow_pipelines,
+    kubernetes_namespace.experiment_tracking,
+    kubernetes_namespace.recsys_dataflow,
+    kubernetes_namespace.observability,
+    kubernetes_namespace.api_serving,
+    kubernetes_namespace.kserve_triton_inference,
   ]
 }

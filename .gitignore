@@ -42,3 +42,30 @@ AGENTS.md
 data_platform/
 output
 notebooks/models/
+
+# Terraform and IaC local state/secrets
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/tfplan
+**/tfplan*
+**/terraform.tfvars
+**/*.auto.tfvars
+**/*.tfvars.json
+**/*.auto.tfvars.json
+crash.log
+crash.*.log
+
+# Local cloud credentials and kube access files
+.kube/
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+application_default_credentials.json
+credentials.db
+*service-account*.json
+*-sa.json
+*.pem
+*.key
+*.p12

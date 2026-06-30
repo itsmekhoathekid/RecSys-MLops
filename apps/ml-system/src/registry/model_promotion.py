@@ -24,6 +24,7 @@ DEFAULT_MODEL_BUCKET = "recsys-model-store"
 DEFAULT_MODEL_PREFIX = "triton/bst"
 DEFAULT_PROMOTION_KEY = "promotions/bst/latest.json"
 DEFAULT_OBJECTIVE_METRIC = "test_ndcg_at_10"
+MLFLOW_REGISTERED_MODEL_NAME = "recsys_bst_ranker"
 
 HISTORY_INPUTS = [
     "hist_item_id",
@@ -506,6 +507,53 @@ def build_manifest(
     }
 
 
+def register_mlflow_model_version(
+    *,
+    registered_model_name: str,
+    source_uri: str,
+    run_id: str | None,
+    model_version: str,
+    metric_name: str,
+    metric_value: float,
+) -> dict[str, Any]:
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
+    if not tracking_uri or not source_uri:
+        return {}
+
+    import mlflow
+    from mlflow.exceptions import MlflowException
+    from mlflow.tracking import MlflowClient
+
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient(tracking_uri=tracking_uri)
+    try:
+        client.get_registered_model(registered_model_name)
+    except MlflowException:
+        client.create_registered_model(
+            registered_model_name,
+            tags={
+                "system": "recsys-mlops",
+                "model_family": MODEL_NAME,
+            },
+        )
+    created = client.create_model_version(
+        name=registered_model_name,
+        source=source_uri,
+        run_id=run_id,
+        tags={
+            "model_version": model_version,
+            "metric_name": metric_name,
+            "metric_value": str(metric_value),
+            "source": "kubeflow-ray-tune",
+        },
+    )
+    return {
+        "mlflow_registered_model_name": registered_model_name,
+        "mlflow_registered_model_version": str(created.version),
+        "mlflow_registered_model_status": getattr(created, "status", ""),
+    }
+
+
 def promote_best_model(
     ray_result_path: str,
     config_path: str,
@@ -548,6 +596,22 @@ def promote_best_model(
         serving_storage_uri=serving_uri,
         promotion_manifest_uri=manifest_uri,
     )
+    try:
+        manifest.update(
+            register_mlflow_model_version(
+                registered_model_name=os.getenv(
+                    "MLFLOW_REGISTERED_MODEL_NAME",
+                    MLFLOW_REGISTERED_MODEL_NAME,
+                ),
+                source_uri=manifest["source_checkpoint_uri"],
+                run_id=manifest.get("mlflow_run_id"),
+                model_version=version,
+                metric_name=manifest["metric_name"],
+                metric_value=manifest["metric_value"],
+            )
+        )
+    except Exception as exc:
+        manifest["mlflow_model_registry_error"] = str(exc)
     local_manifest = Path(manifest_path or Path(output_dir) / "promotion_manifest.json")
     local_manifest.parent.mkdir(parents=True, exist_ok=True)
     local_manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")

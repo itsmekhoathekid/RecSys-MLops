@@ -9,10 +9,20 @@ vault:
       namespace: external-secrets
 
 secretStore:
+  enabled: true
+  provider: vault
   name: recsys-vault
+  kubernetes:
+    remoteNamespace: external-secrets
+    auth:
+      serviceAccount:
+        name: external-secrets
+        namespace: external-secrets
 
 externalSecrets:
+  enabled: true
   refreshInterval: 1h
+  creationPolicy: Owner
   dataPlatform:
     namespace: recsys-dataflow
     secretName: recsys-data-platform-secret
