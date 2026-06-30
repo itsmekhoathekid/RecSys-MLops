@@ -57,7 +57,7 @@ metadata:
   name: {{ .Values.kafka.name }}
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.flinkTaskManager.replicas }}
   selector:
     matchLabels:
       app: {{ .Values.kafka.name }}
@@ -257,7 +257,7 @@ metadata:
   name: flink-taskmanager
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.flinkTaskManager.replicas }}
   strategy:
     type: Recreate
   selector:

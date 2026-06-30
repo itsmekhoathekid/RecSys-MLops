@@ -6,6 +6,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: {{ .Values.realtimeFlinkConsumer.replicas }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ .Values.realtimeFlinkConsumer.name }}
@@ -36,7 +38,9 @@ spec:
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                {{- if .Values.realtimeFlinkConsumer.offlineStoreEnabled }}
                 --offline-store-enabled \
+                {{- end }}
                 --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
                 --iceberg-catalog "$ICEBERG_CATALOG" \
                 --offline-feature-catalog "$OFFLINE_FEATURE_CATALOG" \

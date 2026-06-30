@@ -29,6 +29,14 @@ spec:
         prometheus.io/path: /metrics
         prometheus.io/port: {{ .Values.api.service.targetPort | quote }}
     spec:
+      {{- if .Values.api.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.api.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.api.tolerations }}
+      tolerations:
+{{ toYaml .Values.api.tolerations | nindent 8 }}
+      {{- end }}
       containers:
         - name: api
           image: {{ .Values.api.image }}

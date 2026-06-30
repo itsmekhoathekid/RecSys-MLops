@@ -282,3 +282,32 @@ kubectl exec -n recsys-dataflow deploy/flink-jobmanager -- \
 
 The verification checks Iceberg offline feature tables, Redis online feature keys, and the running Flink job.
 
+Observed GCP streaming proof:
+
+```text
+Kafka topic cdc.behavior_events exists:
+PartitionCount: 1
+ReplicationFactor: 1
+
+Flink job:
+JobID: ae265b6977210f116628e6c1349e7174
+Name: recsys-native-pyflink-realtime-features
+State: RUNNING
+Tasks: 5/5 running, 0 failed
+
+Checkpoint proof:
+Completed checkpoint 1 for job ae265b6977210f116628e6c1349e7174.
+Completed checkpoint 2 for job ae265b6977210f116628e6c1349e7174.
+```
+
+GCP runtime commands used:
+
+```bash
+kubectl exec -n recsys-dataflow deploy/kafka -- \
+  kafka-topics --bootstrap-server kafka:29092 --describe --topic cdc.behavior_events
+
+kubectl exec -n recsys-dataflow deploy/flink-jobmanager -- \
+  curl -fsS http://localhost:8081/jobs/overview
+
+kubectl logs -n recsys-dataflow deploy/flink-jobmanager --tail=120
+```

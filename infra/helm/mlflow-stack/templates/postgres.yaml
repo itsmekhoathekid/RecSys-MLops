@@ -15,12 +15,23 @@ spec:
       labels:
         app: postgres
     spec:
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | nindent 8 }}
+      {{- end }}
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}
           envFrom:
             - secretRef:
                 name: recsys-mlflow-secrets
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
 {{- with .Values.postgres.resources }}
           resources:
 {{ toYaml . | nindent 12 }}

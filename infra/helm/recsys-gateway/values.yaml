@@ -12,7 +12,7 @@ auth:
   htpasswd: "recsys:$apr1$N4f11ApR$L6Z5IGFzrKP88UmiqpzLb/"
 
 tls:
-  enabled: true
+  enabled: false
   clusterIssuerName: letsencrypt-staging
   issuer:
     create: false

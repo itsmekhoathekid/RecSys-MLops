@@ -15,6 +15,8 @@ locals {
   }
 
   data_platform_sets = {
+    "chartRevision"        = sha1(join("", [for path in ["configmap.yaml", "airflow.yaml", "realtime-flink-consumer.yaml"] : filemd5("${local.helm_dir}/recsys-data-platform/templates/${path}")]))
+    "namespace.create"     = "false"
     "images.dataflowCli"   = local.images.dataflow_cli
     "images.spark"         = local.images.spark
     "images.flink"         = local.images.flink
@@ -27,6 +29,7 @@ locals {
   }
 
   mlflow_sets = {
+    "namespace.create"  = "false"
     "mlflow.image"      = local.images.mlflow
     "secret.create"     = "true"
     "minio.rootUser"    = "minio"
@@ -34,20 +37,73 @@ locals {
     "postgres.database" = "mlflow"
   }
 
+  ml_system_sets = {
+    "nodeSelector.recsys\\.ai/workload" = "ml-system"
+    "tolerations[0].key"                = "recsys.ai/workload"
+    "tolerations[0].operator"           = "Equal"
+    "tolerations[0].value"              = "ml-system"
+    "tolerations[0].effect"             = "NoSchedule"
+  }
+
   runtime_sets = {
+    "namespace.create"     = "false"
     "secret.create"        = "true"
     "secret.name"          = "recsys-mlops-runtime"
     "secret.minioRootUser" = "minio"
   }
 
   serving_sets = {
-    "api.image"                                                = local.images.api
-    "kserve.secret.create"                                     = "true"
-    "kserve.secret.accessKeyId"                                = "minio"
-    "kserve.secret.minioEndpoint"                              = "minio.experiment-tracking.svc.cluster.local:9000"
-    "kserve.nodeSelector.cloud\\.google\\.com/gke-accelerator" = var.gpu_accelerator_type
-    "observability.serviceMonitor.enabled"                     = "false"
+    "api.namespace.create"                        = "false"
+    "api.image"                                   = local.images.api
+    "kserve.namespace.create"                     = "false"
+    "kserve.secret.create"                        = "true"
+    "kserve.secret.accessKeyId"                   = "minio"
+    "kserve.secret.minioEndpoint"                 = "minio.experiment-tracking.svc.cluster.local:9000"
+    "api.nodeSelector.recsys\\.ai/workload"       = "ml-system"
+    "api.tolerations[0].key"                      = "recsys.ai/workload"
+    "api.tolerations[0].operator"                 = "Equal"
+    "api.tolerations[0].value"                    = "ml-system"
+    "api.tolerations[0].effect"                   = "NoSchedule"
+    "kserve.nodeSelector.recsys\\.ai/workload"    = "ml-system"
+    "kserve.tolerations[0].key"                   = "recsys.ai/workload"
+    "kserve.tolerations[0].operator"              = "Equal"
+    "kserve.tolerations[0].value"                 = "ml-system"
+    "kserve.tolerations[0].effect"                = "NoSchedule"
+    "observability.serviceMonitor.enabled"        = "false"
+    "abTest.enabled"                              = "true"
+    "abTest.experimentId"                         = "bst-stable-vs-candidate-20260630"
+    "abTest.candidateWeightPercent"               = "20"
+    "abTest.controlModelVersion"                  = "stable-001"
+    "abTest.candidateModelVersion"                = "candidate-001"
+    "kserve.inferenceService.candidateStorageUri" = "s3://recsys-model-store/triton/bst/latest"
   }
+
+  service_mesh_namespaces = [
+    "kubeflow",
+    "experiment-tracking",
+    "recsys-dataflow",
+    "kserve-triton-inference",
+    "api-serving",
+    "observability",
+  ]
+
+  service_mesh_sets = merge(
+    {
+      "secretStore.enabled"                                  = "true"
+      "secretStore.provider"                                 = "kubernetes"
+      "secretStore.name"                                     = "recsys-central-secrets"
+      "secretStore.kubernetes.remoteNamespace"               = "external-secrets"
+      "secretStore.kubernetes.auth.serviceAccount.name"      = "external-secrets"
+      "secretStore.kubernetes.auth.serviceAccount.namespace" = "external-secrets"
+      "externalSecrets.enabled"                              = "true"
+      "externalSecrets.creationPolicy"                       = "Merge"
+      "istio.enabled"                                        = "true"
+    },
+    {
+      for index, namespace in local.service_mesh_namespaces :
+      "istio.namespaces[${index}]" => namespace
+    }
+  )
 
   ray_sets = {
     "image.repository"                                      = local.images.training_repository

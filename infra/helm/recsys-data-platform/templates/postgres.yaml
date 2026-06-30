@@ -34,6 +34,8 @@ spec:
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           args: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=8", "-c", "max_wal_senders=8"]
           env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
             - name: POSTGRES_DB
               value: {{ .Values.sourcePostgres.database | quote }}
             - name: POSTGRES_USER
@@ -95,6 +97,8 @@ spec:
           image: {{ .Values.images.postgres }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
             - name: POSTGRES_DB
               value: {{ .Values.airflowPostgres.database | quote }}
             - name: POSTGRES_USER

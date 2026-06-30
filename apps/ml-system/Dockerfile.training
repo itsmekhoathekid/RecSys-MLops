@@ -7,6 +7,9 @@ COPY pyproject.toml uv.lock* /opt/recsys/
 ENV PYTHONPATH=/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys \
     UV_SYSTEM_PYTHON=1
 
+RUN uv pip install --no-cache --index-url https://download.pytorch.org/whl/cpu \
+    torch
+
 RUN uv pip install --no-cache \
     boto3 \
     "feast[redis]" \
@@ -24,7 +27,6 @@ RUN uv pip install --no-cache \
     "ray[default,train,tune]" \
     s3fs \
     scikit-learn \
-    torch \
     tqdm
 
 # Ray 2.55 auto-starts the Ray Client server whenever grpcio is installed.

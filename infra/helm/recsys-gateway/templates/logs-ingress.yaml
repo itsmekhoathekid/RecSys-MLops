@@ -10,6 +10,8 @@ metadata:
     nginx.ingress.kubernetes.io/auth-secret: {{ .Values.auth.secretName }}
     nginx.ingress.kubernetes.io/auth-realm: {{ .Values.auth.realm | quote }}
     {{- end }}
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+    nginx.ingress.kubernetes.io/upstream-vhost: {{ .Values.logs.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.logs.service.name .Values.logs.namespace) | quote }}
     {{- if .Values.tls.enabled }}
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     cert-manager.io/cluster-issuer: {{ .Values.tls.clusterIssuerName | quote }}

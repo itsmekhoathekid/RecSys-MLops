@@ -15,6 +15,13 @@ images:
 retention:
   prometheus: 7d
 
+promtail:
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
+
 storage:
   prometheus: 10Gi
   grafana: 2Gi

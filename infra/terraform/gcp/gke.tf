@@ -103,6 +103,11 @@ resource "google_container_node_pool" "cpu" {
     auto_upgrade = true
   }
 
+  upgrade_settings {
+    max_surge       = 0
+    max_unavailable = 1
+  }
+
   node_config {
     machine_type    = var.cpu_machine_type
     disk_size_gb    = var.cpu_disk_size_gb
@@ -112,9 +117,61 @@ resource "google_container_node_pool" "cpu" {
     service_account = google_service_account.gke_nodes.email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
     labels = merge(var.labels, {
-      "recsys.ai/pool" = "cpu-services"
+      "recsys.ai/pool"     = "cpu-services"
+      "recsys.ai/workload" = "data-platform"
     })
     tags = ["${var.name_prefix}-cpu"]
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+
+  depends_on = [google_project_iam_member.gke_node_roles]
+}
+
+resource "google_container_node_pool" "ml_system" {
+  provider = google-beta
+
+  name       = "${var.name_prefix}-ml-system"
+  location   = var.zone
+  cluster    = google_container_cluster.recsys.name
+  node_count = var.ml_min_nodes
+
+  autoscaling {
+    min_node_count = var.ml_min_nodes
+    max_node_count = var.ml_max_nodes
+  }
+
+  management {
+    auto_repair  = true
+    auto_upgrade = true
+  }
+
+  upgrade_settings {
+    max_surge       = 0
+    max_unavailable = 1
+  }
+
+  node_config {
+    machine_type    = var.ml_machine_type
+    disk_size_gb    = var.ml_disk_size_gb
+    disk_type       = "pd-balanced"
+    image_type      = "COS_CONTAINERD"
+    spot            = var.ml_spot
+    service_account = google_service_account.gke_nodes.email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+    labels = merge(var.labels, {
+      "recsys.ai/pool"     = "ml-system"
+      "recsys.ai/workload" = "ml-system"
+    })
+    tags = ["${var.name_prefix}-ml-system"]
+
+    taint {
+      key    = "recsys.ai/workload"
+      value  = "ml-system"
+      effect = "NO_SCHEDULE"
+    }
 
     workload_metadata_config {
       mode = "GKE_METADATA"

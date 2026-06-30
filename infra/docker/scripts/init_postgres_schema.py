@@ -41,6 +41,33 @@ PRIMARY_KEYS = {
     "order_items": ["order_item_id"],
 }
 
+SECONDARY_INDEXES = {
+    "product_snapshots": [
+        ("idx_product_snapshots_validity", ["product_id", "valid_from", "valid_to"]),
+    ],
+    "sessions": [
+        ("idx_sessions_user_started", ["user_id", "session_start_ts"]),
+    ],
+    "recommendation_requests": [
+        ("idx_recommendation_requests_user_ts", ["user_id", "request_timestamp"]),
+    ],
+    "impressions": [
+        ("idx_impressions_request_ts", ["request_id", "impression_timestamp"]),
+        ("idx_impressions_user_product", ["user_id", "candidate_product_id"]),
+    ],
+    "behavior_events": [
+        ("idx_behavior_events_user_ts", ["user_id", "event_timestamp"]),
+        ("idx_behavior_events_product_ts", ["product_id", "event_timestamp"]),
+        ("idx_behavior_events_type_ts", ["event_type", "event_timestamp"]),
+    ],
+    "orders": [
+        ("idx_orders_user_ts", ["user_id", "order_timestamp"]),
+    ],
+    "order_items": [
+        ("idx_order_items_product", ["product_id"]),
+    ],
+}
+
 
 def build_table_ddl(table_name: str, schema: pa.Schema) -> str:
     columns = [
@@ -54,11 +81,20 @@ def build_table_ddl(table_name: str, schema: pa.Schema) -> str:
     return f"CREATE TABLE IF NOT EXISTS {table_name} (\n{body}\n);"
 
 
+def build_index_ddl() -> str:
+    statements = []
+    for table_name, indexes in SECONDARY_INDEXES.items():
+        for index_name, columns in indexes:
+            statements.append(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({', '.join(columns)});")
+    return "\n".join(statements)
+
+
 def build_all_ddl() -> str:
-    return "\n\n".join(
+    table_ddl = "\n\n".join(
         build_table_ddl(table_name, schema)
         for table_name, schema in SCHEMAS.items()
     )
+    return f"{table_ddl}\n\n{build_index_ddl()}"
 
 
 def main() -> int:

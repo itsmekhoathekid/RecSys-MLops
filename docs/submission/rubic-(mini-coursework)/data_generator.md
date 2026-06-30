@@ -44,7 +44,7 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 
 ### Image Proof
 
-TODO: screenshot generator configuration output.
+![Generator drift/config proof](../../pngs/data_gen_config_drift.png)
 
 ## Offline Data Problems
 
@@ -177,4 +177,4 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 
 ### Image Proof
 
-TODO: screenshot output showing generator configuration, label table `user_id,label`, and merged features with labels.
+![Generator drift/config proof](../../pngs/data_gen_config_drift.png)
