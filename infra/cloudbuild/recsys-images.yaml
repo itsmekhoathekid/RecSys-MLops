@@ -94,6 +94,18 @@ steps:
       - ${_IMAGE_REPO}/recsys-spark:${_TAG}
       - .
 
+  - id: mlops-spark
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_SPARK_BASE_IMAGE=${_IMAGE_REPO}/recsys-spark:${_TAG}
+      - -f
+      - apps/ml-system/Dockerfile.spark
+      - -t
+      - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
+      - .
+
   - id: flink
     name: gcr.io/cloud-builders/docker
     args:
@@ -113,4 +125,5 @@ images:
   - ${_IMAGE_REPO}/recsys-mlflow:${_TAG}
   - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
   - ${_IMAGE_REPO}/recsys-spark:${_TAG}
+  - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
   - ${_IMAGE_REPO}/recsys-flink:${_TAG}

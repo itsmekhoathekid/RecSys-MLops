@@ -50,7 +50,7 @@ Source references:
 ### 2.3 Command used
 
 ```bash
-UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src uv run pytest tests/unit/api_serving -q -vv
+UV_CACHE_DIR=.uv-cache uv run pytest tests/unit/api_serving -q -vv
 ```
 
 ### 2.4 Screenshot proof
@@ -101,7 +101,7 @@ Source references:
 ### 3.4 Command used
 
 ```bash
-UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src uv run pytest \
+UV_CACHE_DIR=.uv-cache uv run pytest \
   tests/unit/api_serving/test_validation_verification.py \
   -q -vv
 ```
@@ -203,7 +203,7 @@ dependencies, repeated predictions must return the same:
 ### 5.3 Command used
 
 ```bash
-UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src uv run pytest \
+UV_CACHE_DIR=.uv-cache uv run pytest \
   tests/unit/api_serving/test_validation_verification.py::test_property_based_recommendation_idempotency_for_deterministic_prediction \
   -q -vv
 ```

@@ -11,6 +11,7 @@ from kubeflow.components.runtime import (
 
 
 PIPELINE_IMAGE = os.getenv("RECSYS_PIPELINE_IMAGE", "recsys-mlops-training:local")
+RAY_IMAGE = os.getenv("RECSYS_RAY_IMAGE", PIPELINE_IMAGE)
 SPARK_IMAGE = os.getenv("RECSYS_SPARK_IMAGE", "recsys-mlops-spark:local")
 SPARK_PACKAGES = os.getenv(
     "RECSYS_SPARK_PACKAGES",
@@ -233,7 +234,7 @@ def recsys_bst_pipeline(
     runtime_secret_name: str = "recsys-mlops-runtime",
     ray_namespace: str = "kubeflow",
     ray_job_name: str = "recsys-bst-ray-tune",
-    ray_image: str = "recsys-mlops-training:local",
+    ray_image: str = RAY_IMAGE,
     feature_service_name: str = "bst_ranking_v1",
     iceberg_catalog_name: str = "recsys_features",
     iceberg_warehouse: str = "s3a://recsys-offline-feature-store/warehouse",

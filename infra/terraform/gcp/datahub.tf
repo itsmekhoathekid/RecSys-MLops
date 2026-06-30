@@ -7,10 +7,10 @@ resource "kubernetes_secret" "datahub_mysql" {
   }
 
   data = {
-    mysql-root-password        = "datahub"
-    mysql-replication-password = "datahub"
-    mysql-password             = "datahub"
-    mysql-cdc-password         = "datahub"
+    mysql-root-password        = coalesce(var.datahub_mysql_root_password, random_password.datahub_mysql_root.result)
+    mysql-replication-password = coalesce(var.datahub_mysql_replication_password, random_password.datahub_mysql_replication.result)
+    mysql-password             = coalesce(var.datahub_mysql_password, random_password.datahub_mysql.result)
+    mysql-cdc-password         = coalesce(var.datahub_mysql_cdc_password, random_password.datahub_mysql_cdc.result)
   }
 
   depends_on = [kubernetes_namespace.datahub]
@@ -30,7 +30,7 @@ resource "kubernetes_secret" "datahub_encryption" {
   }
 
   data = {
-    encryption_key_secret = "datahub-encryption-key-local"
+    encryption_key_secret = coalesce(var.datahub_encryption_key_secret, random_password.datahub_encryption_key.result)
   }
 
   depends_on = [kubernetes_namespace.datahub]

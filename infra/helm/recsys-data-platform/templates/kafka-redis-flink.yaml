@@ -57,7 +57,7 @@ metadata:
   name: {{ .Values.kafka.name }}
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: {{ .Values.flinkTaskManager.replicas }}
+  replicas: 1
   selector:
     matchLabels:
       app: {{ .Values.kafka.name }}
@@ -237,10 +237,23 @@ spec:
           command: ["bash", "-lc"]
           args:
             - |
+              cat >/tmp/core-site.xml <<'EOF'
+              <configuration>
+                <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
+                <property><name>fs.s3a.endpoint</name><value>{{ .Values.minio.endpoint }}</value></property>
+                <property><name>fs.s3a.access.key</name><value>${AWS_ACCESS_KEY_ID}</value></property>
+                <property><name>fs.s3a.secret.key</name><value>${AWS_SECRET_ACCESS_KEY}</value></property>
+                <property><name>fs.s3a.path.style.access</name><value>true</value></property>
+                <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>
+                <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>
+              </configuration>
+              EOF
+              sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
+              export HADOOP_CONF_DIR=/tmp
               /docker-entrypoint.sh jobmanager
           env:
             - name: FLINK_PROPERTIES
-              value: "jobmanager.rpc.address: flink-jobmanager\njobmanager.rpc.port: 6123\nblob.server.port: 6124\nquery.server.port: 6125\npekko.remote.startup-timeout: 60 s"
+              value: "jobmanager.rpc.address: flink-jobmanager\njobmanager.rpc.port: 6123\nblob.server.port: 6124\nquery.server.port: 6125\npekko.remote.startup-timeout: 60 s\nexecution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.all: --add-opens=java.base/java.util=ALL-UNNAMED"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
@@ -276,10 +289,23 @@ spec:
           command: ["bash", "-lc"]
           args:
             - |
+              cat >/tmp/core-site.xml <<'EOF'
+              <configuration>
+                <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
+                <property><name>fs.s3a.endpoint</name><value>{{ .Values.minio.endpoint }}</value></property>
+                <property><name>fs.s3a.access.key</name><value>${AWS_ACCESS_KEY_ID}</value></property>
+                <property><name>fs.s3a.secret.key</name><value>${AWS_SECRET_ACCESS_KEY}</value></property>
+                <property><name>fs.s3a.path.style.access</name><value>true</value></property>
+                <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>
+                <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>
+              </configuration>
+              EOF
+              sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
+              export HADOOP_CONF_DIR=/tmp
               /docker-entrypoint.sh taskmanager
           env:
             - name: FLINK_PROPERTIES
-              value: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.data.port: 6121\ntaskmanager.rpc.port: 6122\nquery.server.port: 6125\npekko.remote.startup-timeout: 60 s"
+              value: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.data.port: 6121\ntaskmanager.rpc.port: 6122\nquery.server.port: 6125\npekko.remote.startup-timeout: 60 s\nexecution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.all: --add-opens=java.base/java.util=ALL-UNNAMED"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

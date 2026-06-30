@@ -24,6 +24,20 @@ spec:
           command: ["bash", "-lc"]
           args:
             - |
+              cat >/tmp/core-site.xml <<'EOF'
+              <configuration>
+                <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
+                <property><name>fs.s3a.endpoint</name><value>{{ .Values.minio.endpoint }}</value></property>
+                <property><name>fs.s3a.access.key</name><value>${AWS_ACCESS_KEY_ID}</value></property>
+                <property><name>fs.s3a.secret.key</name><value>${AWS_SECRET_ACCESS_KEY}</value></property>
+                <property><name>fs.s3a.path.style.access</name><value>true</value></property>
+                <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>
+                <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>
+              </configuration>
+              EOF
+              sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
+              export HADOOP_CONF_DIR=/tmp
+              printf '\n%s\n' "$FLINK_PROPERTIES" >> /opt/flink/conf/flink-conf.yaml
               PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
               flink run -m flink-jobmanager:8081 \
                 -py apps/data-platform/src/features/flink/realtime_stream_job.py \
@@ -46,6 +60,9 @@ spec:
                 --offline-feature-catalog "$OFFLINE_FEATURE_CATALOG" \
                 --offline-feature-store-warehouse "$OFFLINE_FEATURE_STORE_WAREHOUSE" \
                 --iceberg-feature-namespace "$ICEBERG_FEATURE_NAMESPACE"
+          env:
+            - name: FLINK_PROPERTIES
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: --add-opens=java.base/java.util=ALL-UNNAMED\nenv.java.opts.all: --add-opens=java.base/java.util=ALL-UNNAMED"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

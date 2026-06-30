@@ -7,9 +7,11 @@ auth:
   createSecret: true
   secretName: recsys-gateway-basic-auth
   realm: RecSys Gateway
-  # Default demo credential is recsys:recsys. Override with:
+  # No real credential is stored in git. Create an ignored htpasswd file with:
+  #   make gateway-create-auth GATEWAY_PASSWORD='<rotated-password>'
+  # Then install with:
   #   --set-file auth.htpasswd=.gateway-auth/auth
-  htpasswd: "recsys:$apr1$N4f11ApR$L6Z5IGFzrKP88UmiqpzLb/"
+  htpasswd: "recsys:!set-auth-htpasswd-before-deploy"
 
 tls:
   enabled: false

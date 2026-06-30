@@ -13,9 +13,9 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = "recsys-dataflow"
-DATAFLOW_IMAGE = "recsys-dataflow-cli:local"
-FLINK_IMAGE = "recsys-flink:local"
-SPARK_IMAGE = "recsys-spark:local"
+DATAFLOW_IMAGE = os.getenv("DATAFLOW_IMAGE", "recsys-dataflow-cli:local")
+FLINK_IMAGE = os.getenv("FLINK_IMAGE", "recsys-flink:local")
+SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "recsys-spark:local"))
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
 }

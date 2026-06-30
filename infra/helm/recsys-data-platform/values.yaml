@@ -89,6 +89,9 @@ redis:
 flinkTaskManager:
   replicas: 1
 
+flink:
+  checkpointStorageUri: file:///tmp/flink-checkpoints
+
 realtimeProducer:
   enabled: true
   name: realtime-event-producer

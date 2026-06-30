@@ -35,6 +35,7 @@ graphify-out/
 .codex/
 .model-cd/
 .gateway-auth/
+.gcp-services-power-state.env
 AGENTS.md
 .uv-cache/
 .ci-image-manifest/

@@ -255,3 +255,45 @@ variable "gateway_domain" {
   type        = string
   default     = "recsys.local"
 }
+
+variable "gateway_htpasswd" {
+  description = "Rotated htpasswd line for gateway basic auth, for example user:hash. Set via TF_VAR_gateway_htpasswd from the ignored .env file."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "datahub_mysql_root_password" {
+  description = "Optional rotated DataHub MySQL root password. If null, Terraform generates one."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "datahub_mysql_replication_password" {
+  description = "Optional rotated DataHub MySQL replication password. If null, Terraform generates one."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "datahub_mysql_password" {
+  description = "Optional rotated DataHub MySQL application password. If null, Terraform generates one."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "datahub_mysql_cdc_password" {
+  description = "Optional rotated DataHub MySQL CDC password. If null, Terraform generates one."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "datahub_encryption_key_secret" {
+  description = "Optional rotated DataHub encryption key secret. If null, Terraform generates one."
+  type        = string
+  default     = null
+  sensitive   = true
+}

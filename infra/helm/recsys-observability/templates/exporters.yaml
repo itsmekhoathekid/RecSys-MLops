@@ -55,8 +55,18 @@ spec:
         - name: postgres-exporter
           image: {{ .Values.images.postgresExporter }}
           env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: recsys-data-platform-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: recsys-data-platform-secret
+                  key: POSTGRES_PASSWORD
             - name: DATA_SOURCE_NAME
-              value: postgresql://recsys:recsys@warehouse-postgres.{{ .Values.targets.dataNamespace }}.svc.cluster.local:5432/recsys_warehouse?sslmode=disable
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@warehouse-postgres.{{ .Values.targets.dataNamespace }}.svc.cluster.local:5432/recsys_warehouse?sslmode=disable
           ports:
             - name: metrics
               containerPort: 9187
@@ -93,8 +103,18 @@ spec:
         - name: postgres-exporter
           image: {{ .Values.images.postgresExporter }}
           env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: recsys-data-platform-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: recsys-data-platform-secret
+                  key: POSTGRES_PASSWORD
             - name: DATA_SOURCE_NAME
-              value: postgresql://recsys:recsys@source-postgres.{{ .Values.targets.dataNamespace }}.svc.cluster.local:5432/recsys?sslmode=disable
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@source-postgres.{{ .Values.targets.dataNamespace }}.svc.cluster.local:5432/recsys?sslmode=disable
           ports:
             - name: metrics
               containerPort: 9187

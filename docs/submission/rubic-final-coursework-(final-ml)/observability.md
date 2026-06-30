@@ -15,7 +15,7 @@ sudo sh -c "printf '%s %s\n' '${GATEWAY_IP}' 'grafana.recsys.local logs.recsys.l
 
 ```text
 Grafana URL:        http://grafana.recsys.local
-Gateway basic auth: recsys / recsys
+Gateway basic auth: loaded from ignored `.env` (`GATEWAY_USER` / `GATEWAY_PASSWORD`)
 Grafana login:      admin / admin
 Grafana folder:     RecSys
 ```
@@ -93,7 +93,11 @@ Groundtruth note: this demo has no production labels, so drift is measured with 
 Generate request, metric, log, and trace data:
 
 ```bash
-curl -s -u recsys:recsys \
+set -a
+source .env
+set +a
+
+curl -s -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
   -H 'Host: api.recsys.local' \
   -H 'Content-Type: application/json' \
   -X POST "http://${GATEWAY_IP}/recommendations" \

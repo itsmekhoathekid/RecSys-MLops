@@ -72,6 +72,31 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
+## Hibernate And Resume Without Deleting PVC Data
+
+Use these commands when you want to stop paying for GKE worker nodes while keeping PVC/PV-backed data such as MinIO, Postgres, Airflow, MLflow, and DataHub volumes.
+
+```bash
+# Bring all RecSys GCP services down by scaling node pools to 0.
+# This keeps namespaces, Helm releases, PVCs, PVs, and Persistent Disks.
+make gcp-services-down
+
+# Bring node pools back, wait rollouts, and run smoke checks.
+make gcp-services-up
+
+# Inspect node pools, PVCs, nodes, and non-running pods.
+make gcp-services-status
+```
+
+The down command records the live node-pool sizes in `.gcp-services-power-state.env` and the up command restores from that file. Override the defaults only if the cluster was created with different names:
+
+```bash
+GCP_PROJECT_ID=fsds-coursework \
+GKE_ZONE=asia-southeast1-b \
+GKE_CLUSTER=recsys-mlops-gke \
+make gcp-services-up
+```
+
 ## Verify
 
 Static verification from the repo:
