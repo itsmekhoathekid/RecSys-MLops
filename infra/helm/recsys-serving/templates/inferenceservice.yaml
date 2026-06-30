@@ -25,7 +25,10 @@ spec:
         emptyDir:
           medium: Memory
           sizeLimit: {{ .Values.kserve.sharedMemory.sizeLimit | quote }}
-    triton:
+    model:
+      modelFormat:
+        name: triton
+      protocolVersion: v2
       storageUri: {{ .Values.kserve.inferenceService.storageUri | quote }}
       volumeMounts:
         - name: triton-shm
@@ -62,7 +65,10 @@ spec:
         emptyDir:
           medium: Memory
           sizeLimit: {{ .Values.kserve.sharedMemory.sizeLimit | quote }}
-    triton:
+    model:
+      modelFormat:
+        name: triton
+      protocolVersion: v2
       storageUri: {{ .Values.kserve.inferenceService.candidateStorageUri | quote }}
       volumeMounts:
         - name: triton-shm

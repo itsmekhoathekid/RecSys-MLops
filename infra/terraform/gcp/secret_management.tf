@@ -1,5 +1,6 @@
 locals {
   external_secret_source_namespace = "external-secrets"
+  gateway_htpasswd                 = coalesce(var.gateway_htpasswd, "recsys:!set-TF_VAR_gateway_htpasswd")
 
   external_secret_payloads = {
     data-platform = {
@@ -52,7 +53,7 @@ locals {
       S3_USE_HTTPS          = "0"
     }
     gateway = {
-      auth = "recsys:$apr1$N4f11ApR$L6Z5IGFzrKP88UmiqpzLb/"
+      auth = local.gateway_htpasswd
     }
   }
 }

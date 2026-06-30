@@ -278,6 +278,16 @@ resource "helm_release" "recsys_gateway" {
     value = "false"
   }
 
+  set {
+    name  = "auth.createSecret"
+    value = var.deploy_service_mesh ? "false" : "true"
+  }
+
+  set_sensitive {
+    name  = "auth.htpasswd"
+    value = local.gateway_htpasswd
+  }
+
   depends_on = [
     helm_release.ingress_nginx,
     helm_release.recsys_serving,

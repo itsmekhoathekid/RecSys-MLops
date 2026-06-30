@@ -150,11 +150,15 @@ Observed result:
 
 ![Ingress LoadBalancer proof](../../pngs/basic_auth.png)
 
-Demo credentials pass through the gateway:
+Rotated credentials pass through the gateway. Load the ignored `.env` file locally before running proof commands:
 
 ```bash
+set -a
+source .env
+set +a
+
 curl -s -o /tmp/recsys_gateway_http_auth.txt -w '%{http_code}\n' \
-  -u recsys:recsys \
+  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
   -H 'Host: api.recsys.local' \
   http://34.21.171.234/ready
 ```
@@ -180,7 +184,7 @@ Body:
 The recommendation API is reachable only through the gateway host route and basic auth.
 
 ```bash
-curl -s -u recsys:recsys \
+curl -s -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
   -H 'Host: api.recsys.local' \
   -H 'Content-Type: application/json' \
   -X POST http://34.21.171.234/recommendations \
@@ -211,17 +215,17 @@ Observed result:
 
 ```bash
 curl -s -o /tmp/recsys_gateway_grafana.txt -w '%{http_code}\n' \
-  -u recsys:recsys \
+  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
   -H 'Host: grafana.recsys.local' \
   http://34.21.171.234/login
 
 curl -s -o /tmp/recsys_gateway_loki.txt -w '%{http_code}\n' \
-  -u recsys:recsys \
+  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
   -H 'Host: logs.recsys.local' \
   http://34.21.171.234/ready
 
 curl -s -o /tmp/recsys_gateway_tempo.txt -w '%{http_code}\n' \
-  -u recsys:recsys \
+  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
   -H 'Host: traces.recsys.local' \
   http://34.21.171.234/ready
 ```
@@ -272,7 +276,7 @@ Burst test:
 
 ```bash
 seq 1 80 | xargs -n1 -P40 -I{} curl -s -o /dev/null -w '%{http_code}\n' \
-  -u recsys:recsys \
+  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
   -H 'Host: api.recsys.local' \
   http://34.21.171.234/ready | sort | uniq -c
 ```
@@ -300,4 +304,3 @@ Observed result:
 | Basic authentication | PASS | no auth `401`, auth `200` |
 | Rate limit | PASS | burst returns `429` |
 | Domain & HTTPS | SKIPPED | havent implemented it yet |
-

@@ -134,9 +134,19 @@ generate_serving_traffic() {
     local body
     body="$(printf '{"user_id":%d,"candidate_item_ids":[1,2,3,4,5,6,7,8,9,10],"top_k":5}' "${user_id}")"
     local response
-    response="$(curl -fsS -X POST "http://127.0.0.1:${FASTAPI_PORT}/recommendations" \
-      -H 'Content-Type: application/json' \
-      -d "${body}")"
+    response=""
+    for _ in $(seq 1 12); do
+      if response="$(curl -fsS -X POST "http://127.0.0.1:${FASTAPI_PORT}/recommendations" \
+        -H 'Content-Type: application/json' \
+        -d "${body}")"; then
+        break
+      fi
+      sleep 5
+    done
+    if [[ -z "${response}" ]]; then
+      echo "Recommendation API did not return a successful response for user ${user_id}"
+      return 1
+    fi
     if [[ -z "${first_response}" ]]; then
       first_response="${response}"
     fi

@@ -118,6 +118,7 @@ CREATE CATALOG {catalog} WITH (
   'hadoop.fs.s3a.secret.key' = '{config.s3_secret_key}',
   'hadoop.fs.s3a.path.style.access' = 'true',
   'hadoop.fs.s3a.connection.ssl.enabled' = 'false',
+  'hadoop.fs.s3a.aws.credentials.provider' = 'com.amazonaws.auth.EnvironmentVariableCredentialsProvider',
   'property-version' = '1'
 )
 """.strip()

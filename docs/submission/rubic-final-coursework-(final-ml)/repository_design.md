@@ -67,11 +67,11 @@ The important proof is that each large concern has its own deployable boundary:
 
 | Pattern | Code | Why it matters |
 |---|---|---|
-| Strategy / Router | `TritonABRouter` chooses control or candidate route at runtime. | A/B routing is isolated from ranking logic. |
-| Adapter / Gateway | `FeatureClient` wraps Redis feature-store access. | API code depends on feature operations, not Redis commands everywhere. |
-| Template Method style training loop | `Trainer.train`, `Trainer.evaluate`, `_compute_metrics`, `_forward_batch`. | Training/evaluation share batch movement, model forward, and metric computation structure. |
-| Composite neural module | `BST` composes embeddings, transformer layer, positional encoding, and MLP. | Model parts are testable and reusable as PyTorch modules. |
-| Builder / Manifest generator | `promote_best_model`, `build_triton_repository`, `build_manifest`. | Promotion assembles ONNX, Triton config, storage upload, MLflow registry, and manifest consistently. |
+| Strategy / Router | [TritonABRouter](../../../apps/api-serving/src/ab_testing.py#20) chooses control or candidate route at runtime. | A/B routing is isolated from ranking logic. |
+| Adapter / Gateway | [FeatureClient](../../../apps/api-serving/src/online_features.py#22) wraps Redis feature-store access. | API code depends on feature operations, not Redis commands everywhere. |
+| Template Method style training loop | [Trainer](../../../apps/ml-system/src/models/trainer.py#58), [Trainer.train](../../../apps/ml-system/src/models/trainer.py#129), [Trainer.evaluate](../../../apps/ml-system/src/models/trainer.py#175), [_compute_metrics](../../../apps/ml-system/src/models/trainer.py#217), and [_forward_batch](../../../apps/ml-system/src/models/trainer.py#97). | Training/evaluation share batch movement, model forward, and metric computation structure. |
+| Composite neural module | [BST](../../../apps/ml-system/src/models/model.py#886) composes embeddings, transformer layer, positional encoding, and MLP. | Model parts are testable and reusable as PyTorch modules. |
+| Builder / Manifest generator | [promote_best_model](../../../apps/ml-system/src/registry/model_promotion.py#557), [build_triton_repository](../../../apps/ml-system/src/registry/model_promotion.py#405), and [build_manifest](../../../apps/ml-system/src/registry/model_promotion.py#471). | Promotion assembles ONNX, Triton config, storage upload, MLflow registry, and manifest consistently. |
 
 ## Tests Showing Boundaries
 
@@ -83,11 +83,12 @@ uv run pytest tests/unit/ml_system
 uv run pytest tests/e2e/test_live_serving_flow.py
 ```
 
-What to capture:
+`pyproject.toml` adds `apps/api-serving/src` and `apps/ml-system/src` to the pytest import path, so these commands can run from the repository root without manually exporting `PYTHONPATH`.
+The live E2E test is skipped by default; run `UV_CACHE_DIR=.uv-cache RECSYS_LIVE_E2E=1 uv run pytest tests/e2e/test_live_serving_flow.py` when the GKE cluster is reachable and KServe/FastAPI are deployed.
 
-```text
-docs/pngs/repository_tests_pass.png
-```
+### Image proof
+
+![Ingress LoadBalancer proof](../../pngs/tests_proof.png)
 
 ## README Policy
 
@@ -100,4 +101,3 @@ docs/pngs/repository_tests_pass.png
 - `security.md`
 - `repository_design.md`
 - `low_level_ml_design.md`
-

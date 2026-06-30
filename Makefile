@@ -30,7 +30,7 @@ MLOPS_NAMESPACE ?= experiment-tracking
 GATEWAY_NAMESPACE ?= ingress-nginx
 GATEWAY_DOMAIN ?= recsys.local
 GATEWAY_USER ?= recsys
-GATEWAY_PASSWORD ?= recsys
+GATEWAY_PASSWORD ?=
 GATEWAY_AUTH_USER ?= $(if $(filter command line,$(origin USER)),$(USER),$(GATEWAY_USER))
 GATEWAY_AUTH_PASSWORD ?= $(if $(filter command line,$(origin PASSWORD)),$(PASSWORD),$(GATEWAY_PASSWORD))
 GATEWAY_AUTH_FILE ?= .gateway-auth/auth
@@ -41,6 +41,7 @@ GATEWAY_TRACES_HOST ?= traces.$(GATEWAY_DOMAIN)
 GATEWAY_SCHEME ?= https
 GATEWAY_CURL_FLAGS ?= -k
 RECSYS_CLUSTER_SECURITY_ENABLED ?= 1
+GCP_POWER_SCRIPT := infra/terraform/gcp/scripts/gcp_services_power.sh
 
 .PHONY: help
 help:
@@ -106,6 +107,9 @@ help:
 	@echo "  make mlops-compile-kfp        Compile the RecSys BST Kubeflow pipeline"
 	@echo "  make mlops-helm-template      Render MLflow/runtime Helm charts"
 	@echo "  make mlops-port-forward       Port-forward KFP, MLflow, MinIO, Ray dashboards"
+	@echo "  make gcp-services-down        Hibernate GCP services by scaling node pools to 0; keep PVC/PV data"
+	@echo "  make gcp-services-up          Restore GCP node pools, wait services Ready, and smoke test"
+	@echo "  make gcp-services-status      Show GCP node pools, PVCs, nodes, and non-running pods"
 	@echo ""
 	@echo "Observability:"
 	@echo "  make observability-template      Render observability Helm chart"
@@ -169,6 +173,18 @@ mlops-cluster-data-setup:
 .PHONY: mlops-cluster-serving-e2e
 mlops-cluster-serving-e2e:
 	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) RECSYS_PIPELINE_IMAGE=$(RECSYS_PIPELINE_IMAGE) infra/k8s/scripts/cluster_mlops_serving_e2e.sh
+
+.PHONY: gcp-services-down
+gcp-services-down:
+	@$(GCP_POWER_SCRIPT) down
+
+.PHONY: gcp-services-up
+gcp-services-up:
+	@$(GCP_POWER_SCRIPT) up
+
+.PHONY: gcp-services-status
+gcp-services-status:
+	@$(GCP_POWER_SCRIPT) status
 
 .PHONY: dataflow-build
 dataflow-build:
@@ -477,6 +493,7 @@ gateway-install-controller:
 
 .PHONY: gateway-create-auth
 gateway-create-auth:
+	@test -n "$(GATEWAY_AUTH_PASSWORD)" || { echo "Set GATEWAY_PASSWORD or PASSWORD before creating gateway auth." >&2; exit 1; }
 	@mkdir -p "$$(dirname "$(GATEWAY_AUTH_FILE)")"
 	@hash=$$(openssl passwd -apr1 "$(GATEWAY_AUTH_PASSWORD)"); \
 		printf '%s:%s\n' "$(GATEWAY_AUTH_USER)" "$$hash" > "$(GATEWAY_AUTH_FILE)"; \
@@ -501,6 +518,7 @@ gateway-install:
 
 .PHONY: gateway-smoke
 gateway-smoke:
+	@test -n "$(GATEWAY_AUTH_PASSWORD)" || { echo "Set GATEWAY_PASSWORD or PASSWORD before gateway smoke." >&2; exit 1; }
 	@set -euo pipefail; \
 	base="$(GATEWAY_SCHEME)://$(GATEWAY_API_HOST)"; \
 	unauth_status=$$(curl $(GATEWAY_CURL_FLAGS) -sS -o /dev/null -w '%{http_code}' "$$base/healthz" || true); \

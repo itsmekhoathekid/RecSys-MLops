@@ -31,3 +31,7 @@ dependencies = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [
+    "apps/api-serving/src",
+    "apps/ml-system/src",
+]

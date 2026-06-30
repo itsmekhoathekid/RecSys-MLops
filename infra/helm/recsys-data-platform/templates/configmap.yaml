@@ -20,6 +20,9 @@ data:
   DATA_GENERATOR_CONFIG: {{ .Values.dataSetup.generatorConfig | quote }}
   DATA_GENERATOR_RUN_ID: {{ .Values.dataSetup.generatorRunId | quote }}
   SPARK_BATCH_CONFIG: {{ .Values.dataSetup.sparkBatchConfig | quote }}
+  DATAFLOW_IMAGE: {{ .Values.images.dataflowCli | quote }}
+  FLINK_IMAGE: {{ .Values.images.flink | quote }}
+  SPARK_IMAGE: {{ .Values.images.spark | quote }}
   REALTIME_LIMIT_PER_TABLE: {{ .Values.dataSetup.realtimeLimitPerTable | quote }}
   DATA_PLATFORM_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
   REALTIME_E2E_ENABLED: {{ .Values.e2e.realtimeEnabled | quote }}
@@ -79,6 +82,7 @@ data:
   REALTIME_STREAM_MAX_HISTORY_LENGTH: {{ .Values.realtimeFlinkConsumer.maxHistoryLength | quote }}
   STREAM_PROGRESS_LOG_EVENTS: {{ .Values.realtimeFlinkConsumer.progressLogEvents | quote }}
   STREAM_CHECKPOINT_INTERVAL_SECONDS: {{ .Values.realtimeFlinkConsumer.checkpointIntervalSeconds | quote }}
+  FLINK_CHECKPOINT_STORAGE_URI: {{ .Values.flink.checkpointStorageUri | quote }}
   STREAM_WATERMARK_DELAY_MINUTES: {{ .Values.streaming.watermarkDelayMinutes | quote }}
   STREAM_QUALITY_WINDOW_SECONDS: {{ .Values.streaming.qualityWindowSeconds | quote }}
   STREAM_BURST_THRESHOLD_EVENT_COUNT: {{ .Values.streaming.burstThresholdEventCount | quote }}

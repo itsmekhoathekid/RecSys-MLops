@@ -12,9 +12,12 @@ airflowPostgres:
 minio:
   storage: 20Gi
 
+airflow:
+  schedule: manual
+
 dataSetup:
   generatorConfig: configs/local/data_generator_e2e_2k.yaml
-  generatorRunId: gcp_seed42
+  generatorRunId: test_2k_seed42
   sparkBatchConfig: configs/local/spark_batch_e2e_2k.yaml
   realtimeLimitPerTable: "1000"
 
@@ -22,7 +25,7 @@ spark:
   driverMemory: 2g
   driverMemoryOverhead: 512m
   driverCores: "1"
-  executorInstances: "2"
+  executorInstances: "1"
   executorMemory: 2g
   executorMemoryOverhead: 512m
   executorCores: "1"
@@ -42,8 +45,8 @@ flinkTaskManager:
 realtimeFlinkConsumer:
   replicas: 1
   parallelism: "1"
-  checkpointIntervalSeconds: "30"
-  offlineStoreEnabled: false
+  checkpointIntervalSeconds: "120"
+  offlineStoreEnabled: true
 
 drift:
   sampleRows: "5000"
