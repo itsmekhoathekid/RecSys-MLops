@@ -1,0 +1,19 @@
+namespace:
+  create: false
+
+staticVolumes:
+  enabled: false
+
+registry:
+  pvc:
+    volumeName: ""
+    storage: 10Gi
+    storageClassName: standard-rwo
+
+jenkins:
+  webhookIngress:
+    enabled: true
+  pvc:
+    volumeName: ""
+    storage: 5Gi
+    storageClassName: standard-rwo

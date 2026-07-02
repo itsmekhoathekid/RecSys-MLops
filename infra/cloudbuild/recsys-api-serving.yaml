@@ -1,0 +1,22 @@
+substitutions:
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _TAG: gcp
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1800s
+
+steps:
+  - id: api-serving
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/api-serving/Dockerfile
+      - -t
+      - ${_IMAGE_REPO}/recsys-api-serving:${_TAG}
+      - .
+
+images:
+  - ${_IMAGE_REPO}/recsys-api-serving:${_TAG}

@@ -38,6 +38,10 @@ resource "kubernetes_namespace" "datahub" {
   count = var.deploy_datahub ? 1 : 0
 
   metadata {
+    labels = {
+      istio-injection = "enabled"
+    }
+
     name = "datahub"
   }
 

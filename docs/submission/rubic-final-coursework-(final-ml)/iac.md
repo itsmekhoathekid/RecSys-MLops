@@ -22,6 +22,7 @@ infra/
   helm/
     datahub-local/              # DataHub values for GKE deployment
     mlflow-stack/               # MLflow, MinIO model store, Postgres
+    recsys-ci/                  # Jenkins CI controller and in-cluster registry
     recsys-data-platform/       # Kafka, Redis, MinIO, Flink, Airflow, Postgres
     recsys-gateway/             # Ingress for API serving
     recsys-observability/       # Prometheus, Grafana, Loki, Tempo, exporters
@@ -78,6 +79,7 @@ recsys-flink:gcp            sha256:ca89c5f434828c619a37c79366943a0a49be98b38d8d3
 ```
 
 ### Image Proof
+
 
 ![Cloud Build proof](../../pngs/gcp_build_log.png)
 
@@ -159,17 +161,18 @@ Some Kubernetes and GKE DaemonSet pods run on both nodes, such as logging, metri
 
 ### All Services's Namespace up and running on GCP
 
-![Helm release proof](../../pngs/namespace_gcp.png)
+![Helm release proof](../../pngs/svcs_ns.png)
 
 Namespace meaning:
 
 | Namespace | Purpose | Main workloads/services |
 | --- | --- | --- |
-| `api-serving` | Public/API serving layer for the recommendation API. Istio injection is enabled here. | FastAPI `recsys-api-serving`, RecSys API ingress/gateway resources, KEDA HTTP autoscaling target. |
+| `api-serving` | Public/API serving layer for online feature lookup and recommendation inference orchestration. Istio injection is enabled here. | FastAPI `recsys-online-feature-api`, FastAPI `recsys-api-serving`, RecSys API ingress/gateway resources, KEDA HTTP autoscaling target. |
 | `kserve-triton-inference` | Model inference runtime layer. Istio injection is enabled here. | KServe `InferenceService`, Triton predictor pod, Triton HTTP/gRPC services, MinIO model-store service account/secret. |
 | `experiment-tracking` | ML experiment tracking and model registry/storage layer. Istio injection is enabled here. | MLflow, MLflow MinIO model store, MLflow Postgres, model-store bucket initialization job. |
 | `recsys-dataflow` | Data platform and feature pipeline runtime. Istio injection is enabled here. | Kafka, Zookeeper, Kafka Connect, Redis online store, Flink, Airflow, source Postgres, data-platform MinIO, realtime producer/consumer. |
 | `datahub` | Metadata governance and lineage layer. | DataHub frontend, DataHub GMS, OpenSearch, MySQL prerequisites, `kafka` ExternalName alias to the data platform Kafka service. |
+| `ci` | CI/CD execution layer for coursework proof runs. | Jenkins controller, Docker-in-Docker sidecar, in-cluster Docker registry, registry node proxy, Jenkins home PVC, registry PVC. |
 | `observability` | Metrics, logs, traces, and ML/data monitoring layer. Istio injection is enabled here. | Prometheus, Grafana, Loki, Tempo, Promtail, PushGateway, Redis/Postgres exporters. |
 | `kubeflow` | ML workflow orchestration layer. | Kubeflow Pipelines API/UI/controllers, workflow controller, KubeRay operator, metadata services, MySQL, SeaweedFS. |
 | `istio-system` | Service mesh control plane. | `istiod`, Istio base CRDs/webhooks, sidecar injection and mTLS control plane. |
@@ -187,8 +190,7 @@ Namespace meaning:
 
 ### Node ml-system
 
-![Helm release proof](../../pngs/node_ml_system_.png)
-
+![Helm release proof](../../pngs/ml_node_pods.png)
 
 ## Helm Release Proof
 
@@ -221,7 +223,61 @@ This proves the full coursework MLOps stack is installed through Terraform-manag
 
 ### Image Proof
 
-![Helm release proof](../../pngs/helm_list__.png)
+![Helm release proof](../../pngs/helm_list___.png)
+
+## Jenkins CI/CD Component Proof
+
+Jenkins is documented as the CI/CD component of the IaC stack. The chart lives in
+`infra/helm/recsys-ci` and installs:
+
+| Component | Kubernetes object | Purpose |
+|---|---|---|
+| Jenkins controller | `deployment/recsys-jenkins` | Runs the `Jenkinsfile` pipeline: detect changed components, test, build, and deploy. |
+| Docker-in-Docker sidecar | container `docker` inside the Jenkins pod | Builds component images inside the cluster instead of relying on local Docker. |
+| In-cluster registry | `deployment/recsys-registry`, `service/recsys-registry` | Stores images built by Jenkins proof runs. |
+| Registry node proxy | `daemonset/recsys-registry-node-proxy` | Exposes the registry on each node so kubelet can pull proof-run images. |
+| Jenkins PVC | `pvc/recsys-jenkins-home` | Persists Jenkins jobs, credentials metadata, and build history. |
+| Registry PVC | `pvc/recsys-registry-data` | Persists pushed proof-run images. |
+
+Install/upgrade command:
+
+```bash
+helm upgrade --install recsys-ci infra/helm/recsys-ci \
+  --namespace ci \
+  --create-namespace \
+  --values infra/helm/recsys-ci/values-gke.yaml \
+  --wait
+```
+
+Runtime proof commands:
+
+```bash
+kubectl -n ci get deploy,ds,svc,pvc -o wide
+kubectl -n ci get pod -l app.kubernetes.io/name=recsys-jenkins \
+  -o jsonpath='{.items[0].metadata.name}{" containers="}{.items[0].spec.containers[*].name}{"\n"}'
+```
+
+Expected result:
+
+```text
+deployment.apps/recsys-jenkins         READY 1/1
+deployment.apps/recsys-registry        READY 1/1
+daemonset.apps/recsys-registry-node-proxy
+service/recsys-jenkins                 ClusterIP 8080/TCP,50000/TCP
+service/recsys-registry                ClusterIP 5000/TCP
+persistentvolumeclaim/recsys-jenkins-home
+persistentvolumeclaim/recsys-registry-data
+
+recsys-jenkins-... containers=jenkins docker
+```
+
+This proves the coursework CI/CD system is also reproducible from Helm IaC. The
+pipeline-level proof for `test -> build -> deploy` is documented separately in
+[ci_cd.md](ci_cd.md).
+
+### Image Proof
+
+![Jenkins CI IaC proof](../../pngs/jenkins_iac.png)
 
 ## Service Mesh Proof
 
@@ -265,6 +321,10 @@ recsys-api-serving-864cb568cf-cbwvj                  2/2 Running
 recsys-bst-triton-predictor-bb4c58c46-8mmbp          2/2 Running
 ```
 
+### Image proof
+
+![Jenkins CI IaC proof](../../pngs/service_mesh_iac.png)
+
 Sidecar container proof:
 
 ```bash
@@ -295,11 +355,12 @@ Observed service placement from `kubectl get pods -A -o wide`:
 
 | Namespace | Service group | Status | Node |
 | --- | --- | --- | --- |
+| `ci` | Jenkins controller, Docker sidecar, in-cluster registry, registry node proxy | `Running`, PVCs `Bound` | `cpu-services` |
 | `datahub` | DataHub frontend, DataHub GMS, OpenSearch, MySQL | `Running`, init job `Completed` | `cpu-services` |
 | `recsys-dataflow` | Kafka, Kafka Connect, Redis, Flink, Airflow, MinIO, source Postgres, Zookeeper | `Running` | `cpu-services` |
 | `observability` | Grafana, Loki, Prometheus, Tempo, Pushgateway, exporters, Promtail | `Running` | `cpu-services` |
 | `kubeflow` | Kubeflow Pipelines, workflow controller, KubeRay operator, metadata services | `Running` | `cpu-services` |
-| `api-serving` | `recsys-api-serving` with Istio sidecar | `2/2 Running` | `ml-system` |
+| `api-serving` | `recsys-online-feature-api` and `recsys-api-serving` with Istio sidecars | `2/2 Running` per pod | `ml-system` |
 | `experiment-tracking` | MLflow, MinIO model store, Postgres | `Running`, bucket init job `Completed` | `ml-system` |
 | `kserve-triton-inference` | `recsys-bst-triton` control and `recsys-bst-triton-candidate` Triton predictors with Istio sidecars | `2/2 Running` | `ml-system` |
 
@@ -362,6 +423,10 @@ NAME                URL                                                         
 recsys-bst-triton   http://recsys-bst-triton-kserve-triton-inference.example.com   True
 ```
 
+### Image proof
+
+![Helm release proof](../../pngs/triton_up_iac.png)
+
 Triton model load proof:
 
 ```text
@@ -376,6 +441,17 @@ Started HTTPService at 0.0.0.0:8080
 ![Helm release proof](../../pngs/infer_svc_gcp.png)
 
 End-to-end API proof:
+
+Online feature API proof:
+
+```bash
+kubectl -n api-serving exec deploy/recsys-online-feature-api -c api -- \
+  python -c 'import json, urllib.request; data=json.dumps({"user_id":1,"candidate_item_ids":[101,202,303],"top_k":3}).encode(); req=urllib.request.Request("http://127.0.0.1:8080/online-features", data=data, headers={"Content-Type":"application/json"}, method="POST"); print(urllib.request.urlopen(req, timeout=10).read().decode())'
+```
+
+This proves the split online feature API can pull Feast online features from Redis. In this project, Apache Iceberg is the Feast offline store and Redis is the Feast online store.
+
+Recommendation API proof:
 
 ```bash
 kubectl -n api-serving exec deploy/recsys-api-serving -c api -- \
@@ -398,7 +474,7 @@ Observed response:
 }
 ```
 
-This proves the deployed API serving pod can call the Triton inference service successfully inside GKE.
+This proves the deployed recommendation API can call `recsys-online-feature-api` for online features and then call the Triton inference service successfully inside GKE.
 
 ### Image proof
 
@@ -414,8 +490,10 @@ The runtime checklist below is based on the workbook sheets `rubic (mini-coursew
 | Mini-coursework batch processing | Airflow, Spark image/runtime config, data pipeline DAGs | `airflow-webserver`, `airflow-scheduler`, and `airflow-postgres` are `Running`; Spark image was built by Cloud Build. |
 | Mini-coursework streaming processing | Kafka, Zookeeper, Flink JobManager/TaskManager, realtime producer/consumer | All `recsys-dataflow` Kafka/Flink/realtime pods are `1/1 Running`. |
 | Mini-coursework governance | DataHub frontend/GMS, OpenSearch, MySQL, Kafka alias | DataHub pods are `Running`; `service/kafka` is an `ExternalName` to `kafka.recsys-dataflow.svc.cluster.local`. |
-| Final-coursework Web API kéo dữ liệu | FastAPI `recsys-api-serving` recommendation API | API pod is `2/2 Running` with Istio sidecar; `/recommendations` end-to-end call pulls online features, calls Triton, and returns ranked items. |
-| Final-coursework Web API drift detection | FastAPI `recsys-api-serving` recommendation API | This rubric item maps to the same deployed recommendation API service. The service is live on the `ml-system` node, exposes health/readiness endpoints, and the end-to-end `/recommendations` proof above verifies the API path. |
+| Final-coursework CI/CD runner | Jenkins and in-cluster registry | `recsys-jenkins` and `recsys-registry` run in namespace `ci`; Jenkins executes the `Jenkinsfile` test/build/deploy stages. |
+| Final-coursework Web API kéo dữ liệu | FastAPI `recsys-online-feature-api` | Online feature API pod is `2/2 Running` with Istio sidecar; `/online-features` pulls Feast online features from Redis by `user_id`/candidate ids. |
+| Final-coursework Web API model prediction | FastAPI `recsys-api-serving` recommendation API | Recommendation API pod is `2/2 Running` with Istio sidecar; `/recommendations` calls `recsys-online-feature-api`, sends payload to Triton, and returns ranked items. |
+| Final-coursework Web API drift detection | FastAPI drift/recommendation API path | This rubric item maps to the real-time API path plus drift observability; the service exposes health/readiness endpoints and emits metrics/traces for online recommendation traffic. |
 | Final-coursework inference engine | KServe InferenceService and Triton predictor | Triton pod is `2/2 Running` with Istio sidecar; `recsys-bst-triton` is `READY=True`; Triton logs show `bst_ensemble` model `READY`. |
 | Final-coursework feature store and drift telemetry | Redis, Airflow materialize/drift DAG runtime, PushGateway/Grafana metrics path | Redis, Airflow, PushGateway, Prometheus, and Grafana are `Running`; these support the recommendation API with online features, drift metrics, dashboards, and retrain-trigger pipeline logic. |
 | Final-coursework ML pipeline | Kubeflow Pipelines and KubeRay operator | Kubeflow pipeline API/UI/controllers and `kuberay-operator` are `Running`. |

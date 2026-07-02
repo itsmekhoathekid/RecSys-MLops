@@ -41,6 +41,9 @@ def wire_runtime(
     secret_name: str = DEFAULT_RUNTIME_SECRET_NAME,
     secret_key_to_env: Mapping[str, str] = SECRET_KEY_TO_ENV,
 ):
+    if hasattr(task, "platform_config"):
+        kubernetes.add_pod_annotation(task, "sidecar.istio.io/inject", "false")
+        kubernetes.set_image_pull_policy(task, "Always")
     kubernetes.mount_pvc(task, pvc_name=pvc_name, mount_path=mount_path)
     kubernetes.use_secret_as_env(
         task,

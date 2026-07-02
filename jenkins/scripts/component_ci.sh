@@ -133,7 +133,7 @@ case "${component}" in
   api)
     tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)
     append_integration_dir api
-    cov_paths=(ab_testing api_schemas online_features ranking serving triton)
+    cov_paths=(ab_testing api_runtime api_schemas feature_api feature_service_client inference_api online_features ranking serving_utils triton)
     component_pytest "${component}" "apps/api-serving/src"
     ;;
   kserve)

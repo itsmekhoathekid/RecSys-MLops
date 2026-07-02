@@ -1,0 +1,26 @@
+substitutions:
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _TAG: gcp
+  _BASE_TAG: gcp
+
+options:
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 2400s
+
+steps:
+  - id: dataflow-cli
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_BASE_TAG}
+      - -f
+      - apps/data-platform/Dockerfile.dataflow-cli
+      - -t
+      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+      - .
+
+images:
+  - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}

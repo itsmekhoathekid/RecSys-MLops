@@ -132,12 +132,26 @@ def _canonical_entity_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return entity
 
 
-def _read_feature_table(path: str) -> pd.DataFrame:
+def _looks_like_table_identifier(value: str) -> bool:
+    return "://" not in value and "/" not in value and value.count(".") >= 2
+
+
+def _read_iceberg_table_as_pandas(table_name: str, catalog_name: str, warehouse: str) -> pd.DataFrame:
+    spark = _spark_session_for_offline_features(catalog_name, warehouse)
+    try:
+        return spark.table(table_name).toPandas()
+    finally:
+        spark.stop()
+
+
+def _read_feature_table(path: str, *, iceberg_catalog_name: str, iceberg_warehouse: str) -> pd.DataFrame:
     source = Path(path)
     if source.is_dir():
         return pd.read_parquet(source)
     if source.exists():
         return pd.read_parquet(source)
+    if _looks_like_table_identifier(path):
+        return _read_iceberg_table_as_pandas(path, iceberg_catalog_name, iceberg_warehouse)
     raise FileNotFoundError(f"Feature table path does not exist: {path}")
 
 
@@ -228,6 +242,8 @@ def build_bst_training_table_from_feast(
     apply_feast_repo: bool = True,
     feature_service_name: str = DEFAULT_FEATURE_SERVICE_NAME,
     fallback_to_feature_refs: bool = True,
+    iceberg_catalog_name: str = DEFAULT_CATALOG_NAME,
+    iceberg_warehouse: str = DEFAULT_WAREHOUSE,
 ) -> pd.DataFrame:
     if feast_offline_root:
         os.environ["FEAST_OFFLINE_ROOT"] = feast_offline_root
@@ -236,7 +252,13 @@ def build_bst_training_table_from_feast(
 
     from feast import FeatureStore
 
-    entities = _canonical_entity_frame(_read_feature_table(entity_input_path))
+    entities = _canonical_entity_frame(
+        _read_feature_table(
+            entity_input_path,
+            iceberg_catalog_name=iceberg_catalog_name,
+            iceberg_warehouse=iceberg_warehouse,
+        )
+    )
     store = FeatureStore(repo_path=str(feast_repo_path))
     features: Any = FEAST_FEATURE_REFS
     if feature_service_name:
@@ -447,6 +469,8 @@ def prepare_bst_jsonl_splits(
             feast_offline_root=feast_offline_root,
             apply_feast_repo=apply_feast_repo,
             feature_service_name=feature_service_name,
+            iceberg_catalog_name=iceberg_catalog_name,
+            iceberg_warehouse=iceberg_warehouse,
         )
     else:
         raise ValueError(f"Unsupported feature_source: {feature_source}")

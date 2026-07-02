@@ -17,6 +17,21 @@ metadata:
   namespace: {{ . }}
 spec: {}
 {{- end }}
+{{- if has "recsys-dataflow" .Values.istio.namespaces }}
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-dataflow-minio-s3-permissive
+  namespace: recsys-dataflow
+spec:
+  selector:
+    matchLabels:
+      app: data-platform-minio
+  portLevelMtls:
+    9000:
+      mode: PERMISSIVE
+{{- end }}
 {{- if has "kubeflow" .Values.istio.namespaces }}
 ---
 apiVersion: security.istio.io/v1beta1

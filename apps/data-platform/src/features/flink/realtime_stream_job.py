@@ -728,13 +728,13 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         BuildItemFeatures(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
     )
-    if args.offline_store_enabled:
+    if not args.disable_online_store:
         enriched = enriched.map(
             RedisFeaturePassthrough(),
             output_type=Types.PICKLED_BYTE_ARRAY(),
         ).name("redis-online-feature-writer")
     else:
-        enriched.map(RedisFeatureWriter(), output_type=Types.STRING()).name("redis-online-feature-writer").print()
+        emit_progress({"status": "online_store_disabled", "topic": args.topic, "group_id": args.group_id})
     quality_rows = deduped.key_by(lambda event: "stream-quality").process(
         StreamingQualityRows(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
@@ -840,7 +840,7 @@ def run_pyflink_stream(args: argparse.Namespace) -> None:
     env.enable_checkpointing(args.checkpoint_interval_seconds * 1000)
     statement_set = build_realtime_stream(env, args)
     if statement_set is None:
-        env.execute("recsys-native-pyflink-realtime-features")
+        env.execute(f"recsys-native-pyflink-realtime-features-online-{args.group_id}")
     else:
         statement_set.execute().wait()
 
@@ -860,6 +860,8 @@ def main() -> int:
     parser.add_argument("--parallelism", type=int, default=env_int("FLINK_PARALLELISM", 1))
     parser.add_argument("--max-history-length", type=int, default=50)
     parser.add_argument("--offline-store-enabled", action="store_true", default=os.getenv("OFFLINE_STORE_ENABLED", "true").lower() in {"1", "true", "yes"})
+    parser.add_argument("--disable-offline-store", action="store_true", default=os.getenv("DISABLE_OFFLINE_STORE", "false").lower() in {"1", "true", "yes"})
+    parser.add_argument("--disable-online-store", action="store_true", default=os.getenv("DISABLE_ONLINE_STORE", "false").lower() in {"1", "true", "yes"})
     parser.add_argument("--lakehouse-warehouse", default=os.getenv("LAKEHOUSE_WAREHOUSE", "s3a://recsys-lakehouse/warehouse"))
     parser.add_argument("--iceberg-catalog", default=os.getenv("ICEBERG_CATALOG", "recsys"))
     parser.add_argument("--offline-feature-catalog", default=os.getenv("OFFLINE_FEATURE_CATALOG", "recsys_features"))
@@ -873,6 +875,8 @@ def main() -> int:
     parser.add_argument("--progress-log-events", type=int, default=env_int("STREAM_PROGRESS_LOG_EVENTS", 100))
     parser.add_argument("--checkpoint-interval-seconds", type=int, default=env_int("STREAM_CHECKPOINT_INTERVAL_SECONDS", 30))
     args = parser.parse_args()
+    if args.disable_offline_store:
+        args.offline_store_enabled = False
 
     run_pyflink_stream(args)
     return 0

@@ -5,8 +5,8 @@
 ### Tech stacks 
 
 - **Kubeflow Pipelines (KFP):** orchestrates the end-to-end training workflow as a containerized pipeline package.
-- **Spark + Iceberg/Hudi + MinIO offline store:** reads the materialized offline feature table `recsys_features.feature_store.ml_bst_training` and converts it into BST train/validation/test datasets.
-- **Feast-compatible feature contract:** the prepared dataset follows the same feature schema used by the notebook and the feature store.
+- **Spark + Iceberg/Hudi + MinIO offline store:** produces authoritative offline feature tables in Apache Iceberg and dataset-version metadata in Hudi.
+- **Feast historical feature retrieval:** `prepare-training-data` reads entity/label rows from Iceberg and then calls Feast `get_historical_features` with FeatureService `bst_ranking_v1`. Feast reads the Iceberg-exported offline views from `s3://recsys-offline-feature-store/feast/offline`.
 - **PyTorch BST model:** trains the existing `BST` recommender model with the existing `recommenderDataset` and `Trainer` code.
 - **KubeRay RayJob + Ray Tune:** replaces the notebook train step with distributed training/tuning. The KFP train component submits a RayJob with Ray head/worker pods and can run multiple trials in parallel.
 - **MLflow + MinIO + Postgres model registry:** stores training metrics, model checkpoints/artifacts, and promoted model metadata.
@@ -15,7 +15,7 @@ Notebook-to-pipeline mapping:
 
 | Notebook step | Pipeline step | What it does |
 | --- | --- | --- |
-| Load data from offline store through Feast and merge labels | `prepare-training-data` | Reads the offline feature table and prepares training rows. |
+| Load data from offline store through Feast and merge labels | `prepare-training-data` | Reads entity/label rows from Iceberg, pulls historical features through Feast FeatureService `bst_ranking_v1`, and prepares training rows. |
 | Split train/validation data | `prepare-training-data` | Writes `train.jsonl`, `val.jsonl`, `test.jsonl`, and dataset metadata. |
 | Train model | `submit-rayjob` | Runs distributed BST training/tuning through KubeRay/Ray Tune. |
 | Evaluate model | `evaluate-bst` | Evaluates the best Ray result on the test split. |
@@ -24,9 +24,9 @@ Notebook-to-pipeline mapping:
 ### Code reference
 
 - [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 213](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L213): defines the KFP pipeline `recsys_bst_pipeline`.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 43](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L43): `prepare_training_data` component converts offline features into BST splits.
+- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 43](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L43): `prepare_training_data` component passes `--feature-source feast`, `--entity-input-path`, `--feast-repo-path`, and `--feast-offline-root`.
 - [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 90](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L90): `submit_rayjob` component submits distributed training.
-- [apps/ml-system/src/cli/prepare_bst_training_data.py line 278](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L278): reads the offline feature store table for BST training data.
+- [apps/ml-system/src/cli/prepare_bst_training_data.py line 237](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L237): builds BST rows through Feast `FeatureStore.get_historical_features`.
 - [apps/ml-system/src/cli/prepare_bst_training_data.py line 414](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L414): writes BST JSONL train/validation/test splits and dataset metadata.
 - [apps/ml-system/src/cli/submit_ray_job.py line 93](../../../apps/ml-system/src/cli/submit_ray_job.py#L93): builds the KubeRay `RayJob` with Ray head and worker pods.
 - [apps/ml-system/src/training/ray_tune_train_bst.py line 126](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L126): runs each Ray Tune BST training trial.
@@ -59,7 +59,10 @@ RUN_ID="manual-bst-distributed-$(date +%Y%m%d%H%M%S)"
 cat > /tmp/recsys_kfp_bst_args.json <<JSON
 {
   "pipeline_run_id": "${RUN_ID}",
-  "offline_feature_table": "recsys_features.feature_store.ml_bst_training",
+  "entity_input_path": "recsys_features.feature_store.ml_ranking_labels",
+  "feast_repo_path": "/opt/recsys/apps/data-platform/feature-store/feature_repo",
+  "feast_offline_root": "s3://recsys-offline-feature-store/feast/offline",
+  "feature_service_name": "bst_ranking_v1",
   "split_output_dir": "/workspace/recsys/data_platform/output/ml/bst_split",
   "ray_output_dir": "/workspace/recsys/data_platform/output/ml/ray",
   "ray_best_result_path": "/workspace/recsys/data_platform/output/ml/ray/best_result.json",

@@ -1,0 +1,62 @@
+substitutions:
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _TAG: gcp
+
+options:
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 3600s
+
+steps:
+  - id: base-python
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - -f
+      - infra/docker/Dockerfile.base-python
+      - -t
+      - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - .
+
+  - id: dataflow-cli
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - -f
+      - apps/data-platform/Dockerfile.dataflow-cli
+      - -t
+      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+      - .
+
+  - id: airflow
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - -f
+      - infra/docker/Dockerfile.airflow
+      - -t
+      - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
+      - .
+
+  - id: verify-airflow-dag
+    name: gcr.io/cloud-builders/docker
+    args:
+      - run
+      - --rm
+      - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
+      - bash
+      - -lc
+      - >-
+        grep -q 'quitquitquit' /opt/recsys/apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py &&
+        grep -q '"sidecar.istio.io/inject": "true"' /opt/recsys/apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py
+
+images:
+  - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
+  - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+  - ${_IMAGE_REPO}/recsys-airflow:${_TAG}

@@ -97,6 +97,19 @@ GKE_CLUSTER=recsys-mlops-gke \
 make gcp-services-up
 ```
 
+For the coursework-sized GKE cluster, `make gcp-services-up` also normalizes runtime settings so the full data and ML platform comes back in the same proof-ready shape:
+
+- KEDA HTTP add-on `external-scaler` and `interceptor` default to `1` replica each. The services stay enabled, but this leaves enough CPU request headroom for KFP component pods and the Ray retrain launcher.
+- Airflow data-platform config is restored to `REALTIME_E2E_ENABLED=true` and `RETRAIN_PSI_THRESHOLD=0.15`, so a forced-drift proof run does not leave the cluster in forced mode.
+- The smoke phase checks the recommendation API, A/B split, Flink streaming job, Jenkins UI, Airflow UI, DataHub UI/GMS, Prometheus, Grafana, and a temporary `500m` CPU Ray-launcher scheduling pod.
+- Smoke port-forwards use non-default local ports to avoid clashing with proof UIs already open locally: Jenkins `28090`, Airflow `28080`, DataHub GMS `28088`, DataHub frontend `29002`, Prometheus `29090`, and Grafana `23000`.
+
+If you specifically need KEDA HTTP add-on HA for an autoscaling demo, override the replica count:
+
+```bash
+GCP_SERVICES_KEDA_HTTP_REPLICAS=3 make gcp-services-up
+```
+
 ## Verify
 
 Static verification from the repo:

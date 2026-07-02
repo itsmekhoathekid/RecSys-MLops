@@ -116,7 +116,7 @@ recsys-dataflow             Active   enabled
 
 ### Image proof
 
-![Ingress LoadBalancer proof](../../pngs/istio_injection.png)
+![Ingress LoadBalancer proof](../../pngs/istio_injection_.png)
 
 mTLS and authorization policies:
 
@@ -150,9 +150,9 @@ Policy meaning:
 
 | Namespace | Default behavior | Explicit allow examples |
 |---|---|---|
-| `api-serving` | Deny all by default under STRICT mTLS | Allow NGINX ingress and Prometheus to API ports 80/8080. |
+| `api-serving` | Deny all by default under STRICT mTLS | Allow NGINX ingress, Prometheus, and internal `api-serving/default` service-to-service traffic to API ports 80/8080. This permits `recsys-api-serving` to call `recsys-online-feature-api` while keeping default-deny for other sources. |
 | `kserve-triton-inference` | Deny all by default under STRICT mTLS | Allow API service account and Prometheus to Triton ports 80/8080/9000. |
-| `recsys-dataflow` | Deny all by default under STRICT mTLS | Allow API to Redis 6379; allow internal data platform ports. |
+| `recsys-dataflow` | Deny all by default under STRICT mTLS | Allow API to Redis 6379; allow DataHub GMS/frontend through `cluster.local/ns/datahub/sa/datahub-app-sa` to Kafka/data-platform ports such as `29092`; allow internal data platform ports. |
 | `experiment-tracking` | Deny all by default under STRICT mTLS | Allow Kubeflow, KServe, and Prometheus to MLflow/MinIO/Postgres. |
 | `observability` | Deny all by default under STRICT mTLS | Allow Prometheus, Promtail, API, Airflow/Kubeflow, and NGINX gateway. |
 
@@ -181,5 +181,3 @@ Containers:
 ### Image proof
 
 ![Ingress LoadBalancer proof](../../pngs/sidecar_proof_.png)
-
-

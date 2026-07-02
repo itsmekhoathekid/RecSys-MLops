@@ -1,0 +1,23 @@
+{{- if .Values.featureApi.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.featureApi.name }}
+  namespace: {{ .Values.api.namespace.name }}
+data:
+  REDIS_HOST: {{ .Values.featureApi.config.redisHost | quote }}
+  REDIS_PORT: {{ .Values.featureApi.config.redisPort | quote }}
+  FEAST_REPO_PATH: {{ .Values.featureApi.config.feastRepoPath | quote }}
+  FEAST_RUNTIME_REPO_PATH: {{ .Values.featureApi.config.feastRuntimeRepoPath | quote }}
+  FEAST_REDIS_CONNECTION_STRING: "{{ .Values.featureApi.config.redisHost }}:{{ .Values.featureApi.config.redisPort }}"
+  FEAST_APPLY_ON_STARTUP: {{ .Values.featureApi.config.feastApplyOnStartup | quote }}
+  FORCE_NOT_READY: {{ .Values.featureApi.config.forceNotReady | quote }}
+  ALLOW_FEATURE_FALLBACK: {{ .Values.featureApi.config.allowFeatureFallback | quote }}
+  RECSYS_JSON_LOGS: {{ .Values.featureApi.config.jsonLogs | quote }}
+  RECSYS_OTEL_ENABLED: {{ .Values.featureApi.config.otelEnabled | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.featureApi.config.otelServiceName | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.featureApi.config.otelEndpoint | quote }}
+  RECSYS_API_COMPONENT: online-feature-api
+  FEAST_OFFLINE_STORE: Apache Iceberg
+  FEAST_ONLINE_STORE: Redis
+{{- end }}

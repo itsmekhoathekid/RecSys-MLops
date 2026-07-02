@@ -41,6 +41,14 @@ spec:
         - name: api
           image: {{ .Values.api.image }}
           imagePullPolicy: {{ .Values.api.imagePullPolicy }}
+          {{- if .Values.api.command }}
+          command:
+{{ toYaml .Values.api.command | nindent 12 }}
+          {{- end }}
+          {{- if .Values.api.args }}
+          args:
+{{ toYaml .Values.api.args | nindent 12 }}
+          {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ .Values.api.name }}

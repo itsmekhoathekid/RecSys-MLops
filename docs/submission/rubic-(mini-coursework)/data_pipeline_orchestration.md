@@ -7,7 +7,7 @@ Code reference:
 - [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py): Airflow DAG for DP1/DP2/DP3.
 - [infra/helm/recsys-data-platform/templates/airflow.yaml](../../../infra/helm/recsys-data-platform/templates/airflow.yaml): Airflow scheduler/webserver deployment.
 - [infra/helm/recsys-data-platform/templates/configmap.yaml](../../../infra/helm/recsys-data-platform/templates/configmap.yaml): shared runtime variables.
-- [infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): Flink streaming deployment checked by Airflow.
+- [infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): Flink online-store and offline-store streaming deployments checked by Airflow/runtime verification.
 
 ## DP1 - Raw Data Into Bronze Zone
 
@@ -85,8 +85,9 @@ airflow-scheduler READY 1/1
 airflow-webserver READY 1/1
 flink-jobmanager READY 1/1
 flink-taskmanager READY Running
-realtime-flink-consumer READY Running
-Flink job ae265b6977210f116628e6c1349e7174 RUNNING with 5/5 tasks.
+realtime-flink-online-store READY Running
+realtime-flink-offline-store READY Running
+Flink jobs show online-store and offline-store RUNNING.
 Flink checkpoints 1 and 2 completed.
 ```
 

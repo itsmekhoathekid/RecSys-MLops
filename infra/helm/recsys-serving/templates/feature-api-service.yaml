@@ -1,0 +1,17 @@
+{{- if .Values.featureApi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.featureApi.name }}
+  namespace: {{ .Values.api.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.featureApi.name }}
+    app.kubernetes.io/component: online-feature-api
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Values.featureApi.name }}
+  ports:
+    - name: http
+      port: {{ .Values.featureApi.service.port }}
+      targetPort: http
+{{- end }}

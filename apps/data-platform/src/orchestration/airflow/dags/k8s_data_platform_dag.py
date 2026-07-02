@@ -60,7 +60,17 @@ def pod_env_from():
 
 
 def mesh_safe_command(command: str) -> str:
-    return f"set -e; {command}"
+    quit_sidecar = (
+        "python -c \"import urllib.request; "
+        "req=urllib.request.Request('http://127.0.0.1:15020/quitquitquit', method='POST'); "
+        "urllib.request.urlopen(req, timeout=2).read()\" >/dev/null 2>&1 || true"
+    )
+    return (
+        "set -e; "
+        f"cleanup() {{ status=$?; {quit_sidecar}; exit $status; }}; "
+        "trap cleanup EXIT; "
+        f"{command}"
+    )
 
 
 def optional_command(flag_name: str, command: str, label: str) -> str:
@@ -73,7 +83,13 @@ def optional_command(flag_name: str, command: str, label: str) -> str:
     )
 
 
-def pod_task(task_id: str, image: str, command: str):
+def pod_task(task_id: str, image: str, command: str, *, mesh: bool = True):
+    annotations = {"sidecar.istio.io/inject": "false"}
+    if mesh:
+        annotations = {
+            "proxy.istio.io/config": '{"holdApplicationUntilProxyStarts": true}',
+            "sidecar.istio.io/inject": "true",
+        }
     return KubernetesPodOperator(
         task_id=task_id,
         name=task_id.replace("_", "-"),
@@ -83,9 +99,7 @@ def pod_task(task_id: str, image: str, command: str):
         arguments=[mesh_safe_command(command)],
         env_vars=COMMON_ENV,
         env_from=pod_env_from(),
-        annotations={
-            "sidecar.istio.io/inject": "false",
-        },
+        annotations=annotations,
         get_logs=True,
         is_delete_operator_pod=True,
         in_cluster=True,
@@ -124,10 +138,12 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         "--conf spark.driver.memory=${SPARK_K8S_DRIVER_MEMORY:-1g} "
         "--conf spark.driver.memoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-384m} "
         "--conf spark.driver.cores=${SPARK_K8S_DRIVER_CORES:-1} "
+        "--conf spark.kubernetes.driver.request.cores=${SPARK_K8S_DRIVER_REQUEST_CORES:-500m} "
         "--conf spark.executor.instances=${SPARK_K8S_EXECUTOR_INSTANCES:-1} "
         "--conf spark.executor.memory=${SPARK_K8S_EXECUTOR_MEMORY:-1g} "
         "--conf spark.executor.memoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-384m} "
         "--conf spark.executor.cores=${SPARK_K8S_EXECUTOR_CORES:-1} "
+        "--conf spark.kubernetes.executor.request.cores=${SPARK_K8S_EXECUTOR_REQUEST_CORES:-500m} "
         f"{env_conf} "
         f"{secret_conf} "
         f"{application} {application_args}".strip()
@@ -149,6 +165,7 @@ if DAG is not None:
             "init_data_platform_minio",
             DATAFLOW_IMAGE,
             "python -m ingest.init_data_platform_minio",
+            mesh=False,
         )
         init_source_schema = pod_task(
             "init_source_schema",
@@ -172,6 +189,7 @@ if DAG is not None:
             "python apps/data-platform/data-generator/src/scripts/generate_historical_to_minio.py "
             "--config $DATA_GENERATOR_CONFIG "
             "--target s3 --bucket $LAKE_BUCKET --prefix raw",
+            mesh=False,
         )
         ingest_historical_batch_to_lakehouse = pod_task(
             "ingest_historical_batch_to_lakehouse",
@@ -180,6 +198,7 @@ if DAG is not None:
             "--run-path s3a://$LAKE_BUCKET/raw/$DATA_GENERATOR_RUN_ID "
             "--lakehouse-warehouse $LAKEHOUSE_WAREHOUSE "
             "--mode overwrite",
+            mesh=False,
         )
         load_realtime_to_source_postgres = pod_task(
             "load_realtime_to_source_postgres",
@@ -201,6 +220,7 @@ if DAG is not None:
                 "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
                 "--config $SPARK_BATCH_CONFIG",
             ),
+            mesh=False,
         )
         feast_materialize_incremental = pod_task(
             "feast_materialize_incremental",
@@ -208,7 +228,7 @@ if DAG is not None:
             "cd /opt/recsys/apps/data-platform/feature-store/feature_repo && "
             "export FEAST_OFFLINE_ROOT=${FEAST_OFFLINE_ROOT:-s3://$OFFLINE_FEATURE_BUCKET/feast/offline} && "
             "export AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-${MINIO_ENDPOINT:-$DATA_PLATFORM_MINIO_ENDPOINT}} && "
-            "feast apply && "
+            "python -c 'from feature_store.feast_registry import apply_feature_repo; apply_feature_repo(\".\")' && "
             "feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)",
         )
         run_flink_stream_to_feature_stores = pod_task(

@@ -4,7 +4,10 @@ images:
   pullPolicy: IfNotPresent
 
 sourcePostgres:
-  storage: 5Gi
+  storage: 20Gi
+
+kafkaConnect:
+  istioInject: "true"
 
 airflowPostgres:
   storage: 5Gi
@@ -25,10 +28,12 @@ spark:
   driverMemory: 2g
   driverMemoryOverhead: 512m
   driverCores: "1"
+  driverRequestCores: 100m
   executorInstances: "1"
   executorMemory: 2g
   executorMemoryOverhead: 512m
   executorCores: "1"
+  executorRequestCores: 100m
   sqlShufflePartitions: "16"
 
 realtimeProducer:
@@ -40,10 +45,17 @@ realtimeProducer:
   nProducts: "5000"
 
 flinkTaskManager:
-  replicas: 2
+  replicas: 1
+
+flink:
+  istioInject: "true"
+
+redis:
+  istioInject: "true"
 
 realtimeFlinkConsumer:
   replicas: 1
+  istioInject: "true"
   parallelism: "1"
   checkpointIntervalSeconds: "120"
   offlineStoreEnabled: true

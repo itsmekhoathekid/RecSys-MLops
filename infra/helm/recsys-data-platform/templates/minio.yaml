@@ -29,6 +29,8 @@ spec:
     metadata:
       labels:
         app: {{ .Values.minio.name }}
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       enableServiceLinks: false
       containers:

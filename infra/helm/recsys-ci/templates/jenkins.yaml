@@ -35,6 +35,7 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/jenkins-init: {{ include (print $.Template.BasePath "/jenkins-init-configmap.yaml") . | sha256sum }}
 {{ toYaml .Values.serviceMesh.jenkinsPodAnnotations | indent 8 }}
       labels:
         app.kubernetes.io/name: recsys-jenkins
@@ -56,6 +57,35 @@ spec:
           volumeMounts:
             - name: jenkins-home
               mountPath: /var/jenkins_home
+        {{- if .Values.jenkins.plugins.installOnStartup }}
+        - name: install-jenkins-plugins
+          image: {{ .Values.jenkins.image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              mkdir -p /var/jenkins_home/plugins
+              missing=0
+              for plugin in {{ join " " .Values.jenkins.plugins.required }}; do
+                plugin_name="${plugin%%:*}"
+                if [ ! -e "/var/jenkins_home/plugins/${plugin_name}.jpi" ] && [ ! -e "/var/jenkins_home/plugins/${plugin_name}.hpi" ]; then
+                  missing=1
+                fi
+              done
+              if [ "${missing}" = "1" ]; then
+                jenkins-plugin-cli \
+                  --plugin-download-directory /var/jenkins_home/plugins \
+                  --plugins {{ join " " .Values.jenkins.plugins.required }}
+              fi
+              chown -R 1000:1000 /var/jenkins_home/plugins
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: /var/jenkins_home
+        {{- end }}
       containers:
         - name: jenkins
           image: {{ .Values.jenkins.image }}

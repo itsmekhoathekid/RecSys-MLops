@@ -358,10 +358,10 @@ datahub-ingest-governance:
 	pushgateway_pf_pid=$$!; \
 	trap 'kill $$gms_pf_pid $$pushgateway_pf_pid >/dev/null 2>&1 || true' EXIT; \
 	for _ in $$(seq 1 30); do \
-	if curl -fsS $(DATAHUB_GMS_URL)/health >/dev/null 2>&1; then break; fi; \
+	if curl -fsS $(DATAHUB_GMS_URL)/config >/dev/null 2>&1; then break; fi; \
 		sleep 1; \
 	done; \
-	curl -fsS $(DATAHUB_GMS_URL)/health >/dev/null; \
+	curl -fsS $(DATAHUB_GMS_URL)/config >/dev/null; \
 	for _ in $$(seq 1 30); do \
 	if curl -fsS $(PUSHGATEWAY_URL)/-/ready >/dev/null 2>&1; then break; fi; \
 		sleep 1; \
@@ -412,6 +412,8 @@ mlops-install-serving:
 	helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace \
 		--set observability.serviceMonitor.enabled=false \
 		--set autoscaling.kserveResource.enabled=true
+	@kubectl rollout status deployment/recsys-online-feature-api -n api-serving --timeout=300s
+	@kubectl rollout status deployment/recsys-api-serving -n api-serving --timeout=300s
 
 .PHONY: mlops-compile-kfp
 mlops-compile-kfp:
@@ -431,7 +433,8 @@ mlops-port-forward:
 	@echo "MLflow:    kubectl port-forward -n $(MLOPS_NAMESPACE) svc/mlflow 5000:5000"
 	@echo "MinIO:     kubectl port-forward -n $(MLOPS_NAMESPACE) svc/minio 9001:9001"
 	@echo "Ray UI:    kubectl port-forward -n $(KUBEFLOW_NAMESPACE) svc/recsys-bst-ray-tune-raycluster-*-head-svc 8265:8265"
-	@echo "FastAPI:   kubectl port-forward -n api-serving svc/recsys-api-serving 8088:80"
+	@echo "Feature API: kubectl port-forward -n api-serving svc/recsys-online-feature-api 8087:80"
+	@echo "Inference API: kubectl port-forward -n api-serving svc/recsys-api-serving 8088:80"
 
 .PHONY: observability-template
 observability-template:
@@ -452,6 +455,7 @@ observability-port-forward:
 .PHONY: observability-smoke
 observability-smoke:
 	@kubectl get pods,svc -n observability
+	@kubectl get deploy -n api-serving recsys-online-feature-api
 	@kubectl get deploy -n api-serving recsys-api-serving
 
 .PHONY: security-template

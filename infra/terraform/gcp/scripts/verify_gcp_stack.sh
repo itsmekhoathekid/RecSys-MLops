@@ -77,6 +77,7 @@ live_verify() {
   kubectl rollout status deploy/kafka -n recsys-dataflow --timeout=300s
   kubectl rollout status deploy/redis -n recsys-dataflow --timeout=300s
   kubectl rollout status deploy/airflow-webserver -n recsys-dataflow --timeout=300s
+  kubectl rollout status deploy/recsys-online-feature-api -n api-serving --timeout=300s
   kubectl rollout status deploy/recsys-api-serving -n api-serving --timeout=300s
   kubectl rollout status deploy/recsys-prometheus -n observability --timeout=300s
   kubectl rollout status deploy/recsys-grafana -n observability --timeout=300s
@@ -92,6 +93,12 @@ live_verify() {
   kubectl get pods -n kubeflow -l ray.io/node-type=worker -o wide || true
 
   section "API smoke"
+  kubectl run recsys-online-feature-api-smoke \
+    --rm -i --restart=Never \
+    --image=curlimages/curl:8.10.1 \
+    --namespace api-serving \
+    --command -- curl -fsS http://recsys-online-feature-api.api-serving.svc.cluster.local/healthz
+
   kubectl run recsys-api-smoke \
     --rm -i --restart=Never \
     --image=curlimages/curl:8.10.1 \

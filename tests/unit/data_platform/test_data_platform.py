@@ -354,7 +354,8 @@ def test_pipeline_arg_parser_and_default_retrain_arguments():
 
     assert parsed["source_run_path"] == "s3a://lake/raw/run1"
     assert defaults["pipeline_run_id"] == "retrain-run-1"
-    assert defaults["ray_job_name"] == "recsys-bst-ray-retrain-run-1"
+    assert defaults["ray_job_name"].startswith("recsys-bst-ray-retrain-run-1-")
+    assert len(defaults["ray_job_name"]) <= 47
     assert defaults["split_output_dir"].endswith("/retrain-run-1/ml/bst_split")
 
 

@@ -38,7 +38,7 @@ def _backend(ingress: dict) -> dict:
     return ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]
 
 
-def test_gateway_chart_renders_auth_tls_rate_limits_and_backends():
+def test_gateway_chart_renders_auth_rate_limits_and_backends_with_tls_disabled_by_default():
     docs = _render_gateway()
     by_kind_name = _by_kind_name(docs)
 
@@ -55,7 +55,7 @@ def test_gateway_chart_renders_auth_tls_rate_limits_and_backends():
     assert api["metadata"]["namespace"] == "api-serving"
     assert api["spec"]["ingressClassName"] == "nginx"
     assert api["spec"]["rules"][0]["host"] == "api.recsys.local"
-    assert api["spec"]["tls"] == [{"hosts": ["api.recsys.local"], "secretName": "recsys-api-tls"}]
+    assert "tls" not in api["spec"]
     assert _backend(api) == {"name": "recsys-api-serving", "port": {"number": 80}}
 
     annotations = api["metadata"]["annotations"]
@@ -66,34 +66,32 @@ def test_gateway_chart_renders_auth_tls_rate_limits_and_backends():
     assert annotations["nginx.ingress.kubernetes.io/limit-rpm"] == "120"
     assert annotations["nginx.ingress.kubernetes.io/limit-connections"] == "10"
     assert annotations["nginx.ingress.kubernetes.io/limit-req-status-code"] == "429"
-    assert annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] == "true"
-    assert annotations["cert-manager.io/cluster-issuer"] == "letsencrypt-staging"
+    assert "nginx.ingress.kubernetes.io/force-ssl-redirect" not in annotations
+    assert "cert-manager.io/cluster-issuer" not in annotations
 
     grafana = by_kind_name[("Ingress", "recsys-grafana-gateway")]
     assert grafana["metadata"]["namespace"] == "observability"
     assert grafana["spec"]["rules"][0]["host"] == "grafana.recsys.local"
-    assert grafana["spec"]["tls"] == [
-        {"hosts": ["grafana.recsys.local"], "secretName": "recsys-grafana-tls"}
-    ]
+    assert "tls" not in grafana["spec"]
     assert _backend(grafana) == {"name": "recsys-grafana", "port": {"number": 3000}}
 
     logs = by_kind_name[("Ingress", "recsys-logs-gateway")]
     assert logs["metadata"]["namespace"] == "observability"
     assert logs["spec"]["rules"][0]["host"] == "logs.recsys.local"
-    assert logs["spec"]["tls"] == [{"hosts": ["logs.recsys.local"], "secretName": "recsys-logs-tls"}]
+    assert "tls" not in logs["spec"]
     assert _backend(logs) == {"name": "recsys-loki", "port": {"number": 3100}}
 
     traces = by_kind_name[("Ingress", "recsys-traces-gateway")]
     assert traces["metadata"]["namespace"] == "observability"
     assert traces["spec"]["rules"][0]["host"] == "traces.recsys.local"
-    assert traces["spec"]["tls"] == [
-        {"hosts": ["traces.recsys.local"], "secretName": "recsys-traces-tls"}
-    ]
+    assert "tls" not in traces["spec"]
     assert _backend(traces) == {"name": "recsys-tempo", "port": {"number": 3200}}
 
 
 def test_gateway_chart_can_create_cert_manager_cluster_issuer():
     docs = _render_gateway(
+        "--set",
+        "tls.enabled=true",
         "--set",
         "tls.issuer.create=true",
         "--set",

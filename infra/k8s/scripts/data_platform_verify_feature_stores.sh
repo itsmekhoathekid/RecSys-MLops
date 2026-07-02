@@ -35,6 +35,9 @@ wait_for_command "Flink REST job overview" /tmp/recsys-flink-jobs.json \
   kubectl exec -n "${NAMESPACE}" deploy/flink-jobmanager -- \
   curl -fsS http://localhost:8081/jobs/overview
 
+kubectl rollout status -n "${NAMESPACE}" deploy/realtime-flink-online-store --timeout="${TIMEOUT_SECONDS}s"
+kubectl rollout status -n "${NAMESPACE}" deploy/realtime-flink-offline-store --timeout="${TIMEOUT_SECONDS}s"
+
 python3 - <<'PY'
 import json
 from pathlib import Path
@@ -53,8 +56,8 @@ from pathlib import Path
 
 flink = json.loads(Path("/tmp/recsys-flink-jobs.json").read_text())
 running = [job for job in flink.get("jobs", []) if job.get("state") == "RUNNING"]
-if not running:
-    raise SystemExit(f"No RUNNING Flink jobs found: {flink}")
+if len(running) < 2:
+    raise SystemExit(f"Expected online + offline RUNNING Flink jobs, found {len(running)}: {flink}")
 print({"flink_running_jobs": len(running)})
 PY
   then

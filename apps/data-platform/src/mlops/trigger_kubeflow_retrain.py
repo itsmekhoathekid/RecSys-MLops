@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -64,6 +65,14 @@ def safe_run_slug(run_id: str) -> str:
     return slug or "unknown"
 
 
+def bounded_k8s_name(prefix: str, value: str, max_length: int = 47) -> str:
+    slug = safe_run_slug(value)
+    digest = hashlib.sha1(slug.encode("utf-8")).hexdigest()[:8]
+    body_length = max(1, max_length - len(prefix) - len(digest) - 2)
+    body = slug[:body_length].strip("-") or "run"
+    return f"{prefix}-{body}-{digest}"
+
+
 def default_pipeline_arguments(run_id: str) -> dict[str, str]:
     slug = safe_run_slug(run_id)
     base = f"/workspace/recsys/data_platform/output/retrain-{slug}"
@@ -79,7 +88,7 @@ def default_pipeline_arguments(run_id: str) -> dict[str, str]:
         "eval_metrics_path": f"{base}/ml/eval_metrics.json",
         "serving_output_dir": f"{base}/ml/serving",
         "promotion_manifest_path": f"{base}/ml/serving/promotion_manifest.json",
-        "ray_job_name": f"recsys-bst-ray-retrain-{slug}",
+        "ray_job_name": bounded_k8s_name("recsys-bst-ray", f"retrain-{slug}"),
     }
 
 

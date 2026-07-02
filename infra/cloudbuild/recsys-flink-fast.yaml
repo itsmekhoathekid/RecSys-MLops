@@ -1,0 +1,23 @@
+substitutions:
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _TAG: gcp
+
+options:
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 3600s
+
+steps:
+  - id: flink
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/data-platform/Dockerfile.flink
+      - -t
+      - ${_IMAGE_REPO}/recsys-flink:${_TAG}
+      - .
+
+images:
+  - ${_IMAGE_REPO}/recsys-flink:${_TAG}
