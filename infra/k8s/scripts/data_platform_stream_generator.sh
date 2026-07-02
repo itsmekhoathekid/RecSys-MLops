@@ -9,7 +9,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 case "${ACTION}" in
   start)
-    kubectl rollout status "deploy/realtime-flink-consumer" -n "${NAMESPACE}" --timeout=180s
+    kubectl rollout status "deploy/realtime-flink-online-store" -n "${NAMESPACE}" --timeout=180s
+    kubectl rollout status "deploy/realtime-flink-offline-store" -n "${NAMESPACE}" --timeout=180s
     kubectl scale "deploy/${PRODUCER}" -n "${NAMESPACE}" --replicas="${REPLICAS}"
     kubectl rollout status "deploy/${PRODUCER}" -n "${NAMESPACE}" --timeout=180s
     "${ROOT_DIR}/infra/k8s/scripts/data_platform_verify_feature_stores.sh"

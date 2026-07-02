@@ -108,7 +108,7 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
             write_iceberg_table(frame, table_name, mode="overwrite")
         feast_offline_root = output.get("feast_offline_store_uri")
         if feast_offline_root:
-            for table_name in ("user_aggregate_features", "item_features"):
+            for table_name in ("user_sequence_features", "user_aggregate_features", "item_features"):
                 write_parquet(
                     outputs[catalog.feature_table(table_name)],
                     f"{feast_offline_root.rstrip('/')}/{table_name}",

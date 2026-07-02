@@ -6,7 +6,10 @@
 #    config_path: str [Default: 'configs/local/spark_batch.yaml']
 #    cpus_per_trial: float [Default: 1.0]
 #    dataset_metadata_path: str [Default: '/workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json']
+#    entity_input_path: str [Default: 'recsys_features.feature_store.ml_ranking_labels']
 #    eval_metrics_path: str [Default: '/workspace/recsys/data_platform/output/ml/eval_metrics.json']
+#    feast_offline_root: str [Default: 's3://recsys-offline-feature-store/feast/offline']
+#    feast_repo_path: str [Default: '/opt/recsys/apps/data-platform/feature-store/feature_repo']
 #    feature_service_name: str [Default: 'bst_ranking_v1']
 #    feature_summary_path: str [Default: '/workspace/recsys/data_platform/output/feature_summary.json']
 #    gpu_limit: int [Default: 1.0]
@@ -28,7 +31,7 @@
 #    pvc_mount_path: str [Default: '/workspace']
 #    pvc_name: str [Default: 'recsys-mlops-pvc']
 #    ray_best_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/best_result.json']
-#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:gcp']
+#    ray_image: str [Default: 'recsys-mlops-training:local']
 #    ray_job_name: str [Default: 'recsys-bst-ray-tune']
 #    ray_namespace: str [Default: 'kubeflow']
 #    ray_output_dir: str [Default: '/workspace/recsys/data_platform/output/ml/ray']
@@ -59,6 +62,12 @@ components:
     inputDefinitions:
       parameters:
         dataset_metadata_path:
+          parameterType: STRING
+        entity_input_path:
+          parameterType: STRING
+        feast_offline_root:
+          parameterType: STRING
+        feast_repo_path:
           parameterType: STRING
         feature_service_name:
           parameterType: STRING
@@ -154,7 +163,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:gcp
+        image: recsys-mlops-training:local
     exec-prepare-training-data:
       container:
         args:
@@ -164,7 +173,13 @@ deploymentSpec:
         - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2,org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.2,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262
         - /opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py
         - --feature-source
-        - offline_feature_store
+        - feast
+        - --entity-input-path
+        - '{{$.inputs.parameters[''entity_input_path'']}}'
+        - --feast-repo-path
+        - '{{$.inputs.parameters[''feast_repo_path'']}}'
+        - --feast-offline-root
+        - '{{$.inputs.parameters[''feast_offline_root'']}}'
         - --offline-feature-table
         - '{{$.inputs.parameters[''offline_feature_table'']}}'
         - --output-dir
@@ -187,7 +202,7 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - /opt/spark/bin/spark-submit
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:gcp
+        image: recsys-mlops-spark:local
     exec-promote-bst-model:
       container:
         args:
@@ -204,7 +219,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/registry/model_promotion.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:gcp
+        image: recsys-mlops-training:local
     exec-submit-rayjob:
       container:
         args:
@@ -253,7 +268,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:gcp
+        image: recsys-mlops-training:local
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.
@@ -287,6 +302,12 @@ root:
           parameters:
             dataset_metadata_path:
               componentInputParameter: dataset_metadata_path
+            entity_input_path:
+              componentInputParameter: entity_input_path
+            feast_offline_root:
+              componentInputParameter: feast_offline_root
+            feast_repo_path:
+              componentInputParameter: feast_repo_path
             feature_service_name:
               componentInputParameter: feature_service_name
             hudi_catalog_name:
@@ -395,8 +416,20 @@ root:
         defaultValue: /workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json
         isOptional: true
         parameterType: STRING
+      entity_input_path:
+        defaultValue: recsys_features.feature_store.ml_ranking_labels
+        isOptional: true
+        parameterType: STRING
       eval_metrics_path:
         defaultValue: /workspace/recsys/data_platform/output/ml/eval_metrics.json
+        isOptional: true
+        parameterType: STRING
+      feast_offline_root:
+        defaultValue: s3://recsys-offline-feature-store/feast/offline
+        isOptional: true
+        parameterType: STRING
+      feast_repo_path:
+        defaultValue: /opt/recsys/apps/data-platform/feature-store/feature_repo
         isOptional: true
         parameterType: STRING
       feature_service_name:
@@ -484,7 +517,7 @@ root:
         isOptional: true
         parameterType: STRING
       ray_image:
-        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:gcp
+        defaultValue: recsys-mlops-training:local
         isOptional: true
         parameterType: STRING
       ray_job_name:
@@ -543,6 +576,10 @@ platforms:
     deploymentSpec:
       executors:
         exec-evaluate-bst:
+          imagePullPolicy: Always
+          podMetadata:
+            annotations:
+              sidecar.istio.io/inject: 'false'
           pvcMount:
           - constant: recsys-mlops-pvc
             mountPath: /workspace
@@ -597,6 +634,10 @@ platforms:
               runtimeValue:
                 constant: recsys-mlops-runtime
         exec-prepare-training-data:
+          imagePullPolicy: Always
+          podMetadata:
+            annotations:
+              sidecar.istio.io/inject: 'false'
           pvcMount:
           - constant: recsys-mlops-pvc
             mountPath: /workspace
@@ -651,6 +692,10 @@ platforms:
               runtimeValue:
                 constant: recsys-mlops-runtime
         exec-promote-bst-model:
+          imagePullPolicy: Always
+          podMetadata:
+            annotations:
+              sidecar.istio.io/inject: 'false'
           pvcMount:
           - constant: recsys-mlops-pvc
             mountPath: /workspace
@@ -705,6 +750,10 @@ platforms:
               runtimeValue:
                 constant: recsys-mlops-runtime
         exec-submit-rayjob:
+          imagePullPolicy: Always
+          podMetadata:
+            annotations:
+              sidecar.istio.io/inject: 'false'
           pvcMount:
           - constant: recsys-mlops-pvc
             mountPath: /workspace

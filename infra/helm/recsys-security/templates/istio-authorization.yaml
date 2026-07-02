@@ -13,6 +13,9 @@ spec:
         - source:
             principals:
               - cluster.local/ns/recsys-dataflow/sa/default
+              - cluster.local/ns/datahub/sa/datahub-app-sa
+              - cluster.local/ns/kubeflow/sa/pipeline-runner
+              - cluster.local/ns/kubeflow/sa/default
               - cluster.local/ns/observability/sa/recsys-prometheus
       to:
         - operation:
@@ -24,6 +27,21 @@ spec:
       to:
         - operation:
             ports: ["6379"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-dataflow-minio-s3-allow
+  namespace: recsys-dataflow
+spec:
+  selector:
+    matchLabels:
+      app: data-platform-minio
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["9000"]
 {{- end }}
 ---
 apiVersion: security.istio.io/v1beta1
@@ -141,6 +159,7 @@ spec:
             principals:
               - cluster.local/ns/ingress-nginx/sa/ingress-nginx
               - cluster.local/ns/observability/sa/recsys-prometheus
+              - cluster.local/ns/api-serving/sa/default
       to:
         - operation:
             ports: ["80", "8080"]

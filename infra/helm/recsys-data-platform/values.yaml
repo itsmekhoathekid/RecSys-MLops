@@ -23,7 +23,7 @@ sourcePostgres:
   database: recsys
   user: recsys
   password: ""
-  storage: 5Gi
+  storage: 20Gi
 
 airflowPostgres:
   name: airflow-postgres
@@ -66,10 +66,12 @@ spark:
   driverMemory: 768m
   driverMemoryOverhead: 128m
   driverCores: "1"
+  driverRequestCores: 100m
   executorInstances: "1"
   executorMemory: 768m
   executorMemoryOverhead: 128m
   executorCores: "1"
+  executorRequestCores: 100m
   sqlShufflePartitions: "4"
   connectionTimeout: "60000"
   requestTimeout: "180000"
@@ -81,16 +83,21 @@ kafka:
 kafkaConnect:
   name: kafka-connect
   port: 8083
+  istioInject: "false"
 
 redis:
   name: redis
   port: 6379
+  istioInject: "false"
 
 flinkTaskManager:
   replicas: 1
 
 flink:
   checkpointStorageUri: file:///tmp/flink-checkpoints
+  istioInject: "false"
+  taskSlots: "2"
+  javaOpens: "--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
 
 realtimeProducer:
   enabled: true
@@ -104,8 +111,16 @@ realtimeProducer:
 
 realtimeFlinkConsumer:
   enabled: true
-  name: realtime-flink-consumer
   replicas: 1
+  istioInject: ""
+  online:
+    enabled: true
+    name: realtime-flink-online-store
+    groupIdSuffix: online
+  offline:
+    enabled: true
+    name: realtime-flink-offline-store
+    groupIdSuffix: offline
   topic: cdc.behavior_events
   groupId: recsys-flink-realtime
   minEvents: "0"

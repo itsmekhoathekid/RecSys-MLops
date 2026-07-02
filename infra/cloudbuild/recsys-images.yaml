@@ -5,7 +5,6 @@ substitutions:
 options:
   diskSizeGb: 200
   logging: CLOUD_LOGGING_ONLY
-  machineType: E2_HIGHCPU_8
 
 timeout: 7200s
 

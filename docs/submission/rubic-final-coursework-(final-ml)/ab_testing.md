@@ -35,6 +35,66 @@ AB_CONTROL_TRITON_URL=recsys-bst-triton-grpc.kserve-triton-inference.svc.cluster
 AB_CANDIDATE_TRITON_URL=recsys-bst-triton-candidate-grpc.kserve-triton-inference.svc.cluster.local:9000
 ```
 
+## Current Full A/B Flow
+
+The current implementation supports the full A/B lifecycle, but this proof document captures the traffic-split and monitoring state rather than a completed promotion run.
+
+1. Produce model manifests.
+
+   The training/promotion pipeline writes Triton model repository metadata into promotion manifests. In Model CD, the stable manifest is used as `control`, while a new manifest is passed as `candidate`.
+
+2. Render serving values for the desired stage.
+
+   [jenkins/scripts/model_cd.py](../../../jenkins/scripts/model_cd.py) accepts these stages:
+
+   | Stage | Purpose | Resulting A/B state |
+   |---|---|---|
+   | `deploy` | Deploy the stable production model only. | A/B disabled, candidate weight `0`. |
+   | `ab-start` | Start an experiment with control and candidate manifests. | A/B enabled if candidate exists and weight > 0. |
+   | `ab-step` | Continue or increase/decrease candidate exposure. | A/B enabled with the requested candidate weight. |
+   | `promote` | Make the candidate model the new stable serving model after gates pass. | Candidate becomes stable, A/B disabled, candidate weight `0`. |
+   | `rollback` | Return to stable-only serving. | A/B disabled, candidate weight `0`. |
+
+   The stage logic is implemented in `write_values()`: A/B is enabled only for `ab-start` and `ab-step` when a candidate manifest exists and `candidate_weight_percent > 0`. For `deploy`, `promote`, and `rollback`, the rendered values disable A/B routing.
+
+3. Deploy two KServe/Triton inference services during A/B.
+
+   [infra/helm/recsys-serving/templates/inferenceservice.yaml](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml) always renders the control `InferenceService`. When A/B is enabled and `candidateStorageUri` is present, it also renders the candidate `InferenceService` with label `recsys.ai/ab-variant: candidate`.
+
+4. Pass A/B config into the API pod.
+
+   [infra/helm/recsys-serving/templates/api-configmap.yaml](../../../infra/helm/recsys-serving/templates/api-configmap.yaml) exposes the runtime config to FastAPI:
+
+   ```text
+   AB_TEST_ENABLED
+   AB_EXPERIMENT_ID
+   AB_CANDIDATE_WEIGHT_PERCENT
+   AB_CONTROL_MODEL_VERSION
+   AB_CANDIDATE_MODEL_VERSION
+   AB_CONTROL_TRITON_URL
+   AB_CANDIDATE_TRITON_URL
+   ```
+
+5. Route each recommendation request.
+
+   [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py) builds one Triton ranker for `control` and one Triton ranker for `candidate`. `TritonABRouter.assign()` hashes `experiment_id:user_id` into a bucket from `0..99`; if the bucket is below `AB_CANDIDATE_WEIGHT_PERCENT`, the user is assigned to `candidate`, otherwise to `control`.
+
+6. Return and monitor variant metadata.
+
+   [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py) passes the selected route into the recommendation response, so each response includes `ab_variant`, `ab_experiment_id`, and `model_version`. The same labels are also attached to Prometheus metrics through [apps/api-serving/src/serving_utils.py](../../../apps/api-serving/src/serving_utils.py), which lets Grafana compare control and candidate request volume, errors, latency, confidence, and score shape.
+
+7. Decide promote or rollback.
+
+   [jenkins/scripts/model_cd.py](../../../jenkins/scripts/model_cd.py) implements promotion gates in `assert_promote_gates()`:
+
+   - Promote is allowed when candidate error rate is not more than `0.02` above control error rate.
+   - Promote is allowed when candidate p95 latency is not more than `1.5x` control p95 latency.
+   - If either gate fails, `model_cd.py --stage promote` raises an error before updating the production manifest.
+
+   If the candidate passes and `--apply` is used, `promote` copies the candidate Triton repository into the stable serving URI, uploads the new production manifest, then renders a stable-only deploy with A/B disabled. If the candidate fails or the operator chooses not to continue, `rollback` renders stable-only values and sets candidate weight back to `0`.
+
+Current proof status: this document proves that `ab-start`-style serving is active on GCP because both `recsys-bst-triton` and `recsys-bst-triton-candidate` are ready, live requests split into `control` and `candidate`, and Prometheus/Grafana expose per-variant metrics. It does not claim that `model_cd.py --stage promote` has already been executed for this experiment.
+
 ## Two Inference Services
 
 ```bash
@@ -96,7 +156,24 @@ statuses {'200': 80}
 variants {'control': 57, 'candidate': 23}
 ```
 
-The result is close to the configured 20% candidate split. The exact count is deterministic for this user-id range because the router hashes `bst-stable-vs-candidate-20260630:<user_id>`.
+What this proves:
+
+- `statuses {'200': 80}` means all 80 real in-cluster API calls succeeded.
+- `variants {'control': 57, 'candidate': 23}` means the API routed some users to the stable model and some users to the candidate model.
+- `control` is the current stable model path, configured as `AB_CONTROL_TRITON_URL` / `AB_CONTROL_MODEL_VERSION`.
+- `candidate` is the newly deployed model path under test, configured as `AB_CANDIDATE_TRITON_URL` / `AB_CANDIDATE_MODEL_VERSION`.
+- The split is sticky per user: the same `experiment_id:user_id` hashes to the same A/B bucket, so repeat calls for the same user stay on the same variant during the experiment.
+
+The `ab_variant` value is not inferred from Kubernetes after the fact. It is an explicit response field emitted by the API:
+
+- [apps/api-serving/src/api_schemas.py](../../../apps/api-serving/src/api_schemas.py): `RecommendationResponse` includes `ab_variant` and `ab_experiment_id`.
+- [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py): `TritonABRouter.from_env()` creates a control Triton ranker with `ab_variant="control"` and a candidate Triton ranker with `ab_variant="candidate"`.
+- [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py): `TritonABRouter.assign()` hashes `experiment_id:user_id` into a bucket and compares it with `AB_CANDIDATE_WEIGHT_PERCENT`.
+- [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py): `TritonABRouter.route()` returns a `TritonRoute` carrying the selected `model_version`, `ab_variant`, and `ab_experiment_id`.
+- [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py): `recommend()` passes the route metadata into `format_top_k()`, so the API response exposes whether that request used `control` or `candidate`.
+- [apps/api-serving/src/serving_utils.py](../../../apps/api-serving/src/serving_utils.py): `ab_labels()` also attaches `ab_variant`, `model_version`, and `experiment_id` to Prometheus metrics.
+
+With `AB_CANDIDATE_WEIGHT_PERCENT=20`, the expected long-run candidate share is about 20%. This short proof uses only user IDs `1..80`, so the observed 23/80 candidate assignments are deterministic for this exact range and can differ from exactly 20%. The key evidence is that both variants receive successful traffic and the response/metrics identify which model version served each request.
 
 ### Image proof to capture:
 

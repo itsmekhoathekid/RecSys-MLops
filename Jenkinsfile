@@ -50,6 +50,10 @@ pipeline {
     skipDefaultCheckout(false)
   }
 
+  triggers {
+    githubPush()
+  }
+
   parameters {
     string(name: 'IMAGE_PUSH_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used by Jenkins when pushing component images.')
     string(name: 'IMAGE_PULL_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used by Kubernetes workloads when pulling component images.')

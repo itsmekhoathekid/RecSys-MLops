@@ -11,7 +11,7 @@ import numpy as np
 from ab_testing import TritonABRouter, TritonRoute, select_triton_route
 from online_features import FeatureClient, get_online_features
 from observability import METRICS, observe_model_prediction, span
-from api_schemas import RecommendationItem, RecommendationRequest, RecommendationResponse
+from api_schemas import OnlineFeaturesResponse, RecommendationItem, RecommendationRequest, RecommendationResponse
 from serving_utils import ab_labels
 from triton import RankerProtocol
 
@@ -168,12 +168,27 @@ def _recommend_with_route(
             top_k=request.top_k,
             feature_client=feature_client,
         )
+    return recommend_from_online_features(
+        online_features=online_features,
+        top_k=request.top_k,
+        route=route,
+        metric_labels=metric_labels,
+    )
+
+
+def recommend_from_online_features(
+    online_features: OnlineFeaturesResponse,
+    top_k: int,
+    route: TritonRoute,
+    metric_labels: dict[str, str] | None = None,
+) -> RecommendationResponse:
+    metric_labels = metric_labels or {}
     candidate_item_ids = online_features.candidate_item_ids
     METRICS.set_gauge("recsys_api_candidate_count", len(candidate_item_ids), labels=metric_labels)
     if not candidate_item_ids:
         METRICS.inc("recsys_api_empty_recommendations_total", labels=metric_labels)
         return RecommendationResponse(
-            user_id=request.user_id,
+            user_id=online_features.user_id,
             model_version=route.model_version,
             ab_variant=route.ab_variant,
             ab_experiment_id=route.ab_experiment_id,
@@ -187,13 +202,13 @@ def _recommend_with_route(
     if scores:
         METRICS.observe("recsys_api_score_mean", float(np.mean(scores)), labels=metric_labels)
         METRICS.set_gauge("recsys_api_score_max", float(np.max(scores)), labels=metric_labels)
-    with span("recommend.format_top_k", top_k=request.top_k):
+    with span("recommend.format_top_k", top_k=top_k):
         response = format_top_k(
-            user_id=request.user_id,
+            user_id=online_features.user_id,
             model_version=route.model_version,
             candidate_item_ids=candidate_item_ids,
             scores=scores,
-            top_k=request.top_k,
+            top_k=top_k,
             ab_variant=route.ab_variant,
             ab_experiment_id=route.ab_experiment_id,
         )

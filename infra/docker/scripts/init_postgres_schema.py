@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from decimal import Decimal
 
 import pyarrow as pa
@@ -100,20 +101,35 @@ def build_all_ddl() -> str:
 def main() -> int:
     import psycopg
 
+    attempts = int(os.getenv("POSTGRES_SCHEMA_INIT_ATTEMPTS", "12"))
+    retry_seconds = float(os.getenv("POSTGRES_SCHEMA_INIT_RETRY_SECONDS", "5"))
     conninfo = (
         f"host={os.getenv('POSTGRES_HOST', 'postgres')} "
         f"port={os.getenv('POSTGRES_PORT', '5432')} "
         f"dbname={os.getenv('POSTGRES_DB', 'recsys')} "
         f"user={os.getenv('POSTGRES_USER', 'recsys')} "
-        f"password={os.getenv('POSTGRES_PASSWORD', 'recsys')}"
+        f"password={os.getenv('POSTGRES_PASSWORD', 'recsys')} "
+        f"connect_timeout={os.getenv('POSTGRES_CONNECT_TIMEOUT_SECONDS', '10')}"
     )
-    with psycopg.connect(conninfo) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_xact_lock(hashtext('recsys_source_schema_init'))")
-            cursor.execute(build_all_ddl())
-        connection.commit()
-    print("Postgres source schema initialized.")
-    return 0
+    for attempt in range(1, attempts + 1):
+        try:
+            with psycopg.connect(conninfo) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_xact_lock(hashtext('recsys_source_schema_init'))")
+                    cursor.execute(build_all_ddl())
+                connection.commit()
+            print("Postgres source schema initialized.")
+            return 0
+        except psycopg.OperationalError:
+            if attempt >= attempts:
+                raise
+            print(
+                "Postgres source schema init connection failed "
+                f"on attempt {attempt}/{attempts}; retrying in {retry_seconds:g}s."
+            )
+            time.sleep(retry_seconds)
+
+    return 1
 
 
 if __name__ == "__main__":

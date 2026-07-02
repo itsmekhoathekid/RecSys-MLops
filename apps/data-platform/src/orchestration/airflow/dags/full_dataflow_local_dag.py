@@ -115,7 +115,7 @@ if DAG is not None:
                 "cd apps/data-platform/feature-store/feature_repo && "
                 "export FEAST_OFFLINE_ROOT=${FEAST_OFFLINE_ROOT:-s3://$OFFLINE_FEATURE_BUCKET/feast/offline} && "
                 "export AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-$MINIO_ENDPOINT} && "
-                "feast apply && "
+                "python -c 'from feature_store.feast_registry import apply_feature_repo; apply_feature_repo(\".\")' && "
                 "feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)",
             )
             generate_historical_raw >> ingest_historical_batch_to_lakehouse >> run_historical_spark_batch >> feast_materialize_incremental

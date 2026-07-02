@@ -1,0 +1,81 @@
+{{- if .Values.featureApi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.featureApi.name }}
+  namespace: {{ .Values.api.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.featureApi.name }}
+    app.kubernetes.io/component: online-feature-api
+spec:
+  replicas: {{ .Values.featureApi.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.featureApi.rollout.maxUnavailable }}
+      maxSurge: {{ .Values.featureApi.rollout.maxSurge }}
+  minReadySeconds: {{ .Values.featureApi.rollout.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.featureApi.rollout.progressDeadlineSeconds }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.featureApi.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.featureApi.name }}
+        app.kubernetes.io/component: online-feature-api
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/feature-api-configmap.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ .Values.featureApi.service.targetPort | quote }}
+    spec:
+      {{- if .Values.featureApi.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.featureApi.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.featureApi.tolerations }}
+      tolerations:
+{{ toYaml .Values.featureApi.tolerations | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ .Values.featureApi.image }}
+          imagePullPolicy: {{ .Values.featureApi.imagePullPolicy }}
+          {{- if .Values.featureApi.command }}
+          command:
+{{ toYaml .Values.featureApi.command | nindent 12 }}
+          {{- end }}
+          {{- if .Values.featureApi.args }}
+          args:
+{{ toYaml .Values.featureApi.args | nindent 12 }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.featureApi.name }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.featureApi.service.targetPort }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+{{ toYaml .Values.featureApi.resources | indent 12 }}
+{{- end }}

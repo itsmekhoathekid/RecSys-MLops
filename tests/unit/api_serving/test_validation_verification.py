@@ -5,8 +5,11 @@ from fastapi.testclient import TestClient
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-import main as api_main
-from serving import RecommendationRequest, recommend
+import feature_api
+import inference_api
+from api_schemas import OnlineFeaturesRequest, OnlineFeaturesResponse, RecommendationRequest
+from ranking import recommend
+from serving_utils import bool_env, int_env
 
 
 class DeterministicFeatureClient:
@@ -39,14 +42,31 @@ class DeterministicRanker:
         return payload["candidate_item_id"].tolist(), [float(index) for index in range(candidate_count)]
 
 
+class DeterministicFeatureService:
+    async def fetch(self, request: OnlineFeaturesRequest) -> OnlineFeaturesResponse:
+        feature_client = DeterministicFeatureClient()
+        candidates = request.candidate_item_ids or feature_client.candidates(request.user_id, request.top_k)
+        return OnlineFeaturesResponse(
+            user_id=request.user_id,
+            candidate_item_ids=candidates,
+            user_sequence=feature_client.user_sequence(request.user_id),
+            item_features={str(item_id): feature_client.item_features(item_id) for item_id in candidates},
+        )
+
+
 @pytest.fixture
 def deterministic_api(monkeypatch) -> TestClient:
-    feature_client = DeterministicFeatureClient()
     ranker = DeterministicRanker()
-    monkeypatch.setattr(api_main, "feature_client", lambda: feature_client)
-    monkeypatch.setattr(api_main, "ranker", lambda: ranker)
+    monkeypatch.setattr(inference_api, "feature_service_client", lambda: DeterministicFeatureService())
+    monkeypatch.setattr(inference_api, "ranker", lambda: ranker)
     monkeypatch.setenv("MODEL_VERSION", ranker.model_version)
-    return TestClient(api_main.app)
+    return TestClient(inference_api.app)
+
+
+@pytest.fixture
+def deterministic_feature_api(monkeypatch) -> TestClient:
+    monkeypatch.setattr(feature_api, "feature_client", lambda: DeterministicFeatureClient())
+    return TestClient(feature_api.app)
 
 
 @pytest.mark.parametrize(
@@ -101,6 +121,125 @@ def test_recommendations_web_api_equivalence_and_boundary_invalid_cases(
     response = deterministic_api.post("/recommendations", json=payload)
 
     assert response.status_code == 422
+
+
+def test_api_health_ready_version_metrics_and_online_features(
+    deterministic_api: TestClient,
+    deterministic_feature_api: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MODEL_VERSION", "api-surface-test")
+
+    assert deterministic_api.get("/healthz").json() == {"status": "ok"}
+    assert deterministic_api.get("/ready").json() == {"status": "ready"}
+    version = deterministic_api.get("/version").json()
+    assert version["service"] == "recsys-api-serving"
+    assert version["model_version"] == "api-surface-test"
+    assert version["inference_engine"] == "Triton Inference Server"
+
+    metrics = deterministic_api.get("/metrics")
+    assert metrics.status_code == 200
+    assert "text/plain" in metrics.headers["content-type"]
+    assert "recsys_observability_build_info" in metrics.text
+
+    online = deterministic_feature_api.get(
+        "/online-features/42",
+        params=[("candidate_item_ids", 101), ("candidate_item_ids", 102), ("top_k", 2)],
+    )
+    assert online.status_code == 200
+    body = online.json()
+    assert body["user_id"] == 42
+    assert body["candidate_item_ids"] == [101, 102]
+    assert body["user_sequence"]["hist_item_ids"] == [1, 2, 3]
+    assert body["item_features"]["101"]["category_id"] == 11
+
+    feature_version = deterministic_feature_api.get("/version").json()
+    assert feature_version["service"] == "recsys-online-feature-api"
+    assert feature_version["online_store"] == "Redis"
+
+
+def test_ready_can_be_forced_not_ready(
+    deterministic_api: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FORCE_NOT_READY", "1")
+
+    response = deterministic_api.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "forced not ready"
+
+
+def test_api_error_paths_return_bad_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
+    class BrokenFeatureClient:
+        def candidates(self, user_id: int, limit: int) -> list[int]:
+            raise RuntimeError("feature store down")
+
+        def user_sequence(self, user_id: int) -> dict:
+            raise RuntimeError("feature store down")
+
+        def item_features(self, item_id: int) -> dict:
+            raise RuntimeError("feature store down")
+
+    class BrokenRanker:
+        def score(self, payload):
+            raise RuntimeError("triton down")
+
+    monkeypatch.setattr(feature_api, "feature_client", lambda: BrokenFeatureClient())
+    feature_client = TestClient(feature_api.app)
+
+    online = feature_client.get("/online-features/42", params={"top_k": 2})
+    assert online.status_code == 502
+    assert "online feature fetch failed" in online.json()["detail"]
+
+    class BrokenFeatureService:
+        async def fetch(self, request):
+            raise RuntimeError("feature api down")
+
+    monkeypatch.setattr(inference_api, "feature_service_client", lambda: BrokenFeatureService())
+    monkeypatch.setattr(inference_api, "ranker", lambda: DeterministicRanker())
+    client = TestClient(inference_api.app)
+
+    recommendations = client.post("/recommendations", json={"user_id": 42, "top_k": 1})
+    assert recommendations.status_code == 502
+    assert "inference failed" in recommendations.json()["detail"]
+
+    monkeypatch.setattr(inference_api, "feature_service_client", lambda: DeterministicFeatureService())
+    monkeypatch.setattr(inference_api, "ranker", lambda: BrokenRanker())
+
+    triton_failure = client.post("/recommendations", json={"user_id": 42, "top_k": 1})
+    assert triton_failure.status_code == 502
+    assert "inference failed" in triton_failure.json()["detail"]
+
+
+def test_api_singletons_and_env_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+    created_features = []
+    created_rankers = []
+
+    class FakeFeatureClient:
+        def __init__(self) -> None:
+            created_features.append("feature-client")
+
+    class FakeRouter:
+        @classmethod
+        def from_env(cls):
+            created_rankers.append("ranker")
+            return cls()
+
+    monkeypatch.setattr(feature_api, "FeatureClient", FakeFeatureClient)
+    monkeypatch.setattr(inference_api, "TritonABRouter", FakeRouter)
+    monkeypatch.setattr(feature_api, "_feature_client", None)
+    monkeypatch.setattr(inference_api, "_ranker", None)
+    monkeypatch.setenv("FEATURE_FLAG", "yes")
+    monkeypatch.setenv("BAD_INT", "not-an-int")
+
+    assert feature_api.feature_client() is feature_api.feature_client()
+    assert inference_api.ranker() is inference_api.ranker()
+    assert created_features == ["feature-client"]
+    assert created_rankers == ["ranker"]
+    assert bool_env("FEATURE_FLAG") is True
+    assert bool_env("MISSING_FLAG", default="off") is False
+    assert int_env("BAD_INT", default=7) == 7
 
 
 @given(

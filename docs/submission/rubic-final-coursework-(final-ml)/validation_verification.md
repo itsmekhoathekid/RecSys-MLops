@@ -1,51 +1,75 @@
 # Validation & Verification
 
-## 1. Unit test coverage > 90% & Web API tests with fixtures and mocks
-
-### 1.1 Unitest coverage > 90%
+## 1. Unit Test Coverage > 90%
 
 ### 1.1 Goal
 
 - Requirement: unit tests must pass with line coverage `> 90%`.
-- Scope: component-level CI coverage gate for project Python components.
-- Components covered: API serving, materialize, training, Spark batch, DP1, DP2, DP3, KServe, drift, stream offline, and stream online.
-- Coverage gate: `COVERAGE_MIN=90` is passed into the CI script, and pytest uses `--cov-fail-under`.
+- Scope: `api-serving` unit tests over the full `apps/api-serving/src` package.
+- Current result: `29 passed`, `1 warning`, total line coverage `92.25%`.
+- Coverage gate: pytest uses `--cov-fail-under=90`.
+
+Source references:
+
+- [apps/api-serving/src/main.py line 73](../../../apps/api-serving/src/main.py#L73): `/healthz` endpoint covered by API surface tests.
+- [apps/api-serving/src/main.py line 78](../../../apps/api-serving/src/main.py#L78): `/ready` endpoint and forced-not-ready branch.
+- [apps/api-serving/src/main.py line 93](../../../apps/api-serving/src/main.py#L93): `/metrics` endpoint.
+- [apps/api-serving/src/main.py line 98](../../../apps/api-serving/src/main.py#L98): `/online-features/{user_id}` endpoint.
+- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#L116): `POST /recommendations` endpoint.
+- [tests/unit/api_serving/test_validation_verification.py line 107](../../../tests/unit/api_serving/test_validation_verification.py#L107): API health/readiness/version/metrics/online-features coverage test.
+- [tests/unit/api_serving/test_validation_verification.py line 149](../../../tests/unit/api_serving/test_validation_verification.py#L149): API `502` error-path coverage test.
+- [tests/unit/api_serving/test_validation_verification.py line 189](../../../tests/unit/api_serving/test_validation_verification.py#L189): singleton and env-helper coverage test.
 
 ### 1.2 Command used
 
 ```bash
-COVERAGE_MIN=90 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/component_ci.sh api
+UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src \
+uv run pytest tests/unit/api_serving -q \
+  --cov=apps/api-serving/src \
+  --cov-report=term-missing \
+  --cov-fail-under=90
 ```
 
-### 1.3 Screenshot proof
+Expected terminal summary:
+
+```text
+29 passed, 1 warning
+Required test coverage of 90% reached. Total coverage: 92.25%
+```
+
+### 1.3 Screenshot Proof
 
 ![Data & ML system](../../pngs/unit_test_90.png)
 
-### 1.2. Web API tests with fixtures and mocks
+## 2. Web API Tests With Fixtures And Mocks
 
 ### 2.1 Goal
 
-- Requirement: prove Web API tests use pytest fixtures and mocks.
-- Web API endpoint under test: `POST /recommendations`.
-- External dependencies mocked: Redis/online feature store, Triton/KServe ranker, and model metadata.
+- Requirement: prove Web API unit tests use pytest fixtures and mocks.
+- Web API endpoints under test: `POST /recommendations`, `GET /online-features/{user_id}`, `/healthz`, `/ready`, `/version`, and `/metrics`.
+- External dependencies mocked: Redis/online feature store, Triton/KServe ranker, and model metadata/env config.
 
 Source references:
 
-- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#116): `POST /recommendations` FastAPI route.
-- [apps/api-serving/src/api_schemas.py line 8](../../../apps/api-serving/src/api_schemas.py#8): `RecommendationRequest` validation model.
-- [tests/unit/api_serving/test_validation_verification.py line 4](../../../tests/unit/api_serving/test_validation_verification.py#4): FastAPI `TestClient` import.
-- [tests/unit/api_serving/test_validation_verification.py line 42](../../../tests/unit/api_serving/test_validation_verification.py#42): pytest fixture definition.
-- [tests/unit/api_serving/test_validation_verification.py line 46](../../../tests/unit/api_serving/test_validation_verification.py#46): feature client mock via `monkeypatch`.
-- [tests/unit/api_serving/test_validation_verification.py line 47](../../../tests/unit/api_serving/test_validation_verification.py#47): ranker mock via `monkeypatch`.
+- [apps/api-serving/src/main.py line 98](../../../apps/api-serving/src/main.py#L98): `GET /online-features/{user_id}` FastAPI route.
+- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#L116): `POST /recommendations` FastAPI route.
+- [apps/api-serving/src/api_schemas.py line 8](../../../apps/api-serving/src/api_schemas.py#L8): `RecommendationRequest` validation model.
+- [tests/unit/api_serving/test_validation_verification.py line 4](../../../tests/unit/api_serving/test_validation_verification.py#L4): FastAPI `TestClient` import.
+- [tests/unit/api_serving/test_validation_verification.py line 43](../../../tests/unit/api_serving/test_validation_verification.py#L43): pytest fixture definition.
+- [tests/unit/api_serving/test_validation_verification.py line 47](../../../tests/unit/api_serving/test_validation_verification.py#L47): feature client mock via `monkeypatch`.
+- [tests/unit/api_serving/test_validation_verification.py line 48](../../../tests/unit/api_serving/test_validation_verification.py#L48): ranker mock via `monkeypatch`.
+- [tests/unit/api_serving/test_validation_verification.py line 111](../../../tests/unit/api_serving/test_validation_verification.py#L111): model metadata/env config mock via `monkeypatch.setenv`.
 
 ### 2.2 Test design
 
 | Test area | Fixture/mock used | Expected behavior | Evidence |
 | --- | --- | --- | --- |
-| FastAPI `/recommendations` endpoint | `deterministic_api` fixture returns `TestClient` | API returns HTTP 200 for valid recommendation payloads | [test_validation_verification.py line 67](../../../tests/unit/api_serving/test_validation_verification.py#67) |
-| Redis/online feature store | `DeterministicFeatureClient` replaces `feature_client()` | Tests do not require live Redis and still return candidates/features | [test_validation_verification.py line 12](../../../tests/unit/api_serving/test_validation_verification.py#12) |
-| Triton/KServe ranker | `DeterministicRanker` replaces `ranker()` | Tests do not require live Triton/KServe and return deterministic scores | [test_validation_verification.py line 34](../../../tests/unit/api_serving/test_validation_verification.py#34) |
-| AB routing / model metadata | `MODEL_VERSION` is set through `monkeypatch.setenv` | Response exposes deterministic test model version | [test_validation_verification.py line 48](../../../tests/unit/api_serving/test_validation_verification.py#48) |
+| FastAPI `/recommendations` endpoint | `deterministic_api` fixture returns `TestClient` | API returns HTTP 200 for valid recommendation payloads | [test_validation_verification.py line 68](../../../tests/unit/api_serving/test_validation_verification.py#L68) |
+| FastAPI `/online-features/{user_id}` endpoint | `deterministic_api` fixture returns `TestClient` | API returns HTTP 200 and deterministic online features | [test_validation_verification.py line 107](../../../tests/unit/api_serving/test_validation_verification.py#L107) |
+| Redis/online feature store | `DeterministicFeatureClient` replaces `feature_client()` | Tests do not require live Redis and still return candidates/features | [test_validation_verification.py line 13](../../../tests/unit/api_serving/test_validation_verification.py#L13) |
+| Triton/KServe ranker | `DeterministicRanker` replaces `ranker()` | Tests do not require live Triton/KServe and return deterministic scores | [test_validation_verification.py line 35](../../../tests/unit/api_serving/test_validation_verification.py#L35) |
+| API error handling | `BrokenFeatureClient` and `BrokenRanker` mocks | API returns HTTP 502 when feature store or ranker fails | [test_validation_verification.py line 149](../../../tests/unit/api_serving/test_validation_verification.py#L149) |
+| Model metadata/env config | `MODEL_VERSION`, `FORCE_NOT_READY`, and helper env vars are set through `monkeypatch.setenv` | API exposes model version, readiness branch, and env helper fallback | [test_validation_verification.py line 111](../../../tests/unit/api_serving/test_validation_verification.py#L111), [test_validation_verification.py line 141](../../../tests/unit/api_serving/test_validation_verification.py#L141), [test_validation_verification.py line 189](../../../tests/unit/api_serving/test_validation_verification.py#L189) |
 
 ### 2.3 Command used
 
@@ -53,11 +77,19 @@ Source references:
 UV_CACHE_DIR=.uv-cache uv run pytest tests/unit/api_serving -q -vv
 ```
 
-### 2.4 Screenshot proof
+This command proves the `api-serving` unit tests pass. It does not measure coverage; coverage is proven by the command in Section 1.2.
+
+Expected terminal summary:
+
+```text
+29 passed, 1 warning
+```
+
+### 2.4 Screenshot Proof
 
 ![Data & ML system](../../pngs/feature_and_mock_test.png)
 
-## 3. Equivalence partitioning and boundary value analysis
+## 3. Equivalence Partitioning And Boundary Value Analysis
 
 ### 3.1 Goal
 
@@ -67,11 +99,12 @@ UV_CACHE_DIR=.uv-cache uv run pytest tests/unit/api_serving -q -vv
 
 Source references:
 
-- [apps/api-serving/src/api_schemas.py line 9](../../../apps/api-serving/src/api_schemas.py#9): `user_id` lower bound.
-- [apps/api-serving/src/api_schemas.py line 10](../../../apps/api-serving/src/api_schemas.py#10): `candidate_item_ids` length bounds.
-- [apps/api-serving/src/api_schemas.py line 11](../../../apps/api-serving/src/api_schemas.py#11): `top_k` lower and upper bounds.
-- [tests/unit/api_serving/test_validation_verification.py line 52](../../../tests/unit/api_serving/test_validation_verification.py#52): parametrized valid EP/BVA cases.
-- [tests/unit/api_serving/test_validation_verification.py line 80](../../../tests/unit/api_serving/test_validation_verification.py#80): parametrized invalid boundary cases.
+- [apps/api-serving/src/api_schemas.py line 9](../../../apps/api-serving/src/api_schemas.py#L9): `user_id` lower bound.
+- [apps/api-serving/src/api_schemas.py line 10](../../../apps/api-serving/src/api_schemas.py#L10): `candidate_item_ids` length bounds.
+- [apps/api-serving/src/api_schemas.py line 11](../../../apps/api-serving/src/api_schemas.py#L11): `top_k` lower and upper bounds.
+- [apps/api-serving/src/main.py line 116](../../../apps/api-serving/src/main.py#L116): `POST /recommendations` endpoint under test.
+- [tests/unit/api_serving/test_validation_verification.py line 53](../../../tests/unit/api_serving/test_validation_verification.py#L53): parametrized valid EP/BVA cases.
+- [tests/unit/api_serving/test_validation_verification.py line 81](../../../tests/unit/api_serving/test_validation_verification.py#L81): parametrized invalid boundary cases.
 
 ### 3.2 Equivalence partitioning cases
 
@@ -106,7 +139,7 @@ UV_CACHE_DIR=.uv-cache uv run pytest \
   -q -vv
 ```
 
-### 3.5 Screenshot proof
+### 3.5 Screenshot Proof
 
 ![Data & ML system](../../pngs/boundary_analysis.png)
 
@@ -122,16 +155,16 @@ UV_CACHE_DIR=.uv-cache uv run pytest \
 
 Source references:
 
-- [pyproject.toml line 27](../../../pyproject.toml#27): `mutmut` dependency.
-- [jenkins/scripts/validation_mutation.sh line 7](../../../jenkins/scripts/validation_mutation.sh#7): base ref for changed-file detection.
-- [jenkins/scripts/validation_mutation.sh line 8](../../../jenkins/scripts/validation_mutation.sh#8): mutation score threshold.
-- [jenkins/scripts/validation_mutation.sh line 25](../../../jenkins/scripts/validation_mutation.sh#25): optional `MUTATION_TARGETS` input.
-- [jenkins/scripts/validation_mutation.sh line 27](../../../jenkins/scripts/validation_mutation.sh#27): fallback to changed files from git diff.
-- [jenkins/scripts/validation_mutation.sh line 116](../../../jenkins/scripts/validation_mutation.sh#116): generated `mutmut` configuration.
-- [jenkins/scripts/validation_mutation.sh line 132](../../../jenkins/scripts/validation_mutation.sh#132): mutate only covered lines.
-- [jenkins/scripts/validation_mutation.sh line 134](../../../jenkins/scripts/validation_mutation.sh#134): `only_mutate` target restriction.
-- [jenkins/scripts/validation_mutation.sh line 167](../../../jenkins/scripts/validation_mutation.sh#167): detected mutant calculation.
-- [jenkins/scripts/validation_mutation.sh line 169](../../../jenkins/scripts/validation_mutation.sh#169): mutation score formula.
+- [pyproject.toml line 27](../../../pyproject.toml#L27): `mutmut` dependency.
+- [jenkins/scripts/validation_mutation.sh line 7](../../../jenkins/scripts/validation_mutation.sh#L7): base ref for changed-file detection.
+- [jenkins/scripts/validation_mutation.sh line 8](../../../jenkins/scripts/validation_mutation.sh#L8): mutation score threshold.
+- [jenkins/scripts/validation_mutation.sh line 25](../../../jenkins/scripts/validation_mutation.sh#L25): optional `MUTATION_TARGETS` input.
+- [jenkins/scripts/validation_mutation.sh line 27](../../../jenkins/scripts/validation_mutation.sh#L27): fallback to changed files from git diff.
+- [jenkins/scripts/validation_mutation.sh line 116](../../../jenkins/scripts/validation_mutation.sh#L116): generated `mutmut` configuration.
+- [jenkins/scripts/validation_mutation.sh line 132](../../../jenkins/scripts/validation_mutation.sh#L132): mutate only covered lines.
+- [jenkins/scripts/validation_mutation.sh line 134](../../../jenkins/scripts/validation_mutation.sh#L134): `only_mutate` target restriction.
+- [jenkins/scripts/validation_mutation.sh line 167](../../../jenkins/scripts/validation_mutation.sh#L167): detected mutant calculation.
+- [jenkins/scripts/validation_mutation.sh line 169](../../../jenkins/scripts/validation_mutation.sh#L169): mutation score formula.
 
 ### 4.2 Command used
 
@@ -161,12 +194,12 @@ Evidence files:
 
 Result references:
 
-- [validation-verification/mutation-summary.md line 3](validation-verification/mutation-summary.md#3): mutation score.
-- [validation-verification/mutation-summary.md line 5](validation-verification/mutation-summary.md#5): killed mutants.
-- [validation-verification/mutation-summary.md line 6](validation-verification/mutation-summary.md#6): survived mutants.
-- [validation-verification/mutation-summary.md line 10](validation-verification/mutation-summary.md#10): mutation target file.
+- [validation-verification/mutation-summary.md line 3](validation-verification/mutation-summary.md#L3): mutation score.
+- [validation-verification/mutation-summary.md line 5](validation-verification/mutation-summary.md#L5): killed mutants.
+- [validation-verification/mutation-summary.md line 6](validation-verification/mutation-summary.md#L6): survived mutants.
+- [validation-verification/mutation-summary.md line 10](validation-verification/mutation-summary.md#L10): mutation target file.
 
-### 4.4 Screenshot proof
+### 4.4 Screenshot Proof
 
 ![Data & ML system](../../pngs/mutation_testing.png)
 
@@ -181,14 +214,14 @@ Result references:
 
 Source references:
 
-- [pyproject.toml line 26](../../../pyproject.toml#26): `hypothesis` dependency.
-- [tests/unit/api_serving/test_validation_verification.py line 5](../../../tests/unit/api_serving/test_validation_verification.py#5): Hypothesis imports.
-- [tests/unit/api_serving/test_validation_verification.py line 106](../../../tests/unit/api_serving/test_validation_verification.py#106): `@given` property-based test.
-- [tests/unit/api_serving/test_validation_verification.py line 107](../../../tests/unit/api_serving/test_validation_verification.py#107): generated `user_id` strategy.
-- [tests/unit/api_serving/test_validation_verification.py line 108](../../../tests/unit/api_serving/test_validation_verification.py#108): generated `top_k` strategy.
-- [tests/unit/api_serving/test_validation_verification.py line 109](../../../tests/unit/api_serving/test_validation_verification.py#109): generated candidate list strategy.
-- [tests/unit/api_serving/test_validation_verification.py line 129](../../../tests/unit/api_serving/test_validation_verification.py#129): repeated predictions for the same input.
-- [tests/unit/api_serving/test_validation_verification.py line 139](../../../tests/unit/api_serving/test_validation_verification.py#139): idempotency assertion.
+- [pyproject.toml line 26](../../../pyproject.toml#L26): `hypothesis` dependency.
+- [tests/unit/api_serving/test_validation_verification.py line 5](../../../tests/unit/api_serving/test_validation_verification.py#L5): Hypothesis imports.
+- [tests/unit/api_serving/test_validation_verification.py line 219](../../../tests/unit/api_serving/test_validation_verification.py#L219): `@given` property-based test.
+- [tests/unit/api_serving/test_validation_verification.py line 220](../../../tests/unit/api_serving/test_validation_verification.py#L220): generated `user_id` strategy.
+- [tests/unit/api_serving/test_validation_verification.py line 221](../../../tests/unit/api_serving/test_validation_verification.py#L221): generated `top_k` strategy.
+- [tests/unit/api_serving/test_validation_verification.py line 222](../../../tests/unit/api_serving/test_validation_verification.py#L222): generated candidate list strategy.
+- [tests/unit/api_serving/test_validation_verification.py line 242](../../../tests/unit/api_serving/test_validation_verification.py#L242): repeated predictions for the same input.
+- [tests/unit/api_serving/test_validation_verification.py line 252](../../../tests/unit/api_serving/test_validation_verification.py#L252): idempotency assertion.
 
 ### 5.2 Property definition
 
@@ -215,9 +248,9 @@ UV_CACHE_DIR=.uv-cache uv run pytest \
 | Library | Hypothesis |
 | Number of examples | `60` |
 | Result | PASS |
-| Evidence | [test_validation_verification.py line 115](../../../tests/unit/api_serving/test_validation_verification.py#115) |
+| Evidence | [test_validation_verification.py line 228](../../../tests/unit/api_serving/test_validation_verification.py#L228) |
 
-### 5.5 Screenshot proof
+### 5.5 Screenshot Proof
 
 ![Data & ML system](../../pngs/idempotency_testing.png)
 
@@ -232,15 +265,15 @@ UV_CACHE_DIR=.uv-cache uv run pytest \
 
 Source references:
 
-- [pyproject.toml line 28](../../../pyproject.toml#28): `locust` dependency.
-- [tests/load/locustfile_serving.py line 27](../../../tests/load/locustfile_serving.py#27): Locust user class.
-- [tests/load/locustfile_serving.py line 36](../../../tests/load/locustfile_serving.py#36): Locust task.
-- [tests/load/locustfile_serving.py line 43](../../../tests/load/locustfile_serving.py#43): Web API recommendation request builder.
-- [tests/load/locustfile_serving.py line 49](../../../tests/load/locustfile_serving.py#49): `POST /recommendations` load-test call.
-- [jenkins/scripts/validation_load_test.sh line 19](../../../jenkins/scripts/validation_load_test.sh#19): headless Locust command.
-- [jenkins/scripts/validation_load_test.sh line 26](../../../jenkins/scripts/validation_load_test.sh#26): HTML report output.
-- [jenkins/scripts/validation_load_test.sh line 30](../../../jenkins/scripts/validation_load_test.sh#30): CSV-to-SLA summary script.
-- [jenkins/scripts/validation_load_test.sh line 44](../../../jenkins/scripts/validation_load_test.sh#44): SLA pass/fail condition.
+- [pyproject.toml line 28](../../../pyproject.toml#L28): `locust` dependency.
+- [tests/load/locustfile_serving.py line 27](../../../tests/load/locustfile_serving.py#L27): Locust user class.
+- [tests/load/locustfile_serving.py line 36](../../../tests/load/locustfile_serving.py#L36): Locust task.
+- [tests/load/locustfile_serving.py line 43](../../../tests/load/locustfile_serving.py#L43): Web API recommendation request builder.
+- [tests/load/locustfile_serving.py line 49](../../../tests/load/locustfile_serving.py#L49): `POST /recommendations` load-test call.
+- [jenkins/scripts/validation_load_test.sh line 19](../../../jenkins/scripts/validation_load_test.sh#L19): headless Locust command.
+- [jenkins/scripts/validation_load_test.sh line 26](../../../jenkins/scripts/validation_load_test.sh#L26): HTML report output.
+- [jenkins/scripts/validation_load_test.sh line 30](../../../jenkins/scripts/validation_load_test.sh#L30): CSV-to-SLA summary script.
+- [jenkins/scripts/validation_load_test.sh line 44](../../../jenkins/scripts/validation_load_test.sh#L44): SLA pass/fail condition.
 
 ### 6.2 Command used
 
@@ -273,6 +306,6 @@ Evidence files:
 - `validation-verification/locust-api.html`
 - `validation-verification/locust-sla-summary.md`
 
-### 6.4 Screenshot proof
+### 6.4 Screenshot Proof
 
 ![Data & ML system](../../pngs/locust_test.png)

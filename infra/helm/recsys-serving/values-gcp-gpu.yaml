@@ -28,6 +28,17 @@ api:
       cpu: "1"
       memory: 1Gi
 
+featureApi:
+  replicas: 1
+  imagePullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 autoscaling:
   http:
     api:

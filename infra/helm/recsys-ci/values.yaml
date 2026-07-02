@@ -45,11 +45,37 @@ jenkins:
   replicas: 1
   adminUser: admin
   adminSecretName: recsys-jenkins-admin
+  github:
+    projectUrl: https://github.com/itsmekhoathekid/AIDE1-project/
+    repositoryUrl: https://github.com/itsmekhoathekid/AIDE1-project.git
+    branchSpec: "*/main"
+  plugins:
+    installOnStartup: true
+    required:
+      - workflow-aggregator
+      - workflow-job
+      - workflow-cps
+      - workflow-scm-step
+      - workflow-multibranch
+      - pipeline-stage-view
+      - git
+      - github
+  seedJob:
+    enabled: true
+    name: RecSys-GitHub-CICD
+    scriptPath: Jenkinsfile
   service:
     name: recsys-jenkins
     type: ClusterIP
     httpPort: 8080
     agentPort: 50000
+  webhookIngress:
+    enabled: false
+    className: nginx
+    host: ""
+    path: /github-webhook/
+    pathType: Prefix
+    annotations: {}
   pvc:
     name: recsys-jenkins-home
     volumeName: recsys-ci-jenkins-home

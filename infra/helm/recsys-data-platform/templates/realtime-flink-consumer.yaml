@@ -1,29 +1,34 @@
-{{- if .Values.realtimeFlinkConsumer.enabled }}
+{{- $consumer := .Values.realtimeFlinkConsumer -}}
+{{- $submitterIstioInject := default .Values.flink.istioInject $consumer.istioInject -}}
+{{- if and $consumer.enabled $consumer.online.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Values.realtimeFlinkConsumer.name }}
+  name: {{ default "realtime-flink-online-store" $consumer.online.name }}
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: {{ .Values.realtimeFlinkConsumer.replicas }}
+  replicas: {{ default $consumer.replicas $consumer.online.replicas }}
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: {{ .Values.realtimeFlinkConsumer.name }}
+      app: {{ default "realtime-flink-online-store" $consumer.online.name }}
   template:
     metadata:
       labels:
-        app: {{ .Values.realtimeFlinkConsumer.name }}
+        app: {{ default "realtime-flink-online-store" $consumer.online.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ $submitterIstioInject | quote }}
     spec:
       enableServiceLinks: false
       containers:
-        - name: realtime-flink-consumer
+        - name: realtime-flink-online-store
           image: {{ .Values.images.flink }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["bash", "-lc"]
           args:
             - |
+              set -euo pipefail
               cat >/tmp/core-site.xml <<'EOF'
               <configuration>
                 <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
@@ -44,7 +49,7 @@ spec:
                 -- \
                 --runner pyflink \
                 --topic "$REALTIME_STREAM_TOPIC" \
-                --group-id "$REALTIME_STREAM_GROUP_ID" \
+                --group-id "$REALTIME_STREAM_ONLINE_GROUP_ID" \
                 --continuous \
                 --min-events "$REALTIME_STREAM_MIN_EVENTS" \
                 --max-events "$REALTIME_STREAM_MAX_EVENTS" \
@@ -52,17 +57,93 @@ spec:
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
-                {{- if .Values.realtimeFlinkConsumer.offlineStoreEnabled }}
-                --offline-store-enabled \
-                {{- end }}
+                --disable-offline-store \
                 --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
                 --iceberg-catalog "$ICEBERG_CATALOG" \
                 --offline-feature-catalog "$OFFLINE_FEATURE_CATALOG" \
                 --offline-feature-store-warehouse "$OFFLINE_FEATURE_STORE_WAREHOUSE" \
                 --iceberg-feature-namespace "$ICEBERG_FEATURE_NAMESPACE"
+              echo "Submitted realtime Flink online-store job; keeping submitter pod alive."
+              sleep infinity
           env:
             - name: FLINK_PROPERTIES
-              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: --add-opens=java.base/java.util=ALL-UNNAMED\nenv.java.opts.all: --add-opens=java.base/java.util=ALL-UNNAMED"
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+{{- end }}
+{{- if and $consumer.enabled $consumer.offline.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ default "realtime-flink-offline-store" $consumer.offline.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: {{ default $consumer.replicas $consumer.offline.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ default "realtime-flink-offline-store" $consumer.offline.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ default "realtime-flink-offline-store" $consumer.offline.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ $submitterIstioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: realtime-flink-offline-store
+          image: {{ .Values.images.flink }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              cat >/tmp/core-site.xml <<'EOF'
+              <configuration>
+                <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
+                <property><name>fs.s3a.endpoint</name><value>{{ .Values.minio.endpoint }}</value></property>
+                <property><name>fs.s3a.access.key</name><value>${AWS_ACCESS_KEY_ID}</value></property>
+                <property><name>fs.s3a.secret.key</name><value>${AWS_SECRET_ACCESS_KEY}</value></property>
+                <property><name>fs.s3a.path.style.access</name><value>true</value></property>
+                <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>
+                <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>
+              </configuration>
+              EOF
+              sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
+              export HADOOP_CONF_DIR=/tmp
+              printf '\n%s\n' "$FLINK_PROPERTIES" >> /opt/flink/conf/flink-conf.yaml
+              PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
+              flink run -m flink-jobmanager:8081 \
+                -py apps/data-platform/src/features/flink/realtime_stream_job.py \
+                -- \
+                --runner pyflink \
+                --topic "$REALTIME_STREAM_TOPIC" \
+                --group-id "$REALTIME_STREAM_OFFLINE_GROUP_ID" \
+                --continuous \
+                --min-events "$REALTIME_STREAM_MIN_EVENTS" \
+                --max-events "$REALTIME_STREAM_MAX_EVENTS" \
+                --parallelism "$FLINK_PARALLELISM" \
+                --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
+                --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
+                --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --offline-store-enabled \
+                --disable-online-store \
+                --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
+                --iceberg-catalog "$ICEBERG_CATALOG" \
+                --offline-feature-catalog "$OFFLINE_FEATURE_CATALOG" \
+                --offline-feature-store-warehouse "$OFFLINE_FEATURE_STORE_WAREHOUSE" \
+                --iceberg-feature-namespace "$ICEBERG_FEATURE_NAMESPACE"
+              echo "Submitted realtime Flink offline-store job; keeping submitter pod alive."
+              sleep infinity
+          env:
+            - name: FLINK_PROPERTIES
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

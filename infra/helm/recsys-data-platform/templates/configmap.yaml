@@ -35,10 +35,12 @@ data:
   SPARK_K8S_DRIVER_MEMORY: {{ .Values.spark.driverMemory | quote }}
   SPARK_K8S_DRIVER_MEMORY_OVERHEAD: {{ .Values.spark.driverMemoryOverhead | quote }}
   SPARK_K8S_DRIVER_CORES: {{ .Values.spark.driverCores | quote }}
+  SPARK_K8S_DRIVER_REQUEST_CORES: {{ .Values.spark.driverRequestCores | quote }}
   SPARK_K8S_EXECUTOR_INSTANCES: {{ .Values.spark.executorInstances | quote }}
   SPARK_K8S_EXECUTOR_MEMORY: {{ .Values.spark.executorMemory | quote }}
   SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD: {{ .Values.spark.executorMemoryOverhead | quote }}
   SPARK_K8S_EXECUTOR_CORES: {{ .Values.spark.executorCores | quote }}
+  SPARK_K8S_EXECUTOR_REQUEST_CORES: {{ .Values.spark.executorRequestCores | quote }}
   SPARK_K8S_CONNECTION_TIMEOUT: {{ .Values.spark.connectionTimeout | quote }}
   SPARK_K8S_REQUEST_TIMEOUT: {{ .Values.spark.requestTimeout | quote }}
   SPARK_SQL_SHUFFLE_PARTITIONS: {{ .Values.spark.sqlShufflePartitions | quote }}
@@ -73,6 +75,8 @@ data:
   REALTIME_N_PRODUCTS: {{ .Values.realtimeProducer.nProducts | quote }}
   REALTIME_STREAM_TOPIC: {{ .Values.realtimeFlinkConsumer.topic | quote }}
   REALTIME_STREAM_GROUP_ID: {{ .Values.realtimeFlinkConsumer.groupId | quote }}
+  REALTIME_STREAM_ONLINE_GROUP_ID: "{{ .Values.realtimeFlinkConsumer.groupId }}-{{ .Values.realtimeFlinkConsumer.online.groupIdSuffix }}"
+  REALTIME_STREAM_OFFLINE_GROUP_ID: "{{ .Values.realtimeFlinkConsumer.groupId }}-{{ .Values.realtimeFlinkConsumer.offline.groupIdSuffix }}"
   REALTIME_STREAM_MIN_EVENTS: {{ .Values.realtimeFlinkConsumer.minEvents | quote }}
   REALTIME_STREAM_MAX_EVENTS: {{ .Values.realtimeFlinkConsumer.maxEvents | quote }}
   DEBEZIUM_TABLE_INCLUDE_LIST: {{ .Values.realtimeCdcConnector.tableIncludeList | quote }}

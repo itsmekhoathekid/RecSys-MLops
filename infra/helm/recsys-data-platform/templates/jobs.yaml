@@ -43,7 +43,8 @@ spec:
   template:
     metadata:
       annotations:
-        sidecar.istio.io/inject: "false"
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+        sidecar.istio.io/inject: "true"
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
@@ -54,6 +55,12 @@ spec:
           command: ["bash", "-lc"]
           args:
             - |
+              cleanup() {
+                status=$?
+                python -c "import urllib.request; req=urllib.request.Request('http://127.0.0.1:15020/quitquitquit', method='POST'); urllib.request.urlopen(req, timeout=2).read()" >/dev/null 2>&1 || true
+                exit "$status"
+              }
+              trap cleanup EXIT
               until PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
                 python infra/docker/scripts/init_postgres_schema.py; do
                 sleep 5
@@ -79,7 +86,8 @@ spec:
   template:
     metadata:
       annotations:
-        sidecar.istio.io/inject: "false"
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+        sidecar.istio.io/inject: "true"
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
@@ -90,6 +98,12 @@ spec:
           command: ["bash", "-lc"]
           args:
             - |
+              cleanup() {
+                status=$?
+                python -c "import urllib.request; req=urllib.request.Request('http://127.0.0.1:15020/quitquitquit', method='POST'); urllib.request.urlopen(req, timeout=2).read()" >/dev/null 2>&1 || true
+                exit "$status"
+              }
+              trap cleanup EXIT
               python -m ingest.register_k8s_connectors --connector debezium --wait-timeout-seconds 900
           envFrom:
             - configMapRef:

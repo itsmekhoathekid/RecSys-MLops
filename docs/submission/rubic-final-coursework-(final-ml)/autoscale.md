@@ -63,7 +63,7 @@ kubectl get scaledobject -n kserve-triton-inference
 kubectl get hpa -A
 ```
 
-![Data & ML system](../../pngs/get_scale_object.png)
+![Data & ML system](../../pngs/autoscale_api_serve.png)
 
 Then describe the objects for detailed configuration and runtime status:
 

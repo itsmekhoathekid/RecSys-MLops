@@ -41,7 +41,10 @@ def test_serving_chart_renders_expected_namespaces():
     assert ("Namespace", "api-serving") in by_kind_name
     inference_service = by_kind_name[("InferenceService", "recsys-bst-triton")]
     assert inference_service["metadata"]["namespace"] == "kserve-triton-inference"
-    assert inference_service["spec"]["predictor"]["triton"]["storageUri"].startswith("s3://")
+    predictor_model = inference_service["spec"]["predictor"]["model"]
+    assert predictor_model["modelFormat"]["name"] == "triton"
+    assert predictor_model["protocolVersion"] == "v2"
+    assert predictor_model["storageUri"].startswith("s3://")
     api_deployment = by_kind_name[("Deployment", "recsys-api-serving")]
     assert api_deployment["metadata"]["namespace"] == "api-serving"
     assert "replicas" not in api_deployment["spec"]
@@ -156,7 +159,7 @@ def test_serving_chart_renders_candidate_for_ab_testing():
     by_kind_name = {(doc["kind"], doc["metadata"]["name"]): doc for doc in docs}
 
     candidate = by_kind_name[("InferenceService", "recsys-bst-triton-candidate")]
-    assert candidate["spec"]["predictor"]["triton"]["storageUri"] == (
+    assert candidate["spec"]["predictor"]["model"]["storageUri"] == (
         "s3://recsys-model-store/triton/bst/candidate-001"
     )
     candidate_grpc = by_kind_name[("Service", "recsys-bst-triton-candidate-grpc")]

@@ -27,6 +27,10 @@ externalSecrets:
     namespace: recsys-dataflow
     secretName: recsys-data-platform-secret
     vaultPath: data-platform
+  dataPlatformObservability:
+    namespace: observability
+    secretName: recsys-data-platform-secret
+    vaultPath: data-platform
   mlflow:
     namespace: experiment-tracking
     secretName: recsys-mlflow-secrets

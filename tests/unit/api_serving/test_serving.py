@@ -6,22 +6,21 @@ import types
 import numpy as np
 import pytest
 
-from serving import (
-    FeatureClient,
-    RecommendationRequest,
-    TritonRanker,
-    TritonABRouter,
+import online_features
+from ab_testing import TritonABRouter
+from api_schemas import RecommendationRequest
+from observability import METRICS, metrics_text, span
+from online_features import FeatureClient, get_online_features, parse_json_bytes
+from ranking import (
     as_int_list,
     build_triton_payload,
     embedding_index,
     format_top_k,
-    get_online_features,
     normalize_item_features,
     normalize_sequence_features,
-    parse_json_bytes,
     recommend,
 )
-from observability import METRICS, metrics_text, span
+from triton import TritonRanker
 
 
 def test_build_triton_payload_maps_feature_rows_to_tensors():
@@ -261,8 +260,6 @@ def test_get_online_features_reads_candidates_sequence_and_items():
 
 
 def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkeypatch):
-    import serving
-
     class BrokenRedis:
         def __init__(self, *args, **kwargs):
             pass
@@ -273,7 +270,7 @@ def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkey
         def zrevrange(self, key, start, end):
             raise OSError("redis unavailable")
 
-    monkeypatch.setattr(serving, "redis", type("RedisModule", (), {"Redis": BrokenRedis}), raising=False)
+    monkeypatch.setattr(online_features, "redis", type("RedisModule", (), {"Redis": BrokenRedis}), raising=False)
 
     original_import = __import__
 
@@ -283,7 +280,7 @@ def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkey
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fake_import)
-    client = serving.FeatureClient(allow_fallback=True)
+    client = FeatureClient(allow_fallback=True)
 
     assert client.user_sequence(1) == {}
     assert client.item_features(1) == {}
@@ -291,20 +288,16 @@ def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkey
 
 
 def test_feature_client_success_and_error_without_fallback(monkeypatch):
-    import serving
-
     class RedisClient:
-        def get(self, key):
-            if key == "fs:user_sequence:1":
-                return b'{"hist_item_ids": [1]}'
-            if key == "fs:item:10":
-                return '{"category_id": 2}'
-            raise OSError("missing")
-
         def zrevrange(self, key, start, end):
             return [b"10", "11"]
 
-    monkeypatch.setattr(serving, "redis", type("RedisModule", (), {"Redis": lambda *args, **kwargs: RedisClient()}), raising=False)
+    monkeypatch.setattr(
+        online_features,
+        "redis",
+        type("RedisModule", (), {"Redis": lambda *args, **kwargs: RedisClient()}),
+        raising=False,
+    )
 
     original_import = __import__
 
@@ -316,14 +309,24 @@ def test_feature_client_success_and_error_without_fallback(monkeypatch):
     monkeypatch.setattr("builtins.__import__", fake_import)
     client = FeatureClient(allow_fallback=False)
 
-    assert client.user_sequence(1) == {"hist_item_ids": [1]}
-    assert client.item_features(10) == {"category_id": 2}
+    def fake_get_online_features(features, entity_rows):
+        if "user_id" in entity_rows[0]:
+            return {"user_id": [1], "hist_item_ids": [[1]], "hist_event_type_ids": [[1]]}
+        product_id = entity_rows[0]["product_id"]
+        if product_id == 10:
+            return {"product_id": [10], "category_id": [2], "brand_id": [3], "price_bucket": [4]}
+        raise OSError("missing")
+
+    monkeypatch.setattr(client, "_get_feast_online_features", fake_get_online_features)
+
+    assert client.user_sequence(1)["hist_item_ids"] == [1]
+    assert client.item_features(10)["category_id"] == 2
     assert client.candidates(1, 2) == [10, 11]
 
     try:
         client.item_features(99)
     except RuntimeError as exc:
-        assert "failed to fetch item features" in str(exc)
+        assert "failed to fetch item features from Feast online store" in str(exc)
     else:
         raise AssertionError("expected item feature Redis failure")
 

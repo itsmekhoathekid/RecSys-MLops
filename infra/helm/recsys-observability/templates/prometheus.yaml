@@ -50,6 +50,12 @@ data:
           - targets: ["recsys-api-serving.{{ .Values.targets.apiNamespace }}.svc.cluster.local:80"]
             labels:
               service: recsys-api-serving
+      - job_name: recsys-online-feature-api
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["recsys-online-feature-api.{{ .Values.targets.apiNamespace }}.svc.cluster.local:80"]
+            labels:
+              service: recsys-online-feature-api
       - job_name: recsys-pushgateway
         honor_labels: true
         static_configs:

@@ -48,7 +48,10 @@ deploy_api() {
     --set "api.namespace.name=${namespace_api}" \
     --set "api.image=$(image recsys-api-serving)" \
     --set "api.imagePullPolicy=Always" \
+    --set "featureApi.image=$(image recsys-api-serving)" \
+    --set "featureApi.imagePullPolicy=Always" \
     "${rollout_args[@]}"
+  kubectl rollout status "deployment/recsys-online-feature-api" -n "${namespace_api}" --timeout="${timeout}"
   kubectl rollout status "deployment/recsys-api-serving" -n "${namespace_api}" --timeout="${timeout}"
 }
 

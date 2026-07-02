@@ -58,6 +58,8 @@ api:
   name: recsys-api-serving
   image: recsys-api-serving:local
   imagePullPolicy: IfNotPresent
+  command: ["uvicorn"]
+  args: ["inference_api:app", "--host", "0.0.0.0", "--port", "8080"]
   replicas: 2
   rollout:
     maxSurge: 1
@@ -70,6 +72,8 @@ api:
   config:
     tritonUrl: recsys-bst-triton-grpc.kserve-triton-inference.svc.cluster.local:9000
     tritonModelName: bst_ensemble
+    featureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
+    featureApiTimeoutSeconds: "5"
     redisHost: redis.recsys-dataflow.svc.cluster.local
     redisPort: "6379"
     defaultTopK: "10"
@@ -93,6 +97,44 @@ api:
     limits:
       cpu: 500m
       memory: 1Gi
+  nodeSelector: {}
+  tolerations: []
+
+featureApi:
+  enabled: true
+  name: recsys-online-feature-api
+  image: recsys-api-serving:local
+  imagePullPolicy: IfNotPresent
+  command: ["uvicorn"]
+  args: ["feature_api:app", "--host", "0.0.0.0", "--port", "8080"]
+  replicas: 1
+  rollout:
+    maxSurge: 1
+    maxUnavailable: 0
+    minReadySeconds: 10
+    progressDeadlineSeconds: 120
+  service:
+    port: 80
+    targetPort: 8080
+  config:
+    redisHost: redis.recsys-dataflow.svc.cluster.local
+    redisPort: "6379"
+    feastRepoPath: /opt/recsys/apps/data-platform/feature-store/feature_repo
+    feastRuntimeRepoPath: /opt/recsys/recsys-feast-feature-repo
+    feastApplyOnStartup: "1"
+    forceNotReady: "0"
+    allowFeatureFallback: "0"
+    jsonLogs: "1"
+    otelEnabled: "1"
+    otelServiceName: recsys-online-feature-api
+    otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   nodeSelector: {}
   tolerations: []
 

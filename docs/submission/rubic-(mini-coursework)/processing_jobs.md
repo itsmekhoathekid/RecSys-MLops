@@ -3,7 +3,7 @@
 This document covers the before/after optimization evidence for the rubric section:
 
 - Spark offline processing job: skew, high cardinality, schema evolution, duplicate/offline data quality, and Airflow integration.
-- Flink streaming processing job: burst traffic, late arrival, duplicates, window processing, and feature-store integration.
+- Flink streaming processing jobs: burst traffic, late arrival, duplicates, window processing, and separated online/offline feature-store integration.
 
 ## Evidence Files
 
@@ -16,7 +16,7 @@ Code and config:
 - [configs/local/processing_jobs_flink_optimized.yaml](../../../configs/local/processing_jobs_flink_optimized.yaml): Flink optimized version.
 - [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py line 196](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#196): Spark batch feature job in Airflow.
 - [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py line 214](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#214): Airflow checks the running Flink feature-store job.
-- [infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml line 25](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#25): Flink streaming job deployment.
+- [infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): two Flink streaming deployments. `realtime-flink-online-store` continuously pushes streaming features into Redis online store, while `realtime-flink-offline-store` continuously pushes the same Kafka stream into Apache Iceberg offline store.
 - [apps/data-platform/src/features/flink/realtime_stream_job.py line 637](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#637): streaming quality window processor.
 
 Generated local benchmark outputs:

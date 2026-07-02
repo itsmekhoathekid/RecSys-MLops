@@ -1,0 +1,21 @@
+{{- if and .Values.featureApi.enabled .Values.observability.enabled .Values.observability.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.featureApi.name }}
+  namespace: {{ .Values.api.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.featureApi.name }}
+    app.kubernetes.io/component: online-feature-api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.featureApi.name }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.api.namespace.name }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.observability.serviceMonitor.interval }}
+{{- end }}

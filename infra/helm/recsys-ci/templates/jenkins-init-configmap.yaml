@@ -26,4 +26,98 @@ data:
       instance.setAuthorizationStrategy(strategy)
       instance.save()
     }
+  {{- if .Values.jenkins.seedJob.enabled }}
+  seed-github-cicd-job.groovy: |
+    import java.io.ByteArrayInputStream
+    import java.io.StringReader
+    import java.nio.charset.StandardCharsets
+    import javax.xml.transform.stream.StreamSource
+    import jenkins.model.Jenkins
+
+    def instance = Jenkins.get()
+    def jobName = "{{ .Values.jenkins.seedJob.name }}"
+    def jobXml = new File("/var/jenkins_home/init.groovy.d/recsys-github-cicd.xml")
+
+    if (jobXml.exists()) {
+      def xml = jobXml.getText("UTF-8")
+      def existing = instance.getItem(jobName)
+      if (existing == null) {
+        instance.createProjectFromXML(jobName, new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
+      } else {
+        existing.updateByXml(new StreamSource(new StringReader(xml)))
+        existing.save()
+      }
+      instance.save()
+    }
+  recsys-github-cicd.xml: |
+    <?xml version='1.1' encoding='UTF-8'?>
+    <flow-definition plugin="workflow-job">
+      <actions/>
+      <description>GitHub webhook CI/CD entrypoint. GitHub push or PR event calls /github-webhook/, Jenkins checks out the repository, reads Jenkinsfile, detects changed components, runs test/build, and deploys only when the resolved branch is main.</description>
+      <keepDependencies>false</keepDependencies>
+      <properties>
+        <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github">
+          <projectUrl>{{ .Values.jenkins.github.projectUrl }}</projectUrl>
+          <displayName></displayName>
+        </com.coravy.hudson.plugins.github.GithubProjectProperty>
+        <hudson.model.ParametersDefinitionProperty>
+          <parameterDefinitions>
+            <hudson.model.StringParameterDefinition>
+              <name>IMAGE_PUSH_REGISTRY</name>
+              <defaultValue>{{ .Values.jenkins.imagePushRegistry }}</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>IMAGE_PULL_REGISTRY</name>
+              <defaultValue>{{ .Values.jenkins.imagePullRegistry }}</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>PUBLISH_IMAGES</name>
+              <defaultValue>true</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>DEPLOY_CHANGED_COMPONENTS</name>
+              <defaultValue>true</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>FORCE_DEPLOY</name>
+              <defaultValue>false</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>COVERAGE_MIN</name>
+              <defaultValue>90</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+          </parameterDefinitions>
+        </hudson.model.ParametersDefinitionProperty>
+      </properties>
+      <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
+        <scm class="hudson.plugins.git.GitSCM" plugin="git">
+          <configVersion>2</configVersion>
+          <userRemoteConfigs>
+            <hudson.plugins.git.UserRemoteConfig>
+              <url>{{ .Values.jenkins.github.repositoryUrl }}</url>
+            </hudson.plugins.git.UserRemoteConfig>
+          </userRemoteConfigs>
+          <branches>
+            <hudson.plugins.git.BranchSpec>
+              <name>{{ .Values.jenkins.github.branchSpec }}</name>
+            </hudson.plugins.git.BranchSpec>
+          </branches>
+          <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+          <submoduleCfg class="empty-list"/>
+          <extensions/>
+        </scm>
+        <scriptPath>{{ .Values.jenkins.seedJob.scriptPath }}</scriptPath>
+        <lightweight>true</lightweight>
+      </definition>
+      <triggers>
+        <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
+          <spec></spec>
+        </com.cloudbees.jenkins.GitHubPushTrigger>
+      </triggers>
+      <disabled>false</disabled>
+    </flow-definition>
+  {{- end }}
 {{- end }}

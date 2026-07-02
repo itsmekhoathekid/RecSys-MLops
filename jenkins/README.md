@@ -4,6 +4,40 @@ Root `Jenkinsfile` is the component-aware CI/CD entrypoint. It detects changed
 paths, runs only the affected component gates, pushes only the affected images,
 and updates only the affected deployed component on `main`.
 
+## GitHub Webhook Flow
+
+The in-cluster Jenkins chart seeds a Pipeline-from-SCM job named
+`RecSys-GitHub-CICD`. The job points to the GitHub repository and reads the root
+`Jenkinsfile`; CI/CD behavior stays in source control instead of inside the
+Jenkins UI.
+
+```text
+GitHub push/PR
+  -> GitHub Webhook
+  -> Jenkins /github-webhook/
+  -> RecSys-GitHub-CICD job
+  -> Jenkinsfile
+  -> Detect Changed Components
+  -> Component CI
+  -> Component Build And Publish
+  -> Component Deploy Or Update only when branch is main
+```
+
+Webhook settings:
+
+```text
+Payload URL on GKE proof cluster: http://34.21.171.234/github-webhook/
+Content type: application/json
+Events: push and pull_request
+```
+
+The Helm chart exposes only `/github-webhook/` through the ingress controller.
+Use port-forward for the Jenkins UI:
+
+```bash
+kubectl port-forward -n ci svc/recsys-jenkins 18090:8080
+```
+
 ## Components
 
 | Component | Trigger paths | Published artifacts |

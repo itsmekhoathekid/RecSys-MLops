@@ -1,0 +1,31 @@
+{{- if and .Values.jenkins.enabled .Values.jenkins.webhookIngress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recsys-jenkins-github-webhook
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-jenkins
+    app.kubernetes.io/part-of: recsys-ci
+  {{- with .Values.jenkins.webhookIngress.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.jenkins.webhookIngress.className }}
+  ingressClassName: {{ .Values.jenkins.webhookIngress.className }}
+  {{- end }}
+  rules:
+    - {{- if .Values.jenkins.webhookIngress.host }}
+      host: {{ .Values.jenkins.webhookIngress.host | quote }}
+      {{- end }}
+      http:
+        paths:
+          - path: {{ .Values.jenkins.webhookIngress.path }}
+            pathType: {{ .Values.jenkins.webhookIngress.pathType }}
+            backend:
+              service:
+                name: {{ .Values.jenkins.service.name }}
+                port:
+                  number: {{ .Values.jenkins.service.httpPort }}
+{{- end }}

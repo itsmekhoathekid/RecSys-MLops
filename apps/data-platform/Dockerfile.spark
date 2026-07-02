@@ -7,7 +7,7 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl python3-pip \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir pyyaml boto3 psycopg[binary] redis
+    && pip3 install --no-cache-dir pyyaml boto3 psycopg[binary] redis pyarrow s3fs "feast[redis]"
 
 RUN curl -fsSL \
         https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.7.1/iceberg-spark-runtime-3.5_2.12-1.7.1.jar \
