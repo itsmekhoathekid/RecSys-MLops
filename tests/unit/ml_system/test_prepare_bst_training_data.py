@@ -16,6 +16,7 @@ from cli.prepare_bst_training_data import (
     DEFAULT_FEATURE_SERVICE_NAME,
     DEFAULT_OFFLINE_FEATURE_TABLE,
     FEAST_FEATURE_REFS,
+    _canonical_entity_frame,
     build_bst_training_table_from_feast,
     prepare_bst_jsonl_splits,
 )
@@ -51,6 +52,38 @@ def _install_fake_feast(monkeypatch, historical: pd.DataFrame, captured: dict, f
 
     monkeypatch.setitem(sys.modules, "feast", SimpleNamespace(FeatureStore=FakeFeatureStore))
     monkeypatch.setattr("cli.prepare_bst_training_data._apply_feast_repo", lambda repo_path: None)
+
+
+def test_canonical_entity_frame_resets_non_contiguous_index():
+    labels = pd.DataFrame(
+        [
+            {
+                "impression_id": "imp-old",
+                "request_id": "req-old",
+                "user_id": 1,
+                "candidate_product_id": 10,
+                "prediction_timestamp": pd.Timestamp("2026-01-01T00:00:00Z"),
+                "label": 0,
+            },
+            {
+                "impression_id": "imp-new",
+                "request_id": "req-new",
+                "user_id": 2,
+                "candidate_product_id": 20,
+                "prediction_timestamp": pd.Timestamp("2026-01-02T00:00:00Z"),
+                "label": 1,
+            },
+        ],
+        index=[101, 205],
+    )
+
+    entity = _canonical_entity_frame(labels.sort_values("prediction_timestamp").head(2))
+
+    assert entity["event_timestamp"].isna().sum() == 0
+    assert entity[["row_id", "user_id", "product_id", "label"]].to_dict("records") == [
+        {"row_id": 0, "user_id": 1, "product_id": 10, "label": 0},
+        {"row_id": 1, "user_id": 2, "product_id": 20, "label": 1},
+    ]
 
 
 def test_build_bst_training_table_from_feast_maps_historical_features(monkeypatch, tmp_path):

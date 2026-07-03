@@ -32,3 +32,20 @@ def test_feature_views_use_postgres_sources(monkeypatch) -> None:
     assert features.user_sequence_source._postgres_options._table == "unit_schema.user_sequence_features"
     assert features.user_aggregate_source._postgres_options._table == "unit_schema.user_aggregate_features"
     assert features.item_features_source._postgres_options._table == "unit_schema.item_features"
+
+
+def test_feast_objects_do_not_tag_lakehouse_as_feature_store(monkeypatch) -> None:
+    monkeypatch.syspath_prepend(str(FEATURE_REPO))
+    sys.modules.pop("features", None)
+
+    features = importlib.import_module("features")
+
+    feast_objects = [
+        features.user_sequence_features,
+        features.user_aggregate_features,
+        features.item_features,
+        features.bst_ranking_v1,
+    ]
+    for feast_object in feast_objects:
+        assert "lakehouse_source" not in feast_object.tags
+        assert feast_object.tags["offline_store"] == "postgresql"

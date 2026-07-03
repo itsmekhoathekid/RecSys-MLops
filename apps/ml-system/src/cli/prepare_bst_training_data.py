@@ -117,6 +117,7 @@ def _prediction_timestamps(frame: pd.DataFrame) -> pd.Series:
 def _canonical_entity_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         raise ValueError("No rows found in Feast entity table")
+    frame = frame.reset_index(drop=True)
     entity = pd.DataFrame()
     entity["row_id"] = range(len(frame))
     entity["impression_id"] = frame.get("impression_id", pd.Series([""] * len(frame))).astype(str)

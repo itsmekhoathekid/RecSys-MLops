@@ -60,7 +60,7 @@ user_sequence_features = FeatureView(
     ],
     source=user_sequence_source,
     online=True,
-    tags={"offline_store": "postgresql", "lakehouse_source": "apache_iceberg", "online_store": "redis"},
+    tags={"offline_store": "postgresql", "online_store": "redis"},
 )
 
 
@@ -80,7 +80,7 @@ user_aggregate_features = FeatureView(
     ],
     source=user_aggregate_source,
     online=True,
-    tags={"offline_store": "postgresql", "lakehouse_source": "apache_iceberg", "online_store": "redis"},
+    tags={"offline_store": "postgresql", "online_store": "redis"},
 )
 
 
@@ -105,7 +105,7 @@ item_features = FeatureView(
     ],
     source=item_features_source,
     online=True,
-    tags={"offline_store": "postgresql", "lakehouse_source": "apache_iceberg", "online_store": "redis"},
+    tags={"offline_store": "postgresql", "online_store": "redis"},
 )
 
 
@@ -116,5 +116,5 @@ bst_ranking_v1 = FeatureService(
         user_aggregate_features,
         item_features,
     ],
-    tags={"offline_store": "postgresql", "lakehouse_source": "apache_iceberg", "online_store": "redis"},
+    tags={"offline_store": "postgresql", "online_store": "redis"},
 )

@@ -1,18 +1,17 @@
 # Feature Store
 
-Apache Iceberg is the data lakehouse layer only. Feast does not use Iceberg as its offline store. The current Feast store is:
+The current Feast store is:
 
 | Layer | Backing system | Role |
 | --- | --- | --- |
-| Data lakehouse | Apache Iceberg tables in MinIO/S3 (`recsys-lakehouse`, `recsys-offline-feature-store`) | Historical lineage, batch computation, replay/backfill, and drift inputs. |
 | Feast offline store | Dedicated PostgreSQL service `feature-postgres.recsys-dataflow.svc.cluster.local`, database/schema `feature_store` | Native Feast point-in-time retrieval and `materialize-incremental` source. |
 | Feast online store | Redis | Low-latency feature serving for API services and recommendation inference. |
 
-Current data paths:
+Feast store paths:
 
 ```text
-Airflow -> Spark batch -> Iceberg lakehouse tables -> PostgreSQL Feast offline store -> Feast materialize-incremental -> Redis
-Kafka CDC topic cdc.behavior_events -> Flink online-store job -> Redis
+PostgreSQL Feast offline store -> Feast materialize-incremental -> Redis online store
+Kafka CDC topic cdc.behavior_events -> Flink online-store job -> Redis online store
 Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Feast offline store
 ```
 
@@ -20,8 +19,8 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 
 ### Code Reference
 
-- [k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py): orchestrates generator load, lakehouse ingestion, Spark batch feature build, Feast repo apply, Feast `materialize-incremental`, drift, and retrain trigger checks.
-- [spark_batch_entrypoint.py](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py): builds Iceberg feature tables and exports Feast-compatible tables into PostgreSQL through `feast_postgres_export`.
+- [k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py): orchestrates Spark batch feature build, Feast repo apply, Feast `materialize-incremental`, drift, and retrain trigger checks.
+- [spark_batch_entrypoint.py](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py): exports Feast-compatible feature and label tables into PostgreSQL through `feast_postgres_export`.
 - [postgres_offline_store.py](../../../apps/data-platform/src/feature_store/postgres_offline_store.py): owns PostgreSQL DDL and row insertion for `user_sequence_features`, `user_aggregate_features`, `item_features`, and `ml_ranking_labels`.
 - [feature_store.yaml](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml): configures Feast `offline_store.type: postgres` and Redis online store.
 - [features.py](../../../apps/data-platform/feature-store/feature_repo/features.py): defines Feast `PostgreSQLSource` FeatureViews and FeatureService `bst_ranking_v1`.

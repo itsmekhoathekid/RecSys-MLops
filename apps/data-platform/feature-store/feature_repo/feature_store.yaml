@@ -4,8 +4,7 @@ registry: data/registry.db
 entity_key_serialization_version: 2
 
 # Feast core offline store for point-in-time historical retrieval.
-# Apache Iceberg remains the data lakehouse. Feast historical retrieval reads
-# from the dedicated PostgreSQL offline feature store below.
+# Feast stores feature values in PostgreSQL and Redis; lakehouse tables are upstream only.
 offline_store:
   type: postgres
   host: feature-postgres.recsys-dataflow.svc.cluster.local
