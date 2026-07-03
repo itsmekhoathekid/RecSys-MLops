@@ -1,4 +1,4 @@
-{{- if and .Values.autoscaling.http.enabled .Values.autoscaling.http.api.enabled }}
+{{- if and .Values.autoscaling.http.enabled .Values.autoscaling.http.api.enabled (not (and .Values.autoscaling.prometheus.enabled .Values.autoscaling.prometheus.api.enabled)) }}
 apiVersion: http.keda.sh/v1alpha1
 kind: HTTPScaledObject
 metadata:

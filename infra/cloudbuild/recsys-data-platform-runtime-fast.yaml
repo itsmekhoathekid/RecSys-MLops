@@ -1,0 +1,61 @@
+substitutions:
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _TAG: gcp
+  _BASE_TAG: gcp
+
+options:
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 3600s
+
+steps:
+  - id: dataflow-cli
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_BASE_TAG}
+      - -f
+      - apps/data-platform/Dockerfile.dataflow-cli
+      - -t
+      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+      - .
+
+  - id: spark
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/data-platform/Dockerfile.spark
+      - -t
+      - ${_IMAGE_REPO}/recsys-spark:${_TAG}
+      - .
+
+  - id: mlops-spark
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_SPARK_BASE_IMAGE=${_IMAGE_REPO}/recsys-spark:${_TAG}
+      - -f
+      - apps/ml-system/Dockerfile.spark
+      - -t
+      - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
+      - .
+
+  - id: flink
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/data-platform/Dockerfile.flink
+      - -t
+      - ${_IMAGE_REPO}/recsys-flink:${_TAG}
+      - .
+
+images:
+  - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+  - ${_IMAGE_REPO}/recsys-spark:${_TAG}
+  - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
+  - ${_IMAGE_REPO}/recsys-flink:${_TAG}

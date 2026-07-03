@@ -449,7 +449,7 @@ kubectl -n api-serving exec deploy/recsys-online-feature-api -c api -- \
   python -c 'import json, urllib.request; data=json.dumps({"user_id":1,"candidate_item_ids":[101,202,303],"top_k":3}).encode(); req=urllib.request.Request("http://127.0.0.1:8080/online-features", data=data, headers={"Content-Type":"application/json"}, method="POST"); print(urllib.request.urlopen(req, timeout=10).read().decode())'
 ```
 
-This proves the split online feature API can pull Feast online features from Redis. In this project, Apache Iceberg is the Feast offline store and Redis is the Feast online store.
+This proves the split online feature API can pull Feast online features from Redis. In this project, BigQuery is the Feast core offline store and Redis is the Feast online store.
 
 Recommendation API proof:
 

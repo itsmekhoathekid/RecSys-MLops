@@ -145,14 +145,28 @@ export PYTHONPATH=".:apps/api-serving/src:apps/ml-system/src:apps/data-platform/
 export UV_CACHE_DIR="${UV_CACHE_DIR:-${repo_root}/.uv-cache}"
 
 pushd "${tmpdir}" >/dev/null
-"${repo_root}/.venv/bin/mutmut" run --max-children "${MUTMUT_MAX_CHILDREN:-2}" "${mutation_mutant_names[@]}" | tee "${repo_root}/${reports_dir}/mutation-run.log"
+mutmut_run_args=(run --max-children "${MUTMUT_MAX_CHILDREN:-2}")
+if [[ "${#mutation_mutant_names[@]}" -gt 0 ]]; then
+  mutmut_run_args+=("${mutation_mutant_names[@]}")
+fi
+"${repo_root}/.venv/bin/mutmut" "${mutmut_run_args[@]}" | tee "${repo_root}/${reports_dir}/mutation-run.log"
 "${repo_root}/.venv/bin/mutmut" export-cicd-stats | tee "${repo_root}/${reports_dir}/mutation-export.log"
 "${repo_root}/.venv/bin/mutmut" results --all true > "${repo_root}/${reports_dir}/mutation-results.txt"
 popd >/dev/null
 
 cp "${tmpdir}/mutants/mutmut-cicd-stats.json" "${reports_dir}/mutmut-cicd-stats.json"
 
-python3 - "${reports_dir}/mutmut-cicd-stats.json" "${threshold}" "${reports_dir}/mutation-summary.md" "${#mutation_targets[@]}" "${mutation_targets[@]}" "${mutation_mutant_names[@]}" <<'PY'
+summary_args=(
+  "${reports_dir}/mutmut-cicd-stats.json"
+  "${threshold}"
+  "${reports_dir}/mutation-summary.md"
+  "${#mutation_targets[@]}"
+  "${mutation_targets[@]}"
+)
+if [[ "${#mutation_mutant_names[@]}" -gt 0 ]]; then
+  summary_args+=("${mutation_mutant_names[@]}")
+fi
+python3 - "${summary_args[@]}" <<'PY'
 import json
 import sys
 from pathlib import Path

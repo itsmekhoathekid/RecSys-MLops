@@ -1,26 +1,37 @@
-FROM spark:3.5.8-scala2.12-java11-ubuntu
+FROM spark:3.5.8-scala2.12-java11-ubuntu AS jar-downloader
 
 WORKDIR /opt/recsys
-COPY . /opt/recsys
+
+USER root
+ARG DOWNLOAD_JOBS=4
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /tmp/recsys-jars \
+    && printf '%s %s\n' \
+        https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.7.1/iceberg-spark-runtime-3.5_2.12-1.7.1.jar /tmp/recsys-jars/iceberg-spark-runtime-3.5_2.12-1.7.1.jar \
+        https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3.5-bundle_2.12/1.0.2/hudi-spark3.5-bundle_2.12-1.0.2.jar /tmp/recsys-jars/hudi-spark3.5-bundle_2.12-1.0.2.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar /tmp/recsys-jars/hadoop-aws-3.3.4.jar \
+        https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar /tmp/recsys-jars/aws-java-sdk-bundle-1.12.262.jar \
+    | xargs -n 2 -P "${DOWNLOAD_JOBS}" sh -c 'curl -fsSL "$1" -o "$2"' sh
+
+FROM spark:3.5.8-scala2.12-java11-ubuntu AS runtime
+
+WORKDIR /opt/recsys
 
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl python3-pip \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir pyyaml boto3 psycopg[binary] redis pyarrow s3fs "feast[redis]"
+    && pip3 install --no-cache-dir pyyaml boto3 psycopg[binary] psycopg-pool redis pyarrow s3fs "feast[redis]"
 
-RUN curl -fsSL \
-        https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.7.1/iceberg-spark-runtime-3.5_2.12-1.7.1.jar \
-        -o /opt/spark/jars/iceberg-spark-runtime-3.5_2.12-1.7.1.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3.5-bundle_2.12/1.0.2/hudi-spark3.5-bundle_2.12-1.0.2.jar \
-        -o /opt/spark/jars/hudi-spark3.5-bundle_2.12-1.0.2.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar \
-        -o /opt/spark/jars/hadoop-aws-3.3.4.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
-        -o /opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar
+COPY --from=jar-downloader /tmp/recsys-jars/*.jar /opt/spark/jars/
+COPY configs /opt/recsys/configs
+COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
+COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
+COPY apps/ml-system/src /opt/recsys/apps/ml-system/src
 
 ENV AWS_ACCESS_KEY_ID=minio \
     AWS_SECRET_ACCESS_KEY=minio123 \

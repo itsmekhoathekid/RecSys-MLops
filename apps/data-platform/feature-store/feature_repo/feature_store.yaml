@@ -3,13 +3,18 @@ provider: local
 registry: data/registry.db
 entity_key_serialization_version: 2
 
-# Feast 0.64 does not ship a native Apache Iceberg offline-store provider.
-# The authoritative offline store for this project is Apache Iceberg under
-# s3://recsys-offline-feature-store/warehouse/feature_store. Spark exports the
-# Iceberg feature views below into this Feast offline view before `feast apply`
-# and `feast materialize-incremental`.
+# Feast core offline store for point-in-time historical retrieval.
+# Apache Iceberg remains the data lakehouse. Feast historical retrieval reads
+# from the dedicated PostgreSQL offline feature store below.
 offline_store:
-  type: file
+  type: postgres
+  host: feature-postgres.recsys-dataflow.svc.cluster.local
+  port: 5432
+  database: feature_store
+  db_schema: feature_store
+  user: feast
+  password: feast
+  sslmode: disable
 
 online_store:
   type: redis

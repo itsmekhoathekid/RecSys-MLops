@@ -23,6 +23,12 @@ from features.flink.user_sequence_job import (
 )
 from features.flink.time_utils import isoformat_utc, parse_event_time
 from feature_store.online_writer import RedisOnlineWriter, dumps_feature_payload
+from feature_store.postgres_offline_store import (
+    FEATURE_TABLES,
+    PostgresOfflineStoreConfig,
+    ensure_offline_store_tables,
+    insert_offline_rows,
+)
 from ingest.debezium import extract_debezium_after
 
 
@@ -302,6 +308,83 @@ def build_offline_feature_rows(
 build_warehouse_rows = build_offline_feature_rows
 
 
+def _event_time_pair(event: dict[str, Any]) -> tuple[datetime, str]:
+    feature_ts = parse_event_time(event["event_timestamp"])
+    return feature_ts, isoformat_utc(feature_ts)
+
+
+def build_postgres_feast_rows(
+    event: dict[str, Any],
+    sequence_payload: dict[str, Any],
+    aggregate_payload: dict[str, Any],
+    item_payload: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    feature_ts, feature_ts_text = _event_time_pair(event)
+    created_ts = datetime.now(timezone.utc)
+    return {
+        "user_sequence_features": [
+            {
+                "user_id": int(sequence_payload["user_id"]),
+                "feature_timestamp": feature_ts,
+                "event_timestamp": feature_ts,
+                "created_timestamp": created_ts,
+                "hist_item_ids": [int(value) for value in sequence_payload["item_ids"]],
+                "hist_event_type_ids": [int(value) for value in sequence_payload["event_type_ids"]],
+                "hist_category_ids": [int(value) for value in sequence_payload["category_ids"]],
+                "hist_brand_ids": [int(value) for value in sequence_payload["brand_ids"]],
+                "hist_price_bucket_ids": [int(value) for value in sequence_payload["price_bucket_ids"]],
+                "hist_event_timestamps": [str(value) for value in sequence_payload["event_timestamps"]],
+                "hist_request_ids": [str(value) for value in sequence_payload["request_ids"]],
+                "hist_impression_ids": [str(value) for value in sequence_payload["impression_ids"]],
+                "hist_length": int(sequence_payload["sequence_length"]),
+                "max_history_length": int(sequence_payload["max_history_length"]),
+                "feature_version": str(sequence_payload["feature_version"]),
+            }
+        ],
+        "user_aggregate_features": [
+            {
+                "user_id": int(aggregate_payload["user_id"]),
+                "feature_timestamp": feature_ts,
+                "event_timestamp": feature_ts,
+                "views_30m": int(aggregate_payload["views_30m"]),
+                "carts_30m": int(aggregate_payload["carts_30m"]),
+                "purchases_24h": int(aggregate_payload["purchases_24h"]),
+                "distinct_categories_7d": int(aggregate_payload["distinct_categories_7d"]),
+                "avg_viewed_price_7d": float(aggregate_payload["avg_viewed_price_7d"]),
+                "cart_to_purchase_ratio_7d": float(aggregate_payload["cart_to_purchase_ratio_7d"]),
+                "last_event_age_seconds": int(aggregate_payload["last_event_age_seconds"]),
+                "aggregation_window_end_ts": aggregate_payload.get("updated_at", feature_ts_text),
+                "watermark_ts": feature_ts,
+                "created_timestamp": created_ts,
+                "feature_version": str(aggregate_payload["feature_version"]),
+            }
+        ],
+        "item_features": [
+            {
+                "product_id": int(item_payload["product_id"]),
+                "feature_timestamp": feature_ts,
+                "event_timestamp": feature_ts,
+                "category_id": int(item_payload["category_id"]),
+                "brand_id": int(item_payload["brand_id"]),
+                "price_bucket": int(item_payload["price_bucket"]),
+                "is_active": bool(item_payload["is_active"]),
+                "views_1h": int(item_payload["views_1h"]),
+                "views_24h": int(item_payload["views_24h"]),
+                "carts_1h": int(item_payload["carts_1h"]),
+                "carts_24h": int(item_payload["carts_24h"]),
+                "purchases_24h": int(item_payload["purchases_24h"]),
+                "purchases_7d": int(item_payload["purchases_7d"]),
+                "conversion_rate_7d": float(item_payload["conversion_rate_7d"]),
+                "popularity_score": float(item_payload["popularity_score"]),
+                "aggregation_window_end_ts": item_payload.get("updated_at", feature_ts_text),
+                "watermark_ts": feature_ts,
+                "created_timestamp": created_ts,
+                "feature_version": str(item_payload["feature_version"]),
+            }
+        ],
+    }
+
+
 def apply_state_ttl(descriptor: Any, ttl_seconds: int) -> Any:
     if ttl_seconds <= 0:
         return descriptor
@@ -376,6 +459,9 @@ def build_kafka_source(args: argparse.Namespace):
         .set_starting_offsets(kafka_offsets_initializer(args.starting_offsets))
         .set_value_only_deserializer(SimpleStringSchema())
         .set_client_id_prefix("recsys-native-pyflink")
+        .set_property("fetch.max.bytes", str(args.kafka_fetch_max_bytes))
+        .set_property("max.partition.fetch.bytes", str(args.kafka_max_partition_fetch_bytes))
+        .set_property("max.poll.records", str(args.kafka_max_poll_records))
     )
     if not args.continuous and args.max_events > 0:
         builder = builder.set_bounded(KafkaOffsetsInitializer.latest())
@@ -518,6 +604,57 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         def map(self, envelope: dict[str, Any]) -> dict[str, Any]:
             super().map(envelope)
             return envelope
+
+    class PostgresFeastOfflineWriter(MapFunction):
+        def open(self, runtime_context):
+            self.config = PostgresOfflineStoreConfig(
+                host=args.feast_postgres_host,
+                port=args.feast_postgres_port,
+                database=args.feast_postgres_database,
+                schema=args.feast_postgres_schema,
+                user=args.feast_postgres_user,
+                password=args.feast_postgres_password,
+                sslmode=args.feast_postgres_sslmode,
+            )
+            self.conn = self.config.connect()
+            ensure_offline_store_tables(self.conn, self.config.schema, FEATURE_TABLES)
+            self.writes = 0
+
+        def map(self, envelope: dict[str, Any]) -> str:
+            event = envelope["event"]
+            if event.get("_is_duplicate"):
+                return json.dumps({"status": "duplicate_skipped", "event_id": event["event_id"]}, sort_keys=True)
+            rows_by_table = build_postgres_feast_rows(
+                event,
+                envelope["sequence_payload"],
+                envelope["aggregate_payload"],
+                envelope["item_payload"],
+            )
+            inserted = 0
+            for table_name, rows in rows_by_table.items():
+                inserted += insert_offline_rows(self.conn, self.config.schema, table_name, rows)
+            self.writes += inserted
+            if args.progress_log_events > 0 and self.writes % args.progress_log_events == 0:
+                emit_progress(
+                    {
+                        "status": "running",
+                        "topic": args.topic,
+                        "offline_store_sink": "postgres",
+                        "postgres_rows": self.writes,
+                    }
+                )
+            return json.dumps(
+                {
+                    "status": "postgres_feast_offline_written",
+                    "event_id": event["event_id"],
+                    "rows": inserted,
+                    "total_rows": self.writes,
+                },
+                sort_keys=True,
+            )
+
+        def close(self):
+            self.conn.close()
 
     class KeepRows(FilterFunction):
         def filter(self, value: Any | None) -> bool:
@@ -742,6 +879,13 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
     if not args.offline_store_enabled:
         return None
 
+    if args.offline_store_sink == "postgres":
+        enriched.map(
+            PostgresFeastOfflineWriter(),
+            output_type=Types.STRING(),
+        ).name("postgres-feast-offline-feature-writer").print()
+        return None
+
     from features.flink.iceberg_feature_sink import configure_iceberg_catalog
     from lakehouse.iceberg import IcebergCatalogConfig
     from pyflink.table import StreamTableEnvironment
@@ -854,6 +998,13 @@ def main() -> int:
     parser.add_argument("--redis-port", type=int, default=env_int("REDIS_PORT", 6379))
     parser.add_argument("--group-id", default="recsys-flink-realtime-local")
     parser.add_argument("--starting-offsets", choices=["earliest", "latest", "committed-offsets"], default="earliest")
+    parser.add_argument("--kafka-fetch-max-bytes", type=int, default=env_int("KAFKA_FETCH_MAX_BYTES", 1048576))
+    parser.add_argument(
+        "--kafka-max-partition-fetch-bytes",
+        type=int,
+        default=env_int("KAFKA_MAX_PARTITION_FETCH_BYTES", 262144),
+    )
+    parser.add_argument("--kafka-max-poll-records", type=int, default=env_int("KAFKA_MAX_POLL_RECORDS", 100))
     parser.add_argument("--max-events", type=int, default=200)
     parser.add_argument("--min-events", type=int, default=1)
     parser.add_argument("--continuous", action="store_true")
@@ -867,6 +1018,14 @@ def main() -> int:
     parser.add_argument("--offline-feature-catalog", default=os.getenv("OFFLINE_FEATURE_CATALOG", "recsys_features"))
     parser.add_argument("--offline-feature-store-warehouse", default=os.getenv("OFFLINE_FEATURE_STORE_WAREHOUSE", "s3a://recsys-offline-feature-store/warehouse"))
     parser.add_argument("--iceberg-feature-namespace", default=os.getenv("ICEBERG_FEATURE_NAMESPACE", "feature_store"))
+    parser.add_argument("--offline-store-sink", choices=["postgres", "iceberg"], default=os.getenv("OFFLINE_STORE_SINK", "iceberg"))
+    parser.add_argument("--feast-postgres-host", default=os.getenv("FEAST_POSTGRES_HOST", "feature-postgres"))
+    parser.add_argument("--feast-postgres-port", type=int, default=env_int("FEAST_POSTGRES_PORT", 5432))
+    parser.add_argument("--feast-postgres-database", default=os.getenv("FEAST_POSTGRES_DB", "feature_store"))
+    parser.add_argument("--feast-postgres-schema", default=os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store"))
+    parser.add_argument("--feast-postgres-user", default=os.getenv("FEAST_POSTGRES_USER", "feast"))
+    parser.add_argument("--feast-postgres-password", default=os.getenv("FEAST_POSTGRES_PASSWORD", "feast"))
+    parser.add_argument("--feast-postgres-sslmode", default=os.getenv("FEAST_POSTGRES_SSLMODE", "disable"))
     parser.add_argument("--watermark-delay-minutes", type=int, default=env_int("STREAM_WATERMARK_DELAY_MINUTES", 60))
     parser.add_argument("--quality-window-seconds", type=int, default=env_int("STREAM_QUALITY_WINDOW_SECONDS", 60))
     parser.add_argument("--burst-threshold-event-count", type=int, default=env_int("STREAM_BURST_THRESHOLD_EVENT_COUNT", 500))

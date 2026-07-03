@@ -32,6 +32,16 @@ airflowPostgres:
   password: ""
   storage: 5Gi
 
+featurePostgres:
+  name: feature-postgres
+  database: feature_store
+  schema: feature_store
+  user: feast
+  password: feast
+  storage: 1Gi
+  sslmode: disable
+  istioInject: "false"
+
 minio:
   name: data-platform-minio
   endpoint: http://data-platform-minio:9000
@@ -94,10 +104,13 @@ flinkTaskManager:
   replicas: 1
 
 flink:
-  checkpointStorageUri: file:///tmp/flink-checkpoints
+  checkpointStorageUri: s3a://recsys-lakehouse/flink-checkpoints
   istioInject: "false"
   taskSlots: "2"
-  javaOpens: "--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
+  taskManagerProcessMemory: "2560m"
+  taskManagerTaskHeapMemory: "1024m"
+  taskManagerManagedMemory: "256m"
+  javaOpens: "--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
 
 realtimeProducer:
   enabled: true
@@ -129,7 +142,11 @@ realtimeFlinkConsumer:
   maxHistoryLength: "50"
   progressLogEvents: "100"
   checkpointIntervalSeconds: "30"
+  kafkaFetchMaxBytes: "1048576"
+  kafkaMaxPartitionFetchBytes: "262144"
+  kafkaMaxPollRecords: "100"
   offlineStoreEnabled: true
+  offlineStoreSink: postgres
 
 realtimeCdcConnector:
   enabled: true

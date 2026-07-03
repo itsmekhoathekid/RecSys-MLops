@@ -1,0 +1,107 @@
+autoscaling:
+  http:
+    api:
+      enabled: false
+      maxReplicas: 3
+  prometheus:
+    enabled: true
+    serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
+    pollingInterval: 10
+    cooldownPeriod: 120
+    restoreToOriginalReplicaCount: true
+    api:
+      enabled: true
+      name: recsys-api-serving-prometheus
+      hpaName: recsys-api-serving
+      serviceLabel: recsys-api-serving
+      route: /recommendations
+      method: POST
+      minReplicas: 1
+      maxReplicas: 3
+      requestRate:
+        targetValue: "4"
+        activationThreshold: "1"
+        window: 1m
+      latency:
+        targetValue: "0.15"
+        activationThreshold: "0.04"
+        window: 1m
+    featureApi:
+      enabled: true
+      name: recsys-online-feature-api-prometheus
+      hpaName: recsys-online-feature-api
+      serviceLabel: recsys-online-feature-api
+      route: /online-features
+      method: POST
+      minReplicas: 1
+      maxReplicas: 3
+      requestRate:
+        targetValue: "4"
+        activationThreshold: "1"
+        window: 1m
+      latency:
+        targetValue: "0.08"
+        activationThreshold: "0.03"
+        window: 1m
+  kserveResource:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+    pollingInterval: 15
+    cooldownPeriod: 240
+    cpu:
+      enabled: true
+      metricType: Utilization
+      value: "15"
+kserve:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 768Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  servingRuntime:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 768Mi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+api:
+  rollout:
+    maxSurge: 0
+    maxUnavailable: 1
+    minReadySeconds: 10
+    progressDeadlineSeconds: 300
+  config:
+    featureApiTimeoutSeconds: "20"
+  resources:
+    requests:
+      cpu: 75m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  istio:
+    proxyCPU: 25m
+    proxyMemory: 64Mi
+featureApi:
+  rollout:
+    maxSurge: 0
+    maxUnavailable: 1
+    minReadySeconds: 10
+    progressDeadlineSeconds: 300
+  config:
+    warmupOnStartup: "1"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  istio:
+    proxyCPU: 25m
+    proxyMemory: 64Mi

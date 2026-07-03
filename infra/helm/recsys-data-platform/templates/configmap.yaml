@@ -17,6 +17,14 @@ data:
   OFFLINE_FEATURE_STORE_WAREHOUSE: "s3a://{{ .Values.minio.offlineFeatureBucket }}/warehouse"
   ICEBERG_FEATURE_NAMESPACE: {{ .Values.lakehouse.featureNamespace | quote }}
   OFFLINE_FEATURE_STORE_URI: "s3a://{{ .Values.minio.offlineFeatureBucket }}/warehouse/{{ .Values.lakehouse.featureNamespace }}"
+  FEAST_POSTGRES_HOST: {{ printf "%s.%s.svc.cluster.local" .Values.featurePostgres.name .Release.Namespace | quote }}
+  FEAST_POSTGRES_PORT: "5432"
+  FEAST_POSTGRES_DB: {{ .Values.featurePostgres.database | quote }}
+  FEAST_POSTGRES_SCHEMA: {{ .Values.featurePostgres.schema | quote }}
+  FEAST_POSTGRES_USER: {{ .Values.featurePostgres.user | quote }}
+  FEAST_POSTGRES_PASSWORD: {{ .Values.featurePostgres.password | quote }}
+  FEAST_POSTGRES_SSLMODE: {{ .Values.featurePostgres.sslmode | quote }}
+  FEAST_POSTGRES_EXPORT_ENABLED: "1"
   DATA_GENERATOR_CONFIG: {{ .Values.dataSetup.generatorConfig | quote }}
   DATA_GENERATOR_RUN_ID: {{ .Values.dataSetup.generatorRunId | quote }}
   SPARK_BATCH_CONFIG: {{ .Values.dataSetup.sparkBatchConfig | quote }}
@@ -52,6 +60,7 @@ data:
   REDIS_HOST: {{ .Values.redis.name | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
   OFFLINE_STORE_ENABLED: {{ .Values.realtimeFlinkConsumer.offlineStoreEnabled | quote }}
+  OFFLINE_STORE_SINK: {{ .Values.realtimeFlinkConsumer.offlineStoreSink | quote }}
   OFFLINE_FEATURE_DRIFT_REPORT_PATH: "s3://{{ .Values.minio.offlineFeatureBucket }}/monitoring/offline_feature_drift/report.json"
   OFFLINE_FEATURE_DRIFT_CURRENT_ROOT: {{ .Values.drift.currentRoot | quote }}
   OFFLINE_FEATURE_DRIFT_BASELINE_PATH: {{ .Values.drift.baselinePath | quote }}
@@ -86,6 +95,9 @@ data:
   REALTIME_STREAM_MAX_HISTORY_LENGTH: {{ .Values.realtimeFlinkConsumer.maxHistoryLength | quote }}
   STREAM_PROGRESS_LOG_EVENTS: {{ .Values.realtimeFlinkConsumer.progressLogEvents | quote }}
   STREAM_CHECKPOINT_INTERVAL_SECONDS: {{ .Values.realtimeFlinkConsumer.checkpointIntervalSeconds | quote }}
+  KAFKA_FETCH_MAX_BYTES: {{ .Values.realtimeFlinkConsumer.kafkaFetchMaxBytes | quote }}
+  KAFKA_MAX_PARTITION_FETCH_BYTES: {{ .Values.realtimeFlinkConsumer.kafkaMaxPartitionFetchBytes | quote }}
+  KAFKA_MAX_POLL_RECORDS: {{ .Values.realtimeFlinkConsumer.kafkaMaxPollRecords | quote }}
   FLINK_CHECKPOINT_STORAGE_URI: {{ .Values.flink.checkpointStorageUri | quote }}
   STREAM_WATERMARK_DELAY_MINUTES: {{ .Values.streaming.watermarkDelayMinutes | quote }}
   STREAM_QUALITY_WINDOW_SECONDS: {{ .Values.streaming.qualityWindowSeconds | quote }}

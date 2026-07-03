@@ -37,6 +37,8 @@ class RecsysServingUser(HttpUser):
     def infer(self) -> None:
         if TARGET == "triton":
             self._triton_infer()
+        elif TARGET == "feature":
+            self._online_features()
         else:
             self._api_recommendations()
 
@@ -59,6 +61,26 @@ class RecsysServingUser(HttpUser):
             items = response.json().get("items", [])
             if not items:
                 response.failure("empty recommendation items")
+
+    def _online_features(self) -> None:
+        payload = {
+            "user_id": USER_ID,
+            "candidate_item_ids": CANDIDATES,
+            "top_k": TOP_K,
+        }
+        with self.client.post(
+            "/online-features",
+            json=payload,
+            headers=self._headers(),
+            name="feature:/online-features",
+            catch_response=True,
+        ) as response:
+            if response.status_code != 200:
+                response.failure(f"status={response.status_code} body={response.text[:300]}")
+                return
+            body = response.json()
+            if not body.get("user_sequence") or not body.get("item_features"):
+                response.failure("empty online feature payload")
 
     def _triton_infer(self) -> None:
         n_candidates = len(CANDIDATES)

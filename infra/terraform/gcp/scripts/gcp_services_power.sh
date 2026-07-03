@@ -503,6 +503,16 @@ flink_has_running_job() {
     python -c 'import json, urllib.request; jobs=json.load(urllib.request.urlopen("http://localhost:8081/jobs/overview", timeout=10)); running=[job for job in jobs.get("jobs", []) if job.get("state") == "RUNNING"]; raise SystemExit(0 if len(running) >= 2 else 1)'
 }
 
+flink_cancel_duplicate_restarting_jobs() {
+  kubectl exec -n recsys-dataflow deploy/flink-jobmanager -- \
+    python -c 'import json, urllib.request; base="http://localhost:8081"; jobs=json.load(urllib.request.urlopen(base + "/jobs/overview", timeout=10)).get("jobs", []); running=[job for job in jobs if job.get("state") == "RUNNING"]; restarting=[job for job in jobs if job.get("state") == "RESTARTING"]; print("Flink RUNNING jobs:", len(running)); print("Flink duplicate RESTARTING jobs:", [(job.get("jid"), job.get("name")) for job in restarting]);
+if len(running) < 2:
+    raise SystemExit(0)
+for job in restarting:
+    req=urllib.request.Request(base + "/jobs/" + job["jid"] + "?mode=cancel", method="PATCH")
+    urllib.request.urlopen(req, timeout=10).read()'
+}
+
 ensure_realtime_flink_running() {
   if ! kubectl get deploy -n recsys-dataflow realtime-flink-online-store >/dev/null 2>&1; then
     return 0
@@ -512,6 +522,7 @@ ensure_realtime_flink_running() {
   fi
 
   if flink_has_running_job; then
+    flink_cancel_duplicate_restarting_jobs || true
     return 0
   fi
 
@@ -523,6 +534,7 @@ ensure_realtime_flink_running() {
   local i
   for ((i = 1; i <= 30; i++)); do
     if flink_has_running_job; then
+      flink_cancel_duplicate_restarting_jobs || true
       return 0
     fi
     sleep 5
@@ -692,6 +704,8 @@ smoke_after_up() {
       kubectl exec -i -n api-serving deploy/recsys-api-serving -c api -- python - <<'PY'
 import collections
 import json
+import time
+import urllib.error
 
 import urllib.request
 
@@ -706,8 +720,15 @@ for user_id in range(1001, 1201):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        counts.update([json.loads(response.read().decode()).get("ab_variant") or "none"])
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                counts.update([json.loads(response.read().decode()).get("ab_variant") or "none"])
+            break
+        except urllib.error.HTTPError:
+            if attempt == 3:
+                raise
+            time.sleep(0.5 * attempt)
 print(json.dumps(counts, sort_keys=True))
 assert counts["candidate"] > 0 and counts["control"] > 0, counts
 PY
@@ -723,6 +744,7 @@ PY
 
   if kubectl get deploy -n recsys-dataflow flink-jobmanager >/dev/null 2>&1; then
     echo "== Smoke: Flink overview =="
+    flink_cancel_duplicate_restarting_jobs || true
     kubectl exec -n recsys-dataflow deploy/flink-jobmanager -- \
       curl -s http://localhost:8081/jobs/overview || true
     echo

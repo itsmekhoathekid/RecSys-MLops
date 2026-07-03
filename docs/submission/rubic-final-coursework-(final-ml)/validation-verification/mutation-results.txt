@@ -5,6 +5,22 @@
     online_features.x_parse_json_bytes__mutmut_5: not checked
     online_features.x_parse_json_bytes__mutmut_6: not checked
     online_features.x_parse_json_bytes__mutmut_7: not checked
+    online_features.x_normalize_feature_value__mutmut_1: not checked
+    online_features.x_normalize_feature_value__mutmut_2: not checked
+    online_features.x_normalize_feature_value__mutmut_3: not checked
+    online_features.x_normalize_feature_value__mutmut_4: not checked
+    online_features.x_normalize_feature_value__mutmut_5: not checked
+    online_features.x_normalize_feature_value__mutmut_6: not checked
+    online_features.x_first_feature_row__mutmut_1: not checked
+    online_features.x_first_feature_row__mutmut_2: not checked
+    online_features.x_first_feature_row__mutmut_3: not checked
+    online_features.x_first_feature_row__mutmut_4: not checked
+    online_features.x_first_feature_row__mutmut_5: not checked
+    online_features.x_first_feature_row__mutmut_6: not checked
+    online_features.x_first_feature_row__mutmut_7: not checked
+    online_features.x_first_feature_row__mutmut_8: not checked
+    online_features.x_first_feature_row__mutmut_9: not checked
+    online_features.x_first_feature_row__mutmut_10: not checked
     online_features.xǁFeatureClientǁ__init____mutmut_1: not checked
     online_features.xǁFeatureClientǁ__init____mutmut_2: not checked
     online_features.xǁFeatureClientǁ__init____mutmut_3: not checked
@@ -38,6 +54,44 @@
     online_features.xǁFeatureClientǁ__init____mutmut_31: not checked
     online_features.xǁFeatureClientǁ__init____mutmut_32: not checked
     online_features.xǁFeatureClientǁ__init____mutmut_33: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_34: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_35: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_36: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_37: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_38: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_39: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_40: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_41: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_42: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_43: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_44: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_45: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_46: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_47: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_48: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_49: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_50: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_51: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_52: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_53: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_54: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_55: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_56: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_57: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_58: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_59: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_60: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_61: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_62: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_63: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_64: not checked
+    online_features.xǁFeatureClientǁ__init____mutmut_65: not checked
+    online_features.xǁFeatureClientǁ_feature_store__mutmut_1: not checked
+    online_features.xǁFeatureClientǁ_feature_store__mutmut_2: not checked
+    online_features.xǁFeatureClientǁ_get_feast_online_features__mutmut_1: not checked
+    online_features.xǁFeatureClientǁ_get_feast_online_features__mutmut_2: not checked
+    online_features.xǁFeatureClientǁ_get_feast_online_features__mutmut_3: not checked
+    online_features.xǁFeatureClientǁ_get_feast_online_features__mutmut_4: not checked
     online_features.xǁFeatureClientǁuser_sequence__mutmut_1: not checked
     online_features.xǁFeatureClientǁuser_sequence__mutmut_2: not checked
     online_features.xǁFeatureClientǁuser_sequence__mutmut_3: not checked
@@ -68,37 +122,79 @@
     online_features.xǁFeatureClientǁuser_sequence__mutmut_28: not checked
     online_features.xǁFeatureClientǁuser_sequence__mutmut_29: not checked
     online_features.xǁFeatureClientǁuser_sequence__mutmut_30: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_31: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_32: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_33: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_34: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_35: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_36: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_37: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_38: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_39: not checked
+    online_features.xǁFeatureClientǁuser_sequence__mutmut_40: not checked
     online_features.xǁFeatureClientǁitem_features__mutmut_1: not checked
     online_features.xǁFeatureClientǁitem_features__mutmut_2: not checked
     online_features.xǁFeatureClientǁitem_features__mutmut_3: not checked
     online_features.xǁFeatureClientǁitem_features__mutmut_4: not checked
     online_features.xǁFeatureClientǁitem_features__mutmut_5: not checked
     online_features.xǁFeatureClientǁitem_features__mutmut_6: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_7: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_8: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_9: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_10: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_11: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_12: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_13: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_14: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_15: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_16: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_17: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_18: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_19: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_20: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_21: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_22: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_23: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_24: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_25: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_26: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_27: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_28: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_29: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_30: not checked
-    online_features.xǁFeatureClientǁitem_features__mutmut_31: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_1: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_2: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_3: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_4: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_5: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_6: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_7: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_8: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_9: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_10: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_11: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_12: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_13: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_14: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_15: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_16: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_17: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_18: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_19: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_20: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_21: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_22: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_23: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_24: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_25: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_26: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_27: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_28: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_29: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_30: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_31: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_32: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_33: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_34: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_35: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_36: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_37: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_38: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_39: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_40: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_41: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_42: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_43: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_44: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_45: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_46: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_47: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_48: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_49: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_50: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_51: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_52: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_53: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_54: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_55: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_56: not checked
+    online_features.xǁFeatureClientǁitem_features_batch__mutmut_57: not checked
     online_features.xǁFeatureClientǁcandidates__mutmut_1: not checked
     online_features.xǁFeatureClientǁcandidates__mutmut_2: not checked
     online_features.xǁFeatureClientǁcandidates__mutmut_3: not checked
@@ -170,18 +266,24 @@
     online_features.x_get_online_features__mutmut_10: killed
     online_features.x_get_online_features__mutmut_11: survived
     online_features.x_get_online_features__mutmut_12: survived
-    online_features.x_get_online_features__mutmut_13: killed
+    online_features.x_get_online_features__mutmut_13: survived
     online_features.x_get_online_features__mutmut_14: killed
     online_features.x_get_online_features__mutmut_15: killed
     online_features.x_get_online_features__mutmut_16: killed
-    online_features.x_get_online_features__mutmut_17: killed
-    online_features.x_get_online_features__mutmut_18: killed
+    online_features.x_get_online_features__mutmut_17: survived
+    online_features.x_get_online_features__mutmut_18: survived
     online_features.x_get_online_features__mutmut_19: killed
     online_features.x_get_online_features__mutmut_20: killed
     online_features.x_get_online_features__mutmut_21: killed
     online_features.x_get_online_features__mutmut_22: killed
     online_features.x_get_online_features__mutmut_23: killed
-    online_features.x_get_online_features__mutmut_24: survived
+    online_features.x_get_online_features__mutmut_24: killed
+    online_features.x_get_online_features__mutmut_25: killed
+    online_features.x_get_online_features__mutmut_26: killed
+    online_features.x_get_online_features__mutmut_27: killed
+    online_features.x_get_online_features__mutmut_28: killed
+    online_features.x_get_online_features__mutmut_29: killed
+    online_features.x_get_online_features__mutmut_30: survived
     ranking.x_as_int_list__mutmut_1: not checked
     ranking.x_as_int_list__mutmut_2: not checked
     ranking.x_as_int_list__mutmut_3: not checked
@@ -493,72 +595,82 @@
     ranking.x__recommend_with_route__mutmut_21: not checked
     ranking.x__recommend_with_route__mutmut_22: not checked
     ranking.x__recommend_with_route__mutmut_23: not checked
-    ranking.x__recommend_with_route__mutmut_24: not checked
-    ranking.x__recommend_with_route__mutmut_25: not checked
-    ranking.x__recommend_with_route__mutmut_26: not checked
-    ranking.x__recommend_with_route__mutmut_27: not checked
-    ranking.x__recommend_with_route__mutmut_28: not checked
-    ranking.x__recommend_with_route__mutmut_29: not checked
-    ranking.x__recommend_with_route__mutmut_30: not checked
-    ranking.x__recommend_with_route__mutmut_31: not checked
-    ranking.x__recommend_with_route__mutmut_32: not checked
-    ranking.x__recommend_with_route__mutmut_33: not checked
-    ranking.x__recommend_with_route__mutmut_34: not checked
-    ranking.x__recommend_with_route__mutmut_35: not checked
-    ranking.x__recommend_with_route__mutmut_36: not checked
-    ranking.x__recommend_with_route__mutmut_37: not checked
-    ranking.x__recommend_with_route__mutmut_38: not checked
-    ranking.x__recommend_with_route__mutmut_39: not checked
-    ranking.x__recommend_with_route__mutmut_40: not checked
-    ranking.x__recommend_with_route__mutmut_41: not checked
-    ranking.x__recommend_with_route__mutmut_42: not checked
-    ranking.x__recommend_with_route__mutmut_43: not checked
-    ranking.x__recommend_with_route__mutmut_44: not checked
-    ranking.x__recommend_with_route__mutmut_45: not checked
-    ranking.x__recommend_with_route__mutmut_46: not checked
-    ranking.x__recommend_with_route__mutmut_47: not checked
-    ranking.x__recommend_with_route__mutmut_48: not checked
-    ranking.x__recommend_with_route__mutmut_49: not checked
-    ranking.x__recommend_with_route__mutmut_50: not checked
-    ranking.x__recommend_with_route__mutmut_51: not checked
-    ranking.x__recommend_with_route__mutmut_52: not checked
-    ranking.x__recommend_with_route__mutmut_53: not checked
-    ranking.x__recommend_with_route__mutmut_54: not checked
-    ranking.x__recommend_with_route__mutmut_55: not checked
-    ranking.x__recommend_with_route__mutmut_56: not checked
-    ranking.x__recommend_with_route__mutmut_57: not checked
-    ranking.x__recommend_with_route__mutmut_58: not checked
-    ranking.x__recommend_with_route__mutmut_59: not checked
-    ranking.x__recommend_with_route__mutmut_60: not checked
-    ranking.x__recommend_with_route__mutmut_61: not checked
-    ranking.x__recommend_with_route__mutmut_62: not checked
-    ranking.x__recommend_with_route__mutmut_63: not checked
-    ranking.x__recommend_with_route__mutmut_64: not checked
-    ranking.x__recommend_with_route__mutmut_65: not checked
-    ranking.x__recommend_with_route__mutmut_66: not checked
-    ranking.x__recommend_with_route__mutmut_67: not checked
-    ranking.x__recommend_with_route__mutmut_68: not checked
-    ranking.x__recommend_with_route__mutmut_69: not checked
-    ranking.x__recommend_with_route__mutmut_70: not checked
-    ranking.x__recommend_with_route__mutmut_71: not checked
-    ranking.x__recommend_with_route__mutmut_72: not checked
-    ranking.x__recommend_with_route__mutmut_73: not checked
-    ranking.x__recommend_with_route__mutmut_74: not checked
-    ranking.x__recommend_with_route__mutmut_75: not checked
-    ranking.x__recommend_with_route__mutmut_76: not checked
-    ranking.x__recommend_with_route__mutmut_77: not checked
-    ranking.x__recommend_with_route__mutmut_78: not checked
-    ranking.x__recommend_with_route__mutmut_79: not checked
-    ranking.x__recommend_with_route__mutmut_80: not checked
-    ranking.x__recommend_with_route__mutmut_81: not checked
-    ranking.x__recommend_with_route__mutmut_82: not checked
-    ranking.x__recommend_with_route__mutmut_83: not checked
-    ranking.x__recommend_with_route__mutmut_84: not checked
-    ranking.x__recommend_with_route__mutmut_85: not checked
-    ranking.x__recommend_with_route__mutmut_86: not checked
-    ranking.x__recommend_with_route__mutmut_87: not checked
-    ranking.x__recommend_with_route__mutmut_88: not checked
-    ranking.x__recommend_with_route__mutmut_89: not checked
-    ranking.x__recommend_with_route__mutmut_90: not checked
-    ranking.x__recommend_with_route__mutmut_91: not checked
-    ranking.x__recommend_with_route__mutmut_92: not checked
+    ranking.x_recommend_from_online_features__mutmut_1: not checked
+    ranking.x_recommend_from_online_features__mutmut_2: not checked
+    ranking.x_recommend_from_online_features__mutmut_3: not checked
+    ranking.x_recommend_from_online_features__mutmut_4: not checked
+    ranking.x_recommend_from_online_features__mutmut_5: not checked
+    ranking.x_recommend_from_online_features__mutmut_6: not checked
+    ranking.x_recommend_from_online_features__mutmut_7: not checked
+    ranking.x_recommend_from_online_features__mutmut_8: not checked
+    ranking.x_recommend_from_online_features__mutmut_9: not checked
+    ranking.x_recommend_from_online_features__mutmut_10: not checked
+    ranking.x_recommend_from_online_features__mutmut_11: not checked
+    ranking.x_recommend_from_online_features__mutmut_12: not checked
+    ranking.x_recommend_from_online_features__mutmut_13: not checked
+    ranking.x_recommend_from_online_features__mutmut_14: not checked
+    ranking.x_recommend_from_online_features__mutmut_15: not checked
+    ranking.x_recommend_from_online_features__mutmut_16: not checked
+    ranking.x_recommend_from_online_features__mutmut_17: not checked
+    ranking.x_recommend_from_online_features__mutmut_18: not checked
+    ranking.x_recommend_from_online_features__mutmut_19: not checked
+    ranking.x_recommend_from_online_features__mutmut_20: not checked
+    ranking.x_recommend_from_online_features__mutmut_21: not checked
+    ranking.x_recommend_from_online_features__mutmut_22: not checked
+    ranking.x_recommend_from_online_features__mutmut_23: not checked
+    ranking.x_recommend_from_online_features__mutmut_24: not checked
+    ranking.x_recommend_from_online_features__mutmut_25: not checked
+    ranking.x_recommend_from_online_features__mutmut_26: not checked
+    ranking.x_recommend_from_online_features__mutmut_27: not checked
+    ranking.x_recommend_from_online_features__mutmut_28: not checked
+    ranking.x_recommend_from_online_features__mutmut_29: not checked
+    ranking.x_recommend_from_online_features__mutmut_30: not checked
+    ranking.x_recommend_from_online_features__mutmut_31: not checked
+    ranking.x_recommend_from_online_features__mutmut_32: not checked
+    ranking.x_recommend_from_online_features__mutmut_33: not checked
+    ranking.x_recommend_from_online_features__mutmut_34: not checked
+    ranking.x_recommend_from_online_features__mutmut_35: not checked
+    ranking.x_recommend_from_online_features__mutmut_36: not checked
+    ranking.x_recommend_from_online_features__mutmut_37: not checked
+    ranking.x_recommend_from_online_features__mutmut_38: not checked
+    ranking.x_recommend_from_online_features__mutmut_39: not checked
+    ranking.x_recommend_from_online_features__mutmut_40: not checked
+    ranking.x_recommend_from_online_features__mutmut_41: not checked
+    ranking.x_recommend_from_online_features__mutmut_42: not checked
+    ranking.x_recommend_from_online_features__mutmut_43: not checked
+    ranking.x_recommend_from_online_features__mutmut_44: not checked
+    ranking.x_recommend_from_online_features__mutmut_45: not checked
+    ranking.x_recommend_from_online_features__mutmut_46: not checked
+    ranking.x_recommend_from_online_features__mutmut_47: not checked
+    ranking.x_recommend_from_online_features__mutmut_48: not checked
+    ranking.x_recommend_from_online_features__mutmut_49: not checked
+    ranking.x_recommend_from_online_features__mutmut_50: not checked
+    ranking.x_recommend_from_online_features__mutmut_51: not checked
+    ranking.x_recommend_from_online_features__mutmut_52: not checked
+    ranking.x_recommend_from_online_features__mutmut_53: not checked
+    ranking.x_recommend_from_online_features__mutmut_54: not checked
+    ranking.x_recommend_from_online_features__mutmut_55: not checked
+    ranking.x_recommend_from_online_features__mutmut_56: not checked
+    ranking.x_recommend_from_online_features__mutmut_57: not checked
+    ranking.x_recommend_from_online_features__mutmut_58: not checked
+    ranking.x_recommend_from_online_features__mutmut_59: not checked
+    ranking.x_recommend_from_online_features__mutmut_60: not checked
+    ranking.x_recommend_from_online_features__mutmut_61: not checked
+    ranking.x_recommend_from_online_features__mutmut_62: not checked
+    ranking.x_recommend_from_online_features__mutmut_63: not checked
+    ranking.x_recommend_from_online_features__mutmut_64: not checked
+    ranking.x_recommend_from_online_features__mutmut_65: not checked
+    ranking.x_recommend_from_online_features__mutmut_66: not checked
+    ranking.x_recommend_from_online_features__mutmut_67: not checked
+    ranking.x_recommend_from_online_features__mutmut_68: not checked
+    ranking.x_recommend_from_online_features__mutmut_69: not checked
+    ranking.x_recommend_from_online_features__mutmut_70: not checked
+    ranking.x_recommend_from_online_features__mutmut_71: not checked
+    ranking.x_recommend_from_online_features__mutmut_72: not checked
+    ranking.x_recommend_from_online_features__mutmut_73: not checked
+    ranking.x_recommend_from_online_features__mutmut_74: not checked
+    ranking.x_recommend_from_online_features__mutmut_75: not checked
+    ranking.x_recommend_from_online_features__mutmut_76: not checked
+    ranking.x_recommend_from_online_features__mutmut_77: not checked
+    ranking.x_recommend_from_online_features__mutmut_78: not checked
+    ranking.x_recommend_from_online_features__mutmut_79: not checked

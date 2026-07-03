@@ -7,6 +7,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import numpy as np
 import pandas as pd
@@ -144,7 +145,78 @@ def _read_iceberg_table_as_pandas(table_name: str, catalog_name: str, warehouse:
         spark.stop()
 
 
+def _read_postgres_table_as_pandas(table_uri: str) -> pd.DataFrame:
+    import psycopg
+    from psycopg import sql
+
+    parsed = urlparse(table_uri)
+    path = parsed.path.lstrip("/")
+    if "/" in path:
+        database, table_ref = path.split("/", 1)
+    else:
+        database = os.getenv("FEAST_POSTGRES_DB", "feature_store")
+        table_ref = path
+    if "." in table_ref:
+        schema, table = table_ref.rsplit(".", 1)
+    else:
+        schema = os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store")
+        table = table_ref
+    with psycopg.connect(
+        host=parsed.hostname or os.getenv("FEAST_POSTGRES_HOST", "feature-postgres"),
+        port=parsed.port or int(os.getenv("FEAST_POSTGRES_PORT", "5432")),
+        dbname=database or os.getenv("FEAST_POSTGRES_DB", "feature_store"),
+        user=unquote(parsed.username) if parsed.username else os.getenv("FEAST_POSTGRES_USER", "feast"),
+        password=unquote(parsed.password) if parsed.password else os.getenv("FEAST_POSTGRES_PASSWORD", "feast"),
+        sslmode=os.getenv("FEAST_POSTGRES_SSLMODE", "disable"),
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = %s AND table_name = %s
+                """,
+                (schema, table),
+            )
+            table_columns = {row[0] for row in cur.fetchall()}
+            entity_columns = [
+                "impression_id",
+                "request_id",
+                "user_id",
+                "candidate_product_id",
+                "target_item_id",
+                "prediction_timestamp",
+                "event_time",
+                "label",
+            ]
+            selected_columns = [column for column in entity_columns if column in table_columns]
+            if {"user_id", "label"}.issubset(selected_columns) and (
+                "candidate_product_id" in selected_columns or "target_item_id" in selected_columns
+            ):
+                select_expr = sql.SQL(", ").join(sql.Identifier(column) for column in selected_columns)
+            else:
+                select_expr = sql.SQL("*")
+            query = sql.SQL("SELECT {} FROM {}.{}").format(
+                select_expr,
+                sql.Identifier(schema),
+                sql.Identifier(table),
+            )
+            params: tuple[Any, ...] = ()
+            if "prediction_timestamp" in table_columns:
+                query += sql.SQL(" WHERE prediction_timestamp >= %s AND prediction_timestamp < %s")
+                params = (
+                    datetime(1970, 1, 1, tzinfo=timezone.utc),
+                    datetime(2100, 1, 1, tzinfo=timezone.utc),
+                )
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            columns = [column.name for column in cur.description or []]
+    return pd.DataFrame(rows, columns=columns)
+
+
 def _read_feature_table(path: str, *, iceberg_catalog_name: str, iceberg_warehouse: str) -> pd.DataFrame:
+    if path.startswith(("postgresql://", "postgres://")):
+        return _read_postgres_table_as_pandas(path)
     source = Path(path)
     if source.is_dir():
         return pd.read_parquet(source)

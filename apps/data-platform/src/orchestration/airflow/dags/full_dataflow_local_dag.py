@@ -113,8 +113,13 @@ if DAG is not None:
             feast_materialize_incremental = cli_task(
                 "feast_materialize_incremental",
                 "cd apps/data-platform/feature-store/feature_repo && "
-                "export FEAST_OFFLINE_ROOT=${FEAST_OFFLINE_ROOT:-s3://$OFFLINE_FEATURE_BUCKET/feast/offline} && "
-                "export AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-$MINIO_ENDPOINT} && "
+                "export FEAST_POSTGRES_HOST=${FEAST_POSTGRES_HOST:-feature-postgres} && "
+                "export FEAST_POSTGRES_PORT=${FEAST_POSTGRES_PORT:-5432} && "
+                "export FEAST_POSTGRES_DB=${FEAST_POSTGRES_DB:-feature_store} && "
+                "export FEAST_POSTGRES_SCHEMA=${FEAST_POSTGRES_SCHEMA:-feature_store} && "
+                "export FEAST_POSTGRES_USER=${FEAST_POSTGRES_USER:-feast} && "
+                "export FEAST_POSTGRES_PASSWORD=${FEAST_POSTGRES_PASSWORD:-feast} && "
+                "export FEAST_POSTGRES_SSLMODE=${FEAST_POSTGRES_SSLMODE:-disable} && "
                 "python -c 'from feature_store.feast_registry import apply_feature_repo; apply_feature_repo(\".\")' && "
                 "feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)",
             )
@@ -133,6 +138,14 @@ if DAG is not None:
                 "-py apps/data-platform/src/features/flink/realtime_stream_job.py "
                 "-- --runner pyflink --topic cdc.behavior_events --max-events 200 --min-events 1 "
                 "--offline-store-enabled "
+                "--offline-store-sink ${OFFLINE_STORE_SINK:-postgres} "
+                "--feast-postgres-host ${FEAST_POSTGRES_HOST:-feature-postgres} "
+                "--feast-postgres-port ${FEAST_POSTGRES_PORT:-5432} "
+                "--feast-postgres-database ${FEAST_POSTGRES_DB:-feature_store} "
+                "--feast-postgres-schema ${FEAST_POSTGRES_SCHEMA:-feature_store} "
+                "--feast-postgres-user ${FEAST_POSTGRES_USER:-feast} "
+                "--feast-postgres-password ${FEAST_POSTGRES_PASSWORD:-feast} "
+                "--feast-postgres-sslmode ${FEAST_POSTGRES_SSLMODE:-disable} "
                 "--offline-feature-catalog $OFFLINE_FEATURE_CATALOG "
                 "--offline-feature-store-warehouse $OFFLINE_FEATURE_STORE_WAREHOUSE",
             )

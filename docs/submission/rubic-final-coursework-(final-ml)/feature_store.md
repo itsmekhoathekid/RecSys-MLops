@@ -1,187 +1,147 @@
 # Feature Store
 
-## Feast Store Definition
+Apache Iceberg is the data lakehouse layer only. Feast does not use Iceberg as its offline store. The current Feast store is:
 
-This project defines the Feast store split as:
-
-| Feast layer | Backing system | Purpose |
+| Layer | Backing system | Role |
 | --- | --- | --- |
-| Offline store | Apache Iceberg tables in the lakehouse warehouse, exported to Feast FileSource views under `s3://recsys-offline-feature-store/feast/offline` | Historical feature storage for batch training, validation, drift checks, and Feast historical retrieval/materialization jobs. |
-| Online store | Redis in namespace `recsys-dataflow` | Low-latency feature lookup for serving APIs by `user_id` and `item_id`. |
+| Data lakehouse | Apache Iceberg tables in MinIO/S3 (`recsys-lakehouse`, `recsys-offline-feature-store`) | Historical lineage, batch computation, replay/backfill, and drift inputs. |
+| Feast offline store | Dedicated PostgreSQL service `feature-postgres.recsys-dataflow.svc.cluster.local`, database/schema `feature_store` | Native Feast point-in-time retrieval and `materialize-incremental` source. |
+| Feast online store | Redis | Low-latency feature serving for API services and recommendation inference. |
 
-MinIO is the S3-compatible storage backend for the Iceberg warehouse. The authoritative offline store is Apache Iceberg. Feast 0.64 does not ship a native Iceberg offline-store provider, so Spark writes the Iceberg feature tables and also exports Feast-compatible Parquet views. Kubeflow then uses Feast `get_historical_features` over those exported views instead of bypassing Feast and reading the merged training table directly. Redis is the online store used by the serving APIs.
-
-The serving split uses this contract:
+Current data paths:
 
 ```text
-Spark/Flink -> Apache Iceberg offline store -> Feast FileSource views
-Kubeflow prepare-training-data -> Feast get_historical_features -> BST dataset splits
-Feast materialize / Flink online-store job -> Redis online store
-FastAPI online feature API -> Redis online store
-FastAPI recommendation API -> online feature API -> Triton inference
+Airflow -> Spark batch -> Iceberg lakehouse tables -> PostgreSQL Feast offline store -> Feast materialize-incremental -> Redis
+Kafka CDC topic cdc.behavior_events -> Flink online-store job -> Redis
+Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Feast offline store
 ```
 
-## Data Pipeline And Incremental Materialize
+## Airflow Data Pipeline For Incremental Materialize Offline -> Online Store
 
-Code reference:
+### Code Reference
 
-- [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py line 185](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L185): generates historical raw files into the lake bucket.
-- [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py line 194](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L194): ingests historical raw data into the lakehouse.
-- [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py line 215](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L215): runs Spark batch materialization into the offline feature store.
-- [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py line 232](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L232): runs Feast `materialize-incremental` after offline feature tables are written.
-- [apps/data-platform/feature-store/feature_repo/feature_store.yaml line 1](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L1): Feast project, offline store, and Redis online store configuration.
-- [apps/data-platform/feature-store/feature_repo/features.py line 20](../../../apps/data-platform/feature-store/feature_repo/features.py#L20): Feast `user_sequence_features` FileSource exported from the Iceberg offline store.
-- [apps/data-platform/feature-store/feature_repo/features.py line 37](../../../apps/data-platform/feature-store/feature_repo/features.py#L37): Feast `user_sequence_features` FeatureView.
-- [apps/data-platform/feature-store/feature_repo/features.py line 63](../../../apps/data-platform/feature-store/feature_repo/features.py#L63): Feast `user_aggregate_features` FeatureView.
-- [apps/data-platform/feature-store/feature_repo/features.py line 83](../../../apps/data-platform/feature-store/feature_repo/features.py#L83): Feast `item_features` FeatureView.
-- [apps/data-platform/feature-store/feature_repo/features.py line 106](../../../apps/data-platform/feature-store/feature_repo/features.py#L106): Feast FeatureService `bst_ranking_v1` used by Kubeflow training preparation.
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 111](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L111): exports `user_sequence_features`, `user_aggregate_features`, and `item_features` from Iceberg outputs into Feast offline views.
-- [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py line 291](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L291): defines `run_spark_batch_to_offline_store -> feast_materialize_incremental`.
+- [k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py): orchestrates generator load, lakehouse ingestion, Spark batch feature build, Feast repo apply, Feast `materialize-incremental`, drift, and retrain trigger checks.
+- [spark_batch_entrypoint.py](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py): builds Iceberg feature tables and exports Feast-compatible tables into PostgreSQL through `feast_postgres_export`.
+- [postgres_offline_store.py](../../../apps/data-platform/src/feature_store/postgres_offline_store.py): owns PostgreSQL DDL and row insertion for `user_sequence_features`, `user_aggregate_features`, `item_features`, and `ml_ranking_labels`.
+- [feature_store.yaml](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml): configures Feast `offline_store.type: postgres` and Redis online store.
+- [features.py](../../../apps/data-platform/feature-store/feature_repo/features.py): defines Feast `PostgreSQLSource` FeatureViews and FeatureService `bst_ranking_v1`.
 
-Running command:
+### Image Proof Data Pipelines On Airflow
+
+![Airflow data pipeline overview](../../pngs/airflow_data_pipeline_overview.png)
+
+### Image Proof Of Feast Incremental Materialize On Airflow Graph
+
+![Feast incremental materialize graph](../../pngs/feast_materialize_dag.png)
+
+### Commands To Capture Proof
 
 ```bash
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
+kubectl get pods -n recsys-dataflow
 
-make cluster-data-setup
+kubectl logs -n recsys-dataflow deploy/airflow-scheduler --tail=120 | \
+  grep -E 'run_spark_batch_to_offline_store|feast_materialize_incremental|offline_feature_drift'
 
-# Keep this terminal open for Airflow UI access.
-kubectl port-forward -n recsys-dataflow svc/airflow-webserver 8080:8080
+kubectl exec -n recsys-dataflow deploy/feature-postgres -- \
+  psql -U feast -d feature_store -c '
+    SELECT table_schema, table_name
+    FROM information_schema.tables
+    WHERE table_schema = '\''feature_store'\''
+    ORDER BY table_name;
+  '
 ```
 
-Open Airflow UI at `http://localhost:8080`, login with `admin/admin`
+Expected proof: Airflow shows Spark batch and Feast materialize tasks, and PostgreSQL has the Feast offline feature tables in schema `feature_store`.
 
-Description of output when running command:
+## Two Flink Streaming Jobs Running
 
-- `make cluster-data-setup` starts the data platform stack, triggers `k8s_data_platform_dag`, waits for the DAG run, and verifies feature stores.
-- Airflow Graph view demonstrates the pipeline stage order: platform initialization, historical batch ingestion, Spark offline feature materialization, Feast incremental materialization, realtime CDC load, Flink streaming feature-store sync, drift check, retrain trigger, and governance ingest.
-- The important proof for this rubric is `run_spark_batch_to_offline_store -> feast_materialize_incremental`: Spark writes the latest feature tables to the offline store, then Feast runs `feast apply` and `feast materialize-incremental <end_datetime>`.
-- This follows the Feast incremental materialize pattern: Feast uses the registry materialization state to infer the start time and only loads feature rows up to the requested end time into the Redis online store.
+Both streaming jobs run continuously and listen to Kafka topic `cdc.behavior_events`, produced by Debezium CDC from source Postgres table `public.behavior_events`.
 
-### Image proof of Airflow data pipelines overview
+- `realtime-flink-online-store` uses consumer group `recsys-flink-realtime-online`, runs with `--continuous`, and writes online features to Redis.
+- `realtime-flink-offline-store` uses consumer group `recsys-flink-realtime-offline`, runs with `--continuous`, and writes Feast offline feature rows to PostgreSQL.
 
-![Data & ML system](../../pngs/airflow_data_pipeline_overview.png)
+The jobs intentionally use separate consumer groups so both jobs receive the full event stream instead of competing for partitions. Useful runtime config:
 
-### Image proof of Incremental materialize data from offline to online store
+- Kafka topic: `realtimeFlinkConsumer.topic: cdc.behavior_events`
+- Base group: `realtimeFlinkConsumer.groupId: recsys-flink-realtime`
+- Offline sink: `realtimeFlinkConsumer.offlineStoreSink: postgres`
+- Checkpoint interval: `30` seconds
+- Watermark delay: `60` minutes
+- Feature state TTL: `604800` seconds
+- Dedup state TTL: `86400` seconds
+- PostgreSQL Feast target: `FEAST_POSTGRES_HOST=feature-postgres.recsys-dataflow.svc.cluster.local`, `FEAST_POSTGRES_DB=feature_store`, `FEAST_POSTGRES_SCHEMA=feature_store`, `FEAST_POSTGRES_SSLMODE=disable`
+- Stability tuning after proof run: `KAFKA_FETCH_MAX_BYTES=1048576`, `KAFKA_MAX_PARTITION_FETCH_BYTES=262144`, `KAFKA_MAX_POLL_RECORDS=100`, plus TaskManager memory `process=2560m`, `task.heap=1024m`, `managed=256m`. This avoids Java heap OOM from large Kafka fetch buffers while both continuous jobs share the TaskManager.
 
-![Data & ML system](../../pngs/feast_materialize_dag.png)
+| Job | Kafka topic | Consumer group | Continuous mode | Sink |
+| --- | --- | --- | --- | --- |
+| `realtime-flink-online-store` | `cdc.behavior_events` | `recsys-flink-realtime-online` | `--continuous` | Redis keys `fs:user_sequence:*`, `fs:user_aggregate:*`, `fs:item:*` |
+| `realtime-flink-offline-store` | `cdc.behavior_events` | `recsys-flink-realtime-offline` | `--continuous` | PostgreSQL tables `feature_store.user_sequence_features`, `user_aggregate_features`, `item_features` |
 
-## Two Running Streaming Feature Store Jobs
+### Image Proof Of Flink UI Job Running
 
-Code reference:
+![Two Flink jobs running](../../pngs/2_flink_jobs.png)
 
-- [infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): deploys two continuous Flink submitters, one for Redis online features and one for Iceberg offline features.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 483](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L483): Redis online feature writer.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 735](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L735): names the online sink `redis-online-feature-writer`.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py](../../../apps/data-platform/src/features/flink/realtime_stream_job.py): `--disable-offline-store` runs the Redis-only job; `--offline-store-enabled --disable-online-store` runs the Iceberg-only job.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 779](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L779): writes streaming behavior events to the Iceberg offline feature store.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 781](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L781): writes streaming user sequence features to the Iceberg offline feature store.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 791](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L791): writes streaming user aggregate features to the Iceberg offline feature store.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 801](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L801): writes streaming item features to the Iceberg offline feature store.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 817](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L817): writes streaming quality windows to the Iceberg offline feature store.
-
-Running command:
+### Commands To Capture Proof
 
 ```bash
-cd RecSys-MLops
-
-# Terminal 1: keep open for Flink UI.
-kubectl port-forward -n recsys-dataflow svc/flink-jobmanager 8081:8081
-
-# Terminal 2: show the deployed streaming feature job and its Flink job id.
-kubectl get deploy -n recsys-dataflow \
-  realtime-flink-online-store \
-  realtime-flink-offline-store
+kubectl get deploy -n recsys-dataflow realtime-flink-online-store realtime-flink-offline-store
 
 kubectl exec -n recsys-dataflow deploy/flink-jobmanager -- \
   curl -fsS http://localhost:8081/jobs/overview
+
+kubectl get pods -n recsys-dataflow -l app=flink-taskmanager \
+  -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount
 ```
 
-Open Flink UI at `http://localhost:8081/#/job/running/<job_id>/overview`, using the `jid` from `jobs/overview`.
+Expected proof: both submitter deployments are ready, Flink has two `RUNNING` jobs, and TaskManager restart count is stable.
 
-Description of output when running command:
+## Flink Streaming Job To Offline Store
 
-- This proof shows two continuous Flink jobs listening to the same Kafka CDC topic with different consumer groups.
-- `realtime-flink-online-store` writes Redis keys such as `fs:user_sequence:*`, `fs:user_aggregate:*`, `fs:item:*`, and candidate sorted sets for low-latency API serving.
-- `realtime-flink-offline-store` writes Iceberg tables: `stream_behavior_events`, `stream_user_sequence_features`, `stream_user_aggregate_features`, `stream_item_features`, and `streaming_quality_windows`.
-- The Flink UI and `jobs/overview` output should show both jobs in `RUNNING` state.
+### Code Reference
 
-### Image proof of CLI running job
+- [realtime-flink-consumer.yaml](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): deploys `realtime-flink-offline-store`, disables online writes, and passes `--offline-store-sink "$OFFLINE_STORE_SINK"` plus `--feast-postgres-*`.
+- [realtime_stream_job.py](../../../apps/data-platform/src/features/flink/realtime_stream_job.py): `build_postgres_feast_rows(...)` maps CDC feature payloads to Feast PostgreSQL table schemas.
+- [realtime_stream_job.py](../../../apps/data-platform/src/features/flink/realtime_stream_job.py): `PostgresFeastOfflineWriter` creates/writes PostgreSQL Feast offline feature tables.
+- [features.py](../../../apps/data-platform/feature-store/feature_repo/features.py): Feast FeatureViews read those tables with `PostgreSQLSource`.
 
-![Data & ML system](../../pngs/two_streaming_job_cli.png)
-
-### Image proof of one streaming job with two sink paths
-
-![Data & ML system](../../pngs/flink_ui_streaming_jobs.png)
-
-### Image proof of Flink operator names
-
-![Data & ML system](../../pngs/flink_ui_streaming_job_operators.png)
-
-### Flink UI Name descriptions
-
-| Name in Flink UI | Description |
-| --- | --- |
-| `Source: cdc-behavior-events-source -> Map, Filter, _stream_key_by_map_operator` | Reads CDC behavior events from Kafka, parses and normalizes the payload, filters invalid records, and keys the stream for downstream feature processing. |
-| `KEYED PROCESS -> (_stream_key_by_map_operator, _stream_key_by_map_operator)` | Deduplicates events by `event_id` and fans out the validated stream into feature-building and quality-monitoring branches. |
-| `KEYED PROCESS, _stream_key_by_map_operator` | Builds keyed user-level features from the deduplicated behavior stream, such as sequence and aggregate feature inputs. |
-| `KEYED PROCESS -> redis-online-feature-writer -> ... IcebergStreamWriter` | Builds item-level features, writes fresh online features through the Redis writer path, and converts records into Iceberg table rows for offline storage. |
-| `KEYED PROCESS, redis-online-feature-writer` | Online feature-store writer path; writes fresh streaming feature values to Redis for low-latency serving. |
-| `IcebergFilesCommitter -> Sink: IcebergSink ...stream_behavior_events` | Offline feature-store sink for cleaned streaming behavior events. |
-| `IcebergFilesCommitter -> Sink: IcebergSink ...stream_user_sequence_features` | Offline feature-store sink for user sequence features, including recent interaction history payloads. |
-| `IcebergFilesCommitter -> Sink: IcebergSink ...stream_user_aggregate_features` | Offline feature-store sink for user rolling aggregate counters such as recent views, carts, and purchases. |
-| `IcebergFilesCommitter -> Sink: IcebergSink ...stream_item_features` | Offline feature-store sink for item popularity and item-level rolling features. |
-| `KEYED PROCESS, Map -> *anonymous_datastream_source$5* -> Calc -> IcebergStreamWriter` | Builds streaming quality-window rows, including event count, late-event count, duplicate count, max lateness, and burst flag. |
-| `IcebergFilesCommitter -> Sink: IcebergSink ...streaming_quality_windows` | Offline feature-store sink for streaming quality monitoring windows. |
-
-
-
-## Streaming Features Pushed To Offline Store
-
-Code reference:
-
-- [apps/data-platform/src/features/flink/iceberg_feature_sink.py line 8](../../../apps/data-platform/src/features/flink/iceberg_feature_sink.py#L8): defines Iceberg offline streaming feature table DDLs.
-- [apps/data-platform/src/features/flink/iceberg_feature_sink.py line 80](../../../apps/data-platform/src/features/flink/iceberg_feature_sink.py#L80): configures the Iceberg feature catalog and creates feature tables.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 781](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L781): writes `stream_user_sequence_features`.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 791](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L791): writes `stream_user_aggregate_features`.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 801](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L801): writes `stream_item_features`.
-- [infra/k8s/scripts/data_platform_verify_feature_stores.sh line 152](../../../infra/k8s/scripts/data_platform_verify_feature_stores.sh#L152): verifies offline feature table metadata and data files.
-
-Running command:
+### Commands To Capture Proof
 
 ```bash
-cd RecSys-MLops
+kubectl logs -n recsys-dataflow deploy/realtime-flink-offline-store --tail=80
 
-make data-platform-verify-e2e
+kubectl logs -n recsys-dataflow deploy/flink-taskmanager --tail=160 | \
+  grep -E 'postgres-feast-offline-feature-writer|postgres_feast_offline_written'
+
+kubectl exec -n recsys-dataflow deploy/feature-postgres -- \
+  psql -U feast -d feature_store -c '
+    SELECT '\''user_sequence_features'\'' AS table_name, count(*) FROM feature_store.user_sequence_features
+    UNION ALL
+    SELECT '\''user_aggregate_features'\'', count(*) FROM feature_store.user_aggregate_features
+    UNION ALL
+    SELECT '\''item_features'\'', count(*) FROM feature_store.item_features
+    ORDER BY table_name;
+  '
 ```
 
-Description of output when running command:
+Expected proof: logs show PostgreSQL offline writer activity and PostgreSQL row counts are non-zero.
 
-- The verification job checks that the offline Iceberg feature store contains metadata files and Parquet data files.
-- The checked offline streaming tables are `stream_behavior_events`, `stream_user_sequence_features`, `stream_user_aggregate_features`, `stream_item_features`, and `streaming_quality_windows`.
-- The JSON output should show each table with `metadata_files > 0` and `data_files > 0`.
+### Image Proof Of Streaming Features In Offline Store
 
-### Image proof 
+![Streaming features pushed to offline store](../../pngs/streaming_feats_to_offline.png)
 
-![Data & ML system](../../pngs/streaming_feats_to_offline.png)
+![Streaming offline job tasks](../../pngs/stream_job_offline_tasks.png)
 
+## Flink Streaming Job To Online Store
 
-## Streaming Features Pushed To Online Store
+### Code Reference
 
-Code reference:
+- [realtime-flink-consumer.yaml](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): deploys `realtime-flink-online-store`, disables offline writes, and submits the online PyFlink job.
+- [online_writer.py](../../../apps/data-platform/src/feature_store/online_writer.py): defines Redis key templates and writes `fs:user_sequence:{user_id}`, `fs:user_aggregate:{user_id}`, and `fs:item:{product_id}` with expiry.
+- [realtime_stream_job.py](../../../apps/data-platform/src/features/flink/realtime_stream_job.py): pushes built feature payloads into Redis and names the operator `redis-online-feature-writer`.
 
-- [apps/data-platform/src/feature_store/online_writer.py line 30](../../../apps/data-platform/src/feature_store/online_writer.py#L30): Redis online writer used by the streaming job.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 483](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L483): Redis writer operator class.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 498](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L498): writes user sequence, user aggregate, and item payloads to Redis.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 735](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L735): names the Redis online sink `redis-online-feature-writer`.
-- [infra/k8s/scripts/data_platform_verify_feature_stores.sh line 76](../../../infra/k8s/scripts/data_platform_verify_feature_stores.sh#L76): waits until Redis online feature keys exist.
-- [infra/k8s/scripts/data_platform_verify_feature_stores.sh line 180](../../../infra/k8s/scripts/data_platform_verify_feature_stores.sh#L180): prints Redis online feature key verification.
-
-Running command:
+### Commands To Capture Proof
 
 ```bash
-cd RecSys-MLops
-
 kubectl exec -n recsys-dataflow deploy/redis -- \
   sh -lc 'redis-cli --scan --pattern "fs:user_sequence:*" | head'
 
@@ -190,69 +150,31 @@ kubectl exec -n recsys-dataflow deploy/redis -- \
 
 kubectl exec -n recsys-dataflow deploy/redis -- \
   sh -lc 'redis-cli --scan --pattern "fs:item:*" | head'
-
-make data-platform-verify-e2e
 ```
 
-Description of output when running command:
+Expected proof: each command prints at least one Redis online feature key created by the continuous online-store Flink job.
 
-- The Redis commands show online feature keys created by the streaming Flink job.
-- `fs:user_sequence:*` proves streaming user sequence features were pushed into the online store.
-- `fs:user_aggregate:*` proves streaming user aggregate features were pushed into the online store.
-- `fs:item:*` proves streaming item features were pushed into the online store.
-- `make data-platform-verify-e2e` prints `Redis online feature keys detected: ...` and `Streaming feature stores verified.` when the online feature store proof passes.
+### Image Proof Of Streaming Features In Online Store
 
-### Image proof 
+![Streaming features pushed to online store](../../pngs/streaming_feats_to_online.png)
 
-![Data & ML system](../../pngs/streaming_feats_to_online.png)
+![Streaming online job tasks](../../pngs/stream_job_online_tasks.png)
 
-## Feature Columns And TTL
+## TTL Definition & Reasons
 
-Code reference:
+### Code Reference
 
-- [apps/data-platform/src/features/spark/build_user_sequence_features.py line 6](../../../apps/data-platform/src/features/spark/build_user_sequence_features.py#L6): defines user sequence feature columns.
-- [apps/data-platform/src/features/spark/build_user_aggregate_features.py line 26](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L26): defines user aggregate feature columns.
-- [apps/data-platform/src/features/spark/build_item_features.py line 49](../../../apps/data-platform/src/features/spark/build_item_features.py#L49): defines item feature columns.
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 65](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L65): writes batch feature tables to the offline feature store.
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 109](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L109): writes Feast parquet mirror for offline-to-online materialization.
-- [apps/data-platform/feature-store/feature_repo/features.py line 36](../../../apps/data-platform/feature-store/feature_repo/features.py#L36): Feast TTL for `user_aggregate_features`.
-- [apps/data-platform/feature-store/feature_repo/features.py line 55](../../../apps/data-platform/feature-store/feature_repo/features.py#L55): Feast TTL for `item_features`.
-- [configs/local/redis_online_store.yaml line 14](../../../configs/local/redis_online_store.yaml#L14): documents native Redis TTL values for streaming online writer.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 871](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L871): default Flink state TTL.
-- [apps/data-platform/src/features/flink/realtime_stream_job.py line 872](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L872): default Flink dedup state TTL.
+- [features.py](../../../apps/data-platform/feature-store/feature_repo/features.py): Feast FeatureView TTLs.
+- [redis_online_store.yaml](../../../configs/local/redis_online_store.yaml): Redis online TTL notes.
+- [realtime_stream_job.py](../../../apps/data-platform/src/features/flink/realtime_stream_job.py): Redis TTLs plus Flink feature/dedup state TTL.
+- [values.yaml](../../../infra/helm/recsys-data-platform/values.yaml): runtime TTL values for deployed streaming jobs.
 
-Running command:
+### TTL For Each Feature Table & Reason Why
 
-```bash
-cd RecSys-MLops
-
-kubectl exec -n recsys-dataflow deploy/redis -- \
-  sh -lc 'key=$(redis-cli --scan --pattern "fs:user_sequence:*" | head -1); echo "$key"; redis-cli ttl "$key"'
-
-kubectl exec -n recsys-dataflow deploy/redis -- \
-  sh -lc 'key=$(redis-cli --scan --pattern "fs:user_aggregate:*" | head -1); echo "$key"; redis-cli ttl "$key"'
-
-kubectl exec -n recsys-dataflow deploy/redis -- \
-  sh -lc 'key=$(redis-cli --scan --pattern "fs:item:*" | head -1); echo "$key"; redis-cli ttl "$key"'
-```
-
-Description of output when running command:
-
-- Each Redis command prints one matching online feature key, followed by the remaining TTL in seconds for that key.
-- `fs:user_sequence:*` should return a TTL close to `7,776,000` seconds for a freshly written sequence feature.
-- `fs:user_aggregate:*` should return a TTL close to `86,400` seconds for a freshly written user aggregate feature.
-- `fs:item:*` should return a TTL close to `604,800` seconds for a freshly written item feature.
-- A positive TTL proves the feature is stored in Redis with expiry enabled. A result of `-2` means the key does not exist, and `-1` means the key exists but no expiry was set.
-
-Feature columns and TTL explanation:
-
-| Feature group | Main columns | Storage path | TTL | Why this TTL |
-| --- | --- | --- | --- | --- |
-| `user_sequence` | `hist_item_ids`, `hist_event_type_ids`, `hist_category_ids`, `hist_brand_ids`, `hist_price_bucket_ids`, `hist_event_timestamps`, `hist_request_ids`, `hist_impression_ids` | Native Redis online store key `fs:user_sequence:{user_id}` | `7,776,000` seconds (`90 days`) | Sequence features represent longer user history for sequential recommendation models. A longer TTL keeps enough interaction context for ranking while still allowing inactive users to age out. |
-| `user_aggregate_features` / `user_aggregate` | `views_30m`, `carts_30m`, `purchases_24h`, `distinct_categories_7d`, `avg_viewed_price_7d`, `cart_to_purchase_ratio_7d`, `last_event_age_seconds`, `feature_version` | Feast FeatureView for batch materialization, plus Redis key `fs:user_aggregate:{user_id}` for streaming online serving | Feast TTL `1 day`; Redis TTL `86,400` seconds (`1 day`) | User aggregate features describe recent intent, so stale values can mislead recommendations quickly. The short TTL forces fresh behavior counts and prevents old intent from being served. |
-| `item_features` / `item` | `category_id`, `brand_id`, `price_bucket`, `is_active`, `views_1h`, `views_24h`, `carts_1h`, `carts_24h`, `purchases_24h`, `purchases_7d`, `conversion_rate_7d`, `popularity_score`, `feature_version` | Feast FeatureView for batch materialization, plus Redis key `fs:item:{product_id}` for streaming online serving | Feast TTL `7 days`; Redis TTL `604,800` seconds (`7 days`) | Item metadata and popularity are more stable than user intent, but popularity still changes over time. A weekly TTL keeps item features useful without serving very old trends. |
-| Flink keyed state | Per-user history, per-item history, dedup ids, and streaming quality windows used while computing features | Flink internal state | Feature state TTL `7 days`; dedup state TTL `1 day` | State TTL bounds memory/storage used by the streaming job. Dedup ids only need a short retention window, while feature-building state needs enough history for rolling and sequence features. |
-
-### Image proof 
-
-![Data & ML system](../../pngs/TTL.png)
+| Feature table / store key | Main columns | Offline / Feast TTL | Online Redis TTL | Reason |
+| --- | --- | ---: | ---: | --- |
+| `user_sequence_features` / `fs:user_sequence:{user_id}` | user history arrays and `hist_length` | `1 day` | `90 days` | Feast historical joins need short event-time freshness; Redis keeps longer sequence context for serving inactive users. |
+| `user_aggregate_features` / `fs:user_aggregate:{user_id}` | recent views/carts/purchases and ratios | `1 day` | `1 day` | User intent changes quickly, so stale aggregate counters should expire fast. |
+| `item_features` / `fs:item:{product_id}` | item metadata, popularity, and conversion signals | `7 days` | `7 days` | Item metadata and popularity drift over days, so a week balances continuity and freshness. |
+| PostgreSQL Feast offline stream rows | same Feast feature columns as Spark batch export | FeatureView TTLs above | not applicable | The offline streaming job keeps the Feast offline store fresh for historical retrieval and later materialization. PostgreSQL retention is an operational DB policy; Feast TTL controls point-in-time validity. |
+| Flink keyed feature state | per-user sequence, per-user aggregate, per-item state, dedup IDs | not applicable | not applicable | Feature state TTL is `7 days` to bound state size while preserving rolling history. Dedup TTL is `1 day` for replay and late-arrival protection. |

@@ -67,17 +67,27 @@ def test_serving_chart_renders_expected_namespaces():
     assert api_config["data"]["RECSYS_JSON_LOGS"] == "1"
     assert api_config["data"]["OTEL_SERVICE_NAME"] == "recsys-api-serving"
     assert ("ServiceMonitor", "recsys-api-serving") in by_kind_name
-    api_http_scaledobject = by_kind_name[("HTTPScaledObject", "recsys-api-serving-http")]
-    assert api_http_scaledobject["metadata"]["namespace"] == "api-serving"
-    assert api_http_scaledobject["spec"]["hosts"] == ["recsys-api-serving.local"]
-    assert api_http_scaledobject["spec"]["scaleTargetRef"] == {
+    assert ("HTTPScaledObject", "recsys-api-serving-http") not in by_kind_name
+    api_scaledobject = by_kind_name[("ScaledObject", "recsys-api-serving-prometheus")]
+    assert api_scaledobject["metadata"]["namespace"] == "api-serving"
+    assert api_scaledobject["spec"]["scaleTargetRef"] == {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
         "name": "recsys-api-serving",
-        "service": "recsys-api-serving",
-        "port": 80,
     }
-    assert api_http_scaledobject["spec"]["scalingMetric"]["requestRate"]["targetValue"] == 5
+    assert api_scaledobject["spec"]["minReplicaCount"] == 1
+    assert api_scaledobject["spec"]["maxReplicaCount"] == 3
+    assert api_scaledobject["spec"]["advanced"]["horizontalPodAutoscalerConfig"]["name"] == "recsys-api-serving"
+    assert [trigger["type"] for trigger in api_scaledobject["spec"]["triggers"]] == ["prometheus", "prometheus"]
+    assert "recsys_api_requests_total" in api_scaledobject["spec"]["triggers"][0]["metadata"]["query"]
+    assert "recsys_api_request_duration_seconds_sum" in api_scaledobject["spec"]["triggers"][1]["metadata"]["query"]
+    feature_api_deployment = by_kind_name[("Deployment", "recsys-online-feature-api")]
+    assert "replicas" not in feature_api_deployment["spec"]
+    feature_api_scaledobject = by_kind_name[("ScaledObject", "recsys-online-feature-api-prometheus")]
+    assert feature_api_scaledobject["metadata"]["namespace"] == "api-serving"
+    assert feature_api_scaledobject["spec"]["scaleTargetRef"]["name"] == "recsys-online-feature-api"
+    assert feature_api_scaledobject["spec"]["maxReplicaCount"] == 3
+    assert "recsys-online-feature-api" in feature_api_scaledobject["spec"]["triggers"][0]["metadata"]["query"]
     assert ("HTTPScaledObject", "recsys-bst-triton-http") not in by_kind_name
     assert ("Service", "recsys-bst-triton-http") not in by_kind_name
     kserve_resource_scaledobject = by_kind_name[("ScaledObject", "recsys-bst-triton-resource")]
@@ -122,7 +132,9 @@ def test_serving_chart_can_render_api_only_for_rollout_demo():
 
     assert ("Deployment", "recsys-api-serving") in by_kind_name
     assert ("Service", "recsys-api-serving") in by_kind_name
-    assert ("HTTPScaledObject", "recsys-api-serving-http") in by_kind_name
+    assert ("HTTPScaledObject", "recsys-api-serving-http") not in by_kind_name
+    assert ("ScaledObject", "recsys-api-serving-prometheus") in by_kind_name
+    assert ("ScaledObject", "recsys-online-feature-api-prometheus") in by_kind_name
     assert ("HTTPScaledObject", "recsys-bst-triton-http") not in by_kind_name
     assert ("ScaledObject", "recsys-bst-triton-resource") in by_kind_name
     assert ("InferenceService", "recsys-bst-triton") not in by_kind_name

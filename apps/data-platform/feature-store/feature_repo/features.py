@@ -3,44 +3,41 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 
-from feast import Entity, FeatureService, FeatureView, Field, FileSource, ValueType
+from feast import Entity, FeatureService, FeatureView, Field, ValueType
+from feast.infra.offline_stores.contrib.postgres_offline_store.postgres_source import PostgreSQLSource
 from feast.types import Array, Bool, Float64, Int64, String
 
 
-FEAST_OFFLINE_ROOT = os.getenv(
-    "FEAST_OFFLINE_ROOT",
-    "s3://recsys-offline-feature-store/feast/offline",
-).rstrip("/")
-FEAST_S3_ENDPOINT = (
-    os.getenv("FEAST_S3_ENDPOINT_OVERRIDE")
-    or os.getenv("MINIO_ENDPOINT")
-    or os.getenv("DATA_PLATFORM_MINIO_ENDPOINT")
-)
+FEAST_POSTGRES_SCHEMA = os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store")
+
+
+def _pg_table(table_name: str) -> str:
+    return f"{FEAST_POSTGRES_SCHEMA}.{table_name}"
 
 
 user = Entity(name="user", join_keys=["user_id"], value_type=ValueType.INT64)
 product = Entity(name="product", join_keys=["product_id"], value_type=ValueType.INT64)
 
 
-user_sequence_source = FileSource(
+user_sequence_source = PostgreSQLSource(
     name="user_sequence_features_source",
-    path=f"{FEAST_OFFLINE_ROOT}/user_sequence_features",
+    table=_pg_table("user_sequence_features"),
     timestamp_field="feature_timestamp",
-    s3_endpoint_override=FEAST_S3_ENDPOINT,
+    created_timestamp_column="created_timestamp",
 )
 
-user_aggregate_source = FileSource(
+user_aggregate_source = PostgreSQLSource(
     name="user_aggregate_features_source",
-    path=f"{FEAST_OFFLINE_ROOT}/user_aggregate_features",
+    table=_pg_table("user_aggregate_features"),
     timestamp_field="feature_timestamp",
-    s3_endpoint_override=FEAST_S3_ENDPOINT,
+    created_timestamp_column="created_timestamp",
 )
 
-item_features_source = FileSource(
+item_features_source = PostgreSQLSource(
     name="item_features_source",
-    path=f"{FEAST_OFFLINE_ROOT}/item_features",
+    table=_pg_table("item_features"),
     timestamp_field="feature_timestamp",
-    s3_endpoint_override=FEAST_S3_ENDPOINT,
+    created_timestamp_column="created_timestamp",
 )
 
 
@@ -63,7 +60,7 @@ user_sequence_features = FeatureView(
     ],
     source=user_sequence_source,
     online=True,
-    tags={"offline_store": "apache_iceberg", "online_store": "redis"},
+    tags={"offline_store": "postgresql", "lakehouse_source": "apache_iceberg", "online_store": "redis"},
 )
 
 
@@ -83,7 +80,7 @@ user_aggregate_features = FeatureView(
     ],
     source=user_aggregate_source,
     online=True,
-    tags={"offline_store": "apache_iceberg", "online_store": "redis"},
+    tags={"offline_store": "postgresql", "lakehouse_source": "apache_iceberg", "online_store": "redis"},
 )
 
 
@@ -108,7 +105,7 @@ item_features = FeatureView(
     ],
     source=item_features_source,
     online=True,
-    tags={"offline_store": "apache_iceberg", "online_store": "redis"},
+    tags={"offline_store": "postgresql", "lakehouse_source": "apache_iceberg", "online_store": "redis"},
 )
 
 
@@ -119,5 +116,5 @@ bst_ranking_v1 = FeatureService(
         user_aggregate_features,
         item_features,
     ],
-    tags={"offline_store": "apache_iceberg", "online_store": "redis"},
+    tags={"offline_store": "postgresql", "lakehouse_source": "apache_iceberg", "online_store": "redis"},
 )

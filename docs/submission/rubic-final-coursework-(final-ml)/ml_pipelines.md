@@ -5,8 +5,8 @@
 ### Tech stacks 
 
 - **Kubeflow Pipelines (KFP):** orchestrates the end-to-end training workflow as a containerized pipeline package.
-- **Spark + Iceberg/Hudi + MinIO offline store:** produces authoritative offline feature tables in Apache Iceberg and dataset-version metadata in Hudi.
-- **Feast historical feature retrieval:** `prepare-training-data` reads entity/label rows from Iceberg and then calls Feast `get_historical_features` with FeatureService `bst_ranking_v1`. Feast reads the Iceberg-exported offline views from `s3://recsys-offline-feature-store/feast/offline`.
+- **Spark + Iceberg/Hudi + BigQuery Feast offline store:** produces authoritative feature tables in Apache Iceberg, exports Feast feature/label tables to BigQuery, and records dataset-version metadata in Hudi.
+- **Feast historical feature retrieval:** `prepare-training-data` reads entity/label rows from BigQuery and then calls Feast `get_historical_features` with FeatureService `bst_ranking_v1`. Feast uses its core BigQuery offline store and `BigQuerySource` feature views.
 - **PyTorch BST model:** trains the existing `BST` recommender model with the existing `recommenderDataset` and `Trainer` code.
 - **KubeRay RayJob + Ray Tune:** replaces the notebook train step with distributed training/tuning. The KFP train component submits a RayJob with Ray head/worker pods and can run multiple trials in parallel.
 - **MLflow + MinIO + Postgres model registry:** stores training metrics, model checkpoints/artifacts, and promoted model metadata.
@@ -15,7 +15,7 @@ Notebook-to-pipeline mapping:
 
 | Notebook step | Pipeline step | What it does |
 | --- | --- | --- |
-| Load data from offline store through Feast and merge labels | `prepare-training-data` | Reads entity/label rows from Iceberg, pulls historical features through Feast FeatureService `bst_ranking_v1`, and prepares training rows. |
+| Load data from offline store through Feast and merge labels | `prepare-training-data` | Reads entity/label rows from BigQuery, pulls historical features through Feast FeatureService `bst_ranking_v1`, and prepares training rows. |
 | Split train/validation data | `prepare-training-data` | Writes `train.jsonl`, `val.jsonl`, `test.jsonl`, and dataset metadata. |
 | Train model | `submit-rayjob` | Runs distributed BST training/tuning through KubeRay/Ray Tune. |
 | Evaluate model | `evaluate-bst` | Evaluates the best Ray result on the test split. |
@@ -59,9 +59,9 @@ RUN_ID="manual-bst-distributed-$(date +%Y%m%d%H%M%S)"
 cat > /tmp/recsys_kfp_bst_args.json <<JSON
 {
   "pipeline_run_id": "${RUN_ID}",
-  "entity_input_path": "recsys_features.feature_store.ml_ranking_labels",
+  "entity_input_path": "bigquery://fsds-coursework.feature_store.ml_ranking_labels",
   "feast_repo_path": "/opt/recsys/apps/data-platform/feature-store/feature_repo",
-  "feast_offline_root": "s3://recsys-offline-feature-store/feast/offline",
+  "feast_offline_root": "",
   "feature_service_name": "bst_ranking_v1",
   "split_output_dir": "/workspace/recsys/data_platform/output/ml/bst_split",
   "ray_output_dir": "/workspace/recsys/data_platform/output/ml/ray",

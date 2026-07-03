@@ -8,7 +8,9 @@ metadata:
     app.kubernetes.io/name: {{ .Values.featureApi.name }}
     app.kubernetes.io/component: online-feature-api
 spec:
+{{- if not (and .Values.autoscaling.prometheus.enabled .Values.autoscaling.prometheus.featureApi.enabled) }}
   replicas: {{ .Values.featureApi.replicas }}
+{{- end }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -29,6 +31,8 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
         prometheus.io/port: {{ .Values.featureApi.service.targetPort | quote }}
+        sidecar.istio.io/proxyCPU: {{ .Values.featureApi.istio.proxyCPU | quote }}
+        sidecar.istio.io/proxyMemory: {{ .Values.featureApi.istio.proxyMemory | quote }}
     spec:
       {{- if .Values.featureApi.nodeSelector }}
       nodeSelector:

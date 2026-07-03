@@ -1,43 +1,37 @@
 # Load Test Autoscaling
 
-This guide shows how to load test autoscaling for:
+This guide shows how to load test serving autoscaling on GCP.
 
-- FastAPI serving in namespace `api-serving`
-- Triton/KServe inference in namespace `kserve-triton-inference`
-
-The FastAPI service uses KEDA HTTP request-rate autoscaling. Requests must go through the KEDA HTTP interceptor so KEDA can count API request rate. Requests sent directly to the internal Kubernetes Service, such as `http://recsys-api-serving`, still reach the app, but they bypass KEDA HTTP metrics and will not trigger API request-rate scaling.
-
-Triton/KServe uses KEDA resource autoscaling on CPU utilization. This is the correct path for the current serving design because FastAPI calls Triton through gRPC directly.
+The current FastAPI autoscaling path uses KEDA `ScaledObject` resources with Prometheus metrics. Prometheus scrapes the FastAPI metrics endpoint, then KEDA scales each Deployment from request rate and p95 latency.
 
 ## Current Scaling Targets
 
-| Workload | Namespace | HPA | Min | Max | Scaling target |
-|---|---|---|---:|---:|---:|
-| `recsys-api-serving` | `api-serving` | `keda-hpa-recsys-api-serving-http` | 1 | 5 | 5 req/s |
-| `recsys-bst-triton-predictor` | `kserve-triton-inference` | `recsys-bst-triton-predictor` | 1 | 3 | 50% CPU utilization |
+| Workload | Namespace | HPA | Min | Max | Scaling signal |
+|---|---|---|---:|---:|---|
+| `recsys-api-serving` | `api-serving` | `keda-hpa-recsys-api-serving` | 1 | 3 | `/recommendations` req/s and p95 latency |
+| `recsys-online-feature-api` | `api-serving` | `keda-hpa-recsys-online-feature-api` | 1 | 3 | `/online-features` req/s and p95 latency |
+| `recsys-bst-triton-predictor` | `kserve-triton-inference` | `recsys-bst-triton-predictor` | 1 | 3 | CPU utilization, 15% proof target |
+
+The proof override is in:
+
+```bash
+infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml
+```
 
 ## 1. Start Monitors
-
-CPU-based Triton autoscaling requires the Kubernetes metrics API. On minikube, enable `metrics-server` first:
-
-```bash
-minikube -p recsys-mlops addons enable metrics-server
-```
-
-Verify CPU metrics:
-
-```bash
-kubectl top pods -n kserve-triton-inference
-```
 
 Open separate terminals before running the load tests.
 
 ```bash
-kubectl get hpa -A -w
+kubectl get hpa -n api-serving -w
 ```
 
 ```bash
-kubectl get deploy -n api-serving recsys-api-serving -w
+kubectl get deploy -n api-serving recsys-api-serving recsys-online-feature-api -w
+```
+
+```bash
+kubectl get hpa -n kserve-triton-inference -w
 ```
 
 ```bash
@@ -51,110 +45,116 @@ kubectl get pods -n api-serving -l app.kubernetes.io/name=recsys-api-serving -w
 ```
 
 ```bash
-kubectl get pods -n kserve-triton-inference -l app=isvc.recsys-bst-triton-predictor -w
+kubectl get pods -n api-serving -l app.kubernetes.io/name=recsys-online-feature-api -w
 ```
 
-## 2. Port-Forward KEDA HTTP Interceptor
-
-Run this in a separate terminal and keep it running during the load tests.
+## 2. Verify Autoscale Objects
 
 ```bash
-kubectl -n keda port-forward svc/keda-add-ons-http-interceptor-proxy 18081:8080
+kubectl get scaledobject -n api-serving
+kubectl get hpa -n api-serving
+kubectl get hpa -n kserve-triton-inference
 ```
 
-If the service name is different, inspect services first:
+Expected objects:
+
+```text
+recsys-api-serving-prometheus           True   False   1   3
+recsys-online-feature-api-prometheus    True   False   1   3
+```
+
+Describe the FastAPI scalers:
 
 ```bash
-kubectl get svc -n keda
+kubectl describe scaledobject -n api-serving recsys-api-serving-prometheus
+kubectl describe scaledobject -n api-serving recsys-online-feature-api-prometheus
 ```
 
-Use the service with `interceptor-proxy` in its name.
+## 3. Smoke Test
 
-## 3. Smoke Test API Through KEDA
+This validates the full path:
 
-This request must return `HTTP/1.1 200 OK`.
+```text
+FastAPI recommendation API -> online feature API -> Feast Redis online store -> Triton gRPC inference
+```
 
 ```bash
-curl -i -X POST http://127.0.0.1:18081/recommendations \
-  -H 'Host: recsys-api-serving.local' \
-  -H 'Content-Type: application/json' \
-  -d '{"user_id":50,"candidate_item_ids":[456,379,287,194,157],"top_k":3}'
+kubectl -n api-serving exec deploy/recsys-api-serving -c api -- \
+  python -c 'import requests, json; r=requests.post("http://127.0.0.1:8080/recommendations", json={"user_id":4,"candidate_item_ids":[1,2,3,4,5],"top_k":3}, timeout=30); print(r.status_code); print(json.dumps(r.json(), indent=2)[:2000]); r.raise_for_status()'
 ```
 
-Expected response shape:
+## 4. Run Locust To Trigger API And Online Feature API Scaling
 
-```json
-{
-  "user_id": 50,
-  "model_version": "v2",
-  "items": [
-    {"item_id": 157, "score": 0.5533815622329712}
-  ]
-}
-```
-
-## 4. E2E Load Test For Both API And Triton
-
-This test sends traffic to `recsys-api-serving.local` through KEDA HTTP interceptor. FastAPI then fetches online features and calls Triton through gRPC. This single test should trigger:
-
-- API scale-up from KEDA HTTP request rate
-- Triton scale-up from CPU utilization caused by real gRPC inference traffic
-
-`RECSYS_CANDIDATE_COUNT=200` makes each recommendation request heavier by sending 200 candidate items to Triton.
+This command port-forwards `svc/recsys-api-serving`, runs Locust against `/recommendations`, then prints the HPA and Deployment state before and after the test.
 
 ```bash
+LOCUST_USERS=30 \
+LOCUST_SPAWN_RATE=10 \
+LOCUST_DURATION=90s \
 RECSYS_LOAD_TARGET=api \
-RECSYS_HOST_HEADER=recsys-api-serving.local \
-RECSYS_CANDIDATE_COUNT=200 \
+RECSYS_USER_ID=4 \
+RECSYS_CANDIDATE_COUNT=20 \
 RECSYS_TOP_K=10 \
-uv run --with locust locust \
-  -f tests/load/locustfile_serving.py \
-  --host http://127.0.0.1:18081 \
-  --headless \
-  -u 160 \
-  -r 40 \
-  -t 3m \
-  --only-summary
+make serving-autoscale-load-test
 ```
 
-Expected scale behavior:
+The `/recommendations` endpoint calls the online feature API internally, so this single run should scale both:
 
 ```text
-recsys-api-serving: 1/1 -> up to 5/5 -> 1/1 after cooldown
-recsys-bst-triton-predictor: 1/1 -> up to 3/3 -> 1/1 after cooldown
+recsys-api-serving: 1/1 -> 3/3
+recsys-online-feature-api: 1/1 -> 3/3
 ```
 
-Expected HPA signals during load:
+For a lighter repeatable proof after pods are already warm:
 
-```text
-api-serving  keda-hpa-recsys-api-serving-http  ...  TARGETS > 5  MINPODS 1  MAXPODS 5
-kserve-triton-inference  recsys-bst-triton-predictor  ...  CPU target above 50%  MINPODS 1  MAXPODS 3
+```bash
+LOCUST_USERS=15 \
+LOCUST_SPAWN_RATE=5 \
+LOCUST_DURATION=60s \
+RECSYS_LOAD_TARGET=api \
+RECSYS_USER_ID=4 \
+RECSYS_CANDIDATE_COUNT=10 \
+RECSYS_TOP_K=5 \
+make serving-autoscale-load-test
 ```
 
-Example observed E2E result:
+To stress only the online feature API:
 
-```text
-POST api:/recommendations
-3804 requests
-0 fails
-21.50 req/s
+```bash
+NAMESPACE=api-serving \
+SERVICE=recsys-online-feature-api \
+LOCAL_PORT=18089 \
+LOCUST_USERS=20 \
+LOCUST_SPAWN_RATE=10 \
+LOCUST_DURATION=90s \
+RECSYS_LOAD_TARGET=feature \
+RECSYS_USER_ID=4 \
+RECSYS_CANDIDATE_COUNT=20 \
+RECSYS_TOP_K=10 \
+make serving-autoscale-load-test
 ```
 
-## 5. Optional Direct Triton HTTP Stress Test
+## 5. Optional Triton Stress Test
 
-This path is optional after switching Triton to CPU autoscaling. The preferred proof is the E2E API load test above because it exercises the real application path:
+Triton/KServe scales by CPU. Normal API traffic may not always push Triton CPU high enough because the model is small, but the chart is configured with `maxReplicas: 3` and a low proof target.
 
-```text
-Locust -> KEDA HTTP interceptor -> FastAPI -> Redis -> Triton gRPC
+```bash
+kubectl get hpa -n kserve-triton-inference
+kubectl describe hpa -n kserve-triton-inference recsys-bst-triton-predictor
 ```
 
-If you still want to stress Triton directly with the Locust `triton` target, expose the Triton HTTP service and run:
+If direct Triton pressure is needed, port-forward the Triton predictor service and run the `triton` Locust target:
+
+```bash
+kubectl -n kserve-triton-inference port-forward svc/recsys-bst-triton-predictor 18090:80
+```
 
 ```bash
 RECSYS_LOAD_TARGET=triton \
+RECSYS_CANDIDATE_COUNT=200 \
 uv run --with locust locust \
   -f tests/load/locustfile_serving.py \
-  --host http://127.0.0.1:<TRITON_HTTP_PORT> \
+  --host http://127.0.0.1:18090 \
   --headless \
   -u 60 \
   -r 20 \
@@ -162,96 +162,44 @@ uv run --with locust locust \
   --only-summary
 ```
 
-Example observed result:
-
-```text
-POST triton:/v2/models/bst_ensemble/infer
-16245 requests
-0 fails
-135.59 req/s
-```
-
 ## 6. Capture Evidence
 
-Use these commands during and after each load test.
+Use these commands during and after the load test.
 
 ```bash
-kubectl get hpa -A
+kubectl get hpa -n api-serving
+kubectl get scaledobject -n api-serving
+kubectl get deploy -n api-serving recsys-api-serving recsys-online-feature-api -o wide
+kubectl get pods -n api-serving -o wide
 ```
 
 ```bash
-kubectl get deploy -n api-serving recsys-api-serving -o wide
-```
-
-```bash
+kubectl get hpa -n kserve-triton-inference
 kubectl get deploy -n kserve-triton-inference recsys-bst-triton-predictor -o wide
-```
-
-```bash
-kubectl describe hpa -n api-serving keda-hpa-recsys-api-serving-http
-```
-
-```bash
-kubectl describe hpa -n kserve-triton-inference recsys-bst-triton-predictor
 ```
 
 Good screenshots to capture:
 
-1. Locust summary with `0 fails`.
-2. HPA target above threshold during load.
-3. Deployment replicas scaled up.
-4. HPA target back to `0`.
-5. Deployment replicas scaled down after cooldown.
-
-## Important Note About API-To-Triton Traffic
-
-The FastAPI `/recommendations` endpoint calls Triton with gRPC directly:
-
-```text
-recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
-```
-
-That gRPC call bypasses the KEDA HTTP interceptor. Therefore Triton should not rely on KEDA HTTP request-rate metrics for this path. The chart now uses CPU resource autoscaling for Triton, so real gRPC inference load can scale the Triton deployment.
-
-With the current design:
-
-- Load on `/recommendations` scales `recsys-api-serving` by API request rate.
-- The same load can scale `recsys-bst-triton-predictor` by CPU utilization from gRPC inference.
-- No separate Triton HTTP KEDA path is required for the normal API serving flow.
+1. Locust summary.
+2. FastAPI HPA targets above the request-rate or latency threshold.
+3. `recsys-api-serving` at `3/3`.
+4. `recsys-online-feature-api` at `3/3`.
+5. HPA target back to low values after cooldown.
 
 ## Troubleshooting
 
-If Locust shows `100%` failures, first test one request:
+If HPA `TARGETS` stays `0`, confirm Prometheus can see FastAPI metrics:
 
 ```bash
-curl -i -X POST http://127.0.0.1:18081/recommendations \
-  -H 'Host: recsys-api-serving.local' \
-  -H 'Content-Type: application/json' \
-  -d '{"user_id":50,"candidate_item_ids":[456,379,287,194,157],"top_k":3}'
+kubectl -n observability exec deploy/recsys-prometheus -- \
+  wget -qO- 'http://127.0.0.1:9090/api/v1/query?query=sum(rate(recsys_api_requests_total{namespace="api-serving"}[1m]))'
 ```
 
-Common causes:
-
-- `Connection refused`: port-forward is not running.
-- `404`: wrong `Host` header or no matching `HTTPScaledObject`.
-- `502` or `503`: KEDA routed the request, but the backend service or Triton dependency is not ready.
-- HPA `TARGETS` stays `0`: traffic is not being counted by KEDA HTTP metrics.
-
-If scale-down is slow, inspect HPA:
+If KEDA reports Prometheus connection errors, check the mesh exception that allows KEDA to query Prometheus:
 
 ```bash
-kubectl describe hpa -n api-serving keda-hpa-recsys-api-serving-http
+kubectl get peerauthentication -n observability recsys-prometheus-keda-permissive
+kubectl get authorizationpolicy -n observability recsys-prometheus-keda-allow
 ```
 
-```bash
-kubectl describe hpa -n kserve-triton-inference recsys-bst-triton-predictor
-```
-
-The condition below is normal after a traffic spike:
-
-```text
-ScaleDownStabilized
-recent recommendations were higher than current one
-```
-
-It means HPA is intentionally delaying scale-down to avoid rapid replica flapping.
+If pods remain `Pending`, the GKE node pool does not have enough schedulable CPU or memory for the requested replica count. The proof values reduce FastAPI request sizes and Istio sidecar requests so both FastAPI services can reach 3 pods on the coursework cluster.

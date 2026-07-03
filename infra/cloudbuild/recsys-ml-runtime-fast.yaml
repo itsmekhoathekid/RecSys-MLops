@@ -1,0 +1,26 @@
+substitutions:
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _TAG: gcp
+  _BASE_TAG: gcp
+
+options:
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 3600s
+
+steps:
+  - id: training
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_BASE_TAG}
+      - -f
+      - apps/ml-system/Dockerfile.training
+      - -t
+      - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+      - .
+
+images:
+  - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}

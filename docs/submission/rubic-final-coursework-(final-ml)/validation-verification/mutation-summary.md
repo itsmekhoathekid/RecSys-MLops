@@ -1,9 +1,9 @@
 # Mutation Testing
 
-- Mutation score: 90.74%
+- Mutation score: 86.67%
 - Gate: > 80.00%
-- Killed: 49
-- Survived: 5
+- Killed: 52
+- Survived: 8
 - Timeout: 0
 - Suspicious: 0
 - No tests: 0

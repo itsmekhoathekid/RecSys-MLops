@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import feature_api
+import feature_service_client
 import inference_api
 from api_schemas import OnlineFeaturesRequest, OnlineFeaturesResponse, RecommendationRequest
 from ranking import recommend
@@ -157,17 +160,27 @@ def test_api_health_ready_version_metrics_and_online_features(
     assert feature_version["service"] == "recsys-online-feature-api"
     assert feature_version["online_store"] == "Redis"
 
+    assert deterministic_feature_api.get("/ready").json() == {"status": "ready"}
+    feature_metrics = deterministic_feature_api.get("/metrics")
+    assert feature_metrics.status_code == 200
+    assert "text/plain" in feature_metrics.headers["content-type"]
+    assert "recsys_observability_build_info" in feature_metrics.text
+
 
 def test_ready_can_be_forced_not_ready(
     deterministic_api: TestClient,
+    deterministic_feature_api: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FORCE_NOT_READY", "1")
 
     response = deterministic_api.get("/ready")
+    feature_response = deterministic_feature_api.get("/ready")
 
     assert response.status_code == 503
     assert response.json()["detail"] == "forced not ready"
+    assert feature_response.status_code == 503
+    assert feature_response.json()["detail"] == "forced not ready"
 
 
 def test_api_error_paths_return_bad_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -214,11 +227,16 @@ def test_api_error_paths_return_bad_gateway(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_api_singletons_and_env_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     created_features = []
+    created_feature_services = []
     created_rankers = []
 
     class FakeFeatureClient:
         def __init__(self) -> None:
             created_features.append("feature-client")
+
+    class FakeFeatureServiceClient:
+        def __init__(self) -> None:
+            created_feature_services.append("feature-service-client")
 
     class FakeRouter:
         @classmethod
@@ -227,19 +245,101 @@ def test_api_singletons_and_env_helpers(monkeypatch: pytest.MonkeyPatch) -> None
             return cls()
 
     monkeypatch.setattr(feature_api, "FeatureClient", FakeFeatureClient)
+    monkeypatch.setattr(inference_api, "OnlineFeatureServiceClient", FakeFeatureServiceClient)
     monkeypatch.setattr(inference_api, "TritonABRouter", FakeRouter)
     monkeypatch.setattr(feature_api, "_feature_client", None)
+    monkeypatch.setattr(inference_api, "_feature_service_client", None)
     monkeypatch.setattr(inference_api, "_ranker", None)
     monkeypatch.setenv("FEATURE_FLAG", "yes")
     monkeypatch.setenv("BAD_INT", "not-an-int")
 
     assert feature_api.feature_client() is feature_api.feature_client()
+    assert inference_api.feature_service_client() is inference_api.feature_service_client()
     assert inference_api.ranker() is inference_api.ranker()
     assert created_features == ["feature-client"]
+    assert created_feature_services == ["feature-service-client"]
     assert created_rankers == ["ranker"]
     assert bool_env("FEATURE_FLAG") is True
     assert bool_env("MISSING_FLAG", default="off") is False
     assert int_env("BAD_INT", default=7) == 7
+
+
+def test_feature_api_startup_warmup_respects_env_toggle(monkeypatch: pytest.MonkeyPatch) -> None:
+    warmups = []
+
+    class WarmupFeatureClient:
+        def _feature_store(self) -> str:
+            warmups.append("warmed")
+            return "store"
+
+    monkeypatch.setattr(feature_api, "feature_client", lambda: WarmupFeatureClient())
+    monkeypatch.setenv("FEATURE_API_WARMUP_ON_STARTUP", "1")
+    asyncio.run(feature_api.warm_feature_store())
+    assert warmups == ["warmed"]
+
+    monkeypatch.setenv("FEATURE_API_WARMUP_ON_STARTUP", "0")
+    asyncio.run(feature_api.warm_feature_store())
+    assert warmups == ["warmed"]
+
+
+def test_online_feature_service_client_fetches_and_validates_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            calls.append(("raise_for_status",))
+
+        def json(self) -> dict:
+            return {
+                "user_id": 7,
+                "candidate_item_ids": [101, 102],
+                "user_sequence": {"hist_item_ids": [1, 2]},
+                "item_features": {
+                    "101": {"category_id": 11},
+                    "102": {"category_id": 12},
+                },
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            calls.append(("timeout", timeout))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            calls.append(("closed",))
+
+        async def post(self, url: str, json: dict) -> FakeResponse:
+            calls.append(("post", url, json))
+            return FakeResponse()
+
+    monkeypatch.setattr(feature_service_client.httpx, "AsyncClient", FakeAsyncClient)
+    client = feature_service_client.OnlineFeatureServiceClient(
+        base_url="http://feature-api/",
+        timeout_seconds=1.5,
+    )
+
+    response = asyncio.run(
+        client.fetch(
+            OnlineFeaturesRequest(
+                user_id=7,
+                candidate_item_ids=[101, 102],
+                top_k=2,
+            )
+        )
+    )
+
+    assert response.user_id == 7
+    assert response.candidate_item_ids == [101, 102]
+    assert response.item_features["102"]["category_id"] == 12
+    assert ("timeout", 1.5) in calls
+    assert ("raise_for_status",) in calls
+    assert (
+        "post",
+        "http://feature-api/online-features",
+        {"user_id": 7, "candidate_item_ids": [101, 102], "top_k": 2},
+    ) in calls
 
 
 @given(

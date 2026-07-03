@@ -6,9 +6,9 @@
 #    config_path: str [Default: 'configs/local/spark_batch.yaml']
 #    cpus_per_trial: float [Default: 1.0]
 #    dataset_metadata_path: str [Default: '/workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json']
-#    entity_input_path: str [Default: 'recsys_features.feature_store.ml_ranking_labels']
+#    entity_input_path: str [Default: 'postgresql://feature-postgres.recsys-dataflow.svc.cluster.local:5432/feature_store/feature_store.ml_ranking_labels']
 #    eval_metrics_path: str [Default: '/workspace/recsys/data_platform/output/ml/eval_metrics.json']
-#    feast_offline_root: str [Default: 's3://recsys-offline-feature-store/feast/offline']
+#    feast_offline_root: str [Default: '']
 #    feast_repo_path: str [Default: '/opt/recsys/apps/data-platform/feature-store/feature_repo']
 #    feature_service_name: str [Default: 'bst_ranking_v1']
 #    feature_summary_path: str [Default: '/workspace/recsys/data_platform/output/feature_summary.json']
@@ -417,7 +417,7 @@ root:
         isOptional: true
         parameterType: STRING
       entity_input_path:
-        defaultValue: recsys_features.feature_store.ml_ranking_labels
+        defaultValue: postgresql://feature-postgres.recsys-dataflow.svc.cluster.local:5432/feature_store/feature_store.ml_ranking_labels
         isOptional: true
         parameterType: STRING
       eval_metrics_path:
@@ -425,7 +425,7 @@ root:
         isOptional: true
         parameterType: STRING
       feast_offline_root:
-        defaultValue: s3://recsys-offline-feature-store/feast/offline
+        defaultValue: ''
         isOptional: true
         parameterType: STRING
       feast_repo_path:

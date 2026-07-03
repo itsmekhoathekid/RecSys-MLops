@@ -13,6 +13,14 @@ output:
   iceberg_feature_namespace: feature_store
   offline_feature_store_uri: s3a://recsys-offline-feature-store/warehouse/feature_store
   feast_offline_store_uri: s3a://recsys-offline-feature-store/feast/offline
+  feast_postgres_export:
+    enabled: true
+    host: feature-postgres
+    port: 5432
+    database: feature_store
+    schema: feature_store
+    user: feast
+    sslmode: disable
 
 features:
   max_history_length: 50

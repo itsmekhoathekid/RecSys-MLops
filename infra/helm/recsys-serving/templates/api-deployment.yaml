@@ -6,7 +6,9 @@ metadata:
   labels:
     app.kubernetes.io/name: {{ .Values.api.name }}
 spec:
-{{- if not (and .Values.autoscaling.http.enabled .Values.autoscaling.http.api.enabled) }}
+{{- $apiPrometheusAutoscaling := and .Values.autoscaling.prometheus.enabled .Values.autoscaling.prometheus.api.enabled -}}
+{{- $apiHttpAutoscaling := and .Values.autoscaling.http.enabled .Values.autoscaling.http.api.enabled -}}
+{{- if not (or $apiPrometheusAutoscaling $apiHttpAutoscaling) }}
   replicas: {{ .Values.api.replicas }}
 {{- end }}
   strategy:
@@ -28,6 +30,8 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
         prometheus.io/port: {{ .Values.api.service.targetPort | quote }}
+        sidecar.istio.io/proxyCPU: {{ .Values.api.istio.proxyCPU | quote }}
+        sidecar.istio.io/proxyMemory: {{ .Values.api.istio.proxyMemory | quote }}
     spec:
       {{- if .Values.api.nodeSelector }}
       nodeSelector:

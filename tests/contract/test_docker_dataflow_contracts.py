@@ -70,6 +70,8 @@ def test_spark_and_flink_images_include_iceberg_without_pandas_runtime():
     assert "hudi-spark3.5-bundle_2.12" in spark_dockerfile
     assert "iceberg-flink-runtime-1.19" in flink_dockerfile
     assert "flink-sql-connector-kafka" in flink_dockerfile
+    assert "psycopg[binary]" in flink_dockerfile
+    assert "google-cloud-bigquery" not in flink_dockerfile
     assert "great_expectations" not in dataflow_cli
     assert "dbt-core" not in dataflow_cli
     assert " pandas" not in spark_dockerfile
@@ -91,7 +93,7 @@ def test_airflow_dags_run_native_lakehouse_tasks_only():
             assert "feast_materialize_incremental >> offline_feature_drift >> trigger_kubeflow_retrain" in source
             assert "python -m validate.offline_feature_drift" in source
             assert '"offline_feature_drift",\n            DATAFLOW_IMAGE,' in source
-            assert "feast apply" in source
+            assert "apply_feature_repo" in source
             assert "http://flink-jobmanager:8081/jobs/overview" in source
             assert "No RUNNING Flink jobs found" in source
         else:
@@ -137,10 +139,10 @@ def test_lakehouse_batch_ingestion_uses_python_not_spark_submit():
     assert "pyarrow.parquet" in ingestion_source
 
 
-def test_k8s_airflow_task_pods_do_not_join_istio_mesh():
+def test_k8s_airflow_task_pods_can_skip_istio_mesh_for_native_jobs():
     source = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py").read_text()
     assert '"sidecar.istio.io/inject": "false"' in source
-    assert "holdApplicationUntilProxyStarts" not in source
+    assert "mesh=False" in source
     assert "curl --max-time 5 -sf -X POST http://127.0.0.1:15020/quitquitquit" not in source
     assert "startup_timeout_seconds=600" in source
 
@@ -189,12 +191,20 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
     assert values["realtimeCdcConnector"]["enabled"] is True
     assert values["e2e"]["realtimeEnabled"] == "true"
     assert values["e2e"]["datahubIngestEnabled"] == "false"
+    assert values["realtimeFlinkConsumer"]["offlineStoreSink"] == "postgres"
+    assert values["featurePostgres"]["name"] == "feature-postgres"
+    assert values["featurePostgres"]["schema"] == "feature_store"
     assert "LAKEHOUSE_WAREHOUSE" in rendered
     assert "ICEBERG_CATALOG" in rendered
     assert "ICEBERG_LAKEHOUSE_NAMESPACE" in rendered
     assert "OFFLINE_FEATURE_STORE_WAREHOUSE" in rendered
     assert "OFFLINE_FEATURE_CATALOG" in rendered
     assert "OFFLINE_STORE_ENABLED" in rendered
+    assert "OFFLINE_STORE_SINK" in rendered
+    assert '--offline-store-sink "$OFFLINE_STORE_SINK"' in rendered
+    assert '--feast-postgres-host "$FEAST_POSTGRES_HOST"' in rendered
+    assert '--feast-postgres-database "$FEAST_POSTGRES_DB"' in rendered
+    assert '--feast-postgres-password "$FEAST_POSTGRES_PASSWORD"' in rendered
     assert "OFFLINE_FEATURE_DRIFT_REPORT_PATH" in rendered
     assert "OFFLINE_FEATURE_DRIFT_CURRENT_ROOT" in rendered
     assert "OFFLINE_FEATURE_DRIFT_BASELINE_PATH" in rendered

@@ -1,9 +1,10 @@
-FROM apache/airflow:2.9.3-python3.10
+FROM apache/airflow:2.9.3-python3.10 AS deps
 
-ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
 
 USER airflow
-RUN pip install --no-cache-dir \
+RUN pip install --user \
     apache-airflow-providers-docker \
     apache-airflow-providers-http \
     apache-airflow-providers-cncf-kubernetes \
@@ -12,9 +13,18 @@ RUN pip install --no-cache-dir \
     pyyaml \
     redis
 
+FROM apache/airflow:2.9.3-python3.10 AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1
+
 USER root
 WORKDIR /opt/recsys
-COPY . /opt/recsys
+COPY --from=deps --chown=airflow:root /home/airflow/.local /home/airflow/.local
+COPY --chown=airflow:root configs /opt/recsys/configs
+COPY --chown=airflow:root infra/docker/scripts /opt/recsys/infra/docker/scripts
+COPY --chown=airflow:root apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY --chown=airflow:root apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
+COPY --chown=airflow:root apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
 USER airflow
 
 ENV PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys

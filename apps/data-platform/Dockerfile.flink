@@ -1,4 +1,24 @@
-FROM flink:1.19-scala_2.12-java17
+FROM flink:1.19-scala_2.12-java17 AS jar-downloader
+
+USER root
+ARG DOWNLOAD_JOBS=4
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /tmp/recsys-jars \
+    && printf '%s %s\n' \
+        https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.2.0-1.19/flink-sql-connector-kafka-3.2.0-1.19.jar /tmp/recsys-jars/flink-sql-connector-kafka-3.2.0-1.19.jar \
+        https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-flink-runtime-1.19/1.7.1/iceberg-flink-runtime-1.19-1.7.1.jar /tmp/recsys-jars/iceberg-flink-runtime-1.19-1.7.1.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar /tmp/recsys-jars/hadoop-aws-3.3.4.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-api/3.3.4/hadoop-client-api-3.3.4.jar /tmp/recsys-jars/hadoop-client-api-3.3.4.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-runtime/3.3.4/hadoop-client-runtime-3.3.4.jar /tmp/recsys-jars/hadoop-client-runtime-3.3.4.jar \
+        https://repo1.maven.org/maven2/commons-logging/commons-logging/1.2/commons-logging-1.2.jar /tmp/recsys-jars/commons-logging-1.2.jar \
+        https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar /tmp/recsys-jars/aws-java-sdk-bundle-1.12.262.jar \
+        https://repo1.maven.org/maven2/org/scala-lang/scala-library/2.12.18/scala-library-2.12.18.jar /tmp/recsys-jars/scala-library-2.12.18.jar \
+    | xargs -n 2 -P "${DOWNLOAD_JOBS}" sh -c 'curl -fsSL "$1" -o "$2"' sh
+
+FROM flink:1.19-scala_2.12-java17 AS runtime
 
 WORKDIR /opt/recsys
 
@@ -36,32 +56,13 @@ RUN python3 -m pip install --no-cache-dir \
         ruamel.yaml \
         redis \
         requests \
-        psycopg[binary]
+        psycopg[binary] \
+        psycopg-pool
 
-RUN curl -fsSL \
-        https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.2.0-1.19/flink-sql-connector-kafka-3.2.0-1.19.jar \
-        -o /opt/flink/lib/flink-sql-connector-kafka-3.2.0-1.19.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-flink-runtime-1.19/1.7.1/iceberg-flink-runtime-1.19-1.7.1.jar \
-        -o /opt/flink/lib/iceberg-flink-runtime-1.19-1.7.1.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar \
-        -o /opt/flink/lib/hadoop-aws-3.3.4.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-api/3.3.4/hadoop-client-api-3.3.4.jar \
-        -o /opt/flink/lib/hadoop-client-api-3.3.4.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-runtime/3.3.4/hadoop-client-runtime-3.3.4.jar \
-        -o /opt/flink/lib/hadoop-client-runtime-3.3.4.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/commons-logging/commons-logging/1.2/commons-logging-1.2.jar \
-        -o /opt/flink/lib/commons-logging-1.2.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
-        -o /opt/flink/lib/aws-java-sdk-bundle-1.12.262.jar \
-    && curl -fsSL \
-        https://repo1.maven.org/maven2/org/scala-lang/scala-library/2.12.18/scala-library-2.12.18.jar \
-        -o /opt/flink/lib/scala-library-2.12.18.jar
+COPY --from=jar-downloader /tmp/recsys-jars/*.jar /opt/flink/lib/
+
+RUN mkdir -p /opt/flink/plugins/s3-fs-hadoop \
+    && cp /opt/flink/opt/flink-s3-fs-hadoop-*.jar /opt/flink/plugins/s3-fs-hadoop/
 
 RUN python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python \
     && chmod +x /opt/flink/opt/python/pyflink/bin/*.sh
@@ -80,6 +81,10 @@ RUN printf '%s\n' \
         '</configuration>' \
         > /opt/flink/conf/core-site.xml
 
-COPY . /opt/recsys
+COPY configs /opt/recsys/configs
+COPY infra/docker/scripts /opt/recsys/infra/docker/scripts
+COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
+COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
 
 ENV PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys

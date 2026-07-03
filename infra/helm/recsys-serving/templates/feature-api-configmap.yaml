@@ -11,6 +11,7 @@ data:
   FEAST_RUNTIME_REPO_PATH: {{ .Values.featureApi.config.feastRuntimeRepoPath | quote }}
   FEAST_REDIS_CONNECTION_STRING: "{{ .Values.featureApi.config.redisHost }}:{{ .Values.featureApi.config.redisPort }}"
   FEAST_APPLY_ON_STARTUP: {{ .Values.featureApi.config.feastApplyOnStartup | quote }}
+  FEATURE_API_WARMUP_ON_STARTUP: {{ .Values.featureApi.config.warmupOnStartup | quote }}
   FORCE_NOT_READY: {{ .Values.featureApi.config.forceNotReady | quote }}
   ALLOW_FEATURE_FALLBACK: {{ .Values.featureApi.config.allowFeatureFallback | quote }}
   RECSYS_JSON_LOGS: {{ .Values.featureApi.config.jsonLogs | quote }}
@@ -18,6 +19,6 @@ data:
   OTEL_SERVICE_NAME: {{ .Values.featureApi.config.otelServiceName | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.featureApi.config.otelEndpoint | quote }}
   RECSYS_API_COMPONENT: online-feature-api
-  FEAST_OFFLINE_STORE: Apache Iceberg
+  FEAST_OFFLINE_STORE: PostgreSQL
   FEAST_ONLINE_STORE: Redis
 {{- end }}

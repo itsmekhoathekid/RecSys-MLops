@@ -67,7 +67,7 @@ spec:
               sleep infinity
           env:
             - name: FLINK_PROPERTIES
-              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}"
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
@@ -134,16 +134,24 @@ spec:
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
                 --offline-store-enabled \
                 --disable-online-store \
+                --offline-store-sink "$OFFLINE_STORE_SINK" \
+                --feast-postgres-host "$FEAST_POSTGRES_HOST" \
+                --feast-postgres-port "$FEAST_POSTGRES_PORT" \
+                --feast-postgres-database "$FEAST_POSTGRES_DB" \
+                --feast-postgres-schema "$FEAST_POSTGRES_SCHEMA" \
+                --feast-postgres-user "$FEAST_POSTGRES_USER" \
+                --feast-postgres-password "$FEAST_POSTGRES_PASSWORD" \
+                --feast-postgres-sslmode "$FEAST_POSTGRES_SSLMODE" \
                 --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
                 --iceberg-catalog "$ICEBERG_CATALOG" \
                 --offline-feature-catalog "$OFFLINE_FEATURE_CATALOG" \
                 --offline-feature-store-warehouse "$OFFLINE_FEATURE_STORE_WAREHOUSE" \
                 --iceberg-feature-namespace "$ICEBERG_FEATURE_NAMESPACE"
-              echo "Submitted realtime Flink offline-store job; keeping submitter pod alive."
+              echo "Submitted realtime Flink $OFFLINE_STORE_SINK offline-store job; keeping submitter pod alive."
               sleep infinity
           env:
             - name: FLINK_PROPERTIES
-              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}"
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

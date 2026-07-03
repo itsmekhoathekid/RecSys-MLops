@@ -1,0 +1,78 @@
+{{- $prom := .Values.autoscaling.prometheus -}}
+{{- if and $prom.enabled $prom.api.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $prom.api.name }}
+  namespace: {{ .Values.api.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.api.name }}
+    app.kubernetes.io/component: prometheus-autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.api.name }}
+  minReplicaCount: {{ $prom.api.minReplicas }}
+  maxReplicaCount: {{ $prom.api.maxReplicas }}
+  pollingInterval: {{ $prom.pollingInterval }}
+  cooldownPeriod: {{ $prom.cooldownPeriod }}
+  advanced:
+    restoreToOriginalReplicaCount: {{ $prom.restoreToOriginalReplicaCount }}
+    horizontalPodAutoscalerConfig:
+      name: {{ $prom.api.hpaName }}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $prom.serverAddress | quote }}
+        metricName: recsys_api_serving_requests_per_second
+        threshold: {{ $prom.api.requestRate.targetValue | quote }}
+        activationThreshold: {{ $prom.api.requestRate.activationThreshold | quote }}
+        query: {{ printf "sum(rate(recsys_api_requests_total{service=\"%s\",route=\"%s\",method=\"%s\"}[%s]))" $prom.api.serviceLabel $prom.api.route $prom.api.method $prom.api.requestRate.window | quote }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $prom.serverAddress | quote }}
+        metricName: recsys_api_serving_latency_seconds
+        threshold: {{ $prom.api.latency.targetValue | quote }}
+        activationThreshold: {{ $prom.api.latency.activationThreshold | quote }}
+        query: {{ printf "sum(rate(recsys_api_request_duration_seconds_sum{service=\"%s\",route=\"%s\",method=\"%s\"}[%s])) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count{service=\"%s\",route=\"%s\",method=\"%s\"}[%s])), 0.001)" $prom.api.serviceLabel $prom.api.route $prom.api.method $prom.api.latency.window $prom.api.serviceLabel $prom.api.route $prom.api.method $prom.api.latency.window | quote }}
+{{- end }}
+{{- if and $prom.enabled $prom.featureApi.enabled }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $prom.featureApi.name }}
+  namespace: {{ .Values.api.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.featureApi.name }}
+    app.kubernetes.io/component: prometheus-autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.featureApi.name }}
+  minReplicaCount: {{ $prom.featureApi.minReplicas }}
+  maxReplicaCount: {{ $prom.featureApi.maxReplicas }}
+  pollingInterval: {{ $prom.pollingInterval }}
+  cooldownPeriod: {{ $prom.cooldownPeriod }}
+  advanced:
+    restoreToOriginalReplicaCount: {{ $prom.restoreToOriginalReplicaCount }}
+    horizontalPodAutoscalerConfig:
+      name: {{ $prom.featureApi.hpaName }}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $prom.serverAddress | quote }}
+        metricName: recsys_online_feature_api_requests_per_second
+        threshold: {{ $prom.featureApi.requestRate.targetValue | quote }}
+        activationThreshold: {{ $prom.featureApi.requestRate.activationThreshold | quote }}
+        query: {{ printf "sum(rate(recsys_api_requests_total{service=\"%s\",route=\"%s\",method=\"%s\"}[%s]))" $prom.featureApi.serviceLabel $prom.featureApi.route $prom.featureApi.method $prom.featureApi.requestRate.window | quote }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $prom.serverAddress | quote }}
+        metricName: recsys_online_feature_api_latency_seconds
+        threshold: {{ $prom.featureApi.latency.targetValue | quote }}
+        activationThreshold: {{ $prom.featureApi.latency.activationThreshold | quote }}
+        query: {{ printf "sum(rate(recsys_api_request_duration_seconds_sum{service=\"%s\",route=\"%s\",method=\"%s\"}[%s])) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count{service=\"%s\",route=\"%s\",method=\"%s\"}[%s])), 0.001)" $prom.featureApi.serviceLabel $prom.featureApi.route $prom.featureApi.method $prom.featureApi.latency.window $prom.featureApi.serviceLabel $prom.featureApi.route $prom.featureApi.method $prom.featureApi.latency.window | quote }}
+{{- end }}

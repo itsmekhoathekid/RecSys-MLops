@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -91,6 +92,7 @@ class FeatureClient:
         self.feast_runtime_repo_path = Path(os.getenv("FEAST_RUNTIME_REPO_PATH", "/tmp/recsys-feast-feature-repo"))
         self.feast_apply_on_startup = os.getenv("FEAST_APPLY_ON_STARTUP", "1") == "1"
         self._store: Any | None = None
+        self._store_lock = threading.RLock()
         self.client = redis.Redis(
             host=os.getenv("REDIS_HOST", "localhost"),
             port=int(os.getenv("REDIS_PORT", "6379")),
@@ -119,17 +121,20 @@ class FeatureClient:
 
     def _feature_store(self):
         if self._store is None:
-            from feast import FeatureStore
-            from feature_store.feast_registry import apply_feature_repo
+            with self._store_lock:
+                if self._store is None:
+                    from feast import FeatureStore
+                    from feature_store.feast_registry import apply_feature_repo
 
-            repo_path = self._prepare_runtime_repo()
-            if self.feast_apply_on_startup:
-                apply_feature_repo(repo_path, skip_source_validation=True)
-            self._store = FeatureStore(repo_path=str(repo_path))
+                    repo_path = self._prepare_runtime_repo()
+                    if self.feast_apply_on_startup:
+                        apply_feature_repo(repo_path, skip_source_validation=True)
+                    self._store = FeatureStore(repo_path=str(repo_path))
         return self._store
 
     def _get_feast_online_features(self, features: list[str], entity_rows: list[dict[str, Any]]) -> dict[str, list[Any]]:
-        return self._feature_store().get_online_features(features=features, entity_rows=entity_rows).to_dict()
+        with self._store_lock:
+            return self._feature_store().get_online_features(features=features, entity_rows=entity_rows).to_dict()
 
     def user_sequence(self, user_id: int) -> dict[str, Any]:
         start = time.perf_counter()

@@ -33,6 +33,14 @@ SPARK_DRIVER_EXECUTOR_ENV = (
     "OFFLINE_FEATURE_STORE_WAREHOUSE",
     "ICEBERG_FEATURE_NAMESPACE",
     "OFFLINE_FEATURE_STORE_URI",
+    "FEAST_POSTGRES_HOST",
+    "FEAST_POSTGRES_PORT",
+    "FEAST_POSTGRES_DB",
+    "FEAST_POSTGRES_SCHEMA",
+    "FEAST_POSTGRES_USER",
+    "FEAST_POSTGRES_PASSWORD",
+    "FEAST_POSTGRES_SSLMODE",
+    "FEAST_POSTGRES_EXPORT_ENABLED",
     "OFFLINE_FEATURE_DRIFT_REPORT_PATH",
     "PUSHGATEWAY_URL",
     "OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -226,8 +234,13 @@ if DAG is not None:
             "feast_materialize_incremental",
             DATAFLOW_IMAGE,
             "cd /opt/recsys/apps/data-platform/feature-store/feature_repo && "
-            "export FEAST_OFFLINE_ROOT=${FEAST_OFFLINE_ROOT:-s3://$OFFLINE_FEATURE_BUCKET/feast/offline} && "
-            "export AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-${MINIO_ENDPOINT:-$DATA_PLATFORM_MINIO_ENDPOINT}} && "
+            "export FEAST_POSTGRES_HOST=${FEAST_POSTGRES_HOST:-feature-postgres} && "
+            "export FEAST_POSTGRES_PORT=${FEAST_POSTGRES_PORT:-5432} && "
+            "export FEAST_POSTGRES_DB=${FEAST_POSTGRES_DB:-feature_store} && "
+            "export FEAST_POSTGRES_SCHEMA=${FEAST_POSTGRES_SCHEMA:-feature_store} && "
+            "export FEAST_POSTGRES_USER=${FEAST_POSTGRES_USER:-feast} && "
+            "export FEAST_POSTGRES_PASSWORD=${FEAST_POSTGRES_PASSWORD:-feast} && "
+            "export FEAST_POSTGRES_SSLMODE=${FEAST_POSTGRES_SSLMODE:-disable} && "
             "python -c 'from feature_store.feast_registry import apply_feature_repo; apply_feature_repo(\".\")' && "
             "feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)",
         )

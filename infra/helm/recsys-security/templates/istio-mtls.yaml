@@ -70,4 +70,19 @@ spec:
   mtls:
     mode: PERMISSIVE
 {{- end }}
+{{- if has "observability" .Values.istio.namespaces }}
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-prometheus-keda-permissive
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: recsys-prometheus
+  portLevelMtls:
+    9090:
+      mode: PERMISSIVE
+{{- end }}
 {{- end }}

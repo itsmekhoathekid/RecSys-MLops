@@ -1,174 +1,184 @@
-# Autoscale
+# Autoscaling Evidence
 
-## api-serving namespace (FastAPI)
+## Autoscaling Configuration Evidence
 
-### Config evidence
+### Online Feature API Autoscaling
 
-The main configuration is defined in this Helm values file:
-[infra/helm/recsys-serving/values.yaml line 95](../../../infra/helm/recsys-serving/values.yaml#95)
+#### Code References
 
-The API serving autoscaling configuration is:
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 29](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L29): enables Prometheus autoscaling for `recsys-online-feature-api`.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 36](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L36): sets min/max replicas to `1 -> 3`.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 38](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L38): request-rate threshold for `/online-features`.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 42](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L42): latency threshold for `/online-features`.
+- [infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml line 40](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L40): renders the online feature API KEDA `ScaledObject`.
+- [infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml line 70](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L70): Prometheus query for online feature API request rate.
+- [infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml line 77](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L77): Prometheus query for online feature API latency.
+
+#### Configuration
 
 ```yaml
 autoscaling:
-  http:
-    api:
+  prometheus:
+    featureApi:
       enabled: true
-      name: recsys-api-serving-http
-      host: recsys-api-serving.local
+      name: recsys-online-feature-api-prometheus
+      hpaName: recsys-online-feature-api
+      serviceLabel: recsys-online-feature-api
+      route: /online-features
+      method: POST
       minReplicas: 1
-      maxReplicas: 5
+      maxReplicas: 3
       requestRate:
-        targetValue: 5
+        targetValue: "4"
+        activationThreshold: "1"
+        window: 1m
+      latency:
+        targetValue: "0.08"
+        activationThreshold: "0.03"
+        window: 1m
 ```
 
-This renders a KEDA `HTTPScaledObject` from:
-[infra/helm/recsys-serving/templates/api-http-scaledobject.yaml line 1](../../../infra/helm/recsys-serving/templates/api-http-scaledobject.yaml#1)
+#### Scaling Behavior
 
-This means the FastAPI service scales by HTTP request rate. The target is 5 requests per second, with a minimum of 1 replica and a maximum of 5 replicas.
+`recsys-online-feature-api` scales from 1 to 3 pods. KEDA reads Prometheus metrics for `/online-features` and scales up when either request rate is above 4 req/s or average request latency is above 0.08 seconds over a 1-minute window. This service is expected to scale together with `recsys-api-serving` because every recommendation request fetches online Feast features before inference.
 
-## Triton inference service (KServe)
+### Recommendation API Autoscaling
 
-### Config evidence
+#### Code References
 
-The Triton/KServe autoscaling configuration is defined in:
-[infra/helm/recsys-serving/values.yaml line 130](../../../infra/helm/recsys-serving/values.yaml#130)
+- [apps/api-serving/src/inference_api.py line 60](../../../apps/api-serving/src/inference_api.py#L60): recommendation endpoint `/recommendations`.
+- [apps/api-serving/src/inference_api.py line 68](../../../apps/api-serving/src/inference_api.py#L68): recommendation API calls the online feature API before Triton inference.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 12](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L12): enables Prometheus autoscaling for `recsys-api-serving`.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 19](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L19): sets min/max replicas to `1 -> 3`.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 21](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L21): request-rate threshold for `/recommendations`.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 25](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L25): latency threshold for `/recommendations`.
+- [infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml line 2](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L2): renders the API serving KEDA `ScaledObject`.
+- [infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml line 31](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L31): Prometheus query for API serving request rate.
+- [infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml line 38](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L38): Prometheus query for API serving latency.
+
+#### Configuration
+
+```yaml
+autoscaling:
+  prometheus:
+    api:
+      enabled: true
+      name: recsys-api-serving-prometheus
+      hpaName: recsys-api-serving
+      serviceLabel: recsys-api-serving
+      route: /recommendations
+      method: POST
+      minReplicas: 1
+      maxReplicas: 3
+      requestRate:
+        targetValue: "4"
+        activationThreshold: "1"
+        window: 1m
+      latency:
+        targetValue: "0.15"
+        activationThreshold: "0.04"
+        window: 1m
+```
+
+#### Scaling Behavior
+
+`recsys-api-serving` scales from 1 to 3 pods. KEDA reads Prometheus metrics for `/recommendations` and scales up when either request rate is above 4 req/s or average request latency is above 0.15 seconds over a 1-minute window. This is the public serving entrypoint, so load starts here and then propagates to the online feature API and Triton inference.
+
+### Triton Inference Autoscaling
+
+#### Code References
+
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 46](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L46): enables Triton/KServe resource autoscaling.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 48](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L48): sets min/max replicas to `1 -> 3`.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 52](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L52): CPU autoscale metric.
+- [infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml line 56](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L56): lowers Triton resource request for scale-up proof on the coursework cluster.
+- [infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml line 1](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L1): renders the Triton/KServe KEDA `ScaledObject`.
+- [infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml line 17](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L17): Triton min/max replica fields.
+- [infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml line 26](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L26): Triton CPU trigger.
+
+#### Configuration
 
 ```yaml
 autoscaling:
   kserveResource:
     enabled: true
-    deploymentName: recsys-bst-triton-predictor
     minReplicas: 1
     maxReplicas: 3
-    hpaName: recsys-bst-triton-predictor
+    pollingInterval: 15
+    cooldownPeriod: 240
     cpu:
       enabled: true
       metricType: Utilization
-      value: "50"
+      value: "15"
+kserve:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 768Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
 ```
 
-This renders a KEDA `ScaledObject` from:
-[infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml line 1](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#1)
+#### Scaling Behavior
 
-This means Triton scales by CPU utilization. The target is 50% CPU utilization, with a minimum of 1 replica and a maximum of 3 replicas.
+`recsys-bst-triton-predictor` scales from 1 to 3 pods using CPU utilization. The proof target is 15% CPU utilization, and the request CPU is lowered to `100m` so the small coursework model can still demonstrate scale-up on the limited GKE node. Triton receives traffic indirectly from `recsys-api-serving` after the API builds the inference payload from online features.
 
-## 2. Runtime object proof
+## Load Test Evidence
 
-The following commands show the actual autoscaling objects deployed in the cluster:
+### Locust Stress Test Command
 
-```bash
-kubectl get httpscaledobject -n api-serving
-kubectl get scaledobject -n kserve-triton-inference
-kubectl get hpa -A
+Code references:
+
+- [infra/k8s/scripts/serving_autoscale_load_test.sh line 4](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L4): load-test script target namespace/service defaults.
+- [infra/k8s/scripts/serving_autoscale_load_test.sh line 23](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L23): port-forwards the selected Kubernetes Service.
+- [infra/k8s/scripts/serving_autoscale_load_test.sh line 27](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L27): prints initial HPA/ScaledObject/deployment state.
+- [infra/k8s/scripts/serving_autoscale_load_test.sh line 34](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L34): runs Locust with the selected load target.
+- [infra/k8s/scripts/serving_autoscale_load_test.sh line 47](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L47): prints autoscale state after load.
+- [tests/load/locustfile_serving.py line 20](../../../tests/load/locustfile_serving.py#L20): selects the `api` load target for the end-to-end serving path.
+- [tests/load/locustfile_serving.py line 45](../../../tests/load/locustfile_serving.py#L45): `api` target calls `/recommendations`.
+- [apps/api-serving/src/inference_api.py line 68](../../../apps/api-serving/src/inference_api.py#L68): API serving calls the online feature API.
+- [apps/api-serving/src/inference_api.py line 75](../../../apps/api-serving/src/inference_api.py#L75): API serving sends the feature payload to the ranking path backed by Triton.
+
+Run one end-to-end recommendation API load test. This single command triggers the full serving path:
+
+```text
+Locust -> recsys-api-serving -> recsys-online-feature-api -> Triton inference
 ```
 
-![Data & ML system](../../pngs/autoscale_api_serve.png)
-
-Then describe the objects for detailed configuration and runtime status:
-
 ```bash
-kubectl describe httpscaledobject -n api-serving recsys-api-serving-http
-kubectl describe scaledobject -n kserve-triton-inference recsys-bst-triton-resource
-```
-
-### Describe api-serving scale object
-
-![Data & ML system](../../pngs/scale_object_api.png)
-
-### Describe Triton scale object
-
-![Data & ML system](../../pngs/scale_object_triton.png)
-
-## 3. Metrics proof
-
-Because Triton scales by CPU utilization, the Kubernetes `metrics-server` must be working. These commands verify that CPU and memory metrics are available:
-
-```bash
-kubectl top pods -n kserve-triton-inference
-kubectl top pods -n api-serving
-```
-
-![Data & ML system](../../pngs/top_pods_service.png)
-
-If these commands return CPU and memory values, the resource metrics pipeline is available for the Triton HPA.
-
-## 4. Visual scaling proof
-
-### Load proof
-
-#### Port forward first
-
-```bash
-kubectl -n keda port-forward svc/keda-add-ons-http-interceptor-proxy 18081:8080
-```
-
-This port-forward exposes the KEDA HTTP interceptor locally on port `18081`. Traffic must go through this interceptor for KEDA to count API request rate and scale the FastAPI deployment.
-
-#### Test the curl
-
-```bash
-curl -i -X POST http://127.0.0.1:18081/recommendations \
-  -H 'Host: recsys-api-serving.local' \
-  -H 'Content-Type: application/json' \
-  -d '{"user_id":50,"candidate_item_ids":[456,379,287,194,157],"top_k":3}'
-```
-
-This request validates that the interceptor can route traffic to the FastAPI service. The `Host` header is required because the `HTTPScaledObject` is configured for `recsys-api-serving.local`.
-
-#### Run Locust stress test
-
-The command below generates API traffic through the KEDA HTTP interceptor:
-
-```bash
+LOCUST_USERS=60 \
+LOCUST_SPAWN_RATE=20 \
+LOCUST_DURATION=3m \
 RECSYS_LOAD_TARGET=api \
-RECSYS_HOST_HEADER=recsys-api-serving.local \
-RECSYS_CANDIDATE_COUNT=50 \
+RECSYS_USER_ID=4 \
+RECSYS_CANDIDATE_COUNT=200 \
 RECSYS_TOP_K=10 \
-uv run --with locust locust \
-  -f tests/load/locustfile_serving.py \
-  --host http://127.0.0.1:18081 \
-  --headless \
-  -u 20 \
-  -r 5 \
-  -t 2m \
-  --only-summary
+make serving-autoscale-load-test
 ```
 
-#### Explain the config of the running command above
+### Baseline Before Load
 
-- `RECSYS_LOAD_TARGET=api`: tells the Locust file to call the FastAPI `/recommendations` endpoint instead of Triton's direct HTTP inference endpoint.
-- `RECSYS_HOST_HEADER=recsys-api-serving.local`: sends the host value expected by the KEDA `HTTPScaledObject`. Without this header, the interceptor may not match the API route correctly and KEDA may not count the request rate.
-- `RECSYS_CANDIDATE_COUNT=50`: sends 50 candidate item IDs per recommendation request. A larger candidate count increases inference work because FastAPI sends a larger ranking payload to Triton.
-- `RECSYS_TOP_K=10`: asks the service to return the top 10 ranked recommendations.
-- `uv run --with locust locust`: runs Locust in the project environment while installing the `locust` package for this command.
-- `-f tests/load/locustfile_serving.py`: points Locust to the project load-test file.
-- `--host http://127.0.0.1:18081`: sends all requests to the local KEDA interceptor port-forward.
-- `--headless`: runs Locust without the web UI.
-- `-u 20`: runs 20 concurrent simulated users.
-- `-r 5`: ramps users up at 5 users per second.
-- `-t 2m`: keeps the test running for 2 minutes.
-- `--only-summary`: prints only the final summary table.
+#### Screenshot Evidence
 
-Expected scaling behavior:
+![Before scaling proof](../../pngs/before_scaling.png)
 
-- FastAPI scales by KEDA HTTP request-rate metrics when traffic goes through `18081` with the correct `Host` header.
-- Triton scales separately by CPU utilization because FastAPI calls Triton through gRPC.
-- If the HPA desired replica count increases but pods remain `Pending`, the cluster does not have enough schedulable CPU or memory.
+### Recommendation And Online Feature APIs Scaling Up
 
-#### Before running Locust
+#### Screenshot Evidence
 
-![Data & ML system](../../pngs/before_scaling.png)
+![API serving scaling proof](../../pngs/api-serving-scaling-up.png)
 
-#### Scaling api-serving up
+![Online feature API scaling proof](../../pngs/online-feature-api-scaling-up.png)
 
-![Data & ML system](../../pngs/api-serving-scaling-up.png)
+### Triton Inference Scaling Up
 
-#### Scaling Triton inference up
+#### Screenshot Evidence
 
-![Data & ML system](../../pngs/triton-inference-scaling-later.png)
+![Triton inference scaling proof](../../pngs/triton-inference-scaling-later.png)
 
-#### Fully scaled up
+### Fully Scaled State
 
-![Data & ML system](../../pngs/fully_scaled.png)
+#### Screenshot Evidence
 
+![Fully scaled proof](../../pngs/fully_scaled.png)

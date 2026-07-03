@@ -42,19 +42,44 @@ featureApi:
 autoscaling:
   http:
     api:
+      enabled: false
       minReplicas: 1
       maxReplicas: 3
       requestRate:
         targetValue: 10
         window: 30s
         granularity: 1s
+  prometheus:
+    enabled: true
+    api:
+      minReplicas: 1
+      maxReplicas: 3
+      requestRate:
+        targetValue: "4"
+        activationThreshold: "1"
+        window: 1m
+      latency:
+        targetValue: "0.15"
+        activationThreshold: "0.04"
+        window: 1m
+    featureApi:
+      minReplicas: 1
+      maxReplicas: 3
+      requestRate:
+        targetValue: "4"
+        activationThreshold: "1"
+        window: 1m
+      latency:
+        targetValue: "0.08"
+        activationThreshold: "0.03"
+        window: 1m
   kserveResource:
-    enabled: false
+    enabled: true
     minReplicas: 1
-    maxReplicas: 2
+    maxReplicas: 3
     pollingInterval: 15
     cooldownPeriod: 240
     cpu:
       enabled: true
       metricType: Utilization
-      value: "60"
+      value: "35"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 from fastapi import FastAPI, HTTPException, Path, Query
 
@@ -20,6 +21,12 @@ def feature_client() -> FeatureClient:
     return _feature_client
 
 
+@app.on_event("startup")
+async def warm_feature_store() -> None:
+    if os.getenv("FEATURE_API_WARMUP_ON_STARTUP", "1") == "1":
+        await asyncio.to_thread(feature_client()._feature_store)
+
+
 @app.get("/healthz")
 async def feature_healthz() -> dict[str, str]:
     return await healthz()
@@ -34,7 +41,7 @@ async def feature_ready() -> dict[str, str]:
 async def version() -> dict[str, object]:
     return version_payload(
         "recsys-online-feature-api",
-        offline_store="Apache Iceberg",
+        offline_store="PostgreSQL",
         online_store="Redis",
         feature_store="Feast",
     )

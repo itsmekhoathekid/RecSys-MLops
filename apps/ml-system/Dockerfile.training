@@ -1,16 +1,19 @@
 ARG RECSYS_BASE_IMAGE=recsys-base-python:local
-FROM ${RECSYS_BASE_IMAGE}
+FROM ${RECSYS_BASE_IMAGE} AS deps
 
 WORKDIR /opt/recsys
 COPY pyproject.toml uv.lock* /opt/recsys/
 
-ENV PYTHONPATH=/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys \
-    UV_SYSTEM_PYTHON=1
+ENV UV_LINK_MODE=copy \
+    UV_CONCURRENT_DOWNLOADS=8 \
+    UV_CONCURRENT_BUILDS=8
 
-RUN uv pip install --no-cache --index-url https://download.pytorch.org/whl/cpu \
+RUN python -m venv /opt/venv
+
+RUN uv pip install --python /opt/venv/bin/python --no-cache --index-url https://download.pytorch.org/whl/cpu \
     torch
 
-RUN uv pip install --no-cache \
+RUN uv pip install --python /opt/venv/bin/python --no-cache \
     boto3 \
     "feast[redis]" \
     kfp \
@@ -22,6 +25,7 @@ RUN uv pip install --no-cache \
     onnxscript \
     pandas \
     psycopg[binary] \
+    psycopg-pool \
     pyarrow \
     pyyaml \
     "ray[default,train,tune]" \
@@ -32,12 +36,26 @@ RUN uv pip install --no-cache \
 # Ray 2.55 auto-starts the Ray Client server whenever grpcio is installed.
 # KubeRay RayJob uses the dashboard Jobs API instead; disabling the unused
 # client server avoids a ray_client_server crash on local arm64 Minikube.
-RUN python -c "from pathlib import Path; import ray; p = Path(ray.__file__).parent / 'scripts' / 'scripts.py'; text = p.read_text(); old = 'if has_ray_client and ray_client_server_port is None:\\n        ray_client_server_port = 10001'; new = 'if False and has_ray_client and ray_client_server_port is None:\\n        ray_client_server_port = 10001'; assert old in text; p.write_text(text.replace(old, new))"
+RUN /opt/venv/bin/python -c "from pathlib import Path; import ray; p = Path(ray.__file__).parent / 'scripts' / 'scripts.py'; text = p.read_text(); old = 'if has_ray_client and ray_client_server_port is None:\\n        ray_client_server_port = 10001'; new = 'if False and has_ray_client and ray_client_server_port is None:\\n        ray_client_server_port = 10001'; assert old in text; p.write_text(text.replace(old, new))"
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/venv/bin:${PATH} \
+    PYTHONPATH=/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends wget \
+    && apt-get install -y --no-install-recommends ca-certificates wget \
     && rm -rf /var/lib/apt/lists/*
 
-COPY . /opt/recsys
+WORKDIR /opt/recsys
+COPY --from=deps /opt/venv /opt/venv
+COPY pyproject.toml uv.lock* /opt/recsys/
+COPY configs /opt/recsys/configs
+COPY infra/kubeflow /opt/recsys/infra/kubeflow
+COPY apps/ml-system/src /opt/recsys/apps/ml-system/src
+COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
 
 CMD ["bash"]

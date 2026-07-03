@@ -186,4 +186,19 @@ spec:
       to:
         - operation:
             ports: ["3000", "3100", "3200", "4317", "9090", "9091", "9121", "9187"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-prometheus-keda-allow
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: recsys-prometheus
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["9090"]
 {{- end }}

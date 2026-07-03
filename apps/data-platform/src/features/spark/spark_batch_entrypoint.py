@@ -17,6 +17,13 @@ from features.spark.build_silver_tables import (
 from features.spark.build_user_aggregate_features import build_user_aggregate_features
 from features.spark.build_user_sequence_features import build_user_sequence_features
 from features.spark.session import row_count, spark_session, write_iceberg_table, write_parquet
+from feature_store.postgres_offline_store import (
+    OFFLINE_STORE_TABLES,
+    PostgresOfflineStoreConfig,
+    ensure_offline_store_tables,
+    insert_offline_rows,
+    truncate_offline_store_tables,
+)
 from lakehouse.iceberg import IcebergCatalogConfig, create_spark_namespace
 
 
@@ -75,6 +82,32 @@ def _output_summary(outputs: dict[str, Any]) -> dict[str, int]:
     return {table_name.rsplit(".", 1)[-1]: row_count(frame) for table_name, frame in outputs.items()}
 
 
+def _is_enabled(value: Any) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _postgres_export_config(output: dict[str, Any]) -> dict[str, Any]:
+    config = output.get("feast_postgres_export", {})
+    enabled = config.get("enabled", output.get("feast_postgres_export_enabled", os.getenv("FEAST_POSTGRES_EXPORT_ENABLED", "0")))
+    return {
+        "enabled": _is_enabled(enabled),
+        "config": PostgresOfflineStoreConfig.from_output(output),
+    }
+
+
+def _write_postgres_tables(outputs: dict[str, Any], *, catalog: IcebergCatalogConfig, output: dict[str, Any]) -> None:
+    export = _postgres_export_config(output)
+    if not export["enabled"]:
+        return
+    config: PostgresOfflineStoreConfig = export["config"]
+    with config.connect() as conn:
+        ensure_offline_store_tables(conn, config.schema, OFFLINE_STORE_TABLES)
+        truncate_offline_store_tables(conn, config.schema, OFFLINE_STORE_TABLES)
+        for table_name in OFFLINE_STORE_TABLES:
+            frame = outputs[catalog.feature_table(table_name)].toPandas()
+            insert_offline_rows(conn, config.schema, table_name, frame.to_dict("records"))
+
+
 def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml") -> dict[str, int]:
     spark = spark_session("recsys-pyspark-batch-features")
     config = load_config(config_path)
@@ -113,6 +146,7 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
                     outputs[catalog.feature_table(table_name)],
                     f"{feast_offline_root.rstrip('/')}/{table_name}",
                 )
+        _write_postgres_tables(outputs, catalog=catalog, output=output)
         summary = {"clean_behavior_events": row_count(silver["clean_behavior_events"])}
         summary.update(_output_summary(outputs))
         return summary

@@ -10,6 +10,7 @@ from features.flink.candidate_pool_job import candidate_updates
 from features.flink.item_features_job import ItemFeatureState
 from features.flink.realtime_stream_job import (
     StreamQualityTracker,
+    build_postgres_feast_rows,
     build_offline_feature_rows,
     build_realtime_feature_payloads,
     normalize_event,
@@ -176,6 +177,12 @@ def test_streaming_payloads_candidate_updates_and_offline_rows():
     assert rows["stream_item_features"][0]["popularity_score"] == item["popularity_score"]
     assert ("candidate:trending:1h", 10, item["views_1h"] + item["carts_1h"] * 3.0) in candidate_updates(item)
 
+    postgres_rows = build_postgres_feast_rows(event, sequence, aggregate, item)
+    assert postgres_rows["user_sequence_features"][0]["hist_item_ids"] == [10]
+    assert postgres_rows["user_sequence_features"][0]["hist_length"] == 1
+    assert postgres_rows["user_aggregate_features"][0]["carts_30m"] == 1
+    assert postgres_rows["item_features"][0]["conversion_rate_7d"] == item["conversion_rate_7d"]
+
 
 def test_stream_quality_tracker_marks_bursty_and_late_windows():
     tracker = StreamQualityTracker("cdc.behavior_events", window_seconds=60, burst_threshold_event_count=2)
@@ -261,6 +268,47 @@ def test_spark_feature_path_is_native_iceberg_not_pandas_or_parquet_writer():
     assert "feast_offline_store_uri" in batch_source
     assert "write_parquet(" in batch_source
     assert not (spark_dir / "spark_realtime_bronze_entrypoint.py").exists()
+
+
+def test_spark_batch_postgres_export_config_supports_explicit_config_and_env(monkeypatch):
+    import features.spark.spark_batch_entrypoint as spark_batch
+
+    explicit = spark_batch._postgres_export_config(
+        {
+            "feast_postgres_export": {
+                "enabled": True,
+                "host": "feature-postgres-a",
+                "port": 5433,
+                "database": "features_a",
+                "schema": "schema_a",
+                "user": "feast_a",
+                "password": "secret-a",
+                "sslmode": "disable",
+            }
+        }
+    )
+    assert explicit["enabled"] is True
+    assert explicit["config"].host == "feature-postgres-a"
+    assert explicit["config"].port == 5433
+    assert explicit["config"].database == "features_a"
+    assert explicit["config"].schema == "schema_a"
+    assert explicit["config"].user == "feast_a"
+
+    monkeypatch.setenv("FEAST_POSTGRES_EXPORT_ENABLED", "1")
+    monkeypatch.setenv("FEAST_POSTGRES_HOST", "feature-postgres-b")
+    monkeypatch.setenv("FEAST_POSTGRES_PORT", "5434")
+    monkeypatch.setenv("FEAST_POSTGRES_DB", "features_b")
+    monkeypatch.setenv("FEAST_POSTGRES_SCHEMA", "schema_b")
+    monkeypatch.setenv("FEAST_POSTGRES_USER", "feast_b")
+    monkeypatch.setenv("FEAST_POSTGRES_PASSWORD", "secret-b")
+
+    from_env = spark_batch._postgres_export_config({})
+    assert from_env["enabled"] is True
+    assert from_env["config"].host == "feature-postgres-b"
+    assert from_env["config"].port == 5434
+    assert from_env["config"].database == "features_b"
+    assert from_env["config"].schema == "schema_b"
+    assert from_env["config"].user == "feast_b"
 
 
 def test_flink_feature_path_is_native_kafka_state_and_iceberg():

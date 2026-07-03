@@ -124,3 +124,56 @@ spec:
         resources:
           requests:
             storage: {{ .Values.airflowPostgres.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.featurePostgres.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  selector:
+    app: {{ .Values.featurePostgres.name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.featurePostgres.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.featurePostgres.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.featurePostgres.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.featurePostgres.istioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_DB
+              value: {{ .Values.featurePostgres.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.featurePostgres.user | quote }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.featurePostgres.password | quote }}
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}

@@ -110,6 +110,7 @@ help:
 	@echo "  make gcp-services-down        Hibernate GCP services by scaling node pools to 0; keep PVC/PV data"
 	@echo "  make gcp-services-up          Restore GCP node pools, wait services Ready, and smoke test"
 	@echo "  make gcp-services-status      Show GCP node pools, PVCs, nodes, and non-running pods"
+	@echo "  make serving-autoscale-load-test Run Locust traffic to trigger FastAPI/Triton autoscaling"
 	@echo ""
 	@echo "Observability:"
 	@echo "  make observability-template      Render observability Helm chart"
@@ -185,6 +186,10 @@ gcp-services-up:
 .PHONY: gcp-services-status
 gcp-services-status:
 	@$(GCP_POWER_SCRIPT) status
+
+.PHONY: serving-autoscale-load-test
+serving-autoscale-load-test:
+	@bash infra/k8s/scripts/serving_autoscale_load_test.sh
 
 .PHONY: dataflow-build
 dataflow-build:
