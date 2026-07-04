@@ -113,6 +113,13 @@ deploy_data_platform() {
     --wait \
     --wait-for-jobs \
     --set "images.pullPolicy=Always" \
+    --set "sourcePostgres.istioInject=false" \
+    --set "airflowPostgres.istioInject=false" \
+    --set "featurePostgres.istioInject=false" \
+    --set "kafkaConnect.istioInject=false" \
+    --set "redis.istioInject=false" \
+    --set "flink.istioInject=false" \
+    --set "realtimeFlinkConsumer.istioInject=false" \
     "$@"
 }
 
