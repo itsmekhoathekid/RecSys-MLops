@@ -5,6 +5,7 @@ import json
 
 from kubeflow.components import runtime
 from kubeflow.pipelines.compile_training_pipeline import compile_pipeline
+from kubeflow.upload_pipeline_package import upload_or_version_pipeline
 from cli.submit_ray_job import build_rayjob, container_spec, pod_template, reusable_best_result
 
 
@@ -163,8 +164,64 @@ def test_build_rayjob_uses_refactored_training_module():
     assert "python /opt/recsys/apps/ml-system/src/training/ray_tune_train_bst.py" in rayjob["spec"]["entrypoint"]
     assert "pipelines.model_pipeline" not in rayjob["spec"]["entrypoint"]
     assert rayjob["spec"]["rayClusterSpec"]["headGroupSpec"]["rayStartParams"]["memory"] == "1073741824"
+    submitter_spec = rayjob["spec"]["submitterPodTemplate"]["spec"]
+    assert submitter_spec["restartPolicy"] == "Never"
+    assert submitter_spec["containers"][0]["image"] == "recsys-training:test"
+    assert submitter_spec["containers"][0]["resources"] == {
+        "requests": {"cpu": "50m", "memory": "128Mi"},
+        "limits": {"cpu": "500m", "memory": "512Mi"},
+    }
     worker_group = rayjob["spec"]["rayClusterSpec"]["workerGroupSpecs"][0]
     assert worker_group["rayStartParams"]["object-store-memory"] == "536870912"
+
+
+def test_build_rayjob_supports_distributed_training_mode():
+    args = argparse.Namespace(
+        job_mode="distributed-train",
+        base_config_path="/opt/recsys/configs/local/bst.yaml",
+        split_dir="/workspace/recsys/data_platform/output/ml/bst_split",
+        ray_output_dir="/workspace/recsys/data_platform/output/ml/ray",
+        training_percent=0.02,
+        num_epochs=1,
+        max_trials=1,
+        parallel_trials=1,
+        cpus_per_trial=1.0,
+        gpus_per_trial=0.0,
+        use_gpu=False,
+        best_result_path="/workspace/recsys/data_platform/output/ml/ray/best_result.json",
+        tune_result_path="/workspace/recsys/data_platform/output/ml/ray/tune_result.json",
+        image="recsys-training:test",
+        head_cpu_request="500m",
+        head_cpu_limit="1",
+        head_memory_request="1Gi",
+        head_memory_limit="2Gi",
+        head_ray_num_cpus="0",
+        head_ray_memory_bytes="1073741824",
+        head_object_store_memory_bytes="268435456",
+        pvc_name="recsys-pvc",
+        runtime_secret_name="runtime-secret",
+        worker_cpu_request="1",
+        worker_cpu_limit="2",
+        worker_memory_request="2Gi",
+        worker_memory_limit="4Gi",
+        worker_ray_memory_bytes="2147483648",
+        worker_object_store_memory_bytes="536870912",
+        gpu_limit=1,
+        dataset_metadata_path="/workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json",
+        job_name="recsys-bst-ray-ddp-train",
+        namespace="kubeflow",
+        ttl_seconds_after_finished=300,
+        worker_replicas=2,
+        num_workers=2,
+    )
+
+    rayjob = build_rayjob(args)
+
+    assert "python /opt/recsys/apps/ml-system/src/training/ray_distributed_train_bst.py" in rayjob["spec"]["entrypoint"]
+    assert "--tune-result-path /workspace/recsys/data_platform/output/ml/ray/tune_result.json" in rayjob["spec"]["entrypoint"]
+    assert "--num-workers 2" in rayjob["spec"]["entrypoint"]
+    assert rayjob["metadata"]["labels"]["recsys.ai/ray-job-mode"] == "distributed-train"
+    assert rayjob["spec"]["rayClusterSpec"]["workerGroupSpecs"][0]["replicas"] == 2
 
 
 def test_reusable_best_result_requires_matching_dataset_versions(tmp_path):
@@ -223,7 +280,74 @@ def test_compile_pipeline_writes_refactored_component_commands():
     assert "recsys_features.feature_store.ml_bst_training" in compiled
     assert "training_table_path" not in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/submit_ray_job.py" in compiled
+    assert "--job-mode" in compiled
+    assert "distributed-train" in compiled
+    assert "recsys-bst-ray-ddp-train" in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/registry/model_promotion.py" in compiled
     assert "pipelines.model_pipeline" not in compiled
     assert "recsys_model_pipeline" not in compiled
+
+
+def test_upload_pipeline_package_adds_version_when_pipeline_exists():
+    class Client:
+        def __init__(self):
+            self.version_uploads = []
+
+        def get_pipeline_id(self, name):
+            assert name == "recsys-pipeline"
+            return "pipeline-1"
+
+        def upload_pipeline_version(self, **kwargs):
+            self.version_uploads.append(kwargs)
+            return type("Version", (), {"pipeline_version_id": "version-1"})()
+
+    client = Client()
+
+    result = upload_or_version_pipeline(
+        client=client,
+        package_path="pipeline.yaml",
+        pipeline_name="recsys-pipeline",
+        version_name="ci-abc-build-1",
+        description="ci upload",
+    )
+
+    assert result["action"] == "uploaded_pipeline_version"
+    assert result["pipeline_id"] == "pipeline-1"
+    assert result["pipeline_version_id"] == "version-1"
+    assert client.version_uploads == [
+        {
+            "pipeline_package_path": "pipeline.yaml",
+            "pipeline_version_name": "ci-abc-build-1",
+            "pipeline_id": "pipeline-1",
+            "description": "ci upload",
+        }
+    ]
+
+
+def test_upload_pipeline_package_creates_pipeline_when_missing():
+    class Client:
+        def get_pipeline_id(self, name):
+            return None
+
+        def upload_pipeline(self, **kwargs):
+            self.upload = kwargs
+            return type("Pipeline", (), {"pipeline_id": "pipeline-new"})()
+
+    client = Client()
+
+    result = upload_or_version_pipeline(
+        client=client,
+        package_path="pipeline.yaml",
+        pipeline_name="recsys-pipeline",
+        version_name="ci-abc-build-1",
+        description="ci upload",
+    )
+
+    assert result["action"] == "uploaded_pipeline"
+    assert result["pipeline_id"] == "pipeline-new"
+    assert client.upload == {
+        "pipeline_package_path": "pipeline.yaml",
+        "pipeline_name": "recsys-pipeline",
+        "description": "ci upload",
+    }

@@ -6,6 +6,10 @@
 #    config_path: str [Default: 'configs/local/spark_batch.yaml']
 #    cpus_per_trial: float [Default: 1.0]
 #    dataset_metadata_path: str [Default: '/workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json']
+#    distributed_num_epochs: int [Default: 1.0]
+#    distributed_num_workers: int [Default: 2.0]
+#    distributed_training_percent: float [Default: 0.02]
+#    distributed_worker_replicas: int [Default: 2.0]
 #    entity_input_path: str [Default: 'postgresql://feature-postgres.recsys-dataflow.svc.cluster.local:5432/feature_store/feature_store.ml_ranking_labels']
 #    eval_metrics_path: str [Default: '/workspace/recsys/data_platform/output/ml/eval_metrics.json']
 #    feast_offline_root: str [Default: '']
@@ -36,6 +40,10 @@
 #    ray_namespace: str [Default: 'kubeflow']
 #    ray_output_dir: str [Default: '/workspace/recsys/data_platform/output/ml/ray']
 #    ray_status_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/rayjob_status.json']
+#    ray_train_job_name: str [Default: 'recsys-bst-ray-ddp-train']
+#    ray_train_status_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/rayjob_ddp_status.json']
+#    ray_ttl_seconds_after_finished: int [Default: 1800.0]
+#    ray_tune_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/tune_result.json']
 #    runtime_secret_name: str [Default: 'recsys-mlops-runtime']
 #    serving_output_dir: str [Default: '/workspace/recsys/data_platform/output/ml/serving']
 #    source_run_path: str [Default: 'apps/data-platform/data-generator/src/output/test_10k_seed42']
@@ -117,6 +125,8 @@ components:
           parameterType: STRING
         image:
           parameterType: STRING
+        job_mode:
+          parameterType: STRING
         job_name:
           parameterType: STRING
         max_trials:
@@ -124,6 +134,8 @@ components:
         namespace:
           parameterType: STRING
         num_epochs:
+          parameterType: NUMBER_INTEGER
+        num_workers:
           parameterType: NUMBER_INTEGER
         parallel_trials:
           parameterType: NUMBER_INTEGER
@@ -141,6 +153,64 @@ components:
           parameterType: STRING
         training_percent:
           parameterType: NUMBER_DOUBLE
+        ttl_seconds_after_finished:
+          parameterType: NUMBER_INTEGER
+        tune_result_path:
+          parameterType: STRING
+        use_gpu:
+          parameterType: BOOLEAN
+        worker_replicas:
+          parameterType: NUMBER_INTEGER
+  comp-submit-rayjob-2:
+    executorLabel: exec-submit-rayjob-2
+    inputDefinitions:
+      parameters:
+        best_result_path:
+          parameterType: STRING
+        cpus_per_trial:
+          parameterType: NUMBER_DOUBLE
+        dataset_metadata_path:
+          parameterType: STRING
+        gpu_limit:
+          parameterType: NUMBER_INTEGER
+        gpus_per_trial:
+          parameterType: NUMBER_DOUBLE
+        head_ray_num_cpus:
+          parameterType: STRING
+        image:
+          parameterType: STRING
+        job_mode:
+          parameterType: STRING
+        job_name:
+          parameterType: STRING
+        max_trials:
+          parameterType: NUMBER_INTEGER
+        namespace:
+          parameterType: STRING
+        num_epochs:
+          parameterType: NUMBER_INTEGER
+        num_workers:
+          parameterType: NUMBER_INTEGER
+        parallel_trials:
+          parameterType: NUMBER_INTEGER
+        pipeline_run_id:
+          parameterType: STRING
+        pvc_name:
+          parameterType: STRING
+        ray_output_dir:
+          parameterType: STRING
+        runtime_secret_name:
+          parameterType: STRING
+        split_dir:
+          parameterType: STRING
+        status_path:
+          parameterType: STRING
+        training_percent:
+          parameterType: NUMBER_DOUBLE
+        ttl_seconds_after_finished:
+          parameterType: NUMBER_INTEGER
+        tune_result_path:
+          parameterType: STRING
         use_gpu:
           parameterType: BOOLEAN
         worker_replicas:
@@ -229,6 +299,8 @@ deploymentSpec:
         - '{{$.inputs.parameters[''namespace'']}}'
         - --job-name
         - '{{$.inputs.parameters[''job_name'']}}'
+        - --job-mode
+        - '{{$.inputs.parameters[''job_mode'']}}'
         - --image
         - '{{$.inputs.parameters[''image'']}}'
         - --pvc-name
@@ -241,6 +313,8 @@ deploymentSpec:
         - '{{$.inputs.parameters[''ray_output_dir'']}}'
         - --best-result-path
         - '{{$.inputs.parameters[''best_result_path'']}}'
+        - --tune-result-path
+        - '{{$.inputs.parameters[''tune_result_path'']}}'
         - --training-percent
         - '{{$.inputs.parameters[''training_percent'']}}'
         - --num-epochs
@@ -255,6 +329,8 @@ deploymentSpec:
         - '{{$.inputs.parameters[''gpus_per_trial'']}}'
         - --worker-replicas
         - '{{$.inputs.parameters[''worker_replicas'']}}'
+        - --num-workers
+        - '{{$.inputs.parameters[''num_workers'']}}'
         - --head-ray-num-cpus
         - '{{$.inputs.parameters[''head_ray_num_cpus'']}}'
         - --use-gpu-value
@@ -265,6 +341,65 @@ deploymentSpec:
         - '{{$.inputs.parameters[''status_path'']}}'
         - --dataset-metadata-path
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
+        - --ttl-seconds-after-finished
+        - '{{$.inputs.parameters[''ttl_seconds_after_finished'']}}'
+        command:
+        - python
+        - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
+        image: recsys-mlops-training:local
+    exec-submit-rayjob-2:
+      container:
+        args:
+        - --pipeline-run-id
+        - '{{$.inputs.parameters[''pipeline_run_id'']}}'
+        - --namespace
+        - '{{$.inputs.parameters[''namespace'']}}'
+        - --job-name
+        - '{{$.inputs.parameters[''job_name'']}}'
+        - --job-mode
+        - '{{$.inputs.parameters[''job_mode'']}}'
+        - --image
+        - '{{$.inputs.parameters[''image'']}}'
+        - --pvc-name
+        - '{{$.inputs.parameters[''pvc_name'']}}'
+        - --runtime-secret-name
+        - '{{$.inputs.parameters[''runtime_secret_name'']}}'
+        - --split-dir
+        - '{{$.inputs.parameters[''split_dir'']}}'
+        - --ray-output-dir
+        - '{{$.inputs.parameters[''ray_output_dir'']}}'
+        - --best-result-path
+        - '{{$.inputs.parameters[''best_result_path'']}}'
+        - --tune-result-path
+        - '{{$.inputs.parameters[''tune_result_path'']}}'
+        - --training-percent
+        - '{{$.inputs.parameters[''training_percent'']}}'
+        - --num-epochs
+        - '{{$.inputs.parameters[''num_epochs'']}}'
+        - --max-trials
+        - '{{$.inputs.parameters[''max_trials'']}}'
+        - --parallel-trials
+        - '{{$.inputs.parameters[''parallel_trials'']}}'
+        - --cpus-per-trial
+        - '{{$.inputs.parameters[''cpus_per_trial'']}}'
+        - --gpus-per-trial
+        - '{{$.inputs.parameters[''gpus_per_trial'']}}'
+        - --worker-replicas
+        - '{{$.inputs.parameters[''worker_replicas'']}}'
+        - --num-workers
+        - '{{$.inputs.parameters[''num_workers'']}}'
+        - --head-ray-num-cpus
+        - '{{$.inputs.parameters[''head_ray_num_cpus'']}}'
+        - --use-gpu-value
+        - '{{$.inputs.parameters[''use_gpu'']}}'
+        - --gpu-limit
+        - '{{$.inputs.parameters[''gpu_limit'']}}'
+        - --status-path
+        - '{{$.inputs.parameters[''status_path'']}}'
+        - --dataset-metadata-path
+        - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
+        - --ttl-seconds-after-finished
+        - '{{$.inputs.parameters[''ttl_seconds_after_finished'']}}'
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
@@ -281,7 +416,7 @@ root:
         componentRef:
           name: comp-evaluate-bst
         dependentTasks:
-        - submit-rayjob
+        - submit-rayjob-2
         inputs:
           parameters:
             config_path:
@@ -355,7 +490,7 @@ root:
         inputs:
           parameters:
             best_result_path:
-              componentInputParameter: ray_best_result_path
+              componentInputParameter: ray_tune_result_path
             cpus_per_trial:
               componentInputParameter: cpus_per_trial
             dataset_metadata_path:
@@ -368,6 +503,9 @@ root:
               componentInputParameter: head_ray_num_cpus
             image:
               componentInputParameter: ray_image
+            job_mode:
+              runtimeValue:
+                constant: tune
             job_name:
               componentInputParameter: ray_job_name
             max_trials:
@@ -376,6 +514,8 @@ root:
               componentInputParameter: ray_namespace
             num_epochs:
               componentInputParameter: num_epochs
+            num_workers:
+              componentInputParameter: worker_replicas
             parallel_trials:
               componentInputParameter: parallel_trials
             pipeline_run_id:
@@ -392,12 +532,79 @@ root:
               componentInputParameter: ray_status_path
             training_percent:
               componentInputParameter: training_percent
+            ttl_seconds_after_finished:
+              componentInputParameter: ray_ttl_seconds_after_finished
+            tune_result_path:
+              componentInputParameter: ray_tune_result_path
             use_gpu:
               componentInputParameter: use_gpu
             worker_replicas:
               componentInputParameter: worker_replicas
         taskInfo:
-          name: submit-rayjob
+          name: Hyperparameter tuning
+      submit-rayjob-2:
+        cachingOptions: {}
+        componentRef:
+          name: comp-submit-rayjob-2
+        dependentTasks:
+        - submit-rayjob
+        inputs:
+          parameters:
+            best_result_path:
+              componentInputParameter: ray_best_result_path
+            cpus_per_trial:
+              componentInputParameter: cpus_per_trial
+            dataset_metadata_path:
+              componentInputParameter: dataset_metadata_path
+            gpu_limit:
+              componentInputParameter: gpu_limit
+            gpus_per_trial:
+              componentInputParameter: gpus_per_trial
+            head_ray_num_cpus:
+              componentInputParameter: head_ray_num_cpus
+            image:
+              componentInputParameter: ray_image
+            job_mode:
+              runtimeValue:
+                constant: distributed-train
+            job_name:
+              componentInputParameter: ray_train_job_name
+            max_trials:
+              runtimeValue:
+                constant: 1.0
+            namespace:
+              componentInputParameter: ray_namespace
+            num_epochs:
+              componentInputParameter: distributed_num_epochs
+            num_workers:
+              componentInputParameter: distributed_num_workers
+            parallel_trials:
+              runtimeValue:
+                constant: 1.0
+            pipeline_run_id:
+              componentInputParameter: pipeline_run_id
+            pvc_name:
+              componentInputParameter: pvc_name
+            ray_output_dir:
+              componentInputParameter: ray_output_dir
+            runtime_secret_name:
+              componentInputParameter: runtime_secret_name
+            split_dir:
+              componentInputParameter: split_output_dir
+            status_path:
+              componentInputParameter: ray_train_status_path
+            training_percent:
+              componentInputParameter: distributed_training_percent
+            ttl_seconds_after_finished:
+              componentInputParameter: ray_ttl_seconds_after_finished
+            tune_result_path:
+              componentInputParameter: ray_tune_result_path
+            use_gpu:
+              componentInputParameter: use_gpu
+            worker_replicas:
+              componentInputParameter: distributed_worker_replicas
+        taskInfo:
+          name: Distributed training
   inputDefinitions:
     parameters:
       bst_config_path:
@@ -416,6 +623,22 @@ root:
         defaultValue: /workspace/recsys/data_platform/output/ml/bst_split/dataset_version_meta.json
         isOptional: true
         parameterType: STRING
+      distributed_num_epochs:
+        defaultValue: 1.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      distributed_num_workers:
+        defaultValue: 2.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      distributed_training_percent:
+        defaultValue: 0.02
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      distributed_worker_replicas:
+        defaultValue: 2.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
       entity_input_path:
         defaultValue: postgresql://feature-postgres.recsys-dataflow.svc.cluster.local:5432/feature_store/feature_store.ml_ranking_labels
         isOptional: true
@@ -534,6 +757,22 @@ root:
         parameterType: STRING
       ray_status_path:
         defaultValue: /workspace/recsys/data_platform/output/ml/ray/rayjob_status.json
+        isOptional: true
+        parameterType: STRING
+      ray_train_job_name:
+        defaultValue: recsys-bst-ray-ddp-train
+        isOptional: true
+        parameterType: STRING
+      ray_train_status_path:
+        defaultValue: /workspace/recsys/data_platform/output/ml/ray/rayjob_ddp_status.json
+        isOptional: true
+        parameterType: STRING
+      ray_ttl_seconds_after_finished:
+        defaultValue: 1800.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      ray_tune_result_path:
+        defaultValue: /workspace/recsys/data_platform/output/ml/ray/tune_result.json
         isOptional: true
         parameterType: STRING
       runtime_secret_name:
@@ -750,6 +989,64 @@ platforms:
               runtimeValue:
                 constant: recsys-mlops-runtime
         exec-submit-rayjob:
+          imagePullPolicy: Always
+          podMetadata:
+            annotations:
+              sidecar.istio.io/inject: 'false'
+          pvcMount:
+          - constant: recsys-mlops-pvc
+            mountPath: /workspace
+            pvcNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-pvc
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MINIO_ENDPOINT
+              secretKey: MINIO_ENDPOINT
+            - envVar: MINIO_ROOT_USER
+              secretKey: MINIO_ROOT_USER
+            - envVar: MINIO_ROOT_PASSWORD
+              secretKey: MINIO_ROOT_PASSWORD
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: MODEL_STORE_ENDPOINT
+              secretKey: MODEL_STORE_ENDPOINT
+            - envVar: MODEL_REGISTRY_POSTGRES_URI
+              secretKey: MODEL_REGISTRY_POSTGRES_URI
+            - envVar: MODEL_STORE_BUCKET
+              secretKey: MODEL_STORE_BUCKET
+            - envVar: MODEL_STORE_PREFIX
+              secretKey: MODEL_STORE_PREFIX
+            - envVar: PROMOTION_MANIFEST_KEY
+              secretKey: PROMOTION_MANIFEST_KEY
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            - envVar: ICEBERG_ENABLED
+              secretKey: ICEBERG_ENABLED
+            - envVar: ICEBERG_CATALOG_NAME
+              secretKey: ICEBERG_CATALOG_NAME
+            - envVar: ICEBERG_WAREHOUSE
+              secretKey: ICEBERG_WAREHOUSE
+            - envVar: HUDI_ENABLED
+              secretKey: HUDI_ENABLED
+            - envVar: HUDI_CATALOG_NAME
+              secretKey: HUDI_CATALOG_NAME
+            - envVar: HUDI_WAREHOUSE
+              secretKey: HUDI_WAREHOUSE
+            optional: false
+            secretName: recsys-mlops-runtime
+            secretNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-runtime
+        exec-submit-rayjob-2:
           imagePullPolicy: Always
           podMetadata:
             annotations:

@@ -149,21 +149,28 @@ deploy_api() {
 }
 
 deploy_training_refs() {
+  local compiled_package="infra/kubeflow/compiled/bst_training_pipeline.yaml"
+  local training_image
+  local spark_image
+
+  training_image="$(image recsys-mlops-training)"
+  spark_image="$(image recsys-mlops-spark)"
+
   PYTHONPATH=apps/ml-system/src:apps/data-platform/src \
-    RECSYS_PIPELINE_IMAGE="$(image recsys-mlops-training)" \
-    RECSYS_SPARK_IMAGE="$(image recsys-mlops-spark)" \
+    RECSYS_PIPELINE_IMAGE="${training_image}" \
+    RECSYS_RAY_IMAGE="${training_image}" \
+    RECSYS_SPARK_IMAGE="${spark_image}" \
     uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
 
-  helm upgrade --install recsys-ray-cpu infra/helm/ray-cluster \
-    --namespace "${namespace_kubeflow}" \
-    --create-namespace \
-    --timeout "${timeout}" \
-    --wait \
-    --take-ownership \
-    --set "image.repository=${image_registry}/recsys-mlops-training" \
-    --set "image.tag=${image_tag}" \
-    --set "image.pullPolicy=Always"
-  verify_rayjob_image "$(image recsys-mlops-training)"
+  grep -F "${training_image}" "${compiled_package}"
+  grep -F "${spark_image}" "${compiled_package}"
+
+  uv run python apps/ml-system/src/kubeflow/upload_pipeline_package.py \
+    --host "${KFP_ENDPOINT:-http://ml-pipeline.kubeflow.svc.cluster.local:8888}" \
+    --package-path "${compiled_package}" \
+    --pipeline-name "${KFP_PIPELINE_NAME:-recsys-bst-feature-train-evaluate}"
+
+  echo "Training CI/CD updated image refs and uploaded the Kubeflow pipeline package only; Ray Tune and DDP training are not auto-run by CI/CD."
 }
 
 deploy_kserve() {

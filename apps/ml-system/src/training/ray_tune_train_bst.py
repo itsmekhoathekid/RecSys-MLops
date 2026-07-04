@@ -203,6 +203,7 @@ def main() -> int:
     parser.add_argument("--ray-address", default="auto")
     parser.add_argument("--best-result-path", default="")
     parser.add_argument("--dataset-metadata-path", default="")
+    parser.add_argument("--register-best-result", action="store_true")
     args = parser.parse_args()
 
     import ray
@@ -218,6 +219,9 @@ def main() -> int:
         "hidden_dropout_prob": tune.choice([0.1, 0.2]),
         "num_workers": 0,
     }
+    trial_resources: dict[str, float] = {"cpu": args.cpus_per_trial}
+    if args.gpus_per_trial > 0:
+        trial_resources["gpu"] = args.gpus_per_trial
     trainable = tune.with_resources(
         tune.with_parameters(
             run_trial,
@@ -228,7 +232,7 @@ def main() -> int:
             num_epochs=args.num_epochs,
             dataset_metadata_path=args.dataset_metadata_path or None,
         ),
-        resources={"cpu": args.cpus_per_trial, "gpu": args.gpus_per_trial},
+        resources=trial_resources,
     )
     tuner = tune.Tuner(
         trainable,
@@ -252,6 +256,7 @@ def main() -> int:
         "artifact_uri": best.metrics["artifact_uri"],
         "mlflow_run_id": training_result.get("mlflow_run_id") or best.metrics.get("mlflow_run_id"),
         "dataset_versions": training_result.get("dataset_versions", {}),
+        "source": "kubeflow-ray-tune",
         "metrics": training_result.get("metrics", {}),
         "ray_metrics": {
             key: value
@@ -265,7 +270,8 @@ def main() -> int:
         json.dumps(best_payload, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    register_best_result(best_payload)
+    if args.register_best_result:
+        register_best_result(best_payload)
     print(json.dumps(best_payload, indent=2, sort_keys=True))
     ray.shutdown()
     return 0

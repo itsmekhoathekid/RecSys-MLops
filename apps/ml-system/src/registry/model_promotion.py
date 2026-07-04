@@ -484,6 +484,7 @@ def build_manifest(
         "metric_name": triton_metric_name,
         "metric_value": _best_metric(best_payload, triton_metric_name),
         "mlflow_run_id": best_payload.get("mlflow_run_id"),
+        "source": best_payload.get("source", "kubeflow-ray-tune"),
         "source_checkpoint_uri": best_payload.get("artifact_uri") or best_payload.get("checkpoint_path"),
         "source_checkpoint_path": best_payload.get("checkpoint_path"),
         "triton_storage_uri": triton_storage_uri,
@@ -515,6 +516,7 @@ def register_mlflow_model_version(
     model_version: str,
     metric_name: str,
     metric_value: float,
+    source_tag: str = "kubeflow-ray-tune",
 ) -> dict[str, Any]:
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
     if not tracking_uri or not source_uri:
@@ -544,7 +546,7 @@ def register_mlflow_model_version(
             "model_version": model_version,
             "metric_name": metric_name,
             "metric_value": str(metric_value),
-            "source": "kubeflow-ray-tune",
+            "source": source_tag,
         },
     )
     return {
@@ -608,6 +610,7 @@ def promote_best_model(
                 model_version=version,
                 metric_name=manifest["metric_name"],
                 metric_value=manifest["metric_value"],
+                source_tag=manifest.get("source", "kubeflow-ray-tune"),
             )
         )
     except Exception as exc:

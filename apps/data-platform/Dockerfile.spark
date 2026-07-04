@@ -24,7 +24,17 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl python3-pip \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir pyyaml boto3 psycopg[binary] psycopg-pool redis pyarrow s3fs "feast[redis]"
+    && pip3 install --no-cache-dir \
+        pyyaml \
+        boto3==1.35.36 \
+        botocore==1.35.36 \
+        psycopg[binary] \
+        psycopg-pool \
+        redis \
+        pyarrow \
+        s3fs==2024.10.0 \
+        fsspec==2024.10.0 \
+        "feast[redis]"
 
 COPY --from=jar-downloader /tmp/recsys-jars/*.jar /opt/spark/jars/
 COPY configs /opt/recsys/configs
