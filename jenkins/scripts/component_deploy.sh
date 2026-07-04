@@ -10,7 +10,7 @@ namespace_api="${API_NAMESPACE:-api-serving}"
 namespace_kserve="${KSERVE_NAMESPACE:-kserve-triton-inference}"
 namespace_kubeflow="${KUBEFLOW_NAMESPACE:-kubeflow}"
 namespace_mlops="${MLOPS_NAMESPACE:-experiment-tracking}"
-promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/production.json}"
+promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
 timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
 
 if [[ -z "${image_tag}" ]]; then

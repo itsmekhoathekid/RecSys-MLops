@@ -216,7 +216,7 @@ data:
             </hudson.model.StringParameterDefinition>
             <hudson.model.StringParameterDefinition>
               <name>PROMOTION_MANIFEST_URI</name>
-              <defaultValue>s3://recsys-model-store/promotions/bst/production.json</defaultValue>
+              <defaultValue>s3://recsys-model-store/promotions/bst/latest.json</defaultValue>
               <trim>true</trim>
             </hudson.model.StringParameterDefinition>
             <hudson.model.StringParameterDefinition>
