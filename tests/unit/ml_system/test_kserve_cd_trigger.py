@@ -58,7 +58,7 @@ def test_trigger_kserve_cd_posts_versioned_manifest_to_jenkins(tmp_path, monkeyp
     status_path = tmp_path / "status.json"
     calls = []
 
-    def fake_request(url, *, headers=None, data=None, timeout=30):
+    def fake_request(url, *, headers=None, data=None, opener=None, timeout=30):
         calls.append((url, headers or {}, data))
         if url.endswith("/crumbIssuer/api/json"):
             return 200, {}, json.dumps({"crumbRequestField": "Jenkins-Crumb", "crumb": "crumb-1"})
@@ -108,7 +108,7 @@ def test_trigger_kserve_cd_posts_versioned_manifest_to_jenkins(tmp_path, monkeyp
 
 
 def test_trigger_kserve_cd_waits_for_successful_build(monkeypatch):
-    def fake_request(url, *, headers=None, data=None, timeout=30):
+    def fake_request(url, *, headers=None, data=None, opener=None, timeout=30):
         if url.endswith("/crumbIssuer/api/json"):
             return 200, {}, json.dumps({"crumbRequestField": "Jenkins-Crumb", "crumb": "crumb-1"})
         if url.endswith("/buildWithParameters"):

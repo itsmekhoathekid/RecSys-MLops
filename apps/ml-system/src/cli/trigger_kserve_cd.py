@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.cookiejar
 import json
 import os
 import time
@@ -48,18 +49,26 @@ def request(
     *,
     headers: dict[str, str] | None = None,
     data: bytes | None = None,
+    opener: urllib.request.OpenerDirector | None = None,
     timeout: int = 30,
 ) -> tuple[int, dict[str, str], str]:
     req = urllib.request.Request(url, headers=headers or {}, data=data, method="POST" if data is not None else "GET")
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    open_url = opener.open if opener else urllib.request.urlopen
+    with open_url(req, timeout=timeout) as response:
         return response.status, dict(response.headers), response.read().decode("utf-8")
 
 
-def jenkins_crumb(base_url: str, auth_headers: dict[str, str]) -> dict[str, str]:
+def jenkins_crumb(
+    base_url: str,
+    auth_headers: dict[str, str],
+    *,
+    opener: urllib.request.OpenerDirector | None = None,
+) -> dict[str, str]:
     try:
         _, _, body = request(
             f"{base_url.rstrip('/')}/crumbIssuer/api/json",
             headers=dict(auth_headers),
+            opener=opener,
             timeout=15,
         )
     except urllib.error.HTTPError as exc:
@@ -86,10 +95,11 @@ def trigger_jenkins_cd(
     timeout_seconds: int,
 ) -> dict[str, Any]:
     base_url = jenkins_url.rstrip("/")
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     auth_headers = basic_auth_header(user, token)
     headers = {
         **auth_headers,
-        **jenkins_crumb(base_url, auth_headers),
+        **jenkins_crumb(base_url, auth_headers, opener=opener),
         "Content-Type": "application/x-www-form-urlencoded",
     }
     encoded_params = urllib.parse.urlencode(params).encode("utf-8")
@@ -98,6 +108,7 @@ def trigger_jenkins_cd(
         f"{base_url}/job/{encoded_job}/buildWithParameters",
         headers=headers,
         data=encoded_params,
+        opener=opener,
         timeout=30,
     )
     queue_url = response_headers.get("Location", "")
@@ -116,7 +127,12 @@ def trigger_jenkins_cd(
     executable_url = ""
     while time.monotonic() < deadline:
         if queue_url:
-            _, _, queue_body = request(f"{queue_url.rstrip('/')}/api/json", headers=auth_headers, timeout=15)
+            _, _, queue_body = request(
+                f"{queue_url.rstrip('/')}/api/json",
+                headers=auth_headers,
+                opener=opener,
+                timeout=15,
+            )
             queue_payload = json.loads(queue_body)
             executable_url = queue_payload.get("executable", {}).get("url", "")
             if executable_url:
@@ -127,7 +143,12 @@ def trigger_jenkins_cd(
         raise TimeoutError(f"Timed out waiting for Jenkins job {job_name} to leave the queue.")
 
     while time.monotonic() < deadline:
-        _, _, build_body = request(f"{executable_url.rstrip('/')}/api/json", headers=auth_headers, timeout=15)
+        _, _, build_body = request(
+            f"{executable_url.rstrip('/')}/api/json",
+            headers=auth_headers,
+            opener=opener,
+            timeout=15,
+        )
         build_payload = json.loads(build_body)
         build_result = build_payload.get("result")
         result["build_number"] = build_payload.get("number")
