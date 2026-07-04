@@ -153,7 +153,6 @@ deploy_training_refs() {
     --timeout "${timeout}" \
     --wait \
     --take-ownership \
-    --force-conflicts \
     --set "image.repository=${image_registry}/recsys-mlops-training" \
     --set "image.tag=${image_tag}" \
     --set "image.pullPolicy=Always"
