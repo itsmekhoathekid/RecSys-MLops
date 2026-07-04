@@ -4,6 +4,7 @@ set -euo pipefail
 component="${1:?component is required}"
 image_registry="${IMAGE_PUSH_REGISTRY:-${IMAGE_REGISTRY:-localhost:5001/recsys}}"
 image_registry="${image_registry%/}"
+registry_host="${image_registry%%/*}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-}}"
 publish_images="${PUBLISH_IMAGES:-1}"
 require_gcp_artifact_registry="${REQUIRE_GCP_ARTIFACT_REGISTRY:-1}"
@@ -37,6 +38,24 @@ record_image() {
   printf '%s=%s\n' "${key}" "${image}" >>"${manifest_path}"
 }
 
+refresh_registry_login_if_gcp() {
+  if [[ "${publish_images}" != "1" && "${publish_images}" != "true" ]]; then
+    return 0
+  fi
+  if [[ "${registry_host}" != *".pkg.dev" ]]; then
+    return 0
+  fi
+
+  local token
+  token="$(
+    curl -fsS -H 'Metadata-Flavor: Google' \
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
+  )"
+  echo "${token}" | docker login "https://${registry_host}" --username oauth2accesstoken --password-stdin >/dev/null
+  echo "Refreshed Docker login for ${registry_host}"
+}
+
 build_and_optionally_push() {
   local name="$1"
   local dockerfile="$2"
@@ -48,6 +67,7 @@ build_and_optionally_push() {
   docker tag "${local_image}" "${remote_image}"
   record_image "$(echo "${name}" | tr '[:lower:]-' '[:upper:]_')_IMAGE" "${remote_image}"
   if [[ "${publish_images}" == "1" || "${publish_images}" == "true" ]]; then
+    refresh_registry_login_if_gcp
     docker push "${remote_image}"
   else
     echo "Skipping docker push for ${remote_image}; PUBLISH_IMAGES=${publish_images}"
