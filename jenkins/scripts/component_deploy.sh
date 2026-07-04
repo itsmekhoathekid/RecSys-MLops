@@ -86,6 +86,37 @@ verify_data_platform_config_image() {
   fi
 }
 
+load_secret_env_if_unset() {
+  local namespace="$1"
+  local secret_name="$2"
+  shift 2
+
+  if ! kubectl get secret "${secret_name}" -n "${namespace}" >/dev/null 2>&1; then
+    echo "Secret ${secret_name} in namespace ${namespace} was not found; continuing with existing environment."
+    return 0
+  fi
+
+  local key encoded value loaded=0
+  for key in "$@"; do
+    if [[ -n "${!key:-}" ]]; then
+      continue
+    fi
+    encoded="$(kubectl get secret "${secret_name}" -n "${namespace}" -o "jsonpath={.data.${key}}" 2>/dev/null || true)"
+    if [[ -z "${encoded}" ]]; then
+      continue
+    fi
+    value="$(printf '%s' "${encoded}" | base64 -d)"
+    export "${key}=${value}"
+    loaded=1
+  done
+
+  if [[ "${loaded}" == "1" ]]; then
+    echo "Loaded model store environment from secret ${secret_name} in namespace ${namespace} (values hidden)."
+  else
+    echo "No additional model store environment keys were loaded from secret ${secret_name}; using existing environment."
+  fi
+}
+
 verify_rayjob_image() {
   local expected_image="$1"
   local rayjob_name="${RAYJOB_NAME:-recsys-bst-ray-tune}"
@@ -174,6 +205,18 @@ deploy_training_refs() {
 }
 
 deploy_kserve() {
+  load_secret_env_if_unset "${namespace_kubeflow}" "${MLOPS_RUNTIME_SECRET_NAME:-recsys-mlops-runtime}" \
+    AWS_ACCESS_KEY_ID \
+    AWS_SECRET_ACCESS_KEY \
+    AWS_DEFAULT_REGION \
+    MINIO_ENDPOINT \
+    MINIO_ROOT_USER \
+    MINIO_ROOT_PASSWORD \
+    MLFLOW_S3_ENDPOINT_URL \
+    MODEL_STORE_ENDPOINT \
+    MODEL_STORE_BUCKET \
+    MODEL_STORE_PREFIX
+
   uv run python jenkins/scripts/model_cd.py \
     --manifest-uri "${promotion_manifest_uri}" \
     --output-dir .model-cd \

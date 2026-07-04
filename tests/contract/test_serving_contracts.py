@@ -485,6 +485,36 @@ def test_model_cd_s3_helpers_copy_upload_and_read(monkeypatch):
     assert client.uploads[0]["Key"] == "latest.json"
 
 
+def test_model_cd_s3_client_prefers_model_store_endpoint(monkeypatch):
+    calls = []
+
+    class Boto3:
+        def client(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            return object()
+
+    monkeypatch.setitem(sys.modules, "boto3", Boto3())
+    monkeypatch.setenv("MODEL_STORE_ENDPOINT", "http://model-store:9000")
+    monkeypatch.setenv("MLFLOW_S3_ENDPOINT_URL", "http://mlflow-minio:9000")
+    monkeypatch.setenv("MINIO_ENDPOINT", "http://data-minio:9000")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "access")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+
+    model_cd.s3_client()
+
+    assert calls == [
+        (
+            ("s3",),
+            {
+                "endpoint_url": "http://model-store:9000",
+                "aws_access_key_id": "access",
+                "aws_secret_access_key": "secret",
+                "region_name": "us-east-1",
+            },
+        )
+    ]
+
+
 def test_model_cd_missing_local_repository_and_latest_uri(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError):
         model_cd.verify_model_repository(str(tmp_path / "missing"))

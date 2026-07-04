@@ -27,7 +27,7 @@ def s3_client():
 
     return boto3.client(
         "s3",
-        endpoint_url=os.getenv("MINIO_ENDPOINT") or os.getenv("MLFLOW_S3_ENDPOINT_URL"),
+        endpoint_url=os.getenv("MODEL_STORE_ENDPOINT") or os.getenv("MLFLOW_S3_ENDPOINT_URL") or os.getenv("MINIO_ENDPOINT"),
         aws_access_key_id=os.getenv("MINIO_ROOT_USER") or os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("MINIO_ROOT_PASSWORD") or os.getenv("AWS_SECRET_ACCESS_KEY"),
         region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
