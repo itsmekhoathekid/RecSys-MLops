@@ -11,6 +11,11 @@ registry:
     storageClassName: standard-rwo
 
 jenkins:
+  imagePushRegistry: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  imagePullRegistry: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  requireGcpArtifactRegistry: true
+  runtimeTools:
+    installOnStartup: true
   webhookIngress:
     enabled: true
   pvc:

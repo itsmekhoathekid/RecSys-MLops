@@ -17,12 +17,12 @@ def componentDefinitions() {
 def runComponentBranches(String scriptPath, String extraEnv) {
   def branches = [:]
   componentDefinitions().each { component ->
-    if (env[component.flag] == 'true') {
+    if (env.getProperty(component.flag) == 'true') {
       def componentName = component.name
       def componentLabel = component.label
-      branches[componentLabel] = {
+      branches.put(componentLabel, {
         sh "${extraEnv} ${scriptPath} ${componentName}"
-      }
+      })
     }
   }
   if (branches) {
@@ -30,6 +30,54 @@ def runComponentBranches(String scriptPath, String extraEnv) {
   } else {
     echo 'No component changes detected for this stage.'
   }
+}
+
+def applyForcedComponents(String forcedComponents) {
+  def requested = forcedComponents
+    ?.split(',')
+    ?.collect { it.trim().toLowerCase() }
+    ?.findAll { it }
+
+  if (!requested) {
+    return false
+  }
+
+  def componentsByToken = [:]
+  componentDefinitions().each { component ->
+    componentsByToken.put(component.name, component)
+    componentsByToken.put(component.flag.toLowerCase().replaceFirst('^run_', ''), component)
+    componentsByToken.put(component.label.toLowerCase().replaceAll(/[^a-z0-9]+/, '_').replaceAll(/^_|_$/, ''), component)
+  }
+
+  def selectedByName = [:]
+  def unknown = []
+  requested.each { token ->
+    def component = componentsByToken.get(token)
+    if (component) {
+      selectedByName.put(component.name, component)
+    } else {
+      unknown << token
+    }
+  }
+
+  if (unknown) {
+    error "Unknown FORCE_COMPONENTS token(s): ${unknown.join(', ')}"
+  }
+
+  componentDefinitions().each { component ->
+    env.setProperty(component.flag, 'false')
+  }
+  selectedByName.values().each { component ->
+    env.setProperty(component.flag, 'true')
+  }
+
+  env.RUN_COMPONENT_CI = selectedByName ? 'true' : 'false'
+  env.RUN_COMPONENT_BUILD = selectedByName ? 'true' : 'false'
+  env.RUN_COMPONENT_DEPLOY = selectedByName ? 'true' : 'false'
+  env.RUN_PYTHON = selectedByName ? 'true' : 'false'
+  env.CHANGED_COMPONENTS = selectedByName.keySet().join(',')
+  echo "Forced CI/CD components: ${env.CHANGED_COMPONENTS}"
+  return true
 }
 
 def shouldDeployChangedComponents() {
@@ -50,21 +98,19 @@ pipeline {
     skipDefaultCheckout(false)
   }
 
-  triggers {
-    githubPush()
-  }
-
   parameters {
     string(name: 'IMAGE_PUSH_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used by Jenkins when pushing component images.')
     string(name: 'IMAGE_PULL_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used by Kubernetes workloads when pulling component images.')
     string(name: 'IMAGE_REGISTRY', defaultValue: '', description: 'Deprecated fallback used when IMAGE_PUSH_REGISTRY or IMAGE_PULL_REGISTRY is empty.')
     booleanParam(name: 'PUBLISH_IMAGES', defaultValue: true, description: 'Push images after successful component CI.')
+    booleanParam(name: 'REQUIRE_GCP_ARTIFACT_REGISTRY', defaultValue: true, description: 'Fail build proof runs unless IMAGE_PUSH_REGISTRY points to GCP Artifact Registry and PUBLISH_IMAGES=true.')
     booleanParam(name: 'DEPLOY_CHANGED_COMPONENTS', defaultValue: true, description: 'Deploy/update changed components on main only.')
     booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'Allow deploy/update from a non-main branch.')
     string(name: 'REGISTRY_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins username/password credential for docker login.')
     string(name: 'KUBECONFIG_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins file credential containing kubeconfig.')
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/production.json', description: 'Production model manifest URI for KServe CD.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
+    string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, for example materialize,training,dp1,dp2,dp3,api,kserve,stream_offline,stream_online. Empty keeps path-based detection.')
   }
 
   environment {
@@ -87,10 +133,12 @@ pipeline {
           readFile('.ci-components.env').split('\\n').each { line ->
             if (line.trim() && line.contains('=')) {
               def pair = line.split('=', 2)
-              env[pair[0]] = pair[1]
+              env.setProperty(pair[0], pair[1])
             }
           }
-          echo "Changed components: ${env.CHANGED_COMPONENTS}"
+          if (!applyForcedComponents(params.FORCE_COMPONENTS ?: '')) {
+            echo "Changed components: ${env.CHANGED_COMPONENTS}"
+          }
         }
       }
     }
@@ -116,13 +164,23 @@ pipeline {
     }
 
     stage('Docker Login') {
-      when { expression { env.RUN_COMPONENT_BUILD == 'true' && params.PUBLISH_IMAGES && params.REGISTRY_CREDENTIALS_ID?.trim() } }
+      when { expression { env.RUN_COMPONENT_BUILD == 'true' && params.PUBLISH_IMAGES } }
       steps {
         script {
           def pushRegistry = params.IMAGE_PUSH_REGISTRY?.trim() ?: params.IMAGE_REGISTRY
           def registryHost = pushRegistry.tokenize('/')[0]
-          withCredentials([usernamePassword(credentialsId: params.REGISTRY_CREDENTIALS_ID, usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
-            sh "echo \"\\$REGISTRY_PASSWORD\" | docker login '${registryHost}' --username \"\\$REGISTRY_USERNAME\" --password-stdin"
+          if (params.REGISTRY_CREDENTIALS_ID?.trim()) {
+            withCredentials([usernamePassword(credentialsId: params.REGISTRY_CREDENTIALS_ID, usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
+              sh "echo \"\\$REGISTRY_PASSWORD\" | docker login '${registryHost}' --username \"\\$REGISTRY_USERNAME\" --password-stdin"
+            }
+          } else if (registryHost.contains('.pkg.dev')) {
+            sh """
+              set -euo pipefail
+              token=\$(curl -fsS -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"access_token\"])')
+              echo "\$token" | docker login 'https://${registryHost}' --username oauth2accesstoken --password-stdin
+            """
+          } else {
+            echo "No REGISTRY_CREDENTIALS_ID set and ${registryHost} is not GCP Artifact Registry; skipping docker login."
           }
         }
       }
@@ -135,7 +193,7 @@ pipeline {
           def pushRegistry = params.IMAGE_PUSH_REGISTRY?.trim() ?: params.IMAGE_REGISTRY
           runComponentBranches(
             'jenkins/scripts/component_build_publish.sh',
-            "IMAGE_PUSH_REGISTRY='${pushRegistry}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}'"
+            "IMAGE_PUSH_REGISTRY='${pushRegistry}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' REQUIRE_GCP_ARTIFACT_REGISTRY='${params.REQUIRE_GCP_ARTIFACT_REGISTRY ? '1' : '0'}'"
           )
         }
       }

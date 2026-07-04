@@ -77,6 +77,10 @@ data:
               <defaultValue>true</defaultValue>
             </hudson.model.BooleanParameterDefinition>
             <hudson.model.BooleanParameterDefinition>
+              <name>REQUIRE_GCP_ARTIFACT_REGISTRY</name>
+              <defaultValue>{{ .Values.jenkins.requireGcpArtifactRegistry }}</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
               <name>DEPLOY_CHANGED_COMPONENTS</name>
               <defaultValue>true</defaultValue>
             </hudson.model.BooleanParameterDefinition>
@@ -87,6 +91,11 @@ data:
             <hudson.model.StringParameterDefinition>
               <name>COVERAGE_MIN</name>
               <defaultValue>90</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>FORCE_COMPONENTS</name>
+              <defaultValue></defaultValue>
               <trim>true</trim>
             </hudson.model.StringParameterDefinition>
           </parameterDefinitions>
@@ -119,5 +128,214 @@ data:
       </triggers>
       <disabled>false</disabled>
     </flow-definition>
+  zz-seed-cicd-views.groovy: |
+    import hudson.model.ListView
+    import java.io.ByteArrayInputStream
+    import java.io.StringReader
+    import java.nio.charset.StandardCharsets
+    import javax.xml.transform.stream.StreamSource
+    import jenkins.model.Jenkins
+
+    def instance = Jenkins.get()
+    def repositoryUrl = "{{ .Values.jenkins.github.repositoryUrl }}"
+    def branchSpec = "{{ .Values.jenkins.github.branchSpec }}"
+    def projectUrl = "{{ .Values.jenkins.github.projectUrl }}"
+    def scriptPath = "{{ .Values.jenkins.seedJob.scriptPath }}"
+    def imagePushRegistry = "{{ .Values.jenkins.imagePushRegistry }}"
+    def imagePullRegistry = "{{ .Values.jenkins.imagePullRegistry }}"
+    def requireGcpArtifactRegistry = {{ .Values.jenkins.requireGcpArtifactRegistry }}
+    def mainJobName = "{{ .Values.jenkins.seedJob.name }}"
+
+    def xmlEscape = { value ->
+      (value ?: "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&apos;")
+    }
+
+    def scmPipelineXml = { jobName, description, forceComponents, forceDeploy, githubTrigger ->
+      def triggerBlock = githubTrigger ? """<triggers>
+        <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
+          <spec></spec>
+        </com.cloudbees.jenkins.GitHubPushTrigger>
+      </triggers>""" : "<triggers/>"
+      return """<?xml version='1.1' encoding='UTF-8'?>
+    <flow-definition plugin="workflow-job">
+      <actions/>
+      <description>${xmlEscape(description)}</description>
+      <keepDependencies>false</keepDependencies>
+      <properties>
+        <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github">
+          <projectUrl>${xmlEscape(projectUrl)}</projectUrl>
+          <displayName></displayName>
+        </com.coravy.hudson.plugins.github.GithubProjectProperty>
+        <hudson.model.ParametersDefinitionProperty>
+          <parameterDefinitions>
+            <hudson.model.StringParameterDefinition>
+              <name>IMAGE_PUSH_REGISTRY</name>
+              <defaultValue>${xmlEscape(imagePushRegistry)}</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>IMAGE_PULL_REGISTRY</name>
+              <defaultValue>${xmlEscape(imagePullRegistry)}</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>IMAGE_REGISTRY</name>
+              <defaultValue></defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>PUBLISH_IMAGES</name>
+              <defaultValue>true</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>REQUIRE_GCP_ARTIFACT_REGISTRY</name>
+              <defaultValue>${requireGcpArtifactRegistry ? "true" : "false"}</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>DEPLOY_CHANGED_COMPONENTS</name>
+              <defaultValue>true</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>FORCE_DEPLOY</name>
+              <defaultValue>${forceDeploy ? "true" : "false"}</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>REGISTRY_CREDENTIALS_ID</name>
+              <defaultValue></defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>KUBECONFIG_CREDENTIALS_ID</name>
+              <defaultValue></defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>PROMOTION_MANIFEST_URI</name>
+              <defaultValue>s3://recsys-model-store/promotions/bst/production.json</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>COVERAGE_MIN</name>
+              <defaultValue>90</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>FORCE_COMPONENTS</name>
+              <defaultValue>${xmlEscape(forceComponents)}</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+          </parameterDefinitions>
+        </hudson.model.ParametersDefinitionProperty>
+      </properties>
+      <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
+        <scm class="hudson.plugins.git.GitSCM" plugin="git">
+          <configVersion>2</configVersion>
+          <userRemoteConfigs>
+            <hudson.plugins.git.UserRemoteConfig>
+              <url>${xmlEscape(repositoryUrl)}</url>
+            </hudson.plugins.git.UserRemoteConfig>
+          </userRemoteConfigs>
+          <branches>
+            <hudson.plugins.git.BranchSpec>
+              <name>${xmlEscape(branchSpec)}</name>
+            </hudson.plugins.git.BranchSpec>
+          </branches>
+          <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+          <submoduleCfg class="empty-list"/>
+          <extensions/>
+        </scm>
+        <scriptPath>${xmlEscape(scriptPath)}</scriptPath>
+        <lightweight>true</lightweight>
+      </definition>
+      ${triggerBlock}
+      <disabled>false</disabled>
+    </flow-definition>"""
+    }
+
+    def upsertJob = { name, xml ->
+      def existing = instance.getItem(name)
+      if (existing == null) {
+        instance.createProjectFromXML(name, new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
+      } else {
+        existing.updateByXml(new StreamSource(new StringReader(xml)))
+        existing.save()
+      }
+    }
+
+    def componentJobs = [
+      [view: "01 Materialize Pipeline", job: "RecSys-Materialize-CICD", component: "materialize", label: "Materialize Pipeline"],
+      [view: "02 Training Pipeline", job: "RecSys-Training-CICD", component: "training", label: "Training Pipeline"],
+      [view: "03 Data Pipeline 1", job: "RecSys-DP1-Raw-To-Bronze-CICD", component: "dp1", label: "DP1 Raw To Bronze"],
+      [view: "04 Data Pipeline 2", job: "RecSys-DP2-Bronze-To-Silver-Gold-CICD", component: "dp2", label: "DP2 Bronze To Silver Gold"],
+      [view: "05 Data Pipeline 3", job: "RecSys-DP3-Offline-Feature-Table-CICD", component: "dp3", label: "DP3 Offline Feature Table"],
+      [view: "06 Triton Inference Engine", job: "RecSys-Triton-KServe-CICD", component: "kserve", label: "KServe Inference Engine"],
+      [view: "07 FastAPI Services", job: "RecSys-FastAPI-CICD", component: "api", label: "FastAPI Web API"],
+      [view: "08 Streaming Offline Store", job: "RecSys-Stream-Offline-Store-CICD", component: "stream_offline", label: "Stream Features To Offline Store"],
+      [view: "09 Streaming Online Store", job: "RecSys-Stream-Online-Store-CICD", component: "stream_online", label: "Stream Features To Online Store"],
+    ]
+
+    def mainDescription = "Main GitHub webhook CI/CD entrypoint. Push/merge events call /github-webhook/, Jenkins detects changed paths, runs test/build for affected components, and deploys automatically when the resolved branch is main."
+    upsertJob(mainJobName, scmPipelineXml(mainJobName, mainDescription, "", false, true))
+
+    componentJobs.each { componentJob ->
+      def description = "Manual CI/CD proof job for ${componentJob.label}. It runs the shared Jenkinsfile with FORCE_COMPONENTS=${componentJob.component} so the UI shows Test, Build, and Deploy evidence for this pipeline only."
+      upsertJob(componentJob.job, scmPipelineXml(componentJob.job, description, componentJob.component, true, false))
+    }
+
+    def resetListView = { viewName, description, jobNames, primary ->
+      def view = instance.getView(viewName)
+      if (view != null && !(view instanceof ListView)) {
+        instance.deleteView(view)
+        view = null
+      }
+      if (view == null) {
+        view = new ListView(viewName)
+        instance.addView(view)
+      }
+      view.description = description
+      view.getItems().toList().each { item ->
+        view.remove(item)
+      }
+      jobNames.each { jobName ->
+        def item = instance.getItem(jobName)
+        if (item != null) {
+          view.add(item)
+        }
+      }
+      view.save()
+      if (primary) {
+        instance.setPrimaryView(view)
+      }
+    }
+
+    resetListView(
+      "00 Main Auto Deploy",
+      "Main RecSys CI/CD view. This view contains the GitHub webhook job that automatically runs path-based test/build and deploys changed components after push or merge to main.",
+      [mainJobName],
+      true
+    )
+
+    componentJobs.each { componentJob ->
+      resetListView(
+        componentJob.view,
+        "Capture proof for ${componentJob.label}. Open this view, run ${componentJob.job}, then capture Component CI, Component Build And Publish, and Component Deploy Or Update.",
+        [componentJob.job],
+        false
+      )
+    }
+
+    resetListView(
+      "99 All Component CI/CD",
+      "All manual component CI/CD proof jobs in one place.",
+      componentJobs.collect { it.job },
+      false
+    )
+
+    instance.save()
   {{- end }}
 {{- end }}

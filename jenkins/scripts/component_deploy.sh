@@ -21,12 +21,97 @@ image() {
   printf '%s/%s:%s' "${image_registry}" "$1" "${image_tag}"
 }
 
+resource_exists() {
+  local kind="$1"
+  local name="$2"
+  local namespace="$3"
+  kubectl get "${kind}/${name}" -n "${namespace}" >/dev/null 2>&1
+}
+
+verify_workload_image() {
+  local kind="$1"
+  local name="$2"
+  local namespace="$3"
+  local expected_image="$4"
+
+  if ! resource_exists "${kind}" "${name}" "${namespace}"; then
+    echo "Skipping image check for ${kind}/${name} in ${namespace}; resource is not installed in this environment."
+    return 0
+  fi
+
+  local images
+  images="$(kubectl get "${kind}/${name}" -n "${namespace}" -o jsonpath='{range .spec.template.spec.containers[*]}{.image}{"\n"}{end}')"
+  echo "Current images for ${kind}/${name} in ${namespace}:"
+  printf '%s\n' "${images}"
+  if [[ -n "${expected_image}" ]] && ! grep -Fq "${expected_image}" <<<"${images}"; then
+    echo "Expected image ${expected_image} was not found on ${kind}/${name} in ${namespace}." >&2
+    exit 1
+  fi
+}
+
+wait_rollout_if_exists() {
+  local kind="$1"
+  local name="$2"
+  local namespace="$3"
+
+  if ! resource_exists "${kind}" "${name}" "${namespace}"; then
+    echo "Skipping rollout wait for ${kind}/${name} in ${namespace}; resource is not installed in this environment."
+    return 0
+  fi
+
+  kubectl rollout status "${kind}/${name}" -n "${namespace}" --timeout="${timeout}"
+}
+
+verify_and_wait_workload() {
+  local kind="$1"
+  local name="$2"
+  local namespace="$3"
+  local expected_image="$4"
+
+  verify_workload_image "${kind}" "${name}" "${namespace}" "${expected_image}"
+  wait_rollout_if_exists "${kind}" "${name}" "${namespace}"
+}
+
+verify_data_platform_config_image() {
+  local key="$1"
+  local expected_image="$2"
+  local configmap_name="recsys-data-platform-config"
+
+  local actual_image
+  actual_image="$(kubectl get configmap "${configmap_name}" -n "${namespace_data}" -o "jsonpath={.data.${key}}")"
+  echo "${configmap_name}.${key}=${actual_image}"
+  if [[ "${actual_image}" != "${expected_image}" ]]; then
+    echo "Expected ${configmap_name}.${key}=${expected_image}, got ${actual_image}." >&2
+    exit 1
+  fi
+}
+
+verify_rayjob_image() {
+  local expected_image="$1"
+  local rayjob_name="${RAYJOB_NAME:-recsys-bst-ray-tune}"
+
+  if ! resource_exists "rayjob" "${rayjob_name}" "${namespace_kubeflow}"; then
+    echo "Skipping RayJob image check for ${rayjob_name}; RayJob is not installed in ${namespace_kubeflow}."
+    return 0
+  fi
+
+  local images
+  images="$(kubectl get "rayjob/${rayjob_name}" -n "${namespace_kubeflow}" -o jsonpath='{.spec.rayClusterSpec.headGroupSpec.template.spec.containers[*].image}{" "}{.spec.rayClusterSpec.workerGroupSpecs[*].template.spec.containers[*].image}')"
+  echo "Current RayJob images for ${rayjob_name}: ${images}"
+  if ! grep -Fq "${expected_image}" <<<"${images}"; then
+    echo "Expected RayJob image ${expected_image} was not found on ${rayjob_name}." >&2
+    exit 1
+  fi
+}
+
 deploy_data_platform() {
   helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform \
     --namespace "${namespace_data}" \
     --create-namespace \
     --reuse-values \
     --timeout "${timeout}" \
+    --wait=watcher \
+    --wait-for-jobs \
     --set "images.pullPolicy=Always" \
     "$@"
 }
@@ -45,14 +130,15 @@ deploy_api() {
     --create-namespace \
     --reuse-values \
     --timeout "${timeout}" \
+    --wait=watcher \
     --set "api.namespace.name=${namespace_api}" \
     --set "api.image=$(image recsys-api-serving)" \
     --set "api.imagePullPolicy=Always" \
     --set "featureApi.image=$(image recsys-api-serving)" \
     --set "featureApi.imagePullPolicy=Always" \
     "${rollout_args[@]}"
-  kubectl rollout status "deployment/recsys-online-feature-api" -n "${namespace_api}" --timeout="${timeout}"
-  kubectl rollout status "deployment/recsys-api-serving" -n "${namespace_api}" --timeout="${timeout}"
+  verify_and_wait_workload "deployment" "recsys-online-feature-api" "${namespace_api}" "$(image recsys-api-serving)"
+  verify_and_wait_workload "deployment" "recsys-api-serving" "${namespace_api}" "$(image recsys-api-serving)"
 }
 
 deploy_training_refs() {
@@ -65,11 +151,13 @@ deploy_training_refs() {
     --namespace "${namespace_kubeflow}" \
     --create-namespace \
     --timeout "${timeout}" \
+    --wait=watcher \
     --take-ownership \
     --force-conflicts \
     --set "image.repository=${image_registry}/recsys-mlops-training" \
     --set "image.tag=${image_tag}" \
     --set "image.pullPolicy=Always"
+  verify_rayjob_image "$(image recsys-mlops-training)"
 }
 
 deploy_kserve() {
@@ -94,27 +182,50 @@ case "${component}" in
     case "${component}" in
       materialize)
         deploy_data_platform --set "images.dataflowCli=$(image recsys-dataflow-cli)"
+        verify_data_platform_config_image "DATAFLOW_IMAGE" "$(image recsys-dataflow-cli)"
+        verify_and_wait_workload "deployment" "realtime-event-producer" "${namespace_data}" "$(image recsys-dataflow-cli)"
         ;;
       spark_batch|dp2)
         deploy_data_platform --set "images.spark=$(image recsys-spark)" --set "images.airflow=$(image recsys-airflow)"
+        verify_data_platform_config_image "SPARK_IMAGE" "$(image recsys-spark)"
+        verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "$(image recsys-airflow)"
+        verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "$(image recsys-airflow)"
         ;;
       dp1)
         deploy_data_platform \
           --set "images.dataflowCli=$(image recsys-dataflow-cli)" \
           --set "images.airflow=$(image recsys-airflow)" \
           --set "images.kafkaConnect=$(image recsys-kafka-connect)"
+        verify_data_platform_config_image "DATAFLOW_IMAGE" "$(image recsys-dataflow-cli)"
+        verify_and_wait_workload "deployment" "realtime-event-producer" "${namespace_data}" "$(image recsys-dataflow-cli)"
+        verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "$(image recsys-airflow)"
+        verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "$(image recsys-airflow)"
+        verify_and_wait_workload "deployment" "kafka-connect" "${namespace_data}" "$(image recsys-kafka-connect)"
         ;;
       dp3)
         deploy_data_platform \
           --set "images.spark=$(image recsys-spark)" \
           --set "images.dataflowCli=$(image recsys-dataflow-cli)" \
           --set "images.airflow=$(image recsys-airflow)"
+        verify_data_platform_config_image "SPARK_IMAGE" "$(image recsys-spark)"
+        verify_data_platform_config_image "DATAFLOW_IMAGE" "$(image recsys-dataflow-cli)"
+        verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "$(image recsys-airflow)"
+        verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "$(image recsys-airflow)"
         ;;
       stream_offline)
         deploy_data_platform --set "images.flink=$(image recsys-flink)"
+        verify_data_platform_config_image "FLINK_IMAGE" "$(image recsys-flink)"
+        verify_and_wait_workload "deployment" "flink-jobmanager" "${namespace_data}" "$(image recsys-flink)"
+        verify_and_wait_workload "deployment" "flink-taskmanager" "${namespace_data}" "$(image recsys-flink)"
+        verify_and_wait_workload "deployment" "realtime-flink-offline-store" "${namespace_data}" "$(image recsys-flink)"
         ;;
       stream_online)
         deploy_data_platform --set "images.flink=$(image recsys-flink)" --set "images.dataflowCli=$(image recsys-dataflow-cli)"
+        verify_data_platform_config_image "FLINK_IMAGE" "$(image recsys-flink)"
+        verify_data_platform_config_image "DATAFLOW_IMAGE" "$(image recsys-dataflow-cli)"
+        verify_and_wait_workload "deployment" "flink-jobmanager" "${namespace_data}" "$(image recsys-flink)"
+        verify_and_wait_workload "deployment" "flink-taskmanager" "${namespace_data}" "$(image recsys-flink)"
+        verify_and_wait_workload "deployment" "realtime-flink-online-store" "${namespace_data}" "$(image recsys-flink)"
         ;;
     esac
     ;;

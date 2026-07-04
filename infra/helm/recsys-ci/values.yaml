@@ -58,8 +58,13 @@ jenkins:
       - workflow-scm-step
       - workflow-multibranch
       - pipeline-stage-view
+      - junit
       - git
       - github
+  runtimeTools:
+    installOnStartup: false
+    kubectlVersion: v1.33.0
+    helmVersion: v3.18.4
   seedJob:
     enabled: true
     name: RecSys-GitHub-CICD
@@ -85,6 +90,7 @@ jenkins:
     storageClassName: recsys-ci-local
   imagePushRegistry: recsys-registry.ci.svc.cluster.local:5000/recsys
   imagePullRegistry: localhost:5001/recsys
+  requireGcpArtifactRegistry: false
   javaOpts: "-Djenkins.install.runSetupWizard=false -Dhudson.model.DownloadService.never=true"
   dind:
     enabled: true

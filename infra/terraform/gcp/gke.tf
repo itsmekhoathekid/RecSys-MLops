@@ -8,6 +8,7 @@ resource "google_service_account" "gke_nodes" {
 resource "google_project_iam_member" "gke_node_roles" {
   for_each = toset([
     "roles/artifactregistry.reader",
+    "roles/artifactregistry.writer",
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
     "roles/monitoring.viewer",

@@ -6,10 +6,22 @@ image_registry="${IMAGE_PUSH_REGISTRY:-${IMAGE_REGISTRY:-localhost:5001/recsys}}
 image_registry="${image_registry%/}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-}}"
 publish_images="${PUBLISH_IMAGES:-1}"
+require_gcp_artifact_registry="${REQUIRE_GCP_ARTIFACT_REGISTRY:-1}"
 manifest_dir="${IMAGE_MANIFEST_DIR:-.ci-image-manifest}"
 
 if [[ -z "${image_tag}" ]]; then
   image_tag="$(git rev-parse --short=12 HEAD)"
+fi
+
+if [[ "${require_gcp_artifact_registry}" == "1" || "${require_gcp_artifact_registry}" == "true" ]]; then
+  if [[ "${image_registry}" != *".pkg.dev/"* ]]; then
+    echo "REQUIRE_GCP_ARTIFACT_REGISTRY is enabled, but IMAGE_PUSH_REGISTRY is not a GCP Artifact Registry repo: ${image_registry}" >&2
+    exit 2
+  fi
+  if [[ "${publish_images}" != "1" && "${publish_images}" != "true" ]]; then
+    echo "REQUIRE_GCP_ARTIFACT_REGISTRY is enabled, so PUBLISH_IMAGES must be true." >&2
+    exit 2
+  fi
 fi
 
 mkdir -p "${manifest_dir}"

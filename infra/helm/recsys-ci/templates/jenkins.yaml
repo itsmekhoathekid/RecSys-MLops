@@ -90,6 +90,54 @@ spec:
         - name: jenkins
           image: {{ .Values.jenkins.image }}
           imagePullPolicy: IfNotPresent
+          {{- if .Values.jenkins.runtimeTools.installOnStartup }}
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                ca-certificates \
+                curl \
+                docker-cli \
+                docker.io \
+                gnupg \
+                python3 \
+                python3-pip \
+                python3-venv \
+                tar \
+                unzip
+              rm -rf /var/lib/apt/lists/*
+
+              if ! command -v uv >/dev/null 2>&1; then
+                curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
+                chmod +x /usr/local/bin/uv
+              fi
+              if ! command -v kubectl >/dev/null 2>&1; then
+                curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/{{ .Values.jenkins.runtimeTools.kubectlVersion }}/bin/linux/amd64/kubectl"
+                chmod +x /usr/local/bin/kubectl
+              fi
+              if ! command -v helm >/dev/null 2>&1; then
+                curl -fsSL -o /tmp/helm.tgz "https://get.helm.sh/helm-{{ .Values.jenkins.runtimeTools.helmVersion }}-linux-amd64.tar.gz"
+                tar -xzf /tmp/helm.tgz -C /tmp
+                mv /tmp/linux-amd64/helm /usr/local/bin/helm
+                chmod +x /usr/local/bin/helm
+                rm -rf /tmp/helm.tgz /tmp/linux-amd64
+              fi
+              ln -sf /opt/java/openjdk/bin/java /usr/local/bin/java
+
+              python3 --version
+              uv --version
+              docker --version
+              kubectl version --client=true
+              helm version --short
+              exec /usr/bin/tini -- su -s /bin/bash jenkins -c 'export JAVA_HOME=/opt/java/openjdk; export PATH=/opt/java/openjdk/bin:/usr/local/bin:/usr/bin:/bin; /usr/local/bin/jenkins.sh'
+          securityContext:
+            runAsUser: 0
+          {{- end }}
           ports:
             - name: http
               containerPort: 8080
