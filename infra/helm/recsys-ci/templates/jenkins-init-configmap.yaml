@@ -257,6 +257,77 @@ data:
     </flow-definition>"""
     }
 
+    def kserveModelCdXml = { jobName, description ->
+      return """<?xml version='1.1' encoding='UTF-8'?>
+    <flow-definition plugin="workflow-job">
+      <actions/>
+      <description>${xmlEscape(description)}</description>
+      <keepDependencies>false</keepDependencies>
+      <properties>
+        <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github">
+          <projectUrl>${xmlEscape(projectUrl)}</projectUrl>
+          <displayName></displayName>
+        </com.coravy.hudson.plugins.github.GithubProjectProperty>
+        <hudson.model.ParametersDefinitionProperty>
+          <parameterDefinitions>
+            <hudson.model.StringParameterDefinition>
+              <name>PROMOTION_MANIFEST_URI</name>
+              <defaultValue>s3://recsys-model-store/promotions/bst/latest.json</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>COMPONENT_DEPLOY_TIMEOUT</name>
+              <defaultValue>600s</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>MODEL_VERSION</name>
+              <defaultValue></defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>METRIC_NAME</name>
+              <defaultValue></defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>METRIC_VALUE</name>
+              <defaultValue></defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>TRIGGER_SOURCE</name>
+              <defaultValue>manual</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+          </parameterDefinitions>
+        </hudson.model.ParametersDefinitionProperty>
+      </properties>
+      <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
+        <scm class="hudson.plugins.git.GitSCM" plugin="git">
+          <configVersion>2</configVersion>
+          <userRemoteConfigs>
+            <hudson.plugins.git.UserRemoteConfig>
+              <url>${xmlEscape(repositoryUrl)}</url>
+            </hudson.plugins.git.UserRemoteConfig>
+          </userRemoteConfigs>
+          <branches>
+            <hudson.plugins.git.BranchSpec>
+              <name>${xmlEscape(branchSpec)}</name>
+            </hudson.plugins.git.BranchSpec>
+          </branches>
+          <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+          <submoduleCfg class="empty-list"/>
+          <extensions/>
+        </scm>
+        <scriptPath>jenkins/KServeModelCD.Jenkinsfile</scriptPath>
+        <lightweight>true</lightweight>
+      </definition>
+      <triggers/>
+      <disabled>false</disabled>
+    </flow-definition>"""
+    }
+
     def upsertJob = { name, xml ->
       def existing = instance.getItem(name)
       if (existing == null) {
@@ -278,6 +349,7 @@ data:
       [view: "08 Streaming Offline Store", job: "RecSys-Stream-Offline-Store-CICD", component: "stream_offline", label: "Stream Features To Offline Store"],
       [view: "09 Streaming Online Store", job: "RecSys-Stream-Online-Store-CICD", component: "stream_online", label: "Stream Features To Online Store"],
     ]
+    def kserveCdJobName = "RecSys-KServe-Model-CD"
 
     def mainDescription = "Main GitHub webhook CI/CD entrypoint. Push/merge events call /github-webhook/, Jenkins detects changed paths, runs test/build for affected components, and deploys automatically when the resolved branch is main."
     upsertJob(mainJobName, scmPipelineXml(mainJobName, mainDescription, "", false, true))
@@ -286,6 +358,14 @@ data:
       def description = "Manual CI/CD proof job for ${componentJob.label}. It runs the shared Jenkinsfile with FORCE_COMPONENTS=${componentJob.component} so the UI shows Test, Build, and Deploy evidence for this pipeline only."
       upsertJob(componentJob.job, scmPipelineXml(componentJob.job, description, componentJob.component, true, false))
     }
+
+    upsertJob(
+      kserveCdJobName,
+      kserveModelCdXml(
+        kserveCdJobName,
+        "Post-promotion KServe model CD. Kubeflow triggers this job after Ray training and model promotion pass the score threshold; the job applies jenkins/scripts/model_cd.py --apply and waits for the Triton/KServe rolling update."
+      )
+    )
 
     def resetListView = { viewName, description, jobNames, primary ->
       def view = instance.getView(viewName)
@@ -330,9 +410,16 @@ data:
     }
 
     resetListView(
+      "06A KServe Model CD",
+      "Auto/manual CD view for promoted BST models. Kubeflow triggers RecSys-KServe-Model-CD after promotion when metric score >= threshold, and this job deploys the promoted Triton repository to KServe.",
+      [kserveCdJobName],
+      false
+    )
+
+    resetListView(
       "99 All Component CI/CD",
-      "All manual component CI/CD proof jobs in one place.",
-      componentJobs.collect { it.job },
+      "All manual component CI/CD and model CD proof jobs in one place.",
+      componentJobs.collect { it.job } + [kserveCdJobName],
       false
     )
 

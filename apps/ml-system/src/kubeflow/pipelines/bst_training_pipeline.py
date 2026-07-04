@@ -21,6 +21,12 @@ SPARK_PACKAGES = os.getenv(
     "com.amazonaws:aws-java-sdk-bundle:1.12.262",
 )
 
+KSERVE_CD_SECRET_KEY_TO_ENV = {
+    "JENKINS_URL": "JENKINS_URL",
+    "JENKINS_USER": "JENKINS_USER",
+    "JENKINS_TOKEN": "JENKINS_TOKEN",
+}
+
 
 @dsl.container_component
 def feature_engineering(config_path: str, output_base: str, run_path: str, summary_path: str):
@@ -228,6 +234,36 @@ def promote_bst_model(
     )
 
 
+@dsl.container_component
+def trigger_kserve_model_cd(
+    manifest_path: str,
+    score_threshold: float,
+    metric_name: str,
+    jenkins_url: str,
+    job_name: str,
+    status_path: str,
+):
+    return dsl.ContainerSpec(
+        image=PIPELINE_IMAGE,
+        command=["python", "/opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py"],
+        args=[
+            "--manifest-path",
+            manifest_path,
+            "--score-threshold",
+            score_threshold,
+            "--metric-name",
+            metric_name,
+            "--jenkins-url",
+            jenkins_url,
+            "--job-name",
+            job_name,
+            "--status-path",
+            status_path,
+            "--wait",
+        ],
+    )
+
+
 @dsl.pipeline(
     name="recsys-bst-feature-train-evaluate",
     description="Feature engineering, BST training, evaluation, MLflow tracking, MinIO artifacts, and Postgres model config.",
@@ -253,6 +289,10 @@ def recsys_bst_pipeline(
     serving_output_dir: str = "/workspace/recsys/data_platform/output/ml/serving",
     promotion_manifest_path: str = "/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json",
     promotion_metric_name: str = "test_ndcg_at_10",
+    kserve_cd_score_threshold: float = 0.0,
+    kserve_cd_jenkins_url: str = "http://recsys-jenkins.ci.svc.cluster.local:8080",
+    kserve_cd_job_name: str = "RecSys-KServe-Model-CD",
+    kserve_cd_status_path: str = "/workspace/recsys/data_platform/output/ml/serving/kserve_cd_status.json",
     pvc_name: str = "recsys-mlops-pvc",
     pvc_mount_path: str = "/workspace",
     runtime_secret_name: str = "recsys-mlops-runtime",
@@ -382,7 +422,7 @@ def recsys_bst_pipeline(
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
     ).after(distributed_train)
-    wire_runtime(
+    promote = wire_runtime(
         promote_bst_model(
             config_path=bst_config_path,
             ray_result_path=ray_best_result_path,
@@ -394,3 +434,19 @@ def recsys_bst_pipeline(
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
     ).after(evaluate)
+    deploy = wire_runtime(
+        trigger_kserve_model_cd(
+            manifest_path=promotion_manifest_path,
+            score_threshold=kserve_cd_score_threshold,
+            metric_name=promotion_metric_name,
+            jenkins_url=kserve_cd_jenkins_url,
+            job_name=kserve_cd_job_name,
+            status_path=kserve_cd_status_path,
+        ),
+        pvc_name=DEFAULT_PVC_NAME,
+        mount_path=DEFAULT_PVC_MOUNT_PATH,
+        secret_name=DEFAULT_RUNTIME_SECRET_NAME,
+        secret_key_to_env=KSERVE_CD_SECRET_KEY_TO_ENV,
+    )
+    deploy.set_display_name("Trigger KServe CD")
+    deploy.after(promote)

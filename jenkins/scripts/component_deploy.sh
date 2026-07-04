@@ -237,6 +237,27 @@ deploy_kserve_unlocked() {
     MODEL_STORE_BUCKET \
     MODEL_STORE_PREFIX
 
+  echo "KServe CI/CD validates the promoted Triton model manifest only."
+  echo "Production model deployment is handled by the RecSys-KServe-Model-CD job after Kubeflow promotion."
+  uv run python jenkins/scripts/model_cd.py \
+    --manifest-uri "${promotion_manifest_uri}" \
+    --output-dir .model-cd \
+    --timeout "${timeout}"
+}
+
+deploy_kserve_model_cd_unlocked() {
+  load_secret_env_if_unset "${namespace_kubeflow}" "${MLOPS_RUNTIME_SECRET_NAME:-recsys-mlops-runtime}" \
+    AWS_ACCESS_KEY_ID \
+    AWS_SECRET_ACCESS_KEY \
+    AWS_DEFAULT_REGION \
+    MINIO_ENDPOINT \
+    MINIO_ROOT_USER \
+    MINIO_ROOT_PASSWORD \
+    MLFLOW_S3_ENDPOINT_URL \
+    MODEL_STORE_ENDPOINT \
+    MODEL_STORE_BUCKET \
+    MODEL_STORE_PREFIX
+
   uv run python jenkins/scripts/model_cd.py \
     --manifest-uri "${promotion_manifest_uri}" \
     --output-dir .model-cd \
@@ -246,6 +267,10 @@ deploy_kserve_unlocked() {
 
 deploy_kserve() {
   with_file_lock "/tmp/recsys-serving-helm.lock" deploy_kserve_unlocked
+}
+
+deploy_kserve_model_cd() {
+  with_file_lock "/tmp/recsys-serving-helm.lock" deploy_kserve_model_cd_unlocked
 }
 
 deploy_drift() {
@@ -317,6 +342,9 @@ case "${component}" in
     ;;
   kserve)
     deploy_kserve
+    ;;
+  kserve_model_cd)
+    deploy_kserve_model_cd
     ;;
   drift)
     deploy_drift

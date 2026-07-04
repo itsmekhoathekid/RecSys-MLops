@@ -211,7 +211,7 @@ def classify(paths: list[str]) -> dict[str, bool]:
             mark(flags, "API")
         elif path.startswith("apps/ml-system/"):
             mark(flags, "TRAINING")
-            if parts[-1] in {"model_promotion.py"}:
+            if parts[-1] in {"model_promotion.py", "trigger_kserve_cd.py"}:
                 mark(flags, "KSERVE")
         elif path.startswith("apps/data-platform/data-generator/"):
             mark(flags, "DP1")

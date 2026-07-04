@@ -22,6 +22,7 @@ def test_api_change_routes_only_api_component():
 def test_training_change_routes_training_and_model_promotion_routes_kserve():
     assert "TRAINING" in enabled(["apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py"])
     assert {"TRAINING", "KSERVE"} <= enabled(["apps/ml-system/src/registry/model_promotion.py"])
+    assert {"TRAINING", "KSERVE"} <= enabled(["apps/ml-system/src/cli/trigger_kserve_cd.py"])
 
 
 def test_spark_batch_paths_route_spark_batch_dp2_dp3():

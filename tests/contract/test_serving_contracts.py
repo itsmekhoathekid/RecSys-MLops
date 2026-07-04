@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -592,3 +593,36 @@ def test_model_cd_query_prometheus_and_crd_exists(monkeypatch):
     assert model_cd.crd_exists("servicemonitors.monitoring.coreos.com") is True
     monkeypatch.setattr(model_cd.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 1})())
     assert model_cd.crd_exists("missing.example.com") is False
+
+
+def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
+    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    cicd_block = re.search(
+        r"deploy_kserve_unlocked\(\) \{(?P<body>.*?)\n\}",
+        deploy_script,
+        flags=re.S,
+    )
+    cd_block = re.search(
+        r"deploy_kserve_model_cd_unlocked\(\) \{(?P<body>.*?)\n\}",
+        deploy_script,
+        flags=re.S,
+    )
+
+    assert cicd_block is not None
+    assert cd_block is not None
+    assert "model_cd.py" in cicd_block.group("body")
+    assert "--apply" not in cicd_block.group("body")
+    assert "model_cd.py" in cd_block.group("body")
+    assert "--apply" in cd_block.group("body")
+    assert "kserve_model_cd)" in deploy_script
+
+
+def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
+    seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(encoding="utf-8")
+    jenkinsfile = (ROOT / "jenkins/KServeModelCD.Jenkinsfile").read_text(encoding="utf-8")
+
+    assert "RecSys-KServe-Model-CD" in seed
+    assert "06A KServe Model CD" in seed
+    assert "jenkins/KServeModelCD.Jenkinsfile" in seed
+    assert "PROMOTION_MANIFEST_URI" in jenkinsfile
+    assert "component_deploy.sh kserve_model_cd" in jenkinsfile

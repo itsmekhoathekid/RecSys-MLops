@@ -285,6 +285,10 @@ def test_compile_pipeline_writes_refactored_component_commands():
     assert "recsys-bst-ray-ddp-train" in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/registry/model_promotion.py" in compiled
+    assert "/opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py" in compiled
+    assert "Trigger KServe CD" in compiled
+    assert "kserve_cd_score_threshold" in compiled
+    assert "RecSys-KServe-Model-CD" in compiled
     assert "pipelines.model_pipeline" not in compiled
     assert "recsys_model_pipeline" not in compiled
 
