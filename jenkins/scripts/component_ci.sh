@@ -55,7 +55,9 @@ run_component_pytest() {
     cov_args+=(--cov "${cov_path}")
   done
 
+  COVERAGE_FILE="${reports_dir}/coverage/.coverage.${name}" \
   PYTHONPATH="${pythonpath}" uv run pytest "${test_paths[@]}" -q \
+    --cov-config="${PWD}/pyproject.toml" \
     "${cov_args[@]}" \
     --cov-report="term-missing" \
     --cov-report="xml:${reports_dir}/coverage/${name}.xml" \
@@ -112,7 +114,7 @@ case "${component}" in
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   dp1)
-    run_plain_pytest "dp1-data-generator" "apps/data-platform/data-generator/src" tests/unit/data_generator
+    run_plain_pytest "dp1-data-generator" "apps/data-platform/data-generator/src:apps/data-platform/src:apps/ml-system/src:apps/api-serving/src" tests/unit/data_generator
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir dp1
     cov_paths=(ingest.debezium ingest.batch_lakehouse_ingestion)
