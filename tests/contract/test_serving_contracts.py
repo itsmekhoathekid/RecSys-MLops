@@ -27,6 +27,7 @@ def test_api_serving_image_includes_feast_postgres_driver():
     dockerfile = (ROOT / "apps/api-serving/Dockerfile").read_text(encoding="utf-8")
     assert "feast[redis]" in dockerfile
     assert "psycopg[binary]" in dockerfile
+    assert "psycopg-pool" in dockerfile
 
 
 def test_serving_chart_renders_expected_namespaces():

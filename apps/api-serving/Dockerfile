@@ -24,6 +24,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     pydantic \
     prometheus-client \
     "psycopg[binary]" \
+    psycopg-pool \
     redis \
     tritonclient[grpc] \
     uvicorn
