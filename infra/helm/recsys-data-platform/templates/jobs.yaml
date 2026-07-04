@@ -43,8 +43,7 @@ spec:
   template:
     metadata:
       annotations:
-        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
-        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/inject: "false"
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
@@ -86,8 +85,7 @@ spec:
   template:
     metadata:
       annotations:
-        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
-        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/inject: "false"
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
