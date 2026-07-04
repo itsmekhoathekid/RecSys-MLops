@@ -1,4 +1,5 @@
 {{- if .Values.realtimeProducer.enabled }}
+{{- $producerRollout := default (dict) .Values.realtimeProducer.rollout }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,8 +10,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: {{ .Values.realtimeProducer.rollout.maxSurge | quote }}
-      maxUnavailable: {{ .Values.realtimeProducer.rollout.maxUnavailable | quote }}
+      maxSurge: {{ get $producerRollout "maxSurge" | default 0 | quote }}
+      maxUnavailable: {{ get $producerRollout "maxUnavailable" | default 1 | quote }}
   selector:
     matchLabels:
       app: {{ .Values.realtimeProducer.name }}
