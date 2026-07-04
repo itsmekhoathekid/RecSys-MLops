@@ -19,6 +19,14 @@ resource "google_project_iam_member" "gke_node_roles" {
   member  = "serviceAccount:${google_service_account.gke_nodes.email}"
 }
 
+resource "google_project_iam_member" "jenkins_workload_identity_artifact_registry_writer" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "principal://iam.googleapis.com/projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${var.project_id}.svc.id.goog/subject/ns/ci/sa/recsys-jenkins"
+
+  depends_on = [google_project_service.required]
+}
+
 resource "google_container_cluster" "recsys" {
   provider = google-beta
 

@@ -110,7 +110,7 @@ deploy_data_platform() {
     --create-namespace \
     --reuse-values \
     --timeout "${timeout}" \
-    --wait=watcher \
+    --wait \
     --wait-for-jobs \
     --set "images.pullPolicy=Always" \
     "$@"
@@ -130,7 +130,7 @@ deploy_api() {
     --create-namespace \
     --reuse-values \
     --timeout "${timeout}" \
-    --wait=watcher \
+    --wait \
     --set "api.namespace.name=${namespace_api}" \
     --set "api.image=$(image recsys-api-serving)" \
     --set "api.imagePullPolicy=Always" \
@@ -151,7 +151,7 @@ deploy_training_refs() {
     --namespace "${namespace_kubeflow}" \
     --create-namespace \
     --timeout "${timeout}" \
-    --wait=watcher \
+    --wait \
     --take-ownership \
     --force-conflicts \
     --set "image.repository=${image_registry}/recsys-mlops-training" \
