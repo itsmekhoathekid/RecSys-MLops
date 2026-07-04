@@ -26,6 +26,8 @@ spec:
     metadata:
       labels:
         app: {{ .Values.sourcePostgres.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ default "false" .Values.sourcePostgres.istioInject | quote }}
     spec:
       enableServiceLinks: false
       containers:
@@ -90,6 +92,8 @@ spec:
     metadata:
       labels:
         app: {{ .Values.airflowPostgres.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ default "false" .Values.airflowPostgres.istioInject | quote }}
     spec:
       enableServiceLinks: false
       containers:

@@ -24,6 +24,7 @@ sourcePostgres:
   user: recsys
   password: ""
   storage: 20Gi
+  istioInject: "false"
 
 airflowPostgres:
   name: airflow-postgres
@@ -31,6 +32,7 @@ airflowPostgres:
   user: airflow
   password: ""
   storage: 5Gi
+  istioInject: "false"
 
 featurePostgres:
   name: feature-postgres
