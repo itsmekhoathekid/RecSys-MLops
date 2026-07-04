@@ -93,6 +93,15 @@ run_plain_pytest() {
     --junitxml="${reports_dir}/junit/${name}.xml"
 }
 
+run_plain_pytest_with_pythonpath_override() {
+  local name="$1"
+  local pythonpath="$2"
+  shift 2
+  PYTHONPATH="${pythonpath}" uv run pytest "$@" -q \
+    -o "pythonpath=${pythonpath}" \
+    --junitxml="${reports_dir}/junit/${name}.xml"
+}
+
 case "${component}" in
   materialize)
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
@@ -114,7 +123,7 @@ case "${component}" in
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   dp1)
-    run_plain_pytest "dp1-data-generator" "apps/data-platform/data-generator/src:apps/data-platform/src:apps/ml-system/src:apps/api-serving/src" tests/unit/data_generator
+    run_plain_pytest_with_pythonpath_override "dp1-data-generator" "apps/data-platform/data-generator/src" tests/unit/data_generator
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir dp1
     cov_paths=(ingest.debezium ingest.batch_lakehouse_ingestion)
