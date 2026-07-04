@@ -62,7 +62,7 @@ spec:
               }
               trap cleanup EXIT
               until PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
-                python infra/docker/scripts/init_postgres_schema.py; do
+                /opt/venv/bin/python infra/docker/scripts/init_postgres_schema.py; do
                 sleep 5
               done
           envFrom:
@@ -104,7 +104,7 @@ spec:
                 exit "$status"
               }
               trap cleanup EXIT
-              python -m ingest.register_k8s_connectors --connector debezium --wait-timeout-seconds 900
+              /opt/venv/bin/python -m ingest.register_k8s_connectors --connector debezium --wait-timeout-seconds 900
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

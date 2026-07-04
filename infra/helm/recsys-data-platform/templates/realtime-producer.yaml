@@ -6,6 +6,11 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: {{ .Values.realtimeProducer.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.realtimeProducer.rollout.maxSurge | quote }}
+      maxUnavailable: {{ .Values.realtimeProducer.rollout.maxUnavailable | quote }}
   selector:
     matchLabels:
       app: {{ .Values.realtimeProducer.name }}
@@ -24,11 +29,11 @@ spec:
             - |
               set -euo pipefail
               until PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
-                python infra/docker/scripts/init_postgres_schema.py; do
+                /opt/venv/bin/python infra/docker/scripts/init_postgres_schema.py; do
                 sleep 5
               done
               PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
-              python apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py
+              /opt/venv/bin/python apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py
               if [ "${REALTIME_MAX_EVENTS:-0}" != "0" ]; then
                 echo "Realtime producer reached REALTIME_MAX_EVENTS=${REALTIME_MAX_EVENTS}; keeping pod alive to avoid deployment restart loops."
                 sleep infinity

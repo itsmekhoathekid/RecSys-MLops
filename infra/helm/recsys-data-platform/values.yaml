@@ -116,6 +116,9 @@ realtimeProducer:
   enabled: true
   name: realtime-event-producer
   replicas: 1
+  rollout:
+    maxSurge: 0
+    maxUnavailable: 1
   intervalSeconds: "2"
   eventsPerTick: "5"
   maxEvents: "1000"
