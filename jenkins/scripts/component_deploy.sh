@@ -72,6 +72,22 @@ verify_and_wait_workload() {
   wait_rollout_if_exists "${kind}" "${name}" "${namespace}"
 }
 
+with_file_lock() {
+  local lock_file="$1"
+  shift
+
+  if command -v flock >/dev/null 2>&1; then
+    (
+      flock 9
+      "$@"
+    ) 9>"${lock_file}"
+    return
+  fi
+
+  echo "flock is not available; running ${*} without a process lock."
+  "$@"
+}
+
 verify_data_platform_config_image() {
   local key="$1"
   local expected_image="$2"
@@ -154,7 +170,7 @@ deploy_data_platform() {
     "$@"
 }
 
-deploy_api() {
+deploy_api_unlocked() {
   local rollout_args=()
   if [[ -n "${API_ROLLOUT_MAX_SURGE:-}" ]]; then
     rollout_args+=(--set "api.rollout.maxSurge=${API_ROLLOUT_MAX_SURGE}")
@@ -177,6 +193,10 @@ deploy_api() {
     "${rollout_args[@]}"
   verify_and_wait_workload "deployment" "recsys-online-feature-api" "${namespace_api}" "$(image recsys-api-serving)"
   verify_and_wait_workload "deployment" "recsys-api-serving" "${namespace_api}" "$(image recsys-api-serving)"
+}
+
+deploy_api() {
+  with_file_lock "/tmp/recsys-serving-helm.lock" deploy_api_unlocked
 }
 
 deploy_training_refs() {
@@ -204,7 +224,7 @@ deploy_training_refs() {
   echo "Training CI/CD updated image refs and uploaded the Kubeflow pipeline package only; Ray Tune and DDP training are not auto-run by CI/CD."
 }
 
-deploy_kserve() {
+deploy_kserve_unlocked() {
   load_secret_env_if_unset "${namespace_kubeflow}" "${MLOPS_RUNTIME_SECRET_NAME:-recsys-mlops-runtime}" \
     AWS_ACCESS_KEY_ID \
     AWS_SECRET_ACCESS_KEY \
@@ -222,6 +242,10 @@ deploy_kserve() {
     --output-dir .model-cd \
     --apply \
     --timeout "${timeout}"
+}
+
+deploy_kserve() {
+  with_file_lock "/tmp/recsys-serving-helm.lock" deploy_kserve_unlocked
 }
 
 deploy_drift() {
