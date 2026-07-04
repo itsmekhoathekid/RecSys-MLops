@@ -141,7 +141,7 @@ pipeline {
           }
           env.CI_TMP_ROOT = "/tmp/recsys-ci-${env.JOB_BASE_NAME}-${env.BUILD_NUMBER}"
           env.UV_PROJECT_ENVIRONMENT = "${env.CI_TMP_ROOT}/venv"
-          env.UV_CACHE_DIR = "/tmp/recsys-ci-uv-cache"
+          env.UV_CACHE_DIR = "${env.CI_TMP_ROOT}/uv-cache"
           echo "Using CI temp root: ${env.CI_TMP_ROOT}"
         }
         sh 'rm -rf reports .ci-image-manifest && mkdir -p reports/junit reports/coverage .ci-image-manifest'
