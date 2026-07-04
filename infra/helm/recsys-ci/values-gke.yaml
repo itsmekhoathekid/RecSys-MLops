@@ -20,5 +20,5 @@ jenkins:
     enabled: true
   pvc:
     volumeName: ""
-    storage: 5Gi
+    storage: 50Gi
     storageClassName: standard-rwo

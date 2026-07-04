@@ -139,6 +139,10 @@ pipeline {
           if (!applyForcedComponents(params.FORCE_COMPONENTS ?: '')) {
             echo "Changed components: ${env.CHANGED_COMPONENTS}"
           }
+          env.CI_TMP_ROOT = "/tmp/recsys-ci-${env.JOB_BASE_NAME}-${env.BUILD_NUMBER}"
+          env.UV_PROJECT_ENVIRONMENT = "${env.CI_TMP_ROOT}/venv"
+          env.UV_CACHE_DIR = "/tmp/recsys-ci-uv-cache"
+          echo "Using CI temp root: ${env.CI_TMP_ROOT}"
         }
       }
     }
@@ -146,7 +150,11 @@ pipeline {
     stage('Python Env') {
       when { expression { env.RUN_PYTHON == 'true' } }
       steps {
-        sh 'uv sync'
+        sh '''
+          set -euo pipefail
+          mkdir -p "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"
+          uv sync
+        '''
         sh 'mkdir -p reports/junit reports/coverage'
       }
     }
@@ -221,6 +229,12 @@ pipeline {
     always {
       junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
       archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,infra/kubeflow/compiled/*.yaml,.ci-components.env,.ci-image-manifest/*,.model-cd/*'
+      sh '''
+        set +e
+        if [ -n "${CI_TMP_ROOT:-}" ] && [ -d "${CI_TMP_ROOT}" ]; then
+          rm -rf "${CI_TMP_ROOT}"
+        fi
+      '''
     }
   }
 }
