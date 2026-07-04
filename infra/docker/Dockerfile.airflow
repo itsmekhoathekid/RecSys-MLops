@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 USER airflow
-RUN pip install --user \
+RUN pip install \
     apache-airflow-providers-docker \
     apache-airflow-providers-http \
     apache-airflow-providers-cncf-kubernetes \
