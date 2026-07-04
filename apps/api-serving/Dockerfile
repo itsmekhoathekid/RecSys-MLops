@@ -23,6 +23,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     opentelemetry-sdk \
     pydantic \
     prometheus-client \
+    "psycopg[binary]" \
     redis \
     tritonclient[grpc] \
     uvicorn

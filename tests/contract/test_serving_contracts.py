@@ -16,8 +16,17 @@ import model_cd
 from model_cd import REQUIRED_MODEL_FILES, main as model_cd_main
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
 def _documents(rendered: str) -> list[dict]:
     return [doc for doc in yaml.safe_load_all(rendered) if isinstance(doc, dict)]
+
+
+def test_api_serving_image_includes_feast_postgres_driver():
+    dockerfile = (ROOT / "apps/api-serving/Dockerfile").read_text(encoding="utf-8")
+    assert "feast[redis]" in dockerfile
+    assert "psycopg[binary]" in dockerfile
 
 
 def test_serving_chart_renders_expected_namespaces():
