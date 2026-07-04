@@ -144,6 +144,7 @@ pipeline {
           env.UV_CACHE_DIR = "/tmp/recsys-ci-uv-cache"
           echo "Using CI temp root: ${env.CI_TMP_ROOT}"
         }
+        sh 'rm -rf reports .ci-image-manifest && mkdir -p reports/junit reports/coverage .ci-image-manifest'
       }
     }
 
@@ -155,7 +156,6 @@ pipeline {
           mkdir -p "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"
           uv sync
         '''
-        sh 'mkdir -p reports/junit reports/coverage'
       }
     }
 
