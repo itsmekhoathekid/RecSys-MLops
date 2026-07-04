@@ -183,6 +183,7 @@ pipeline {
             }
           } else if (registryHost.contains('.pkg.dev')) {
             sh """
+              set +x
               set -euo pipefail
               token=\$(curl -fsS -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"access_token\"])')
               echo "\$token" | docker login 'https://${registryHost}' --username oauth2accesstoken --password-stdin

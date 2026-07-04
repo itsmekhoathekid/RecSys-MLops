@@ -10,8 +10,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: {{ get $producerRollout "maxSurge" | default 0 | quote }}
-      maxUnavailable: {{ get $producerRollout "maxUnavailable" | default 1 | quote }}
+      maxSurge: {{ get $producerRollout "maxSurge" | default 0 }}
+      maxUnavailable: {{ get $producerRollout "maxUnavailable" | default 1 }}
   selector:
     matchLabels:
       app: {{ .Values.realtimeProducer.name }}
