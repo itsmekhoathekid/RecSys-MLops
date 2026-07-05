@@ -239,7 +239,7 @@ deploy_kserve_unlocked() {
 
   echo "KServe CI/CD validates the promoted Triton model manifest only."
   echo "Production model deployment is handled by the RecSys-KServe-Model-CD job after Kubeflow promotion."
-  uv run python jenkins/scripts/model_cd.py \
+  uv run --no-project --with boto3 python jenkins/scripts/model_cd.py \
     --manifest-uri "${promotion_manifest_uri}" \
     --output-dir .model-cd \
     --timeout "${timeout}"
@@ -258,7 +258,7 @@ deploy_kserve_model_cd_unlocked() {
     MODEL_STORE_BUCKET \
     MODEL_STORE_PREFIX
 
-  uv run python jenkins/scripts/model_cd.py \
+  uv run --no-project --with boto3 python jenkins/scripts/model_cd.py \
     --manifest-uri "${promotion_manifest_uri}" \
     --output-dir .model-cd \
     --apply \
