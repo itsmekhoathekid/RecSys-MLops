@@ -103,14 +103,21 @@ redis:
   istioInject: "false"
 
 flinkTaskManager:
-  replicas: 1
+  replicas: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 5Gi
 
 flink:
   checkpointStorageUri: s3a://recsys-lakehouse/flink-checkpoints
   istioInject: "false"
-  taskSlots: "2"
-  taskManagerProcessMemory: "2560m"
-  taskManagerTaskHeapMemory: "1024m"
+  taskSlots: "1"
+  taskManagerProcessMemory: "4096m"
+  taskManagerTaskHeapMemory: "2048m"
   taskManagerManagedMemory: "256m"
   javaOpens: "--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
 

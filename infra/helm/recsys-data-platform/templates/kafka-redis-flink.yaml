@@ -327,3 +327,7 @@ spec:
             - containerPort: 6121
             - containerPort: 6122
             - containerPort: 6125
+          {{- with .Values.flinkTaskManager.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
