@@ -198,6 +198,13 @@ def insert_offline_rows(conn: psycopg.Connection, schema: str, table_name: str, 
 def _coerce_value(value: Any) -> Any:
     if value is None:
         return None
+    try:
+        import pandas as pd
+
+        if pd.isna(value):
+            return None
+    except (ImportError, TypeError, ValueError):
+        pass
     if isinstance(value, list):
         return [_coerce_value(item) for item in value]
     if isinstance(value, tuple):

@@ -1,0 +1,130 @@
+# Reusable Apache Hudi CLI proof pod for dataset versioning screenshots.
+#
+# Run:
+#   kubectl apply -f infra/k8s/hudi-cli-data-versioning-proof.yaml
+#   kubectl logs -n recsys-dataflow hudi-cli-data-versioning-proof | less -S
+#
+# Re-run after a completed proof:
+#   kubectl delete pod -n recsys-dataflow hudi-cli-data-versioning-proof --ignore-not-found
+#   kubectl apply -f infra/k8s/hudi-cli-data-versioning-proof.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hudi-cli-data-versioning-proof
+  namespace: recsys-dataflow
+  labels:
+    app.kubernetes.io/name: hudi-cli-data-versioning-proof
+    app.kubernetes.io/component: data-versioning-proof
+    app.kubernetes.io/part-of: recsys-mlops
+  annotations:
+    sidecar.istio.io/inject: "false"
+spec:
+  enableServiceLinks: false
+  restartPolicy: Never
+  serviceAccountName: default
+  containers:
+    - name: hudi-cli
+      image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-spark:postgres-offline-20260703-1700
+      imagePullPolicy: IfNotPresent
+      envFrom:
+        - configMapRef:
+            name: recsys-data-platform-config
+        - secretRef:
+            name: recsys-data-platform-secret
+      env:
+        - name: HUDI_TABLE_PATH
+          value: s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_training_samples
+        - name: HUDI_CLI_VERSION
+          value: "1.0.2"
+        - name: HUDI_CLI_SCALA_BINARY_VERSION
+          value: "2.12"
+      resources:
+        requests:
+          cpu: 250m
+          memory: 768Mi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+      command:
+        - bash
+        - -lc
+      args:
+        - |
+          set -euo pipefail
+
+          : "${MINIO_ENDPOINT:=http://data-platform-minio:9000}"
+          : "${AWS_ACCESS_KEY_ID:=${MINIO_ROOT_USER:-minio}}"
+          : "${AWS_SECRET_ACCESS_KEY:=${MINIO_ROOT_PASSWORD:-minio123}}"
+          : "${AWS_DEFAULT_REGION:=us-east-1}"
+
+          export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+          export AWS_REGION="${AWS_DEFAULT_REGION}"
+
+          export HADOOP_CONF_DIR=/tmp/hadoop-conf
+          mkdir -p "${HADOOP_CONF_DIR}"
+          cat > "${HADOOP_CONF_DIR}/core-site.xml" <<EOF
+          <?xml version="1.0"?>
+          <configuration>
+            <property>
+              <name>fs.s3a.endpoint</name>
+              <value>${MINIO_ENDPOINT}</value>
+            </property>
+            <property>
+              <name>fs.s3a.access.key</name>
+              <value>${AWS_ACCESS_KEY_ID}</value>
+            </property>
+            <property>
+              <name>fs.s3a.secret.key</name>
+              <value>${AWS_SECRET_ACCESS_KEY}</value>
+            </property>
+            <property>
+              <name>fs.s3a.path.style.access</name>
+              <value>true</value>
+            </property>
+            <property>
+              <name>fs.s3a.connection.ssl.enabled</name>
+              <value>false</value>
+            </property>
+            <property>
+              <name>fs.s3a.impl</name>
+              <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+            </property>
+            <property>
+              <name>fs.s3a.aws.credentials.provider</name>
+              <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
+            </property>
+            <property>
+              <name>fs.s3a.endpoint.region</name>
+              <value>${AWS_DEFAULT_REGION}</value>
+            </property>
+          </configuration>
+          EOF
+
+          HUDI_CLI_JAR="/tmp/hudi-cli-bundle_${HUDI_CLI_SCALA_BINARY_VERSION}-${HUDI_CLI_VERSION}.jar"
+          HUDI_CLI_URL="https://repo1.maven.org/maven2/org/apache/hudi/hudi-cli-bundle_${HUDI_CLI_SCALA_BINARY_VERSION}/${HUDI_CLI_VERSION}/hudi-cli-bundle_${HUDI_CLI_SCALA_BINARY_VERSION}-${HUDI_CLI_VERSION}.jar"
+
+          echo "== Apache Hudi CLI data versioning proof =="
+          echo "table_path=${HUDI_TABLE_PATH}"
+          echo "minio_endpoint=${MINIO_ENDPOINT}"
+          echo "hudi_cli_version=${HUDI_CLI_VERSION}"
+          echo
+
+          if [ ! -s "${HUDI_CLI_JAR}" ]; then
+            curl -fsSL "${HUDI_CLI_URL}" -o "${HUDI_CLI_JAR}"
+          fi
+
+          cat > /tmp/hudi-cli-commands.txt <<EOF
+          connect --path ${HUDI_TABLE_PATH}
+          desc
+          commits show
+          show fsview all
+          exit
+          EOF
+
+          java \
+            -Daws.region="${AWS_DEFAULT_REGION}" \
+            -Daws.accessKeyId="${AWS_ACCESS_KEY_ID}" \
+            -Daws.secretAccessKey="${AWS_SECRET_ACCESS_KEY}" \
+            -cp "${HADOOP_CONF_DIR}:${HUDI_CLI_JAR}:/opt/spark/jars/*" \
+            org.apache.hudi.cli.Main \
+            < /tmp/hudi-cli-commands.txt

@@ -48,12 +48,21 @@
 - [apps/ml-system/src/lineage/dataset_versioning.py line 453 (line 453)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L453): exports versioned Hudi rows back to JSONL files for model training.
 - [apps/ml-system/src/lineage/mlflow_dataset_lineage.py line 34 (line 34)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L34): logs dataset run ID, schema hash, split row counts, table names, commit times, and tags to MLflow.
 - [apps/ml-system/src/lineage/mlflow_dataset_lineage.py line 94 (line 94)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L94): stores the full `datasets/dataset_version_meta.json` artifact in MLflow.
+- [infra/k8s/hudi-cli-data-versioning-proof.yaml line 1 (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1): defines the reusable Hudi CLI proof pod that prints `desc`, `commits show`, and `show fsview all` for screenshot evidence.
 
 ### Apache Hudi incremental versioning flow
 
 This project uses Apache Hudi for incremental dataset versioning. The flow is: Feast/PostgreSQL offline features are converted into BST train/validation/test samples, each sample gets a stable `sample_id` plus a `row_hash`, then Apache Hudi writes the samples with Copy-on-Write `upsert`. The Hudi record key is `sample_id`, the precombine field is `updated_at`, and the split column partitions the data. After each write, the pipeline records the Hudi table path, latest commit time, snapshot ID, split tag, and row count into `dataset_version_meta.json`; MLflow then logs the same metadata as parameters and as a durable artifact.
 
 Hudi proof is captured with Hudi CLI by connecting directly to the Hudi table path and showing the active commit timeline. The CLI proof includes the table connection banner, `desc` output with `COPY_ON_WRITE`, `sample_id` record key, `updated_at` precombine field, and `split` partition field, plus `commits show` / `show fsview all` output showing commit instants and the versioned parquet file slices written by each incremental Hudi upsert.
+
+**Proof pod note:** the Hudi CLI proof is now reproducible from the reusable Kubernetes manifest [infra/k8s/hudi-cli-data-versioning-proof.yaml line 1 (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1). The manifest creates the fixed pod name `hudi-cli-data-versioning-proof` in namespace `recsys-dataflow`, mounts `recsys-data-platform-config` and `recsys-data-platform-secret`, connects to `s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_training_samples`, and prints `desc`, `commits show`, and `show fsview all` to pod logs. The pod is intentionally a one-shot `Pod` instead of a `Job`, so the screenshot command stays stable. To refresh and capture the proof again, run:
+
+```bash
+kubectl delete pod -n recsys-dataflow hudi-cli-data-versioning-proof --ignore-not-found
+kubectl apply -f infra/k8s/hudi-cli-data-versioning-proof.yaml
+kubectl logs -n recsys-dataflow hudi-cli-data-versioning-proof | less -S
+```
 
 In Hudi, a **file slice** is the concrete data-file version for a Hudi file group at a specific commit instant. For this Copy-on-Write table, each file slice points to a Parquet base file. When the same `FileId` appears across multiple `Base-Instant` values, it proves Hudi preserved incremental versions for the same logical file group instead of replacing the whole table.
 
