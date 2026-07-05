@@ -11,12 +11,6 @@ pipeline {
   }
 
   stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
-
     stage('KServe Model CD') {
       steps {
         echo "Deploying promoted model ${params.MODEL_VERSION ?: '(version from manifest)'} from ${params.PROMOTION_MANIFEST_URI}"

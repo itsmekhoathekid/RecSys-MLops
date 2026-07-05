@@ -627,3 +627,5 @@ def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
     assert "PROMOTION_MANIFEST_URI" in jenkinsfile
     assert "component_deploy.sh kserve_model_cd" in jenkinsfile
     assert "stage('Python Env')" not in jenkinsfile
+    assert "stage('Checkout')" not in jenkinsfile
+    assert "checkout scm" not in jenkinsfile
