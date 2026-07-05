@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recsys-grafana-local-gateway
+  namespace: observability
+  annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: recsys-gateway-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "RecSys Gateway"
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+    nginx.ingress.kubernetes.io/upstream-vhost: recsys-grafana.observability.svc.cluster.local
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: grafana.recsys.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: recsys-grafana
+                port:
+                  number: 3000

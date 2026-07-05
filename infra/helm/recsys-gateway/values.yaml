@@ -24,6 +24,7 @@ tls:
     privateKeySecretName: letsencrypt-staging-account-key
   secretNames:
     api: recsys-api-tls
+    featureApi: recsys-feature-api-tls
     grafana: recsys-grafana-tls
     logs: recsys-logs-tls
     traces: recsys-traces-tls
@@ -42,21 +43,52 @@ api:
     connections: "10"
     statusCode: "429"
 
+featureApi:
+  enabled: true
+  namespace: api-serving
+  host: features.recsys.local
+  service:
+    name: recsys-online-feature-api
+    port: 80
+  rateLimit:
+    enabled: true
+    rps: "5"
+    rpm: "120"
+    connections: "10"
+    statusCode: "429"
+
 grafana:
   enabled: true
   namespace: observability
   host: grafana.recsys.local
+  meshRoute:
+    enabled: true
   service:
     name: recsys-grafana
     port: 3000
+  rateLimit:
+    enabled: true
+    rps: "5"
+    rpm: "120"
+    connections: "10"
+    statusCode: "429"
 
 logs:
   enabled: true
   namespace: observability
   host: logs.recsys.local
+  rootRedirect:
+    enabled: true
+    path: /d/recsys-logs/logs-overview
   service:
     name: recsys-loki
     port: 3100
+  rateLimit:
+    enabled: true
+    rps: "5"
+    rpm: "120"
+    connections: "10"
+    statusCode: "429"
 
 traces:
   enabled: true
@@ -65,3 +97,9 @@ traces:
   service:
     name: recsys-tempo
     port: 3200
+  rateLimit:
+    enabled: true
+    rps: "5"
+    rpm: "120"
+    connections: "10"
+    statusCode: "429"

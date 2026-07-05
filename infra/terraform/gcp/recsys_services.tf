@@ -249,6 +249,16 @@ resource "helm_release" "recsys_gateway" {
   }
 
   set {
+    name  = "featureApi.host"
+    value = "features.${var.gateway_domain}"
+  }
+
+  set {
+    name  = "featureApi.upstreamHost"
+    value = "recsys-online-feature-api.api-serving.svc.cluster.local"
+  }
+
+  set {
     name  = "grafana.host"
     value = "grafana.${var.gateway_domain}"
   }

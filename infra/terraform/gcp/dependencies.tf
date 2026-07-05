@@ -140,6 +140,16 @@ resource "helm_release" "ingress_nginx" {
   }
 
   set {
+    name  = "controller.podAnnotations.sidecar\\.istio\\.io/inject"
+    value = var.deploy_service_mesh ? "true" : "false"
+  }
+
+  set {
+    name  = "controller.podAnnotations.traffic\\.sidecar\\.istio\\.io/includeInboundPorts"
+    value = ""
+  }
+
+  set {
     name  = "controller.config.limit-req-status-code"
     value = "429"
   }

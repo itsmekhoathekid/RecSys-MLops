@@ -1,306 +1,177 @@
-# Routing & Gateway Proof
+# Routing & Gateway (NGINX Ingress Controller)
 
-This proof covers the final-coursework rubric item **Routing & Gateway (NGINX Ingress Controller)** on GCP/GKE project `fsds-coursework`.
+**Domain:** `recsys-mlops.site`
 
-Scope note: **Setup domain & enable HTTPS is intentionally skipped** per the latest instruction. The gateway is tested through the GKE LoadBalancer IP with explicit `Host` headers instead of DNS records and TLS certificates.
+NGINX Ingress Controller is the public gateway for RecSys services. The backend
+Kubernetes services stay internal, while DNS points the public subdomains to the
+single NGINX LoadBalancer IP.
 
-## Gateway Target
+## Domain Setup For All 4 Services
 
-NGINX Ingress Controller is the single external entrypoint. Application services stay behind Kubernetes `ClusterIP` services and are exposed through host-based NGINX ingress routes.
+| Service | Public domain | Internal backend |
+| --- | --- | --- |
+| Web API Pull Data service | `api.recsys-mlops.site` | `recsys-online-feature-api.api-serving.svc.cluster.local:80` |
+| Metric service | `metrics.recsys-mlops.site` | `recsys-grafana.observability.svc.cluster.local:3000` |
+| Log service | `log.recsys-mlops.site` | `recsys-loki.observability.svc.cluster.local:3100` |
+| Trace service | `traces.recsys-mlops.site` | `recsys-tempo.observability.svc.cluster.local:3200` |
 
-```bash
-kubectl -n ingress-nginx get svc ingress-nginx-controller -o wide
-```
+![Domain setup for gateway services](../../pngs/domain_setup.png)
 
-Observed result:
+**Figure: Domain setup for all gateway services.** The DNS provider has four
+public `A` records: `api.recsys-mlops.site`, `metrics.recsys-mlops.site`,
+`log.recsys-mlops.site`, and `traces.recsys-mlops.site`. All records point to
+the NGINX Ingress Controller LoadBalancer IP `34.21.171.234`, proving that the
+public domains enter the platform through the same gateway.
 
-```text
-NAME                       TYPE           CLUSTER-IP    EXTERNAL-IP     PORT(S)                      AGE    SELECTOR
-ingress-nginx-controller   LoadBalancer   10.48.7.151   34.21.171.234   80:31717/TCP,443:31406/TCP   128m   app.kubernetes.io/component=controller,app.kubernetes.io/instance=ingress-nginx,app.kubernetes.io/name=ingress-nginx
-```
+## Metric Service
 
-![Ingress LoadBalancer proof](../../pngs/ingress_svc.png)
+The metric service is Grafana behind the NGINX gateway. The production host is
+`https://metrics.recsys-mlops.site`.
 
-## Hidden Services
+### Code Reference
 
-| Rubric service | Gateway host | Ingress | Internal backend |
-|---|---|---|---|
-| Service để coi metric | `grafana.recsys.local` | `observability/recsys-grafana-gateway` | `recsys-grafana:3000` |
-| Service để coi log | `logs.recsys.local` | `observability/recsys-logs-gateway` | `recsys-loki:3100` |
-| Service để coi trace | `traces.recsys.local` | `observability/recsys-traces-gateway` | `recsys-tempo:3200` |
-| Web API kéo dữ liệu / recommendation API | `api.recsys.local` | `api-serving/recsys-api-gateway` | `recsys-api-serving:80 -> pod 8080` |
+- [infra/helm/recsys-gateway/values.yaml line 60 (line 60)](../../../infra/helm/recsys-gateway/values.yaml#L60): enables the Grafana gateway route.
+- [infra/helm/recsys-gateway/templates/grafana-ingress.yaml line 1 (line 1)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L1): renders the Grafana NGINX `Ingress`.
+- [infra/helm/recsys-gateway/templates/grafana-ingress.yaml line 8 (line 8)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L8): enables Basic Auth annotations.
+- [infra/helm/recsys-gateway/templates/grafana-ingress.yaml line 17 (line 17)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L17): renders rate-limit annotations.
+- [infra/helm/recsys-gateway/templates/grafana-ingress.yaml line 23 (line 23)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L23): enables HTTPS redirect and cert-manager annotations when TLS is enabled.
 
-```bash
-kubectl get ingress -A -o wide
-```
+### Basic Auth & Rate Limit Proof
 
-Observed result:
+![Basic auth challenge proof](../../pngs/metrics_auth_proof.png)
 
-```text
-NAMESPACE                 NAME                     CLASS   HOSTS                                                                                                                   ADDRESS         PORTS   AGE
-api-serving               recsys-api-gateway       nginx   api.recsys.local                                                                                                        34.21.171.234   80      115m
-kserve-triton-inference   recsys-bst-triton        istio   recsys-bst-triton-kserve-triton-inference.example.com,recsys-bst-triton-predictor-kserve-triton-inference.example.com                   80      105m
-observability             recsys-grafana-gateway   nginx   grafana.recsys.local                                                                                                    34.21.171.234   80      115m
-observability             recsys-logs-gateway      nginx   logs.recsys.local                                                                                                       34.21.171.234   80      115m
-observability             recsys-traces-gateway    nginx   traces.recsys.local                                                                                                     34.21.171.234   80      115m
-```
+**Figure: Basic auth proof for metric service.** Accessing
+`https://metrics.recsys-mlops.site` without valid gateway credentials returns a
+Basic Auth challenge or `401 Unauthorized`, proving Grafana is protected before
+the request reaches the internal `recsys-grafana` service.
 
-The KServe/Triton ingress is owned by Istio and is separate from this NGINX gateway proof. The four `CLASS=nginx` routes are the rubric-facing gateway routes.
+![Gateway rate limit proof](../../pngs/metric_rate_limit.png)
 
-### Image proof
+**Figure: Rate limit proof for metric service.** The CLI proof shows the
+Grafana ingress annotations and/or burst-test result for
+`https://metrics.recsys-mlops.site`; excess requests are throttled by NGINX and
+return HTTP `429`.
 
-![Ingress LoadBalancer proof](../../pngs/kbctl_get_ingress.png)
+### Image Proof Enable HTTPS
 
+![Metric service HTTPS proof](../../pngs/metric_https_proof.png)
 
-## Gateway Config
+**Figure: Metric service HTTPS proof.** The browser loads Grafana through
+`https://metrics.recsys-mlops.site` with HTTPS enabled, proving the metric UI is
+published through the NGINX gateway domain while the Kubernetes service remains
+internal.
 
-The gateway is managed by Terraform and Helm:
+## Trace Service
 
-- `infra/terraform/gcp/dependencies.tf`: installs `ingress-nginx` and configures rate-limit status codes.
-- `infra/terraform/gcp/recsys_services.tf`: installs `recsys-gateway`, host routes, upstream hosts, and disables TLS for this proof.
-- `infra/helm/recsys-gateway/templates/*-ingress.yaml`: creates the API, Grafana, logs, and traces ingress resources.
+The trace service is Tempo behind the NGINX gateway. The production host is
+`https://traces.recsys-mlops.site`.
 
-Important implementation details:
+### Code Reference
 
-- `nginx.ingress.kubernetes.io/auth-type: basic` enables username/password authentication.
-- `nginx.ingress.kubernetes.io/auth-secret: recsys-gateway-basic-auth` stores the htpasswd secret in `api-serving` and `observability`.
-- `nginx.ingress.kubernetes.io/service-upstream: true` sends traffic to the internal service VIP.
-- `nginx.ingress.kubernetes.io/upstream-vhost: <service>.<namespace>.svc.cluster.local` makes NGINX pass the internal service host to Istio-backed workloads.
-- `tls.enabled=false` keeps domain/HTTPS outside this proof.
+- [infra/helm/recsys-gateway/values.yaml line 93 (line 93)](../../../infra/helm/recsys-gateway/values.yaml#L93): enables the trace gateway route.
+- [infra/helm/recsys-gateway/templates/traces-ingress.yaml line 1 (line 1)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L1): renders the trace NGINX `Ingress`.
+- [infra/helm/recsys-gateway/templates/traces-ingress.yaml line 8 (line 8)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L8): enables Basic Auth annotations.
+- [infra/helm/recsys-gateway/templates/traces-ingress.yaml line 15 (line 15)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L15): renders rate-limit annotations.
+- [infra/helm/recsys-gateway/templates/traces-ingress.yaml line 21 (line 21)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L21): enables HTTPS redirect and cert-manager annotations when TLS is enabled.
 
-API gateway annotations:
+### Basic Auth & Rate Limit Proof
 
-```bash
-kubectl -n api-serving describe ingress recsys-api-gateway
-```
+![Basic auth challenge proof](../../pngs/traces_auth_proof.png)
 
-Observed result:
+**Figure: Basic auth proof for trace service.** Accessing
+`https://traces.recsys-mlops.site` without valid gateway credentials returns a
+Basic Auth challenge or `401 Unauthorized`, proving Tempo is protected at the
+gateway layer.
 
-```text
-Rules:
-  Host              Path  Backends
-  ----              ----  --------
-  api.recsys.local
-                    /   recsys-api-serving:80 (10.44.0.12:8080)
-Annotations:        nginx.ingress.kubernetes.io/auth-realm: RecSys Gateway
-                    nginx.ingress.kubernetes.io/auth-secret: recsys-gateway-basic-auth
-                    nginx.ingress.kubernetes.io/auth-type: basic
-                    nginx.ingress.kubernetes.io/limit-connections: 10
-                    nginx.ingress.kubernetes.io/limit-req-status-code: 429
-                    nginx.ingress.kubernetes.io/limit-rpm: 120
-                    nginx.ingress.kubernetes.io/limit-rps: 5
-                    nginx.ingress.kubernetes.io/service-upstream: true
-                    nginx.ingress.kubernetes.io/upstream-vhost: recsys-api-serving.api-serving.svc.cluster.local
-```
+![Gateway rate limit proof](../../pngs/traces_rate_limit.png)
 
-### Image proof
+**Figure: Rate limit proof for trace service.** The CLI proof shows the trace
+ingress rate-limit annotations and/or burst-test result for
+`https://traces.recsys-mlops.site`; NGINX returns HTTP `429` when requests exceed
+the configured gateway limit.
 
-![Ingress LoadBalancer proof](../../pngs/describe_api_gateway.png)
+### Image Proof Enable HTTPS
 
-Observability gateway annotations:
+![Trace service HTTPS proof](../../pngs/traces_https_proof.png)
 
-```bash
-kubectl -n observability describe ingress recsys-grafana-gateway
-kubectl -n observability describe ingress recsys-logs-gateway
-kubectl -n observability describe ingress recsys-traces-gateway
-```
+**Figure: Trace service HTTPS proof.** The trace endpoint is reached through
+`https://traces.recsys-mlops.site`, proving HTTPS is enabled on the public trace
+gateway route.
 
-Observed backend mapping:
+## Log Service
 
-```text
-grafana.recsys.local -> recsys-grafana:3000 (10.44.1.32:3000)
-logs.recsys.local    -> recsys-loki:3100    (10.44.1.33:3100)
-traces.recsys.local  -> recsys-tempo:3200   (10.44.1.53:3200)
-```
+The log service is Loki behind the NGINX gateway. The production host is
+`https://log.recsys-mlops.site`.
 
-Each observability ingress has:
+### Code Reference
 
-```text
-nginx.ingress.kubernetes.io/auth-secret: recsys-gateway-basic-auth
-nginx.ingress.kubernetes.io/auth-type: basic
-nginx.ingress.kubernetes.io/service-upstream: true
-nginx.ingress.kubernetes.io/upstream-vhost: <internal service fqdn>
-```
+- [infra/helm/recsys-gateway/values.yaml line 76 (line 76)](../../../infra/helm/recsys-gateway/values.yaml#L76): enables the log gateway route.
+- [infra/helm/recsys-gateway/templates/logs-ingress.yaml line 1 (line 1)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L1): renders the log NGINX `Ingress`.
+- [infra/helm/recsys-gateway/templates/logs-ingress.yaml line 8 (line 8)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L8): enables Basic Auth annotations.
+- [infra/helm/recsys-gateway/templates/logs-ingress.yaml line 15 (line 15)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L15): renders rate-limit annotations.
+- [infra/helm/recsys-gateway/templates/logs-ingress.yaml line 21 (line 21)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L21): enables HTTPS redirect and cert-manager annotations when TLS is enabled.
 
-### Image proof
+### Basic Auth & Rate Limit Proof
 
-![Ingress LoadBalancer proof](../../pngs/grafana_gateway.png)
+![Basic auth challenge proof](../../pngs/logs_auth_proof.png)
 
-![Ingress LoadBalancer proof](../../pngs/logs_gateway.png)
+**Figure: Basic auth proof for log service.** Accessing
+`https://log.recsys-mlops.site` without valid gateway credentials returns a
+Basic Auth challenge or `401 Unauthorized`, proving Loki is not publicly exposed
+without gateway authentication.
 
-![Ingress LoadBalancer proof](../../pngs/traces_gateway.png)
+![Gateway rate limit proof](../../pngs/logs_rate_limit.png)
 
-## Basic Auth Proof
+**Figure: Rate limit proof for log service.** The CLI proof shows the Loki
+ingress rate-limit annotations and/or burst-test result for
+`https://log.recsys-mlops.site`; excess requests are throttled by NGINX with
+HTTP `429`.
 
-No credentials are rejected by the gateway:
+### Image Proof Enable HTTPS
 
-```bash
-curl -s -o /tmp/recsys_gateway_http_noauth.txt -w '%{http_code}\n' \
-  -H 'Host: api.recsys.local' \
-  http://34.21.171.234/ready
-```
+![Log service HTTPS proof](../../pngs/logs_https_proof.png)
 
-Observed result:
+**Figure: Log service HTTPS proof.** The log endpoint is reached through
+`https://log.recsys-mlops.site`, proving HTTPS is enabled on the public log
+gateway route.
 
-```text
-401
-```
 
-### Image proof 
+## Web API Pull Data Service
 
-![Ingress LoadBalancer proof](../../pngs/basic_auth.png)
+The Web API Pull Data service is the FastAPI online feature API behind the NGINX
+gateway. The production host is `https://api.recsys-mlops.site`.
 
-Rotated credentials pass through the gateway. Load the ignored `.env` file locally before running proof commands:
+### Code Reference
 
-```bash
-set -a
-source .env
-set +a
+- [apps/api-serving/src/feature_api.py line 13 (line 13)](../../../apps/api-serving/src/feature_api.py#L13): creates the `RecSys Online Feature API` FastAPI app.
+- [apps/api-serving/src/feature_api.py line 55 (line 55)](../../../apps/api-serving/src/feature_api.py#L55): exposes `POST /online-features` for online feature retrieval.
+- [infra/helm/recsys-gateway/values.yaml line 46 (line 46)](../../../infra/helm/recsys-gateway/values.yaml#L46): enables the online-feature API gateway route.
+- [infra/helm/recsys-gateway/templates/feature-api-ingress.yaml line 1 (line 1)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L1): renders the online-feature API NGINX `Ingress`.
+- [infra/helm/recsys-gateway/templates/feature-api-ingress.yaml line 8 (line 8)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L8): enables Basic Auth annotations.
+- [infra/helm/recsys-gateway/templates/feature-api-ingress.yaml line 15 (line 15)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L15): renders rate-limit annotations.
+- [infra/helm/recsys-gateway/templates/feature-api-ingress.yaml line 21 (line 21)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L21): enables HTTPS redirect and cert-manager annotations when TLS is enabled.
+- [infra/terraform/gcp/recsys_services.tf line 252 (line 252)](../../../infra/terraform/gcp/recsys_services.tf#L252): maps the feature API gateway host from `gateway_domain`.
 
-curl -s -o /tmp/recsys_gateway_http_auth.txt -w '%{http_code}\n' \
-  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
-  -H 'Host: api.recsys.local' \
-  http://34.21.171.234/ready
-```
+### Basic Auth & Rate Limit Proof
 
-Observed result:
+![Basic auth challenge proof](../../pngs/pull_api_auth_proof.png)
 
-```text
-200
-```
+**Figure: Basic auth proof for Web API Pull Data service.** Accessing
+`https://api.recsys-mlops.site` without valid gateway credentials returns a
+Basic Auth challenge or `401 Unauthorized`; authenticated traffic passes through
+the gateway and reaches the FastAPI online-feature backend.
 
-Body:
+![Gateway rate limit proof](../../pngs/pull_api_rate_limit.png)
 
-```json
-{"status":"ready"}
-```
+**Figure: Rate limit proof for Web API Pull Data service.** The CLI proof shows
+the API ingress rate-limit annotations and/or burst-test result for
+`https://api.recsys-mlops.site`; burst requests beyond the configured limit
+return HTTP `429`.
 
-### Image proof 
+### Image Proof Enable HTTPS
 
-![Ingress LoadBalancer proof](../../pngs/through_gate.png)
+![Web API Pull Data HTTPS proof](../../pngs/pull_api_https_proof.png)
 
-## Web API Proof
+**Figure: Web API Pull Data HTTPS proof.** The FastAPI Swagger UI is loaded via
+`https://api.recsys-mlops.site/docs`.
 
-The recommendation API is reachable only through the gateway host route and basic auth.
-
-```bash
-curl -s -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
-  -H 'Host: api.recsys.local' \
-  -H 'Content-Type: application/json' \
-  -X POST http://34.21.171.234/recommendations \
-  -d '{"user_id":1,"candidate_item_ids":[101,202,303],"top_k":3}'
-```
-
-Observed result:
-
-```json
-{
-  "user_id": 1,
-  "model_version": "stable-001",
-  "ab_variant": "control",
-  "ab_experiment_id": "bst-stable-vs-candidate-20260630",
-  "items": [
-    {"item_id": 101, "score": 1.0010099411010742},
-    {"item_id": 202, "score": 0.6686866283416748},
-    {"item_id": 303, "score": 0.3363633155822754}
-  ]
-}
-```
-
-### Image proof 
-
-![Ingress LoadBalancer proof](../../pngs/curl_rec.png)
-
-## Observability Route Proof
-
-```bash
-curl -s -o /tmp/recsys_gateway_grafana.txt -w '%{http_code}\n' \
-  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
-  -H 'Host: grafana.recsys.local' \
-  http://34.21.171.234/login
-
-curl -s -o /tmp/recsys_gateway_loki.txt -w '%{http_code}\n' \
-  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
-  -H 'Host: logs.recsys.local' \
-  http://34.21.171.234/ready
-
-curl -s -o /tmp/recsys_gateway_tempo.txt -w '%{http_code}\n' \
-  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
-  -H 'Host: traces.recsys.local' \
-  http://34.21.171.234/ready
-```
-
-Observed result:
-
-```text
-Grafana /login: 200
-Loki /ready:    200
-Tempo /ready:   200
-```
-
-### Image proof 
-
-![Ingress LoadBalancer proof](../../pngs/get_3_gateways.png)
-
-
-## Rate Limit Proof
-
-The API ingress is configured with:
-
-```text
-limit-rps: 5
-limit-rpm: 120
-limit-connections: 10
-```
-
-The NGINX controller is configured to return `429` when request or connection limits are exceeded:
-
-```bash
-kubectl -n ingress-nginx exec deploy/ingress-nginx-controller -c controller -- \
-  sh -c "nginx -T 2>/dev/null | grep -n 'limit_req_status\|limit_conn_status' | head -20"
-```
-
-Observed result:
-
-```text
-81: limit_req_status                429;
-82: limit_conn_status               429;
-```
-
-### Image proof
-
-![Ingress LoadBalancer proof](../../pngs/rate_limit.png)
-
-
-Burst test:
-
-```bash
-seq 1 80 | xargs -n1 -P40 -I{} curl -s -o /dev/null -w '%{http_code}\n' \
-  -u "${GATEWAY_USER}:${GATEWAY_PASSWORD}" \
-  -H 'Host: api.recsys.local' \
-  http://34.21.171.234/ready | sort | uniq -c
-```
-
-Observed result:
-
-```text
-  17 200
-  63 429
-```
-
-### Image proof 
-
-![Ingress LoadBalancer proof](../../pngs/rate_lim.png)
-
-## Verification Summary
-
-| Requirement | Status | Proof |
-|---|---:|---|
-| NGINX Ingress Controller gateway | PASS | `ingress-nginx-controller` LoadBalancer IP `34.21.171.234` |
-| Hide metric service behind gateway | PASS | `grafana.recsys.local -> recsys-grafana:3000` |
-| Hide log service behind gateway | PASS | `logs.recsys.local -> recsys-loki:3100` |
-| Hide trace service behind gateway | PASS | `traces.recsys.local -> recsys-tempo:3200` |
-| Hide Web API behind gateway | PASS | `api.recsys.local -> recsys-api-serving:80` |
-| Basic authentication | PASS | no auth `401`, auth `200` |
-| Rate limit | PASS | burst returns `429` |
-| Domain & HTTPS | SKIPPED | havent implemented it yet |

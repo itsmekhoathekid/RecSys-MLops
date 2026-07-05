@@ -1,4 +1,6 @@
 {{- if .Values.logs.enabled }}
+{{- $logsRootRedirect := .Values.logs.rootRedirect | default dict }}
+{{- $logsRateLimit := .Values.logs.rateLimit | default dict }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -12,6 +14,12 @@ metadata:
     {{- end }}
     nginx.ingress.kubernetes.io/service-upstream: "true"
     nginx.ingress.kubernetes.io/upstream-vhost: {{ .Values.logs.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.logs.service.name .Values.logs.namespace) | quote }}
+    {{- if ($logsRateLimit.enabled | default false) }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ $logsRateLimit.rps | quote }}
+    nginx.ingress.kubernetes.io/limit-rpm: {{ $logsRateLimit.rpm | quote }}
+    nginx.ingress.kubernetes.io/limit-connections: {{ $logsRateLimit.connections | quote }}
+    nginx.ingress.kubernetes.io/limit-req-status-code: {{ $logsRateLimit.statusCode | quote }}
+    {{- end }}
     {{- if .Values.tls.enabled }}
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     cert-manager.io/cluster-issuer: {{ .Values.tls.clusterIssuerName | quote }}
@@ -28,6 +36,29 @@ spec:
     - host: {{ .Values.logs.host }}
       http:
         paths:
+          {{- if ($logsRootRedirect.enabled | default false) }}
+          - path: /loki
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.logs.service.name }}
+                port:
+                  number: {{ .Values.logs.service.port }}
+          - path: /ready
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .Values.logs.service.name }}
+                port:
+                  number: {{ .Values.logs.service.port }}
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .Values.logs.service.name }}
+                port:
+                  number: {{ .Values.logs.service.port }}
+          {{- else }}
           - path: /
             pathType: Prefix
             backend:
@@ -35,4 +66,5 @@ spec:
                 name: {{ .Values.logs.service.name }}
                 port:
                   number: {{ .Values.logs.service.port }}
+          {{- end }}
 {{- end }}

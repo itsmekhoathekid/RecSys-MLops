@@ -28,6 +28,10 @@ storage:
   loki: 10Gi
   tempo: 5Gi
 
+grafana:
+  domain: grafana.recsys.local
+  rootUrl: http://grafana.recsys.local/
+
 targets:
   apiNamespace: api-serving
   dataNamespace: recsys-dataflow

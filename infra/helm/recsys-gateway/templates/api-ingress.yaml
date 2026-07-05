@@ -1,4 +1,5 @@
 {{- if .Values.api.enabled }}
+{{- $apiRateLimit := .Values.api.rateLimit | default dict }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -12,11 +13,11 @@ metadata:
     {{- end }}
     nginx.ingress.kubernetes.io/service-upstream: "true"
     nginx.ingress.kubernetes.io/upstream-vhost: {{ .Values.api.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.api.service.name .Values.api.namespace) | quote }}
-    {{- if .Values.api.rateLimit.enabled }}
-    nginx.ingress.kubernetes.io/limit-rps: {{ .Values.api.rateLimit.rps | quote }}
-    nginx.ingress.kubernetes.io/limit-rpm: {{ .Values.api.rateLimit.rpm | quote }}
-    nginx.ingress.kubernetes.io/limit-connections: {{ .Values.api.rateLimit.connections | quote }}
-    nginx.ingress.kubernetes.io/limit-req-status-code: {{ .Values.api.rateLimit.statusCode | quote }}
+    {{- if ($apiRateLimit.enabled | default false) }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ $apiRateLimit.rps | quote }}
+    nginx.ingress.kubernetes.io/limit-rpm: {{ $apiRateLimit.rpm | quote }}
+    nginx.ingress.kubernetes.io/limit-connections: {{ $apiRateLimit.connections | quote }}
+    nginx.ingress.kubernetes.io/limit-req-status-code: {{ $apiRateLimit.statusCode | quote }}
     {{- end }}
     {{- if .Values.tls.enabled }}
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"

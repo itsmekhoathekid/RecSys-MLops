@@ -34,7 +34,11 @@ GATEWAY_PASSWORD ?=
 GATEWAY_AUTH_USER ?= $(if $(filter command line,$(origin USER)),$(USER),$(GATEWAY_USER))
 GATEWAY_AUTH_PASSWORD ?= $(if $(filter command line,$(origin PASSWORD)),$(PASSWORD),$(GATEWAY_PASSWORD))
 GATEWAY_AUTH_FILE ?= .gateway-auth/auth
+GATEWAY_AUTH_SECRET ?= recsys-gateway-basic-auth
+GATEWAY_API_NAMESPACE ?= api-serving
+GATEWAY_OBSERVABILITY_NAMESPACE ?= observability
 GATEWAY_API_HOST ?= api.$(GATEWAY_DOMAIN)
+GATEWAY_FEATURE_API_HOST ?= features.$(GATEWAY_DOMAIN)
 GATEWAY_GRAFANA_HOST ?= grafana.$(GATEWAY_DOMAIN)
 GATEWAY_LOGS_HOST ?= logs.$(GATEWAY_DOMAIN)
 GATEWAY_TRACES_HOST ?= traces.$(GATEWAY_DOMAIN)
@@ -484,6 +488,7 @@ gateway-template:
 	@helm template recsys-gateway infra/helm/recsys-gateway --namespace api-serving \
 		--set gateway.domain=$(GATEWAY_DOMAIN) \
 		--set api.host=$(GATEWAY_API_HOST) \
+		--set featureApi.host=$(GATEWAY_FEATURE_API_HOST) \
 		--set grafana.host=$(GATEWAY_GRAFANA_HOST) \
 		--set logs.host=$(GATEWAY_LOGS_HOST) \
 		--set traces.host=$(GATEWAY_TRACES_HOST)
@@ -513,13 +518,20 @@ gateway-create-auth:
 gateway-install:
 	@set -euo pipefail; \
 	extra=""; \
-	if [ "$(RECSYS_CLUSTER_SECURITY_ENABLED)" = "1" ]; then extra="$$extra --set auth.createSecret=false"; fi; \
-	if [ -f "$(GATEWAY_AUTH_FILE)" ]; then extra="$$extra --set-file auth.htpasswd=$(GATEWAY_AUTH_FILE)"; fi; \
+	if [ -f "$(GATEWAY_AUTH_FILE)" ]; then \
+		extra="$$extra --set-file auth.htpasswd=$(GATEWAY_AUTH_FILE)"; \
+	elif [ "$(RECSYS_CLUSTER_SECURITY_ENABLED)" = "1" ]; then \
+		extra="$$extra --set auth.createSecret=false"; \
+	else \
+		echo "Missing $(GATEWAY_AUTH_FILE); run make gateway-create-auth GATEWAY_PASSWORD='<password>' first." >&2; \
+		exit 1; \
+	fi; \
 	helm upgrade --install recsys-gateway infra/helm/recsys-gateway \
 		--namespace api-serving \
 		--create-namespace \
 		--set gateway.domain=$(GATEWAY_DOMAIN) \
 		--set api.host=$(GATEWAY_API_HOST) \
+		--set featureApi.host=$(GATEWAY_FEATURE_API_HOST) \
 		--set grafana.host=$(GATEWAY_GRAFANA_HOST) \
 		--set logs.host=$(GATEWAY_LOGS_HOST) \
 		--set traces.host=$(GATEWAY_TRACES_HOST) \

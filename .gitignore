@@ -70,3 +70,7 @@ credentials.db
 *.pem
 *.key
 *.p12
+
+temp/
+.coverage
+

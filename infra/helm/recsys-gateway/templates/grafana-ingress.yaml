@@ -1,4 +1,5 @@
 {{- if .Values.grafana.enabled }}
+{{- $grafanaRateLimit := .Values.grafana.rateLimit | default dict }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -11,7 +12,15 @@ metadata:
     nginx.ingress.kubernetes.io/auth-realm: {{ .Values.auth.realm | quote }}
     {{- end }}
     nginx.ingress.kubernetes.io/service-upstream: "true"
-    nginx.ingress.kubernetes.io/upstream-vhost: {{ .Values.grafana.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.grafana.service.name .Values.grafana.namespace) | quote }}
+    {{- with .Values.grafana.upstreamHost }}
+    nginx.ingress.kubernetes.io/upstream-vhost: {{ . | quote }}
+    {{- end }}
+    {{- if ($grafanaRateLimit.enabled | default false) }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ $grafanaRateLimit.rps | quote }}
+    nginx.ingress.kubernetes.io/limit-rpm: {{ $grafanaRateLimit.rpm | quote }}
+    nginx.ingress.kubernetes.io/limit-connections: {{ $grafanaRateLimit.connections | quote }}
+    nginx.ingress.kubernetes.io/limit-req-status-code: {{ $grafanaRateLimit.statusCode | quote }}
+    {{- end }}
     {{- if .Values.tls.enabled }}
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     cert-manager.io/cluster-issuer: {{ .Values.tls.clusterIssuerName | quote }}

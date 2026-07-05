@@ -1,0 +1,37 @@
+{{- if and .Values.grafana.enabled .Values.grafana.meshRoute.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: recsys-grafana-gateway-service-entry
+  namespace: {{ .Values.grafana.namespace }}
+spec:
+  hosts:
+    - {{ .Values.grafana.host | quote }}
+  location: MESH_INTERNAL
+  ports:
+    - name: http
+      number: {{ .Values.grafana.service.port }}
+      protocol: HTTP
+  resolution: DNS
+  endpoints:
+    - address: {{ printf "%s.%s.svc.cluster.local" .Values.grafana.service.name .Values.grafana.namespace | quote }}
+      ports:
+        http: {{ .Values.grafana.service.port }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: recsys-grafana-gateway-mesh-route
+  namespace: {{ .Values.grafana.namespace }}
+spec:
+  hosts:
+    - {{ .Values.grafana.host | quote }}
+  gateways:
+    - mesh
+  http:
+    - route:
+        - destination:
+            host: {{ printf "%s.%s.svc.cluster.local" .Values.grafana.service.name .Values.grafana.namespace | quote }}
+            port:
+              number: {{ .Values.grafana.service.port }}
+{{- end }}

@@ -652,47 +652,4 @@ max(recsys_ml_retrain_triggered_total) = 1
 max(recsys_ml_retrain_trigger_failed_total) = 0
 ```
 
-K9s capture notes:
 
-| K9s view | Pod or object | Meaning |
-|---|---|---|
-| `:workflows`, namespace `kubeflow`, filter `recsys-bst-feature-train-evaluate-tldr5` | `recsys-bst-feature-train-evaluate-tldr5` | Latest KFP workflow created by the drift retrain trigger. This proves the Kubeflow API was called and completed successfully. |
-| `:pods`, namespace `kubeflow`, filter `tldr5` | `*-system-dag-driver-*` | Argo/KFP DAG driver pod that expands the pipeline DAG and schedules component tasks. |
-| `:pods`, namespace `kubeflow`, filter `tldr5` | `*-system-container-driver-*` | KFP component driver pod that prepares inputs/outputs for one pipeline component. |
-| `:pods`, namespace `kubeflow`, filter `tldr5` | `*-system-container-impl-*` | Actual component execution pods: prepare training data, submit RayJob, evaluate BST, and promote model. |
-| `:rayjobs`, namespace `kubeflow`, filter `recsys-bst-ray-retrain` | `recsys-bst-ray-retrain-forced-drift-gc-b8b21563` | Latest RayJob triggered by forced feature drift; status `Complete/SUCCEEDED`. |
-| `:pods`, namespace `kubeflow`, filter `recsys-bst-ray-retrain` | Ray head/worker pods when present | KubeRay pods that execute distributed retraining. They may disappear after TTL cleanup, while the RayJob object keeps final status. |
-
-## Final Screenshot Checklist
-
-| Rubric order | Screenshot | Requirement covered |
-|---|---|---|
-| 0 | ![Observability services](../../pngs/observe_svcs.png) | Observability services are deployed |
-| 0 | ![Observability pods](../../pngs/observe_pods.png) | Grafana, Prometheus, Loki, Tempo, PushGateway, Promtail are running |
-| 0 | ![Grafana dashboard ConfigMaps](../../pngs/obser_config_map.png) | Dashboards are provisioned by Kubernetes ConfigMaps |
-| 0 | ![Grafana gateway](../../pngs/grafana_gateway.png) | Grafana is accessible through the GCP gateway |
-| 1 | ![Web API overview](../../pngs/web_api_overview.png) | Web API req/s, total requests, failures, latency |
-| 2 | ![Compute telemetry](../../pngs/compute_telemetry.png) | CPU, RAM, network, and pod health |
-| 3 | ![Logs overview](../../pngs/logs_overview.png) | Centralized logs in Loki/Grafana |
-| 4 | ![Traces overview](../../pngs/traces_overview_.png) | Distributed traces in Tempo/Grafana |
-| 5 | ![Airflow drift DAG proof](../../pngs/airflow_drift_pipeline_success.png) | Airflow drift task success |
-| 5 | ![PushGateway drift metrics proof](../../pngs/pushgateway_drift_metrics.png) | Drift metrics in PushGateway |
-| 5 | ![Prometheus drift query proof](../../pngs/prometheus_drift_query.png) | Drift metrics scraped by Prometheus |
-| 5 | ![Grafana ML drift dashboard proof](../../pngs/grafana_ml_drift_retrain_dashboard.png) | Drift dashboard in Grafana |
-| 5 | ![K9s PushGateway pod proof](../../pngs/k9s_pushgateway_pod.png) | K9s proof that PushGateway is running in the cloud cluster |
-| 6 | ![Airflow retrain trigger proof](../../pngs/airflow_retrain_trigger_success.png) | Airflow triggered Kubeflow retrain |
-| 6 | ![Kubeflow retrain workflow proof](../../pngs/kubeflow_retrain_workflow_success.png) | KFP workflow and RayJob succeeded |
-| 6 | ![Prometheus retrain metric proof](../../pngs/prometheus_retrain_metric.png) | Retrain trigger metrics in Prometheus/Grafana |
-| 6 | ![K9s Kubeflow retrain workflow pods proof](../../pngs/k9s_kubeflow_retrain_workflow_pods.png) | K9s proof of the latest Kubeflow workflow pods |
-| 6 | ![K9s Kubeflow RayJob proof](../../pngs/k9s_kubeflow_rayjob_proof.png) | K9s proof of the RayJob object and final retrain status |
-
-## Verification Summary
-
-| Requirement | Status |
-|---|---:|
-| Web API metrics | PASS |
-| Compute metrics | PASS |
-| Logs | PASS |
-| Traces | PASS |
-| ML drift telemetry via Airflow + PushGateway + Grafana | PASS |
-| Retrain trigger via Airflow + Kubeflow API | PASS |

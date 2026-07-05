@@ -1,4 +1,5 @@
 {{- if .Values.traces.enabled }}
+{{- $tracesRateLimit := .Values.traces.rateLimit | default dict }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -12,6 +13,12 @@ metadata:
     {{- end }}
     nginx.ingress.kubernetes.io/service-upstream: "true"
     nginx.ingress.kubernetes.io/upstream-vhost: {{ .Values.traces.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.traces.service.name .Values.traces.namespace) | quote }}
+    {{- if ($tracesRateLimit.enabled | default false) }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ $tracesRateLimit.rps | quote }}
+    nginx.ingress.kubernetes.io/limit-rpm: {{ $tracesRateLimit.rpm | quote }}
+    nginx.ingress.kubernetes.io/limit-connections: {{ $tracesRateLimit.connections | quote }}
+    nginx.ingress.kubernetes.io/limit-req-status-code: {{ $tracesRateLimit.statusCode | quote }}
+    {{- end }}
     {{- if .Values.tls.enabled }}
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     cert-manager.io/cluster-issuer: {{ .Values.tls.clusterIssuerName | quote }}

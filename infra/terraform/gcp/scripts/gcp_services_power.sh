@@ -441,7 +441,7 @@ normalize_gcp_runtime() {
   restore_data_platform_runtime_config
 }
 
-disable_mesh_injection_for_namespace() {
+enable_mesh_injection_for_namespace() {
   local namespace="$1"
 
   if ! kubectl get namespace "${namespace}" >/dev/null 2>&1; then
@@ -450,12 +450,36 @@ disable_mesh_injection_for_namespace() {
 
   local injection
   injection="$(kubectl get namespace "${namespace}" -o jsonpath='{.metadata.labels.istio-injection}' 2>/dev/null || true)"
-  if [[ "${injection}" == "disabled" ]]; then
+  if [[ "${injection}" == "enabled" ]]; then
     return 0
   fi
 
-  echo "Disable Istio sidecar injection for namespace ${namespace}"
-  kubectl label namespace "${namespace}" istio-injection=disabled --overwrite
+  echo "Enable Istio sidecar injection for namespace ${namespace}"
+  kubectl label namespace "${namespace}" istio-injection=enabled --overwrite
+}
+
+ensure_ingress_nginx_mesh() {
+  if ! kubectl get deploy -n ingress-nginx ingress-nginx-controller >/dev/null 2>&1; then
+    return 0
+  fi
+
+  enable_mesh_injection_for_namespace ingress-nginx
+
+  local containers
+  containers="$(kubectl get pods -n ingress-nginx \
+    -l app.kubernetes.io/component=controller,app.kubernetes.io/instance=ingress-nginx,app.kubernetes.io/name=ingress-nginx \
+    -o jsonpath='{range .items[*]}{.spec.containers[*].name}{" "}{.spec.initContainers[*].name}{"\n"}{end}' 2>/dev/null || true)"
+  if grep -q 'istio-proxy' <<<"${containers}"; then
+    return 0
+  fi
+
+  echo "Restart ingress-nginx controller to inject Istio sidecar for mTLS upstreams."
+  kubectl annotate deployment ingress-nginx-controller -n ingress-nginx \
+    sidecar.istio.io/inject=true \
+    traffic.sidecar.istio.io/includeInboundPorts="" \
+    --overwrite
+  kubectl rollout restart deployment/ingress-nginx-controller -n ingress-nginx
+  kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout="${WAIT_TIMEOUT}"
 }
 
 patch_datahub_gms_probe() {
@@ -565,7 +589,7 @@ wait_ready_after_up() {
       --timeout="${WAIT_TIMEOUT}" || true
   fi
 
-  disable_mesh_injection_for_namespace ingress-nginx
+  ensure_ingress_nginx_mesh
 
   local system_namespaces=(
     cert-manager

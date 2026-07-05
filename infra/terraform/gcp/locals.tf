@@ -102,7 +102,7 @@ locals {
       "secretStore.kubernetes.auth.serviceAccount.name"      = "external-secrets"
       "secretStore.kubernetes.auth.serviceAccount.namespace" = "external-secrets"
       "externalSecrets.enabled"                              = "true"
-      "externalSecrets.creationPolicy"                       = "Merge"
+      "externalSecrets.creationPolicy"                       = "Owner"
       "istio.enabled"                                        = "true"
     },
     {
