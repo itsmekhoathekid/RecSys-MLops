@@ -138,12 +138,29 @@ gke-recsys-mlops-gke-recsys-mlops-cpu-d4791f44-714z   Ready    v1.35.5-gke.11630
 gke-recsys-mlops-gke-recsys-mlops-ml--f31561e0-ltbt   Ready    v1.35.5-gke.1163012   ml-system       ml-system      e2-standard-4
 ```
 
-Node meaning:
+Node pool service placement:
 
-| Node pool | Node role | What runs there | Why it matters |
+Kubernetes `Service` objects are virtual network front doors and are not
+scheduled to a node by themselves. The node split is therefore proven by where
+the backing pods run. The services below are grouped by the node pool selected
+by their pod `nodeSelector`/toleration policy.
+
+| Node pool | Scheduled service/workload group | Kubernetes services and pods behind it | Why it runs there |
 | --- | --- | --- | --- |
-| `cpu-services` | Data platform, platform controllers, and observability | DataHub, Kafka, Kafka Connect, Redis, Flink, Airflow, source Postgres, data-platform MinIO, Kubeflow Pipelines, KServe controllers, KEDA, cert-manager, ingress-nginx, Prometheus, Grafana, Loki, Tempo, exporters | This node proves the data platform and monitoring/control plane are running on GKE compute. |
-| `ml-system` | ML runtime and serving | MLflow, MLflow MinIO model store, MLflow Postgres, FastAPI API serving, KServe/Triton predictor | This tainted node isolates model-serving and experiment-tracking workloads from the heavier data platform services. |
+| `cpu-services` | Data ingestion and feature data platform | `source-postgres`, `airflow-postgres`, `feature-postgres`, `data-platform-minio`, `kafka`, `kafka-connect`, `redis`, `flink-jobmanager`, `flink-taskmanager`, `airflow-webserver`, `airflow-scheduler`, `realtime-event-producer`, `realtime-flink-online-store`, `realtime-flink-offline-store` | Keeps streaming, batch orchestration, feature-store writes, and data-generator traffic on the larger CPU data-platform node. |
+| `cpu-services` | Observability, gateway, governance, CI/CD, and control plane | `recsys-grafana`, `recsys-prometheus`, `recsys-loki`, `recsys-tempo`, `recsys-pushgateway`, exporters, `datahub-frontend`, `datahub-gms`, Jenkins `recsys-jenkins`, in-cluster registry `recsys-registry`, NGINX ingress controller, KEDA, cert-manager, KServe controller, Istio control plane, Kubeflow Pipelines control services | These are platform/control-plane services. They support the whole stack and do not need to consume capacity on the isolated ML serving node. |
+| `ml-system` | Experiment tracking and model store | MLflow service `mlflow`, MLflow Postgres service `postgres`, MLflow MinIO service `minio`, MinIO bucket init job | Terraform applies the shared `ml-system` node selector/toleration to the MLflow Helm release so experiment tracking and model artifacts stay close to model serving. |
+| `ml-system` | Online serving APIs | FastAPI recommendation service `recsys-api-serving`, FastAPI online feature service `recsys-online-feature-api`, KEDA HTTP targets/ScaledObjects for those services | API pods are pinned to the tainted ML node so online inference traffic is isolated from Kafka/Flink/Airflow load. |
+| `ml-system` | Model inference runtime | KServe `InferenceService` `recsys-bst-triton`, optional candidate `recsys-bst-triton-candidate`, predictor services `recsys-bst-triton-predictor` and `recsys-bst-triton-candidate-predictor` exposing Triton HTTP and gRPC ports | Triton/KServe predictor pods are pinned to the ML node. The recommendation API calls Triton through the predictor service gRPC port `9000` and receives promoted model updates from the KServe CD flow. |
+
+The placement is defined in Terraform/Helm:
+
+- [infra/terraform/gcp/gke.tf line 97](../../../infra/terraform/gcp/gke.tf#L97): creates the `cpu-services` node pool with `recsys.ai/pool=cpu-services` and `recsys.ai/workload=data-platform`.
+- [infra/terraform/gcp/gke.tf line 142](../../../infra/terraform/gcp/gke.tf#L142): creates the tainted `ml-system` node pool.
+- [infra/terraform/gcp/locals.tf line 40](../../../infra/terraform/gcp/locals.tf#L40): defines reusable `ml-system` node selector and toleration overrides.
+- [infra/terraform/gcp/locals.tf line 55](../../../infra/terraform/gcp/locals.tf#L55): applies `ml-system` placement to API serving, online feature API, and KServe/Triton.
+- [infra/terraform/gcp/recsys_services.tf line 44](../../../infra/terraform/gcp/recsys_services.tf#L44): deploys MLflow with the `ml-system` placement overrides.
+- [infra/terraform/gcp/recsys_services.tf line 158](../../../infra/terraform/gcp/recsys_services.tf#L158): deploys serving/KServe with the `ml-system` placement overrides.
 
 The `ml-system` node pool has a taint:
 
@@ -151,7 +168,7 @@ The `ml-system` node pool has a taint:
 recsys.ai/workload=ml-system:NoSchedule
 ```
 
-Only workloads with the matching toleration and node selector are scheduled there. This is why API serving, MLflow, MinIO model store, Postgres, and Triton are placed on the ML node.
+Only workloads with the matching toleration and node selector are scheduled there. This is why API serving, online feature lookup, MLflow, the model-store MinIO, MLflow Postgres, and Triton/KServe predictors are placed on the ML node.
 
 Some Kubernetes and GKE DaemonSet pods run on both nodes, such as logging, metrics, networking, DNS, storage, and metadata agents. That is expected for per-node system services.
 
@@ -184,13 +201,17 @@ Namespace meaning:
 | `gmp-system` / `gmp-public` | Google Managed Prometheus system namespaces. | GKE/GMP collectors and operator-managed monitoring components. |
 | `kube-system` and other `gke-managed-*` namespaces | GKE-managed cluster system namespaces. | DNS, networking, CSI storage, metadata server, logging/metrics agents, node system DaemonSets. |
 
-### Node cpu-services 
+### Node `cpu-services` services
 
 ![Helm release proof](../../pngs/mlops_cpu_node_.png)
 
-### Node ml-system
+**Figure: `cpu-services` node proof.** This image should show the data platform and control-plane pods on the CPU node: Kafka, Redis, Flink, Airflow, data-platform Postgres/MinIO, DataHub, observability, Jenkins, gateway, Kubeflow/KServe controllers, and GKE system DaemonSets.
+
+### Node `ml-system` services
 
 ![Helm release proof](../../pngs/ml_node_pods.png)
+
+**Figure: `ml-system` node proof.** This image should show the isolated ML/runtime pods on the tainted ML node: MLflow, MLflow Postgres, MLflow MinIO model store, `recsys-api-serving`, `recsys-online-feature-api`, and the KServe/Triton predictor pods. Some per-node DaemonSet pods can also appear here because logging, metrics, mesh, networking, and storage agents must run on every node.
 
 ## Helm Release Proof
 
@@ -224,5 +245,3 @@ This proves the full coursework MLOps stack is installed through Terraform-manag
 ### Image Proof
 
 ![Helm release proof](../../pngs/helm_list___.png)
-
-

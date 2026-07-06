@@ -12,13 +12,85 @@ namespace_kubeflow="${KUBEFLOW_NAMESPACE:-kubeflow}"
 namespace_mlops="${MLOPS_NAMESPACE:-experiment-tracking}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
 timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
+run_node_rebalance="${RUN_NODE_REBALANCE:-1}"
+validate_node_rebalance="${VALIDATE_NODE_REBALANCE:-1}"
+kfp_port_forward_pids=()
 
 if [[ -z "${image_tag}" ]]; then
   image_tag="$(git rev-parse --short=12 HEAD)"
 fi
 
+cleanup_port_forwards() {
+  local pid
+  for pid in "${kfp_port_forward_pids[@]:-}"; do
+    kill "${pid}" >/dev/null 2>&1 || true
+  done
+}
+trap cleanup_port_forwards EXIT
+
 image() {
   printf '%s/%s:%s' "${image_registry}" "$1" "${image_tag}"
+}
+
+wait_for_local_port() {
+  local port="$1"
+  local label="$2"
+  for _ in $(seq 1 60); do
+    if (echo >"/dev/tcp/127.0.0.1/${port}") >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Timed out waiting for ${label} on 127.0.0.1:${port}" >&2
+  return 1
+}
+
+kfp_endpoint_for_upload() {
+  local endpoint="${KFP_ENDPOINT:-http://ml-pipeline.kubeflow.svc.cluster.local:8888}"
+  local local_port="${KFP_LOCAL_PORT:-18888}"
+  local log_path="/tmp/recsys-kfp-upload-port-forward.log"
+
+  if [[ "${endpoint}" != *".svc.cluster.local"* ]]; then
+    printf '%s\n' "${endpoint}"
+    return 0
+  fi
+
+  kubectl port-forward -n "${namespace_kubeflow}" svc/ml-pipeline "${local_port}:8888" >"${log_path}" 2>&1 &
+  kfp_port_forward_pids+=("$!")
+  wait_for_local_port "${local_port}" "Kubeflow Pipelines upload endpoint" || {
+    cat "${log_path}" >&2 || true
+    return 1
+  }
+  printf 'http://127.0.0.1:%s\n' "${local_port}"
+}
+
+local_model_store_endpoint() {
+  local endpoint="$1"
+  local local_port="${MODEL_STORE_LOCAL_PORT:-19000}"
+  local log_path="/tmp/recsys-model-store-port-forward.log"
+
+  if [[ -z "${endpoint}" || "${endpoint}" != *".svc.cluster.local"* ]]; then
+    printf '%s\n' "${endpoint}"
+    return 0
+  fi
+
+  kubectl port-forward -n "${namespace_mlops}" svc/minio "${local_port}:9000" >"${log_path}" 2>&1 &
+  kfp_port_forward_pids+=("$!")
+  wait_for_local_port "${local_port}" "model store endpoint" || {
+    cat "${log_path}" >&2 || true
+    return 1
+  }
+  printf 'http://127.0.0.1:%s\n' "${local_port}"
+}
+
+configure_local_model_store_endpoint() {
+  local endpoint="${MODEL_STORE_ENDPOINT:-${MLFLOW_S3_ENDPOINT_URL:-${MINIO_ENDPOINT:-}}}"
+  endpoint="$(local_model_store_endpoint "${endpoint}")"
+  if [[ -n "${endpoint}" ]]; then
+    export MODEL_STORE_ENDPOINT="${endpoint}"
+    export MLFLOW_S3_ENDPOINT_URL="${endpoint}"
+    export MINIO_ENDPOINT="${endpoint}"
+  fi
 }
 
 resource_exists() {
@@ -70,6 +142,18 @@ verify_and_wait_workload() {
 
   verify_workload_image "${kind}" "${name}" "${namespace}" "${expected_image}"
   wait_rollout_if_exists "${kind}" "${name}" "${namespace}"
+}
+
+run_node_rebalance_if_enabled() {
+  if [[ "${run_node_rebalance}" == "0" || "${run_node_rebalance}" == "false" ]]; then
+    echo "Skipping node rebalance because RUN_NODE_REBALANCE=${run_node_rebalance}."
+    return 0
+  fi
+
+  bash infra/k8s/scripts/rebalance_ml_node_pool.sh
+  if [[ "${validate_node_rebalance}" == "1" || "${validate_node_rebalance}" == "true" ]]; then
+    bash jenkins/scripts/validate_node_rebalance.sh
+  fi
 }
 
 with_file_lock() {
@@ -171,26 +255,29 @@ deploy_data_platform() {
 }
 
 deploy_api_unlocked() {
-  local rollout_args=()
+  local helm_args=(
+    upgrade --install recsys-serving infra/helm/recsys-serving
+    --namespace "${namespace_kserve}"
+    --create-namespace
+    --reuse-values
+    --timeout "${timeout}"
+    --wait
+    --set "kserve.enabled=false"
+    --set "autoscaling.kserveResource.enabled=false"
+    --set "api.namespace.name=${namespace_api}"
+    --set "api.image=$(image recsys-api-serving)"
+    --set "api.imagePullPolicy=Always"
+    --set "featureApi.image=$(image recsys-api-serving)"
+    --set "featureApi.imagePullPolicy=Always"
+  )
   if [[ -n "${API_ROLLOUT_MAX_SURGE:-}" ]]; then
-    rollout_args+=(--set "api.rollout.maxSurge=${API_ROLLOUT_MAX_SURGE}")
+    helm_args+=(--set "api.rollout.maxSurge=${API_ROLLOUT_MAX_SURGE}")
   fi
   if [[ -n "${API_ROLLOUT_MAX_UNAVAILABLE:-}" ]]; then
-    rollout_args+=(--set "api.rollout.maxUnavailable=${API_ROLLOUT_MAX_UNAVAILABLE}")
+    helm_args+=(--set "api.rollout.maxUnavailable=${API_ROLLOUT_MAX_UNAVAILABLE}")
   fi
 
-  helm upgrade --install recsys-serving infra/helm/recsys-serving \
-    --namespace "${namespace_kserve}" \
-    --create-namespace \
-    --reuse-values \
-    --timeout "${timeout}" \
-    --wait \
-    --set "api.namespace.name=${namespace_api}" \
-    --set "api.image=$(image recsys-api-serving)" \
-    --set "api.imagePullPolicy=Always" \
-    --set "featureApi.image=$(image recsys-api-serving)" \
-    --set "featureApi.imagePullPolicy=Always" \
-    "${rollout_args[@]}"
+  helm "${helm_args[@]}"
   verify_and_wait_workload "deployment" "recsys-online-feature-api" "${namespace_api}" "$(image recsys-api-serving)"
   verify_and_wait_workload "deployment" "recsys-api-serving" "${namespace_api}" "$(image recsys-api-serving)"
 }
@@ -199,29 +286,51 @@ deploy_api() {
   with_file_lock "/tmp/recsys-serving-helm.lock" deploy_api_unlocked
 }
 
+deploy_mlflow() {
+  helm upgrade --install recsys-mlflow infra/helm/mlflow-stack \
+    --namespace "${namespace_mlops}" \
+    --create-namespace \
+    --reuse-values \
+    --timeout "${timeout}" \
+    --wait \
+    --set "nodeSelector.recsys\\.ai/pool=ml-system" \
+    --set "tolerations[0].key=recsys.ai/workload" \
+    --set "tolerations[0].operator=Equal" \
+    --set "tolerations[0].value=ml-system" \
+    --set "tolerations[0].effect=NoSchedule" \
+    --set "minio.resources.requests.cpu=100m" \
+    --set "minio.resources.requests.memory=512Mi" \
+    --set "postgres.resources.requests.cpu=100m" \
+    --set "postgres.resources.requests.memory=256Mi" \
+    --set "mlflow.resources.requests.cpu=100m" \
+    --set "mlflow.resources.requests.memory=512Mi" \
+    --set "mlflow.image=$(image recsys-mlflow)" \
+    --set "mlflow.imagePullPolicy=Always"
+  verify_and_wait_workload "deployment" "mlflow" "${namespace_mlops}" "$(image recsys-mlflow)"
+  wait_rollout_if_exists "deployment" "minio" "${namespace_mlops}"
+  wait_rollout_if_exists "deployment" "postgres" "${namespace_mlops}"
+}
+
 deploy_training_refs() {
-  local compiled_package="infra/kubeflow/compiled/bst_training_pipeline.yaml"
   local training_image
   local spark_image
+  local dataflow_image
 
   training_image="$(image recsys-mlops-training)"
   spark_image="$(image recsys-mlops-spark)"
+  dataflow_image="$(image recsys-dataflow-cli)"
 
-  PYTHONPATH=apps/ml-system/src:apps/data-platform/src \
+  KFP_ENDPOINT="$(kfp_endpoint_for_upload)" \
     RECSYS_PIPELINE_IMAGE="${training_image}" \
     RECSYS_RAY_IMAGE="${training_image}" \
     RECSYS_SPARK_IMAGE="${spark_image}" \
-    uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
+    bash jenkins/scripts/kubeflow_pipeline_cicd.sh
 
-  grep -F "${training_image}" "${compiled_package}"
-  grep -F "${spark_image}" "${compiled_package}"
+  deploy_data_platform --set "images.dataflowCli=${dataflow_image}"
+  verify_data_platform_config_image "DATAFLOW_IMAGE" "${dataflow_image}"
+  verify_and_wait_workload "deployment" "realtime-event-producer" "${namespace_data}" "${dataflow_image}"
 
-  uv run python apps/ml-system/src/kubeflow/upload_pipeline_package.py \
-    --host "${KFP_ENDPOINT:-http://ml-pipeline.kubeflow.svc.cluster.local:8888}" \
-    --package-path "${compiled_package}" \
-    --pipeline-name "${KFP_PIPELINE_NAME:-recsys-bst-feature-train-evaluate}"
-
-  echo "Training CI/CD updated image refs and uploaded the Kubeflow pipeline package only; Ray Tune and DDP training are not auto-run by CI/CD."
+  echo "Training CI/CD built pullable ML images, compiled and uploaded the Kubeflow package, and deployed the trigger runtime image."
 }
 
 deploy_kserve_unlocked() {
@@ -239,7 +348,9 @@ deploy_kserve_unlocked() {
 
   echo "KServe CI/CD validates the promoted Triton model manifest only."
   echo "Production model deployment is handled by the RecSys-KServe-Model-CD job after Kubeflow promotion."
-  uv run --no-project --with boto3 python jenkins/scripts/model_cd.py \
+  configure_local_model_store_endpoint
+  RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-0}" \
+    uv run --no-project --with boto3 python jenkins/scripts/model_cd.py \
     --manifest-uri "${promotion_manifest_uri}" \
     --output-dir .model-cd \
     --timeout "${timeout}"
@@ -258,7 +369,9 @@ deploy_kserve_model_cd_unlocked() {
     MODEL_STORE_BUCKET \
     MODEL_STORE_PREFIX
 
-  uv run --no-project --with boto3 python jenkins/scripts/model_cd.py \
+  configure_local_model_store_endpoint
+  RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-0}" \
+    uv run --no-project --with boto3 python jenkins/scripts/model_cd.py \
     --manifest-uri "${promotion_manifest_uri}" \
     --output-dir .model-cd \
     --apply \
@@ -280,6 +393,56 @@ deploy_drift() {
   else
     echo "No infra/knative/recsys-drift manifests yet; deployed drift-capable dataflow image only."
   fi
+}
+
+deploy_all() {
+  local training_image
+  local spark_image
+  local dataflow_image
+  local airflow_image
+  local kafka_connect_image
+  local flink_image
+
+  training_image="$(image recsys-mlops-training)"
+  spark_image="$(image recsys-mlops-spark)"
+  dataflow_image="$(image recsys-dataflow-cli)"
+  airflow_image="$(image recsys-airflow)"
+  kafka_connect_image="$(image recsys-kafka-connect)"
+  flink_image="$(image recsys-flink)"
+
+  KFP_ENDPOINT="$(kfp_endpoint_for_upload)" \
+    RECSYS_PIPELINE_IMAGE="${training_image}" \
+    RECSYS_RAY_IMAGE="${training_image}" \
+    RECSYS_SPARK_IMAGE="${spark_image}" \
+    bash jenkins/scripts/kubeflow_pipeline_cicd.sh
+
+  deploy_data_platform \
+    --set "images.dataflowCli=${dataflow_image}" \
+    --set "images.spark=$(image recsys-spark)" \
+    --set "images.airflow=${airflow_image}" \
+    --set "images.kafkaConnect=${kafka_connect_image}" \
+    --set "images.flink=${flink_image}" \
+    --set "observability.retrainPsiThreshold=${RETRAIN_PSI_THRESHOLD:-0.15}"
+
+  verify_data_platform_config_image "DATAFLOW_IMAGE" "${dataflow_image}"
+  verify_data_platform_config_image "SPARK_IMAGE" "$(image recsys-spark)"
+  verify_data_platform_config_image "FLINK_IMAGE" "${flink_image}"
+  verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "${airflow_image}"
+  verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "${airflow_image}"
+  verify_and_wait_workload "deployment" "kafka-connect" "${namespace_data}" "${kafka_connect_image}"
+  verify_and_wait_workload "deployment" "realtime-event-producer" "${namespace_data}" "${dataflow_image}"
+  verify_and_wait_workload "deployment" "flink-jobmanager" "${namespace_data}" "${flink_image}"
+  verify_and_wait_workload "deployment" "flink-taskmanager" "${namespace_data}" "${flink_image}"
+  verify_and_wait_workload "deployment" "realtime-flink-offline-store" "${namespace_data}" "${flink_image}"
+  verify_and_wait_workload "deployment" "realtime-flink-online-store" "${namespace_data}" "${flink_image}"
+
+  deploy_mlflow
+  deploy_api
+  deploy_kserve_model_cd
+
+  run_node_rebalance_if_enabled
+
+  echo "Full RecSys CI/CD deploy completed for tag ${image_tag}."
 }
 
 case "${component}" in
@@ -348,6 +511,12 @@ case "${component}" in
     ;;
   drift)
     deploy_drift
+    ;;
+  mlflow)
+    deploy_mlflow
+    ;;
+  all)
+    deploy_all
     ;;
   *)
     echo "Unknown component: ${component}" >&2

@@ -1,6 +1,9 @@
 substitutions:
   _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
   _TAG: gcp
+  _KFP_ENDPOINT: http://ml-pipeline.kubeflow.svc.cluster.local:8888
+  _KFP_PIPELINE_NAME: recsys-bst-feature-train-evaluate
+  _UPLOAD_KFP_PACKAGE: "false"
 
 options:
   diskSizeGb: 200
@@ -17,18 +20,6 @@ steps:
       - infra/docker/Dockerfile.base-python
       - -t
       - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
-      - .
-
-  - id: dataflow-cli
-    name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - --build-arg
-      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
-      - -f
-      - apps/data-platform/Dockerfile.dataflow-cli
-      - -t
-      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
       - .
 
   - id: spark
@@ -64,6 +55,73 @@ steps:
       - -t
       - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
       - .
+
+  - id: compile-kfp-package
+    name: gcr.io/cloud-builders/docker
+    args:
+      - run
+      - --rm
+      - -v
+      - /workspace:/workspace
+      - -w
+      - /workspace
+      - -e
+      - KFP_CICD_PYTHON=/opt/venv/bin/python
+      - -e
+      - KFP_UPLOAD_PACKAGE=0
+      - -e
+      - RECSYS_PIPELINE_IMAGE=${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+      - -e
+      - RECSYS_RAY_IMAGE=${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+      - -e
+      - RECSYS_SPARK_IMAGE=${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
+      - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+      - bash
+      - jenkins/scripts/kubeflow_pipeline_cicd.sh
+
+  - id: dataflow-cli
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - -f
+      - apps/data-platform/Dockerfile.dataflow-cli
+      - -t
+      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+      - .
+
+  - id: validate-dataflow-kfp-package
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -lc
+      - >-
+        docker run --rm ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+        bash -lc "test -f /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
+        && ! grep -F ':local' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
+        && grep -F '${_IMAGE_REPO}/recsys-mlops-training:${_TAG}' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
+        && grep -F '${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml"
+
+  - id: upload-kfp-package
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -lc
+      - >-
+        if [[ "${_UPLOAD_KFP_PACKAGE}" != "true" && "${_UPLOAD_KFP_PACKAGE}" != "1" ]]; then
+          echo "Skipping Kubeflow package upload because _UPLOAD_KFP_PACKAGE=${_UPLOAD_KFP_PACKAGE}.";
+          exit 0;
+        fi;
+        docker run --rm
+        -v /workspace:/workspace
+        -w /workspace
+        ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+        /opt/venv/bin/python apps/ml-system/src/kubeflow/upload_pipeline_package.py
+        --host ${_KFP_ENDPOINT}
+        --package-path infra/kubeflow/compiled/bst_training_pipeline.yaml
+        --pipeline-name ${_KFP_PIPELINE_NAME}
+        --pipeline-version-name cloudbuild-${_TAG}
 
 images:
   - ${_IMAGE_REPO}/recsys-base-python:${_TAG}

@@ -6,7 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from jenkins.scripts.detect_changed_components import classify
+from jenkins.scripts import detect_changed_components
+from jenkins.scripts.detect_changed_components import changed_paths, classify
 
 
 def enabled(paths: list[str]) -> set[str]:
@@ -52,3 +53,22 @@ def test_serving_chart_routes_api_and_kserve_only():
     components = enabled(["infra/helm/recsys-serving/templates/inferenceservice.yaml"])
     assert {"API", "KSERVE"} <= components
     assert "DP1" not in components
+
+
+def test_changed_paths_falls_back_to_current_commit_not_whole_repo(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+
+    def fake_git_lines(args: list[str]) -> list[str]:
+        calls.append(tuple(args))
+        if args[0] == "diff":
+            raise detect_changed_components.subprocess.CalledProcessError(128, ["git", *args])
+        if args[0] == "diff-tree":
+            return ["docs/submission/rubic-final-coursework-(final-ml)/routing_gateway.md"]
+        if args[0] == "ls-files":
+            return ["apps/api-serving/src/main.py"]
+        return []
+
+    monkeypatch.setattr(detect_changed_components, "git_lines", fake_git_lines)
+
+    assert changed_paths("HEAD~1") == ["docs/submission/rubic-final-coursework-(final-ml)/routing_gateway.md"]
+    assert not any(call[0] == "ls-files" for call in calls)

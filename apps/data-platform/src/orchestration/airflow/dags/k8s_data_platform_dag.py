@@ -16,6 +16,7 @@ NAMESPACE = "recsys-dataflow"
 DATAFLOW_IMAGE = os.getenv("DATAFLOW_IMAGE", "recsys-dataflow-cli:local")
 FLINK_IMAGE = os.getenv("FLINK_IMAGE", "recsys-flink:local")
 SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "recsys-spark:local"))
+DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
 }
@@ -67,6 +68,18 @@ def pod_env_from():
     ]
 
 
+def parse_node_selector(value: str) -> dict[str, str]:
+    selectors: dict[str, str] = {}
+    for item in (value or "").split(","):
+        if not item.strip():
+            continue
+        key, _, raw = item.partition("=")
+        if not key.strip() or not raw.strip():
+            raise ValueError(f"Invalid node selector item: {item}")
+        selectors[key.strip()] = raw.strip()
+    return selectors
+
+
 def mesh_safe_command(command: str) -> str:
     quit_sidecar = (
         "python -c \"import urllib.request; "
@@ -103,11 +116,12 @@ def pod_task(task_id: str, image: str, command: str, *, mesh: bool = True):
         name=task_id.replace("_", "-"),
         namespace=NAMESPACE,
         image=image,
-        cmds=["bash", "-lc"],
+        cmds=["bash", "-c"],
         arguments=[mesh_safe_command(command)],
         env_vars=COMMON_ENV,
         env_from=pod_env_from(),
         annotations=annotations,
+        node_selector=parse_node_selector(DATAFLOW_NODE_SELECTOR),
         get_logs=True,
         is_delete_operator_pod=True,
         in_cluster=True,
@@ -143,6 +157,7 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         "--conf spark.kubernetes.report.interval=5s "
         "--conf spark.kubernetes.driver.annotation.sidecar.istio.io/inject=false "
         "--conf spark.kubernetes.executor.annotation.sidecar.istio.io/inject=false "
+        "--conf spark.kubernetes.node.selector.recsys.ai/pool=${SPARK_K8S_NODE_POOL:-cpu-services} "
         "--conf spark.driver.memory=${SPARK_K8S_DRIVER_MEMORY:-1g} "
         "--conf spark.driver.memoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-384m} "
         "--conf spark.driver.cores=${SPARK_K8S_DRIVER_CORES:-1} "

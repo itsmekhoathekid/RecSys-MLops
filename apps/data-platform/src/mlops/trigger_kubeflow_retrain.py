@@ -73,22 +73,44 @@ def bounded_k8s_name(prefix: str, value: str, max_length: int = 47) -> str:
     return f"{prefix}-{body}-{digest}"
 
 
-def default_pipeline_arguments(run_id: str) -> dict[str, str]:
+def kfp_run_name(run_id: str, prefix: str | None = None) -> str:
+    run_prefix = safe_run_slug(prefix or os.getenv("KFP_RETRAIN_RUN_NAME_PREFIX", "recsys-drift-retrain"))
+    return f"{run_prefix}-{safe_run_slug(run_id)}"
+
+
+def default_pipeline_arguments(run_id: str) -> dict[str, Any]:
     slug = safe_run_slug(run_id)
     base = f"/workspace/recsys/data_platform/output/retrain-{slug}"
+    ray_tune_job_name = bounded_k8s_name("recsys-bst-ray-tune", f"retrain-{slug}")
+    ray_train_job_name = bounded_k8s_name("recsys-bst-ray-ddp", f"retrain-{slug}")
+    ray_tune_result_path = f"{base}/ml/ray/tune_result.json"
+    ray_best_result_path = f"{base}/ml/ray/best_result.json"
     return {
-        "pipeline_run_id": f"retrain-{run_id}",
+        "pipeline_run_id": f"retrain-{slug}",
         "output_base": base,
         "feature_summary_path": f"{base}/feature_summary.json",
+        "feature_source": "offline_feature_store",
         "split_output_dir": f"{base}/ml/bst_split",
         "dataset_metadata_path": f"{base}/ml/bst_split/dataset_version_meta.json",
         "ray_output_dir": f"{base}/ml/ray",
-        "ray_best_result_path": f"{base}/ml/ray/best_result.json",
+        "ray_tune_result_path": ray_tune_result_path,
+        "ray_best_result_path": ray_best_result_path,
         "ray_status_path": f"{base}/ml/ray/rayjob_status.json",
+        "ray_train_status_path": f"{base}/ml/ray/rayjob_ddp_status.json",
+        "training_percent": 0.005,
+        "distributed_training_percent": 0.005,
+        "distributed_worker_replicas": 2,
+        "distributed_num_workers": 2,
+        "max_trials": 1,
+        "parallel_trials": 1,
+        "cpus_per_trial": 0.5,
+        "ray_ttl_seconds_after_finished": 60,
         "eval_metrics_path": f"{base}/ml/eval_metrics.json",
         "serving_output_dir": f"{base}/ml/serving",
         "promotion_manifest_path": f"{base}/ml/serving/promotion_manifest.json",
-        "ray_job_name": bounded_k8s_name("recsys-bst-ray", f"retrain-{slug}"),
+        "kserve_cd_status_path": f"{base}/ml/serving/kserve_cd_status.json",
+        "ray_job_name": ray_tune_job_name,
+        "ray_train_job_name": ray_train_job_name,
     }
 
 
@@ -132,7 +154,7 @@ def trigger_retrain(
             pipeline_file=pipeline_package_path,
             arguments=arguments,
             experiment_id=experiment.experiment_id,
-            run_name=f"recsys-drift-retrain-{run_id}",
+            run_name=kfp_run_name(run_id),
         )
         result = RetrainResult(run_id, True, getattr(run, "run_id", None), "feature_drift", failed_features=failures, pipeline_arguments=arguments)
     except Exception as exc:

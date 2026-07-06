@@ -6,7 +6,9 @@ import json
 from kubeflow.components import runtime
 from kubeflow.pipelines.compile_training_pipeline import compile_pipeline
 from kubeflow.upload_pipeline_package import upload_or_version_pipeline
+from kubeflow.validate_pipeline_package import validate_pipeline_package
 from cli.submit_ray_job import build_rayjob, container_spec, pod_template, reusable_best_result
+from training.ray_tune_train_bst import best_payload_from_trial_outputs
 
 
 def test_secret_env_mapping_is_stable():
@@ -263,8 +265,53 @@ def test_reusable_best_result_requires_matching_dataset_versions(tmp_path):
     assert reusable_best_result(str(best_result_path), str(metadata_path)) is None
 
 
-def test_compile_pipeline_writes_refactored_component_commands():
-    package_path = compile_pipeline()
+def test_ray_tune_best_payload_falls_back_to_trial_outputs(tmp_path):
+    low_trial = tmp_path / "trials" / "trial-low"
+    high_trial = tmp_path / "trials" / "trial-high"
+    low_trial.mkdir(parents=True)
+    high_trial.mkdir(parents=True)
+    (low_trial / "bst_trial.yaml").write_text("model_args: {}\n", encoding="utf-8")
+    (high_trial / "bst_trial.yaml").write_text("model_args: {}\n", encoding="utf-8")
+    (low_trial / "training_result.json").write_text(
+        json.dumps(
+            {
+                "checkpoint_path": str(low_trial / "checkpoint"),
+                "artifact_uri": str(low_trial / "checkpoint"),
+                "metrics": {"val/ndcg@10": 0.1, "val/loss": 0.7},
+                "dataset_versions": {"train": {"snapshot_id": 1}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (high_trial / "training_result.json").write_text(
+        json.dumps(
+            {
+                "checkpoint_path": str(high_trial / "checkpoint"),
+                "artifact_uri": str(high_trial / "checkpoint"),
+                "metrics": {"val/ndcg@10": 0.4, "val/loss": 0.5},
+                "dataset_versions": {"train": {"snapshot_id": 2}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = best_payload_from_trial_outputs(tmp_path)
+
+    assert payload["best_trial_name"] == "trial-high"
+    assert payload["best_config_path"] == str(high_trial / "bst_trial.yaml")
+    assert payload["checkpoint_path"] == str(high_trial / "checkpoint")
+    assert payload["source"] == "kubeflow-ray-tune-output-fallback"
+    assert payload["ray_metrics"]["val_ndcg_at_10"] == 0.4
+
+
+def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeypatch):
+    training_image = "registry.example/recsys/recsys-mlops-training:test"
+    spark_image = "registry.example/recsys/recsys-mlops-spark:test"
+    monkeypatch.setenv("RECSYS_PIPELINE_IMAGE", training_image)
+    monkeypatch.setenv("RECSYS_RAY_IMAGE", training_image)
+    monkeypatch.setenv("RECSYS_SPARK_IMAGE", spark_image)
+
+    package_path = compile_pipeline(tmp_path / "bst_training_pipeline.yaml")
     compiled = package_path.read_text(encoding="utf-8")
 
     assert package_path.name == "bst_training_pipeline.yaml"
@@ -283,6 +330,8 @@ def test_compile_pipeline_writes_refactored_component_commands():
     assert "--job-mode" in compiled
     assert "distributed-train" in compiled
     assert "recsys-bst-ray-ddp-train" in compiled
+    assert "distributed_worker_replicas: int [Default: 2.0]" in compiled
+    assert "distributed_num_workers: int [Default: 2.0]" in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/registry/model_promotion.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py" in compiled
@@ -291,6 +340,11 @@ def test_compile_pipeline_writes_refactored_component_commands():
     assert "RecSys-KServe-Model-CD" in compiled
     assert "pipelines.model_pipeline" not in compiled
     assert "recsys_model_pipeline" not in compiled
+    validate_pipeline_package(
+        package_path=package_path,
+        required_images=[training_image, spark_image],
+        forbidden_tokens=[":local"],
+    )
 
 
 def test_upload_pipeline_package_adds_version_when_pipeline_exists():

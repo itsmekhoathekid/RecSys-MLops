@@ -84,5 +84,33 @@ spec:
   portLevelMtls:
     9090:
       mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-loki-ingest-permissive
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: recsys-loki
+  portLevelMtls:
+    3100:
+      mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-tempo-otlp-permissive
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: recsys-tempo
+  portLevelMtls:
+    4317:
+      mode: PERMISSIVE
+    4318:
+      mode: PERMISSIVE
 {{- end }}
 {{- end }}

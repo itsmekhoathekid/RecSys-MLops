@@ -446,7 +446,7 @@ def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
 
         def create_run_from_pipeline_package(self, **kwargs):
             assert kwargs["pipeline_file"] == "pipeline.yaml"
-            assert kwargs["run_name"] == "recsys-drift-retrain-run-2"
+            assert kwargs["run_name"] == "recsys-retrain-run-2"
             assert kwargs["arguments"]["pipeline_run_id"] == "retrain-run-2"
             assert kwargs["arguments"]["source_run_path"] == "s3a://lake/raw/run2"
             return Run()

@@ -108,6 +108,10 @@ build_kafka_connect() {
   build_and_optionally_push "recsys-kafka-connect" "infra/docker/Dockerfile.kafka-connect"
 }
 
+build_mlflow() {
+  build_and_optionally_push "recsys-mlflow" "infra/docker/Dockerfile.mlflow"
+}
+
 build_training() {
   ensure_base_python
   build_and_optionally_push "recsys-mlops-training" "apps/ml-system/Dockerfile.training" \
@@ -128,6 +132,17 @@ build_api() {
   build_and_optionally_push "recsys-api-serving" "apps/api-serving/Dockerfile"
 }
 
+compile_kfp_package_for_image_refs() {
+  local training_image="${image_registry}/recsys-mlops-training:${image_tag}"
+  local spark_image="${image_registry}/recsys-mlops-spark:${image_tag}"
+
+  KFP_UPLOAD_PACKAGE=0 \
+    RECSYS_PIPELINE_IMAGE="${training_image}" \
+    RECSYS_RAY_IMAGE="${training_image}" \
+    RECSYS_SPARK_IMAGE="${spark_image}" \
+    bash jenkins/scripts/kubeflow_pipeline_cicd.sh
+}
+
 case "${component}" in
   materialize)
     build_dataflow_cli
@@ -135,6 +150,8 @@ case "${component}" in
   training)
     build_training
     build_mlops_spark
+    compile_kfp_package_for_image_refs
+    build_dataflow_cli
     ;;
   spark_batch)
     ensure_spark_base
@@ -170,6 +187,22 @@ case "${component}" in
   stream_online)
     build_flink
     build_dataflow_cli
+    ;;
+  mlflow)
+    build_mlflow
+    ;;
+  all)
+    build_training
+    build_mlops_spark
+    compile_kfp_package_for_image_refs
+    build_dataflow_cli
+    build_data_generator
+    build_airflow
+    build_kafka_connect
+    build_mlflow
+    build_flink
+    build_api
+    echo "Built/published all RecSys service images and compiled the Kubeflow package for ${image_registry}:${image_tag}."
     ;;
   *)
     echo "Unknown component: ${component}" >&2

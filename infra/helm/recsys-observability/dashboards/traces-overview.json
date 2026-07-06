@@ -40,11 +40,16 @@
     },
     {
       "id": 4,
-      "type": "traces",
-      "title": "Tempo Search: recsys-api-serving",
+      "type": "logs",
+      "title": "Recent API Trace Context",
       "gridPos": { "x": 0, "y": 4, "w": 12, "h": 12 },
-      "datasource": { "type": "tempo", "uid": "Tempo" },
-      "targets": [{ "query": "{resource.service.name=\"recsys-api-serving\"}", "queryType": "traceql", "refId": "A" }]
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "targets": [
+        {
+          "expr": "{namespace=\"api-serving\"} |= \"trace_id\" | json | line_format \"{{.timestamp}} {{.method}} {{.route}} status={{.status}} duration={{.duration_ms}}ms trace={{.trace_id}} span={{.span_id}}\""
+        }
+      ],
+      "options": { "showLabels": false, "showTime": true, "wrapLogMessage": false, "sortOrder": "Descending" }
     },
     {
       "id": 5,

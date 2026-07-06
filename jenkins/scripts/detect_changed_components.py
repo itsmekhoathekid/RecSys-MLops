@@ -60,6 +60,21 @@ def git_lines(args: list[str]) -> list[str]:
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
+def current_commit_paths() -> list[str]:
+    fallback_commands = (
+        ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-m", "HEAD"],
+        ["show", "--pretty=format:", "--name-only", "HEAD"],
+    )
+    for args in fallback_commands:
+        try:
+            paths = git_lines(args)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+        if paths:
+            return list(dict.fromkeys(paths))
+    return []
+
+
 def changed_paths(base_ref: str | None) -> list[str]:
     candidates: list[list[str]] = []
     if base_ref:
@@ -74,10 +89,7 @@ def changed_paths(base_ref: str | None) -> list[str]:
         if paths:
             return paths
 
-    try:
-        return git_lines(["ls-files"])
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return []
+    return current_commit_paths()
 
 
 def mark(flags: dict[str, bool], *components: str) -> None:

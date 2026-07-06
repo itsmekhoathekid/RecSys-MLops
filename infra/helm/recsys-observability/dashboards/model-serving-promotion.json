@@ -11,12 +11,12 @@
   "panels": [
     {
       "id": 1,
-      "type": "stat",
-      "title": "Serving Build Info",
+      "type": "bargauge",
+      "title": "Serving Components Up",
       "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
-      "targets": [{ "expr": "recsys_observability_build_info", "legendFormat": "{{service}}" }],
+      "targets": [{ "expr": "max by (service) (recsys_observability_build_info)", "legendFormat": "{{service}}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } } },
-      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+      "options": { "displayMode": "basic", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
     },
     {
       "id": 2,

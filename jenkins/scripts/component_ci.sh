@@ -57,6 +57,7 @@ run_component_pytest() {
 
   COVERAGE_FILE="${reports_dir}/coverage/.coverage.${name}" \
   PYTHONPATH="${pythonpath}" uv run pytest "${test_paths[@]}" -q \
+    -o "pythonpath=${pythonpath}" \
     --cov-config="${PWD}/pyproject.toml" \
     "${cov_args[@]}" \
     --cov-report="term-missing" \
@@ -81,8 +82,25 @@ component_pytest() {
 }
 
 run_kfp_compile() {
+  local training_image="${RECSYS_PIPELINE_IMAGE:-ci-registry.example/recsys/recsys-mlops-training:ci}"
+  local ray_image="${RECSYS_RAY_IMAGE:-${training_image}}"
+  local spark_image="${RECSYS_SPARK_IMAGE:-ci-registry.example/recsys/recsys-mlops-spark:ci}"
+  local package_path="${KFP_CI_PACKAGE_PATH:-${reports_dir}/bst_training_pipeline.${component}.yaml}"
+
   PYTHONPATH=apps/ml-system/src:apps/data-platform/src \
-    uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
+    RECSYS_PIPELINE_IMAGE="${training_image}" \
+    RECSYS_RAY_IMAGE="${ray_image}" \
+    RECSYS_SPARK_IMAGE="${spark_image}" \
+    uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py \
+      --package-path "${package_path}"
+
+  PYTHONPATH=apps/ml-system/src:apps/data-platform/src \
+    uv run python apps/ml-system/src/kubeflow/validate_pipeline_package.py \
+      --package-path "${package_path}" \
+      --required-image "${training_image}" \
+      --required-image "${ray_image}" \
+      --required-image "${spark_image}" \
+      --forbidden-token ":local"
 }
 
 run_plain_pytest() {
@@ -139,7 +157,7 @@ case "${component}" in
     tests=(tests/unit/data_platform/test_data_platform.py tests/unit/ml_system/test_prepare_bst_training_data.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir dp3
     cov_paths=(lakehouse.iceberg feature_store.online_writer)
-    component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/ml-system/src"
+    component_pytest "${component}" "apps/ml-system/src:apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   api)
     tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)

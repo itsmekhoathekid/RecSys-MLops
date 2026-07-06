@@ -39,6 +39,7 @@ WORKDIR /opt/recsys
 COPY --from=deps /opt/venv /opt/venv
 COPY pyproject.toml uv.lock* /opt/recsys/
 COPY configs /opt/recsys/configs
+COPY infra/kubeflow /opt/recsys/infra/kubeflow
 COPY infra/docker/scripts /opt/recsys/infra/docker/scripts
 COPY infra/docker/debezium /opt/recsys/infra/docker/debezium
 COPY apps/data-platform/src /opt/recsys/apps/data-platform/src

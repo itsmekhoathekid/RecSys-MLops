@@ -48,6 +48,7 @@ def feature_engineering(config_path: str, output_base: str, run_path: str, summa
 
 @dsl.container_component
 def prepare_training_data(
+    feature_source: str,
     offline_feature_table: str,
     entity_input_path: str,
     output_dir: str,
@@ -71,7 +72,7 @@ def prepare_training_data(
             SPARK_PACKAGES,
             "/opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py",
             "--feature-source",
-            "feast",
+            feature_source,
             "--entity-input-path",
             entity_input_path,
             "--feast-repo-path",
@@ -276,6 +277,7 @@ def recsys_bst_pipeline(
     workspace_root: str = "/workspace/recsys",
     output_base: str = "/workspace/recsys/data_platform/output",
     feature_summary_path: str = "/workspace/recsys/data_platform/output/feature_summary.json",
+    feature_source: str = "feast",
     offline_feature_table: str = "recsys_features.feature_store.ml_bst_training",
     entity_input_path: str = "postgresql://feature-postgres.recsys-dataflow.svc.cluster.local:5432/feature_store/feature_store.ml_ranking_labels",
     split_output_dir: str = "/workspace/recsys/data_platform/output/ml/bst_split",
@@ -326,6 +328,7 @@ def recsys_bst_pipeline(
 ):
     prepare = wire_runtime(
         prepare_training_data(
+            feature_source=feature_source,
             offline_feature_table=offline_feature_table,
             entity_input_path=entity_input_path,
             output_dir=split_output_dir,

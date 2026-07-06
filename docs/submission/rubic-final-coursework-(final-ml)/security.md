@@ -6,178 +6,148 @@ This proof covers the final-coursework rubric item **Security** on GCP/GKE proje
 
 | Rubric item | Implementation |
 |---|---|
-| Centralize secret management via Vault or similar tool | External Secrets Operator plus a central Kubernetes-backed `ClusterSecretStore` called `recsys-central-secrets`. It syncs shared secrets into service namespaces. The chart also supports Vault provider values for a production Vault backend. |
-| Service-to-service authentication | Istio sidecar injection, namespace-level `PeerAuthentication` mTLS, default-deny `AuthorizationPolicy`, and explicit allow policies by source principal and port. |
+| Centralized secret management | External Secrets Operator uses one central `ClusterSecretStore` named `recsys-central-secrets`, then syncs service-specific Kubernetes Secrets into the namespaces that need them. |
+| Service-to-service authentication | Istio sidecar injection, STRICT mTLS, namespace-level default deny, and explicit `AuthorizationPolicy` allow rules by source principal and port. |
 
 ## Centralized Secret Management
 
-Terraform installs External Secrets Operator and creates central source secrets in the `external-secrets` namespace:
+The security setup keeps source credentials centralized and lets workloads consume namespace-local synced secrets. This avoids copying secret manifests into every service chart while still giving each namespace only the secret it needs.
 
-- [infra/terraform/gcp/dependencies.tf](../../../infra/terraform/gcp/dependencies.tf): installs the `external-secrets` Helm chart with CRDs.
-- [infra/terraform/gcp/secret_management.tf](../../../infra/terraform/gcp/secret_management.tf): creates central source secrets for data platform, MLflow, runtime, KServe, and gateway credentials.
-- [infra/helm/recsys-security/templates/secretstore.yaml](../../../infra/helm/recsys-security/templates/secretstore.yaml): renders `ClusterSecretStore`.
-- [infra/helm/recsys-security/templates/externalsecrets.yaml](../../../infra/helm/recsys-security/templates/externalsecrets.yaml): syncs service secrets into target namespaces.
+### Code Reference
 
-Operator proof:
+- [infra/terraform/gcp/dependencies.tf line 1](../../../infra/terraform/gcp/dependencies.tf#L1): installs External Secrets Operator with Helm and CRDs.
+- [infra/terraform/gcp/secret_management.tf line 1](../../../infra/terraform/gcp/secret_management.tf#L1): creates central source secrets for data platform, MLflow, runtime, KServe, and gateway credentials.
+- [infra/helm/recsys-security/templates/secretstore.yaml line 1](../../../infra/helm/recsys-security/templates/secretstore.yaml#L1): renders the central `ClusterSecretStore`.
+- [infra/helm/recsys-security/templates/externalsecrets.yaml line 1](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L1): renders `ExternalSecret` objects that sync target Kubernetes Secrets.
+
+### External Secrets Operator Runtime
+
+**Capture command**
 
 ```bash
 kubectl get pods -n external-secrets
 ```
 
-Observed result:
+![External Secrets Operator pods](../../pngs/external_secrets_pods.png)
 
-```text
-external-secrets-75d658468b-t6v7b                  1/1 Running
-external-secrets-cert-controller-d6459bb8d-4fhd8   1/1 Running
-external-secrets-webhook-7fc5878846-lnbdb          1/1 Running
-```
+**Figure: External Secrets Operator pod proof.** The controller pod reconciles `ExternalSecret` resources, the webhook validates admission requests, and the cert-controller manages webhook certificates. Seeing these pods in `Running` state proves the secret synchronization control plane is available.
 
-### Image proof 
+![External Secrets Operator k9s proof](../../pngs/extermal_scrts.png)
 
-![Ingress LoadBalancer proof](../../pngs/external_secrets_pods.png)
+**Figure: External Secrets Operator k9s proof.** This view shows the same External Secrets components from the cluster UI, including readiness, restart count, node placement, and resource usage. It is useful as a UI-based proof that the operator is live on GKE, not only present as YAML.
 
-Central store proof:
+### Central ClusterSecretStore
+
+**Capture command**
 
 ```bash
 kubectl get clustersecretstore
 ```
 
-Observed result:
+![Central ClusterSecretStore proof](../../pngs/cluster_secret.png)
 
-```text
-NAME                     AGE   STATUS   CAPABILITIES   READY
-recsys-central-secrets   17s   Valid    ReadWrite      True
-```
+**Figure: Central ClusterSecretStore proof.** `recsys-central-secrets` is the shared secret backend reference used by all service-level `ExternalSecret` objects. A healthy/ready status proves workloads can reuse one central secret store instead of each namespace defining its own secret source.
 
-### Image proof 
+### Central Source Secrets
 
-![Ingress LoadBalancer proof](../../pngs/cluster_secret.png)
-
-
-Central source secrets:
+**Capture command**
 
 ```bash
 kubectl get secret -n external-secrets -l app.kubernetes.io/part-of=recsys-mlops
 ```
 
-Observed result:
+![Central source secrets proof](../../pngs/centrel_src_secrets.png)
 
-```text
-NAME            TYPE     DATA
-data-platform   Opaque   10
-gateway         Opaque   1
-kserve-minio    Opaque   6
-mlflow          Opaque   5
-runtime         Opaque   20
-```
+**Figure: Central source secret groups.** The source secrets are grouped by platform area, for example data platform, gateway, KServe/MinIO, MLflow, and runtime credentials. This proves secrets are stored centrally first, then synced outward to the namespaces that need them.
 
-### Image proof 
+### Synced Service Secrets
 
-![Ingress LoadBalancer proof](../../pngs/centrel_src_secrets.png)
-
-Synced service secrets:
+**Capture command**
 
 ```bash
 kubectl get externalsecret -A
 ```
 
-Observed result:
+![Synced ExternalSecret proof](../../pngs/get_ex_secrets.png)
 
-```text
-NAMESPACE                 NAME                          STORETYPE            STORE                    STATUS         READY
-api-serving               recsys-gateway-basic-auth     ClusterSecretStore   recsys-central-secrets   SecretSynced   True
-experiment-tracking       recsys-mlflow-secrets         ClusterSecretStore   recsys-central-secrets   SecretSynced   True
-kserve-triton-inference   recsys-kserve-minio           ClusterSecretStore   recsys-central-secrets   SecretSynced   True
-kubeflow                  recsys-mlops-runtime          ClusterSecretStore   recsys-central-secrets   SecretSynced   True
-observability             recsys-gateway-basic-auth     ClusterSecretStore   recsys-central-secrets   SecretSynced   True
-recsys-dataflow           recsys-data-platform-secret   ClusterSecretStore   recsys-central-secrets   SecretSynced   True
-```
-
-![Ingress LoadBalancer proof](../../pngs/get_ex_secrets.png)
+**Figure: Namespace-level ExternalSecret sync proof.** Each row shows an `ExternalSecret` in a service namespace, the `ClusterSecretStore` it reads from, and the sync/ready state. This proves namespace-local Kubernetes Secrets are generated by External Secrets Operator rather than manually duplicated.
 
 ## Service Mesh Authentication
 
-Namespaces with mesh injection:
+Istio enforces service identity and network-level access control. The baseline posture is STRICT mTLS plus default deny; specific service-to-service flows are then opened with `AuthorizationPolicy`.
+
+### Code Reference
+
+- [infra/helm/recsys-security/templates/istio-mtls.yaml line 1](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L1): renders namespace STRICT mTLS and selected permissive exceptions for non-mesh clients or special ingest ports.
+- [infra/helm/recsys-security/templates/istio-authorization.yaml line 1](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L1): renders default-deny and explicit allow policies for API, KServe/Triton, Dataflow, Kubeflow, MLflow, and Observability traffic.
+
+### Mesh-Enabled Namespaces
+
+**Capture command**
 
 ```bash
 kubectl get ns -L istio-injection
 ```
 
-Observed result:
+![Istio injection namespace proof](../../pngs/istio_injection_.png)
 
-```text
-api-serving                 Active   enabled
-experiment-tracking         Active   enabled
-ingress-nginx               Active   enabled
-kserve-triton-inference     Active   enabled
-observability               Active   enabled
-recsys-dataflow             Active   enabled
-```
+**Figure: Istio sidecar injection scope.** Namespaces with `istio-injection=enabled` automatically receive Istio sidecars on new pods. This proves the security boundary covers core runtime namespaces such as API serving, KServe/Triton, observability, experiment tracking, and dataflow.
 
-### Image proof
+### mTLS And Authorization Policies
 
-![Ingress LoadBalancer proof](../../pngs/istio_injection_.png)
-
-mTLS and authorization policies:
+**Capture command**
 
 ```bash
 kubectl get peerauthentication,authorizationpolicy -A
 ```
 
-Observed result:
+![Istio authorization policy proof](../../pngs/auth_policies.png)
 
-```text
-api-serving               peerauthentication/recsys-strict-mtls                         STRICT
-experiment-tracking       peerauthentication/recsys-strict-mtls                         STRICT
-kserve-triton-inference   peerauthentication/recsys-strict-mtls                         STRICT
-kubeflow                  peerauthentication/recsys-strict-mtls                         STRICT
-observability             peerauthentication/recsys-strict-mtls                         STRICT
-recsys-dataflow           peerauthentication/recsys-strict-mtls                         STRICT
-
-api-serving               authorizationpolicy/recsys-default-deny
-api-serving               authorizationpolicy/recsys-api-allow                        ALLOW
-kserve-triton-inference   authorizationpolicy/recsys-default-deny
-kserve-triton-inference   authorizationpolicy/recsys-kserve-allow                     ALLOW
-recsys-dataflow           authorizationpolicy/recsys-default-deny
-recsys-dataflow           authorizationpolicy/recsys-dataflow-allow                   ALLOW
-observability             authorizationpolicy/recsys-default-deny
-observability             authorizationpolicy/recsys-observability-allow              ALLOW
-experiment-tracking       authorizationpolicy/recsys-default-deny
-experiment-tracking       authorizationpolicy/recsys-mlflow-allow                     ALLOW
-```
-
-Policy meaning:
+**Figure: mTLS and default-deny policy proof.** `PeerAuthentication` enforces STRICT mTLS for mesh traffic, while empty/default `AuthorizationPolicy` objects deny traffic by default. The explicit `ALLOW` policies then reopen only the required service-to-service paths by source identity and destination port.
 
 | Namespace | Default behavior | Explicit allow examples |
 |---|---|---|
-| `api-serving` | Deny all by default under STRICT mTLS | Allow NGINX ingress, Prometheus, and internal `api-serving/default` service-to-service traffic to API ports 80/8080. This permits `recsys-api-serving` to call `recsys-online-feature-api` while keeping default-deny for other sources. |
-| `kserve-triton-inference` | Deny all by default under STRICT mTLS | Allow API service account and Prometheus to Triton ports 80/8080/9000. |
-| `recsys-dataflow` | Deny all by default under STRICT mTLS | Allow API to Redis 6379; allow DataHub GMS/frontend through `cluster.local/ns/datahub/sa/datahub-app-sa` to Kafka/data-platform ports such as `29092`; allow internal data platform ports. |
-| `experiment-tracking` | Deny all by default under STRICT mTLS | Allow Kubeflow, KServe, and Prometheus to MLflow/MinIO/Postgres. |
-| `observability` | Deny all by default under STRICT mTLS | Allow Prometheus, Promtail, API, Airflow/Kubeflow, and NGINX gateway. |
+| `api-serving` | Deny all by default under STRICT mTLS | Allows NGINX ingress, Prometheus, internal API-to-feature traffic, and dataflow-generated calls to API ports `80`/`8080`. |
+| `kserve-triton-inference` | Deny all by default under STRICT mTLS | Allows API service account and Prometheus to Triton/KServe ports `80`, `8080`, and `9000`. |
+| `recsys-dataflow` | Deny all by default under STRICT mTLS | Allows internal data platform traffic, Kubeflow pipeline traffic, DataHub traffic, Prometheus scraping, and API access to Redis `6379`. |
+| `kubeflow` | Deny all by default under STRICT mTLS | Allows pipeline components, metadata services, Ray dashboard/job ports, MinIO-compatible artifact ports, and Prometheus access where required. |
+| `experiment-tracking` | Deny all by default under STRICT mTLS | Allows Kubeflow, KServe, and Prometheus to MLflow, Postgres, and artifact storage ports. |
+| `observability` | Deny all by default under STRICT mTLS | Allows Prometheus, Promtail, API, Airflow/Kubeflow, and NGINX gateway access to Grafana, Loki, Tempo, Pushgateway, and exporter ports. |
 
-### Image proof
+### Sidecar Injection Across Runtime Services
 
-![Ingress LoadBalancer proof](../../pngs/auth_policies.png)
+The sidecar screenshots are UI proof that important runtime services are actually running with Istio components, not just configured through namespace labels. The expected pattern is:
 
-Sidecar proof:
+- `istio-init`: init container that prepares traffic redirection rules.
+- `istio-proxy`: Envoy sidecar that handles mTLS and policy enforcement.
+- main service container: the application workload, for example API, Grafana, or DataHub.
 
-```bash
-kubectl -n kserve-triton-inference describe pod -l app=isvc.recsys-bst-triton-candidate-predictor
-```
+![API serving sidecar proof](../../pngs/api_serve_sidecar.png)
 
-Observed result:
+**Figure: API serving sidecar proof.** The `recsys-api-serving` pod has three containers: `istio-init`, `istio-proxy`, and the FastAPI application container. This proves user-facing recommendation traffic enters the mesh before reaching the API process.
 
-```text
-Labels:
-  security.istio.io/tlsMode=istio
-Init Containers:
-  istio-init:   Completed
-  istio-proxy:  Running
-Containers:
-  kserve-container: Ready
-```
+![Online feature API sidecar proof](../../pngs/pull_data_sidecar.png)
 
-### Image proof
+**Figure: Online feature API sidecar proof.** The `recsys-online-feature-api` pod also contains `istio-init`, `istio-proxy`, and the API container. This proves internal feature-pull traffic between serving APIs is protected by mesh identity and mTLS.
 
-![Ingress LoadBalancer proof](../../pngs/sidecar_proof_.png)
+![DataHub pod sidecar proof](../../pngs/datahub_sidecar.png)
+
+**Figure: DataHub sidecar readiness proof.** DataHub pods show `2/2` readiness, meaning the application container and Istio sidecar are both ready. This proves governance services are also inside the service mesh instead of being left as plain cluster networking.
+
+![DataHub sidecar example](../../pngs/datahub_sc_example.png)
+
+**Figure: DataHub service mesh example.** This k9s view shows the DataHub namespace with mesh-managed pods and operational state. It supports the security proof by showing the governance stack participates in the same runtime security model as the API and observability services.
+
+![Observability sidecar proof](../../pngs/observe_sidecar.png)
+
+**Figure: Observability sidecar proof.** The Grafana pod contains `istio-init`, `istio-proxy`, and the Grafana container. This proves metric-dashboard access is also routed through the mesh and can be governed by Istio policies.
+
+### Sidecar Injection On KServe/Triton Workloads
+
+**Capture UI**
+
+Open the KServe/Triton predictor pod in k9s and switch to the container view.
+
+![KServe Triton sidecar proof](../../pngs/triton_sidecar.png)
+
+**Figure: KServe/Triton sidecar proof.** The `recsys-bst-triton-predictor` pod runs with four containers: `istio-init` prepares traffic redirection, `istio-proxy` is the running Envoy sidecar for mTLS/policy enforcement, `storage-initializer` loads the model artifacts, and `kserve-container` runs the Triton inference server. This proves model inference traffic is not a plain pod-to-pod call; it is served by Triton/KServe while participating in the Istio service mesh.

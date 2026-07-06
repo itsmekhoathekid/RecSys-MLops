@@ -27,12 +27,12 @@ Current GCP values:
 
 ```text
 AB_TEST_ENABLED=1
-AB_EXPERIMENT_ID=bst-stable-vs-candidate-20260630
-AB_CANDIDATE_WEIGHT_PERCENT=20
-AB_CONTROL_MODEL_VERSION=stable-001
-AB_CANDIDATE_MODEL_VERSION=candidate-001
-AB_CONTROL_TRITON_URL=recsys-bst-triton-grpc.kserve-triton-inference.svc.cluster.local:9000
-AB_CANDIDATE_TRITON_URL=recsys-bst-triton-candidate-grpc.kserve-triton-inference.svc.cluster.local:9000
+AB_EXPERIMENT_ID=bst-ab-proof-20260707
+AB_CANDIDATE_WEIGHT_PERCENT=50
+AB_CONTROL_MODEL_VERSION=20260706150755
+AB_CANDIDATE_MODEL_VERSION=candidate-20260706150755
+AB_CONTROL_TRITON_URL=recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
+AB_CANDIDATE_TRITON_URL=recsys-bst-triton-candidate-predictor.kserve-triton-inference.svc.cluster.local:9000
 ```
 
 ## Current Full A/B Flow
@@ -111,8 +111,6 @@ recsys-bst-triton             True
 recsys-bst-triton-candidate   True
 
 NAME                                    TYPE        PORT(S)
-recsys-bst-triton-grpc                  ClusterIP   9000/TCP
-recsys-bst-triton-candidate-grpc        ClusterIP   9000/TCP
 recsys-bst-triton-predictor             ClusterIP   80/TCP,9000/TCP
 recsys-bst-triton-candidate-predictor   ClusterIP   80/TCP,9000/TCP
 
@@ -125,6 +123,8 @@ pod/recsys-bst-triton-candidate-predictor-575544cb77-6xzkx   2/2 Running
 ### Image proof 
 
 ![Data & ML system](../../pngs/infer_service.png)
+
+**Figure: Control and candidate Triton/KServe services.** This proof shows both A/B inference backends are deployed and ready: `recsys-bst-triton` is the stable control service, while `recsys-bst-triton-candidate` is the candidate service under evaluation. Their predictor services expose Triton gRPC on port `9000`, which is the internal endpoint used by the FastAPI recommendation API.
 
 ## Traffic Split Test
 
@@ -153,16 +153,17 @@ Observed result:
 
 ```text
 statuses {'200': 80}
-variants {'control': 57, 'candidate': 23}
+variants {'control': 38, 'candidate': 42}
 ```
 
 What this proves:
 
-- `statuses {'200': 80}` means all 80 real in-cluster API calls succeeded.
-- `variants {'control': 57, 'candidate': 23}` means the API routed some users to the stable model and some users to the candidate model.
-- `control` is the current stable model path, configured as `AB_CONTROL_TRITON_URL` / `AB_CONTROL_MODEL_VERSION`.
-- `candidate` is the newly deployed model path under test, configured as `AB_CANDIDATE_TRITON_URL` / `AB_CANDIDATE_MODEL_VERSION`.
+- The test calls the live FastAPI container inside the GKE cluster, so it exercises the real API, online feature lookup, A/B router, and Triton/KServe inference path rather than a local mock.
+- `statuses {'200': 80}` proves every request completed successfully after routing and inference. This is important because A/B is only useful if both model paths can serve production traffic without returning gateway or inference errors.
+- `variants {'control': 38, 'candidate': 42}` proves traffic reached both variants. The split is close to the configured `AB_CANDIDATE_WEIGHT_PERCENT=50`, but it does not need to be exactly 40/40 because the router uses deterministic hashing over the finite user-id sample `1..80`.
+- `control` maps to the current stable model path from `AB_CONTROL_TRITON_URL` and `AB_CONTROL_MODEL_VERSION`; `candidate` maps to the new model path from `AB_CANDIDATE_TRITON_URL` and `AB_CANDIDATE_MODEL_VERSION`.
 - The split is sticky per user: the same `experiment_id:user_id` hashes to the same A/B bucket, so repeat calls for the same user stay on the same variant during the experiment.
+- The response includes `ab_variant`, `ab_experiment_id`, and `model_version`, and the same labels are emitted to Prometheus. This lets Grafana compare request volume, errors, latency, confidence, and score shape separately for control and candidate.
 
 The `ab_variant` value is not inferred from Kubernetes after the fact. It is an explicit response field emitted by the API:
 
@@ -173,74 +174,17 @@ The `ab_variant` value is not inferred from Kubernetes after the fact. It is an 
 - [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py): `recommend()` passes the route metadata into `format_top_k()`, so the API response exposes whether that request used `control` or `candidate`.
 - [apps/api-serving/src/serving_utils.py](../../../apps/api-serving/src/serving_utils.py): `ab_labels()` also attaches `ab_variant`, `model_version`, and `experiment_id` to Prometheus metrics.
 
-With `AB_CANDIDATE_WEIGHT_PERCENT=20`, the expected long-run candidate share is about 20%. This short proof uses only user IDs `1..80`, so the observed 23/80 candidate assignments are deterministic for this exact range and can differ from exactly 20%. The key evidence is that both variants receive successful traffic and the response/metrics identify which model version served each request.
+With `AB_CANDIDATE_WEIGHT_PERCENT=50`, the expected long-run candidate share is about 50%. This short proof uses only user IDs `1..80`, so the observed 42/80 candidate assignments are deterministic for this exact range and can differ slightly from exactly 50%. The key evidence is that both variants receive successful traffic and the response/metrics identify which model version served each request.
 
 ### Image proof to capture:
 
 ![Data & ML system](../../pngs/api_serve_exec_ab.png)
 
-
-## Prometheus Proof
-
-Raw API metrics:
-
-```bash
-kubectl -n api-serving exec deploy/recsys-api-serving -c api -- \
-  python -c 'import urllib.request
-text=urllib.request.urlopen("http://127.0.0.1:8080/metrics", timeout=5).read().decode()
-for line in text.splitlines():
-    if "model_predictions_total" in line or "recsys_api_ab_assignments_total" in line:
-        print(line)'
-```
-
-Observed result:
-
-```text
-model_predictions_total{ab_variant="candidate",experiment_id="bst-stable-vs-candidate-20260630",model_version="candidate-001",status="success"} 23.0
-model_predictions_total{ab_variant="control",experiment_id="bst-stable-vs-candidate-20260630",model_version="stable-001",status="success"} 57.0
-recsys_api_ab_assignments_total{ab_variant="candidate",experiment_id="bst-stable-vs-candidate-20260630",model_version="candidate-001"} 23.0
-recsys_api_ab_assignments_total{ab_variant="control",experiment_id="bst-stable-vs-candidate-20260630",model_version="stable-001"} 57.0
-```
-### Image proof 
-
-![Data & ML system](../../pngs/ab_prometheus_proof.png)
-
-Prometheus table query:
-
-```bash
-kubectl -n observability exec deploy/recsys-prometheus -- \
-  wget -qO- 'http://localhost:9090/api/v1/query?query=sum%28model_predictions_total%7Bexperiment_id%3D%22bst-stable-vs-candidate-20260630%22%7D%29%20by%20%28ab_variant%2Cmodel_version%2Cstatus%29'
-```
-
-Observed data:
-
-```text
-candidate candidate-001 success 23
-control   stable-001    success 57
-```
-
-Latency and confidence proxy metrics:
-
-```text
-mean latency candidate-001 = 0.0196s
-mean latency stable-001    = 0.0177s
-mean confidence candidate  = 1.0
-mean confidence control    = 1.0
-```
-
-### Image proof 
-
-![Data & ML system](../../pngs/table_query.png)
+**Figure: API-level A/B traffic split proof.** This screenshot should capture the terminal output from the in-cluster request loop. The `statuses` line proves the API served the test traffic successfully, and the `variants` line proves the router sent requests to both `control` and `candidate` model versions.
 
 ## Grafana Dashboard
 
 Dashboard: `Model A/B Testing`
-
-URL through gateway:
-
-```text
-http://grafana.recsys.local/d/recsys-model-ab-testing/model-a-b-testing
-```
 
 Panels prepared for screenshots:
 
@@ -261,8 +205,16 @@ Panels prepared for screenshots:
 
 ![Data & ML system](../../pngs/ab_dashboard_1.png)
 
+**Figure: A/B rollout overview dashboard.** This screenshot should show the top-level model A/B monitoring panels: overall prediction rate, candidate share, error delta, latency delta, and traffic split for the selected experiment. It proves Grafana is reading variant-labeled Prometheus metrics instead of only showing one global serving metric.
+
 ![Data & ML system](../../pngs/ab_dashboard_2.png)
+
+**Figure: Per-variant model health dashboard.** This screenshot should focus on panels that compare `control` and `candidate` by `ab_variant` and `model_version`, such as prediction rate by status, router assignment count, model latency, and empty/error responses.
 
 ![Data & ML system](../../pngs/ab_dashboard_3.png)
 
+**Figure: Proxy quality metrics dashboard.** Because online groundtruth labels are not available in this proof, this screenshot should show proxy model-quality signals such as confidence average, confidence distribution, score mean/max, and recommendation item/candidate counts for each variant.
+
 ![Data & ML system](../../pngs/ab_dashboard_4.png)
+
+**Figure: Triton runtime health dashboard.** This screenshot should show the control and candidate Triton/KServe pod resource panels, including CPU, memory, and restart count. It proves both inference backends remain healthy while A/B traffic is being served.

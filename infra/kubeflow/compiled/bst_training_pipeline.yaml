@@ -15,6 +15,7 @@
 #    feast_offline_root: str [Default: '']
 #    feast_repo_path: str [Default: '/opt/recsys/apps/data-platform/feature-store/feature_repo']
 #    feature_service_name: str [Default: 'bst_ranking_v1']
+#    feature_source: str [Default: 'feast']
 #    feature_summary_path: str [Default: '/workspace/recsys/data_platform/output/feature_summary.json']
 #    gpu_limit: int [Default: 1.0]
 #    gpus_per_trial: float [Default: 0.0]
@@ -39,7 +40,7 @@
 #    pvc_mount_path: str [Default: '/workspace']
 #    pvc_name: str [Default: 'recsys-mlops-pvc']
 #    ray_best_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/best_result.json']
-#    ray_image: str [Default: 'recsys-mlops-training:local']
+#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3']
 #    ray_job_name: str [Default: 'recsys-bst-ray-tune']
 #    ray_namespace: str [Default: 'kubeflow']
 #    ray_output_dir: str [Default: '/workspace/recsys/data_platform/output/ml/ray']
@@ -82,6 +83,8 @@ components:
         feast_repo_path:
           parameterType: STRING
         feature_service_name:
+          parameterType: STRING
+        feature_source:
           parameterType: STRING
         hudi_catalog_name:
           parameterType: STRING
@@ -253,7 +256,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py
-        image: recsys-mlops-training:local
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
     exec-prepare-training-data:
       container:
         args:
@@ -263,7 +266,7 @@ deploymentSpec:
         - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2,org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.2,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262
         - /opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py
         - --feature-source
-        - feast
+        - '{{$.inputs.parameters[''feature_source'']}}'
         - --entity-input-path
         - '{{$.inputs.parameters[''entity_input_path'']}}'
         - --feast-repo-path
@@ -292,7 +295,7 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - /opt/spark/bin/spark-submit
-        image: recsys-mlops-spark:local
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:full-cicd-20260706-r1
     exec-promote-bst-model:
       container:
         args:
@@ -309,7 +312,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/registry/model_promotion.py
-        image: recsys-mlops-training:local
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
     exec-submit-rayjob:
       container:
         args:
@@ -366,7 +369,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: recsys-mlops-training:local
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
     exec-submit-rayjob-2:
       container:
         args:
@@ -423,7 +426,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: recsys-mlops-training:local
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
     exec-trigger-kserve-model-cd:
       container:
         args:
@@ -443,7 +446,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py
-        image: recsys-mlops-training:local
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.
@@ -485,6 +488,8 @@ root:
               componentInputParameter: feast_repo_path
             feature_service_name:
               componentInputParameter: feature_service_name
+            feature_source:
+              componentInputParameter: feature_source
             hudi_catalog_name:
               componentInputParameter: hudi_catalog_name
             hudi_warehouse:
@@ -721,6 +726,10 @@ root:
         defaultValue: bst_ranking_v1
         isOptional: true
         parameterType: STRING
+      feature_source:
+        defaultValue: feast
+        isOptional: true
+        parameterType: STRING
       feature_summary_path:
         defaultValue: /workspace/recsys/data_platform/output/feature_summary.json
         isOptional: true
@@ -818,7 +827,7 @@ root:
         isOptional: true
         parameterType: STRING
       ray_image:
-        defaultValue: recsys-mlops-training:local
+        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
         isOptional: true
         parameterType: STRING
       ray_job_name:
@@ -894,6 +903,9 @@ platforms:
       executors:
         exec-evaluate-bst:
           imagePullPolicy: Always
+          nodeSelector:
+            labels:
+              recsys.ai/pool: ml-system
           podMetadata:
             annotations:
               sidecar.istio.io/inject: 'false'
@@ -950,8 +962,16 @@ platforms:
             secretNameParameter:
               runtimeValue:
                 constant: recsys-mlops-runtime
+          tolerations:
+          - effect: NoSchedule
+            key: recsys.ai/workload
+            operator: Equal
+            value: ml-system
         exec-prepare-training-data:
           imagePullPolicy: Always
+          nodeSelector:
+            labels:
+              recsys.ai/pool: ml-system
           podMetadata:
             annotations:
               sidecar.istio.io/inject: 'false'
@@ -1008,8 +1028,16 @@ platforms:
             secretNameParameter:
               runtimeValue:
                 constant: recsys-mlops-runtime
+          tolerations:
+          - effect: NoSchedule
+            key: recsys.ai/workload
+            operator: Equal
+            value: ml-system
         exec-promote-bst-model:
           imagePullPolicy: Always
+          nodeSelector:
+            labels:
+              recsys.ai/pool: ml-system
           podMetadata:
             annotations:
               sidecar.istio.io/inject: 'false'
@@ -1066,8 +1094,16 @@ platforms:
             secretNameParameter:
               runtimeValue:
                 constant: recsys-mlops-runtime
+          tolerations:
+          - effect: NoSchedule
+            key: recsys.ai/workload
+            operator: Equal
+            value: ml-system
         exec-submit-rayjob:
           imagePullPolicy: Always
+          nodeSelector:
+            labels:
+              recsys.ai/pool: ml-system
           podMetadata:
             annotations:
               sidecar.istio.io/inject: 'false'
@@ -1124,8 +1160,16 @@ platforms:
             secretNameParameter:
               runtimeValue:
                 constant: recsys-mlops-runtime
+          tolerations:
+          - effect: NoSchedule
+            key: recsys.ai/workload
+            operator: Equal
+            value: ml-system
         exec-submit-rayjob-2:
           imagePullPolicy: Always
+          nodeSelector:
+            labels:
+              recsys.ai/pool: ml-system
           podMetadata:
             annotations:
               sidecar.istio.io/inject: 'false'
@@ -1182,8 +1226,16 @@ platforms:
             secretNameParameter:
               runtimeValue:
                 constant: recsys-mlops-runtime
+          tolerations:
+          - effect: NoSchedule
+            key: recsys.ai/workload
+            operator: Equal
+            value: ml-system
         exec-trigger-kserve-model-cd:
           imagePullPolicy: Always
+          nodeSelector:
+            labels:
+              recsys.ai/pool: ml-system
           podMetadata:
             annotations:
               sidecar.istio.io/inject: 'false'
@@ -1206,3 +1258,8 @@ platforms:
             secretNameParameter:
               runtimeValue:
                 constant: recsys-mlops-runtime
+          tolerations:
+          - effect: NoSchedule
+            key: recsys.ai/workload
+            operator: Equal
+            value: ml-system

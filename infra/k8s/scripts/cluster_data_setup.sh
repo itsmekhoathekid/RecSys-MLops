@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 PROFILE="${MINIKUBE_PROFILE:-recsys-mlops}"
+KUBE_CONTEXT="${KUBE_CONTEXT:-${PROFILE}}"
 NAMESPACE="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
 DAG_ID="${RECSYS_DATA_SETUP_DAG_ID:-k8s_data_platform_dag}"
 RUN_ID="${RECSYS_DATA_SETUP_RUN_ID:-data-setup-$(date -u +%Y%m%d%H%M%S)}"
@@ -54,7 +55,7 @@ wait_for_airflow_run() {
 
 if [[ "${SKIP_CLUSTER_UP}" == "1" ]]; then
   section "Use Existing Full Service Cluster"
-  kubectl config use-context "${PROFILE}" >/dev/null || true
+  kubectl config use-context "${KUBE_CONTEXT}" >/dev/null || true
 else
   section "Start Full Service Cluster"
   MINIKUBE_PROFILE="${PROFILE}" run_make cluster-up

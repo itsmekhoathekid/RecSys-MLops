@@ -9,6 +9,17 @@ SECRET_NAME="${DATA_PLATFORM_SECRET_NAME:-recsys-data-platform-secret}"
 TIMEOUT_SECONDS="${DATA_PLATFORM_VERIFY_TIMEOUT_SECONDS:-240}"
 SLEEP_SECONDS="${DATA_PLATFORM_VERIFY_SLEEP_SECONDS:-10}"
 
+if [[ -z "${DATA_PLATFORM_SPARK_IMAGE:-}" && -z "${DATA_PLATFORM_VERIFY_IMAGE:-}" ]]; then
+  deployed_spark_image="$(
+    kubectl get configmap recsys-data-platform-config -n "${NAMESPACE}" \
+      -o jsonpath='{.data.SPARK_IMAGE}' 2>/dev/null || true
+  )"
+  if [[ -n "${deployed_spark_image}" ]]; then
+    SPARK_IMAGE="${deployed_spark_image}"
+    VERIFY_IMAGE="${deployed_spark_image}"
+  fi
+fi
+
 wait_for_command() {
   local description="$1"
   local output_file="$2"

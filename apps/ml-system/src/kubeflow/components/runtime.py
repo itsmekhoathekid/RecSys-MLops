@@ -9,6 +9,10 @@ from kfp import kubernetes
 DEFAULT_PVC_NAME = os.getenv("RECSYS_KFP_PVC_NAME", "recsys-mlops-pvc")
 DEFAULT_PVC_MOUNT_PATH = os.getenv("RECSYS_KFP_PVC_MOUNT_PATH", "/workspace")
 DEFAULT_RUNTIME_SECRET_NAME = os.getenv("RECSYS_KFP_RUNTIME_SECRET_NAME", "recsys-mlops-runtime")
+DEFAULT_NODE_SELECTOR = os.getenv("RECSYS_KFP_NODE_SELECTOR", "recsys.ai/pool=ml-system")
+DEFAULT_TOLERATION_KEY = os.getenv("RECSYS_KFP_TOLERATION_KEY", "recsys.ai/workload")
+DEFAULT_TOLERATION_VALUE = os.getenv("RECSYS_KFP_TOLERATION_VALUE", "ml-system")
+DEFAULT_TOLERATION_EFFECT = os.getenv("RECSYS_KFP_TOLERATION_EFFECT", "NoSchedule")
 
 SECRET_KEY_TO_ENV: dict[str, str] = {
     "MINIO_ENDPOINT": "MINIO_ENDPOINT",
@@ -34,16 +38,39 @@ SECRET_KEY_TO_ENV: dict[str, str] = {
 }
 
 
+def parse_node_selector(value: str) -> dict[str, str]:
+    selectors: dict[str, str] = {}
+    for item in (value or "").split(","):
+        if not item.strip():
+            continue
+        key, _, raw = item.partition("=")
+        if not key.strip() or not raw.strip():
+            raise ValueError(f"Invalid node selector item: {item}")
+        selectors[key.strip()] = raw.strip()
+    return selectors
+
+
 def wire_runtime(
     task,
     pvc_name: str = DEFAULT_PVC_NAME,
     mount_path: str = DEFAULT_PVC_MOUNT_PATH,
     secret_name: str = DEFAULT_RUNTIME_SECRET_NAME,
     secret_key_to_env: Mapping[str, str] = SECRET_KEY_TO_ENV,
+    node_selector: str = DEFAULT_NODE_SELECTOR,
 ):
     if hasattr(task, "platform_config"):
         kubernetes.add_pod_annotation(task, "sidecar.istio.io/inject", "false")
         kubernetes.set_image_pull_policy(task, "Always")
+        for key, value in parse_node_selector(node_selector).items():
+            kubernetes.add_node_selector(task, key, value)
+        if DEFAULT_TOLERATION_KEY and DEFAULT_TOLERATION_VALUE:
+            kubernetes.add_toleration(
+                task,
+                key=DEFAULT_TOLERATION_KEY,
+                operator="Equal",
+                value=DEFAULT_TOLERATION_VALUE,
+                effect=DEFAULT_TOLERATION_EFFECT,
+            )
     kubernetes.mount_pvc(task, pvc_name=pvc_name, mount_path=mount_path)
     kubernetes.use_secret_as_env(
         task,

@@ -123,6 +123,87 @@ def metric_payload(training_result: dict[str, Any]) -> dict[str, float]:
     }
 
 
+def report_trial_metrics(tune: Any, report: dict[str, Any]) -> None:
+    try:
+        tune.report(report)
+    except TypeError as original:
+        try:
+            tune.report(**report)
+        except TypeError:
+            raise original
+
+
+def best_payload_from_training_result(
+    metrics_path: str | Path,
+    *,
+    best_config: dict[str, Any] | None = None,
+    best_metrics: dict[str, Any] | None = None,
+    best_trial_name: str | None = None,
+    source: str = "kubeflow-ray-tune-output",
+) -> dict[str, Any]:
+    metrics_file = Path(metrics_path)
+    training_result = json.loads(metrics_file.read_text(encoding="utf-8"))
+    reported_metrics = dict(best_metrics or {})
+    trial_dir = metrics_file.parent
+    checkpoint_path = (
+        reported_metrics.get("checkpoint_path")
+        or training_result.get("checkpoint_path")
+        or str(trial_dir / "checkpoints")
+    )
+    artifact_uri = reported_metrics.get("artifact_uri") or training_result.get("artifact_uri") or checkpoint_path
+    ray_metrics = {
+        **metric_payload(training_result),
+        **{
+            key: value
+            for key, value in reported_metrics.items()
+            if isinstance(value, (int, float, str))
+        },
+    }
+    config_path = reported_metrics.get("config_path") or str(trial_dir / "bst_trial.yaml")
+    return {
+        "best_trial_name": best_trial_name or trial_dir.name,
+        "best_config": best_config or {},
+        "best_config_path": config_path,
+        "checkpoint_path": checkpoint_path,
+        "artifact_uri": artifact_uri,
+        "mlflow_run_id": training_result.get("mlflow_run_id") or reported_metrics.get("mlflow_run_id"),
+        "dataset_versions": training_result.get("dataset_versions", {}),
+        "source": source,
+        "metrics": training_result.get("metrics", {}),
+        "ray_metrics": ray_metrics,
+    }
+
+
+def best_payload_from_ray_result(best: Any) -> dict[str, Any] | None:
+    metrics = dict(getattr(best, "metrics", {}) or {})
+    metrics_path = metrics.get("metrics_path")
+    if not metrics_path or not Path(metrics_path).exists():
+        return None
+    best_path = getattr(best, "path", "") or ""
+    return best_payload_from_training_result(
+        metrics_path,
+        best_config=dict(getattr(best, "config", {}) or {}),
+        best_metrics=metrics,
+        best_trial_name=best_path.split("/")[-1] if best_path else None,
+        source="kubeflow-ray-tune-report",
+    )
+
+
+def best_payload_from_trial_outputs(output_dir: str | Path) -> dict[str, Any]:
+    candidates: list[tuple[float, Path]] = []
+    for metrics_path in sorted((Path(output_dir) / "trials").glob("*/training_result.json")):
+        training_result = json.loads(metrics_path.read_text(encoding="utf-8"))
+        score = metric_payload(training_result)[RAY_OBJECTIVE_METRIC]
+        candidates.append((score, metrics_path))
+    if not candidates:
+        raise RuntimeError(f"No Ray Tune trial outputs found under {Path(output_dir) / 'trials'}")
+    _, metrics_path = max(candidates, key=lambda item: item[0])
+    return best_payload_from_training_result(
+        metrics_path,
+        source="kubeflow-ray-tune-output-fallback",
+    )
+
+
 def run_trial(
     trial_config: dict[str, Any],
     base_config_path: str,
@@ -168,7 +249,7 @@ def run_trial(
         "metrics_path": str(metrics_path),
         "mlflow_run_id": result.get("mlflow_run_id") or "",
     }
-    tune.report(report)
+    report_trial_metrics(tune, report)
     return report
 
 
@@ -245,25 +326,14 @@ def main() -> int:
         param_space=search_space,
     )
     result_grid = tuner.fit()
-    best = result_grid.get_best_result(metric=RAY_OBJECTIVE_METRIC, mode="max")
-    best_metrics_path = Path(best.metrics["metrics_path"])
-    training_result = json.loads(best_metrics_path.read_text(encoding="utf-8"))
-    best_payload = {
-        "best_trial_name": best.path.split("/")[-1],
-        "best_config": best.config,
-        "best_config_path": best.metrics["config_path"],
-        "checkpoint_path": best.metrics["checkpoint_path"],
-        "artifact_uri": best.metrics["artifact_uri"],
-        "mlflow_run_id": training_result.get("mlflow_run_id") or best.metrics.get("mlflow_run_id"),
-        "dataset_versions": training_result.get("dataset_versions", {}),
-        "source": "kubeflow-ray-tune",
-        "metrics": training_result.get("metrics", {}),
-        "ray_metrics": {
-            key: value
-            for key, value in best.metrics.items()
-            if isinstance(value, (int, float, str))
-        },
-    }
+    best_payload = None
+    try:
+        best = result_grid.get_best_result(metric=RAY_OBJECTIVE_METRIC, mode="max")
+        best_payload = best_payload_from_ray_result(best)
+    except Exception as exc:
+        print(f"Ray Tune result metadata is incomplete, falling back to trial outputs: {exc}")
+    if best_payload is None:
+        best_payload = best_payload_from_trial_outputs(output_dir)
     best_result_path = Path(args.best_result_path or output_dir / "best_result.json")
     best_result_path.parent.mkdir(parents=True, exist_ok=True)
     best_result_path.write_text(

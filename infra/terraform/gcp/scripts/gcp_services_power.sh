@@ -474,10 +474,18 @@ ensure_ingress_nginx_mesh() {
   fi
 
   echo "Restart ingress-nginx controller to inject Istio sidecar for mTLS upstreams."
-  kubectl annotate deployment ingress-nginx-controller -n ingress-nginx \
-    sidecar.istio.io/inject=true \
-    traffic.sidecar.istio.io/includeInboundPorts="" \
-    --overwrite
+  kubectl patch deployment ingress-nginx-controller -n ingress-nginx --type merge -p '{
+    "spec": {
+      "template": {
+        "metadata": {
+          "annotations": {
+            "sidecar.istio.io/inject": "true",
+            "traffic.sidecar.istio.io/includeInboundPorts": ""
+          }
+        }
+      }
+    }
+  }'
   kubectl rollout restart deployment/ingress-nginx-controller -n ingress-nginx
   kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout="${WAIT_TIMEOUT}"
 }

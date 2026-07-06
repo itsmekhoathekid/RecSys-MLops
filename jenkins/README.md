@@ -43,7 +43,7 @@ kubectl port-forward -n ci svc/recsys-jenkins 18090:8080
 | Component | Trigger paths | Published artifacts |
 | --- | --- | --- |
 | `materialize` | `feature_store/`, `local/`, materialize DAG/config | `recsys-dataflow-cli` |
-| `training` | `apps/ml-system/`, `infra/kubeflow/`, `configs/local/bst.yaml` | `recsys-mlops-training`, `recsys-mlops-spark`, compiled KFP YAML |
+| `training` | `apps/ml-system/`, `infra/kubeflow/`, `configs/local/bst.yaml` | `recsys-mlops-training`, `recsys-mlops-spark`, `recsys-dataflow-cli`, compiled/uploaded KFP YAML |
 | `spark_batch` | `features/spark/`, `Dockerfile.spark`, `spark_batch*.yaml` | `recsys-spark`, `recsys-airflow` |
 | `dp1` | raw ingestion, data generator, source CDC config | `recsys-data-generator`, `recsys-dataflow-cli`, `recsys-airflow`, `recsys-kafka-connect` |
 | `dp2` | silver/gold Spark transforms and DAG/config | `recsys-spark`, `recsys-airflow` |
@@ -71,6 +71,13 @@ Each changed component follows the same sequence:
 
 Services should pull the pushed registry image in CI/CD. The pipeline does not
 deploy `*:local` tags.
+
+The `training` component has an extra Kubeflow package gate: CI/CD builds and
+pushes `recsys-mlops-training`, builds and pushes `recsys-mlops-spark`,
+compiles `infra/kubeflow/compiled/bst_training_pipeline.yaml` with those real
+image refs, validates the package contains no `:local` token, uploads or
+versions the package in Kubeflow, and rolls the `recsys-dataflow-cli` trigger
+runtime so drift retrain pods submit the same package.
 
 For the in-cluster Jenkins setup in `infra/helm/recsys-ci`, Jenkins pushes to
 `recsys-registry.ci.svc.cluster.local:5000/recsys`, while workloads pull from
@@ -101,6 +108,22 @@ jenkins/scripts/post_deploy_e2e.sh
 The post-CD job does not build, push, or deploy. It verifies already-running
 services: FastAPI, KServe, Spark/data outputs, stream offline store, Redis online
 store, drift/metrics, and observability smoke checks.
+
+## Full Service CI/CD
+
+To force every RecSys service through CI, image publish, deploy, and E2E gates:
+
+```bash
+IMAGE_REGISTRY=asia-southeast1-docker.pkg.dev/fsds-coursework/recsys \
+IMAGE_TAG=full-cicd-YYYYMMDD-rN \
+FULL_CICD_BUILD_BACKEND=cloudbuild \
+jenkins/scripts/full_services_cicd.sh
+```
+
+The full flow runs component CI, builds/pushes all runtime images, compiles and
+validates the Kubeflow package with pullable image refs, uploads the package,
+deploys data platform, MLflow, API, and KServe/model CD, then runs data-platform,
+ML-platform, and post-deploy E2E checks.
 
 ## Validation Evidence
 

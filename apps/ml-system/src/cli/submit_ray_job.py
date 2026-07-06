@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,8 @@ def pod_template(
     container: dict[str, Any],
     pvc_name: str,
     use_gpu: bool,
+    node_selector: dict[str, str] | None = None,
+    tolerations: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     spec: dict[str, Any] = {
         "containers": [container],
@@ -77,14 +80,18 @@ def pod_template(
             }
         ],
     }
+    if node_selector:
+        spec["nodeSelector"] = dict(node_selector)
+    if tolerations:
+        spec["tolerations"] = list(tolerations)
     if use_gpu:
-        spec["nodeSelector"] = {"nvidia.com/gpu.present": "true"}
-        spec["tolerations"] = [
+        spec["nodeSelector"] = {**spec.get("nodeSelector", {}), "nvidia.com/gpu.present": "true"}
+        spec["tolerations"] = [*spec.get("tolerations", []),
             {
                 "key": "nvidia.com/gpu",
                 "operator": "Exists",
                 "effect": "NoSchedule",
-            }
+            },
         ]
     return {
         "metadata": {
@@ -94,6 +101,34 @@ def pod_template(
         },
         "spec": spec,
     }
+
+
+def parse_node_selector(value: str) -> dict[str, str]:
+    selectors: dict[str, str] = {}
+    for item in (value or "").split(","):
+        if not item.strip():
+            continue
+        key, _, raw = item.partition("=")
+        if not key.strip() or not raw.strip():
+            raise ValueError(f"Invalid node selector item: {item}")
+        selectors[key.strip()] = raw.strip()
+    return selectors
+
+
+def parse_toleration(value: str) -> list[dict[str, str]]:
+    if not value:
+        return []
+    key, raw_value, effect = (value.split(":", 2) + ["", ""])[:3]
+    if not key or not raw_value:
+        raise ValueError(f"Invalid toleration value: {value}")
+    return [
+        {
+            "key": key,
+            "operator": "Equal",
+            "value": raw_value,
+            "effect": effect or "NoSchedule",
+        }
+    ]
 
 
 def build_ray_args(args: argparse.Namespace) -> list[str]:
@@ -157,6 +192,8 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
     ray_args = build_ray_args(args)
     job_mode = getattr(args, "job_mode", "tune")
     app_name = "recsys-ray-ddp-train" if job_mode == "distributed-train" else "recsys-ray-tune"
+    node_selector = parse_node_selector(getattr(args, "node_selector", ""))
+    tolerations = parse_toleration(getattr(args, "toleration", ""))
     rayjob = {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "RayJob",
@@ -176,6 +213,8 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
                 },
                 "spec": {
                     "restartPolicy": "Never",
+                    "nodeSelector": node_selector,
+                    "tolerations": tolerations,
                     "containers": [
                         {
                             "name": "ray-job-submitter",
@@ -219,6 +258,8 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
                         ),
                         args.pvc_name,
                         use_gpu=False,
+                        node_selector=node_selector,
+                        tolerations=tolerations,
                     ),
                 },
                 "workerGroupSpecs": [],
@@ -251,6 +292,8 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
                     ),
                     args.pvc_name,
                     use_gpu=args.use_gpu,
+                    node_selector=node_selector,
+                    tolerations=tolerations,
                 ),
             }
         )
@@ -378,15 +421,15 @@ def main() -> int:
     parser.add_argument("--worker-replicas", type=int_arg, default=1)
     parser.add_argument("--num-workers", type=int_arg, default=0)
     parser.add_argument("--head-ray-num-cpus", default="0")
-    parser.add_argument("--head-cpu-request", default="100m")
+    parser.add_argument("--head-cpu-request", default="50m")
     parser.add_argument("--head-cpu-limit", default="2")
     parser.add_argument("--head-memory-request", default="768Mi")
     parser.add_argument("--head-memory-limit", default="3Gi")
     parser.add_argument("--head-ray-memory-bytes", default="1073741824")
     parser.add_argument("--head-object-store-memory-bytes", default="268435456")
-    parser.add_argument("--worker-cpu-request", default="100m")
+    parser.add_argument("--worker-cpu-request", default="50m")
     parser.add_argument("--worker-cpu-limit", default="2")
-    parser.add_argument("--worker-memory-request", default="1Gi")
+    parser.add_argument("--worker-memory-request", default="768Mi")
     parser.add_argument("--worker-memory-limit", default="3Gi")
     parser.add_argument("--worker-ray-memory-bytes", default="1073741824")
     parser.add_argument("--worker-object-store-memory-bytes", default="268435456")
@@ -397,6 +440,8 @@ def main() -> int:
     parser.add_argument("--use-gpu", action="store_true")
     parser.add_argument("--use-gpu-value", default="false")
     parser.add_argument("--gpu-limit", type=int_arg, default=1)
+    parser.add_argument("--node-selector", default=os.getenv("RECSYS_RAY_NODE_SELECTOR", "recsys.ai/pool=ml-system"))
+    parser.add_argument("--toleration", default=os.getenv("RECSYS_RAY_TOLERATION", "recsys.ai/workload:ml-system:NoSchedule"))
     parser.add_argument("--timeout-seconds", type=int_arg, default=3600)
     parser.add_argument("--ttl-seconds-after-finished", type=int_arg, default=300)
     parser.add_argument("--status-path", default="")

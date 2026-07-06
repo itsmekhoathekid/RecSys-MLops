@@ -1,9 +1,11 @@
 substitutions:
   _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
   _TAG: gcp
+  _TRAINING_TAG: full-cicd-20260706-r1
+  _SPARK_TAG: full-cicd-20260706-r1
 
 options:
-  diskSizeGb: 200
+  diskSizeGb: 100
   logging: CLOUD_LOGGING_ONLY
 
 timeout: 3600s
@@ -13,7 +15,6 @@ steps:
     name: gcr.io/cloud-builders/docker
     args:
       - build
-      - --no-cache
       - -f
       - infra/docker/Dockerfile.base-python
       - -t
@@ -24,7 +25,6 @@ steps:
     name: gcr.io/cloud-builders/docker
     args:
       - build
-      - --no-cache
       - --build-arg
       - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
       - -f
@@ -33,30 +33,20 @@ steps:
       - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
       - .
 
-  - id: airflow
+  - id: validate-dataflow-kfp-package
     name: gcr.io/cloud-builders/docker
+    entrypoint: bash
     args:
-      - build
-      - --no-cache
-      - -f
-      - infra/docker/Dockerfile.airflow
-      - -t
-      - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
-      - .
-
-  - id: verify-airflow-dag
-    name: gcr.io/cloud-builders/docker
-    args:
-      - run
-      - --rm
-      - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
-      - bash
       - -lc
       - >-
-        grep -q 'quitquitquit' /opt/recsys/apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py &&
-        grep -q '"sidecar.istio.io/inject": "true"' /opt/recsys/apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py
+        docker run --rm ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+        bash -c "test -f /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
+        && ! grep -F ':local' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
+        && grep -F 'feature_source' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
+        && grep -F 'distributed_num_workers' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
+        && grep -F '${_IMAGE_REPO}/recsys-mlops-training:${_TRAINING_TAG}' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
+        && grep -F '${_IMAGE_REPO}/recsys-mlops-spark:${_SPARK_TAG}' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml"
 
 images:
   - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
   - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
-  - ${_IMAGE_REPO}/recsys-airflow:${_TAG}

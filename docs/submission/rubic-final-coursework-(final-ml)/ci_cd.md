@@ -120,7 +120,7 @@ showing the full shared stage layout for the monorepo pipeline.
 This proves the main pipeline is path-based and does not deploy unrelated
 components.
 
-**Test/build/deploy flow:** the main job uses the same component branches as the
+**Test/build/deploy flow:** the main job uses the same. component branches as the
 manual proof jobs below. The difference is the trigger: manual component jobs set
 `FORCE_COMPONENTS`, while the main job derives the enabled components from the
 changed paths in Git.

@@ -75,6 +75,126 @@ def test_spark_and_flink_images_include_iceberg_without_pandas_runtime():
     assert "great_expectations" not in dataflow_cli
     assert "dbt-core" not in dataflow_cli
     assert " pandas" not in spark_dockerfile
+    assert "COPY infra/kubeflow /opt/recsys/infra/kubeflow" in dataflow_cli
+
+
+def test_kubeflow_training_package_uses_pullable_images():
+    package = (ROOT / "infra/kubeflow/compiled/bst_training_pipeline.yaml").read_text()
+    assert "recsys-mlops-training:local" not in package
+    assert "recsys-mlops-spark:local" not in package
+    assert "asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:" in package
+    assert "asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:" in package
+
+
+def test_kubeflow_cloudbuild_builds_compiles_uploads_and_validates_package():
+    cloudbuild = (ROOT / "infra/cloudbuild/recsys-feast-kfp.yaml").read_text()
+
+    assert "${_IMAGE_REPO}/recsys-mlops-training:${_TAG}" in cloudbuild
+    assert "${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}" in cloudbuild
+    assert "id: compile-kfp-package" in cloudbuild
+    assert "jenkins/scripts/kubeflow_pipeline_cicd.sh" in cloudbuild
+    assert "id: dataflow-cli" in cloudbuild
+    assert "id: validate-dataflow-kfp-package" in cloudbuild
+    assert "id: upload-kfp-package" in cloudbuild
+    assert "_UPLOAD_KFP_PACKAGE" in cloudbuild
+    assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index("id: dataflow-cli")
+
+
+def test_full_image_cloudbuild_builds_all_runtime_images_after_kfp_compile():
+    cloudbuild = (ROOT / "infra/cloudbuild/recsys-images.yaml").read_text()
+
+    for image in [
+        "recsys-dataflow-cli",
+        "recsys-data-generator",
+        "recsys-mlops-training",
+        "recsys-mlops-spark",
+        "recsys-api-serving",
+        "recsys-kafka-connect",
+        "recsys-mlflow",
+        "recsys-airflow",
+        "recsys-spark",
+        "recsys-flink",
+    ]:
+        assert f"${{_IMAGE_REPO}}/{image}:${{_TAG}}" in cloudbuild
+
+    assert "id: compile-kfp-package" in cloudbuild
+    assert "id: validate-dataflow-kfp-package" in cloudbuild
+    assert "! grep -F ':local'" in cloudbuild
+    assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index("id: dataflow-cli")
+
+
+def test_jenkins_training_component_builds_runtime_images_and_package_trigger_image():
+    build_script = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text()
+    training_case = build_script.split("training)", 1)[1].split(";;", 1)[0]
+
+    assert "build_training" in training_case
+    assert "build_mlops_spark" in training_case
+    assert "compile_kfp_package_for_image_refs" in training_case
+    assert "build_dataflow_cli" in training_case
+    assert training_case.index("compile_kfp_package_for_image_refs") < training_case.index("build_dataflow_cli")
+
+
+def test_jenkins_training_deploy_uploads_package_and_rolls_trigger_runtime():
+    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    assert "jenkins/scripts/kubeflow_pipeline_cicd.sh" in deploy_script
+    assert '--set "images.dataflowCli=${dataflow_image}"' in deploy_script
+    assert 'verify_data_platform_config_image "DATAFLOW_IMAGE" "${dataflow_image}"' in deploy_script
+    assert 'verify_and_wait_workload "deployment" "realtime-event-producer"' in deploy_script
+
+
+def test_full_services_cicd_runs_all_stages_and_post_deploy_e2e():
+    script = (ROOT / "jenkins/scripts/full_services_cicd.sh").read_text()
+    build_script = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text()
+    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+
+    assert "component_ci.sh" in script
+    assert "component_build_publish.sh all" in script
+    assert "component_deploy.sh all" in script
+    assert "cluster_data_setup.sh" in script
+    assert "cluster_mlops_serving_e2e.sh" in script
+    assert "post_deploy_e2e.sh" in script
+    assert "RUN_NODE_REBALANCE" in script
+    assert "VALIDATE_NODE_REBALANCE" in script
+    assert "FULL_CICD_BUILD_BACKEND:-docker" in script
+    assert "cloudbuild)" in script
+    assert "all)" in build_script
+    assert "build_mlflow" in build_script
+    assert "deploy_all()" in deploy_script
+    assert "run_node_rebalance_if_enabled" in deploy_script
+    assert "infra/k8s/scripts/rebalance_ml_node_pool.sh" in deploy_script
+    assert "jenkins/scripts/validate_node_rebalance.sh" in deploy_script
+    assert "deploy_mlflow" in deploy_script
+    assert '--set "nodeSelector.recsys\\\\.ai/pool=ml-system"' in deploy_script
+    assert '--set "minio.resources.requests.memory=512Mi"' in deploy_script
+    assert "kfp_endpoint_for_upload()" in deploy_script
+    assert "kubectl port-forward" in deploy_script
+    assert "observability.retrainPsiThreshold=${RETRAIN_PSI_THRESHOLD:-0.15}" in deploy_script
+
+
+def test_node_rebalance_validation_covers_relocated_control_plane():
+    validator = (ROOT / "jenkins/scripts/validate_node_rebalance.sh").read_text()
+    rebalance = (ROOT / "infra/k8s/scripts/rebalance_ml_node_pool.sh").read_text()
+    power_script = (ROOT / "infra/terraform/gcp/scripts/gcp_services_power.sh").read_text()
+
+    for expected in [
+        "kubeflow ml-pipeline",
+        "kserve kserve-controller-manager",
+        "ci recsys-jenkins",
+        "experiment-tracking minio",
+        "kube-system metrics-server-v1.35.1",
+    ]:
+        assert expected in validator
+    assert "kube-system kube-dns" in validator
+    assert "sidecar.istio.io/inject" in validator
+    assert "assert_no_local_images" in validator
+    assert "assert_no_bad_pods" in validator
+    assert "kube_system_ml_deployments" in rebalance
+    assert "patch_deployment_cpu kube-system kube-dns" in rebalance
+    assert "enable_ingress_mesh_upstreams" in rebalance
+    assert "assert_istio_sidecar_enabled deployment ingress-nginx ingress-nginx-controller" in validator
+    assert "kubectl patch deployment ingress-nginx-controller" in power_script
+    assert '"sidecar.istio.io/inject": "true"' in power_script
+    assert "disable_sidecar_injection daemonset observability recsys-promtail" in rebalance
 
 
 def test_airflow_dags_run_native_lakehouse_tasks_only():
@@ -104,8 +224,35 @@ def test_airflow_dags_run_native_lakehouse_tasks_only():
         assert "validate_" not in source
 
 
+def test_retrain_trigger_uses_distinct_tune_and_ddp_results_for_default_drift_runs():
+    source = (ROOT / "apps/data-platform/src/mlops/trigger_kubeflow_retrain.py").read_text()
+
+    assert 'ray_tune_result_path = f"{base}/ml/ray/tune_result.json"' in source
+    assert 'ray_best_result_path = f"{base}/ml/ray/best_result.json"' in source
+    assert '"ray_tune_result_path": ray_tune_result_path' in source
+    assert '"ray_best_result_path": ray_best_result_path' in source
+    assert '"feature_source": "offline_feature_store"' in source
+    assert '"distributed_worker_replicas": 2' in source
+    assert '"distributed_num_workers": 2' in source
+    assert '"max_trials": 1' in source
+    assert '"cpus_per_trial": 0.5' in source
+    assert '"ray_ttl_seconds_after_finished": 60' in source
+
+
+def test_retrain_trigger_uses_stable_safe_kfp_run_names():
+    source = (ROOT / "apps/data-platform/src/mlops/trigger_kubeflow_retrain.py").read_text()
+
+    assert 'os.getenv("KFP_RETRAIN_RUN_NAME_PREFIX", "recsys-drift-retrain")' in source
+    assert 'def kfp_run_name(run_id: str, prefix: str | None = None) -> str:' in source
+    assert 'run_name=kfp_run_name(run_id)' in source
+    assert 'run_name=f"recsys-drift-retrain-{run_id}"' not in source
+    assert '"pipeline_run_id": f"retrain-{slug}"' in source
+
+
 def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
     source = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py").read_text()
+    assert 'cmds=["bash", "-c"]' in source
+    assert 'cmds=["bash", "-lc"]' not in source
     for expected in [
         "--master ${SPARK_K8S_MASTER:-k8s://https://kubernetes.default.svc}",
         "--deploy-mode cluster",
@@ -161,6 +308,7 @@ def test_flink_runtime_uses_fixed_mesh_friendly_internal_ports():
     chart = ROOT / "infra/helm/recsys-data-platform"
     security_chart = ROOT / "infra/helm/recsys-security"
     rendered = "\n".join(path.read_text() for path in (chart / "templates").glob("*.yaml"))
+    values = yaml.safe_load((chart / "values.yaml").read_text())
     security_rendered = "\n".join(path.read_text() for path in (security_chart / "templates").glob("*.yaml"))
     for expected in [
         "jobmanager.rpc.port: 6123",
@@ -175,6 +323,15 @@ def test_flink_runtime_uses_fixed_mesh_friendly_internal_ports():
         "type: Recreate",
     ]:
         assert expected in rendered
+    assert values["flinkTaskManager"]["resources"] == {
+        "requests": {"cpu": "500m", "memory": "4Gi"},
+        "limits": {"cpu": "2", "memory": "8Gi"},
+    }
+    assert values["flink"]["taskManagerProcessMemory"] == "6144m"
+    assert values["flink"]["taskManagerTaskHeapMemory"] == "3072m"
+    assert values["flink"]["taskManagerManagedMemory"] == "512m"
+    assert values["flink"]["taskManagerJvmOverheadMax"] == "2048m"
+    assert "taskmanager.memory.jvm-overhead.max" in rendered
     assert '"6121", "6122", "6123", "6124", "6125"' in security_rendered
 
 
@@ -278,6 +435,7 @@ def test_security_chart_declares_vault_external_secrets_and_istio_policies():
         '"2181"',
         '"29092"',
         "cluster.local/ns/api-serving/sa/default",
+        "cluster.local/ns/recsys-dataflow/sa/default",
         "cluster.local/ns/kubeflow/sa/pipeline-runner",
     ]:
         assert expected in rendered

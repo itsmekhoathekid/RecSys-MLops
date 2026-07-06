@@ -160,6 +160,7 @@ spec:
               - cluster.local/ns/ingress-nginx/sa/ingress-nginx
               - cluster.local/ns/observability/sa/recsys-prometheus
               - cluster.local/ns/api-serving/sa/default
+              - cluster.local/ns/recsys-dataflow/sa/default
       to:
         - operation:
             ports: ["80", "8080"]
@@ -201,4 +202,34 @@ spec:
     - to:
         - operation:
             ports: ["9090"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-loki-ingest-allow
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: recsys-loki
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["3100"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-tempo-otlp-allow
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: recsys-tempo
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["4317", "4318"]
 {{- end }}

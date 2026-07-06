@@ -30,6 +30,27 @@ run_make() {
   make -C "${ROOT_DIR}" "$@"
 }
 
+load_secret_env_if_unset() {
+  local namespace="$1"
+  local secret_name="$2"
+  shift 2
+
+  local key
+  local value
+  for key in "$@"; do
+    if [[ -n "${!key:-}" ]]; then
+      continue
+    fi
+    value="$(
+      kubectl get secret "${secret_name}" -n "${namespace}" \
+        -o "jsonpath={.data.${key}}" 2>/dev/null | base64 --decode || true
+    )"
+    if [[ -n "${value}" ]]; then
+      export "${key}=${value}"
+    fi
+  done
+}
+
 cleanup() {
   for pid in "${PORT_FORWARD_PIDS[@]:-}"; do
     kill "${pid}" >/dev/null 2>&1 || true
@@ -98,6 +119,12 @@ submit_pipeline() {
 
 promote_and_deploy() {
   local candidate_manifest_uri="$1"
+  load_secret_env_if_unset kubeflow "${MLOPS_RUNTIME_SECRET_NAME:-recsys-mlops-runtime}" \
+    MINIO_ROOT_USER \
+    MINIO_ROOT_PASSWORD \
+    AWS_ACCESS_KEY_ID \
+    AWS_SECRET_ACCESS_KEY \
+    AWS_DEFAULT_REGION
   export MINIO_ENDPOINT="http://127.0.0.1:${MINIO_PORT}"
   export MLFLOW_S3_ENDPOINT_URL="${MINIO_ENDPOINT}"
   export MINIO_ROOT_USER="${MINIO_ROOT_USER:-minio}"
@@ -175,7 +202,7 @@ verify_grafana_dashboard() {
 
 if [[ "${SKIP_CLUSTER_UP}" == "1" ]]; then
   section "Use Existing Full Service Cluster"
-  kubectl config use-context "${PROFILE}" >/dev/null || true
+  kubectl config use-context "${KUBE_CONTEXT:-${PROFILE}}" >/dev/null || true
 else
   section "Start Full Service Cluster"
   MINIKUBE_PROFILE="${PROFILE}" run_make cluster-up

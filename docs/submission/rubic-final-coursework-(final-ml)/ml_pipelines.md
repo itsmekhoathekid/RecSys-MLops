@@ -96,31 +96,35 @@ Notebook-to-pipeline mapping:
 
 ### Image proof of Kubeflow pipeline preparing training data log
 
-![Data & ML system](../../pngs/prep_training_data_log.png)
+![Kubeflow prepare training data log](../../pngs/prep_training_data_log.png)
 
-**Figure: Kubeflow `prepare-training-data` log.** This proof shows the pipeline loading label/entity rows from the PostgreSQL Feast offline store, retrieving historical features through Feast, writing BST train/validation/test JSONL splits, and recording dataset lineage/version metadata before any model training starts.
+**Figure: Kubeflow `prepare-training-data` proof.** The log shows the first ML pipeline stage reading label/entity rows from PostgreSQL Feast offline store, calling Feast native historical retrieval with `bst_ranking_v1`, and writing the BST train/validation/test JSONL splits plus dataset metadata. This is the proof that training data is prepared from the feature store before Ray training starts.
 
 ### Image proof of Kubeflow pipeline submit Ray Tune and DDP RayJob logs
 
-![Data & ML system](../../pngs/hyperparam_tuning_ray_log.png)
+![Kubeflow Ray Tune submission log](../../pngs/hyperparam_tuning_ray_log.png)
 
-**Figure: Kubeflow `Hyperparameter tuning` log.** This proof shows the first KubeRay job submission for Ray Tune. The step runs small tuning trials, selects the best hyperparameter config, writes `tune_result.json`, and passes that result to the next training step.
+**Figure: Kubeflow `Hyperparameter tuning` proof.** The log shows Kubeflow submitting the first KubeRay `RayJob`, `recsys-bst-ray-tune`, in `job_mode=tune`. This stage runs small Ray Tune trials, selects the best hyperparameter config, writes `tune_result.json`, and passes that config into the later DDP training stage.
 
-![Data & ML system](../../pngs/ddp_training_log.png)
+![Kubeflow DDP training submission log](../../pngs/ddp_training_log.png)
 
-**Figure: Kubeflow `Distributed training` log.** This proof shows the second KubeRay job submission for Ray Train DDP. The important evidence is that this stage consumes the tuned config, starts a Ray Train worker group, runs the DDP training entrypoint, and reports `SUCCEEDED` only after distributed training finishes.
+**Figure: Kubeflow `Distributed training` proof.** The log shows Kubeflow submitting the second KubeRay `RayJob`, `recsys-bst-ray-ddp-train`, in `job_mode=distributed-train`. This stage consumes the Ray Tune output, launches Ray Train with PyTorch DDP workers, and only succeeds after distributed training, checkpoint reporting, and result export complete.
 
 ### Image proof of Kubeflow pipeline model evaluation log
 
-![Data & ML system](../../pngs/evaluate_model_log.png)
+![Kubeflow model evaluation log](../../pngs/evaluate_model_log.png)
 
-**Figure: Kubeflow `evaluate-bst` log.** This proof shows the promoted candidate checkpoint being evaluated on the held-out test split. The log records test metrics such as loss, AUC, hit-rate, MRR, and NDCG, then writes the evaluation result used by the promotion step.
+**Figure: Kubeflow `evaluate-bst` proof.** The log shows the best DDP checkpoint being evaluated on the held-out test split. The important proof points are the test metrics, such as loss, AUC, hit-rate, MRR, and NDCG, because these metrics become the promotion input.
 
 ### Image proof of Kubeflow pipeline model promotion
 
-![Data & ML system](../../pngs/promote_model_log.png)
+![Kubeflow model promotion log](../../pngs/promote_model_log.png)
 
-**Figure: Kubeflow `promote-bst-model` log.** This proof shows the selected checkpoint being exported to the Triton serving layout, registered in MLflow, uploaded to the model store, and written into the promotion manifest. The `source` field should identify the model as coming from the DDP training stage.
+**Figure: Kubeflow `promote-bst-model` proof.** The log shows the selected DDP checkpoint being exported into the Triton model repository layout, registered with MLflow/model metadata, uploaded to the model store, and recorded in `promotion_manifest.json`. The manifest is the handoff artifact for model deployment.
+
+![Kubeflow KServe CD trigger log](../../pngs/cd_model_log.png)
+
+**Figure: Kubeflow `Trigger KServe CD` proof.** The log shows the post-promotion deployment handoff after training or retraining: the step reads `promotion_manifest.json`, checks the promotion metric against the configured threshold, triggers Jenkins job `RecSys-KServe-Model-CD`, waits for that job, and writes `kserve_cd_status.json`. This proves training does not stop at model promotion; it hands the promoted Triton model to the KServe deployment CD flow.
 
 Pipeline proof comments:
 
@@ -134,14 +138,14 @@ Pipeline proof comments:
 
 ### Image proof of Ray Dashboard DDP distributed training
 
-![ddp_training_ui_1](../../pngs/ddp_training_ui_1.png)
+![Ray Dashboard DDP job proof](../../pngs/ddp_training_ui_1.png)
 
-**Figure: Ray Dashboard DDP job proof.** This screenshot should show the distributed training Ray job, not the tuning job. The proof points are the DDP entrypoint `ray_distributed_train_bst.py`, the KubeRay job status, and Ray job logs that include `Started training worker group of size 2`, `DistributedDataParallel`, `world_size=2`, `rank=0`, `rank=1`, `distributed_sampler=True`, and `ddp_gradient_sync=True`.
+**Figure: Ray Dashboard DDP job proof.** This screenshot shows the distributed training Ray job rather than the tuning job. The proof points are the DDP entrypoint `ray_distributed_train_bst.py`, the Ray/KubeRay job status, and worker logs that mention the training worker group, `DistributedDataParallel`, `world_size=2`, separate ranks, `distributed_sampler=True`, and `ddp_gradient_sync=True`.
 
-![ddp_training_ui_2](../../pngs/ddp_training_ui_2.png)
+![Ray Dashboard DDP cluster proof](../../pngs/ddp_training_ui_2.png)
 
-**Figure: Ray Dashboard DDP cluster proof.** This screenshot should show the Ray cluster resources used by distributed training. The expected evidence is one Ray head plus two Ray workers, matching the DDP worker count and proving that training is not a single local process.
+**Figure: Ray Dashboard DDP cluster proof.** This screenshot shows the Ray cluster resources used by distributed training. The expected evidence is one Ray head plus two Ray worker nodes, matching the configured DDP worker count and proving that final training runs across multiple Ray workers instead of one local process.
 
-![ddp training k9s](../../pngs/ddp_training_k9s.png)
+![k9s Ray Tune and DDP pod proof](../../pngs/ddp_training_k9s.png)
 
-**Figure: k9s Ray Tune and DDP pod proof.** This screenshot shows the Kubernetes side of both Ray stages in the training flow. The `recsys-bst-ray-tune-...` pods are the hyperparameter tuning RayJob: a Ray head pod, Ray worker pod, and completed submitter pod. The `recsys-bst-ray-ddp-train-...` pods are the final distributed training RayJob: a Ray head pod, two Ray worker pods, and completed submitter pod. Seeing both groups proves that Kubeflow launched separate KubeRay jobs for tuning and DDP training, and that the DDP stage used multiple Ray workers instead of a single local process.
+**Figure: k9s Ray Tune and DDP pod proof.** This screenshot shows the Kubernetes pod-level proof for both Ray stages. The `recsys-bst-ray-tune-...` pods belong to the hyperparameter tuning RayJob, while the `recsys-bst-ray-ddp-train-...` pods belong to the final distributed training RayJob. The DDP proof is the separate Ray head, multiple Ray worker pods, and completed submitter pod for `recsys-bst-ray-ddp-train`, which confirms Kubeflow launched a real multi-worker KubeRay training job.

@@ -107,18 +107,19 @@ flinkTaskManager:
   resources:
     requests:
       cpu: 500m
-      memory: 2Gi
+      memory: 4Gi
     limits:
       cpu: "2"
-      memory: 5Gi
+      memory: 8Gi
 
 flink:
   checkpointStorageUri: s3a://recsys-lakehouse/flink-checkpoints
   istioInject: "false"
   taskSlots: "1"
-  taskManagerProcessMemory: "4096m"
-  taskManagerTaskHeapMemory: "2048m"
-  taskManagerManagedMemory: "256m"
+  taskManagerProcessMemory: "6144m"
+  taskManagerTaskHeapMemory: "3072m"
+  taskManagerManagedMemory: "512m"
+  taskManagerJvmOverheadMax: "2048m"
   javaOpens: "--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
 
 realtimeProducer:

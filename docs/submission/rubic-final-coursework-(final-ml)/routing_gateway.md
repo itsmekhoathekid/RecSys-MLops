@@ -23,6 +23,17 @@ public `A` records: `api.recsys-mlops.site`, `metrics.recsys-mlops.site`,
 the NGINX Ingress Controller LoadBalancer IP `34.21.171.234`, proving that the
 public domains enter the platform through the same gateway.
 
+
+![Domain setup for gateway services](../../pngs/nginx_setup_4svcs.png)
+
+**Figure: NGINX gateway, domain, and HTTPS setup for all 4 services.** The
+proof shows the four public routes are configured on NGINX Ingress with their
+production domains: `api.recsys-mlops.site`, `metrics.recsys-mlops.site`,
+`log.recsys-mlops.site`, and `traces.recsys-mlops.site`. Each route is mapped
+to its internal Kubernetes service and has HTTPS/TLS enabled, proving that the
+gateway is the single secured entrypoint for the Web API, metrics, logs, and
+traces services.
+
 ## Metric Service
 
 The metric service is Grafana behind the NGINX gateway. The production host is
@@ -174,4 +185,3 @@ return HTTP `429`.
 
 **Figure: Web API Pull Data HTTPS proof.** The FastAPI Swagger UI is loaded via
 `https://api.recsys-mlops.site/docs`.
-

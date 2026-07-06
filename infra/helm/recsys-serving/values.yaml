@@ -70,7 +70,7 @@ api:
     port: 80
     targetPort: 8080
   config:
-    tritonUrl: recsys-bst-triton-grpc.kserve-triton-inference.svc.cluster.local:9000
+    tritonUrl: recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
     tritonModelName: bst_ensemble
     featureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
     featureApiTimeoutSeconds: "20"
@@ -254,5 +254,5 @@ abTest:
   candidateWeightPercent: 0
   controlModelVersion: latest
   candidateModelVersion: ""
-  controlTritonUrl: recsys-bst-triton-grpc.kserve-triton-inference.svc.cluster.local:9000
-  candidateTritonUrl: recsys-bst-triton-candidate-grpc.kserve-triton-inference.svc.cluster.local:9000
+  controlTritonUrl: recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
+  candidateTritonUrl: recsys-bst-triton-candidate-predictor.kserve-triton-inference.svc.cluster.local:9000
