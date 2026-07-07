@@ -40,11 +40,13 @@
 #    pvc_mount_path: str [Default: '/workspace']
 #    pvc_name: str [Default: 'recsys-mlops-pvc']
 #    ray_best_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/best_result.json']
-#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3']
+#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1']
 #    ray_job_name: str [Default: 'recsys-bst-ray-tune']
 #    ray_namespace: str [Default: 'kubeflow']
+#    ray_node_selector: str [Default: 'recsys.ai/pool=ml-system']
 #    ray_output_dir: str [Default: '/workspace/recsys/data_platform/output/ml/ray']
 #    ray_status_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/rayjob_status.json']
+#    ray_toleration: str [Default: 'recsys.ai/workload:ml-system:NoSchedule']
 #    ray_train_job_name: str [Default: 'recsys-bst-ray-ddp-train']
 #    ray_train_status_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/rayjob_ddp_status.json']
 #    ray_ttl_seconds_after_finished: int [Default: 1800.0]
@@ -140,6 +142,8 @@ components:
           parameterType: NUMBER_INTEGER
         namespace:
           parameterType: STRING
+        node_selector:
+          parameterType: STRING
         num_epochs:
           parameterType: NUMBER_INTEGER
         num_workers:
@@ -157,6 +161,8 @@ components:
         split_dir:
           parameterType: STRING
         status_path:
+          parameterType: STRING
+        toleration:
           parameterType: STRING
         training_percent:
           parameterType: NUMBER_DOUBLE
@@ -194,6 +200,8 @@ components:
           parameterType: NUMBER_INTEGER
         namespace:
           parameterType: STRING
+        node_selector:
+          parameterType: STRING
         num_epochs:
           parameterType: NUMBER_INTEGER
         num_workers:
@@ -211,6 +219,8 @@ components:
         split_dir:
           parameterType: STRING
         status_path:
+          parameterType: STRING
+        toleration:
           parameterType: STRING
         training_percent:
           parameterType: NUMBER_DOUBLE
@@ -256,7 +266,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
     exec-prepare-training-data:
       container:
         args:
@@ -273,6 +283,7 @@ deploymentSpec:
         - '{{$.inputs.parameters[''feast_repo_path'']}}'
         - --feast-offline-root
         - '{{$.inputs.parameters[''feast_offline_root'']}}'
+        - --skip-feast-apply
         - --offline-feature-table
         - '{{$.inputs.parameters[''offline_feature_table'']}}'
         - --output-dir
@@ -295,7 +306,7 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - /opt/spark/bin/spark-submit
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:full-cicd-20260706-r1
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:full-cicd-20260707-r1
     exec-promote-bst-model:
       container:
         args:
@@ -312,7 +323,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/registry/model_promotion.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
     exec-submit-rayjob:
       container:
         args:
@@ -356,6 +367,10 @@ deploymentSpec:
         - '{{$.inputs.parameters[''num_workers'']}}'
         - --head-ray-num-cpus
         - '{{$.inputs.parameters[''head_ray_num_cpus'']}}'
+        - --node-selector
+        - '{{$.inputs.parameters[''node_selector'']}}'
+        - --toleration
+        - '{{$.inputs.parameters[''toleration'']}}'
         - --use-gpu-value
         - '{{$.inputs.parameters[''use_gpu'']}}'
         - --gpu-limit
@@ -369,7 +384,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
     exec-submit-rayjob-2:
       container:
         args:
@@ -413,6 +428,10 @@ deploymentSpec:
         - '{{$.inputs.parameters[''num_workers'']}}'
         - --head-ray-num-cpus
         - '{{$.inputs.parameters[''head_ray_num_cpus'']}}'
+        - --node-selector
+        - '{{$.inputs.parameters[''node_selector'']}}'
+        - --toleration
+        - '{{$.inputs.parameters[''toleration'']}}'
         - --use-gpu-value
         - '{{$.inputs.parameters[''use_gpu'']}}'
         - --gpu-limit
@@ -426,7 +445,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
     exec-trigger-kserve-model-cd:
       container:
         args:
@@ -446,7 +465,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.
@@ -557,6 +576,8 @@ root:
               componentInputParameter: max_trials
             namespace:
               componentInputParameter: ray_namespace
+            node_selector:
+              componentInputParameter: ray_node_selector
             num_epochs:
               componentInputParameter: num_epochs
             num_workers:
@@ -575,6 +596,8 @@ root:
               componentInputParameter: split_output_dir
             status_path:
               componentInputParameter: ray_status_path
+            toleration:
+              componentInputParameter: ray_toleration
             training_percent:
               componentInputParameter: training_percent
             ttl_seconds_after_finished:
@@ -619,6 +642,8 @@ root:
                 constant: 1.0
             namespace:
               componentInputParameter: ray_namespace
+            node_selector:
+              componentInputParameter: ray_node_selector
             num_epochs:
               componentInputParameter: distributed_num_epochs
             num_workers:
@@ -638,6 +663,8 @@ root:
               componentInputParameter: split_output_dir
             status_path:
               componentInputParameter: ray_train_status_path
+            toleration:
+              componentInputParameter: ray_toleration
             training_percent:
               componentInputParameter: distributed_training_percent
             ttl_seconds_after_finished:
@@ -827,7 +854,7 @@ root:
         isOptional: true
         parameterType: STRING
       ray_image:
-        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:airflow-drift-ddp-20260706-r3
+        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
         isOptional: true
         parameterType: STRING
       ray_job_name:
@@ -838,12 +865,20 @@ root:
         defaultValue: kubeflow
         isOptional: true
         parameterType: STRING
+      ray_node_selector:
+        defaultValue: recsys.ai/pool=ml-system
+        isOptional: true
+        parameterType: STRING
       ray_output_dir:
         defaultValue: /workspace/recsys/data_platform/output/ml/ray
         isOptional: true
         parameterType: STRING
       ray_status_path:
         defaultValue: /workspace/recsys/data_platform/output/ml/ray/rayjob_status.json
+        isOptional: true
+        parameterType: STRING
+      ray_toleration:
+        defaultValue: recsys.ai/workload:ml-system:NoSchedule
         isOptional: true
         parameterType: STRING
       ray_train_job_name:

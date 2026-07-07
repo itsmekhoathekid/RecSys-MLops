@@ -402,8 +402,10 @@ def test_pipeline_arg_parser_and_default_retrain_arguments():
 
     assert parsed["source_run_path"] == "s3a://lake/raw/run1"
     assert defaults["pipeline_run_id"] == "retrain-run-1"
-    assert defaults["ray_job_name"].startswith("recsys-bst-ray-retrain-run-1-")
+    assert defaults["ray_job_name"].startswith("recsys-bst-ray-tune-retrain-run-1-")
+    assert defaults["ray_train_job_name"].startswith("recsys-bst-ray-ddp-retrain-run-1-")
     assert len(defaults["ray_job_name"]) <= 47
+    assert len(defaults["ray_train_job_name"]) <= 47
     assert defaults["split_output_dir"].endswith("/retrain-run-1/ml/bst_split")
 
 
@@ -446,8 +448,10 @@ def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
 
         def create_run_from_pipeline_package(self, **kwargs):
             assert kwargs["pipeline_file"] == "pipeline.yaml"
-            assert kwargs["run_name"] == "recsys-retrain-run-2"
+            assert kwargs["run_name"] == "recsys-drift-retrain-run-2"
             assert kwargs["arguments"]["pipeline_run_id"] == "retrain-run-2"
+            assert kwargs["arguments"]["ray_job_name"].startswith("recsys-bst-ray-tune-retrain-run-2-")
+            assert kwargs["arguments"]["ray_train_job_name"].startswith("recsys-bst-ray-ddp-retrain-run-2-")
             assert kwargs["arguments"]["source_run_path"] == "s3a://lake/raw/run2"
             return Run()
 

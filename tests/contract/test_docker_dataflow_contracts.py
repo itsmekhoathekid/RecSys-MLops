@@ -401,6 +401,25 @@ def test_e2e_1k_whole_run_data_setup_configs_are_wired_into_helm_values():
     assert values["spark"]["executorMemoryOverhead"] == "128m"
 
 
+def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
+    values = yaml.safe_load((ROOT / "infra/helm/recsys-data-platform/values-gcp.yaml").read_text())
+    assert values["spark"]["driverMemory"] == "2g"
+    assert values["spark"]["driverMemoryOverhead"] == "768m"
+    assert values["spark"]["executorInstances"] == "1"
+    assert values["spark"]["executorMemory"] == "4g"
+    assert values["spark"]["executorMemoryOverhead"] == "1g"
+
+
+def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_merge():
+    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    assert "--reuse-values" in deploy_script
+    assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" in deploy_script
+    assert "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-768m}" in deploy_script
+    assert "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-4g}" in deploy_script
+    assert "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1g}" in deploy_script
+    assert "--values infra/helm/recsys-data-platform/values-gcp.yaml" not in deploy_script
+
+
 def test_security_chart_declares_vault_external_secrets_and_istio_policies():
     chart = ROOT / "infra/helm/recsys-security"
     rendered = (chart / "values.yaml").read_text() + "\n".join(

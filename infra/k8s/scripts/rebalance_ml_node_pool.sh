@@ -42,6 +42,30 @@ patch_deployment_ml() {
   }"
 }
 
+patch_gke_managed_deployment_ml() {
+  local deployment="$1"
+  local selector_path="${ML_NODE_SELECTOR_KEY//\//~1}"
+  kubectl patch deployment "${deployment}" -n kube-system --type json -p "[
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/nodeSelector/${selector_path}\", \"value\": \"${ML_NODE_SELECTOR_VALUE}\"}
+  ]"
+
+  local existing_toleration
+  existing_toleration="$(kubectl get deployment "${deployment}" -n kube-system -o "go-template={{range .spec.template.spec.tolerations}}{{if and (eq .key \"${ML_TOLERATION_KEY}\") (eq .value \"${ML_TOLERATION_VALUE}\")}}{{.key}}{{end}}{{end}}")"
+  if [[ -z "${existing_toleration}" ]]; then
+    kubectl patch deployment "${deployment}" -n kube-system --type json -p "[
+      {\"op\": \"add\", \"path\": \"/spec/template/spec/tolerations/-\", \"value\": {\"key\": \"${ML_TOLERATION_KEY}\", \"operator\": \"Equal\", \"value\": \"${ML_TOLERATION_VALUE}\", \"effect\": \"${ML_TOLERATION_EFFECT}\"}}
+    ]"
+  fi
+}
+
+patch_gke_managed_deployment_cpu() {
+  local deployment="$1"
+  local selector_path="${CPU_NODE_SELECTOR_KEY//\//~1}"
+  kubectl patch deployment "${deployment}" -n kube-system --type json -p "[
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/nodeSelector/${selector_path}\", \"value\": \"${CPU_NODE_SELECTOR_VALUE}\"}
+  ]"
+}
+
 patch_daemonset_ml() {
   local namespace="$1"
   local daemonset="$2"
@@ -200,18 +224,15 @@ kubectl set resources \
   deployment/keda-add-ons-http-controller-manager \
   deployment/keda-add-ons-http-external-scaler \
   deployment/keda-add-ons-http-interceptor \
+  -n keda \
+  --requests=cpu=25m,memory=20Mi \
+  --limits=cpu=500m,memory=64Mi
+kubectl set resources \
   deployment/keda-admission-webhooks \
   deployment/keda-operator \
   deployment/keda-operator-metrics-apiserver \
   -n keda \
   --requests=cpu=25m,memory=100Mi
-kubectl set resources \
-  deployment/keda-add-ons-http-controller-manager \
-  deployment/keda-add-ons-http-external-scaler \
-  deployment/keda-add-ons-http-interceptor \
-  -n keda \
-  --requests=cpu=25m,memory=20Mi \
-  --limits=cpu=500m,memory=64Mi
 for deployment in "${keda_deployments[@]}"; do
   patch_deployment_ml keda "${deployment}" true
 done
@@ -250,14 +271,14 @@ kube_system_ml_deployments=(
   metrics-server-v1.35.1
 )
 for deployment in "${kube_system_ml_deployments[@]}"; do
-  patch_deployment_ml kube-system "${deployment}" true
+  patch_gke_managed_deployment_ml "${deployment}"
 done
 
 # kube-dns is GKE-managed and currently requests enough CPU that moving all replicas
 # to the single ML node starves Ray/KFP scheduling. Keep it on the CPU pool until ML
 # node quota is raised or a second ML node is available. kube-system DaemonSets are
 # node agents and intentionally remain per-node.
-patch_deployment_cpu kube-system kube-dns
+patch_gke_managed_deployment_cpu kube-dns
 
 for deployment in "${kubeflow_deployments[@]}"; do
   rollout_deployment kubeflow "${deployment}"

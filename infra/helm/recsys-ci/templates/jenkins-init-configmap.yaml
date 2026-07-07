@@ -258,6 +258,46 @@ data:
     }
 
     def kserveModelCdXml = { jobName, description ->
+      def kserveModelCdPipelineScript = '''pipeline {
+  agent any
+
+  parameters {
+    string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Versioned or latest promotion manifest produced by Kubeflow model promotion.')
+    string(name: 'COMPONENT_DEPLOY_TIMEOUT', defaultValue: '600s', description: 'Timeout for Helm/KServe rolling update checks.')
+    string(name: 'MODEL_VERSION', defaultValue: '', description: 'Optional model version label passed by the Kubeflow trigger.')
+    string(name: 'METRIC_NAME', defaultValue: '', description: 'Optional promotion metric label passed by the Kubeflow trigger.')
+    string(name: 'METRIC_VALUE', defaultValue: '', description: 'Optional promotion metric value passed by the Kubeflow trigger.')
+    string(name: 'TRIGGER_SOURCE', defaultValue: 'manual', description: 'Caller that triggered this model deployment.')
+    string(name: 'RECSYS_CI_WORKSPACE', defaultValue: '/var/jenkins_home/recsys-workspace', description: 'Local Jenkins workspace containing jenkins/scripts and infra/helm/recsys-serving.')
+    string(name: 'IMAGE_TAG', defaultValue: 'manual', description: 'Fallback image tag used by shared deployment helpers when git metadata is unavailable.')
+  }
+
+  stages {
+    stage('KServe Model CD') {
+      steps {
+        echo "Deploying promoted model ${params.MODEL_VERSION ?: '(version from manifest)'} from ${params.PROMOTION_MANIFEST_URI}"
+        echo "Promotion gate: ${params.METRIC_NAME ?: 'metric'}=${params.METRIC_VALUE ?: 'n/a'} from ${params.TRIGGER_SOURCE}"
+        dir(params.RECSYS_CI_WORKSPACE) {
+          sh '''
+            set -euo pipefail
+            test -f jenkins/scripts/component_deploy.sh
+            test -d infra/helm/recsys-serving
+            PROMOTION_MANIFEST_URI="${PROMOTION_MANIFEST_URI}" \
+            COMPONENT_DEPLOY_TIMEOUT="${COMPONENT_DEPLOY_TIMEOUT}" \
+            IMAGE_TAG="${IMAGE_TAG}" \
+            bash jenkins/scripts/component_deploy.sh kserve_model_cd
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts allowEmptyArchive: true, artifacts: "${params.RECSYS_CI_WORKSPACE}/.model-cd/*"
+    }
+  }
+}'''
       return """<?xml version='1.1' encoding='UTF-8'?>
     <flow-definition plugin="workflow-job">
       <actions/>
@@ -300,28 +340,22 @@ data:
               <defaultValue>manual</defaultValue>
               <trim>true</trim>
             </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>RECSYS_CI_WORKSPACE</name>
+              <defaultValue>/var/jenkins_home/recsys-workspace</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>IMAGE_TAG</name>
+              <defaultValue>manual</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
           </parameterDefinitions>
         </hudson.model.ParametersDefinitionProperty>
       </properties>
-      <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
-        <scm class="hudson.plugins.git.GitSCM" plugin="git">
-          <configVersion>2</configVersion>
-          <userRemoteConfigs>
-            <hudson.plugins.git.UserRemoteConfig>
-              <url>${xmlEscape(repositoryUrl)}</url>
-            </hudson.plugins.git.UserRemoteConfig>
-          </userRemoteConfigs>
-          <branches>
-            <hudson.plugins.git.BranchSpec>
-              <name>${xmlEscape(branchSpec)}</name>
-            </hudson.plugins.git.BranchSpec>
-          </branches>
-          <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-          <submoduleCfg class="empty-list"/>
-          <extensions/>
-        </scm>
-        <scriptPath>jenkins/KServeModelCD.Jenkinsfile</scriptPath>
-        <lightweight>true</lightweight>
+      <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+        <script>${xmlEscape(kserveModelCdPipelineScript)}</script>
+        <sandbox>true</sandbox>
       </definition>
       <triggers/>
       <disabled>false</disabled>

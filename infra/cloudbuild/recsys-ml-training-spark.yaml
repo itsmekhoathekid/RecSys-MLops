@@ -1,0 +1,50 @@
+substitutions:
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _TAG: ml-training-spark
+  _SPARK_BASE_TAG: full-cicd-20260706-r1
+
+options:
+  diskSizeGb: 100
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 3600s
+
+steps:
+  - id: base-python
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/docker/Dockerfile.base-python
+      - -t
+      - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - .
+
+  - id: training
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - -f
+      - apps/ml-system/Dockerfile.training
+      - -t
+      - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+      - .
+
+  - id: mlops-spark
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_SPARK_BASE_IMAGE=${_IMAGE_REPO}/recsys-spark:${_SPARK_BASE_TAG}
+      - -f
+      - apps/ml-system/Dockerfile.spark
+      - -t
+      - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
+      - .
+
+images:
+  - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
+  - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
+  - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}

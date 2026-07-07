@@ -26,12 +26,12 @@ dataSetup:
 
 spark:
   driverMemory: 2g
-  driverMemoryOverhead: 512m
+  driverMemoryOverhead: 768m
   driverCores: "1"
   driverRequestCores: 100m
   executorInstances: "1"
-  executorMemory: 2g
-  executorMemoryOverhead: 512m
+  executorMemory: 4g
+  executorMemoryOverhead: 1g
   executorCores: "1"
   executorRequestCores: 100m
   sqlShufflePartitions: "16"

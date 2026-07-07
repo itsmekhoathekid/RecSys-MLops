@@ -118,17 +118,20 @@ def parse_node_selector(value: str) -> dict[str, str]:
 def parse_toleration(value: str) -> list[dict[str, str]]:
     if not value:
         return []
-    key, raw_value, effect = (value.split(":", 2) + ["", ""])[:3]
-    if not key or not raw_value:
-        raise ValueError(f"Invalid toleration value: {value}")
-    return [
-        {
-            "key": key,
-            "operator": "Equal",
-            "value": raw_value,
-            "effect": effect or "NoSchedule",
-        }
-    ]
+    tolerations: list[dict[str, str]] = []
+    for item in value.split(","):
+        if not item.strip():
+            continue
+        key, raw_value, effect = (item.split(":", 2) + ["", ""])[:3]
+        if not key:
+            raise ValueError(f"Invalid toleration value: {item}")
+        toleration = {"key": key, "effect": effect or "NoSchedule"}
+        if raw_value:
+            toleration.update({"operator": "Equal", "value": raw_value})
+        else:
+            toleration["operator"] = "Exists"
+        tolerations.append(toleration)
+    return tolerations
 
 
 def build_ray_args(args: argparse.Namespace) -> list[str]:

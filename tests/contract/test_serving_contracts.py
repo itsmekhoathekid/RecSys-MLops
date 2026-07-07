@@ -619,13 +619,13 @@ def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
 
 def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
     seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(encoding="utf-8")
-    jenkinsfile = (ROOT / "jenkins/KServeModelCD.Jenkinsfile").read_text(encoding="utf-8")
 
     assert "RecSys-KServe-Model-CD" in seed
     assert "06A KServe Model CD" in seed
-    assert "jenkins/KServeModelCD.Jenkinsfile" in seed
-    assert "PROMOTION_MANIFEST_URI" in jenkinsfile
-    assert "component_deploy.sh kserve_model_cd" in jenkinsfile
-    assert "stage('Python Env')" not in jenkinsfile
-    assert "stage('Checkout')" not in jenkinsfile
-    assert "checkout scm" not in jenkinsfile
+    assert "CpsFlowDefinition" in seed
+    assert "PROMOTION_MANIFEST_URI" in seed
+    assert "RECSYS_CI_WORKSPACE" in seed
+    assert "component_deploy.sh kserve_model_cd" in seed
+    assert "stage('Python Env')" not in seed
+    assert "stage('Checkout')" not in seed
+    assert "checkout scm" not in seed

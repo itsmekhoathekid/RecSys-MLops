@@ -244,6 +244,12 @@ deploy_data_platform() {
     --wait \
     --wait-for-jobs \
     --set "images.pullPolicy=Always" \
+    --set "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" \
+    --set "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-768m}" \
+    --set "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-4g}" \
+    --set "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1g}" \
+    --set "spark.executorInstances=${SPARK_K8S_EXECUTOR_INSTANCES:-1}" \
+    --set "spark.sqlShufflePartitions=${SPARK_SQL_SHUFFLE_PARTITIONS:-16}" \
     --set "sourcePostgres.istioInject=false" \
     --set "airflowPostgres.istioInject=false" \
     --set "featurePostgres.istioInject=false" \
@@ -287,6 +293,7 @@ deploy_api() {
 }
 
 deploy_mlflow() {
+  kubectl delete job/minio-create-mlflow-bucket -n "${namespace_mlops}" --ignore-not-found=true
   helm upgrade --install recsys-mlflow infra/helm/mlflow-stack \
     --namespace "${namespace_mlops}" \
     --create-namespace \

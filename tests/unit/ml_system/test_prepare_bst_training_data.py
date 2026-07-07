@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import sys
 
 import pandas as pd
+import pytest
 
 from lineage.dataset_versioning import (
     _hudi_identifier_suffix,
@@ -16,6 +17,9 @@ from cli.prepare_bst_training_data import (
     DEFAULT_FEATURE_SERVICE_NAME,
     DEFAULT_OFFLINE_FEATURE_TABLE,
     FEAST_FEATURE_REFS,
+    MODEL_COLUMNS,
+    SplitService,
+    TrainingDataService,
     _canonical_entity_frame,
     build_bst_training_table_from_feast,
     prepare_bst_jsonl_splits,
@@ -84,6 +88,44 @@ def test_canonical_entity_frame_resets_non_contiguous_index():
         {"row_id": 0, "user_id": 1, "product_id": 10, "label": 0},
         {"row_id": 1, "user_id": 2, "product_id": 20, "label": 1},
     ]
+
+
+def test_training_data_service_validates_canonical_schema():
+    service = TrainingDataService()
+    service.validate_schema(pd.DataFrame([{column: 0 for column in MODEL_COLUMNS}]))
+
+    with pytest.raises(ValueError, match="missing columns"):
+        service.validate_schema(pd.DataFrame([{"user_id": 1}]))
+
+
+def test_split_service_applies_temporal_boundaries_and_normalization():
+    frame = pd.DataFrame(
+        [
+            {
+                "user_id": index,
+                "hist_item_id": [1, 2, 3],
+                "hist_event_type": [1, 2, 3],
+                "hist_category": [1, 2, 3],
+                "hist_brand": [1, 2, 3],
+                "hist_price_bucket": [1, 2, 3],
+                "hist_time": [1, 2, 3],
+                "target_item_id": 10 + index,
+                "target_category": 1,
+                "target_brand": 1,
+                "target_price_bucket": 1,
+                "event_time": 100 + index,
+                "label": index % 2,
+            }
+            for index in range(5)
+        ]
+    )
+    service = SplitService(train_ratio=0.6, val_ratio=0.2, max_history_len=2)
+
+    rows = [service.normalize_row(row) for _, row in service.sort_by_prediction_time(frame).iterrows()]
+    splits = service.split_by_time(rows)
+
+    assert [len(splits[name]) for name in ("train", "val", "test")] == [3, 1, 1]
+    assert rows[0]["hist_item_id"] == [2, 3]
 
 
 def test_build_bst_training_table_from_feast_maps_historical_features(monkeypatch, tmp_path):

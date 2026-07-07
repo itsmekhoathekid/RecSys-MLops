@@ -8,7 +8,7 @@ This proof covers the final-coursework rubric item **Repository Design: clean co
 |---|---|
 | Clean repo | Source code is split by bounded context: API serving, data platform, ML system, infrastructure, tests, and submission docs. |
 | Clean code | Runtime logic is decomposed into schema, routing, feature access, ranking, observability, orchestration, model training, and promotion modules. |
-| Design pattern usage | The codebase uses Strategy/Router, Adapter/Gateway, Protocol/Dependency Injection, Template Method, Composite, Builder/Manifest, and Pipeline/Chain patterns. |
+| Design pattern usage | The codebase uses Strategy/Router, Adapter/Gateway, Protocol/Dependency Injection, Service Layer/Facade, Template Method/Lifecycle Service, Composite, Builder/Manifest, and Pipeline/Chain patterns. |
 | Proof to capture | Screenshots of folder layout, tests, and code snippets where the design patterns are implemented. |
 
 ## Clean Repository Layout
@@ -82,21 +82,20 @@ The code keeps each runtime responsibility in a focused module:
 | Feature access | [apps/api-serving/src/online_features.py line 82](../../../apps/api-serving/src/online_features.py#L82) | Feast/Redis online feature access behind one client. |
 | Ranking orchestration | [apps/api-serving/src/ranking.py line 122](../../../apps/api-serving/src/ranking.py#L122) | Recommendation flow: pull features, route ranker, build payload, format response. |
 | Triton gateway | [apps/api-serving/src/triton.py line 18](../../../apps/api-serving/src/triton.py#L18) | Triton gRPC inference client. |
-| Training loop | [apps/ml-system/src/models/trainer.py line 58](../../../apps/ml-system/src/models/trainer.py#L58) | BST training/evaluation lifecycle. |
+| Training data service | [apps/ml-system/src/cli/prepare_bst_training_data.py line 391](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L391) | Feast/offline-store training table loading, schema validation, and canonical BST dataframe construction. |
+| Temporal split service | [apps/ml-system/src/cli/prepare_bst_training_data.py line 574](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L574) | Time-ordered train/validation/test split creation, JSONL writing, and dataset-version metadata. |
+| Ray Tune training loop | [apps/ml-system/src/models/trainer.py line 58](../../../apps/ml-system/src/models/trainer.py#L58) | Single-node BST trial training/evaluation lifecycle used by Ray Tune. |
+| Ray DDP lifecycle | [apps/ml-system/src/training/ray_distributed_train_bst.py line 104](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L104) | Distributed BST training lifecycle for Ray Train DDP workers. |
 | Model promotion | [apps/ml-system/src/registry/model_promotion.py line 559](../../../apps/ml-system/src/registry/model_promotion.py#L559) | Export, register, upload, and manifest generation. |
 | Data generation pipeline | [apps/data-platform/data-generator/src/pipeline.py line 21](../../../apps/data-platform/data-generator/src/pipeline.py#L21) | Simulation, challenge injection, validation, sink writing, manifest output. |
-
-### Image Proof
-
-![Repository clean-code module proof](../../pngs/repo_clean_code_modules.png)
-
-**Figure: Clean-code module proof.** Capture the IDE/file explorer or code search view showing the separated API modules: `api_schemas.py`, `ab_testing.py`, `online_features.py`, `ranking.py`, `triton.py`, and `observability.py`. This proves the serving service is not a single monolithic file.
 
 ## Design Patterns In Code
 
 ### Pattern 1: Strategy / Router For A/B Inference
 
 **Intent:** choose one of several interchangeable model-serving strategies at runtime without changing the recommendation flow.
+
+**External reference:** [Strategy pattern](https://en.wikipedia.org/wiki/Strategy_pattern).
 
 **Implementation:** `TritonABRouter` owns the control/candidate route selection. `recommend()` only asks `select_triton_route()` for the route, then calls the selected ranker. The routing decision is isolated from payload building and response formatting.
 
@@ -115,6 +114,8 @@ The code keeps each runtime responsibility in a focused module:
 
 **Intent:** hide storage-specific details behind a small domain client so API code does not depend directly on Redis/Feast calls everywhere.
 
+**External reference:** [Adapter pattern](https://en.wikipedia.org/wiki/Adapter_pattern).
+
 **Implementation:** `FeatureClient` adapts Feast online retrieval and Redis configuration into domain methods such as `user_sequence()` and `item_features_batch()`. The ranking flow depends on feature operations, not low-level storage commands.
 
 | Code reference | What to point out in the screenshot |
@@ -132,6 +133,8 @@ The code keeps each runtime responsibility in a focused module:
 
 **Intent:** allow production Triton ranker and test/deterministic rankers to share the same interface.
 
+**External references:** [Python Protocol / structural subtyping](https://docs.python.org/3/library/typing.html#typing.Protocol), [PEP 544: Protocols](https://peps.python.org/pep-0544/), and [Dependency Injection](https://en.wikipedia.org/wiki/Dependency_injection).
+
 **Implementation:** `RankerProtocol` defines the expected `score()` method. `TritonRanker` implements that protocol for production, and tests can inject fake rankers without starting Triton.
 
 | Code reference | What to point out in the screenshot |
@@ -145,11 +148,36 @@ The code keeps each runtime responsibility in a focused module:
 
 **Figure: Protocol/Dependency Injection design pattern proof.** Capture `RankerProtocol`, `TritonRanker`, and a fake/deterministic test ranker. This proves the ranking flow is testable because the model-serving dependency can be replaced.
 
-### Pattern 4: Template Method Style Training Loop
+### Pattern 4: Service Layer / Facade For ML Training Data Preparation
+
+**Intent:** keep feature-source access, schema validation, temporal splitting, and dataset-version writing behind focused service boundaries.
+
+**External reference:** [Facade pattern](https://en.wikipedia.org/wiki/Facade_pattern).
+
+**Implementation:** `TrainingDataService` hides Feast and offline feature store loading behind one training-table API. `SplitService` hides temporal sorting, row normalization, JSONL split writing, and dataset metadata writing. The KFP `prepare-training-data` component calls the data-prep flow, but the flow delegates source-specific IO and split policy to these classes.
+
+| Code reference | What to point out in the screenshot |
+|---|---|
+| [apps/ml-system/src/cli/prepare_bst_training_data.py line 391](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L391) | `TrainingDataService` class with `read_training_table()`, Feast loading, offline-store loading, schema validation, and canonical frame building. |
+| [apps/ml-system/src/cli/prepare_bst_training_data.py line 574](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L574) | `SplitService` class with temporal sort, row normalization, split boundaries, JSONL output, and dataset metadata. |
+| [apps/ml-system/src/cli/prepare_bst_training_data.py line 647](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L647) | `prepare_bst_jsonl_splits()` wires both services into the actual pipeline flow. |
+| [tests/unit/ml_system/test_prepare_bst_training_data.py line 1](../../../tests/unit/ml_system/test_prepare_bst_training_data.py#L1) | Unit tests prove the service boundary validates schema and creates temporal splits. |
+
+![Training data service facade proof](../../pngs/repo_design_pattern_training_data_service.png)
+
+**Figure: TrainingDataService facade proof.** Capture `TrainingDataService` and the call site in `prepare_bst_jsonl_splits()`. This proves the ML pipeline no longer spreads Feast/offline-store loading and schema validation across unrelated helper code.
+
+![Temporal split service proof](../../pngs/repo_design_pattern_split_service.png)
+
+**Figure: SplitService temporal split proof.** Capture `SplitService.split_by_time()`, `write_jsonl_splits()`, and `write_dataset_metadata()`. This proves the no-leakage temporal split and dataset-version metadata are a named service boundary.
+
+### Pattern 5: Template Method / Lifecycle Service For BST Training
 
 **Intent:** keep training and evaluation flow consistent while reusing shared batch movement, forward pass, and metric computation.
 
-**Implementation:** `Trainer.train()` and `Trainer.evaluate()` follow the same high-level algorithm: move batch to device, call `_forward_batch()`, compute loss/probabilities, collect group keys, then call `_compute_metrics()`. The differences are the training-only optimizer step and evaluation-only `torch.no_grad()`.
+**External reference:** [Template method pattern](https://en.wikipedia.org/wiki/Template_method_pattern).
+
+**Implementation:** Ray Tune still uses the single-node `Trainer` path through `run_training()`, while the final distributed proof uses `ModelLifecycleService` inside `train_loop_per_worker()`. Both paths keep the same high-level lifecycle shape: create dataset/loader, move batches to the device, call the BST forward pass, compute loss and ranking metrics, save the best checkpoint, and publish metrics. `ModelLifecycleService` adds the distributed concerns: `DistributedSampler`, DDP metric reduction, rank-0 checkpointing, metric broadcast, Ray Train reporting, and best-result writing.
 
 | Code reference | What to point out in the screenshot |
 |---|---|
@@ -158,14 +186,24 @@ The code keeps each runtime responsibility in a focused module:
 | [apps/ml-system/src/models/trainer.py line 129](../../../apps/ml-system/src/models/trainer.py#L129) | `train()` algorithm skeleton. |
 | [apps/ml-system/src/models/trainer.py line 175](../../../apps/ml-system/src/models/trainer.py#L175) | `evaluate()` algorithm skeleton. |
 | [apps/ml-system/src/models/trainer.py line 217](../../../apps/ml-system/src/models/trainer.py#L217) | `_compute_metrics()` shared metric step. |
+| [apps/ml-system/src/training/ray_tune_train_bst.py line 207](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L207) | `run_trial()` uses `run_training()` for Ray Tune trials and reports the best trial metrics. |
+| [apps/ml-system/src/training/ray_distributed_train_bst.py line 104](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L104) | `ModelLifecycleService` groups DDP dataset, loader, train, eval, checkpoint, report, and best-result lifecycle methods. |
+| [apps/ml-system/src/training/ray_distributed_train_bst.py line 315](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L315) | `train_loop_per_worker()` instantiates `ModelLifecycleService` for each Ray Train worker. |
+| [apps/ml-system/src/training/ray_distributed_train_bst.py line 415](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L415) | `TorchTrainer` uses `train_loop_per_worker`, so the DDP run goes through the lifecycle service. |
 
 ![Template method training loop proof](../../pngs/repo_design_pattern_template_trainer.png)
 
-**Figure: Template Method style training proof.** Capture `train()`, `evaluate()`, and the helper methods they share. This proves training/evaluation are not duplicated as unrelated scripts; they use a common lifecycle and reusable steps.
+**Figure: Ray Tune single-node training lifecycle proof.** Capture `Trainer.train()`, `Trainer.evaluate()`, and `ray_tune_train_bst.run_trial()`. This proves Ray Tune trials use a consistent training/evaluation lifecycle and report comparable metrics.
 
-### Pattern 5: Composite Neural Network Module
+![DDP model lifecycle service proof](../../pngs/repo_design_pattern_model_lifecycle_service.png)
+
+**Figure: DDP ModelLifecycleService proof.** Capture `ModelLifecycleService`, `train_loop_per_worker()`, and the `TorchTrainer(train_loop_per_worker=...)` call. This proves final distributed training uses the lifecycle service rather than ad hoc worker-loop code.
+
+### Pattern 6: Composite Neural Network Module
 
 **Intent:** build a complex BST recommender by composing smaller PyTorch modules.
+
+**External reference:** [Composite pattern](https://en.wikipedia.org/wiki/Composite_pattern).
 
 **Implementation:** `BST` combines embedding layers, `LightTransformerLayer`, positional encoding, MLP layers, and linear projections. Each piece remains a testable `nn.Module` or standard PyTorch layer.
 
@@ -177,13 +215,17 @@ The code keeps each runtime responsibility in a focused module:
 | [apps/ml-system/src/models/model.py line 924](../../../apps/ml-system/src/models/model.py#L924) | Transformer layer composition. |
 | [apps/ml-system/src/models/model.py line 938](../../../apps/ml-system/src/models/model.py#L938) | MLP composition with `nn.Sequential`. |
 
-![Composite model design pattern proof](../../pngs/repo_design_pattern_composite_model.png)
+![Composite model design pattern proof](../../pngs/small_component_class.png)
+
+![Composite model design pattern proof](../../pngs/low_level_bst_ranker_model.png)
 
 **Figure: Composite neural module proof.** Capture the `BST.__init__()` block showing embeddings, transformer layer, positional encoding, and MLP. This proves the model is composed from smaller modules instead of one unstructured forward implementation.
 
-### Pattern 6: Builder / Manifest Generator For Model Promotion
+### Pattern 7: Builder / Manifest Generator For Model Promotion
 
 **Intent:** build a deployable model artifact in a repeatable order and emit a manifest that downstream CD can consume.
+
+**External reference:** [Builder pattern](https://en.wikipedia.org/wiki/Builder_pattern).
 
 **Implementation:** `promote_best_model()` orchestrates a deterministic sequence: read best Ray result, build Triton repository, choose versioned paths, build manifest, register MLflow model version, write/upload artifacts, and optionally promote `latest`.
 
@@ -198,9 +240,11 @@ The code keeps each runtime responsibility in a focused module:
 
 **Figure: Builder/Manifest design pattern proof.** Capture `promote_best_model()`, `build_triton_repository()`, and `build_manifest()`. This proves deployment artifacts are assembled through a controlled builder flow, not by manual copy/paste steps.
 
-### Pattern 7: Pipeline / Chain For Data Generation
+### Pattern 8: Pipeline / Chain For Data Generation
 
 **Intent:** make synthetic data generation a predictable sequence of independent processing stages.
+
+**External reference:** [Pipeline / pipes-and-filters pattern](https://en.wikipedia.org/wiki/Pipeline_(software)).
 
 **Implementation:** `HistoricalDataPipeline.run()` executes a clear chain: simulate data, inject challenges, validate invariants, write parquet tables, optionally write drift artifacts, then write a data-quality report and manifest.
 
@@ -217,37 +261,4 @@ The code keeps each runtime responsibility in a focused module:
 
 **Figure: Pipeline/Chain design pattern proof.** Capture `HistoricalDataPipeline.run()`. This proves the generator is structured as a sequence of explicit stages, which makes data-quality failures and drift artifact generation easier to reason about.
 
-## Tests Showing Repository Boundaries
 
-The tests are split by confidence level, matching the repository boundaries.
-
-```bash
-uv run pytest tests/unit/api_serving tests/unit/ml_system tests/unit/data_generator
-uv run pytest tests/contract
-uv run pytest tests/e2e/test_live_serving_flow.py
-```
-
-`pyproject.toml` configures import paths for local packages, so tests can run from the repository root without copying source files into test folders.
-
-### Image Proof
-
-![Repository tests proof](../../pngs/tests_proof.png)
-
-**Figure: Repository boundary tests proof.** This screenshot should show unit and contract tests passing from the repository root. It proves the code is organized into importable modules with testable boundaries, not scripts that only work from one local directory.
-
-## Screenshot Checklist
-
-Use these screenshots to satisfy the rubric item **"Capture màn hình thể hiện Design Pattern đã được sử dụng trong code"**:
-
-| Screenshot file | What to capture | Why it proves the rubric |
-|---|---|---|
-| `docs/pngs/clean_repo_evidence.png` | Folder tree from `find apps infra/helm infra/terraform/gcp jenkins tests docs/submission ...` | Shows clean repo/service boundaries. |
-| `docs/pngs/repo_clean_code_modules.png` | IDE/code search showing API serving modules split by responsibility | Shows clean code decomposition. |
-| `docs/pngs/repo_design_pattern_strategy_router.png` | `TritonABRouter` + `recommend()` route call | Shows Strategy/Router pattern. |
-| `docs/pngs/repo_design_pattern_feature_adapter.png` | `FeatureClient` methods | Shows Adapter/Gateway pattern. |
-| `docs/pngs/repo_design_pattern_ranker_protocol.png` | `RankerProtocol`, `TritonRanker`, fake test ranker | Shows Protocol + Dependency Injection. |
-| `docs/pngs/repo_design_pattern_template_trainer.png` | `Trainer.train()`, `Trainer.evaluate()`, helper methods | Shows Template Method style lifecycle. |
-| `docs/pngs/repo_design_pattern_composite_model.png` | `BST.__init__()` composed modules | Shows Composite pattern. |
-| `docs/pngs/repo_design_pattern_builder_manifest.png` | model promotion builder/manifest functions | Shows Builder/Manifest pattern. |
-| `docs/pngs/repo_design_pattern_data_pipeline.png` | `HistoricalDataPipeline.run()` | Shows Pipeline/Chain pattern. |
-| `docs/pngs/tests_proof.png` | Unit/contract test run | Shows code boundaries are testable. |

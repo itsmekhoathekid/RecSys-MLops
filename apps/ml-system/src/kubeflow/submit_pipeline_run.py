@@ -70,6 +70,21 @@ def load_arguments(path: str) -> dict[str, Any]:
     return payload
 
 
+def parse_argument_overrides(items: list[str]) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+    for item in items:
+        key, sep, raw_value = item.partition("=")
+        if not sep or not key.strip():
+            raise ValueError(f"--argument must be in key=value form, got: {item!r}")
+        value: Any
+        try:
+            value = json.loads(raw_value)
+        except json.JSONDecodeError:
+            value = raw_value
+        overrides[key.strip()] = value
+    return overrides
+
+
 def create_run(client: Any, package_path: str, experiment_name: str, run_name: str, arguments: dict[str, Any]) -> Any:
     experiment = client.create_experiment(name=experiment_name)
     experiment_id = _attr_or_key(experiment, "experiment_id") or _attr_or_key(experiment, "id")
@@ -120,6 +135,7 @@ def main() -> int:
     parser.add_argument("--experiment-name", default="recsys-bst-ranking")
     parser.add_argument("--run-name", default=f"recsys-bst-e2e-{int(time.time())}")
     parser.add_argument("--arguments-json", default="")
+    parser.add_argument("--argument", action="append", default=[], help="Pipeline argument override as key=value")
     parser.add_argument("--timeout-seconds", type=int, default=7200)
     parser.add_argument("--poll-seconds", type=int, default=30)
     parser.add_argument("--no-wait", action="store_true")
@@ -133,7 +149,7 @@ def main() -> int:
         package_path=args.package_path,
         experiment_name=args.experiment_name,
         run_name=args.run_name,
-        arguments=load_arguments(args.arguments_json),
+        arguments={**load_arguments(args.arguments_json), **parse_argument_overrides(args.argument)},
     )
     run_id = extract_run_id(run)
     result = {"run_id": run_id, "run_name": args.run_name}

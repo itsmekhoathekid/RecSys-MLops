@@ -388,6 +388,71 @@ def build_bst_training_table_from_offline_feature_store(
         spark.stop()
 
 
+class TrainingDataService:
+    def __init__(
+        self,
+        *,
+        feast_repo_path: str | Path = "apps/data-platform/feature-store/feature_repo",
+        feast_offline_root: str | None = None,
+        apply_feast_repo: bool = True,
+        feature_service_name: str = DEFAULT_FEATURE_SERVICE_NAME,
+        offline_feature_table: str = DEFAULT_OFFLINE_FEATURE_TABLE,
+        max_history_len: int = 50,
+        iceberg_catalog_name: str = DEFAULT_CATALOG_NAME,
+        iceberg_warehouse: str = DEFAULT_WAREHOUSE,
+    ) -> None:
+        self.feast_repo_path = feast_repo_path
+        self.feast_offline_root = feast_offline_root
+        self.apply_feast_repo = apply_feast_repo
+        self.feature_service_name = feature_service_name
+        self.offline_feature_table = offline_feature_table
+        self.max_history_len = max_history_len
+        self.iceberg_catalog_name = iceberg_catalog_name
+        self.iceberg_warehouse = iceberg_warehouse
+
+    def read_training_table(self, source: str, *, entity_input_path: str) -> pd.DataFrame:
+        if source == "offline_feature_store":
+            frame = self.read_from_offline_feature_store(self.offline_feature_table)
+        elif source == "feast":
+            frame = self.read_from_feast(entity_input_path)
+        else:
+            raise ValueError(f"Unsupported feature_source: {source}")
+        self.validate_schema(frame)
+        return frame
+
+    def read_from_feast(self, entity_input_path: str) -> pd.DataFrame:
+        return build_bst_training_table_from_feast(
+            entity_input_path=entity_input_path,
+            feast_repo_path=self.feast_repo_path,
+            max_history_len=self.max_history_len,
+            feast_offline_root=self.feast_offline_root,
+            apply_feast_repo=self.apply_feast_repo,
+            feature_service_name=self.feature_service_name,
+            iceberg_catalog_name=self.iceberg_catalog_name,
+            iceberg_warehouse=self.iceberg_warehouse,
+        )
+
+    def read_from_offline_feature_store(self, table_name: str) -> pd.DataFrame:
+        return build_bst_training_table_from_offline_feature_store(
+            table_name,
+            iceberg_catalog_name=self.iceberg_catalog_name,
+            iceberg_warehouse=self.iceberg_warehouse,
+        )
+
+    def validate_schema(self, df: pd.DataFrame) -> None:
+        missing = [column for column in MODEL_COLUMNS if column not in df.columns]
+        if missing:
+            raise ValueError(f"BST training dataframe is missing columns: {missing}")
+
+    def canonicalize_entities(self, df: pd.DataFrame) -> pd.DataFrame:
+        return _canonical_entity_frame(df)
+
+    def build_bst_frame(self, entities: pd.DataFrame, historical: pd.DataFrame) -> pd.DataFrame:
+        frame = _feast_historical_to_bst_frame(entities, historical, max_history_len=self.max_history_len)
+        self.validate_schema(frame)
+        return frame
+
+
 def _normalize_row(row: pd.Series, max_history_len: int) -> dict[str, Any]:
     payload = {column: row.get(column) for column in MODEL_COLUMNS}
     payload["impression_id"] = str(row.get("impression_id", ""))
@@ -506,6 +571,79 @@ def _dataset_metadata(
     }
 
 
+class SplitService:
+    def __init__(self, *, train_ratio: float = 0.8, val_ratio: float = 0.1, max_history_len: int = 50) -> None:
+        self.train_ratio = train_ratio
+        self.val_ratio = val_ratio
+        self.max_history_len = max_history_len
+
+    def sort_by_prediction_time(self, df: pd.DataFrame) -> pd.DataFrame:
+        if "prediction_timestamp" in df.columns:
+            return df.sort_values("prediction_timestamp")
+        return df.sort_values("event_time")
+
+    def normalize_row(self, row: pd.Series, max_history_len: int | None = None) -> dict[str, Any]:
+        return _normalize_row(row, max_history_len=max_history_len or self.max_history_len)
+
+    def get_split_boundaries(
+        self,
+        row_count: int,
+        train_ratio: float | None = None,
+        val_ratio: float | None = None,
+    ) -> dict[str, int]:
+        train_end = int(row_count * (self.train_ratio if train_ratio is None else train_ratio))
+        val_end = train_end + int(row_count * (self.val_ratio if val_ratio is None else val_ratio))
+        return {"train_end": train_end, "val_end": val_end}
+
+    def split_by_time(self, rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+        boundaries = self.get_split_boundaries(len(rows))
+        train_end = boundaries["train_end"]
+        val_end = boundaries["val_end"]
+        return {
+            "train": rows[:train_end],
+            "val": rows[train_end:val_end],
+            "test": rows[val_end:],
+        }
+
+    def write_jsonl_splits(self, splits: dict[str, list[dict[str, Any]]], output_dir: Path) -> None:
+        for split, split_rows in splits.items():
+            _write_jsonl(split_rows, output_dir / f"{split}.jsonl")
+
+    def write_dataset_metadata(
+        self,
+        *,
+        output_dir: Path,
+        dataset_run_id: str,
+        entity_input_path: str,
+        feast_repo_path: str | Path,
+        feast_offline_root: str | None,
+        feature_service_name: str,
+        processing_code: str,
+        splits: dict[str, list[dict[str, Any]]],
+        hudi: dict[str, Any],
+        feature_source: str,
+        offline_feature_table: str,
+        dataset_metadata_path: str | Path | None,
+    ) -> dict[str, Any]:
+        dataset_metadata = _dataset_metadata(
+            output_dir=output_dir,
+            dataset_run_id=dataset_run_id,
+            entity_input_path=entity_input_path,
+            feast_repo_path=feast_repo_path,
+            feast_offline_root=feast_offline_root,
+            feature_service_name=feature_service_name,
+            processing_code=processing_code,
+            split_counts={split: len(split_rows) for split, split_rows in splits.items()},
+            hudi=hudi,
+            max_history_len=self.max_history_len,
+            feature_source=feature_source,
+            offline_feature_table=offline_feature_table,
+        )
+        dataset_meta_target = Path(dataset_metadata_path) if dataset_metadata_path else output_dir / "dataset_version_meta.json"
+        _write_json(dataset_meta_target, dataset_metadata)
+        return dataset_metadata
+
+
 def prepare_bst_jsonl_splits(
     entity_input_path: str,
     output_dir: str | Path,
@@ -528,44 +666,27 @@ def prepare_bst_jsonl_splits(
     dataset_metadata_path: str | Path | None = None,
     processing_code_version: str | None = None,
 ) -> dict[str, Any]:
-    if feature_source == "offline_feature_store":
-        frame = build_bst_training_table_from_offline_feature_store(
-            offline_feature_table,
-            iceberg_catalog_name=iceberg_catalog_name,
-            iceberg_warehouse=iceberg_warehouse,
-        )
-    elif feature_source == "feast":
-        frame = build_bst_training_table_from_feast(
-            entity_input_path=entity_input_path,
-            feast_repo_path=feast_repo_path,
-            max_history_len=max_history_len,
-            feast_offline_root=feast_offline_root,
-            apply_feast_repo=apply_feast_repo,
-            feature_service_name=feature_service_name,
-            iceberg_catalog_name=iceberg_catalog_name,
-            iceberg_warehouse=iceberg_warehouse,
-        )
-    else:
-        raise ValueError(f"Unsupported feature_source: {feature_source}")
+    training_data = TrainingDataService(
+        feast_repo_path=feast_repo_path,
+        feast_offline_root=feast_offline_root,
+        apply_feast_repo=apply_feast_repo,
+        feature_service_name=feature_service_name,
+        offline_feature_table=offline_feature_table,
+        max_history_len=max_history_len,
+        iceberg_catalog_name=iceberg_catalog_name,
+        iceberg_warehouse=iceberg_warehouse,
+    )
+    split_service = SplitService(train_ratio=train_ratio, val_ratio=val_ratio, max_history_len=max_history_len)
+    frame = training_data.read_training_table(feature_source, entity_input_path=entity_input_path)
     if frame.empty:
         raise ValueError(f"No rows found in BST training data from {entity_input_path}")
 
-    if "prediction_timestamp" in frame.columns:
-        frame = frame.sort_values("prediction_timestamp")
-    else:
-        frame = frame.sort_values("event_time")
-
-    rows = [_normalize_row(row, max_history_len=max_history_len) for _, row in frame.iterrows()]
-    train_end = int(len(rows) * train_ratio)
-    val_end = train_end + int(len(rows) * val_ratio)
+    frame = split_service.sort_by_prediction_time(frame)
+    rows = [split_service.normalize_row(row) for _, row in frame.iterrows()]
 
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    splits = {
-        "train": rows[:train_end],
-        "val": rows[train_end:val_end],
-        "test": rows[val_end:],
-    }
+    splits = split_service.split_by_time(rows)
     run_id = dataset_run_id or timestamp_run_id()
     processing_code = processing_code_version or resolve_processing_code_version()
     versioning_enabled = hudi_enabled if iceberg_enabled is None else hudi_enabled or iceberg_enabled
@@ -583,11 +704,10 @@ def prepare_bst_jsonl_splits(
             config=HudiConfig(catalog_name=hudi_catalog_name, warehouse=hudi_warehouse),
         )
     else:
-        for split, split_rows in splits.items():
-            _write_jsonl(split_rows, output / f"{split}.jsonl")
+        split_service.write_jsonl_splits(splits, output)
         hudi_metadata = local_dataset_version_metadata(output, splits)
 
-    dataset_metadata = _dataset_metadata(
+    dataset_metadata = split_service.write_dataset_metadata(
         output_dir=output,
         dataset_run_id=run_id,
         entity_input_path=entity_input_path,
@@ -595,14 +715,13 @@ def prepare_bst_jsonl_splits(
         feast_offline_root=feast_offline_root,
         feature_service_name=feature_service_name,
         processing_code=processing_code,
-        split_counts={split: len(split_rows) for split, split_rows in splits.items()},
+        splits=splits,
         hudi=hudi_metadata,
-        max_history_len=max_history_len,
         feature_source=feature_source,
         offline_feature_table=offline_feature_table,
+        dataset_metadata_path=dataset_metadata_path,
     )
     dataset_meta_target = Path(dataset_metadata_path) if dataset_metadata_path else output / "dataset_version_meta.json"
-    _write_json(dataset_meta_target, dataset_metadata)
 
     metadata = {
         "entity_input_path": entity_input_path,

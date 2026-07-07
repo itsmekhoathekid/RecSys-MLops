@@ -89,7 +89,7 @@ start_port_forward() {
 read_promotion_manifest() {
   local pod_name="recsys-read-promotion-manifest-$(date -u +%s)"
   local overrides
-  overrides="$(printf '{"metadata":{"annotations":{"sidecar.istio.io/inject":"false"}},"spec":{"securityContext":{"seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"workspace","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}],"containers":[{"name":"%s","image":"%s","imagePullPolicy":"IfNotPresent","command":["sh","-lc","cat %s"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"workspace","mountPath":"/workspace"}]}]}}' "${pod_name}" "${PIPELINE_IMAGE}" "${PROMOTION_MANIFEST_PATH}")"
+  overrides="$(printf '{"metadata":{"annotations":{"sidecar.istio.io/inject":"false"}},"spec":{"nodeSelector":{"recsys.ai/pool":"ml-system"},"tolerations":[{"key":"recsys.ai/workload","operator":"Equal","value":"ml-system","effect":"NoSchedule"}],"securityContext":{"seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"workspace","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}],"containers":[{"name":"%s","image":"%s","imagePullPolicy":"IfNotPresent","command":["sh","-lc","cat %s"],"securityContext":{"runAsNonRoot":true,"runAsUser":1000,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"workspace","mountPath":"/workspace"}]}]}}' "${pod_name}" "${PIPELINE_IMAGE}" "${PROMOTION_MANIFEST_PATH}")"
   kubectl run "${pod_name}" \
     -n kubeflow \
     --rm \
@@ -98,6 +98,7 @@ read_promotion_manifest() {
     --restart=Never \
     --image="${PIPELINE_IMAGE}" \
     --image-pull-policy=IfNotPresent \
+    --pod-running-timeout=180s \
     --overrides="${overrides}" \
     | python3 -c 'import sys; text=sys.stdin.read(); start=text.find("{"); end=text.rfind("}"); print(text[start:end + 1] if start >= 0 and end >= start else text)'
 }

@@ -101,125 +101,226 @@ def build_distributed_config(
     return config_path, config, tune_result
 
 
-def move_batch_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
-    return {key: value.to(device) if torch.is_tensor(value) else value for key, value in batch.items()}
+class ModelLifecycleService:
+    def __init__(self, config: dict[str, Any], device: torch.device, *, rank: int = 0, world_size: int = 1) -> None:
+        self.config = config
+        self.device = device
+        self.rank = rank
+        self.world_size = world_size
 
+    def create_dataset(self, split: str) -> recommenderDataset:
+        return recommenderDataset(self.config["data_args"], split=split, percent=float(self.config["training_percent"]))
 
-def forward_model(model: torch.nn.Module, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-    return model(
-        hist_item_id=batch["hist_item_id"],
-        hist_event_type=batch["hist_event_type"],
-        hist_category=batch["hist_category"],
-        hist_brand=batch["hist_brand"],
-        hist_price_bucket=batch["hist_price_bucket"],
-        hist_time=batch["hist_time"],
-        target_item_id=batch["target_item_id"],
-        target_category=batch["target_category"],
-        target_brand=batch["target_brand"],
-        target_price_bucket=batch["target_price_bucket"],
-    )
+    def create_train_loader(self, dataset: recommenderDataset) -> tuple[DataLoader, DistributedSampler]:
+        from ray.train.torch import prepare_data_loader
 
+        sampler = DistributedSampler(
+            dataset,
+            num_replicas=self.world_size,
+            rank=self.rank,
+            shuffle=True,
+            drop_last=False,
+        )
+        loader = DataLoader(
+            dataset,
+            batch_size=int(self.config["training_args"]["batch_size"]),
+            sampler=sampler,
+            shuffle=False,
+            num_workers=0,
+            collate_fn=dataset.collate_fn,
+        )
+        return prepare_data_loader(loader, add_dist_sampler=False), sampler
 
-def reduce_loss(total_loss: float, num_batches: int, device: torch.device) -> float:
-    import torch.distributed as dist
+    def create_eval_loader(self, dataset: recommenderDataset) -> DataLoader:
+        return DataLoader(
+            dataset,
+            batch_size=int(self.config["training_args"]["batch_size"]),
+            shuffle=False,
+            num_workers=0,
+            collate_fn=dataset.collate_fn,
+        )
 
-    payload = torch.tensor([total_loss, float(num_batches)], dtype=torch.float64, device=device)
-    if dist.is_available() and dist.is_initialized():
-        dist.all_reduce(payload, op=dist.ReduceOp.SUM)
-    return float(payload[0].item() / max(payload[1].item(), 1.0))
+    def move_batch_to_device(self, batch: dict[str, Any]) -> dict[str, Any]:
+        return {key: value.to(self.device) if torch.is_tensor(value) else value for key, value in batch.items()}
 
+    def forward_model(self, model: torch.nn.Module, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        return model(
+            hist_item_id=batch["hist_item_id"],
+            hist_event_type=batch["hist_event_type"],
+            hist_category=batch["hist_category"],
+            hist_brand=batch["hist_brand"],
+            hist_price_bucket=batch["hist_price_bucket"],
+            hist_time=batch["hist_time"],
+            target_item_id=batch["target_item_id"],
+            target_category=batch["target_category"],
+            target_brand=batch["target_brand"],
+            target_price_bucket=batch["target_price_bucket"],
+        )
 
-def broadcast_metrics(metrics: dict[str, Any] | None) -> dict[str, Any]:
-    import torch.distributed as dist
-
-    payload = [metrics]
-    if dist.is_available() and dist.is_initialized():
-        dist.broadcast_object_list(payload, src=0)
-    return payload[0] or {}
-
-
-def evaluate_on_rank_zero(
-    model: torch.nn.Module,
-    config: dict[str, Any],
-    val_dataset: recommenderDataset,
-    device: torch.device,
-) -> dict[str, float]:
-    from models.trainer import Trainer
-
-    raw_model = model.module if hasattr(model, "module") else model
-    raw_model.eval()
-    loss_fn = torch.nn.BCEWithLogitsLoss()
-    loader = DataLoader(
-        val_dataset,
-        batch_size=config["training_args"]["batch_size"],
-        shuffle=False,
-        num_workers=0,
-        collate_fn=val_dataset.collate_fn,
-    )
-    all_probs: list[float] = []
-    all_labels: list[float] = []
-    all_group_keys: list[tuple[int, int]] = []
-    total_loss = 0.0
-    with torch.no_grad():
-        for batch in loader:
-            batch = move_batch_to_device(batch, device)
-            logits = forward_model(raw_model, batch)
+    def train_one_epoch(
+        self,
+        model: torch.nn.Module,
+        train_loader: DataLoader,
+        optimizer: torch.optim.Optimizer,
+        loss_fn: torch.nn.Module,
+    ) -> float:
+        model.train()
+        total_loss = 0.0
+        num_batches = 0
+        for batch in train_loader:
+            batch = self.move_batch_to_device(batch)
+            optimizer.zero_grad()
+            logits = self.forward_model(model, batch)
             labels = batch["label"].float()
-            total_loss += float(loss_fn(logits, labels).item())
-            all_probs.extend(torch.sigmoid(logits).detach().cpu().tolist())
-            all_labels.extend(labels.detach().cpu().tolist())
-            all_group_keys.extend(
-                zip(
-                    batch["user_id"].detach().cpu().tolist(),
-                    batch["event_time"].detach().cpu().tolist(),
+            loss = loss_fn(logits, labels)
+            loss.backward()
+            optimizer.step()
+            total_loss += float(loss.item())
+            num_batches += 1
+        return self.reduce_loss(total_loss, num_batches)
+
+    def reduce_loss(self, total_loss: float, num_batches: int) -> float:
+        import torch.distributed as dist
+
+        payload = torch.tensor([total_loss, float(num_batches)], dtype=torch.float64, device=self.device)
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(payload, op=dist.ReduceOp.SUM)
+        return float(payload[0].item() / max(payload[1].item(), 1.0))
+
+    def evaluate(self, model: torch.nn.Module, dataset: recommenderDataset) -> dict[str, float]:
+        from models.trainer import Trainer
+
+        raw_model = model.module if hasattr(model, "module") else model
+        raw_model.eval()
+        loss_fn = torch.nn.BCEWithLogitsLoss()
+        loader = self.create_eval_loader(dataset)
+        all_probs: list[float] = []
+        all_labels: list[float] = []
+        all_group_keys: list[tuple[int, int]] = []
+        total_loss = 0.0
+        with torch.no_grad():
+            for batch in loader:
+                batch = self.move_batch_to_device(batch)
+                logits = self.forward_model(raw_model, batch)
+                labels = batch["label"].float()
+                total_loss += float(loss_fn(logits, labels).item())
+                all_probs.extend(torch.sigmoid(logits).detach().cpu().tolist())
+                all_labels.extend(labels.detach().cpu().tolist())
+                all_group_keys.extend(
+                    zip(
+                        batch["user_id"].detach().cpu().tolist(),
+                        batch["event_time"].detach().cpu().tolist(),
+                    )
                 )
-            )
-    metric_helper = Trainer.__new__(Trainer)
-    metric_helper.ranking_ks = config["training_args"].get("ranking_ks", [1, 3, 5, 10])
-    metrics = metric_helper._compute_metrics(all_labels, all_probs, all_group_keys)
-    metrics["loss"] = total_loss / max(len(loader), 1)
-    return {f"val/{key}": float(value) for key, value in metrics.items() if isinstance(value, (int, float))}
+        metric_helper = Trainer.__new__(Trainer)
+        metric_helper.ranking_ks = self.config["training_args"].get("ranking_ks", [1, 3, 5, 10])
+        metrics = metric_helper._compute_metrics(all_labels, all_probs, all_group_keys)
+        metrics["loss"] = total_loss / max(len(loader), 1)
+        return {f"val/{key}": float(value) for key, value in metrics.items() if isinstance(value, (int, float))}
 
-
-def save_checkpoint(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
-    config: dict[str, Any],
-    epoch: int,
-    best_score: float,
-) -> str:
-    raw_model = model.module if hasattr(model, "module") else model
-    base_path = Path(config["model_args"].get("save_path", "./data_platform/output/ml/checkpoints"))
-    base_path.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = base_path / getattr(raw_model, "model_name", config["model_args"].get("model_name", "BST"))
-    torch.save(
-        {
-            "epoch": epoch,
-            "model_state_dict": raw_model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": scheduler.state_dict(),
-            "score": best_score,
-            "config": config,
-            "distributed": {
-                "backend": "torch.distributed",
-                "strategy": "DistributedDataParallel",
+    def save_checkpoint(
+        self,
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
+        epoch: int,
+        best_score: float,
+    ) -> str:
+        raw_model = model.module if hasattr(model, "module") else model
+        base_path = Path(self.config["model_args"].get("save_path", "./data_platform/output/ml/checkpoints"))
+        base_path.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = base_path / getattr(raw_model, "model_name", self.config["model_args"].get("model_name", "BST"))
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state_dict": raw_model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "score": best_score,
+                "config": self.config,
+                "distributed": {
+                    "backend": "torch.distributed",
+                    "strategy": "DistributedDataParallel",
+                },
             },
-        },
-        checkpoint_path,
-    )
-    return str(checkpoint_path)
+            checkpoint_path,
+        )
+        return str(checkpoint_path)
+
+    def checkpoint_for_ray(self, checkpoint_path: str, epoch: int):
+        from ray.train import Checkpoint
+
+        checkpoint_dir = Path(self.config["output_dir"]) / "ray_train_checkpoints" / f"epoch_{epoch}"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(checkpoint_path, checkpoint_dir / Path(checkpoint_path).name)
+        return Checkpoint.from_directory(str(checkpoint_dir))
+
+    def broadcast_metrics(self, metrics: dict[str, Any] | None) -> dict[str, Any]:
+        import torch.distributed as dist
+
+        payload = [metrics]
+        if dist.is_available() and dist.is_initialized():
+            dist.broadcast_object_list(payload, src=0)
+        return payload[0] or {}
+
+    def report_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
+        report = {
+            key.replace("/", "_").replace("@", "_at_"): value
+            for key, value in metrics.items()
+            if isinstance(value, (int, float))
+        }
+        report.update(
+            {
+                "world_size": self.world_size,
+                "rank": self.rank,
+                "ddp_gradient_sync": True,
+                "distributed_sampler": True,
+            }
+        )
+        return report
+
+    def write_best_result(self, best_checkpoint_path: str, final_metrics: dict[str, Any]) -> None:
+        metadata = load_dataset_metadata(self.config.get("dataset_metadata_path"))
+        with patched_env({"MLFLOW_RUN_NAME": "ray-ddp-distributed-train"}):
+            run_id, artifact_uri = _log_to_mlflow(
+                self.config["logged_config"],
+                final_metrics,
+                best_checkpoint_path,
+                dataset_metadata=metadata,
+            )
+        _maybe_register_config(self.config["logged_config"], final_metrics, best_checkpoint_path, run_id, artifact_uri)
+        result = {
+            "checkpoint_path": best_checkpoint_path,
+            "artifact_uri": artifact_uri or best_checkpoint_path,
+            "mlflow_run_id": run_id,
+            "metrics": final_metrics,
+            "dataset_versions": dataset_versions(metadata),
+            "source": "kubeflow-ray-ddp-train",
+            "best_config": self.config.get("tune_result", {}).get("best_config", {}),
+            "best_config_path": self.config["config_path"],
+            "tune_result_path": self.config.get("tune_result_path", ""),
+            "distributed_training": {
+                "strategy": "DistributedDataParallel",
+                "world_size": self.world_size,
+                "uses_distributed_sampler": True,
+                "gradient_sync": True,
+            },
+        }
+        best_result_path = Path(self.config["best_result_path"])
+        best_result_path.parent.mkdir(parents=True, exist_ok=True)
+        best_result_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+        print(json.dumps(result, indent=2, sort_keys=True))
 
 
 def train_loop_per_worker(config: dict[str, Any]) -> None:
     from ray import train
-    from ray.train import Checkpoint
-    from ray.train.torch import prepare_data_loader, prepare_model
+    from ray.train.torch import prepare_model
 
     context = train.get_context()
     rank = context.get_world_rank()
     world_size = context.get_world_size()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    lifecycle = ModelLifecycleService(config, device, rank=rank, world_size=world_size)
 
     model = BST(config["model_args"]).to(device)
     model = prepare_model(model)
@@ -231,52 +332,26 @@ def train_loop_per_worker(config: dict[str, Any]) -> None:
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.3, patience=2)
     loss_fn = torch.nn.BCEWithLogitsLoss()
 
-    train_dataset = recommenderDataset(config["data_args"], split="train", percent=float(config["training_percent"]))
-    val_dataset = recommenderDataset(config["data_args"], split="val", percent=float(config["training_percent"]))
-    sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=int(config["training_args"]["batch_size"]),
-        sampler=sampler,
-        shuffle=False,
-        num_workers=0,
-        collate_fn=train_dataset.collate_fn,
-    )
-    train_loader = prepare_data_loader(train_loader, add_dist_sampler=False)
+    train_dataset = lifecycle.create_dataset("train")
+    val_dataset = lifecycle.create_dataset("val")
+    train_loader, sampler = lifecycle.create_train_loader(train_dataset)
 
     best_score = 0.0
     best_checkpoint_path = ""
     final_metrics: dict[str, Any] = {}
     for epoch in range(int(config["training_args"]["num_epochs"])):
         sampler.set_epoch(epoch)
-        model.train()
-        total_loss = 0.0
-        num_batches = 0
-        for batch in train_loader:
-            batch = move_batch_to_device(batch, device)
-            optimizer.zero_grad()
-            logits = forward_model(model, batch)
-            labels = batch["label"].float()
-            loss = loss_fn(logits, labels)
-            loss.backward()
-            optimizer.step()
-            total_loss += float(loss.item())
-            num_batches += 1
-
-        train_loss = reduce_loss(total_loss, num_batches, device)
+        train_loss = lifecycle.train_one_epoch(model, train_loader, optimizer, loss_fn)
         rank_zero_metrics = None
         checkpoint = None
         if rank == 0:
-            val_metrics = evaluate_on_rank_zero(model, config, val_dataset, device)
+            val_metrics = lifecycle.evaluate(model, val_dataset)
             scheduler.step(val_metrics.get("val/loss", train_loss))
             score = float(val_metrics.get(OBJECTIVE_METRIC, 0.0))
             if score >= best_score:
                 best_score = score
-                best_checkpoint_path = save_checkpoint(model, optimizer, scheduler, config, epoch, best_score)
-                checkpoint_dir = Path(config["output_dir"]) / "ray_train_checkpoints" / f"epoch_{epoch}"
-                checkpoint_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(best_checkpoint_path, checkpoint_dir / Path(best_checkpoint_path).name)
-                checkpoint = Checkpoint.from_directory(str(checkpoint_dir))
+                best_checkpoint_path = lifecycle.save_checkpoint(model, optimizer, scheduler, epoch, best_score)
+                checkpoint = lifecycle.checkpoint_for_ray(best_checkpoint_path, epoch)
             rank_zero_metrics = {
                 "epoch": epoch,
                 "best_score": best_score,
@@ -284,53 +359,11 @@ def train_loop_per_worker(config: dict[str, Any]) -> None:
                 **val_metrics,
             }
 
-        final_metrics = broadcast_metrics(rank_zero_metrics)
-        report_metrics = {
-            key.replace("/", "_").replace("@", "_at_"): value
-            for key, value in final_metrics.items()
-            if isinstance(value, (int, float))
-        }
-        report_metrics.update(
-            {
-                "world_size": world_size,
-                "rank": rank,
-                "ddp_gradient_sync": True,
-                "distributed_sampler": True,
-            }
-        )
-        train.report(report_metrics, checkpoint=checkpoint)
+        final_metrics = lifecycle.broadcast_metrics(rank_zero_metrics)
+        train.report(lifecycle.report_metrics(final_metrics), checkpoint=checkpoint)
 
     if rank == 0:
-        metadata = load_dataset_metadata(config.get("dataset_metadata_path"))
-        with patched_env({"MLFLOW_RUN_NAME": "ray-ddp-distributed-train"}):
-            run_id, artifact_uri = _log_to_mlflow(
-                config["logged_config"],
-                final_metrics,
-                best_checkpoint_path,
-                dataset_metadata=metadata,
-            )
-        _maybe_register_config(config["logged_config"], final_metrics, best_checkpoint_path, run_id, artifact_uri)
-        result = {
-            "checkpoint_path": best_checkpoint_path,
-            "artifact_uri": artifact_uri or best_checkpoint_path,
-            "mlflow_run_id": run_id,
-            "metrics": final_metrics,
-            "dataset_versions": dataset_versions(metadata),
-            "source": "kubeflow-ray-ddp-train",
-            "best_config": config.get("tune_result", {}).get("best_config", {}),
-            "best_config_path": config["config_path"],
-            "tune_result_path": config.get("tune_result_path", ""),
-            "distributed_training": {
-                "strategy": "DistributedDataParallel",
-                "world_size": world_size,
-                "uses_distributed_sampler": True,
-                "gradient_sync": True,
-            },
-        }
-        best_result_path = Path(config["best_result_path"])
-        best_result_path.parent.mkdir(parents=True, exist_ok=True)
-        best_result_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
-        print(json.dumps(result, indent=2, sort_keys=True))
+        lifecycle.write_best_result(best_checkpoint_path, final_metrics)
 
 
 def main() -> int:

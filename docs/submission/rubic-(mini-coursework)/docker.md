@@ -39,45 +39,21 @@ The Dockerfile optimization follows the Docker Build Cloud guidance from <https:
 
 ## Before/After Measurement
 
-Capture build latency from the `real` line in each `.log` file and image size from the generated `*-image-size.txt` file.
+Use these commands to capture the proof before and after Dockerfile optimization. They keep stable `:before` and `:after` tags, record build latency from `/usr/bin/time -p`, and record image size from `docker image inspect`.
 
-If only image-size evidence is needed, capture it with stable `:before` and `:after` tags so the optimized build does not overwrite the baseline image.
-
-Before building, check free disk and Docker's local storage. If Docker Desktop reports `no space left on device` or containerd/blob `input/output error`, free disk first and restart Docker Desktop before rebuilding.
-
-```bash
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
-
-df -h .
-docker system df
-
-# Cleanup option for local proof builds. This removes unused build cache,
-# stopped containers, unused networks, dangling/unused images, and volumes.
-docker builder prune -af
-docker system prune -af --volumes
-```
-
-Run this before applying the Dockerfile optimization:
+Run this shared helper in the same terminal session before the before/after command blocks:
 
 ```bash
 set -euo pipefail
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
+cd ./RecSys-MLops
 mkdir -p .docker-metrics
 
-docker build -t recsys-base-python:before -f infra/docker/Dockerfile.base-python .
-docker build -t recsys-dataflow-cli:before \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
-  -f apps/data-platform/Dockerfile.dataflow-cli .
-docker build -t recsys-data-generator:before \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
-  -f apps/data-platform/data-generator/Dockerfile .
-docker build -t recsys-airflow:before -f infra/docker/Dockerfile.airflow .
-docker build -t recsys-spark:before -f apps/data-platform/Dockerfile.spark .
-docker build -t recsys-flink:before -f apps/data-platform/Dockerfile.flink .
-docker build -t recsys-api-serving:before -f apps/api-serving/Dockerfile .
-docker build -t recsys-mlops-training:before \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
-  -f apps/ml-system/Dockerfile.training .
+measure_build() {
+  image="$1"
+  logfile="$2"
+  shift 2
+  /usr/bin/time -p docker build --no-cache -t "$image" "$@" . 2>&1 | tee "$logfile"
+}
 
 write_image_sizes() {
   output_path="$1"
@@ -91,7 +67,46 @@ write_image_sizes() {
   done
 }
 
-write_image_sizes .docker-metrics/image-size-before.txt \
+write_build_latency() {
+  output_path="$1"
+  shift
+  : > "$output_path"
+  for logfile in "$@"; do
+    image="$(basename "$logfile" -build.log)"
+    latency="$(awk '/^real / {print $2 "s"}' "$logfile" | tail -1)"
+    printf "%-28s %s\n" "$image" "$latency" | tee -a "$output_path"
+  done
+}
+```
+
+Run this before applying the Dockerfile optimization:
+
+```bash
+set -euo pipefail
+cd ./RecSys-MLops
+mkdir -p .docker-metrics/before
+
+measure_build recsys-base-python:before .docker-metrics/before/base-python-build.log \
+  -f infra/docker/Dockerfile.base-python
+measure_build recsys-dataflow-cli:before .docker-metrics/before/dataflow-cli-build.log \
+  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
+  -f apps/data-platform/Dockerfile.dataflow-cli
+measure_build recsys-data-generator:before .docker-metrics/before/data-generator-build.log \
+  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
+  -f apps/data-platform/data-generator/Dockerfile
+measure_build recsys-airflow:before .docker-metrics/before/airflow-build.log \
+  -f infra/docker/Dockerfile.airflow
+measure_build recsys-spark:before .docker-metrics/before/spark-build.log \
+  -f apps/data-platform/Dockerfile.spark
+measure_build recsys-flink:before .docker-metrics/before/flink-build.log \
+  -f apps/data-platform/Dockerfile.flink
+measure_build recsys-api-serving:before .docker-metrics/before/api-serving-build.log \
+  -f apps/api-serving/Dockerfile
+measure_build recsys-mlops-training:before .docker-metrics/before/mlops-training-build.log \
+  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
+  -f apps/ml-system/Dockerfile.training
+
+write_image_sizes .docker-metrics/before/image-size.txt \
   recsys-base-python:before \
   recsys-dataflow-cli:before \
   recsys-data-generator:before \
@@ -100,47 +115,40 @@ write_image_sizes .docker-metrics/image-size-before.txt \
   recsys-flink:before \
   recsys-api-serving:before \
   recsys-mlops-training:before
+
+write_build_latency .docker-metrics/before/build-latency.txt .docker-metrics/before/*-build.log
 ```
 
 Run this after applying the Dockerfile optimization:
 
 ```bash
 set -euo pipefail
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
-mkdir -p .docker-metrics
+cd ./RecSys-MLops
+mkdir -p .docker-metrics/after
 
-docker build -t recsys-base-python:after -f infra/docker/Dockerfile.base-python .
-docker build -t recsys-dataflow-cli:after \
+measure_build recsys-base-python:after .docker-metrics/after/base-python-build.log \
+  -f infra/docker/Dockerfile.base-python
+measure_build recsys-dataflow-cli:after .docker-metrics/after/dataflow-cli-build.log \
   --build-arg RECSYS_BASE_IMAGE=recsys-base-python:after \
-  -f apps/data-platform/Dockerfile.dataflow-cli .
-docker build -t recsys-data-generator:after \
+  -f apps/data-platform/Dockerfile.dataflow-cli
+measure_build recsys-data-generator:after .docker-metrics/after/data-generator-build.log \
   --build-arg RECSYS_BASE_IMAGE=recsys-base-python:after \
-  -f apps/data-platform/data-generator/Dockerfile .
-docker build -t recsys-airflow:after -f infra/docker/Dockerfile.airflow .
-docker build -t recsys-spark:after \
+  -f apps/data-platform/data-generator/Dockerfile
+measure_build recsys-airflow:after .docker-metrics/after/airflow-build.log \
+  -f infra/docker/Dockerfile.airflow
+measure_build recsys-spark:after .docker-metrics/after/spark-build.log \
   --build-arg DOWNLOAD_JOBS=4 \
-  -f apps/data-platform/Dockerfile.spark .
-docker build -t recsys-flink:after \
+  -f apps/data-platform/Dockerfile.spark
+measure_build recsys-flink:after .docker-metrics/after/flink-build.log \
   --build-arg DOWNLOAD_JOBS=4 \
-  -f apps/data-platform/Dockerfile.flink .
-docker build -t recsys-api-serving:after -f apps/api-serving/Dockerfile .
-docker build -t recsys-mlops-training:after \
+  -f apps/data-platform/Dockerfile.flink
+measure_build recsys-api-serving:after .docker-metrics/after/api-serving-build.log \
+  -f apps/api-serving/Dockerfile
+measure_build recsys-mlops-training:after .docker-metrics/after/mlops-training-build.log \
   --build-arg RECSYS_BASE_IMAGE=recsys-base-python:after \
-  -f apps/ml-system/Dockerfile.training .
+  -f apps/ml-system/Dockerfile.training
 
-write_image_sizes() {
-  output_path="$1"
-  shift
-  : > "$output_path"
-  for image in "$@"; do
-    size_bytes="$(docker image inspect "$image" --format '{{.Size}}')"
-    awk -v image="$image" -v size_bytes="$size_bytes" \
-      'BEGIN { printf "%-36s %.2f MB\n", image, size_bytes / 1024 / 1024 }' \
-      | tee -a "$output_path"
-  done
-}
-
-write_image_sizes .docker-metrics/image-size-after.txt \
+write_image_sizes .docker-metrics/after/image-size.txt \
   recsys-base-python:after \
   recsys-dataflow-cli:after \
   recsys-data-generator:after \
@@ -149,117 +157,42 @@ write_image_sizes .docker-metrics/image-size-after.txt \
   recsys-flink:after \
   recsys-api-serving:after \
   recsys-mlops-training:after
+
+write_build_latency .docker-metrics/after/build-latency.txt .docker-metrics/after/*-build.log
 ```
 
-Compare before and after image size:
+Generate the before/after proof summary:
 
 ```bash
-paste .docker-metrics/image-size-before.txt .docker-metrics/image-size-after.txt
+set -euo pipefail
+cd ./RecSys-MLops
+
+{
+  echo "## Before Optimization"
+  echo
+  echo "### Build latency"
+  sed 's/^/- /' .docker-metrics/before/build-latency.txt
+  echo
+  echo "### Image size"
+  sed 's/^/- /' .docker-metrics/before/image-size.txt
+  echo
+  echo "## After Optimization"
+  echo
+  echo "### Build latency"
+  sed 's/^/- /' .docker-metrics/after/build-latency.txt
+  echo
+  echo "### Image size"
+  sed 's/^/- /' .docker-metrics/after/image-size.txt
+} | tee .docker-metrics/docker-optimization-proof.md
 ```
 
-Run this before applying the Dockerfile optimization:
+After running the summary command, capture the terminal output as screenshots and save them to these paths for the submission:
 
-```bash
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
+![Before Docker optimization proof](../../pngs/docker_before_optimization_proof.png)
 
-mkdir -p .docker-metrics/before
+![After Docker optimization proof](../../pngs/docker_after_optimization_proof.png)
 
-measure_build() {
-  image="$1"
-  logfile="$2"
-  shift 2
-  /usr/bin/time -p docker build --no-cache -t "$image" "$@" . \
-    2>&1 | tee "$logfile"
-}
-
-measure_build recsys-base-python:local .docker-metrics/before/base-python-build.log \
-  -f infra/docker/Dockerfile.base-python
-measure_build recsys-dataflow-cli:local .docker-metrics/before/dataflow-cli-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local \
-  -f apps/data-platform/Dockerfile.dataflow-cli
-measure_build recsys-data-generator:local .docker-metrics/before/data-generator-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local \
-  -f apps/data-platform/data-generator/Dockerfile
-measure_build recsys-airflow:local .docker-metrics/before/airflow-build.log \
-  -f infra/docker/Dockerfile.airflow
-measure_build recsys-spark:local .docker-metrics/before/spark-build.log \
-  -f apps/data-platform/Dockerfile.spark
-measure_build recsys-flink:local .docker-metrics/before/flink-build.log \
-  -f apps/data-platform/Dockerfile.flink
-measure_build recsys-api-serving:local .docker-metrics/before/api-serving-build.log \
-  -f apps/api-serving/Dockerfile
-measure_build recsys-mlops-training:local .docker-metrics/before/mlops-training-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local \
-  -f apps/ml-system/Dockerfile.training
-
-for image in \
-  recsys-base-python:local \
-  recsys-dataflow-cli:local \
-  recsys-data-generator:local \
-  recsys-airflow:local \
-  recsys-spark:local \
-  recsys-flink:local \
-  recsys-api-serving:local \
-  recsys-mlops-training:local
-do
-  docker image inspect "$image" --format "$image {{.Size}}"
-done | awk '{printf "%-34s %.2f MB\n", $1, $2 / 1024 / 1024}' \
-  | tee .docker-metrics/before/image-size.txt
-```
-
-Run this after applying the Dockerfile optimization:
-
-```bash
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
-
-mkdir -p .docker-metrics/after
-
-measure_build() {
-  image="$1"
-  logfile="$2"
-  shift 2
-  /usr/bin/time -p docker build --no-cache -t "$image" "$@" . \
-    2>&1 | tee "$logfile"
-}
-
-measure_build recsys-base-python:local .docker-metrics/after/base-python-build.log \
-  -f infra/docker/Dockerfile.base-python
-measure_build recsys-dataflow-cli:local .docker-metrics/after/dataflow-cli-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local \
-  -f apps/data-platform/Dockerfile.dataflow-cli
-measure_build recsys-data-generator:local .docker-metrics/after/data-generator-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local \
-  -f apps/data-platform/data-generator/Dockerfile
-measure_build recsys-airflow:local .docker-metrics/after/airflow-build.log \
-  -f infra/docker/Dockerfile.airflow
-measure_build recsys-spark:local .docker-metrics/after/spark-build.log \
-  --build-arg DOWNLOAD_JOBS=4 \
-  -f apps/data-platform/Dockerfile.spark
-measure_build recsys-flink:local .docker-metrics/after/flink-build.log \
-  --build-arg DOWNLOAD_JOBS=4 \
-  -f apps/data-platform/Dockerfile.flink
-measure_build recsys-api-serving:local .docker-metrics/after/api-serving-build.log \
-  -f apps/api-serving/Dockerfile
-measure_build recsys-mlops-training:local .docker-metrics/after/mlops-training-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local \
-  -f apps/ml-system/Dockerfile.training
-
-for image in \
-  recsys-base-python:local \
-  recsys-dataflow-cli:local \
-  recsys-data-generator:local \
-  recsys-airflow:local \
-  recsys-spark:local \
-  recsys-flink:local \
-  recsys-api-serving:local \
-  recsys-mlops-training:local
-do
-  docker image inspect "$image" --format "$image {{.Size}}"
-done | awk '{printf "%-34s %.2f MB\n", $1, $2 / 1024 / 1024}' \
-  | tee .docker-metrics/after/image-size.txt
-```
-
-Use this table for the screenshot/write-up:
+Use this table for the write-up after running the commands:
 
 | Image | Before build latency (`real`) | After build latency (`real`) | Before size | After size | Optimization responsible |
 |---|---:|---:|---:|---:|---|
@@ -270,64 +203,3 @@ Use this table for the screenshot/write-up:
 | `recsys-flink` | Fill from `.docker-metrics/before/flink-build.log` | Fill from `.docker-metrics/after/flink-build.log` | Fill from `.docker-metrics/before/image-size.txt` | Fill from `.docker-metrics/after/image-size.txt` | Multi-stage parallel JAR download + selective runtime copy |
 | `recsys-api-serving` | Fill from `.docker-metrics/before/api-serving-build.log` | Fill from `.docker-metrics/after/api-serving-build.log` | Fill from `.docker-metrics/before/image-size.txt` | Fill from `.docker-metrics/after/image-size.txt` | Multi-stage venv + API-only runtime copy + `uv` concurrency |
 | `recsys-mlops-training` | Fill from `.docker-metrics/before/mlops-training-build.log` | Fill from `.docker-metrics/after/mlops-training-build.log` | Fill from `.docker-metrics/before/image-size.txt` | Fill from `.docker-metrics/after/image-size.txt` | Multi-stage venv + ML/runtime-only copy + `uv` concurrency |
-
-## Run Commands
-
-Local compose:
-
-```bash
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
-
-docker compose -f infra/docker/docker-compose.dataflow.yml build
-docker compose -f infra/docker/docker-compose.dataflow.yml up -d
-docker compose -f infra/docker/docker-compose.dataflow.yml ps
-```
-
-GCP Cloud Build:
-
-```bash
-gcloud builds submit \
-  --project fsds-coursework \
-  --config infra/cloudbuild/recsys-images.yaml \
-  --substitutions _IMAGE_REPO=asia-southeast1-docker.pkg.dev/fsds-coursework/recsys,_TAG=gcp \
-  --async \
-  .
-```
-
-Observed GCP proof:
-
-```text
-Build ID: 5793bfd4-3733-4506-a2f1-88535ca012d0
-Status: SUCCESS
-Final log: DONE
-Digest: sha256:569f3eb3e0bfcaa2d1068d1653e8edfeecf7aca1943fe6635c7d3b5262e082ec
-```
-
-Image proof:
-
-![Cloud Build log](../../pngs/gcp_build_log.png)
-
-## Image Size Evidence
-
-Use this command to capture current local image sizes after build:
-
-```bash
-docker images | rg 'recsys-(base-python|dataflow-cli|spark|flink|api-serving)'
-```
-
-For GCP Artifact Registry proof:
-
-```bash
-gcloud artifacts docker images list \
-  asia-southeast1-docker.pkg.dev/fsds-coursework/recsys \
-  --include-tags \
-  --filter='tags:gcp' \
-  --format='table(package,tags,updateTime)'
-```
-
-Image proof to capture:
-
-```text
-docs/pngs/docker_images_size.png
-docs/pngs/cicd_artifact_registry_gcp_tags.png
-```

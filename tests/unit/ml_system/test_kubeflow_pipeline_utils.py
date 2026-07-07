@@ -3,11 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 
+import torch
+
 from kubeflow.components import runtime
 from kubeflow.pipelines.compile_training_pipeline import compile_pipeline
 from kubeflow.upload_pipeline_package import upload_or_version_pipeline
 from kubeflow.validate_pipeline_package import validate_pipeline_package
-from cli.submit_ray_job import build_rayjob, container_spec, pod_template, reusable_best_result
+from cli.submit_ray_job import build_rayjob, container_spec, parse_toleration, pod_template, reusable_best_result
+from training.ray_distributed_train_bst import ModelLifecycleService
 from training.ray_tune_train_bst import best_payload_from_trial_outputs
 
 
@@ -124,6 +127,24 @@ def test_rayjob_gpu_worker_template_contract():
     ]
 
 
+def test_parse_toleration_supports_equal_exists_and_lists():
+    assert parse_toleration(
+        "recsys.ai/workload:ml-system:NoSchedule,node.kubernetes.io/memory-pressure::NoSchedule"
+    ) == [
+        {
+            "key": "recsys.ai/workload",
+            "operator": "Equal",
+            "value": "ml-system",
+            "effect": "NoSchedule",
+        },
+        {
+            "key": "node.kubernetes.io/memory-pressure",
+            "operator": "Exists",
+            "effect": "NoSchedule",
+        },
+    ]
+
+
 def test_build_rayjob_uses_refactored_training_module():
     args = argparse.Namespace(
         base_config_path="/opt/recsys/configs/local/bst.yaml",
@@ -224,6 +245,20 @@ def test_build_rayjob_supports_distributed_training_mode():
     assert "--num-workers 2" in rayjob["spec"]["entrypoint"]
     assert rayjob["metadata"]["labels"]["recsys.ai/ray-job-mode"] == "distributed-train"
     assert rayjob["spec"]["rayClusterSpec"]["workerGroupSpecs"][0]["replicas"] == 2
+
+
+def test_model_lifecycle_service_reports_ddp_proof_metrics():
+    service = ModelLifecycleService({}, torch.device("cpu"), rank=1, world_size=2)
+
+    metrics = service.report_metrics({"val/ndcg@10": 0.42, "epoch": 0, "note": "ignored"})
+
+    assert metrics["val_ndcg_at_10"] == 0.42
+    assert metrics["epoch"] == 0
+    assert metrics["world_size"] == 2
+    assert metrics["rank"] == 1
+    assert metrics["ddp_gradient_sync"] is True
+    assert metrics["distributed_sampler"] is True
+    assert "note" not in metrics
 
 
 def test_reusable_best_result_requires_matching_dataset_versions(tmp_path):
