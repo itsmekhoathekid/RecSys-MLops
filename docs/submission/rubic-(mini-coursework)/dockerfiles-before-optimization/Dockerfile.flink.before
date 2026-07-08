@@ -1,0 +1,49 @@
+FROM flink:1.19-scala_2.12-java17
+
+WORKDIR /opt/recsys
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        openjdk-17-jdk-headless \
+        python3 \
+        python3-dev \
+        python3-pip \
+    && rm -rf /opt/java/openjdk \
+    && ln -sfn "/usr/lib/jvm/java-17-openjdk-$(dpkg --print-architecture)" /opt/java/openjdk \
+    && ln -sfn /usr/bin/python3 /usr/local/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/opt/java/openjdk \
+    PATH=/opt/java/openjdk/bin:${PATH} \
+    TMPDIR=/opt/recsys/tmp \
+    PIP_CACHE_DIR=/opt/recsys/pip-cache
+
+RUN mkdir -p "${TMPDIR}" "${PIP_CACHE_DIR}" \
+    && chmod 1777 "${TMPDIR}" \
+    && python3 -m pip install --upgrade pip setuptools wheel \
+    && python3 -m pip install --no-cache-dir pycodestyle
+
+RUN python3 -m pip install --no-cache-dir \
+        apache-beam==2.48.0 \
+        avro-python3==1.10.2 \
+        cloudpickle==2.2.1 \
+        pyarrow \
+        py4j==0.10.9.7 \
+        pyyaml \
+        ruamel.yaml \
+        redis \
+        requests \
+        psycopg[binary]
+
+RUN curl -fsSL \
+        https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.2.0-1.19/flink-sql-connector-kafka-3.2.0-1.19.jar \
+        -o /opt/flink/lib/flink-sql-connector-kafka-3.2.0-1.19.jar
+
+RUN python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python \
+    && chmod +x /opt/flink/opt/python/pyflink/bin/*.sh
+
+COPY . /opt/recsys
+
+ENV PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys

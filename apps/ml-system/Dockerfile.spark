@@ -1,16 +1,37 @@
 ARG RECSYS_SPARK_BASE_IMAGE=recsys-spark:local
-FROM ${RECSYS_SPARK_BASE_IMAGE}
+FROM ${RECSYS_SPARK_BASE_IMAGE} AS deps
 
 USER root
-RUN pip3 install --no-cache-dir \
+ENV UV_LINK_MODE=copy \
+    UV_CONCURRENT_DOWNLOADS=8 \
+    UV_CONCURRENT_BUILDS=8
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3.10-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m pip install --no-cache-dir uv \
+    && python3 -m venv /opt/venv
+
+RUN uv pip install --python /opt/venv/bin/python --no-cache \
     numpy \
     pandas \
     pyarrow \
+    boto3 \
+    "psycopg[binary]" \
+    psycopg-pool \
     s3fs==2024.10.0 \
     fsspec==2024.10.0 \
     "feast[redis]"
 
-ENV PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys
+FROM ${RECSYS_SPARK_BASE_IMAGE} AS runtime
+
+USER root
+COPY --from=deps /opt/venv /opt/venv
+
+ENV PATH=/opt/venv/bin:${PATH} \
+    PYSPARK_PYTHON=/opt/venv/bin/python \
+    PYSPARK_DRIVER_PYTHON=/opt/venv/bin/python \
+    PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys
 
 WORKDIR /opt/recsys
 COPY configs /opt/recsys/configs

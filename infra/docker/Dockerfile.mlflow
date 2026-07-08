@@ -1,12 +1,30 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS deps
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    UV_CONCURRENT_DOWNLOADS=8 \
+    UV_CONCURRENT_BUILDS=8
 
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir uv \
+    && python -m venv /opt/venv
+
+RUN uv pip install --python /opt/venv/bin/python --no-cache \
     boto3 \
     mlflow \
     psycopg2-binary
 
-CMD ["mlflow", "--help"]
+FROM python:3.11-slim AS runtime
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/venv/bin:${PATH}
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash \
+    && ln -s /opt/venv/bin/mlflow /usr/local/bin/mlflow \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=deps /opt/venv /opt/venv
+
+CMD ["mlflow", "--help"]

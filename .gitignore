@@ -74,3 +74,4 @@ credentials.db
 temp/
 .coverage
 
+.docker-metrics/

@@ -1,0 +1,223 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-baseline-ui-script
+  namespace: recsys-dataflow
+data:
+  spark_baseline_ui.py: |
+    from __future__ import annotations
+
+    import argparse
+    import json
+    import time
+    from typing import Any
+
+    from pyspark.sql import functions as F
+
+    from features.spark.build_silver_tables import build_silver_tables
+    from features.spark.session import row_count, spark_session, write_iceberg_table
+    from features.spark.spark_batch_entrypoint import (
+        _batch_source_path,
+        _build_feature_outputs,
+        _write_postgres_tables,
+        load_config,
+    )
+    from lakehouse.iceberg import IcebergCatalogConfig, create_spark_namespace
+
+
+    def run_ui_action(spark: Any, label: str, action):
+        sc = spark.sparkContext
+        group_id = label.lower().replace(" ", "-").replace(":", "").replace("/", "-")[:120]
+        sc.setJobGroup(group_id, label, interruptOnCancel=True)
+        sc.setJobDescription(label)
+        sc.setLocalProperty("callSite.short", label)
+        try:
+            return action()
+        finally:
+            sc.setLocalProperty("spark.jobGroup.id", None)
+            sc.setLocalProperty("spark.job.interruptOnCancel", None)
+            sc.setLocalProperty("spark.job.description", None)
+            sc.setLocalProperty("callSite.short", None)
+
+
+    def main() -> int:
+        parser = argparse.ArgumentParser(
+            description="Spark baseline UI proof for lakehouse -> Feast PostgreSQL offline store."
+        )
+        parser.add_argument("--config", default="configs/local/spark_batch.yaml")
+        parser.add_argument("--sleep-seconds", type=int, default=1800)
+        args = parser.parse_args()
+
+        spark = spark_session("recsys-spark-lakehouse-to-offline-store-baseline")
+        config = load_config(args.config)
+        input_config = config.get("input", {})
+        output = config["output"]
+        features = config["features"]
+        catalog = IcebergCatalogConfig(
+            catalog_name=output.get("iceberg_catalog", "recsys"),
+            lakehouse_namespace=output.get("iceberg_lakehouse_namespace", "lakehouse"),
+            offline_feature_catalog_name=output.get("offline_feature_catalog", "recsys_features"),
+            feature_namespace=output.get("iceberg_feature_namespace", "feature_store"),
+            warehouse_uri=output.get("lakehouse_warehouse", "s3a://recsys-lakehouse/warehouse"),
+            offline_feature_warehouse_uri=output.get(
+                "offline_feature_store_warehouse",
+                "s3a://recsys-offline-feature-store/warehouse",
+            ),
+        )
+        create_spark_namespace(spark, catalog)
+        source, run_path = _batch_source_path(input_config, output)
+
+        try:
+            silver = run_ui_action(
+                spark,
+                "DP3 SPARK - read data lakehouse and build silver tables before offline-store export",
+                lambda: build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source),
+            )
+            clean_events = silver["clean_behavior_events"].cache()
+            rejected_events = silver["rejected_behavior_events"].cache()
+
+            clean_behavior_events = run_ui_action(
+                spark,
+                "DP3 SPARK - count clean behavior events from lakehouse",
+                lambda: row_count(clean_events),
+            )
+            duplicate_rows = run_ui_action(
+                spark,
+                "ISSUE 4 - duplicate records: rejected duplicate event_id rows before offline-store write",
+                lambda: row_count(rejected_events),
+            )
+            schema_unknown_rows = run_ui_action(
+                spark,
+                "ISSUE 3 - schema evolution: old lakehouse rows with missing or unknown device_type",
+                lambda: clean_events.filter(F.col("device_type").isNull() | (F.col("device_type") == "unknown")).count(),
+            )
+            top_products = run_ui_action(
+                spark,
+                "ISSUE 1 - skew problem: product_id aggregation before offline-store feature write",
+                lambda: [
+                    row.asDict()
+                    for row in (
+                        clean_events.groupBy("product_id")
+                        .agg(F.count("*").alias("event_count"))
+                        .orderBy(F.desc("event_count"))
+                        .limit(10)
+                        .collect()
+                    )
+                ],
+            )
+            campaign_cardinality = run_ui_action(
+                spark,
+                "ISSUE 2 - high cardinality: campaign_id cardinality before offline-store feature write",
+                lambda: clean_events.select("campaign_id").distinct().count(),
+            )
+
+            outputs = run_ui_action(
+                spark,
+                "DP3 SPARK - build batch feature tables for Feast offline store",
+                lambda: _build_feature_outputs(silver, catalog=catalog, features=features),
+            )
+            output_counts: dict[str, int] = {}
+            for table_name, frame in outputs.items():
+                short_name = table_name.rsplit(".", 1)[-1]
+                run_ui_action(
+                    spark,
+                    f"DP3 SPARK - write Iceberg offline feature table {short_name}",
+                    lambda frame=frame, table_name=table_name: write_iceberg_table(frame, table_name, mode="overwrite"),
+                )
+                output_counts[short_name] = run_ui_action(
+                    spark,
+                    f"DP3 SPARK - count offline feature table {short_name}",
+                    lambda frame=frame: row_count(frame),
+                )
+            run_ui_action(
+                spark,
+                "DP3 SPARK - export batch feature tables to PostgreSQL Feast offline store",
+                lambda: _write_postgres_tables(outputs, catalog=catalog, output=output),
+            )
+
+            summary = {
+                "engine": "spark",
+                "flow": "data_lakehouse_to_postgresql_feast_offline_store",
+                "version": "baseline",
+                "lakehouse_source": f"{source}:{run_path}",
+                "offline_store": "PostgreSQL Feast offline store",
+                "clean_behavior_events": clean_behavior_events,
+                "duplicate_rows_rejected_before_offline_store": duplicate_rows,
+                "schema_evolution_unknown_device_type_rows": schema_unknown_rows,
+                "campaign_cardinality": campaign_cardinality,
+                "top_skewed_products": top_products,
+                "offline_feature_output_counts": output_counts,
+                "issues_visible_in_spark_ui": [
+                    "ISSUE 1 - skew problem: product_id aggregation before offline-store feature write",
+                    "ISSUE 2 - high cardinality: campaign_id cardinality before offline-store feature write",
+                    "ISSUE 3 - schema evolution: old lakehouse rows with missing or unknown device_type",
+                    "ISSUE 4 - duplicate records: rejected duplicate event_id rows before offline-store write",
+                ],
+            }
+            print("SPARK_LAKEHOUSE_TO_OFFLINE_STORE_BASELINE=" + json.dumps(summary, sort_keys=True), flush=True)
+
+            deadline = time.time() + args.sleep_seconds
+            while time.time() < deadline:
+                print(json.dumps({"status": "spark_offline_store_ui_alive", "seconds_left": int(deadline - time.time())}), flush=True)
+                time.sleep(30)
+            return 0
+        finally:
+            spark.stop()
+
+
+    if __name__ == "__main__":
+        raise SystemExit(main())
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spark-baseline-ui
+  namespace: recsys-dataflow
+  labels:
+    app: spark-baseline-ui
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: spark-baseline-ui
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: spark-baseline-ui
+          image: recsys-spark:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: spark-ui
+              containerPort: 4040
+          command: ["/opt/spark/bin/spark-submit"]
+          args:
+            - "--master"
+            - "local[*]"
+            - "--conf"
+            - "spark.driver.bindAddress=0.0.0.0"
+            - "--conf"
+            - "spark.driver.host=127.0.0.1"
+            - "/opt/recsys-baseline/spark_baseline_ui.py"
+            - "--config"
+            - "$(SPARK_BATCH_CONFIG)"
+            - "--sleep-seconds"
+            - "1800"
+          env:
+            - name: SPARK_SQL_SHUFFLE_PARTITIONS
+              value: "8"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+          volumeMounts:
+            - name: script
+              mountPath: /opt/recsys-baseline
+      volumes:
+        - name: script
+          configMap:
+            name: spark-baseline-ui-script

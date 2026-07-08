@@ -123,6 +123,42 @@ def test_full_image_cloudbuild_builds_all_runtime_images_after_kfp_compile():
     assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index("id: dataflow-cli")
 
 
+def test_remaining_runtime_dockerfiles_use_multistage_and_parallel_tools():
+    kafka_connect = (ROOT / "infra/docker/Dockerfile.kafka-connect").read_text()
+    mlflow = (ROOT / "infra/docker/Dockerfile.mlflow").read_text()
+    mlops_spark = (ROOT / "apps/ml-system/Dockerfile.spark").read_text()
+
+    assert "FROM confluentinc/cp-kafka-connect:7.5.0 AS plugins" in kafka_connect
+    assert "FROM confluentinc/cp-kafka-connect:7.5.0 AS runtime" in kafka_connect
+    assert "CONNECTOR_INSTALL_JOBS" in kafka_connect
+    assert 'job_count=0' in kafka_connect
+    assert 'confluent-hub install --no-prompt --component-dir /tmp/confluent-hub-components "${connector}" &' in kafka_connect
+    assert "COPY --from=plugins /tmp/confluent-hub-components" in kafka_connect
+    assert "debezium/debezium-connector-postgresql" in kafka_connect
+    assert "kafka-connect-s3" not in kafka_connect
+
+    assert "FROM python:3.11-slim AS deps" in mlflow
+    assert "FROM python:3.11-slim AS runtime" in mlflow
+    assert "UV_CONCURRENT_DOWNLOADS=8" in mlflow
+    assert "UV_CONCURRENT_BUILDS=8" in mlflow
+    assert "apt-get install -y --no-install-recommends bash" in mlflow
+    assert "ln -s /opt/venv/bin/mlflow /usr/local/bin/mlflow" in mlflow
+    assert "COPY --from=deps /opt/venv /opt/venv" in mlflow
+
+    mlflow_chart = (ROOT / "infra/helm/mlflow-stack/templates/mlflow.yaml").read_text()
+    assert "/opt/venv/bin/mlflow server" in mlflow_chart
+
+    assert " AS deps" in mlops_spark
+    assert " AS runtime" in mlops_spark
+    assert "UV_CONCURRENT_DOWNLOADS=8" in mlops_spark
+    assert "UV_CONCURRENT_BUILDS=8" in mlops_spark
+    assert "boto3" in mlops_spark
+    assert "psycopg[binary]" in mlops_spark
+    assert "psycopg-pool" in mlops_spark
+    assert "COPY --from=deps /opt/venv /opt/venv" in mlops_spark
+    assert "PYSPARK_PYTHON=/opt/venv/bin/python" in mlops_spark
+
+
 def test_jenkins_training_component_builds_runtime_images_and_package_trigger_image():
     build_script = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text()
     training_case = build_script.split("training)", 1)[1].split(";;", 1)[0]
@@ -189,7 +225,7 @@ def test_node_rebalance_validation_covers_relocated_control_plane():
     assert "assert_no_local_images" in validator
     assert "assert_no_bad_pods" in validator
     assert "kube_system_ml_deployments" in rebalance
-    assert "patch_deployment_cpu kube-system kube-dns" in rebalance
+    assert "patch_gke_managed_deployment_cpu kube-dns" in rebalance
     assert "enable_ingress_mesh_upstreams" in rebalance
     assert "assert_istio_sidecar_enabled deployment ingress-nginx ingress-nginx-controller" in validator
     assert "kubectl patch deployment ingress-nginx-controller" in power_script
@@ -208,12 +244,23 @@ def test_airflow_dags_run_native_lakehouse_tasks_only():
         assert "feast_materialize_incremental" in source
         assert "feast materialize-incremental" in source
         if name == "k8s":
-            assert "offline_feature_drift" in source
-            assert "trigger_kubeflow_retrain" in source
-            assert "feast_materialize_incremental >> offline_feature_drift >> trigger_kubeflow_retrain" in source
+            assert 'dag_id="recsys_batch_feature_pipeline"' in source
+            assert 'schedule=env_schedule("BATCH_FEATURE_DAG_SCHEDULE", "0 1 * * *")' in source
+            assert "run_spark_batch_to_offline_store >> verify_postgres_offline_store_updated" in source
+            assert 'dag_id="recsys_feast_materialize"' in source
+            assert 'schedule=env_schedule("FEAST_MATERIALIZE_DAG_SCHEDULE", "20 */2 * * *")' in source
+            assert "apply_feast_feature_repo >> feast_materialize_incremental >> verify_redis_online_store_updated" in source
+            assert 'dag_id="recsys_feature_drift_monitoring"' in source
+            assert 'schedule=env_schedule("FEATURE_DRIFT_DAG_SCHEDULE", "30 3 * * *")' in source
+            assert "run_offline_feature_drift >> push_drift_metrics >> trigger_kubeflow_retrain_if_drift" in source
+            assert "feast_materialize_incremental >> offline_feature_drift >> trigger_kubeflow_retrain" not in source
+            assert "trigger_kubeflow_retrain_if_drift" in source
             assert "python -m validate.offline_feature_drift" in source
-            assert '"offline_feature_drift",\n            DATAFLOW_IMAGE,' in source
+            assert '"run_offline_feature_drift",\n            DATAFLOW_IMAGE,' in source
             assert "apply_feature_repo" in source
+            assert "PostgresOfflineStoreConfig.from_env()" in source
+            assert "redis_online_store_key_counts" in source
+            assert "pushed_drift_report_metrics" in source
             assert "http://flink-jobmanager:8081/jobs/overview" in source
             assert "No RUNNING Flink jobs found" in source
         else:

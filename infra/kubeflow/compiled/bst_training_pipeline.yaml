@@ -40,7 +40,7 @@
 #    pvc_mount_path: str [Default: '/workspace']
 #    pvc_name: str [Default: 'recsys-mlops-pvc']
 #    ray_best_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/best_result.json']
-#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1']
+#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7']
 #    ray_job_name: str [Default: 'recsys-bst-ray-tune']
 #    ray_namespace: str [Default: 'kubeflow']
 #    ray_node_selector: str [Default: 'recsys.ai/pool=ml-system']
@@ -49,7 +49,7 @@
 #    ray_toleration: str [Default: 'recsys.ai/workload:ml-system:NoSchedule']
 #    ray_train_job_name: str [Default: 'recsys-bst-ray-ddp-train']
 #    ray_train_status_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/rayjob_ddp_status.json']
-#    ray_ttl_seconds_after_finished: int [Default: 1800.0]
+#    ray_ttl_seconds_after_finished: int [Default: 60.0]
 #    ray_tune_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/tune_result.json']
 #    runtime_secret_name: str [Default: 'recsys-mlops-runtime']
 #    serving_output_dir: str [Default: '/workspace/recsys/data_platform/output/ml/serving']
@@ -266,14 +266,10 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
     exec-prepare-training-data:
       container:
         args:
-        - --master
-        - local[*]
-        - --packages
-        - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2,org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.2,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262
         - /opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py
         - --feature-source
         - '{{$.inputs.parameters[''feature_source'']}}'
@@ -305,8 +301,8 @@ deploymentSpec:
         - --dataset-metadata-path
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
-        - /opt/spark/bin/spark-submit
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:full-cicd-20260707-r1
+        - /opt/venv/bin/python
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:docker-opt-20260707-r7
     exec-promote-bst-model:
       container:
         args:
@@ -323,7 +319,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/registry/model_promotion.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
     exec-submit-rayjob:
       container:
         args:
@@ -384,7 +380,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
     exec-submit-rayjob-2:
       container:
         args:
@@ -445,7 +441,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
     exec-trigger-kserve-model-cd:
       container:
         args:
@@ -465,7 +461,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.
@@ -854,7 +850,7 @@ root:
         isOptional: true
         parameterType: STRING
       ray_image:
-        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cicd-20260707-r1
+        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
         isOptional: true
         parameterType: STRING
       ray_job_name:
@@ -890,7 +886,7 @@ root:
         isOptional: true
         parameterType: STRING
       ray_ttl_seconds_after_finished:
-        defaultValue: 1800.0
+        defaultValue: 60.0
         isOptional: true
         parameterType: NUMBER_INTEGER
       ray_tune_result_path:

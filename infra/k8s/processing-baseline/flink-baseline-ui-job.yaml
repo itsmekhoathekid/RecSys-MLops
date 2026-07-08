@@ -1,0 +1,124 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flink-baseline-offline-submit
+  namespace: recsys-dataflow
+  labels:
+    app: flink-baseline-offline-submit
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: flink-baseline-offline-submit
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: submit
+          image: recsys-flink:local
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              printf '\n%s\n' "$FLINK_PROPERTIES" >> /opt/flink/conf/flink-conf.yaml
+              PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
+              flink run -m flink-jobmanager:8081 \
+                -py apps/data-platform/src/features/flink/realtime_stream_job.py \
+                -- \
+                --runner pyflink \
+                --topic "$REALTIME_STREAM_TOPIC" \
+                --bootstrap-servers "$KAFKA_BOOTSTRAP_SERVERS" \
+                --group-id "recsys-flink-baseline-offline-store" \
+                --starting-offsets earliest \
+                --continuous \
+                --parallelism 1 \
+                --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
+                --progress-log-events 25 \
+                --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --offline-store-enabled \
+                --disable-online-store \
+                --offline-store-sink postgres \
+                --feast-postgres-host "$FEAST_POSTGRES_HOST" \
+                --feast-postgres-port "$FEAST_POSTGRES_PORT" \
+                --feast-postgres-database "$FEAST_POSTGRES_DB" \
+                --feast-postgres-schema "$FEAST_POSTGRES_SCHEMA" \
+                --feast-postgres-user "$FEAST_POSTGRES_USER" \
+                --feast-postgres-password "$FEAST_POSTGRES_PASSWORD" \
+                --feast-postgres-sslmode "$FEAST_POSTGRES_SSLMODE" \
+                --watermark-delay-minutes 15 \
+                --quality-window-seconds "$STREAM_QUALITY_WINDOW_SECONDS" \
+                --burst-threshold-event-count 200 \
+                --state-ttl-seconds "$STREAM_STATE_TTL_SECONDS" \
+                --dedup-state-ttl-seconds "$STREAM_DEDUP_STATE_TTL_SECONDS"
+              echo "Submitted Flink CDC -> PostgreSQL Feast offline feature store baseline proof job."
+              sleep infinity
+          env:
+            - name: FLINK_PROPERTIES
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: s3a://recsys-lakehouse/flink-checkpoints\nenv.java.opts.client: --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED\nenv.java.opts.all: --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flink-baseline-online-submit
+  namespace: recsys-dataflow
+  labels:
+    app: flink-baseline-online-submit
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: flink-baseline-online-submit
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: submit
+          image: recsys-flink:local
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              printf '\n%s\n' "$FLINK_PROPERTIES" >> /opt/flink/conf/flink-conf.yaml
+              PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
+              flink run -m flink-jobmanager:8081 \
+                -py apps/data-platform/src/features/flink/realtime_stream_job.py \
+                -- \
+                --runner pyflink \
+                --topic "$REALTIME_STREAM_TOPIC" \
+                --bootstrap-servers "$KAFKA_BOOTSTRAP_SERVERS" \
+                --group-id "recsys-flink-baseline-online-store" \
+                --starting-offsets earliest \
+                --continuous \
+                --parallelism 1 \
+                --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
+                --progress-log-events 25 \
+                --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --disable-offline-store \
+                --redis-host "$REDIS_HOST" \
+                --redis-port "$REDIS_PORT" \
+                --watermark-delay-minutes 15 \
+                --quality-window-seconds "$STREAM_QUALITY_WINDOW_SECONDS" \
+                --burst-threshold-event-count 200 \
+                --state-ttl-seconds "$STREAM_STATE_TTL_SECONDS" \
+                --dedup-state-ttl-seconds "$STREAM_DEDUP_STATE_TTL_SECONDS"
+              echo "Submitted Flink CDC -> Redis online feature store baseline proof job."
+              sleep infinity
+          env:
+            - name: FLINK_PROPERTIES
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: s3a://recsys-lakehouse/flink-checkpoints\nenv.java.opts.client: --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED\nenv.java.opts.all: --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret

@@ -19,27 +19,39 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 
 ### Code Reference
 
-- [k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py): orchestrates Spark batch feature build, Feast repo apply, Feast `materialize-incremental`, drift, and retrain trigger checks.
+- [k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py): defines the split Airflow DAGs. `recsys_batch_feature_pipeline` builds the PostgreSQL Feast offline store, while `recsys_feast_materialize` applies the Feast repo, runs Feast `materialize-incremental`, and verifies Redis online-store keys.
+- [values.yaml](../../../infra/helm/recsys-data-platform/values.yaml): exposes the `recsys_feast_materialize` schedule through `airflow.feastMaterializeSchedule`.
+- [configmap.yaml](../../../infra/helm/recsys-data-platform/templates/configmap.yaml): injects `FEAST_MATERIALIZE_DAG_SCHEDULE` into Airflow so the materialization DAG can run on its own cadence.
 - [spark_batch_entrypoint.py](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py): exports Feast-compatible feature and label tables into PostgreSQL through `feast_postgres_export`.
 - [postgres_offline_store.py](../../../apps/data-platform/src/feature_store/postgres_offline_store.py): owns PostgreSQL DDL and row insertion for `user_sequence_features`, `user_aggregate_features`, `item_features`, and `ml_ranking_labels`.
 - [feature_store.yaml](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml): configures Feast `offline_store.type: postgres` and Redis online store.
 - [features.py](../../../apps/data-platform/feature-store/feature_repo/features.py): defines Feast `PostgreSQLSource` FeatureViews and FeatureService `bst_ranking_v1`.
 
-### Image Proof Data Pipelines On Airflow
-
-![Airflow data pipeline overview](../../pngs/airflow_data_pipeline_overview.png)
-
 ### Image Proof Of Feast Incremental Materialize On Airflow Graph
 
 ![Feast incremental materialize graph](../../pngs/feast_materialize_dag.png)
+
+**Note:** The `recsys_feast_materialize` DAG runs every 2 hours, at minute 20
+(`20 */2 * * *`). The DAG focuses only on moving features from the PostgreSQL
+Feast offline store into the Redis online store: `apply_feast_feature_repo` ->
+`feast_materialize_incremental` -> `verify_redis_online_store_updated`. The
+upstream offline-store refresh is handled by `recsys_batch_feature_pipeline`,
+and drift/retrain checks are handled by the separate
+`recsys_feature_drift_monitoring` DAG.
 
 ### Commands To Capture Proof
 
 ```bash
 kubectl get pods -n recsys-dataflow
 
-kubectl logs -n recsys-dataflow deploy/airflow-scheduler --tail=120 | \
-  grep -E 'run_spark_batch_to_offline_store|feast_materialize_incremental|offline_feature_drift'
+kubectl exec -n recsys-dataflow deploy/airflow-webserver -- \
+  airflow dags details recsys_feast_materialize
+
+kubectl exec -n recsys-dataflow deploy/airflow-webserver -- \
+  airflow dags list-runs -d recsys_feast_materialize
+
+kubectl exec -n recsys-dataflow deploy/airflow-webserver -- \
+  airflow tasks states-for-dag-run recsys_feast_materialize <run_id>
 
 kubectl exec -n recsys-dataflow deploy/feature-postgres -- \
   psql -U feast -d feature_store -c '
@@ -50,7 +62,11 @@ kubectl exec -n recsys-dataflow deploy/feature-postgres -- \
   '
 ```
 
-Expected proof: Airflow shows Spark batch and Feast materialize tasks, and PostgreSQL has the Feast offline feature tables in schema `feature_store`.
+Expected proof: Airflow shows the dedicated `recsys_feast_materialize` DAG with
+`apply_feast_feature_repo`, `feast_materialize_incremental`, and
+`verify_redis_online_store_updated` all successful. PostgreSQL has the Feast
+offline feature tables in schema `feature_store`, and the materialize DAG
+verifies that Redis online-store keys exist after incremental materialization.
 
 ## Two Flink Streaming Jobs Running
 

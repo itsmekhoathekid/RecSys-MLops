@@ -64,12 +64,8 @@ def prepare_training_data(
 ):
     return dsl.ContainerSpec(
         image=SPARK_IMAGE,
-        command=["/opt/spark/bin/spark-submit"],
+        command=["/opt/venv/bin/python"],
         args=[
-            "--master",
-            "local[*]",
-            "--packages",
-            SPARK_PACKAGES,
             "/opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py",
             "--feature-source",
             feature_source,
@@ -331,7 +327,7 @@ def recsys_bst_pipeline(
     head_ray_num_cpus: str = "0",
     ray_node_selector: str = "recsys.ai/pool=ml-system",
     ray_toleration: str = "recsys.ai/workload:ml-system:NoSchedule",
-    ray_ttl_seconds_after_finished: int = 1800,
+    ray_ttl_seconds_after_finished: int = 60,
     use_gpu: bool = False,
     gpu_limit: int = 1,
 ):

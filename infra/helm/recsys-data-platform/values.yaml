@@ -170,6 +170,9 @@ realtimeCdcConnector:
 airflow:
   dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
   schedule: "@daily"
+  batchFeatureSchedule: "0 1 * * *"
+  feastMaterializeSchedule: "20 */2 * * *"
+  featureDriftSchedule: "30 3 * * *"
 
 drift:
   currentRoot: "s3a://recsys-offline-feature-store/warehouse/feature_store"

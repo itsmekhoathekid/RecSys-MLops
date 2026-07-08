@@ -350,9 +350,8 @@ def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeyp
     compiled = package_path.read_text(encoding="utf-8")
 
     assert package_path.name == "bst_training_pipeline.yaml"
-    assert "/opt/spark/bin/spark-submit" in compiled
-    assert "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12" in compiled
-    assert "org.apache.hudi:hudi-spark3.5-bundle_2.12" in compiled
+    assert "/opt/venv/bin/python" in compiled
+    assert "/opt/spark/bin/spark-submit" not in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py" in compiled
     assert "--feature-source" in compiled
     assert "--offline-feature-table" in compiled

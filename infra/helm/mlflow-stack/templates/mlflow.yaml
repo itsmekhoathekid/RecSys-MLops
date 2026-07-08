@@ -52,7 +52,7 @@ spec:
             - -lc
           args:
             - >-
-              mlflow server
+              /opt/venv/bin/mlflow server
               --host 0.0.0.0
               --port {{ .Values.mlflow.service.port }}
               --backend-store-uri "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"

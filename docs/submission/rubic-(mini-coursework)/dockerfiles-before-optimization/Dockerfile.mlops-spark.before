@@ -1,0 +1,7 @@
+ARG RECSYS_SPARK_BASE_IMAGE=recsys-spark:local
+FROM ${RECSYS_SPARK_BASE_IMAGE}
+
+USER root
+RUN pip3 install --no-cache-dir numpy pandas pyarrow s3fs "feast[redis]"
+
+ENV PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys

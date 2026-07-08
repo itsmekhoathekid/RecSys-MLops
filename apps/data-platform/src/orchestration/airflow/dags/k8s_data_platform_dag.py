@@ -59,6 +59,13 @@ def dag_schedule():
     return schedule
 
 
+def env_schedule(name: str, default: str | None):
+    schedule = os.getenv(name, default or "")
+    if schedule.lower() in {"", "none", "manual"}:
+        return None
+    return schedule
+
+
 def pod_env_from():
     if k8s is None:
         return []
@@ -173,6 +180,127 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
     )
 
 
+SPARK_BATCH_COMMAND = spark_native_submit(
+    "run_spark_batch_to_offline_store",
+    "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
+    "--config $SPARK_BATCH_CONFIG",
+)
+
+FEAST_ENV_EXPORTS = """
+export FEAST_POSTGRES_HOST=${FEAST_POSTGRES_HOST:-feature-postgres}
+export FEAST_POSTGRES_PORT=${FEAST_POSTGRES_PORT:-5432}
+export FEAST_POSTGRES_DB=${FEAST_POSTGRES_DB:-feature_store}
+export FEAST_POSTGRES_SCHEMA=${FEAST_POSTGRES_SCHEMA:-feature_store}
+export FEAST_POSTGRES_USER=${FEAST_POSTGRES_USER:-feast}
+export FEAST_POSTGRES_PASSWORD=${FEAST_POSTGRES_PASSWORD:-feast}
+export FEAST_POSTGRES_SSLMODE=${FEAST_POSTGRES_SSLMODE:-disable}
+""".strip()
+
+APPLY_FEAST_FEATURE_REPO_COMMAND = f"""
+cd /opt/recsys/apps/data-platform/feature-store/feature_repo
+{FEAST_ENV_EXPORTS}
+python -c 'from feature_store.feast_registry import apply_feature_repo; apply_feature_repo(".")'
+""".strip()
+
+FEAST_MATERIALIZE_INCREMENTAL_COMMAND = f"""
+cd /opt/recsys/apps/data-platform/feature-store/feature_repo
+{FEAST_ENV_EXPORTS}
+feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)
+""".strip()
+
+VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = r"""
+python -c '
+import json
+from psycopg import sql
+from feature_store.postgres_offline_store import OFFLINE_STORE_TABLES, PostgresOfflineStoreConfig
+
+config = PostgresOfflineStoreConfig.from_env()
+counts = {}
+with config.connect() as conn:
+    with conn.cursor() as cur:
+        for table_name in OFFLINE_STORE_TABLES:
+            cur.execute(
+                sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
+                    sql.Identifier(config.schema),
+                    sql.Identifier(table_name),
+                )
+            )
+            counts[table_name] = int(cur.fetchone()[0])
+missing = {name: count for name, count in counts.items() if count <= 0}
+assert not missing, f"PostgreSQL Feast offline tables are empty: {missing}; counts={counts}"
+print(json.dumps({"postgres_feast_offline_store_counts": counts}, sort_keys=True))
+'
+""".strip()
+
+VERIFY_REDIS_ONLINE_STORE_COMMAND = r"""
+python -c '
+import json
+import os
+import redis
+
+client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "redis"),
+    port=int(os.getenv("REDIS_PORT", "6379")),
+    decode_responses=True,
+)
+patterns = ("fs:user_sequence:*", "fs:user_aggregate:*", "fs:item:*")
+counts = {pattern: sum(1 for _ in client.scan_iter(match=pattern, count=1000)) for pattern in patterns}
+total = sum(counts.values())
+assert total > 0, f"Redis online store has no feature keys for patterns {patterns}"
+print(json.dumps({"redis_online_store_key_counts": counts, "total": total}, sort_keys=True))
+'
+""".strip()
+
+RUN_OFFLINE_FEATURE_DRIFT_COMMAND = (
+    "python -m validate.offline_feature_drift "
+    "--report-path $OFFLINE_FEATURE_DRIFT_REPORT_PATH "
+    "--current-feature-root $OFFLINE_FEATURE_DRIFT_CURRENT_ROOT "
+    "--baseline-path $OFFLINE_FEATURE_DRIFT_BASELINE_PATH "
+    "--sample-rows $OFFLINE_FEATURE_DRIFT_SAMPLE_ROWS "
+    "--current-days $OFFLINE_FEATURE_DRIFT_CURRENT_DAYS "
+    "--threshold $RETRAIN_PSI_THRESHOLD "
+    "--pushgateway-url $PUSHGATEWAY_URL"
+)
+
+PUSH_DRIFT_METRICS_COMMAND = r"""
+python -c '
+import json
+import os
+import time
+from mlops.trigger_kubeflow_retrain import read_json
+from monitoring.pushgateway import MetricSample, push_metrics
+
+report = read_json(os.getenv("OFFLINE_FEATURE_DRIFT_REPORT_PATH"))
+run_id = str(report.get("run_id") or "unknown")
+samples = [
+    MetricSample(
+        "recsys_ml_feature_drift_report_available",
+        1.0,
+        {"run_id": run_id, "passed": str(report.get("passed", False)).lower()},
+    ),
+    MetricSample("recsys_ml_feature_drift_report_timestamp_seconds", float(int(time.time())), {"run_id": run_id}),
+]
+push_metrics(
+    samples,
+    job="recsys_offline_feature_drift_report",
+    gateway_url=os.getenv("PUSHGATEWAY_URL"),
+    grouping_key={"run_id": run_id},
+)
+print(json.dumps({"pushed_drift_report_metrics": True, "run_id": run_id, "passed": report.get("passed")}, sort_keys=True))
+'
+""".strip()
+
+TRIGGER_KUBEFLOW_RETRAIN_COMMAND = (
+    "python -m mlops.trigger_kubeflow_retrain "
+    "--drift-report-path $OFFLINE_FEATURE_DRIFT_REPORT_PATH "
+    "--kfp-endpoint $KFP_ENDPOINT "
+    "--experiment-name $KFP_EXPERIMENT_NAME "
+    "--pipeline-package-path $KFP_PIPELINE_PACKAGE_PATH "
+    "--pushgateway-url $PUSHGATEWAY_URL "
+    "--pipeline-arg source_run_path=s3a://$LAKE_BUCKET/raw/$DATA_GENERATOR_RUN_ID"
+)
+
+
 if DAG is not None:
     with DAG(
         dag_id="k8s_data_platform_dag",
@@ -238,26 +366,8 @@ if DAG is not None:
         run_spark_batch_to_offline_store = pod_task(
             "run_spark_batch_to_offline_store",
             SPARK_IMAGE,
-            spark_native_submit(
-                "run_spark_batch_to_offline_store",
-                "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
-                "--config $SPARK_BATCH_CONFIG",
-            ),
+            SPARK_BATCH_COMMAND,
             mesh=False,
-        )
-        feast_materialize_incremental = pod_task(
-            "feast_materialize_incremental",
-            DATAFLOW_IMAGE,
-            "cd /opt/recsys/apps/data-platform/feature-store/feature_repo && "
-            "export FEAST_POSTGRES_HOST=${FEAST_POSTGRES_HOST:-feature-postgres} && "
-            "export FEAST_POSTGRES_PORT=${FEAST_POSTGRES_PORT:-5432} && "
-            "export FEAST_POSTGRES_DB=${FEAST_POSTGRES_DB:-feature_store} && "
-            "export FEAST_POSTGRES_SCHEMA=${FEAST_POSTGRES_SCHEMA:-feature_store} && "
-            "export FEAST_POSTGRES_USER=${FEAST_POSTGRES_USER:-feast} && "
-            "export FEAST_POSTGRES_PASSWORD=${FEAST_POSTGRES_PASSWORD:-feast} && "
-            "export FEAST_POSTGRES_SSLMODE=${FEAST_POSTGRES_SSLMODE:-disable} && "
-            "python -c 'from feature_store.feast_registry import apply_feature_repo; apply_feature_repo(\".\")' && "
-            "feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)",
         )
         run_flink_stream_to_feature_stores = pod_task(
             "run_flink_stream_to_feature_stores",
@@ -271,29 +381,6 @@ if DAG is not None:
                 "print(json.dumps({'flink_running_jobs': len(running), 'job_ids': [job.get('jid') for job in running]}, sort_keys=True))\"",
                 "realtime Flink feature-store sync",
             ),
-        )
-        offline_feature_drift = pod_task(
-            "offline_feature_drift",
-            DATAFLOW_IMAGE,
-            "python -m validate.offline_feature_drift "
-            "--report-path $OFFLINE_FEATURE_DRIFT_REPORT_PATH "
-            "--current-feature-root $OFFLINE_FEATURE_DRIFT_CURRENT_ROOT "
-            "--baseline-path $OFFLINE_FEATURE_DRIFT_BASELINE_PATH "
-            "--sample-rows $OFFLINE_FEATURE_DRIFT_SAMPLE_ROWS "
-            "--current-days $OFFLINE_FEATURE_DRIFT_CURRENT_DAYS "
-            "--threshold $RETRAIN_PSI_THRESHOLD "
-            "--pushgateway-url $PUSHGATEWAY_URL",
-        )
-        trigger_kubeflow_retrain = pod_task(
-            "trigger_kubeflow_retrain",
-            DATAFLOW_IMAGE,
-            "python -m mlops.trigger_kubeflow_retrain "
-            "--drift-report-path $OFFLINE_FEATURE_DRIFT_REPORT_PATH "
-            "--kfp-endpoint $KFP_ENDPOINT "
-            "--experiment-name $KFP_EXPERIMENT_NAME "
-            "--pipeline-package-path $KFP_PIPELINE_PACKAGE_PATH "
-            "--pushgateway-url $PUSHGATEWAY_URL "
-            "--pipeline-arg source_run_path=s3a://$LAKE_BUCKET/raw/$DATA_GENERATOR_RUN_ID",
         )
         datahub_ingest = pod_task(
             "datahub_ingest",
@@ -316,5 +403,78 @@ if DAG is not None:
         )
         generate_historical_raw_files >> ingest_historical_batch_to_lakehouse >> run_spark_batch_to_offline_store
         load_realtime_to_source_postgres >> run_flink_stream_to_feature_stores
-        run_spark_batch_to_offline_store >> feast_materialize_incremental >> offline_feature_drift >> trigger_kubeflow_retrain
-        [trigger_kubeflow_retrain, run_flink_stream_to_feature_stores] >> datahub_ingest >> end
+        [run_spark_batch_to_offline_store, run_flink_stream_to_feature_stores] >> datahub_ingest >> end
+
+    with DAG(
+        dag_id="recsys_batch_feature_pipeline",
+        start_date=datetime(2026, 1, 1),
+        schedule=env_schedule("BATCH_FEATURE_DAG_SCHEDULE", "0 1 * * *"),
+        catchup=False,
+        max_active_runs=1,
+        tags=["recsys", "features", "spark", "offline-store"],
+    ) as recsys_batch_feature_pipeline:
+        run_spark_batch_to_offline_store = pod_task(
+            "run_spark_batch_to_offline_store",
+            SPARK_IMAGE,
+            SPARK_BATCH_COMMAND,
+            mesh=False,
+        )
+        verify_postgres_offline_store_updated = pod_task(
+            "verify_postgres_offline_store_updated",
+            DATAFLOW_IMAGE,
+            VERIFY_POSTGRES_OFFLINE_STORE_COMMAND,
+        )
+
+        run_spark_batch_to_offline_store >> verify_postgres_offline_store_updated
+
+    with DAG(
+        dag_id="recsys_feast_materialize",
+        start_date=datetime(2026, 1, 1),
+        schedule=env_schedule("FEAST_MATERIALIZE_DAG_SCHEDULE", "20 */2 * * *"),
+        catchup=False,
+        max_active_runs=1,
+        tags=["recsys", "feast", "materialize", "online-store"],
+    ) as recsys_feast_materialize:
+        apply_feast_feature_repo = pod_task(
+            "apply_feast_feature_repo",
+            DATAFLOW_IMAGE,
+            APPLY_FEAST_FEATURE_REPO_COMMAND,
+        )
+        feast_materialize_incremental = pod_task(
+            "feast_materialize_incremental",
+            DATAFLOW_IMAGE,
+            FEAST_MATERIALIZE_INCREMENTAL_COMMAND,
+        )
+        verify_redis_online_store_updated = pod_task(
+            "verify_redis_online_store_updated",
+            DATAFLOW_IMAGE,
+            VERIFY_REDIS_ONLINE_STORE_COMMAND,
+        )
+
+        apply_feast_feature_repo >> feast_materialize_incremental >> verify_redis_online_store_updated
+
+    with DAG(
+        dag_id="recsys_feature_drift_monitoring",
+        start_date=datetime(2026, 1, 1),
+        schedule=env_schedule("FEATURE_DRIFT_DAG_SCHEDULE", "30 3 * * *"),
+        catchup=False,
+        max_active_runs=1,
+        tags=["recsys", "drift", "monitoring", "retrain"],
+    ) as recsys_feature_drift_monitoring:
+        run_offline_feature_drift = pod_task(
+            "run_offline_feature_drift",
+            DATAFLOW_IMAGE,
+            RUN_OFFLINE_FEATURE_DRIFT_COMMAND,
+        )
+        push_drift_metrics = pod_task(
+            "push_drift_metrics",
+            DATAFLOW_IMAGE,
+            PUSH_DRIFT_METRICS_COMMAND,
+        )
+        trigger_kubeflow_retrain_if_drift = pod_task(
+            "trigger_kubeflow_retrain_if_drift",
+            DATAFLOW_IMAGE,
+            TRIGGER_KUBEFLOW_RETRAIN_COMMAND,
+        )
+
+        run_offline_feature_drift >> push_drift_metrics >> trigger_kubeflow_retrain_if_drift

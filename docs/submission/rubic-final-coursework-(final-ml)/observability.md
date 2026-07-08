@@ -220,6 +220,16 @@ Retrain telemetry flow:
 `PushGateway retrain metrics` -> `Prometheus` ->
 `Grafana ML Drift & Retrain dashboard`
 
+![Grafana ML drift dashboard proof](../../pngs/retrain_dag.png)
+
+**Note:** The platform also has a dedicated Airflow DAG for offline-store drift
+monitoring. The `recsys_feature_drift_monitoring` DAG runs daily at 03:30
+(`30 3 * * *`). This DAG triggers the offline feature-store drift check first,
+pushes drift telemetry, and then runs the retrain trigger only when the drift
+report indicates that monitored features have drifted. In the split DAG layout,
+this is represented by the sequence `run_offline_feature_drift` ->
+`push_drift_metrics` -> `trigger_kubeflow_retrain_if_drift`.
+
 Metrics pushed:
 
 | Metric | Meaning |

@@ -1,6 +1,23 @@
-FROM confluentinc/cp-kafka-connect:7.5.0
+FROM confluentinc/cp-kafka-connect:7.5.0 AS plugins
 
 USER root
-RUN confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.5.4
+ARG CONNECTOR_INSTALL_JOBS=2
+RUN mkdir -p /tmp/confluent-hub-components \
+    && job_count=0 \
+    && for connector in \
+        debezium/debezium-connector-postgresql:2.5.4; do \
+          confluent-hub install --no-prompt --component-dir /tmp/confluent-hub-components "${connector}" & \
+          job_count=$((job_count + 1)); \
+          if [ "${job_count}" -ge "${CONNECTOR_INSTALL_JOBS}" ]; then \
+            wait; \
+            job_count=0; \
+          fi; \
+        done \
+    && wait
+
+FROM confluentinc/cp-kafka-connect:7.5.0 AS runtime
+
+USER root
+COPY --from=plugins /tmp/confluent-hub-components /usr/share/confluent-hub-components
 
 USER appuser
