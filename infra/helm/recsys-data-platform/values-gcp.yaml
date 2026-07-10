@@ -49,6 +49,7 @@ flinkTaskManager:
 
 flink:
   istioInject: "true"
+  taskSlots: "2"
 
 redis:
   istioInject: "true"
