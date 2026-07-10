@@ -155,7 +155,7 @@ pipeline {
           set -euo pipefail
           mkdir -p "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"
           uv venv "${UV_PROJECT_ENVIRONMENT}"
-          uv pip install \
+          uv pip install --python "${UV_PROJECT_ENVIRONMENT}/bin/python" \
             pytest \
             pytest-cov \
             pyyaml \
