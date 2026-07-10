@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# Airflow DAG definitions for rubric DP1/DP2/DP3 orchestration proof.
 from k8s_data_platform_dag import (
     DAG,
     DATAFLOW_IMAGE,
