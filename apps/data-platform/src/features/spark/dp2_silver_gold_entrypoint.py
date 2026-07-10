@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from typing import Any
 
 from features.spark.build_silver_tables import build_silver_tables
@@ -9,12 +10,17 @@ from features.spark.session import read_iceberg_table, row_count, spark_session
 from lakehouse.iceberg import IcebergCatalogConfig, SILVER_LAKEHOUSE_TABLES, create_spark_namespace
 
 
+def bronze_lakehouse_path(catalog: IcebergCatalogConfig) -> str:
+    return f"{catalog.warehouse_uri.rstrip('/')}/{catalog.lakehouse_namespace}"
+
+
 def build_dp2_silver_gold() -> dict[str, int]:
     spark = spark_session("recsys-dp2-bronze-to-silver-gold")
     catalog = IcebergCatalogConfig()
     try:
         create_spark_namespace(spark, catalog)
-        silver = build_silver_tables(spark, catalog=catalog, source="lakehouse")
+        run_path = os.getenv("DP2_BRONZE_RUN_PATH", bronze_lakehouse_path(catalog))
+        silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source="parquet")
         return {name: row_count(frame) for name, frame in sorted(silver.items())}
     finally:
         spark.stop()
