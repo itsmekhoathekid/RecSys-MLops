@@ -99,8 +99,8 @@ pipeline {
   }
 
   parameters {
-    string(name: 'IMAGE_PUSH_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used by Jenkins when pushing component images.')
-    string(name: 'IMAGE_PULL_REGISTRY', defaultValue: 'localhost:5001/recsys', description: 'Registry prefix used by Kubernetes workloads when pulling component images.')
+    string(name: 'IMAGE_PUSH_REGISTRY', defaultValue: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys', description: 'Registry prefix used by Jenkins when pushing component images.')
+    string(name: 'IMAGE_PULL_REGISTRY', defaultValue: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys', description: 'Registry prefix used by Kubernetes workloads when pulling component images.')
     string(name: 'IMAGE_REGISTRY', defaultValue: '', description: 'Deprecated fallback used when IMAGE_PUSH_REGISTRY or IMAGE_PULL_REGISTRY is empty.')
     booleanParam(name: 'PUBLISH_IMAGES', defaultValue: true, description: 'Push images after successful component CI.')
     booleanParam(name: 'REQUIRE_GCP_ARTIFACT_REGISTRY', defaultValue: true, description: 'Fail build proof runs unless IMAGE_PUSH_REGISTRY points to GCP Artifact Registry and PUBLISH_IMAGES=true.')
