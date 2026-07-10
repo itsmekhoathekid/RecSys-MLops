@@ -78,6 +78,17 @@ class BurstWindow(BaseModel):
 
 class SchemaEvolutionConfig(BaseModel):
     change_date: date
+    breaking_change_date: date | None = None
+    breaking_schema_version: int = Field(default=3, ge=3)
+
+    @model_validator(mode="after")
+    def validate_breaking_change(self) -> "SchemaEvolutionConfig":
+        if (
+            self.breaking_change_date is not None
+            and self.breaking_change_date <= self.change_date
+        ):
+            raise ValueError("breaking_change_date must be after change_date")
+        return self
 
 
 class DriftConfig(BaseModel):
@@ -139,6 +150,13 @@ class GeneratorConfig(BaseModel):
         change_day = self.schema_evolution.change_date.toordinal()
         if not self.history_start_date.toordinal() < change_day < history_end:
             raise ValueError("schema change date must fall inside the history window")
+        breaking_change_date = self.schema_evolution.breaking_change_date
+        if breaking_change_date is not None:
+            breaking_day = breaking_change_date.toordinal()
+            if not self.history_start_date.toordinal() < breaking_day < history_end:
+                raise ValueError(
+                    "breaking schema change date must fall inside the history window"
+                )
         if self.entities.n_categories > self.entities.n_products:
             raise ValueError("n_categories cannot exceed n_products")
         if self.entities.n_brands > self.entities.n_products:

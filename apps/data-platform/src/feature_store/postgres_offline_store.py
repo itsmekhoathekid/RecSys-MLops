@@ -90,6 +90,21 @@ TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
         ("created_timestamp", "TIMESTAMPTZ"),
         ("label_version", "TEXT"),
     ],
+    "stream_late_events_dlq": [
+        ("event_id", "TEXT"),
+        ("user_id", "BIGINT"),
+        ("product_id", "BIGINT"),
+        ("event_type", "TEXT"),
+        ("event_timestamp", "TIMESTAMPTZ"),
+        ("processed_timestamp", "TIMESTAMPTZ"),
+        ("late_by_seconds", "DOUBLE PRECISION"),
+        ("allowed_lateness_seconds", "BIGINT"),
+        ("source_topic", "TEXT"),
+        ("payload_hash", "TEXT"),
+        ("reason", "TEXT"),
+        ("payload", "TEXT"),
+        ("created_timestamp", "TIMESTAMPTZ"),
+    ],
 }
 
 

@@ -146,11 +146,24 @@ def summarize(config: GeneratorConfig, config_path: Path, lake_root: Path | None
     )
 
     change_date = config.schema_evolution.change_date
+    breaking_change_date = config.schema_evolution.breaking_change_date
     old_partition_rows = [
         row for row in events if row["event_timestamp"].date() < change_date
     ]
     new_partition_rows = [
-        row for row in events if row["event_timestamp"].date() >= change_date
+        row
+        for row in events
+        if row["event_timestamp"].date() >= change_date
+        and (
+            breaking_change_date is None
+            or row["event_timestamp"].date() < breaking_change_date
+        )
+    ]
+    breaking_partition_rows = [
+        row
+        for row in events
+        if breaking_change_date is not None
+        and row["event_timestamp"].date() >= breaking_change_date
     ]
 
     late_threshold_seconds = config.challenges.late_delay_minutes_min * 60
@@ -213,6 +226,8 @@ def summarize(config: GeneratorConfig, config_path: Path, lake_root: Path | None
                 or "none",
             ],
             ["schema_change_date", config.schema_evolution.change_date],
+            ["breaking_schema_change_date", config.schema_evolution.breaking_change_date],
+            ["breaking_schema_version", config.schema_evolution.breaking_schema_version],
         ],
     )
 
@@ -315,6 +330,28 @@ def summarize(config: GeneratorConfig, config_path: Path, lake_root: Path | None
                     len(new_partition_rows),
                 ),
             ],
+            *(
+                [
+                    [
+                        f"breaking partitions from {breaking_change_date}",
+                        len(breaking_partition_rows),
+                        sorted(
+                            {row["schema_version"] for row in breaking_partition_rows}
+                        ),
+                        sum(row["device_type"] is None for row in breaking_partition_rows),
+                        sum(row["campaign_id"] is None for row in breaking_partition_rows),
+                        percent(
+                            sum(
+                                row["device_type"] is None
+                                for row in breaking_partition_rows
+                            ),
+                            len(breaking_partition_rows),
+                        ),
+                    ]
+                ]
+                if breaking_change_date is not None
+                else []
+            ),
         ],
     )
 

@@ -22,7 +22,7 @@ sourcePostgres:
   name: source-postgres
   database: recsys
   user: recsys
-  password: ""
+  password: recsys
   storage: 20Gi
   istioInject: "false"
 
@@ -30,7 +30,7 @@ airflowPostgres:
   name: airflow-postgres
   database: airflow
   user: airflow
-  password: ""
+  password: airflow
   storage: 5Gi
   istioInject: "false"
 
@@ -48,7 +48,7 @@ minio:
   name: data-platform-minio
   endpoint: http://data-platform-minio:9000
   rootUser: minio
-  rootPassword: ""
+  rootPassword: minio123
   lakeBucket: recsys-lakehouse
   offlineFeatureBucket: recsys-offline-feature-store
   storage: 20Gi
@@ -129,11 +129,22 @@ realtimeProducer:
   rollout:
     maxSurge: 0
     maxUnavailable: 1
-  intervalSeconds: "2"
-  eventsPerTick: "5"
-  maxEvents: "1000"
-  nUsers: "20"
-  nProducts: "50"
+  intervalSeconds: "1"
+  eventsPerTick: "40"
+  maxEvents: "0"
+  nUsers: "80"
+  nProducts: "160"
+  seed: "42"
+  hotProductRatio: "0.70"
+  hotProductCount: "3"
+  duplicateEventRate: "0.14"
+  conflictingDuplicateRate: "0.04"
+  lateArrivalRate: "0.28"
+  outOfOrderRate: "0.10"
+  lateDelayMinutesMin: "45"
+  lateDelayMinutesMax: "180"
+  burstEveryNTicks: "5"
+  burstMultiplier: "8"
 
 realtimeFlinkConsumer:
   enabled: true
@@ -183,9 +194,17 @@ drift:
   bootstrapBaseline: "true"
 
 streaming:
-  watermarkDelayMinutes: 60
+  watermarkDelayMinutes: 5
+  allowedLatenessSeconds: 300
+  watermarkIdlenessSeconds: 120
+  watermarkAlignmentEnabled: "false"
+  watermarkAlignmentGroup: recsys-cdc
+  watermarkAlignmentMaxDriftSeconds: 60
+  watermarkAlignmentUpdateIntervalSeconds: 5
   qualityWindowSeconds: 60
-  burstThresholdEventCount: 500
+  burstThresholdEventCount: 200
+  dropLateEvents: "true"
+  enableLateEventDlq: "true"
   stateTtlSeconds: 604800
   dedupStateTtlSeconds: 86400
 

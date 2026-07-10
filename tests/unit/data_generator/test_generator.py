@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import date
 
 from behavior import SessionState
 from challenges import ChallengePipeline
@@ -135,6 +136,24 @@ def test_schema_evolution(small_config):
         if event.schema_version == 1
     )
     assert all(event.device_type is not None for event in output if event.schema_version == 2)
+
+
+def test_breaking_schema_evolution_can_generate_version_three(small_config):
+    config = small_config.model_copy(
+        update={
+            "schema_evolution": small_config.schema_evolution.model_copy(
+                update={
+                    "change_date": date(2026, 3, 20),
+                    "breaking_change_date": date(2026, 3, 21),
+                    "breaking_schema_version": 3,
+                }
+            )
+        }
+    )
+    data = RecsysSimulation(config).generate()
+    versions = {event.schema_version for event in data.behavior_events}
+    assert 3 in versions
+    assert all(event.device_type is not None for event in data.behavior_events if event.schema_version == 3)
 
 
 def test_parquet_round_trip(small_config):

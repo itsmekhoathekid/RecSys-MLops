@@ -68,9 +68,28 @@ CREATE TABLE IF NOT EXISTS {table_name} (
   topic STRING,
   event_count BIGINT,
   late_event_count BIGINT,
+  late_events_dropped BIGINT,
+  side_output_late_events BIGINT,
   duplicate_event_count BIGINT,
   max_late_by_seconds DOUBLE,
   is_bursty BOOLEAN,
+  created_timestamp TIMESTAMP(3)
+)
+""",
+    "stream_late_events_dlq": """
+CREATE TABLE IF NOT EXISTS {table_name} (
+  event_id STRING,
+  user_id BIGINT,
+  product_id BIGINT,
+  event_type STRING,
+  event_timestamp TIMESTAMP(3),
+  processed_timestamp TIMESTAMP(3),
+  late_by_seconds DOUBLE,
+  allowed_lateness_seconds BIGINT,
+  source_topic STRING,
+  payload_hash STRING,
+  reason STRING,
+  payload STRING,
   created_timestamp TIMESTAMP(3)
 )
 """,

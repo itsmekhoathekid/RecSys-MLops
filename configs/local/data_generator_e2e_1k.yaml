@@ -3,19 +3,19 @@ history_start_date: "2026-03-15"
 history_days: 14
 
 entities:
-  n_users: 300
-  n_products: 200
-  n_categories: 20
-  n_brands: 50
-  preferences_per_user: 3
+  n_users: 8000
+  n_products: 20000
+  n_categories: 1000
+  n_brands: 5000
+  preferences_per_user: 10
 
 traffic:
-  target_behavior_events: 1000
+  target_behavior_events: 50000
   target_tolerance: 0.02
-  requests_per_session_min: 1
-  requests_per_session_max: 2
-  impressions_per_request_min: 5
-  impressions_per_request_max: 9
+  requests_per_session_min: 4
+  requests_per_session_max: 8
+  impressions_per_request_min: 12
+  impressions_per_request_max: 24
   session_gap_minutes_min: 5
   session_gap_minutes_max: 240
 
@@ -26,7 +26,7 @@ session_behavior:
 
 distribution:
   top_city: "HCMC"
-  top_city_ratio: 0.35
+  top_city_ratio: 0.96
   cities:
     - "HCMC"
     - "Hanoi"
@@ -36,26 +36,28 @@ distribution:
     - "Hue"
     - "Nha Trang"
     - "Bien Hoa"
-  top_category_ratio: 0.30
+  top_category_ratio: 0.99
 
 challenges:
-  duplicate_event_rate: 0.0
-  conflicting_duplicate_rate: 0.0
-  late_arrival_rate: 0.12
-  out_of_order_rate: 0.03
-  late_delay_minutes_min: 5
-  late_delay_minutes_max: 45
+  duplicate_event_rate: 0.45
+  conflicting_duplicate_rate: 0.18
+  late_arrival_rate: 0.65
+  out_of_order_rate: 0.40
+  late_delay_minutes_min: 90
+  late_delay_minutes_max: 480
 
 burst_windows:
   - start_hour: 12
     end_hour: 13
-    traffic_weight: 3.0
+    traffic_weight: 50.0
   - start_hour: 20
     end_hour: 21
-    traffic_weight: 3.0
+    traffic_weight: 50.0
 
 schema_evolution:
-  change_date: "2026-03-22"
+  change_date: "2026-03-23"
+  breaking_change_date: "2026-03-27"
+  breaking_schema_version: 3
 
 output:
   base_path: "apps/data-platform/data-generator/src/output"

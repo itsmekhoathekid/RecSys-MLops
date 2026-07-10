@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: data-issues-generator
+  namespace: recsys-dataflow
+  labels:
+    app: data-issues-generator
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: data-issues-generator
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: data-issues-generator
+          image: recsys-dataflow-cli:local
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              export PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys
+              /opt/venv/bin/python apps/data-platform/data-generator/src/cli.py generate --config "${DATA_GENERATOR_CONFIG}"
+              /opt/venv/bin/python -m ingest.batch_lakehouse_ingestion \
+                --run-path "apps/data-platform/data-generator/src/output/${DATA_GENERATOR_RUN_ID}" \
+                --run-id "${DATA_GENERATOR_RUN_ID}" \
+                --mode overwrite
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret

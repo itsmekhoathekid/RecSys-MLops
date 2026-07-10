@@ -13,8 +13,13 @@ data:
     from typing import Any
 
     from pyspark.sql import functions as F
+    from pyspark.sql.types import BooleanType
 
-    from features.spark.build_silver_tables import build_silver_tables
+    from features.spark.build_silver_tables import (
+        build_silver_tables,
+        read_raw_lakehouse_tables,
+        read_raw_parquet_tables,
+    )
     from features.spark.session import row_count, spark_session, write_iceberg_table
     from features.spark.spark_batch_entrypoint import (
         _batch_source_path,
@@ -28,6 +33,7 @@ data:
     def run_ui_action(spark: Any, label: str, action):
         sc = spark.sparkContext
         group_id = label.lower().replace(" ", "-").replace(":", "").replace("/", "-")[:120]
+        spark.catalog.clearCache()
         sc.setJobGroup(group_id, label, interruptOnCancel=True)
         sc.setJobDescription(label)
         sc.setLocalProperty("callSite.short", label)
@@ -40,12 +46,54 @@ data:
             sc.setLocalProperty("callSite.short", None)
 
 
+    def _read_raw_tables_for_source(spark: Any, source: str, run_path: str | None, catalog: Any) -> dict[str, Any]:
+        if source == "parquet":
+            return read_raw_parquet_tables(spark, run_path)
+        return read_raw_lakehouse_tables(spark, catalog)
+
+
+    def _fail_if_schema_version_gt_2(events: Any) -> int:
+        def supported(schema_version: int | None) -> bool:
+            if schema_version is not None and int(schema_version) > 2:
+                raise ValueError(f"unsupported behavior_events schema_version={schema_version}")
+            return True
+
+        supported_udf = F.udf(supported, BooleanType())
+        return events.select(
+            supported_udf(F.col("schema_version")).cast("int").alias("schema_supported")
+        ).agg(F.sum("schema_supported").alias("supported_rows")).collect()[0]["supported_rows"]
+
+
+    def run_heavy_sql_proof(spark: Any, label: str, query: str, *, partitions: int = 32) -> list[dict[str, Any]]:
+        previous_adaptive = spark.conf.get("spark.sql.adaptive.enabled", "true")
+        previous_shuffle_partitions = spark.conf.get("spark.sql.shuffle.partitions", "4")
+        previous_exchange_reuse = spark.conf.get("spark.sql.exchange.reuse", "false")
+        previous_subquery_reuse = spark.conf.get("spark.sql.execution.reuseSubquery", "false")
+        try:
+            # Keep many shuffle tasks visible in Spark UI for proof screenshots.
+            spark.conf.set("spark.sql.adaptive.enabled", "false")
+            spark.conf.set("spark.sql.shuffle.partitions", str(partitions))
+            spark.conf.set("spark.sql.exchange.reuse", "false")
+            spark.conf.set("spark.sql.execution.reuseSubquery", "false")
+            return run_ui_action(
+                spark,
+                label,
+                lambda: [row.asDict() for row in spark.sql(query).collect()],
+            )
+        finally:
+            spark.conf.set("spark.sql.adaptive.enabled", previous_adaptive)
+            spark.conf.set("spark.sql.shuffle.partitions", previous_shuffle_partitions)
+            spark.conf.set("spark.sql.exchange.reuse", previous_exchange_reuse)
+            spark.conf.set("spark.sql.execution.reuseSubquery", previous_subquery_reuse)
+
+
     def main() -> int:
         parser = argparse.ArgumentParser(
             description="Spark baseline UI proof for lakehouse -> Feast PostgreSQL offline store."
         )
         parser.add_argument("--config", default="configs/local/spark_batch.yaml")
-        parser.add_argument("--sleep-seconds", type=int, default=1800)
+        parser.add_argument("--sleep-seconds", type=int, default=10800)
+        parser.add_argument("--fail-on-breaking-schema", action="store_true")
         args = parser.parse_args()
 
         spark = spark_session("recsys-spark-lakehouse-to-offline-store-baseline")
@@ -68,13 +116,32 @@ data:
         source, run_path = _batch_source_path(input_config, output)
 
         try:
+            raw = run_ui_action(
+                spark,
+                "DP3 SPARK - read raw lakehouse tables for schema compatibility checks",
+                lambda: _read_raw_tables_for_source(spark, source, run_path, catalog),
+            )
+            raw_events = raw["behavior_events"]
+            breaking_schema_rows = run_ui_action(
+                spark,
+                "DP3 CHECK - count breaking schema_version rows before silver normalization",
+                lambda: raw_events.filter(F.col("schema_version") > F.lit(2)).count(),
+            )
+            if args.fail_on_breaking_schema:
+                run_ui_action(
+                    spark,
+                    "DP3 FAIL - unsupported schema_version should fail Spark task",
+                    lambda: _fail_if_schema_version_gt_2(raw_events),
+                )
+
             silver = run_ui_action(
                 spark,
                 "DP3 SPARK - read data lakehouse and build silver tables before offline-store export",
                 lambda: build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source),
             )
-            clean_events = silver["clean_behavior_events"].cache()
-            rejected_events = silver["rejected_behavior_events"].cache()
+            clean_events = silver["clean_behavior_events"]
+            rejected_events = silver["rejected_behavior_events"]
+            clean_events.createOrReplaceTempView("clean_behavior_events_proof")
 
             clean_behavior_events = run_ui_action(
                 spark,
@@ -83,32 +150,74 @@ data:
             )
             duplicate_rows = run_ui_action(
                 spark,
-                "ISSUE 4 - duplicate records: rejected duplicate event_id rows before offline-store write",
+                "DP3 CHECK - count rejected duplicate event_id rows before offline-store write",
                 lambda: row_count(rejected_events),
             )
             schema_unknown_rows = run_ui_action(
                 spark,
-                "ISSUE 3 - schema evolution: old lakehouse rows with missing or unknown device_type",
+                "DP3 CHECK - count old lakehouse rows with missing or unknown device_type",
                 lambda: clean_events.filter(F.col("device_type").isNull() | (F.col("device_type") == "unknown")).count(),
             )
-            top_products = run_ui_action(
-                spark,
-                "ISSUE 1 - skew problem: product_id aggregation before offline-store feature write",
-                lambda: [
-                    row.asDict()
-                    for row in (
-                        clean_events.groupBy("product_id")
-                        .agg(F.count("*").alias("event_count"))
-                        .orderBy(F.desc("event_count"))
-                        .limit(10)
-                        .collect()
+            heavy_skew_sql = """
+                WITH amplified AS (
+                  SELECT
+                    category_id,
+                    product_id,
+                    event_id,
+                    user_id,
+                    CAST(price AS DOUBLE) AS price,
+                    repeat_id
+                  FROM clean_behavior_events_proof
+                  LATERAL VIEW explode(
+                    sequence(
+                      1,
+                      CASE WHEN category_id = 1 THEN 24 ELSE 2 END
                     )
-                ],
-            )
-            campaign_cardinality = run_ui_action(
+                  ) repeat_view AS repeat_id
+                )
+                SELECT
+                  category_id,
+                  COUNT(*) AS amplified_event_rows,
+                  COUNT(DISTINCT event_id) AS source_event_count,
+                  COUNT(DISTINCT product_id) AS product_cardinality_inside_category,
+                  SUM(price) AS amplified_price_sum
+                FROM amplified
+                GROUP BY category_id
+                ORDER BY amplified_event_rows DESC
+                LIMIT 20
+            """
+            heavy_cardinality_sql = """
+                WITH amplified AS (
+                  SELECT
+                    product_id,
+                    event_id,
+                    user_id,
+                    category_id,
+                    repeat_id,
+                    CONCAT(CAST(product_id AS STRING), ':', event_id, ':', CAST(repeat_id AS STRING)) AS product_event_key
+                  FROM clean_behavior_events_proof
+                  LATERAL VIEW explode(sequence(1, 8)) repeat_view AS repeat_id
+                )
+                SELECT
+                  product_id,
+                  COUNT(*) AS amplified_rows,
+                  COUNT(DISTINCT product_event_key) AS exact_high_cardinality_keys,
+                  approx_count_distinct(product_event_key, 0.05) AS approx_high_cardinality_keys,
+                  COUNT(DISTINCT user_id) AS user_cardinality_per_product
+                FROM amplified
+                GROUP BY product_id
+                ORDER BY exact_high_cardinality_keys DESC, product_id ASC
+                LIMIT 100
+            """
+            heavy_skew_result = run_heavy_sql_proof(
                 spark,
-                "ISSUE 2 - high cardinality: campaign_id cardinality before offline-store feature write",
-                lambda: clean_events.select("campaign_id").distinct().count(),
+                "DP3 HEAVY SQL - skewed category_id aggregation with 32 shuffle tasks",
+                heavy_skew_sql,
+            )
+            heavy_cardinality_result = run_heavy_sql_proof(
+                spark,
+                "DP3 HEAVY SQL - high-cardinality product_event_key aggregation with 32 shuffle tasks",
+                heavy_cardinality_sql,
             )
 
             outputs = run_ui_action(
@@ -144,14 +253,28 @@ data:
                 "clean_behavior_events": clean_behavior_events,
                 "duplicate_rows_rejected_before_offline_store": duplicate_rows,
                 "schema_evolution_unknown_device_type_rows": schema_unknown_rows,
-                "campaign_cardinality": campaign_cardinality,
-                "top_skewed_products": top_products,
+                "breaking_schema_version_rows": breaking_schema_rows,
+                "heavy_spark_sql_proof": {
+                    "shuffle_partitions": 32,
+                    "aqe_enabled_during_proof": False,
+                    "skew_query": {
+                        "label": "DP3 HEAVY SQL - skewed category_id aggregation with 32 shuffle tasks",
+                        "amplification": "category_id=1 is expanded 24x, other categories are expanded 2x",
+                        "top_rows": heavy_skew_result[:10],
+                    },
+                    "high_cardinality_query": {
+                        "label": "DP3 HEAVY SQL - high-cardinality product_event_key aggregation with 32 shuffle tasks",
+                        "amplification": "each generated behavior event is expanded 8x into product_event_key",
+                        "top_rows": heavy_cardinality_result[:10],
+                    },
+                },
                 "offline_feature_output_counts": output_counts,
-                "issues_visible_in_spark_ui": [
-                    "ISSUE 1 - skew problem: product_id aggregation before offline-store feature write",
-                    "ISSUE 2 - high cardinality: campaign_id cardinality before offline-store feature write",
-                    "ISSUE 3 - schema evolution: old lakehouse rows with missing or unknown device_type",
-                    "ISSUE 4 - duplicate records: rejected duplicate event_id rows before offline-store write",
+                "data_quality_checks_visible_in_spark_ui": [
+                    "DP3 HEAVY SQL - skewed category_id aggregation with 32 shuffle tasks",
+                    "DP3 HEAVY SQL - high-cardinality product_event_key aggregation with 32 shuffle tasks",
+                    "DP3 CHECK - count breaking schema_version rows before silver normalization",
+                    "DP3 CHECK - count old lakehouse rows with missing or unknown device_type",
+                    "DP3 CHECK - count rejected duplicate event_id rows before offline-store write",
                 ],
             }
             print("SPARK_LAKEHOUSE_TO_OFFLINE_STORE_BASELINE=" + json.dumps(summary, sort_keys=True), flush=True)
@@ -196,19 +319,33 @@ spec:
           command: ["/opt/spark/bin/spark-submit"]
           args:
             - "--master"
-            - "local[*]"
+            - "local[2]"
             - "--conf"
             - "spark.driver.bindAddress=0.0.0.0"
             - "--conf"
             - "spark.driver.host=127.0.0.1"
+            - "--conf"
+            - "spark.driver.memory=1536m"
+            - "--conf"
+            - "spark.memory.fraction=0.45"
+            - "--conf"
+            - "spark.sql.autoBroadcastJoinThreshold=-1"
+            - "--conf"
+            - "spark.sql.exchange.reuse=false"
+            - "--conf"
+            - "spark.sql.execution.reuseSubquery=false"
+            - "--conf"
+            - "spark.sql.shuffle.partitions=4"
+            - "--conf"
+            - "spark.default.parallelism=4"
             - "/opt/recsys-baseline/spark_baseline_ui.py"
             - "--config"
             - "$(SPARK_BATCH_CONFIG)"
             - "--sleep-seconds"
-            - "1800"
+            - "10800"
           env:
             - name: SPARK_SQL_SHUFFLE_PARTITIONS
-              value: "8"
+              value: "4"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
@@ -217,7 +354,13 @@ spec:
           volumeMounts:
             - name: script
               mountPath: /opt/recsys-baseline
+            - name: processing-stress-configs
+              mountPath: /opt/recsys/configs/local/spark_batch_e2e_1k.yaml
+              subPath: spark_batch_e2e_1k.yaml
       volumes:
         - name: script
           configMap:
             name: spark-baseline-ui-script
+        - name: processing-stress-configs
+          configMap:
+            name: processing-stress-configs

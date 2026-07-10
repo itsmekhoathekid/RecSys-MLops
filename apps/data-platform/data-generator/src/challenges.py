@@ -51,6 +51,7 @@ class ChallengeStats:
     out_of_order_injected: int
     schema_v1_events: int
     schema_v2_events: int
+    schema_v3_events: int
 
 
 class ChallengePipeline:
@@ -59,10 +60,14 @@ class ChallengePipeline:
         rng: np.random.Generator,
         config: ChallengeConfig,
         schema_change_date,
+        breaking_schema_change_date=None,
+        breaking_schema_version: int = 3,
     ):
         self.rng = rng
         self.config = config
         self.schema_change_date = schema_change_date
+        self.breaking_schema_change_date = breaking_schema_change_date
+        self.breaking_schema_version = breaking_schema_version
 
     def apply(
         self, clean_events: list[BehaviorEvent]
@@ -72,9 +77,16 @@ class ChallengePipeline:
         out_of_order_count = 0
         schema_v1_count = 0
         schema_v2_count = 0
+        schema_v3_count = 0
 
         for event in clean_events:
-            if event.event_timestamp.date() < self.schema_change_date:
+            if (
+                self.breaking_schema_change_date is not None
+                and event.event_timestamp.date() >= self.breaking_schema_change_date
+            ):
+                event = replace(event, schema_version=self.breaking_schema_version)
+                schema_v3_count += 1
+            elif event.event_timestamp.date() < self.schema_change_date:
                 event = replace(
                     event,
                     device_type=None,
@@ -150,4 +162,5 @@ class ChallengePipeline:
             out_of_order_injected=out_of_order_count,
             schema_v1_events=schema_v1_count,
             schema_v2_events=schema_v2_count,
+            schema_v3_events=schema_v3_count,
         )

@@ -3,11 +3,11 @@ history_start_date: "2026-03-15"
 history_days: 30
 
 entities:
-  n_users: 1000
-  n_products: 500
-  n_categories: 20
-  n_brands: 80
-  preferences_per_user: 3
+  n_users: 3000
+  n_products: 3000
+  n_categories: 160
+  n_brands: 500
+  preferences_per_user: 8
 
 traffic:
   target_behavior_events: 10000

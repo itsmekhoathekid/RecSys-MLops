@@ -1,126 +1,3 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: offline-issue-amplifier-script
-  namespace: recsys-dataflow
-data:
-  amplify_offline_issues.py: |
-    from __future__ import annotations
-
-    import argparse
-    import json
-    import shutil
-    import uuid
-    from datetime import timedelta
-    from pathlib import Path
-    from typing import Any
-
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-
-
-    def _read_table(table_path: Path) -> pa.Table:
-        return pq.read_table(table_path)
-
-
-    def _shift(value: Any, seconds: int) -> Any:
-        if value is None:
-            return value
-        try:
-            return value + timedelta(seconds=seconds)
-        except TypeError:
-            return value
-
-
-    def _valid_row(row: dict[str, Any], index: int, *, hot_product_id: int) -> dict[str, Any]:
-        out = dict(row)
-        out["event_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, f"recsys-offline-heavy-event-{index}"))
-        out["product_id"] = hot_product_id if index % 10 < 9 else row.get("product_id")
-        out["campaign_id"] = f"high-card-campaign-{index:06d}"
-        out["device_type"] = None if index % 3 == 0 else row.get("device_type") or "web"
-        out["schema_version"] = 1 if index % 3 == 0 else row.get("schema_version", 2)
-        out["payload_hash"] = f"offline-heavy-payload-{index:08d}"
-        out["event_timestamp"] = _shift(row.get("event_timestamp"), index)
-        out["created_ts"] = _shift(row.get("created_ts"), index)
-        out["ingestion_ts"] = _shift(row.get("ingestion_ts"), index)
-        event_timestamp = out.get("event_timestamp")
-        if event_timestamp is not None:
-            out["event_date"] = event_timestamp.date()
-        return out
-
-
-    def main() -> int:
-        parser = argparse.ArgumentParser(
-            description="Amplify offline data problems before lakehouse ingest so Spark UI proof is visible."
-        )
-        parser.add_argument("--run-path", required=True)
-        parser.add_argument("--extra-rows", type=int, default=24000)
-        parser.add_argument("--duplicate-rows", type=int, default=5000)
-        args = parser.parse_args()
-
-        behavior_path = Path(args.run_path) / "behavior_events"
-        original = _read_table(behavior_path)
-        rows = original.to_pylist()
-        if not rows:
-            raise RuntimeError(f"No behavior_events found under {behavior_path}")
-
-        hot_product_id = int(rows[0]["product_id"])
-        amplified: list[dict[str, Any]] = [dict(row) for row in rows]
-        for offset in range(args.extra_rows):
-            amplified.append(_valid_row(rows[offset % len(rows)], offset, hot_product_id=hot_product_id))
-
-        duplicate_source_start = max(len(amplified) - args.extra_rows, 0)
-        for offset in range(args.duplicate_rows):
-            duplicate = dict(amplified[duplicate_source_start + (offset % max(args.extra_rows, 1))])
-            duplicate["payload_hash"] = f"offline-heavy-duplicate-payload-{offset:08d}"
-            duplicate["ingestion_ts"] = _shift(duplicate.get("ingestion_ts"), args.extra_rows + offset + 1)
-            duplicate["created_ts"] = _shift(duplicate.get("created_ts"), args.extra_rows + offset + 1)
-            amplified.append(duplicate)
-
-        output = pa.Table.from_pylist(amplified, schema=original.schema)
-        shutil.rmtree(behavior_path)
-        behavior_path.mkdir(parents=True, exist_ok=True)
-        pq.write_table(output, behavior_path / "part-offline-heavy-issues.parquet", compression="snappy")
-
-        product_counts: dict[int, int] = {}
-        null_device_rows = 0
-        campaign_ids: set[str] = set()
-        event_ids: set[str] = set()
-        duplicate_rows = 0
-        for row in amplified:
-            product_counts[int(row["product_id"])] = product_counts.get(int(row["product_id"]), 0) + 1
-            if row.get("device_type") is None:
-                null_device_rows += 1
-            if row.get("campaign_id"):
-                campaign_ids.add(row["campaign_id"])
-            event_id = row["event_id"]
-            if event_id in event_ids:
-                duplicate_rows += 1
-            event_ids.add(event_id)
-
-        top_products = sorted(product_counts.items(), key=lambda item: item[1], reverse=True)[:5]
-        print(
-            "OFFLINE_ISSUE_AMPLIFICATION="
-            + json.dumps(
-                {
-                    "original_behavior_events": original.num_rows,
-                    "amplified_behavior_events": output.num_rows,
-                    "hot_product_id": hot_product_id,
-                    "top_product_counts": top_products,
-                    "duplicate_event_id_rows": duplicate_rows,
-                    "null_device_type_rows": null_device_rows,
-                    "campaign_cardinality": len(campaign_ids),
-                },
-                sort_keys=True,
-            ),
-            flush=True,
-        )
-        return 0
-
-
-    if __name__ == "__main__":
-        raise SystemExit(main())
----
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -152,10 +29,6 @@ spec:
                 --config "$DATA_GENERATOR_CONFIG" \
                 --target local \
                 --lake-root /tmp/recsys-lake
-              python3 /opt/recsys-baseline/amplify_offline_issues.py \
-                --run-path "apps/data-platform/data-generator/src/output/$DATA_GENERATOR_RUN_ID" \
-                --extra-rows 24000 \
-                --duplicate-rows 5000
               python3 -m ingest.batch_lakehouse_ingestion \
                 --run-path "apps/data-platform/data-generator/src/output/$DATA_GENERATOR_RUN_ID" \
                 --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
@@ -166,9 +39,10 @@ spec:
             - secretRef:
                 name: recsys-data-platform-secret
           volumeMounts:
-            - name: amplifier-script
-              mountPath: /opt/recsys-baseline
+            - name: processing-stress-configs
+              mountPath: /opt/recsys/configs/local/data_generator_e2e_1k.yaml
+              subPath: data_generator_e2e_1k.yaml
       volumes:
-        - name: amplifier-script
+        - name: processing-stress-configs
           configMap:
-            name: offline-issue-amplifier-script
+            name: processing-stress-configs

@@ -250,6 +250,16 @@ deploy_data_platform() {
     --set "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1g}" \
     --set "spark.executorInstances=${SPARK_K8S_EXECUTOR_INSTANCES:-1}" \
     --set "spark.sqlShufflePartitions=${SPARK_SQL_SHUFFLE_PARTITIONS:-16}" \
+    --set "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-2}" \
+    --set "flinkTaskManager.resources.requests.cpu=${FLINK_TASKMANAGER_REQUEST_CPU:-500m}" \
+    --set "flinkTaskManager.resources.requests.memory=${FLINK_TASKMANAGER_REQUEST_MEMORY:-4Gi}" \
+    --set "flinkTaskManager.resources.limits.cpu=${FLINK_TASKMANAGER_LIMIT_CPU:-2}" \
+    --set "flinkTaskManager.resources.limits.memory=${FLINK_TASKMANAGER_LIMIT_MEMORY:-8Gi}" \
+    --set "flink.taskSlots=${FLINK_TASK_SLOTS:-1}" \
+    --set "flink.taskManagerProcessMemory=${FLINK_TASKMANAGER_PROCESS_MEMORY:-6144m}" \
+    --set "flink.taskManagerTaskHeapMemory=${FLINK_TASKMANAGER_TASK_HEAP_MEMORY:-3072m}" \
+    --set "flink.taskManagerManagedMemory=${FLINK_TASKMANAGER_MANAGED_MEMORY:-512m}" \
+    --set "flink.taskManagerJvmOverheadMax=${FLINK_TASKMANAGER_JVM_OVERHEAD_MAX:-2048m}" \
     --set "sourcePostgres.istioInject=false" \
     --set "airflowPostgres.istioInject=false" \
     --set "featurePostgres.istioInject=false" \

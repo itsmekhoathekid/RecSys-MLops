@@ -1,0 +1,70 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spark-schema-evolution-fail-proof
+  namespace: recsys-dataflow
+  labels:
+    app: spark-schema-evolution-fail-proof
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: spark-schema-evolution-fail-proof
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: spark-schema-evolution-fail-proof
+          image: recsys-spark:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: spark-ui
+              containerPort: 4040
+          command: ["/opt/spark/bin/spark-submit"]
+          args:
+            - "--master"
+            - "local[2]"
+            - "--conf"
+            - "spark.driver.bindAddress=0.0.0.0"
+            - "--conf"
+            - "spark.driver.host=127.0.0.1"
+            - "--conf"
+            - "spark.driver.memory=1536m"
+            - "--conf"
+            - "spark.memory.fraction=0.45"
+            - "--conf"
+            - "spark.sql.autoBroadcastJoinThreshold=-1"
+            - "--conf"
+            - "spark.sql.shuffle.partitions=4"
+            - "--conf"
+            - "spark.default.parallelism=4"
+            - "/opt/recsys-baseline/spark_baseline_ui.py"
+            - "--config"
+            - "$(SPARK_BATCH_CONFIG)"
+            - "--fail-on-breaking-schema"
+            - "--sleep-seconds"
+            - "1"
+          env:
+            - name: SPARK_SQL_SHUFFLE_PARTITIONS
+              value: "4"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+          volumeMounts:
+            - name: script
+              mountPath: /opt/recsys-baseline
+            - name: processing-stress-configs
+              mountPath: /opt/recsys/configs/local/spark_batch_e2e_1k.yaml
+              subPath: spark_batch_e2e_1k.yaml
+      volumes:
+        - name: script
+          configMap:
+            name: spark-baseline-ui-script
+        - name: processing-stress-configs
+          configMap:
+            name: processing-stress-configs

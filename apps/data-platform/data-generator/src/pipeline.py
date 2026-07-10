@@ -31,6 +31,10 @@ class HistoricalDataPipeline:
             rng=challenge_rng,
             config=self.config.challenges,
             schema_change_date=self.config.schema_evolution.change_date,
+            breaking_schema_change_date=(
+                self.config.schema_evolution.breaking_change_date
+            ),
+            breaking_schema_version=self.config.schema_evolution.breaking_schema_version,
         )
         emitted_events, challenge_stats = challenge_pipeline.apply(
             data.behavior_events

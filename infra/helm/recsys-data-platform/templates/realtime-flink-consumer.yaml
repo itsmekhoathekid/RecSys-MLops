@@ -57,6 +57,19 @@ spec:
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --watermark-delay-minutes "$STREAM_WATERMARK_DELAY_MINUTES" \
+                --allowed-lateness-seconds "$STREAM_ALLOWED_LATENESS_SECONDS" \
+                --watermark-idleness-seconds "$STREAM_WATERMARK_IDLENESS_SECONDS" \
+                $([ "$STREAM_WATERMARK_ALIGNMENT_ENABLED" = "true" ] && echo "--watermark-alignment-enabled" || echo "--no-watermark-alignment-enabled") \
+                --watermark-alignment-group "$STREAM_WATERMARK_ALIGNMENT_GROUP" \
+                --watermark-alignment-max-drift-seconds "$STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS" \
+                --watermark-alignment-update-interval-seconds "$STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS" \
+                --quality-window-seconds "$STREAM_QUALITY_WINDOW_SECONDS" \
+                --burst-threshold-event-count "$STREAM_BURST_THRESHOLD_EVENT_COUNT" \
+                $([ "$STREAM_DROP_LATE_EVENTS" = "true" ] && echo "--drop-late-events" || echo "--no-drop-late-events") \
+                $([ "$STREAM_ENABLE_LATE_EVENT_DLQ" = "true" ] && echo "--enable-late-event-dlq" || echo "--no-enable-late-event-dlq") \
+                --state-ttl-seconds "$STREAM_STATE_TTL_SECONDS" \
+                --dedup-state-ttl-seconds "$STREAM_DEDUP_STATE_TTL_SECONDS" \
                 --disable-offline-store \
                 --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
                 --iceberg-catalog "$ICEBERG_CATALOG" \
@@ -132,6 +145,19 @@ spec:
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --watermark-delay-minutes "$STREAM_WATERMARK_DELAY_MINUTES" \
+                --allowed-lateness-seconds "$STREAM_ALLOWED_LATENESS_SECONDS" \
+                --watermark-idleness-seconds "$STREAM_WATERMARK_IDLENESS_SECONDS" \
+                $([ "$STREAM_WATERMARK_ALIGNMENT_ENABLED" = "true" ] && echo "--watermark-alignment-enabled" || echo "--no-watermark-alignment-enabled") \
+                --watermark-alignment-group "$STREAM_WATERMARK_ALIGNMENT_GROUP" \
+                --watermark-alignment-max-drift-seconds "$STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS" \
+                --watermark-alignment-update-interval-seconds "$STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS" \
+                --quality-window-seconds "$STREAM_QUALITY_WINDOW_SECONDS" \
+                --burst-threshold-event-count "$STREAM_BURST_THRESHOLD_EVENT_COUNT" \
+                $([ "$STREAM_DROP_LATE_EVENTS" = "true" ] && echo "--drop-late-events" || echo "--no-drop-late-events") \
+                $([ "$STREAM_ENABLE_LATE_EVENT_DLQ" = "true" ] && echo "--enable-late-event-dlq" || echo "--no-enable-late-event-dlq") \
+                --state-ttl-seconds "$STREAM_STATE_TTL_SECONDS" \
+                --dedup-state-ttl-seconds "$STREAM_DEDUP_STATE_TTL_SECONDS" \
                 --offline-store-enabled \
                 --disable-online-store \
                 --offline-store-sink "$OFFLINE_STORE_SINK" \

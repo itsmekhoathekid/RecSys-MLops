@@ -85,6 +85,17 @@ data:
   REALTIME_MAX_EVENTS: {{ .Values.realtimeProducer.maxEvents | quote }}
   REALTIME_N_USERS: {{ .Values.realtimeProducer.nUsers | quote }}
   REALTIME_N_PRODUCTS: {{ .Values.realtimeProducer.nProducts | quote }}
+  REALTIME_SEED: {{ .Values.realtimeProducer.seed | quote }}
+  REALTIME_HOT_PRODUCT_RATIO: {{ .Values.realtimeProducer.hotProductRatio | quote }}
+  REALTIME_HOT_PRODUCT_COUNT: {{ .Values.realtimeProducer.hotProductCount | quote }}
+  REALTIME_DUPLICATE_EVENT_RATE: {{ .Values.realtimeProducer.duplicateEventRate | quote }}
+  REALTIME_CONFLICTING_DUPLICATE_RATE: {{ .Values.realtimeProducer.conflictingDuplicateRate | quote }}
+  REALTIME_LATE_ARRIVAL_RATE: {{ .Values.realtimeProducer.lateArrivalRate | quote }}
+  REALTIME_OUT_OF_ORDER_RATE: {{ .Values.realtimeProducer.outOfOrderRate | quote }}
+  REALTIME_LATE_DELAY_MINUTES_MIN: {{ .Values.realtimeProducer.lateDelayMinutesMin | quote }}
+  REALTIME_LATE_DELAY_MINUTES_MAX: {{ .Values.realtimeProducer.lateDelayMinutesMax | quote }}
+  REALTIME_BURST_EVERY_N_TICKS: {{ .Values.realtimeProducer.burstEveryNTicks | quote }}
+  REALTIME_BURST_MULTIPLIER: {{ .Values.realtimeProducer.burstMultiplier | quote }}
   REALTIME_STREAM_TOPIC: {{ .Values.realtimeFlinkConsumer.topic | quote }}
   REALTIME_STREAM_GROUP_ID: {{ .Values.realtimeFlinkConsumer.groupId | quote }}
   REALTIME_STREAM_ONLINE_GROUP_ID: "{{ .Values.realtimeFlinkConsumer.groupId }}-{{ .Values.realtimeFlinkConsumer.online.groupIdSuffix }}"
@@ -103,7 +114,15 @@ data:
   KAFKA_MAX_POLL_RECORDS: {{ .Values.realtimeFlinkConsumer.kafkaMaxPollRecords | quote }}
   FLINK_CHECKPOINT_STORAGE_URI: {{ .Values.flink.checkpointStorageUri | quote }}
   STREAM_WATERMARK_DELAY_MINUTES: {{ .Values.streaming.watermarkDelayMinutes | quote }}
+  STREAM_ALLOWED_LATENESS_SECONDS: {{ .Values.streaming.allowedLatenessSeconds | quote }}
+  STREAM_WATERMARK_IDLENESS_SECONDS: {{ .Values.streaming.watermarkIdlenessSeconds | quote }}
+  STREAM_WATERMARK_ALIGNMENT_ENABLED: {{ .Values.streaming.watermarkAlignmentEnabled | quote }}
+  STREAM_WATERMARK_ALIGNMENT_GROUP: {{ .Values.streaming.watermarkAlignmentGroup | quote }}
+  STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS: {{ .Values.streaming.watermarkAlignmentMaxDriftSeconds | quote }}
+  STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS: {{ .Values.streaming.watermarkAlignmentUpdateIntervalSeconds | quote }}
   STREAM_QUALITY_WINDOW_SECONDS: {{ .Values.streaming.qualityWindowSeconds | quote }}
   STREAM_BURST_THRESHOLD_EVENT_COUNT: {{ .Values.streaming.burstThresholdEventCount | quote }}
+  STREAM_DROP_LATE_EVENTS: {{ .Values.streaming.dropLateEvents | quote }}
+  STREAM_ENABLE_LATE_EVENT_DLQ: {{ .Values.streaming.enableLateEventDlq | quote }}
   STREAM_STATE_TTL_SECONDS: {{ .Values.streaming.stateTtlSeconds | quote }}
   STREAM_DEDUP_STATE_TTL_SECONDS: {{ .Values.streaming.dedupStateTtlSeconds | quote }}

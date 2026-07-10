@@ -66,6 +66,8 @@ class StreamQualityWindow:
     topic: str
     event_count: int = 0
     late_event_count: int = 0
+    late_events_dropped: int = 0
+    side_output_late_events: int = 0
     duplicate_event_count: int = 0
     max_late_by_seconds: float = 0.0
     is_bursty: bool = False
@@ -77,6 +79,8 @@ class StreamQualityWindow:
             "topic": self.topic,
             "event_count": self.event_count,
             "late_event_count": self.late_event_count,
+            "late_events_dropped": self.late_events_dropped,
+            "side_output_late_events": self.side_output_late_events,
             "duplicate_event_count": self.duplicate_event_count,
             "max_late_by_seconds": self.max_late_by_seconds,
             "is_bursty": self.is_bursty,
@@ -102,6 +106,7 @@ class StreamQualityTracker:
         late_by_seconds: float,
         is_late: bool,
         is_duplicate: bool = False,
+        drop_late_events: bool = False,
     ) -> list[StreamQualityWindow]:
         ts = parse_event_time(event_timestamp)
         event_unix_seconds = int(ts.timestamp())
@@ -117,6 +122,8 @@ class StreamQualityTracker:
             self.current = StreamQualityWindow(window_start, window_end, self.topic)
         self.current.event_count += 1
         self.current.late_event_count += 1 if is_late else 0
+        self.current.late_events_dropped += 1 if is_late and drop_late_events else 0
+        self.current.side_output_late_events += 1 if is_late else 0
         self.current.duplicate_event_count += 1 if is_duplicate else 0
         self.current.max_late_by_seconds = max(self.current.max_late_by_seconds, late_by_seconds)
         return emitted
@@ -146,6 +153,13 @@ def safe_float(value: Any, default: float = 0.0) -> float:
 
 def env_int(name: str, default: int) -> int:
     return safe_int(os.getenv(name), default)
+
+
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
 
 
 def parse_message(raw: bytes | str | dict[str, Any]) -> dict[str, Any] | None:
@@ -229,11 +243,11 @@ def write_event_to_redis(
     )
 
 
-def late_arrival_metrics(event: dict[str, Any], watermark_delay_minutes: int) -> tuple[float, bool]:
+def late_arrival_metrics(event: dict[str, Any], allowed_lateness_seconds: int) -> tuple[float, bool]:
     processed_ts = datetime.now(timezone.utc)
     event_ts = parse_event_time(event["event_timestamp"])
     late_by_seconds = max(0.0, float((processed_ts - event_ts).total_seconds()))
-    return late_by_seconds, late_by_seconds > watermark_delay_minutes * 60
+    return late_by_seconds, late_by_seconds > allowed_lateness_seconds
 
 
 def build_offline_feature_rows(
@@ -242,9 +256,9 @@ def build_offline_feature_rows(
     aggregate_payload: dict[str, Any],
     item_payload: dict[str, Any],
     source_topic: str,
-    watermark_delay_minutes: int,
+    allowed_lateness_seconds: int,
 ) -> dict[str, list[dict[str, Any]]]:
-    late_by_seconds, is_late = late_arrival_metrics(event, watermark_delay_minutes)
+    late_by_seconds, is_late = late_arrival_metrics(event, allowed_lateness_seconds)
     feature_ts = parse_event_time(event["event_timestamp"])
     return {
         "stream_behavior_events": [
@@ -385,6 +399,32 @@ def build_postgres_feast_rows(
     }
 
 
+def build_late_event_dlq_row(
+    event: dict[str, Any],
+    source_topic: str,
+    allowed_lateness_seconds: int,
+    reason: str = "too_late_for_feature_update",
+) -> dict[str, Any]:
+    late_by_seconds, _ = late_arrival_metrics(event, allowed_lateness_seconds)
+    created_ts = datetime.now(timezone.utc)
+    event_ts = parse_event_time(event["event_timestamp"])
+    return {
+        "event_id": str(event["event_id"]),
+        "user_id": int(event["user_id"]),
+        "product_id": int(event["product_id"]),
+        "event_type": str(event["event_type"]),
+        "event_timestamp": event_ts,
+        "processed_timestamp": created_ts,
+        "late_by_seconds": late_by_seconds,
+        "allowed_lateness_seconds": int(allowed_lateness_seconds),
+        "source_topic": source_topic,
+        "payload_hash": str(event.get("payload_hash") or ""),
+        "reason": reason,
+        "payload": json.dumps(event, default=str, sort_keys=True),
+        "created_timestamp": created_ts,
+    }
+
+
 def apply_state_ttl(descriptor: Any, ttl_seconds: int) -> Any:
     if ttl_seconds <= 0:
         return descriptor
@@ -472,11 +512,29 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
     from pyflink.common import Duration, Types, WatermarkStrategy
     from pyflink.datastream.functions import FilterFunction, KeyedProcessFunction, MapFunction
     from pyflink.datastream.state import ValueStateDescriptor
+    try:
+        from pyflink.common.watermark_strategy import TimestampAssigner
+    except ImportError:
+        from pyflink.datastream.functions import TimestampAssigner
 
     class ParseNormalizeEvent(MapFunction):
         def map(self, raw: str) -> dict[str, Any] | None:
             after = parse_message(raw)
             return normalize_event(after) if after is not None else None
+
+    class EventTimestampAssigner(TimestampAssigner):
+        def extract_timestamp(self, raw: str, record_timestamp: int) -> int:
+            try:
+                after = parse_message(raw)
+                event = normalize_event(after) if after is not None else None
+                if event is None:
+                    raise ValueError("invalid CDC event")
+                event_ts = parse_event_time(event["event_timestamp"])
+                return int(event_ts.timestamp() * 1000)
+            except Exception:
+                if record_timestamp is not None and record_timestamp >= 0:
+                    return int(record_timestamp)
+                return int(datetime.now(timezone.utc).timestamp() * 1000)
 
     class KeepValidEvents(FilterFunction):
         def filter(self, value: dict[str, Any] | None) -> bool:
@@ -660,6 +718,49 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         def filter(self, value: Any | None) -> bool:
             return value is not None
 
+    class KeepFeatureEvents(FilterFunction):
+        def filter(self, event: dict[str, Any]) -> bool:
+            if not args.drop_late_events:
+                return True
+            _, is_late = late_arrival_metrics(event, args.allowed_lateness_seconds)
+            return not is_late
+
+    class KeepLateEvents(FilterFunction):
+        def filter(self, event: dict[str, Any]) -> bool:
+            _, is_late = late_arrival_metrics(event, args.allowed_lateness_seconds)
+            return is_late
+
+    class PostgresLateEventDlqWriter(MapFunction):
+        def open(self, runtime_context):
+            self.config = PostgresOfflineStoreConfig(
+                host=args.feast_postgres_host,
+                port=args.feast_postgres_port,
+                database=args.feast_postgres_database,
+                schema=args.feast_postgres_schema,
+                user=args.feast_postgres_user,
+                password=args.feast_postgres_password,
+                sslmode=args.feast_postgres_sslmode,
+            )
+            self.conn = self.config.connect()
+            ensure_offline_store_tables(self.conn, self.config.schema, ("stream_late_events_dlq",))
+            self.writes = 0
+
+        def map(self, event: dict[str, Any]) -> str:
+            row = build_late_event_dlq_row(event, args.topic, args.allowed_lateness_seconds)
+            self.writes += insert_offline_rows(self.conn, self.config.schema, "stream_late_events_dlq", [row])
+            return json.dumps(
+                {
+                    "status": "late_event_dlq_written",
+                    "event_id": event["event_id"],
+                    "late_by_seconds": float(row["late_by_seconds"]),
+                    "total_rows": self.writes,
+                },
+                sort_keys=True,
+            )
+
+        def close(self):
+            self.conn.close()
+
     class StreamBehaviorEventRow(MapFunction):
         def map(self, envelope: dict[str, Any]):
             from pyflink.common import Row
@@ -673,7 +774,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 envelope["aggregate_payload"],
                 envelope["item_payload"],
                 args.topic,
-                args.watermark_delay_minutes,
+                args.allowed_lateness_seconds,
             )["stream_behavior_events"][0]
             return Row(
                 row["event_id"],
@@ -706,7 +807,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 envelope["aggregate_payload"],
                 envelope["item_payload"],
                 args.topic,
-                args.watermark_delay_minutes,
+                args.allowed_lateness_seconds,
             )["stream_user_sequence_features"][0]
             return Row(
                 row["user_id"],
@@ -730,7 +831,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 envelope["aggregate_payload"],
                 envelope["item_payload"],
                 args.topic,
-                args.watermark_delay_minutes,
+                args.allowed_lateness_seconds,
             )["stream_user_aggregate_features"][0]
             return Row(
                 row["user_id"],
@@ -755,7 +856,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 envelope["aggregate_payload"],
                 envelope["item_payload"],
                 args.topic,
-                args.watermark_delay_minutes,
+                args.allowed_lateness_seconds,
             )["stream_item_features"][0]
             return Row(
                 row["product_id"],
@@ -786,6 +887,8 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 "topic": args.topic,
                 "event_count": int(window["event_count"]),
                 "late_event_count": int(window["late_event_count"]),
+                "late_events_dropped": int(window["late_events_dropped"]),
+                "side_output_late_events": int(window["side_output_late_events"]),
                 "duplicate_event_count": int(window["duplicate_event_count"]),
                 "max_late_by_seconds": float(window["max_late_by_seconds"]),
                 "is_bursty": bool(window["event_count"] >= args.burst_threshold_event_count),
@@ -793,7 +896,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             }
 
         def process_element(self, event: dict[str, Any], ctx):
-            late_by_seconds, is_late = late_arrival_metrics(event, args.watermark_delay_minutes)
+            late_by_seconds, is_late = late_arrival_metrics(event, args.allowed_lateness_seconds)
             event_ts = parse_event_time(event["event_timestamp"])
             event_unix_seconds = int(event_ts.timestamp())
             window_start_seconds = event_unix_seconds - (event_unix_seconds % args.quality_window_seconds)
@@ -811,11 +914,15 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                     "window_end": isoformat_utc(window_end),
                     "event_count": 0,
                     "late_event_count": 0,
+                    "late_events_dropped": 0,
+                    "side_output_late_events": 0,
                     "duplicate_event_count": 0,
                     "max_late_by_seconds": 0.0,
                 }
             current["event_count"] += 1
             current["late_event_count"] += 1 if is_late else 0
+            current["late_events_dropped"] += 1 if is_late and args.drop_late_events else 0
+            current["side_output_late_events"] += 1 if is_late else 0
             current["duplicate_event_count"] += 1 if event.get("_is_duplicate") else 0
             current["max_late_by_seconds"] = max(float(current["max_late_by_seconds"]), late_by_seconds)
             self.window_state.update(current)
@@ -833,16 +940,67 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 row["topic"],
                 row["event_count"],
                 row["late_event_count"],
+                row["late_events_dropped"],
+                row["side_output_late_events"],
                 row["duplicate_event_count"],
                 row["max_late_by_seconds"],
                 row["is_bursty"],
                 flink_timestamp(row["created_timestamp"]),
             )
 
+    class LateEventDlqRow(MapFunction):
+        def map(self, event: dict[str, Any]):
+            from pyflink.common import Row
+
+            row = build_late_event_dlq_row(event, args.topic, args.allowed_lateness_seconds)
+            return Row(
+                row["event_id"],
+                row["user_id"],
+                row["product_id"],
+                row["event_type"],
+                flink_timestamp(row["event_timestamp"]),
+                flink_timestamp(row["processed_timestamp"]),
+                row["late_by_seconds"],
+                row["allowed_lateness_seconds"],
+                row["source_topic"],
+                row["payload_hash"],
+                row["reason"],
+                row["payload"],
+                flink_timestamp(row["created_timestamp"]),
+            )
+
+    class QualityWindowMetricLog(MapFunction):
+        def map(self, row: dict[str, Any]) -> str:
+            return json.dumps(
+                {
+                    "status": "streaming_quality_window_metrics",
+                    "window_start": isoformat_utc(row["window_start"]),
+                    "window_end": isoformat_utc(row["window_end"]),
+                    "topic": row["topic"],
+                    "event_count": int(row["event_count"]),
+                    "late_event_count": int(row["late_event_count"]),
+                    "late_events_dropped": int(row["late_events_dropped"]),
+                    "side_output_late_events": int(row["side_output_late_events"]),
+                    "duplicate_event_count": int(row["duplicate_event_count"]),
+                    "max_late_by_seconds": float(row["max_late_by_seconds"]),
+                    "is_bursty": bool(row["is_bursty"]),
+                    "drop_late_events": bool(args.drop_late_events),
+                },
+                sort_keys=True,
+            )
+
     source = build_kafka_source(args)
     watermark = WatermarkStrategy.for_bounded_out_of_orderness(
         Duration.of_minutes(args.watermark_delay_minutes)
-    )
+    ).with_timestamp_assigner(EventTimestampAssigner())
+    if args.watermark_idleness_seconds > 0:
+        watermark = watermark.with_idleness(Duration.of_seconds(args.watermark_idleness_seconds))
+    if args.watermark_alignment_enabled:
+        watermark = watermark.with_watermark_alignment(
+            args.watermark_alignment_group,
+            Duration.of_seconds(args.watermark_alignment_max_drift_seconds),
+            Duration.of_seconds(args.watermark_alignment_update_interval_seconds),
+        )
     raw_stream = env.from_source(source, watermark, "cdc-behavior-events-source")
     parsed = raw_stream.map(
         ParseNormalizeEvent(),
@@ -857,7 +1015,22 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         MarkDuplicateEvents(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
     )
-    user_features = deduped.key_by(lambda event: int(event["user_id"])).process(
+    quality_rows = deduped.key_by(lambda event: "stream-quality").process(
+        StreamingQualityRows(),
+        output_type=Types.PICKLED_BYTE_ARRAY(),
+    )
+    quality_rows.map(
+        QualityWindowMetricLog(),
+        output_type=Types.STRING(),
+    ).name("streaming-quality-window-metrics").print()
+    late_events = deduped.filter(KeepLateEvents()).name("late-events-side-output")
+    if args.offline_store_enabled and args.offline_store_sink == "postgres" and args.enable_late_event_dlq:
+        late_events.map(
+            PostgresLateEventDlqWriter(),
+            output_type=Types.STRING(),
+        ).name("postgres-late-events-dlq").print()
+    feature_events = deduped.filter(KeepFeatureEvents()).name("late-event-drop-policy")
+    user_features = feature_events.key_by(lambda event: int(event["user_id"])).process(
         BuildUserFeatures(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
     )
@@ -872,10 +1045,6 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         ).name("redis-online-feature-writer")
     else:
         emit_progress({"status": "online_store_disabled", "topic": args.topic, "group_id": args.group_id})
-    quality_rows = deduped.key_by(lambda event: "stream-quality").process(
-        StreamingQualityRows(),
-        output_type=Types.PICKLED_BYTE_ARRAY(),
-    )
     if not args.offline_store_enabled:
         return None
 
@@ -964,11 +1133,50 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             output_type=Types.ROW_NAMED(
                 [
                     "window_start", "window_end", "topic", "event_count", "late_event_count",
-                    "duplicate_event_count", "max_late_by_seconds", "is_bursty", "created_timestamp",
+                    "late_events_dropped", "side_output_late_events", "duplicate_event_count",
+                    "max_late_by_seconds", "is_bursty", "created_timestamp",
                 ],
                 [
                     Types.SQL_TIMESTAMP(), Types.SQL_TIMESTAMP(), Types.STRING(), Types.LONG(), Types.LONG(),
-                    Types.LONG(), Types.DOUBLE(), Types.BOOLEAN(), Types.SQL_TIMESTAMP(),
+                    Types.LONG(), Types.LONG(), Types.LONG(), Types.DOUBLE(), Types.BOOLEAN(), Types.SQL_TIMESTAMP(),
+                ],
+            ),
+        ),
+    )
+    add_insert(
+        "stream_late_events_dlq",
+        late_events.map(
+            LateEventDlqRow(),
+            output_type=Types.ROW_NAMED(
+                [
+                    "event_id",
+                    "user_id",
+                    "product_id",
+                    "event_type",
+                    "event_timestamp",
+                    "processed_timestamp",
+                    "late_by_seconds",
+                    "allowed_lateness_seconds",
+                    "source_topic",
+                    "payload_hash",
+                    "reason",
+                    "payload",
+                    "created_timestamp",
+                ],
+                [
+                    Types.STRING(),
+                    Types.LONG(),
+                    Types.LONG(),
+                    Types.STRING(),
+                    Types.SQL_TIMESTAMP(),
+                    Types.SQL_TIMESTAMP(),
+                    Types.DOUBLE(),
+                    Types.LONG(),
+                    Types.STRING(),
+                    Types.STRING(),
+                    Types.STRING(),
+                    Types.STRING(),
+                    Types.SQL_TIMESTAMP(),
                 ],
             ),
         ),
@@ -1027,8 +1235,36 @@ def main() -> int:
     parser.add_argument("--feast-postgres-password", default=os.getenv("FEAST_POSTGRES_PASSWORD", "feast"))
     parser.add_argument("--feast-postgres-sslmode", default=os.getenv("FEAST_POSTGRES_SSLMODE", "disable"))
     parser.add_argument("--watermark-delay-minutes", type=int, default=env_int("STREAM_WATERMARK_DELAY_MINUTES", 60))
+    parser.add_argument("--allowed-lateness-seconds", type=int, default=env_int("STREAM_ALLOWED_LATENESS_SECONDS", 300))
+    parser.add_argument("--watermark-idleness-seconds", type=int, default=env_int("STREAM_WATERMARK_IDLENESS_SECONDS", 120))
+    parser.add_argument(
+        "--watermark-alignment-enabled",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("STREAM_WATERMARK_ALIGNMENT_ENABLED", False),
+    )
+    parser.add_argument("--watermark-alignment-group", default=os.getenv("STREAM_WATERMARK_ALIGNMENT_GROUP", "recsys-cdc"))
+    parser.add_argument(
+        "--watermark-alignment-max-drift-seconds",
+        type=int,
+        default=env_int("STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS", 60),
+    )
+    parser.add_argument(
+        "--watermark-alignment-update-interval-seconds",
+        type=int,
+        default=env_int("STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS", 5),
+    )
     parser.add_argument("--quality-window-seconds", type=int, default=env_int("STREAM_QUALITY_WINDOW_SECONDS", 60))
     parser.add_argument("--burst-threshold-event-count", type=int, default=env_int("STREAM_BURST_THRESHOLD_EVENT_COUNT", 500))
+    parser.add_argument(
+        "--drop-late-events",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("STREAM_DROP_LATE_EVENTS", True),
+    )
+    parser.add_argument(
+        "--enable-late-event-dlq",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("STREAM_ENABLE_LATE_EVENT_DLQ", True),
+    )
     parser.add_argument("--state-ttl-seconds", type=int, default=env_int("STREAM_STATE_TTL_SECONDS", 7 * 24 * 60 * 60))
     parser.add_argument("--dedup-state-ttl-seconds", type=int, default=env_int("STREAM_DEDUP_STATE_TTL_SECONDS", 24 * 60 * 60))
     parser.add_argument("--progress-log-events", type=int, default=env_int("STREAM_PROGRESS_LOG_EVENTS", 100))

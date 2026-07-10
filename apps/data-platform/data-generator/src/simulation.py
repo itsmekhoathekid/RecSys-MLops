@@ -233,6 +233,14 @@ class RecsysSimulation:
             )
         return products, snapshots
 
+    def _schema_version_for_timestamp(self, timestamp: datetime) -> int:
+        breaking_date = self.config.schema_evolution.breaking_change_date
+        if breaking_date is not None and timestamp.date() >= breaking_date:
+            return self.config.schema_evolution.breaking_schema_version
+        if timestamp.date() < self.config.schema_evolution.change_date:
+            return 1
+        return 2
+
     def _generate_session(
         self, user: User, products: list[Product], session_start: datetime
     ) -> tuple[
@@ -270,11 +278,7 @@ class RecsysSimulation:
             surface = str(
                 self.rng.choice(["homepage", "pdp", "cart", "search"], p=[0.5, 0.2, 0.1, 0.2])
             )
-            schema_version = (
-                1
-                if cursor.date() < self.config.schema_evolution.change_date
-                else 2
-            )
+            schema_version = self._schema_version_for_timestamp(cursor)
             request = RecommendationRequest(
                 request_id=request_id,
                 user_id=user.user_id,
@@ -283,9 +287,9 @@ class RecsysSimulation:
                 surface=surface,
                 context_product_id=None,
                 context_category_id=user.preferred_category_id,
-                device_type=device if schema_version == 2 else None,
+                device_type=device if schema_version >= 2 else None,
                 source=source,
-                campaign_id=campaign_id if schema_version == 2 else None,
+                campaign_id=campaign_id if schema_version >= 2 else None,
                 created_ts=cursor + timedelta(seconds=1),
                 schema_version=schema_version,
             )
