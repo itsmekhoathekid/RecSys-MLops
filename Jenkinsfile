@@ -154,7 +154,28 @@ pipeline {
         sh '''
           set -euo pipefail
           mkdir -p "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"
-          uv sync
+          uv venv "${UV_PROJECT_ENVIRONMENT}"
+          uv pip install \
+            pytest \
+            pytest-cov \
+            pyyaml \
+            pydantic \
+            numpy \
+            pandas \
+            pyarrow \
+            "psycopg[binary]" \
+            boto3 \
+            requests \
+            redis \
+            fastapi \
+            httpx \
+            opentelemetry-api \
+            opentelemetry-sdk \
+            opentelemetry-exporter-otlp-proto-grpc \
+            opentelemetry-instrumentation-fastapi \
+            kfp \
+            kubernetes \
+            scikit-learn
         '''
       }
     }

@@ -56,7 +56,7 @@ run_component_pytest() {
   done
 
   COVERAGE_FILE="${reports_dir}/coverage/.coverage.${name}" \
-  PYTHONPATH="${pythonpath}" uv run pytest "${test_paths[@]}" -q \
+  PYTHONPATH="${pythonpath}" uv run --no-sync pytest "${test_paths[@]}" -q \
     -o "pythonpath=${pythonpath}" \
     --cov-config="${PWD}/pyproject.toml" \
     "${cov_args[@]}" \
@@ -91,11 +91,11 @@ run_kfp_compile() {
     RECSYS_PIPELINE_IMAGE="${training_image}" \
     RECSYS_RAY_IMAGE="${ray_image}" \
     RECSYS_SPARK_IMAGE="${spark_image}" \
-    uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py \
+    uv run --no-sync python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py \
       --package-path "${package_path}"
 
   PYTHONPATH=apps/ml-system/src:apps/data-platform/src \
-    uv run python apps/ml-system/src/kubeflow/validate_pipeline_package.py \
+    uv run --no-sync python apps/ml-system/src/kubeflow/validate_pipeline_package.py \
       --package-path "${package_path}" \
       --required-image "${training_image}" \
       --required-image "${ray_image}" \
@@ -107,7 +107,7 @@ run_plain_pytest() {
   local name="$1"
   local pythonpath="$2"
   shift 2
-  PYTHONPATH="${pythonpath}" uv run pytest "$@" -q \
+  PYTHONPATH="${pythonpath}" uv run --no-sync pytest "$@" -q \
     --junitxml="${reports_dir}/junit/${name}.xml"
 }
 
@@ -115,7 +115,7 @@ run_plain_pytest_with_pythonpath_override() {
   local name="$1"
   local pythonpath="$2"
   shift 2
-  PYTHONPATH="${pythonpath}" uv run pytest "$@" -q \
+  PYTHONPATH="${pythonpath}" uv run --no-sync pytest "$@" -q \
     -o "pythonpath=${pythonpath}" \
     --junitxml="${reports_dir}/junit/${name}.xml"
 }
