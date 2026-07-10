@@ -438,7 +438,7 @@ def test_e2e_1k_whole_run_data_setup_configs_are_wired_into_helm_values():
     values = yaml.safe_load((chart / "values.yaml").read_text())
     generator = yaml.safe_load((ROOT / values["dataSetup"]["generatorConfig"]).read_text())
     spark_batch = yaml.safe_load((ROOT / values["dataSetup"]["sparkBatchConfig"]).read_text())
-    assert generator["traffic"]["target_behavior_events"] == 1000
+    assert generator["traffic"]["target_behavior_events"] == 50000
     assert generator["output"]["run_id"] == values["dataSetup"]["generatorRunId"] == "test_1k_seed42"
     assert spark_batch["input"]["source"] == "parquet"
     assert spark_batch["input"]["run_path"] == "s3a://recsys-lakehouse/warehouse/lakehouse"

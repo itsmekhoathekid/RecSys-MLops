@@ -48,7 +48,7 @@ minio:
   name: data-platform-minio
   endpoint: http://data-platform-minio:9000
   rootUser: minio
-  rootPassword: minio123
+  rootPassword: ""
   lakeBucket: recsys-lakehouse
   offlineFeatureBucket: recsys-offline-feature-store
   storage: 20Gi
