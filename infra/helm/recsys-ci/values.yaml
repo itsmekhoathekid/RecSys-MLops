@@ -96,6 +96,14 @@ jenkins:
     enabled: true
     image: docker:28-dind
     storageDriver: overlay2
+    useJenkinsHomePvc: false
+    pvc:
+      enabled: false
+      name: recsys-jenkins-docker-graph
+      storage: 80Gi
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: ""
     insecureRegistries:
       - recsys-registry.ci.svc.cluster.local:5000
       - localhost:5001

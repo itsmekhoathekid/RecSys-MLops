@@ -14,6 +14,8 @@ jenkins:
   imagePushRegistry: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
   imagePullRegistry: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
   requireGcpArtifactRegistry: true
+  dind:
+    useJenkinsHomePvc: true
   runtimeTools:
     installOnStartup: true
   webhookIngress:

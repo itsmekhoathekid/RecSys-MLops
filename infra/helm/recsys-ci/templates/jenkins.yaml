@@ -16,6 +16,23 @@ spec:
   resources:
     requests:
       storage: {{ .Values.jenkins.pvc.storage }}
+{{- if and .Values.jenkins.dind.enabled .Values.jenkins.dind.pvc.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.jenkins.dind.pvc.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  accessModes:
+{{ toYaml .Values.jenkins.dind.pvc.accessModes | indent 4 }}
+  {{- if .Values.jenkins.dind.pvc.storageClassName }}
+  storageClassName: {{ .Values.jenkins.dind.pvc.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.jenkins.dind.pvc.storage }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -51,7 +68,7 @@ spec:
           command:
             - sh
             - -c
-            - chown -R 1000:1000 /var/jenkins_home
+            - {{- if and .Values.jenkins.dind.enabled .Values.jenkins.dind.useJenkinsHomePvc }} mkdir -p /var/jenkins_home/docker-graph && chown -R 1000:1000 /var/jenkins_home{{- else }} chown -R 1000:1000 /var/jenkins_home{{- end }}
           securityContext:
             runAsUser: 0
           volumeMounts:
@@ -194,6 +211,9 @@ spec:
           volumeMounts:
             - name: docker-graph-storage
               mountPath: /var/lib/docker
+              {{- if .Values.jenkins.dind.useJenkinsHomePvc }}
+              subPath: docker-graph
+              {{- end }}
           {{- with .Values.jenkins.dind.resources }}
           resources:
 {{ toYaml . | indent 12 }}
@@ -204,7 +224,15 @@ spec:
           persistentVolumeClaim:
             claimName: {{ .Values.jenkins.pvc.name }}
         - name: docker-graph-storage
+          {{- if and .Values.jenkins.dind.enabled .Values.jenkins.dind.useJenkinsHomePvc }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.jenkins.pvc.name }}
+          {{- else if and .Values.jenkins.dind.enabled .Values.jenkins.dind.pvc.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.jenkins.dind.pvc.name }}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         - name: jenkins-init
           configMap:
             name: recsys-jenkins-init
