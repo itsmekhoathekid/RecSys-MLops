@@ -235,7 +235,7 @@ verify_rayjob_image() {
   fi
 }
 
-deploy_data_platform() {
+deploy_data_platform_unlocked() {
   helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform \
     --namespace "${namespace_data}" \
     --create-namespace \
@@ -268,6 +268,10 @@ deploy_data_platform() {
     --set "flink.istioInject=false" \
     --set "realtimeFlinkConsumer.istioInject=false" \
     "$@"
+}
+
+deploy_data_platform() {
+  with_file_lock "/tmp/recsys-data-platform-helm.lock" deploy_data_platform_unlocked "$@"
 }
 
 deploy_api_unlocked() {
