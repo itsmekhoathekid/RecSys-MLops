@@ -47,7 +47,7 @@ for table_name in RAW_GENERATOR_TABLES:
     counts[table_name] = table.num_rows
 missing = {name: count for name, count in counts.items() if count <= 0}
 assert not missing, f"DP1 bronze lakehouse tables are empty: {missing}; counts={counts}"
-print(json.dumps({"dp1_validate_bronze_counts": counts}, sort_keys=True))
+print(json.dumps({"dp1_bronze_table_counts": counts}, sort_keys=True))
 PY
 """.strip()
 
@@ -58,7 +58,7 @@ DP2_INGEST_COMMAND = spark_native_submit(
 )
 
 DP2_VALIDATE_COMMAND = spark_native_submit(
-    "dp2_validate_bronze_to_silver_gold",
+    "dp2_verify_silver_gold",
     "local:///opt/recsys/apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
     "--action validate",
 )
