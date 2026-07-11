@@ -16,9 +16,11 @@ data:
 
     if (password?.trim()) {
       def realm = new HudsonPrivateSecurityRealm(false)
-      if (realm.getUser(username) == null) {
-        realm.createAccount(username, password)
-      }
+      // Reconcile the persisted Jenkins user with the Kubernetes Secret on
+      // every startup. Jenkins home survives pod replacement, so only
+      // creating a missing account leaves the Secret and stored password out
+      // of sync after a credential rotation or a restored PVC.
+      realm.createAccount(username, password)
       instance.setSecurityRealm(realm)
 
       def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
