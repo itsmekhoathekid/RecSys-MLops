@@ -14,6 +14,33 @@ def componentDefinitions() {
   ]
 }
 
+def gitRefExists(String ref) {
+  if (!ref?.trim() || ref ==~ /^0+$/) {
+    return false
+  }
+  return sh(
+    returnStatus: true,
+    script: "git cat-file -e '${ref}^{commit}' >/dev/null 2>&1"
+  ) == 0
+}
+
+def resolveChangedBaseRef() {
+  if (env.CHANGE_TARGET?.trim()) {
+    def pullRequestBase = "origin/${env.CHANGE_TARGET}"
+    if (gitRefExists(pullRequestBase)) {
+      return pullRequestBase
+    }
+  }
+
+  for (String candidate : [env.GIT_PREVIOUS_COMMIT, env.GIT_PREVIOUS_SUCCESSFUL_COMMIT]) {
+    if (gitRefExists(candidate)) {
+      return candidate
+    }
+  }
+
+  return gitRefExists('HEAD~1') ? 'HEAD~1' : ''
+}
+
 def runComponentBranches(String scriptPath, String extraEnv) {
   def branches = [:]
   componentDefinitions().each { component ->
@@ -41,6 +68,9 @@ def applyForcedComponents(String forcedComponents) {
   if (!requested) {
     return false
   }
+
+  def forceCiConfig = requested.contains('ci_config')
+  requested = requested.findAll { it != 'ci_config' }
 
   def componentsByToken = [:]
   componentDefinitions().each { component ->
@@ -71,11 +101,16 @@ def applyForcedComponents(String forcedComponents) {
     env.setProperty(component.flag, 'true')
   }
 
+  env.RUN_CI_CONFIG = forceCiConfig ? 'true' : 'false'
   env.RUN_COMPONENT_CI = selectedByName ? 'true' : 'false'
   env.RUN_COMPONENT_BUILD = selectedByName ? 'true' : 'false'
   env.RUN_COMPONENT_DEPLOY = selectedByName ? 'true' : 'false'
   env.RUN_PYTHON = selectedByName ? 'true' : 'false'
-  env.CHANGED_COMPONENTS = selectedByName.keySet().join(',')
+  def forcedNames = selectedByName.keySet().toList()
+  if (forceCiConfig) {
+    forcedNames << 'ci_config'
+  }
+  env.CHANGED_COMPONENTS = forcedNames.join(',')
   echo "Forced CI/CD components: ${env.CHANGED_COMPONENTS}"
   return true
 }
@@ -110,7 +145,7 @@ pipeline {
     string(name: 'KUBECONFIG_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins file credential containing kubeconfig.')
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
-    string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, for example materialize,training,dp1,dp2,dp3,api,kserve,stream_offline,stream_online. Empty keeps path-based detection.')
+    string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, including ci_config. Empty keeps path-based detection.')
   }
 
   environment {
@@ -128,8 +163,10 @@ pipeline {
     stage('Detect Changed Components') {
       steps {
         script {
-          def baseRef = env.CHANGE_TARGET ? "origin/${env.CHANGE_TARGET}" : 'HEAD~1'
-          sh "python3 jenkins/scripts/detect_changed_components.py --base-ref '${baseRef}' > .ci-components.env"
+          def baseRef = resolveChangedBaseRef()
+          echo "Changed-path range: ${baseRef ?: '<current commit>'}...HEAD"
+          def baseArgument = baseRef ? "--base-ref '${baseRef}'" : ''
+          sh "python3 jenkins/scripts/detect_changed_components.py ${baseArgument} > .ci-components.env"
           readFile('.ci-components.env').split('\\n').each { line ->
             if (line.trim() && line.contains('=')) {
               def pair = line.split('=', 2)
@@ -145,6 +182,24 @@ pipeline {
           echo "Using CI temp root: ${env.CI_TMP_ROOT}"
         }
         sh 'rm -rf reports .ci-image-manifest && mkdir -p reports/junit reports/coverage .ci-image-manifest'
+      }
+    }
+
+    stage('CI Configuration Validation') {
+      when { expression { env.RUN_CI_CONFIG == 'true' } }
+      steps {
+        sh '''
+          set -euo pipefail
+          ci_config_venv="${CI_TMP_ROOT}/ci-config-venv"
+          uv venv "${ci_config_venv}"
+          uv pip install --python "${ci_config_venv}/bin/python" pytest
+          "${ci_config_venv}/bin/python" -m pytest \
+            tests/unit/jenkins/test_detect_changed_components.py \
+            -q \
+            --junitxml=reports/junit/ci-config.xml
+          python3 -m py_compile jenkins/scripts/detect_changed_components.py
+          helm lint infra/helm/recsys-ci -f infra/helm/recsys-ci/values-gke.yaml
+        '''
       }
     }
 

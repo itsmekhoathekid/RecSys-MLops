@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -22,6 +23,7 @@ COMPONENTS = (
 FLAGS = {f"RUN_{component}": False for component in COMPONENTS}
 FLAGS.update(
     {
+        "RUN_CI_CONFIG": False,
         "RUN_COMPONENT_CI": False,
         "RUN_COMPONENT_BUILD": False,
         "RUN_COMPONENT_DEPLOY": False,
@@ -40,19 +42,57 @@ DATA_PLATFORM_COMPONENTS = (
     "STREAM_ONLINE",
 )
 
-PYTHON_COMPONENTS = (
-    "MATERIALIZE",
-    "TRAINING",
-    "SPARK_BATCH",
-    "DP1",
-    "DP2",
-    "DP3",
-    "API",
-    "KSERVE",
-    "DRIFT",
-    "STREAM_OFFLINE",
-    "STREAM_ONLINE",
+PYTHON_COMPONENTS = COMPONENTS
+PRODUCT_FLAG_NAMES = tuple(f"RUN_{component}" for component in COMPONENTS)
+ROUTING_FLAG_NAMES = PRODUCT_FLAG_NAMES + ("RUN_CI_CONFIG",)
+
+IGNORED_PREFIXES = (
+    "docs/",
+    "graphify-out/",
+    "ci-image-manifest/",
+    ".ci-image-manifest/",
+    "docker-metrics/",
+    ".docker-metrics/",
+    "tmp/",
+    ".idea/",
+    ".vscode/",
 )
+IGNORED_SUFFIXES = (
+    ".md",
+    ".rst",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".pyc",
+)
+IGNORED_NAMES = {
+    ".DS_Store",
+    ".gitignore",
+    ".gitattributes",
+    ".gitkeep",
+    "LICENSE",
+    "AGENTS.md",
+    "coverage",
+    ".coverage",
+}
+
+
+@dataclass(frozen=True)
+class ClassificationResult:
+    flags: dict[str, bool]
+    changed_paths: tuple[str, ...]
+    ignored_paths: tuple[str, ...]
+    unmapped_paths: tuple[str, ...]
+
+    @property
+    def component_names(self) -> tuple[str, ...]:
+        names = [component.lower() for component in COMPONENTS if self.flags[f"RUN_{component}"]]
+        if self.flags["RUN_CI_CONFIG"]:
+            names.append("ci_config")
+        return tuple(names)
 
 
 def git_lines(args: list[str]) -> list[str]:
@@ -67,34 +107,36 @@ def current_commit_paths() -> list[str]:
     )
     for args in fallback_commands:
         try:
-            paths = git_lines(args)
+            return list(dict.fromkeys(git_lines(args)))
         except (subprocess.CalledProcessError, FileNotFoundError):
             continue
-        if paths:
-            return list(dict.fromkeys(paths))
     return []
 
 
 def changed_paths(base_ref: str | None) -> list[str]:
-    candidates: list[list[str]] = []
+    """Return the exact changed range, preserving a valid empty diff.
+
+    A successful empty diff must remain empty. The old implementation treated it
+    as a failure and fell back to HEAD~1, which could re-run stale components.
+    """
     if base_ref:
-        candidates.append(["diff", "--name-only", f"{base_ref}...HEAD"])
-    candidates.append(["diff", "--name-only", "HEAD~1", "HEAD"])
-
-    for args in candidates:
         try:
-            paths = git_lines(args)
+            return git_lines(["diff", "--name-only", f"{base_ref}...HEAD"])
         except (subprocess.CalledProcessError, FileNotFoundError):
-            continue
-        if paths:
-            return paths
-
-    return current_commit_paths()
+            pass
+    try:
+        return git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return current_commit_paths()
 
 
 def mark(flags: dict[str, bool], *components: str) -> None:
     for component in components:
         flags[f"RUN_{component}"] = True
+
+
+def mark_ci_config(flags: dict[str, bool]) -> None:
+    flags["RUN_CI_CONFIG"] = True
 
 
 def mark_data_platform(flags: dict[str, bool]) -> None:
@@ -105,41 +147,100 @@ def mark_all_python(flags: dict[str, bool]) -> None:
     mark(flags, *PYTHON_COMPONENTS)
 
 
+def normalize_path(path: str) -> str:
+    normalized = path.strip()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def is_ignored_path(path: str) -> bool:
+    normalized = normalize_path(path)
+    name = Path(normalized).name
+    lower = normalized.lower()
+    return (
+        not normalized
+        or normalized.startswith(IGNORED_PREFIXES)
+        or name in IGNORED_NAMES
+        or lower.endswith(IGNORED_SUFFIXES)
+        or "/__pycache__/" in normalized
+    )
+
+
 def classify_config(flags: dict[str, bool], path: str) -> None:
     name = Path(path).name
-    if name.startswith("bst") or name in {"ray-cluster.yaml"}:
+    if path.startswith("configs/datahub/"):
+        mark(flags, "MATERIALIZE", "DP1", "DP2", "DP3")
+    elif name.startswith("bst") or name == "ray-cluster.yaml":
         mark(flags, "TRAINING")
-    if name.startswith("spark_batch"):
+    elif name.startswith("spark_batch"):
         mark(flags, "SPARK_BATCH", "DP2", "DP3")
-    if name.startswith("data_generator") or name in {"postgres_source.yaml", "kafka_topics.yaml"}:
+    elif name.startswith("data_generator") or name in {"postgres_source.yaml", "kafka_topics.yaml"}:
         mark(flags, "DP1")
-    if name in {"flink_streaming.yaml", "redis_online_store.yaml"}:
+    elif name in {"flink_streaming.yaml", "redis_online_store.yaml"}:
         mark(flags, "STREAM_OFFLINE", "STREAM_ONLINE")
-    if name in {"data_flow.yaml", "airflow.yaml"}:
+    elif name in {"data_flow.yaml", "airflow.yaml"}:
         mark_data_platform(flags)
+
+
+def classify_spark_source(flags: dict[str, bool], path: str) -> None:
+    name = Path(path).name
+    silver_files = {"build_silver_tables.py", "dp2_silver_gold_entrypoint.py"}
+    feature_files = {
+        "build_bst_training_table.py",
+        "build_item_features.py",
+        "build_ranking_labels.py",
+        "build_user_aggregate_features.py",
+        "build_user_sequence_features.py",
+        "spark_batch_entrypoint.py",
+    }
+    if name in silver_files:
+        mark(flags, "SPARK_BATCH", "DP2", "DP3")
+    elif name in feature_files:
+        mark(flags, "SPARK_BATCH", "DP3")
+    else:
+        mark(flags, "SPARK_BATCH", "DP2", "DP3")
+
+
+def classify_feature_store_source(flags: dict[str, bool], path: str) -> None:
+    name = Path(path).name
+    if name == "feast_registry.py":
+        mark(flags, "MATERIALIZE")
+    elif name == "online_writer.py":
+        mark(flags, "STREAM_ONLINE")
+    elif name == "postgres_offline_store.py":
+        mark(flags, "DP3", "STREAM_OFFLINE")
+    else:
+        mark(flags, "MATERIALIZE", "DP3", "STREAM_OFFLINE", "STREAM_ONLINE")
 
 
 def classify_data_platform_source(flags: dict[str, bool], path: str) -> None:
     if path.startswith("apps/data-platform/src/feature_store/"):
-        mark(flags, "MATERIALIZE", "DP3", "STREAM_ONLINE")
+        classify_feature_store_source(flags, path)
     elif path.startswith("apps/data-platform/src/local/"):
-        mark(flags, "MATERIALIZE")
+        mark(flags, "SPARK_BATCH", "DP3")
     elif path.startswith("apps/data-platform/src/ingest/"):
         mark(flags, "DP1")
     elif path.startswith("apps/data-platform/src/features/spark/"):
-        mark(flags, "SPARK_BATCH", "DP2", "DP3")
+        classify_spark_source(flags, path)
     elif path.startswith("apps/data-platform/src/features/flink/"):
         mark(flags, "STREAM_OFFLINE", "STREAM_ONLINE")
-    elif path.startswith("apps/data-platform/src/validate/") or path.startswith("apps/data-platform/src/mlops/"):
+    elif path.endswith("validate/governance_contracts.py"):
+        mark(flags, "DP1", "DP2", "DP3")
+    elif path.startswith("apps/data-platform/src/validate/"):
         mark(flags, "DRIFT")
+    elif path.startswith("apps/data-platform/src/mlops/"):
+        mark(flags, "TRAINING", "DRIFT")
     elif path.startswith("apps/data-platform/src/lakehouse/"):
         mark(flags, "SPARK_BATCH", "DP1", "DP2", "DP3", "STREAM_OFFLINE")
     elif path.startswith("apps/data-platform/src/metadata/"):
         mark(flags, "MATERIALIZE", "DP1", "DP2", "DP3")
     elif path.startswith("apps/data-platform/src/orchestration/airflow/dags/"):
         classify_airflow_dag(flags, path)
-    elif path.startswith("apps/data-platform/src/config/") or path.startswith("apps/data-platform/src/monitoring/"):
+    elif path.startswith("apps/data-platform/src/config/"):
         mark_data_platform(flags)
+    elif path.startswith("apps/data-platform/src/monitoring/"):
+        mark(flags, "DRIFT")
     elif path.startswith("apps/data-platform/src/"):
         mark_data_platform(flags)
 
@@ -152,56 +253,86 @@ def classify_airflow_dag(flags: dict[str, bool], path: str) -> None:
         mark(flags, "SPARK_BATCH", "DP2", "DP3")
     elif name == "streaming_feature_pipeline_dag.py":
         mark(flags, "STREAM_OFFLINE", "STREAM_ONLINE")
-    elif name in {"full_dataflow_local_dag.py", "k8s_data_platform_dag.py"}:
-        mark_data_platform(flags)
     else:
         mark_data_platform(flags)
 
 
 def classify_infra(flags: dict[str, bool], path: str) -> None:
-    if path.startswith("infra/kubeflow/"):
+    if path.startswith("infra/helm/recsys-ci/"):
+        mark_ci_config(flags)
+    elif path.startswith("infra/kubeflow/"):
         mark(flags, "TRAINING")
     elif path.startswith("infra/helm/recsys-serving/"):
         mark(flags, "API", "KSERVE")
     elif path.startswith("infra/helm/recsys-data-platform/"):
         mark_data_platform(flags)
-    elif path.startswith("infra/helm/ray-cluster/") or path.startswith("infra/helm/recsys-runtime/") or path.startswith(
-        "infra/helm/mlflow-stack/"
-    ):
+    elif path.startswith(("infra/helm/ray-cluster/", "infra/helm/recsys-runtime/", "infra/helm/mlflow-stack/")):
         mark(flags, "TRAINING")
     elif path.startswith("infra/helm/recsys-observability/"):
         mark(flags, "API", "KSERVE", "DRIFT")
-    elif path.startswith("infra/docker/Dockerfile.base-python"):
+    elif path == "infra/docker/Dockerfile.base-python":
         mark(flags, "MATERIALIZE", "TRAINING", "DP1", "DP3", "DRIFT", "STREAM_ONLINE")
-    elif path.startswith("infra/docker/Dockerfile.airflow"):
+    elif path == "infra/docker/Dockerfile.airflow":
         mark_data_platform(flags)
-    elif path.startswith("infra/docker/Dockerfile.kafka-connect"):
+    elif path == "infra/docker/Dockerfile.kafka-connect":
         mark(flags, "DP1")
     elif path.startswith("infra/docker/"):
         mark_data_platform(flags)
-    elif path.startswith("infra/k8s/scripts/data_platform") or path.startswith("infra/k8s/scripts/cluster_data_setup"):
+    elif path.startswith(("infra/k8s/scripts/data_platform", "infra/k8s/scripts/cluster_data_setup")):
         mark_data_platform(flags)
     elif path.startswith("infra/k8s/scripts/cluster_mlops_serving"):
         mark(flags, "TRAINING", "API", "KSERVE")
+    elif path.startswith("infra/k8s/processing-baseline/"):
+        mark(flags, "SPARK_BATCH", "STREAM_OFFLINE")
+    elif path.startswith("infra/k8s/datahub"):
+        mark(flags, "MATERIALIZE", "DP1", "DP2", "DP3")
+    else:
+        # Cluster/IaC changes need lint/contract validation, not every product image.
+        mark_ci_config(flags)
+
+
+def classify_jenkins(flags: dict[str, bool], path: str) -> None:
+    mark_ci_config(flags)
+    if path in {"jenkins/KServeModelCD.Jenkinsfile", "jenkins/scripts/model_cd.py"}:
+        mark(flags, "KSERVE")
+    elif path == "jenkins/scripts/kubeflow_pipeline_cicd.sh":
+        mark(flags, "TRAINING")
+    elif Path(path).name in {"validation_evidence.sh", "validation_load_test.sh", "validation_mutation.sh"}:
+        mark(flags, "API")
 
 
 def classify_tests(flags: dict[str, bool], path: str) -> None:
-    if path.startswith("tests/unit/api_serving/"):
+    name = Path(path).name
+    if path.startswith("tests/unit/jenkins/"):
+        mark_ci_config(flags)
+    elif path.startswith("tests/unit/api_serving/"):
         mark(flags, "API")
     elif path.startswith("tests/unit/ml_system/"):
         mark(flags, "TRAINING")
-        if Path(path).name == "test_model_promotion.py":
+        if name in {"test_model_promotion.py", "test_kserve_cd_trigger.py"}:
             mark(flags, "KSERVE")
-    elif path.startswith("tests/unit/data_generator/"):
-        mark(flags, "DP1")
+    elif path.endswith("tests/unit/data_platform/test_lakehouse_optimization.py"):
+        mark(flags, "SPARK_BATCH", "DP2", "DP3")
+    elif path.endswith("tests/unit/data_platform/test_governance_lineage.py"):
+        mark(flags, "MATERIALIZE", "DP1", "DP2", "DP3")
     elif path.startswith("tests/unit/data_platform/"):
         mark_data_platform(flags)
-    elif path.startswith("tests/contract/test_serving_contracts.py"):
+    elif path.startswith("tests/unit/data_generator/"):
+        mark(flags, "DP1")
+    elif path == "tests/contract/test_serving_contracts.py":
         mark(flags, "API", "KSERVE")
-    elif path.startswith("tests/contract/test_gateway_contracts.py"):
+    elif path == "tests/contract/test_gateway_contracts.py":
         mark(flags, "API")
-    elif path.startswith("tests/contract/test_docker_dataflow_contracts.py"):
+    elif path == "tests/contract/test_observability_contracts.py":
+        mark(flags, "API", "KSERVE", "DRIFT")
+    elif path == "tests/contract/test_docker_dataflow_contracts.py":
         mark_data_platform(flags)
+    elif path.startswith("tests/e2e/"):
+        mark(flags, "API", "KSERVE")
+    elif path.startswith("tests/load/"):
+        mark(flags, "API")
+    elif path.startswith("tests/unit/feature_store/"):
+        mark(flags, "MATERIALIZE", "DP3")
     elif path.startswith("tests/integration/"):
         parts = Path(path).parts
         if len(parts) >= 3:
@@ -210,39 +341,80 @@ def classify_tests(flags: dict[str, bool], path: str) -> None:
                 mark(flags, component)
 
 
-def classify(paths: list[str]) -> dict[str, bool]:
-    flags = dict(FLAGS)
-    for path in paths:
-        parts = Path(path).parts
-
-        if path in {"pyproject.toml", "uv.lock", "requirements.txt"}:
-            mark_all_python(flags)
-        elif path.startswith("configs/"):
-            classify_config(flags, path)
-        elif path.startswith("apps/api-serving/") or path.startswith("apps/api/"):
-            mark(flags, "API")
-        elif path.startswith("apps/ml-system/"):
-            mark(flags, "TRAINING")
-            if parts[-1] in {"model_promotion.py", "trigger_kserve_cd.py"}:
-                mark(flags, "KSERVE")
-        elif path.startswith("apps/data-platform/data-generator/"):
-            mark(flags, "DP1")
-        elif path == "apps/data-platform/Dockerfile.spark":
-            mark(flags, "SPARK_BATCH", "DP2", "DP3")
-        elif path == "apps/data-platform/Dockerfile.flink":
-            mark(flags, "STREAM_OFFLINE", "STREAM_ONLINE")
-        elif path == "apps/data-platform/Dockerfile.dataflow-cli":
-            mark(flags, "MATERIALIZE", "DP1", "DP3", "DRIFT", "STREAM_ONLINE")
-        elif path.startswith("apps/data-platform/src/"):
-            classify_data_platform_source(flags, path)
-        elif path.startswith("infra/"):
-            classify_infra(flags, path)
-        elif path == "jenkins/scripts/model_cd.py":
+def apply_path_rules(flags: dict[str, bool], normalized: str) -> None:
+    parts = Path(normalized).parts
+    if normalized in {"pyproject.toml", "uv.lock", "requirements.txt"}:
+        mark_all_python(flags)
+    elif normalized == ".dockerignore":
+        mark_all_python(flags)
+    elif normalized in {".gcloudignore", ".python-version"}:
+        mark_ci_config(flags)
+    elif normalized == "Jenkinsfile" or normalized.startswith(".github/"):
+        mark_ci_config(flags)
+    elif normalized.startswith("configs/"):
+        classify_config(flags, normalized)
+    elif normalized.startswith("notebooks/"):
+        mark(flags, "TRAINING")
+    elif normalized.startswith(("apps/api-serving/", "apps/api/")):
+        mark(flags, "API")
+    elif normalized.startswith("apps/ml-system/"):
+        mark(flags, "TRAINING")
+        if parts[-1] in {"model_promotion.py", "trigger_kserve_cd.py"}:
             mark(flags, "KSERVE")
-        elif path.startswith("jenkins/"):
-            mark_all_python(flags)
-        elif path.startswith("tests/"):
-            classify_tests(flags, path)
+    elif normalized.startswith("apps/data-platform/feature-store/"):
+        mark(flags, "MATERIALIZE", "DP3", "STREAM_OFFLINE", "STREAM_ONLINE")
+    elif normalized.startswith("apps/data-platform/data-generator/"):
+        mark(flags, "DP1")
+    elif normalized == "apps/data-platform/Dockerfile.spark":
+        mark(flags, "SPARK_BATCH", "DP2", "DP3")
+    elif normalized == "apps/data-platform/Dockerfile.flink":
+        mark(flags, "STREAM_OFFLINE", "STREAM_ONLINE")
+    elif normalized == "apps/data-platform/Dockerfile.dataflow-cli":
+        mark(flags, "MATERIALIZE", "DP1", "DP3", "DRIFT", "STREAM_ONLINE")
+    elif normalized == "apps/data-platform/uv.lock":
+        mark_data_platform(flags)
+    elif normalized == "apps/data-platform/pyproject.toml":
+        mark_data_platform(flags)
+    elif normalized.startswith("apps/data-platform/src/"):
+        classify_data_platform_source(flags, normalized)
+    elif normalized.startswith("infra/"):
+        classify_infra(flags, normalized)
+    elif normalized.startswith("jenkins/"):
+        classify_jenkins(flags, normalized)
+    elif normalized.startswith("tests/"):
+        classify_tests(flags, normalized)
+    elif normalized.startswith("tools/proofs/compare_spark"):
+        mark(flags, "SPARK_BATCH", "DP2", "DP3")
+    elif normalized.startswith("tools/proofs/detect_duplicate_events"):
+        mark(flags, "DP1", "DP2")
+    elif normalized in {"Makefile", "docker-compose.yml", "docker-compose.yaml"}:
+        mark_ci_config(flags)
+
+
+def route_path(flags: dict[str, bool], path: str) -> str:
+    normalized = normalize_path(path)
+    if is_ignored_path(normalized):
+        return "ignored"
+
+    probe = dict(FLAGS)
+    apply_path_rules(probe, normalized)
+    if not any(probe[name] for name in ROUTING_FLAG_NAMES):
+        return "unmapped"
+    apply_path_rules(flags, normalized)
+    return "mapped"
+
+
+def classify_paths(paths: list[str]) -> ClassificationResult:
+    flags = dict(FLAGS)
+    normalized_paths = tuple(dict.fromkeys(normalize_path(path) for path in paths if path.strip()))
+    ignored: list[str] = []
+    unmapped: list[str] = []
+    for path in normalized_paths:
+        status = route_path(flags, path)
+        if status == "ignored":
+            ignored.append(path)
+        elif status == "unmapped":
+            unmapped.append(path)
 
     enabled_components = [component for component in COMPONENTS if flags[f"RUN_{component}"]]
     if enabled_components:
@@ -250,21 +422,49 @@ def classify(paths: list[str]) -> dict[str, bool]:
         flags["RUN_COMPONENT_BUILD"] = True
         flags["RUN_COMPONENT_DEPLOY"] = True
         flags["RUN_PYTHON"] = any(component in PYTHON_COMPONENTS for component in enabled_components)
-    return flags
+
+    return ClassificationResult(
+        flags=flags,
+        changed_paths=normalized_paths,
+        ignored_paths=tuple(ignored),
+        unmapped_paths=tuple(unmapped),
+    )
+
+
+def classify(paths: list[str]) -> dict[str, bool]:
+    """Compatibility wrapper used by unit tests and existing callers."""
+    return classify_paths(paths).flags
+
+
+def render_environment(result: ClassificationResult) -> str:
+    lines = [f"{name}={'true' if value else 'false'}" for name, value in sorted(result.flags.items())]
+    lines.extend(
+        (
+            f"CHANGED_COMPONENTS={','.join(result.component_names) if result.component_names else 'unchanged'}",
+            f"CHANGED_PATHS_COUNT={len(result.changed_paths)}",
+            f"IGNORED_PATHS_COUNT={len(result.ignored_paths)}",
+            f"UNMAPPED_PATHS_COUNT={len(result.unmapped_paths)}",
+            f"UNMAPPED_PATHS={'|'.join(result.unmapped_paths)}",
+        )
+    )
+    return "\n".join(lines)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Map changed paths to path-based RecSys CI/CD component flags.")
     parser.add_argument("--base-ref", default="")
+    parser.add_argument("--path", action="append", default=[], help="Classify an explicit path instead of reading git diff.")
     args = parser.parse_args()
 
-    paths = changed_paths(args.base_ref or None)
-    flags = classify(paths)
-    components = [component.lower() for component in COMPONENTS if flags[f"RUN_{component}"]]
-
-    for name in sorted(flags):
-        print(f"{name}={'true' if flags[name] else 'false'}")
-    print(f"CHANGED_COMPONENTS={','.join(components) if components else 'docs-only'}")
+    paths = args.path or changed_paths(args.base_ref or None)
+    result = classify_paths(paths)
+    print(render_environment(result))
+    if result.unmapped_paths:
+        print(
+            "ERROR: Unmapped runtime path(s). Add an explicit CI/CD routing rule: "
+            + ", ".join(result.unmapped_paths),
+        )
+        return 2
     return 0
 
 

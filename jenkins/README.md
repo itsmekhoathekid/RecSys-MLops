@@ -42,6 +42,7 @@ kubectl port-forward -n ci svc/recsys-jenkins 18090:8080
 
 | Component | Trigger paths | Published artifacts |
 | --- | --- | --- |
+| `ci_config` | `Jenkinsfile`, `.github/`, `jenkins/`, `infra/helm/recsys-ci/`, generic IaC/control files | None. Runs detector contracts, Python compile checks, and Jenkins Helm lint only. |
 | `materialize` | `feature_store/`, `local/`, materialize DAG/config | `recsys-dataflow-cli` |
 | `training` | `apps/ml-system/`, `infra/kubeflow/`, `configs/local/bst.yaml` | `recsys-mlops-training`, `recsys-mlops-spark`, `recsys-dataflow-cli`, compiled/uploaded KFP YAML |
 | `spark_batch` | `features/spark/`, `Dockerfile.spark`, `spark_batch*.yaml` | `recsys-spark`, `recsys-airflow` |
@@ -57,6 +58,19 @@ kubectl port-forward -n ci svc/recsys-jenkins 18090:8080
 `jenkins/scripts/detect_changed_components.py` is the source of truth for path
 classification. It writes `.ci-components.env` so Jenkins can run the matching
 component stages.
+
+Documentation and generated evidence paths (`docs/`, Markdown, images,
+`graphify-out/`, CI reports) are explicitly ignored and produce
+`CHANGED_COMPONENTS=unchanged`. Jenkins/controller configuration produces only
+`CHANGED_COMPONENTS=ci_config`; it no longer fans out to every application
+pipeline. Any non-documentation path without a routing rule fails closed with an
+`Unmapped runtime path` error so a new component cannot silently run everything
+or skip validation.
+
+For push builds, Jenkins compares `GIT_PREVIOUS_COMMIT...HEAD`. Pull requests use
+the target branch merge base. `HEAD~1` is only a first-build fallback. This makes
+multi-commit pushes and repeated builds deterministic while preserving a valid
+empty diff as unchanged.
 
 ## Stage Contract
 
