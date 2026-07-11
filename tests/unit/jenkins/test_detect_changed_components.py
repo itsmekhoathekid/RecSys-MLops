@@ -71,6 +71,13 @@ def product_components(paths: list[str]) -> set[str]:
         ),
         ("apps/data-platform/src/validate/offline_feature_drift.py", {"DRIFT"}, False),
         (
+            "apps/data-platform/data-generator/src/drift/reporting.py",
+            {"DP1", "DRIFT"},
+            False,
+        ),
+        ("tests/unit/data_generator/test_drift_reporting_unit.py", {"DP1", "DRIFT"}, False),
+        ("configs/local/data_generator_drift.yaml", {"DP1", "DRIFT"}, False),
+        (
             "apps/data-platform/src/mlops/trigger_kubeflow_retrain.py",
             {"TRAINING", "DRIFT"},
             False,

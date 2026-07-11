@@ -175,6 +175,8 @@ def classify_config(flags: dict[str, bool], path: str) -> None:
         mark(flags, "TRAINING")
     elif name.startswith("spark_batch"):
         mark(flags, "SPARK_BATCH", "DP2", "DP3")
+    elif name == "data_generator_drift.yaml":
+        mark(flags, "DP1", "DRIFT")
     elif name.startswith("data_generator") or name in {"postgres_source.yaml", "kafka_topics.yaml"}:
         mark(flags, "DP1")
     elif name in {"flink_streaming.yaml", "redis_online_store.yaml"}:
@@ -319,6 +321,8 @@ def classify_tests(flags: dict[str, bool], path: str) -> None:
         mark_data_platform(flags)
     elif path.startswith("tests/unit/data_generator/"):
         mark(flags, "DP1")
+        if name.startswith("test_drift"):
+            mark(flags, "DRIFT")
     elif path == "tests/contract/test_serving_contracts.py":
         mark(flags, "API", "KSERVE")
     elif path == "tests/contract/test_gateway_contracts.py":
@@ -365,6 +369,8 @@ def apply_path_rules(flags: dict[str, bool], normalized: str) -> None:
         mark(flags, "MATERIALIZE", "DP3", "STREAM_OFFLINE", "STREAM_ONLINE")
     elif normalized.startswith("apps/data-platform/data-generator/"):
         mark(flags, "DP1")
+        if normalized.startswith("apps/data-platform/data-generator/src/drift/"):
+            mark(flags, "DRIFT")
     elif normalized == "apps/data-platform/Dockerfile.spark":
         mark(flags, "SPARK_BATCH", "DP2", "DP3")
     elif normalized == "apps/data-platform/Dockerfile.flink":
