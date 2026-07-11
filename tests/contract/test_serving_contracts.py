@@ -637,5 +637,6 @@ def test_jenkins_admin_secret_is_reconciled_with_persisted_home():
         "seed-github-cicd-job.groovy: |", 1
     )[0]
 
-    assert "realm.createAccount(username, password)" in security_script
+    assert "HudsonPrivateSecurityRealm.Details.fromPlainPassword(password)" in security_script
+    assert "admin.addProperty" in security_script
     assert "realm.getUser(username) == null" not in security_script

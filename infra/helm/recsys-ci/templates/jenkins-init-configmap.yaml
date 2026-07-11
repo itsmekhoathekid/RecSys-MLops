@@ -8,6 +8,7 @@ data:
   basic-security.groovy: |
     import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
     import hudson.security.HudsonPrivateSecurityRealm
+    import hudson.model.User
     import jenkins.model.Jenkins
 
     def instance = Jenkins.get()
@@ -20,7 +21,9 @@ data:
       // every startup. Jenkins home survives pod replacement, so only
       // creating a missing account leaves the Secret and stored password out
       // of sync after a credential rotation or a restored PVC.
-      realm.createAccount(username, password)
+      def admin = User.getById(username, true)
+      admin.addProperty(HudsonPrivateSecurityRealm.Details.fromPlainPassword(password))
+      admin.save()
       instance.setSecurityRealm(realm)
 
       def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
