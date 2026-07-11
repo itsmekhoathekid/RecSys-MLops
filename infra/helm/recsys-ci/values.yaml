@@ -46,8 +46,8 @@ jenkins:
   adminUser: admin
   adminSecretName: recsys-jenkins-admin
   github:
-    projectUrl: https://github.com/itsmekhoathekid/AIDE1-project/
-    repositoryUrl: https://github.com/itsmekhoathekid/AIDE1-project.git
+    projectUrl: https://github.com/itsmekhoathekid/RecSys-MLops/
+    repositoryUrl: https://github.com/itsmekhoathekid/RecSys-MLops.git
     branchSpec: "*/main"
   plugins:
     installOnStartup: true

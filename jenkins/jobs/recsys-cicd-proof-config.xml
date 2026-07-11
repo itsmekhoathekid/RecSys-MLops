@@ -19,7 +19,7 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        git branch: 'main', url: 'https://github.com/itsmekhoathekid/AIDE1-project.git'
+        git branch: 'main', url: 'https://github.com/itsmekhoathekid/RecSys-MLops.git'
         sh 'git rev-parse --short HEAD'
       }
     }

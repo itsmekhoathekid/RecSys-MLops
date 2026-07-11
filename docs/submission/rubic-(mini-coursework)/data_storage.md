@@ -180,26 +180,32 @@ The primary measurable success condition is `after.file_count < before.file_coun
 
 Optimization implemented:
 
-| Technique | Implementation | Effect |
-|---|---|---|
-| Bronze compression | `pq.write_table(..., compression="snappy")` in batch ingestion | Reduces raw storage and scan IO while retaining broadly compatible Parquet. |
-| Iceberg bin-pack | `rewrite_data_files` with 128 MiB target and minimum 2 input files | Combines small files, reducing file-open and metadata overhead. |
-| Selective Z-order | `--strategy zorder` only maps hot event/feature tables to user/item/time columns | Improves data skipping for the repository's dominant point/range access paths without paying a sort cost on every table. |
-| Manifest rewrite | `rewrite_manifests` after data-file rewrite | Improves scan planning after files have moved or been regrouped. |
-| Adaptive write sizing | Spark AQE coalescing with `parallelismFirst=false` and a 128 MiB advisory size | Prevents four configured shuffle partitions from automatically becoming four tiny output files for small jobs. |
-| Table write properties | target size 128 MiB, hash distribution, Zstandard compression | Makes future Iceberg writes more scan-friendly; compaction also rewrites existing files using current table properties. |
-| Feature-store warehouse split | Raw lakehouse and offline feature store use separate warehouses | Keeps raw/silver/gold feature data isolated for lifecycle control. |
+| Technique | Implementation | Effect | Official reference |
+|---|---|---|---|
+| Bronze compression | `pq.write_table(..., compression="snappy")` in batch ingestion | Reduces raw storage and scan IO while retaining broadly compatible Parquet. | [Apache Arrow: Parquet compression](https://arrow.apache.org/docs/python/parquet.html#compression-encoding-and-file-compatibility) |
+| Iceberg bin-pack | `rewrite_data_files` with 128 MiB target and minimum 2 input files | Combines small files, reducing file-open and metadata overhead. | [Apache Iceberg 1.7.1: `rewrite_data_files`](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_data_files) |
+| Selective Z-order | `--strategy zorder` only maps hot event/feature tables to user/item/time columns | Improves data skipping for the repository's dominant point/range access paths without paying a sort cost on every table. | [Apache Iceberg 1.7.1: sort strategy and Z-order](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_data_files) |
+| Manifest rewrite | `rewrite_manifests` after data-file rewrite | Improves scan planning after files have moved or been regrouped. | [Apache Iceberg 1.7.1: `rewrite_manifests`](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_manifests) |
+| Adaptive write sizing | Spark AQE coalescing with `parallelismFirst=false` and a 128 MiB advisory size | Prevents four configured shuffle partitions from automatically becoming four tiny output files for small jobs. | [Spark 3.5.8: AQE configuration](https://spark.apache.org/docs/3.5.8/configuration.html#adaptive-query-execution) and [Iceberg: controlling file sizes](https://iceberg.apache.org/docs/1.7.1/spark-writes/#controlling-file-sizes) |
+| Table write properties | target size 128 MiB, hash distribution, Zstandard compression | Makes future Iceberg writes more scan-friendly; compaction also rewrites existing files using current table properties. | [Iceberg 1.7.1: write properties](https://iceberg.apache.org/docs/1.7.1/configuration/#write-properties) and [write distribution modes](https://iceberg.apache.org/docs/1.7.1/spark-writes/#writing-distribution-modes) |
+| Feature-store warehouse split | Raw lakehouse and offline feature store use separate catalog warehouse roots | Keeps raw/silver/gold feature data isolated for lifecycle control. | [Iceberg 1.7.1: catalog properties and `warehouse`](https://iceberg.apache.org/docs/1.7.1/configuration/#catalog-properties) |
 
+### Official reference notes
 
-Primary references:
+All links below are primary project documentation and were checked on 2026-07-11:
 
-- [Apache Iceberg 1.7.1 Spark procedures](https://iceberg.apache.org/docs/1.7.1/spark-procedures/) documents `rewrite_data_files`, bin-pack/sort/Z-order strategies, result metrics, and `rewrite_manifests`.
-- [Apache Iceberg Spark writes](https://iceberg.apache.org/docs/1.7.0/spark-writes/) explains distribution modes and why Spark task sizing constrains output file size.
-- [Apache Spark 3.5.8 SQL configuration](https://spark.apache.org/docs/3.5.8/configuration.html) documents AQE advisory partition sizing and `parallelismFirst=false`.
+- [Apache Arrow Parquet documentation](https://arrow.apache.org/docs/python/parquet.html) lists Snappy and Zstandard among supported Parquet codecs and shows the `pq.write_table(..., compression=...)` API used by Bronze ingestion.
+- [Apache Iceberg 1.7.1 Spark procedures](https://iceberg.apache.org/docs/1.7.1/spark-procedures/) defines `rewrite_data_files`, the `binpack` and `sort` strategies, `zorder(c1,c2,...)`, rewrite result counters, and `rewrite_manifests`.
+- [Apache Iceberg 1.7.1 Spark writes](https://iceberg.apache.org/docs/1.7.1/spark-writes/) explains hash/range distribution and why Spark task size constrains the resulting Iceberg file size.
+- [Apache Iceberg 1.7.1 configuration](https://iceberg.apache.org/docs/1.7.1/configuration/) defines `write.target-file-size-bytes`, `write.parquet.compression-codec`, and catalog `warehouse` properties.
+- [Apache Spark 3.5.8 configuration](https://spark.apache.org/docs/3.5.8/configuration.html#adaptive-query-execution) documents `spark.sql.adaptive.advisoryPartitionSizeInBytes` and `spark.sql.adaptive.coalescePartitions.parallelismFirst`.
+- [Apache Iceberg 1.7.1 partition evolution](https://iceberg.apache.org/docs/1.7.1/evolution/#partition-evolution) supports the decision to defer daily partitioning at the current small scale and add or evolve a partition spec later without rewriting old data eagerly.
 
 ## Data Warehouse Indexing
 
 Source Postgres is initialized with primary keys plus secondary indexes for the query patterns used by CDC, joining, validation, feature generation, and recommendation training.
+
+Official basis: [PostgreSQL Chapter 11 — Indexes](https://www.postgresql.org/docs/current/indexes.html) explains the read-performance/write-overhead tradeoff, while [PostgreSQL multicolumn indexes](https://www.postgresql.org/docs/current/indexes-multicolumn.html) documents the composite B-tree pattern used for entity-plus-timestamp access paths below.
 
 Code reference:
 
@@ -220,4 +226,3 @@ Secondary indexes implemented:
 | `behavior_events` | `(event_type, event_timestamp)` | Event type filtering for labels and quality checks. |
 | `orders` | `(user_id, order_timestamp)` | Purchase labels and user aggregates. |
 | `order_items` | `(product_id)` | Product conversion and order item joins. |
-
