@@ -5,15 +5,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
-import numpy as np
+# Keep PyArrow before NumPy; drift.reporting relies on the same import order.
 import pyarrow.parquet as pq
 
 from config import DriftConfig, load_config
 from drift.controller import DriftController
+import drift.reporting as drift_reporting
 from drift.reporting import DriftReporter, calculate_psi, classify_drift
+
+np = drift_reporting.np
 
 
 def test_drift_controller_modes_phase_and_scenario():
+    assert drift_reporting.np is np
     disabled = DriftController(DriftConfig())
     assert disabled.scenario is None
     assert disabled.get_factor(datetime(2025, 8, 1, tzinfo=timezone.utc)) == 1.0

@@ -3,12 +3,15 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from math import fsum
 from pathlib import Path
 from typing import Any
 
-import numpy as np
+# PyArrow initializes its NumPy bridge during import. Load it first so this
+# module retains the same NumPy instance used by callers on every platform.
 import pyarrow as pa
 import pyarrow.parquet as pq
+import numpy as np
 
 from config import GeneratorConfig
 from domain import GeneratedData
@@ -109,12 +112,14 @@ def calculate_psi(
     expected_counts, _ = np.histogram(expected_array, bins=edges)
     actual_counts, _ = np.histogram(actual_array, bins=edges)
     epsilon = 1e-4
-    expected_pct = np.maximum(expected_counts / expected_counts.sum(), epsilon)
-    actual_pct = np.maximum(actual_counts / actual_counts.sum(), epsilon)
-    psi = np.sum(
-        (actual_pct - expected_pct) * np.log(actual_pct / expected_pct)
+    expected_pct = np.maximum(
+        expected_counts.astype(np.float64) / float(expected_array.size), epsilon
     )
-    return float(psi)
+    actual_pct = np.maximum(
+        actual_counts.astype(np.float64) / float(actual_array.size), epsilon
+    )
+    terms = (actual_pct - expected_pct) * np.log(actual_pct / expected_pct)
+    return fsum(float(term) for term in terms)
 
 
 def classify_drift(psi: float, is_baseline: bool = False) -> str:
