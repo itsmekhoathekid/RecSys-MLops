@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
+
+
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def spark_session(app_name: str = "recsys-data-platform"):
@@ -10,6 +14,13 @@ def spark_session(app_name: str = "recsys-data-platform"):
 
     builder = SparkSession.builder.appName(app_name)
     builder = builder.config("spark.sql.shuffle.partitions", os.getenv("SPARK_SQL_SHUFFLE_PARTITIONS", "4"))
+    builder = builder.config("spark.sql.adaptive.enabled", "true")
+    builder = builder.config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+    builder = builder.config("spark.sql.adaptive.coalescePartitions.parallelismFirst", "false")
+    builder = builder.config(
+        "spark.sql.adaptive.advisoryPartitionSizeInBytes",
+        os.getenv("SPARK_ADVISORY_PARTITION_SIZE_BYTES", "134217728"),
+    )
     for key, value in spark_iceberg_conf().items():
         builder = builder.config(key, value)
     if os.getenv("SPARK_MASTER"):
@@ -62,16 +73,122 @@ def write_iceberg_table(frame: Any, table_name: str, mode: str = "append") -> No
         writer.create()
 
 
-def compact_iceberg_table(spark: Any, table_name: str, target_file_size_bytes: int = 134_217_728) -> None:
-    catalog = table_name.split(".", 1)[0]
+def _iceberg_identifier_parts(identifier: str, *, minimum_parts: int = 1) -> tuple[str, ...]:
+    parts = tuple(identifier.split("."))
+    if len(parts) < minimum_parts or any(not _IDENTIFIER.fullmatch(part) for part in parts):
+        raise ValueError(f"Invalid Iceberg identifier: {identifier}")
+    return parts
+
+
+def _row_dict(row: Any) -> dict[str, Any]:
+    if hasattr(row, "asDict"):
+        return dict(row.asDict(recursive=True))
+    if isinstance(row, dict):
+        return dict(row)
+    return {}
+
+
+def iceberg_file_metrics(spark: Any, table_name: str) -> dict[str, int | float]:
+    """Read physical file metrics from an Iceberg metadata table."""
+    _iceberg_identifier_parts(table_name, minimum_parts=3)
+    rows = spark.sql(
+        f"""
+        SELECT
+          COUNT(*) AS file_count,
+          COALESCE(SUM(file_size_in_bytes), 0) AS total_size_bytes,
+          COALESCE(MIN(file_size_in_bytes), 0) AS min_file_size_bytes,
+          COALESCE(MAX(file_size_in_bytes), 0) AS max_file_size_bytes,
+          COALESCE(AVG(file_size_in_bytes), 0) AS avg_file_size_bytes
+        FROM {table_name}.files
+        """
+    ).collect()
+    row = _row_dict(rows[0]) if rows else {}
+    return {
+        "file_count": int(row.get("file_count") or 0),
+        "total_size_bytes": int(row.get("total_size_bytes") or 0),
+        "min_file_size_bytes": int(row.get("min_file_size_bytes") or 0),
+        "max_file_size_bytes": int(row.get("max_file_size_bytes") or 0),
+        "avg_file_size_bytes": float(row.get("avg_file_size_bytes") or 0),
+    }
+
+
+def compact_iceberg_table(
+    spark: Any,
+    table_name: str,
+    target_file_size_bytes: int = 134_217_728,
+    *,
+    min_input_files: int = 2,
+    sort_columns: tuple[str, ...] = (),
+    rewrite_all: bool = False,
+    rewrite_manifests: bool = True,
+) -> dict[str, Any]:
+    """Compact an Iceberg table and return capture-ready before/after evidence.
+
+    Bin-packing is the safe default. Passing ``sort_columns`` changes the Iceberg
+    rewrite strategy to sort with a Z-order expression for hot query columns.
+    """
+    parts = _iceberg_identifier_parts(table_name, minimum_parts=3)
+    if target_file_size_bytes <= 0:
+        raise ValueError("target_file_size_bytes must be positive")
+    if min_input_files < 1:
+        raise ValueError("min_input_files must be at least 1")
+    for column in sort_columns:
+        _iceberg_identifier_parts(column)
+
+    catalog = parts[0]
+    procedure_table = ".".join(parts[1:])
+    before = iceberg_file_metrics(spark, table_name)
+
     spark.sql(
         f"""
-        CALL {catalog}.system.rewrite_data_files(
-          table => '{table_name}',
-          options => map('target-file-size-bytes', '{target_file_size_bytes}')
+        ALTER TABLE {table_name} SET TBLPROPERTIES (
+          'write.target-file-size-bytes' = '{target_file_size_bytes}',
+          'write.distribution-mode' = 'hash',
+          'write.parquet.compression-codec' = 'zstd'
         )
         """
     )
+
+    strategy_arguments = ""
+    strategy = "binpack"
+    if sort_columns:
+        strategy = "zorder"
+        order = ",".join(sort_columns)
+        strategy_arguments = f"strategy => 'sort', sort_order => 'zorder({order})',"
+    options = (
+        f"'target-file-size-bytes', '{target_file_size_bytes}', "
+        f"'min-input-files', '{min_input_files}', "
+        f"'rewrite-all', '{str(rewrite_all).lower()}'"
+    )
+    rewrite_rows = spark.sql(
+        f"""
+        CALL {catalog}.system.rewrite_data_files(
+          table => '{procedure_table}',
+          {strategy_arguments}
+          options => map({options})
+        )
+        """
+    ).collect()
+    rewrite_result = _row_dict(rewrite_rows[0]) if rewrite_rows else {}
+
+    manifest_result: dict[str, Any] = {}
+    if rewrite_manifests:
+        manifest_rows = spark.sql(
+            f"CALL {catalog}.system.rewrite_manifests(table => '{procedure_table}')"
+        ).collect()
+        manifest_result = _row_dict(manifest_rows[0]) if manifest_rows else {}
+
+    after = iceberg_file_metrics(spark, table_name)
+    return {
+        "table": table_name,
+        "strategy": strategy,
+        "sort_columns": list(sort_columns),
+        "target_file_size_bytes": target_file_size_bytes,
+        "before": before,
+        "after": after,
+        "rewrite_data_files": rewrite_result,
+        "rewrite_manifests": manifest_result,
+    }
 
 
 def row_count(frame: Any) -> int:

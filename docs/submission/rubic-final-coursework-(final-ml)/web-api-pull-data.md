@@ -113,7 +113,7 @@ Feast store definition:
 
 | Layer | Implementation | Runtime usage |
 | --- | --- | --- |
-| Offline store | BigQuery is the Feast core offline store. Spark exports Iceberg-derived feature and label tables into `fsds-coursework.feature_store`. | Used by training, validation, drift checks, and Feast historical retrieval/materialization. |
+| Offline store | PostgreSQL is the Feast core offline store. Spark exports lakehouse-derived batch feature tables into the Feast PostgreSQL schema, and Flink writes streaming feature rows into the same offline-store backend. | Used by training, validation, drift checks, and Feast historical retrieval/materialization. |
 | Online store | Redis | Used by `recsys-online-feature-api` through Feast SDK `get_online_features(...)` during serving. |
 
 ### Key Evidence

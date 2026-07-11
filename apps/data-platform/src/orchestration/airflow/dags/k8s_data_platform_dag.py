@@ -19,6 +19,7 @@ SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "recsys-spar
 DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
+    "VALIDATION_RUN_ID": "{{ run_id }}",
 }
 SPARK_DRIVER_EXECUTOR_ENV = (
     "PYTHONPATH",
@@ -48,6 +49,8 @@ SPARK_DRIVER_EXECUTOR_ENV = (
     "RETRAIN_PSI_THRESHOLD",
     "RECSYS_JSON_LOGS",
     "SPARK_SQL_SHUFFLE_PARTITIONS",
+    "GOVERNANCE_VALIDATION_ROOT",
+    "VALIDATION_RUN_ID",
 )
 SPARK_SECRET_ENV = ("MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
 
@@ -186,6 +189,18 @@ SPARK_BATCH_COMMAND = spark_native_submit(
     "--config $SPARK_BATCH_CONFIG",
 )
 
+SPARK_DP2_COMMAND = spark_native_submit(
+    "run_dp2_bronze_to_silver_gold",
+    "local:///opt/recsys/apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
+    "--action ingest",
+)
+
+SPARK_DP2_VALIDATE_COMMAND = spark_native_submit(
+    "validate_dp2_silver_gold",
+    "local:///opt/recsys/apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
+    "--action validate",
+)
+
 FEAST_ENV_EXPORTS = """
 export FEAST_POSTGRES_HOST=${FEAST_POSTGRES_HOST:-feature-postgres}
 export FEAST_POSTGRES_PORT=${FEAST_POSTGRES_PORT:-5432}
@@ -208,29 +223,7 @@ cd /opt/recsys/apps/data-platform/feature-store/feature_repo
 feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)
 """.strip()
 
-VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = r"""
-python -c '
-import json
-from psycopg import sql
-from feature_store.postgres_offline_store import OFFLINE_STORE_TABLES, PostgresOfflineStoreConfig
-
-config = PostgresOfflineStoreConfig.from_env()
-counts = {}
-with config.connect() as conn:
-    with conn.cursor() as cur:
-        for table_name in OFFLINE_STORE_TABLES:
-            cur.execute(
-                sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
-                    sql.Identifier(config.schema),
-                    sql.Identifier(table_name),
-                )
-            )
-            counts[table_name] = int(cur.fetchone()[0])
-missing = {name: count for name, count in counts.items() if count <= 0}
-assert not missing, f"PostgreSQL Feast offline tables are empty: {missing}; counts={counts}"
-print(json.dumps({"postgres_feast_offline_store_counts": counts}, sort_keys=True))
-'
-""".strip()
+VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = "python -m validate.governance_contracts dp3-postgres"
 
 VERIFY_REDIS_ONLINE_STORE_COMMAND = r"""
 python -c '
@@ -351,6 +344,18 @@ if DAG is not None:
             "--mode overwrite",
             mesh=False,
         )
+        run_dp2_bronze_to_silver_gold = pod_task(
+            "run_dp2_bronze_to_silver_gold",
+            SPARK_IMAGE,
+            SPARK_DP2_COMMAND,
+            mesh=False,
+        )
+        validate_dp2_silver_gold = pod_task(
+            "validate_dp2_silver_gold",
+            SPARK_IMAGE,
+            SPARK_DP2_VALIDATE_COMMAND,
+            mesh=False,
+        )
         load_realtime_to_source_postgres = pod_task(
             "load_realtime_to_source_postgres",
             DATAFLOW_IMAGE,
@@ -401,7 +406,13 @@ if DAG is not None:
             >> register_debezium_connector
             >> [generate_historical_raw_files, load_realtime_to_source_postgres]
         )
-        generate_historical_raw_files >> ingest_historical_batch_to_lakehouse >> run_spark_batch_to_offline_store
+        (
+            generate_historical_raw_files
+            >> ingest_historical_batch_to_lakehouse
+            >> run_dp2_bronze_to_silver_gold
+            >> validate_dp2_silver_gold
+            >> run_spark_batch_to_offline_store
+        )
         load_realtime_to_source_postgres >> run_flink_stream_to_feature_stores
         [run_spark_batch_to_offline_store, run_flink_stream_to_feature_stores] >> datahub_ingest >> end
 
@@ -413,6 +424,18 @@ if DAG is not None:
         max_active_runs=1,
         tags=["recsys", "features", "spark", "offline-store"],
     ) as recsys_batch_feature_pipeline:
+        run_dp2_bronze_to_silver_gold = pod_task(
+            "run_dp2_bronze_to_silver_gold",
+            SPARK_IMAGE,
+            SPARK_DP2_COMMAND,
+            mesh=False,
+        )
+        validate_dp2_silver_gold = pod_task(
+            "validate_dp2_silver_gold",
+            SPARK_IMAGE,
+            SPARK_DP2_VALIDATE_COMMAND,
+            mesh=False,
+        )
         run_spark_batch_to_offline_store = pod_task(
             "run_spark_batch_to_offline_store",
             SPARK_IMAGE,
@@ -425,7 +448,12 @@ if DAG is not None:
             VERIFY_POSTGRES_OFFLINE_STORE_COMMAND,
         )
 
-        run_spark_batch_to_offline_store >> verify_postgres_offline_store_updated
+        (
+            run_dp2_bronze_to_silver_gold
+            >> validate_dp2_silver_gold
+            >> run_spark_batch_to_offline_store
+            >> verify_postgres_offline_store_updated
+        )
 
     with DAG(
         dag_id="recsys_feast_materialize",

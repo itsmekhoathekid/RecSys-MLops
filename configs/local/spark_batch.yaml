@@ -1,6 +1,5 @@
 input:
-  source: parquet
-  run_path: s3a://recsys-lakehouse/warehouse/lakehouse
+  source: silver_lakehouse
 
 processing:
   mode: whole_run

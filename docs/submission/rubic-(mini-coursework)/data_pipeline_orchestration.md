@@ -1,96 +1,112 @@
 # Data Pipeline Orchestration
 
-This document covers the rubric rows for Airflow DP1, DP2, and DP3. All connections, credentials, and runtime variables are injected through Kubernetes ConfigMaps/Secrets into Airflow tasks so pipeline tasks can reuse them.
+The data platform exposes the three rubric data pipelines as Airflow DAGs. Each DAG follows the same two-stage structure:
+
+1. `ingest_stage`: run the actual pipeline transformation.
+2. `validate_stage`: evaluate the pipeline-specific runtime contract and fail the DAG when a required check fails.
+
+The DAGs reuse shared platform configuration through Kubernetes `ConfigMap` and `Secret` injection instead of hard-coding connection details in each task. The common `KubernetesPodOperator` wrapper loads `recsys-data-platform-config` and `recsys-data-platform-secret`, forwards logs to Airflow, disables sidecar injection for batch pods, and pins the task to the configured dataflow node pool.
 
 Code reference:
 
-- [apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py): Airflow DAG for DP1/DP2/DP3.
-- [infra/helm/recsys-data-platform/templates/airflow.yaml](../../../infra/helm/recsys-data-platform/templates/airflow.yaml): Airflow scheduler/webserver deployment.
-- [infra/helm/recsys-data-platform/templates/configmap.yaml](../../../infra/helm/recsys-data-platform/templates/configmap.yaml): shared runtime variables.
-- [infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): Flink online-store and offline-store streaming deployments checked by Airflow/runtime verification.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 56](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L56): shared `ConfigMap` and `Secret` injection for reusable Airflow connections/variables.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 80](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L80): common `KubernetesPodOperator` factory used by all DP1/DP2/DP3 stages.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 99](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L99): shared Spark-on-Kubernetes submit command used by DP2 and DP3.
 
-## DP1 - Raw Data Into Bronze Zone
+Storage terminology in this document is intentionally strict: Bronze Parquet, Silver Iceberg, and intermediate Iceberg feature tables are zones or tables inside the same data lakehouse. PostgreSQL is the Feast offline feature store. The architecture does not introduce an independent data-lake layer between the Data Generator and the lakehouse.
 
-Airflow stage order:
+## Pipeline To Ingest Raw Data Into Bronze Zone (DP1)
 
-```text
-start
--> init_data_platform_minio
--> init_source_schema
--> register_debezium_connector
--> generate_historical_raw_files
--> ingest_historical_batch_to_lakehouse
-```
+DP1 is the direct batch ingestion pipeline from the Data Generator to the Parquet lakehouse Bronze zone. The generator writes temporary files inside the Airflow batch pod; the same `ingest_stage` immediately loads them into Bronze and the temporary pod output disappears when the task finishes. There is no separate raw data-lake or object-storage stage in this flow. The object-storage implementation is only infrastructure beneath the governed lakehouse warehouse.
 
-| Stage | Task | Purpose |
-|---|---|---|
-| Ingest | `generate_historical_raw_files` | Generates historical source data and stores it under the raw lake prefix. |
-| Ingest | `load_realtime_to_source_postgres` | Loads realtime source rows into Postgres for Debezium CDC. |
-| Validate | `init_source_schema` | Ensures source schema and indexes are present before load/CDC. |
-| Validate | `register_debezium_connector` | Registers the CDC connector and validates Kafka topic path. |
-| Bronze write | `ingest_historical_batch_to_lakehouse` | Copies raw generator tables into lakehouse table paths with ingestion metadata. |
+Flow: `Data Generator -> batch ingest_stage -> Bronze Parquet lakehouse`.
 
-## DP2 - Bronze To Silver/Gold
+Input: historical data generated inside the batch pod from `$DATA_GENERATOR_CONFIG`.
 
-Airflow stage order:
+Output: Bronze Parquet tables under `$LAKEHOUSE_WAREHOUSE/lakehouse/<table>`.
 
-```text
-ingest_historical_batch_to_lakehouse
--> run_spark_batch_to_offline_store
--> feast_materialize_incremental
-```
+DataHub identifies these physical tables through logical Parquet URNs named `recsys.lakehouse.bronze_<table>`; the lineage therefore represents the lakehouse dataset rather than its S3-compatible storage backend.
 
-| Stage | Task | Purpose |
-|---|---|---|
-| Ingest | `run_spark_batch_to_offline_store` | Reads raw lakehouse tables and builds silver tables. |
-| Validate | `build_clean_behavior_events` inside Spark | Handles schema evolution, deduplication, event timestamp normalization. |
-| Gold/offline write | Spark feature builders | Writes user sequence, user aggregate, item features, labels, and training tables. |
-| Materialize | `feast_materialize_incremental` | Applies Feast repo and materializes offline features for online serving. |
+### Reference Code
 
-## DP3 - Offline Feature Table
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 152](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L152): `DP1_INGEST_COMMAND` runs the Data Generator locally inside the batch pod.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 157](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L157): the same task ingests the ephemeral generated run directly into the Bronze lakehouse layout.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 164](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L164): `DP1_VALIDATE_COMMAND` validates every Bronze table and publishes runtime observations.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 181](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L181): Airflow DAG definition for `recsys_dp1_raw_to_bronze`.
+- [apps/data-platform/data-generator/src/cli.py line 25](../../../apps/data-platform/data-generator/src/cli.py#L25): the historical generator loads its config and creates the ephemeral batch output consumed by DP1.
+- [apps/data-platform/src/ingest/batch_lakehouse_ingestion.py line 109](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L109): generated Parquet tables are enriched with run metadata and written directly into the Bronze lakehouse layout.
 
-Airflow stage order:
+### Stage Explanation
 
-```text
-run_spark_batch_to_offline_store
--> feast_materialize_incremental
--> offline_feature_drift
--> trigger_kubeflow_retrain
-```
+`ingest_stage` runs two steps in one Airflow task. First, it calls the historical Data Generator with `$DATA_GENERATOR_CONFIG`; output remains ephemeral inside that Kubernetes pod. Second, it runs `ingest.batch_lakehouse_ingestion` against the local run path and writes every generated table directly into the Bronze lakehouse warehouse with `source_run_id` and `lakehouse_ingestion_ts` metadata.
 
-| Stage | Task | Purpose |
-|---|---|---|
-| Ingest | `run_spark_batch_to_offline_store` | Produces `user_sequence_features`, `user_aggregate_features`, `item_features`, and `ml_bst_training`. |
-| Validate | `offline_feature_drift` | Compares current offline features with baseline and pushes metrics. |
-| Validate/retrain | `trigger_kubeflow_retrain` | Triggers retraining when drift threshold fails. |
+`validate_stage` reads the configured Bronze namespace with PyArrow. It verifies every table is readable and non-empty and contains its source key plus `source_run_id` and `lakehouse_ingestion_ts`. The observed values and Airflow run ID are written to the DP1 governance report.
 
-## Run And Check Logs
+### Image Proof Show Ingest Stage & Validate Stage
 
-```bash
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
+![DP1 Airflow DAG proof](../../pngs/dp1_airflow_ui.png)
 
-kubectl get pods -n recsys-dataflow | rg 'airflow|spark|flink'
-kubectl logs -n recsys-dataflow deploy/airflow-scheduler --tail=100
-kubectl logs -n recsys-dataflow deploy/airflow-webserver --tail=100
+**Figure: DP1 Airflow orchestration proof.** The Airflow Graph tab shows DAG `recsys_dp1_raw_to_bronze` with exactly two ordered tasks: `ingest_stage -> validate_stage`. The left task list shows both stages present in the same DAG, and the graph node labels confirm both tasks are executed by `KubernetesPodOperator`.
 
-kubectl port-forward -n recsys-dataflow svc/airflow-webserver 8080:8080
-```
+## Pipeline To Ingest Data From Bronze Into Silver And Gold Zone (DP2)
 
-Open `http://127.0.0.1:8080` and capture Graph view for `k8s_data_platform_dag`.
+DP2 is the Spark batch processing pipeline from DP1 Bronze Parquet tables to curated Silver Iceberg tables. It handles timestamp normalization, compatible schema evolution, duplicate behavior-event rejection, order fact construction, product slowly changing dimension preparation, and curated `silver_*` writes.
 
-Observed GCP runtime:
+Flow: `Bronze Parquet -> PySpark -> Silver Iceberg`.
 
-```text
-airflow-scheduler READY 1/1
-airflow-webserver READY 1/1
-flink-jobmanager READY 1/1
-flink-taskmanager READY Running
-realtime-flink-online-store READY Running
-realtime-flink-offline-store READY Running
-Flink jobs show online-store and offline-store RUNNING.
-Flink checkpoints 1 and 2 completed.
-```
+Input: DP1 Bronze Parquet tables.
 
-Image proof:
+Output: curated silver/gold-style Apache Iceberg lakehouse tables such as clean behavior events, rejected behavior events, clean impressions, clean recommendation requests, order facts, product SCD, users, products, and user preferences.
 
-![Airflow data pipeline overview](../../pngs/airflow_data_pipeline_overview.png)
+### Reference Code
+
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 166](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L166): `DP2_INGEST_COMMAND` submits the Spark ingest action.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 172](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L172): `DP2_VALIDATE_COMMAND` submits the Spark validate action.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 202](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L202): Airflow DAG definition for `recsys_dp2_bronze_to_silver_gold`.
+- [apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py line 19](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L19): DP2 Spark ingest builds Silver tables from the Bronze lakehouse path.
+- [apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py line 31](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L31): DP2 Spark validate reads every expected Silver table and publishes runtime checks.
+- [apps/data-platform/src/features/spark/build_silver_tables.py line 95](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L95): Bronze tables are normalized into clean Silver tables, rejected-event tables, order facts, product SCD, and related curated datasets.
+
+### Stage Explanation
+
+`ingest_stage` submits a Spark-on-Kubernetes job that runs `dp2_silver_gold_entrypoint.py --action ingest`. The Spark job reads DP1 bronze Parquet tables, normalizes event timestamps, adds missing schema-evolution columns when needed, deduplicates behavior events by latest `ingestion_ts`, builds silver tables, and writes them back to the lakehouse as `silver_*` tables.
+
+`validate_stage` submits the same Spark entrypoint with `--action validate`. It checks every `silver_*` Iceberg table, permits the rejected-event table to be empty, validates required event columns, and requires `duplicate_event_id = 0` in `silver_clean_behavior_events`. Results are published to the DP2 governance report before DP3 consumes Silver.
+
+### Image Proof Show Ingest Stage & Validate Stage
+
+![DP2 Airflow DAG proof](../../pngs/dp2_airflow_ui.png)
+
+**Figure: DP2 Airflow orchestration proof.** The Airflow Graph tab shows DAG `recsys_dp2_bronze_to_silver_gold` with the required `ingest_stage -> validate_stage` order. The proof also shows recent green duration bars on the left for both stages, meaning the two-stage Spark pipeline ran successfully in Airflow.
+
+## Pipeline To Compute Offline Feature Table (DP3)
+
+DP3 is the Spark batch feature-engineering pipeline from curated silver/gold lakehouse tables to offline feature tables. It consumes DP2 curated data, computes model features, writes feature outputs to the feature lakehouse path, and exports the serving/training feature tables into PostgreSQL. In this project, PostgreSQL is the Feast offline feature store, while Apache Iceberg remains the data lakehouse/storage layer. DP3 is therefore the bridge between the data platform and the ML system: it produces user sequence features, user aggregate features, item features, and labels/training samples where configured.
+
+Flow: `Apache Iceberg Silver/Gold -> feature lakehouse outputs -> PostgreSQL Feast offline store`.
+
+Input: curated silver/gold Apache Iceberg lakehouse tables from DP2 and the Spark batch feature config.
+
+Output: offline feature tables in the feature lakehouse path plus PostgreSQL tables used by Feast as the offline feature store.
+
+### Reference Code
+
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 143](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L143): `SPARK_BATCH_COMMAND` submits the DP3 batch feature job.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 149](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L149): `VERIFY_POSTGRES_OFFLINE_STORE_COMMAND` validates the PostgreSQL Feast offline feature store tables.
+- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 223](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L223): Airflow DAG definition for `recsys_dp3_offline_feature_table`.
+- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 150](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L150): DP3 Spark batch entrypoint.
+- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 177](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L177): DP3 loads the existing DP2 Silver Iceberg tables when `source: silver_lakehouse` is configured.
+- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 181](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L181): DP3 computes and writes offline feature outputs.
+- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 191](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L191): DP3 exports feature outputs into the PostgreSQL Feast offline store.
+
+### Stage Explanation
+
+`ingest_stage` submits the production Spark batch feature job through `spark-submit`. The job reads the existing DP2 `silver_*` Iceberg tables directly; it does not rebuild Silver. It computes user sequence, user aggregate, item, ranking-label, and training feature outputs, writes Iceberg feature tables, then exports the four Feast source tables to PostgreSQL.
+
+`validate_stage` connects to the PostgreSQL Feast offline store and checks table existence, required columns, row counts, and non-null entity keys/timestamps. It merges those observations with the Iceberg checks emitted by `ingest_stage`, producing one DP3 report that covers both intermediate feature tables and the real Feast offline store.
+
+### Image Proof Show Ingest Stage & Validate Stage
+
+![DP3 Airflow DAG proof](../../pngs/dp3_airflow_ui.png)
+
+**Figure: DP3 Airflow orchestration proof.** The Airflow Graph tab shows DAG `recsys_dp3_offline_feature_table` with `ingest_stage` followed by `validate_stage`. Both nodes are green and labeled `success`, proving the Spark feature computation stage completed and the PostgreSQL offline-store validation stage passed in the same Airflow run.

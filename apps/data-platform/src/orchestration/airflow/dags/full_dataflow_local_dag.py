@@ -104,6 +104,18 @@ if DAG is not None:
                 "--lakehouse-warehouse $LAKEHOUSE_WAREHOUSE "
                 "--mode overwrite",
             )
+            build_dp2_silver_tables = spark_task(
+                "build_dp2_silver_tables",
+                "/opt/spark/bin/spark-submit "
+                "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py "
+                "--action ingest",
+            )
+            validate_dp2_silver_tables = spark_task(
+                "validate_dp2_silver_tables",
+                "/opt/spark/bin/spark-submit "
+                "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py "
+                "--action validate",
+            )
             run_historical_spark_batch = spark_task(
                 "run_historical_spark_batch",
                 "/opt/spark/bin/spark-submit "
@@ -123,7 +135,14 @@ if DAG is not None:
                 "python -c 'from feature_store.feast_registry import apply_feature_repo; apply_feature_repo(\".\")' && "
                 "feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)",
             )
-            generate_historical_raw >> ingest_historical_batch_to_lakehouse >> run_historical_spark_batch >> feast_materialize_incremental
+            (
+                generate_historical_raw
+                >> ingest_historical_batch_to_lakehouse
+                >> build_dp2_silver_tables
+                >> validate_dp2_silver_tables
+                >> run_historical_spark_batch
+                >> feast_materialize_incremental
+            )
 
         with TaskGroup("realtime_cdc_to_feature_stores") as realtime_cdc_to_feature_stores:
             load_realtime_source = cli_task(

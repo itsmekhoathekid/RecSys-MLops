@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-datahub-legacy-governance-urns
+  namespace: recsys-dataflow
+data:
+  legacy_governance_urns.txt: |
+    urn:li:dataFlow:(airflow,DP1_CDC_Ingestion,PROD)
+    urn:li:dataFlow:(airflow,DP2_Stream_Lakehouse_Features,PROD)
+    urn:li:dataFlow:(airflow,DP2_Stream_PostgreSQL_Feast_Features,PROD)
+    urn:li:dataFlow:(airflow,DP3_Native_Feature_Stores,PROD)
+    urn:li:dataJob:(urn:li:dataFlow:(airflow,DP1_CDC_Ingestion,PROD),register_debezium_connector)
+    urn:li:dataJob:(urn:li:dataFlow:(airflow,DP2_Stream_Lakehouse_Features,PROD),run_flink_stream_to_feature_stores)
+    urn:li:dataJob:(urn:li:dataFlow:(airflow,DP2_Stream_PostgreSQL_Feast_Features,PROD),run_flink_stream_to_feature_stores)
+    urn:li:dataJob:(urn:li:dataFlow:(airflow,DP3_Native_Feature_Stores,PROD),ingest_historical_batch_to_lakehouse)
+    urn:li:dataJob:(urn:li:dataFlow:(airflow,DP3_Native_Feature_Stores,PROD),run_spark_batch_to_offline_store)
+    urn:li:dataJob:(urn:li:dataFlow:(airflow,DP3_Native_Feature_Stores,PROD),run_flink_stream_to_online_store)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-offline-feature-store/warehouse/feature_store/item_features,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-offline-feature-store/warehouse/feature_store/user_aggregate_features,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-offline-feature-store/warehouse/feature_store/user_sequence_features,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-offline-feature-store/warehouse/feature_store/stream_behavior_events,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-offline-feature-store/warehouse/feature_store/stream_item_features,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-offline-feature-store/warehouse/feature_store/stream_user_aggregate_features,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-offline-feature-store/warehouse/feature_store/stream_user_sequence_features,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/users,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/user_preferences,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/products,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/product_snapshots,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/sessions,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/recommendation_requests,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/impressions,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/behavior_events,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/orders,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/raw/{run_id}/order_items,PROD)
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/users,PROD)
+    urn:li:assertion:11811daf-d451-56f6-8e8a-403b047381d0
+    urn:li:assertion:c767470d-3335-5a12-9075-283ea99d867b
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/user_preferences,PROD)
+    urn:li:assertion:0baac67a-dedc-52b6-aa2d-f82a75517d9e
+    urn:li:assertion:e38ff345-d8a8-5e2d-a23a-85ac3adc7582
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/products,PROD)
+    urn:li:assertion:c9b51493-085c-5ef6-9330-72eebada5255
+    urn:li:assertion:d33d5139-7e61-50a6-a443-5355cb59ddaa
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/product_snapshots,PROD)
+    urn:li:assertion:b4eae332-5e34-5a0d-a3dc-2fd12efbbb58
+    urn:li:assertion:e8b699fa-e31e-5537-b011-03f6ccd6f397
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/sessions,PROD)
+    urn:li:assertion:856605eb-1c20-51e2-8a1e-4f7c696948cd
+    urn:li:assertion:0160e3ca-577e-5156-8044-7dc22b053d90
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/recommendation_requests,PROD)
+    urn:li:assertion:da82ec7d-1b8a-5d84-8d2c-bf8e6d7e213a
+    urn:li:assertion:b4921483-cac0-5e82-bc73-18501a338c1f
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/impressions,PROD)
+    urn:li:assertion:32331ded-ecf0-5d15-8b08-b33d7160f374
+    urn:li:assertion:ecb4453a-00e7-52c1-86ea-29d0bc18fd9b
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/behavior_events,PROD)
+    urn:li:assertion:a9a7dc97-c9a6-56ce-8ee1-2d452be39d41
+    urn:li:assertion:5cf822a9-7909-5883-ad7a-d1d004ef9475
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/orders,PROD)
+    urn:li:assertion:8f384e25-17ad-5a27-84d9-ac53a575778f
+    urn:li:assertion:c1c63def-5e66-580b-89db-d27e22492a63
+    urn:li:dataset:(urn:li:dataPlatform:s3,s3://recsys-lakehouse/warehouse/lakehouse/order_items,PROD)
+    urn:li:assertion:8e74009d-83fb-5f53-a384-ee831af5281e
+    urn:li:assertion:df24aa00-5be2-5b13-8171-9c597b6661c1
+    urn:li:assertion:15f29cca-d3e8-570c-b432-754bd57fbb74
+    urn:li:assertion:1b31c34a-1939-544b-9a8d-e293f902a642
+    urn:li:assertion:1b8d1d7d-9ba4-5333-9ddd-1f154e05e70e
+    urn:li:assertion:38774a9d-f3fc-574a-86ec-55bf6531b438
+    urn:li:assertion:3a707e60-c315-5ccc-8d04-a4fa678f6578
+    urn:li:assertion:4758f6f4-df95-54fd-b8f7-042fa74840c6
+    urn:li:assertion:4c89ba14-466a-5824-9ca0-506d00279327
+    urn:li:assertion:548a8b24-2fa5-5d07-bd7e-f47e0a93ecaf
+    urn:li:assertion:579ad185-3f6b-59c9-b61d-f95ec3380b70
+    urn:li:assertion:6a9395a3-9099-549b-b882-d7f3daf43b68
+    urn:li:assertion:6ba524eb-7ac9-52de-bc8a-fc396cbe22d4
+    urn:li:assertion:6eac0f08-6d33-5a5b-a1cc-f8480398683e
+    urn:li:assertion:705e6c7d-90df-582a-9110-acc8b9b740ff
+    urn:li:assertion:72a6bd48-c3dd-51a0-8d1e-3c3a5e2fe263
+    urn:li:assertion:79223f19-97fb-50ab-a0bd-4fa66cab2906
+    urn:li:assertion:7963b7de-5360-5621-a980-c2c5b9416372
+    urn:li:assertion:8006d51c-0334-5400-8472-c1354a1fdb22
+    urn:li:assertion:822b9140-e43c-55d1-a4c8-03a4b83848f5
+    urn:li:assertion:83f0329f-95e8-5636-a8d4-a30a74e050aa
+    urn:li:assertion:84cccc07-3812-5cec-9876-a56e7c412eab
+    urn:li:assertion:8ec5df50-ff4a-5ee8-9059-d483fb7a0575
+    urn:li:assertion:9fd60926-7624-50db-b7fd-a6f4269aff18
+    urn:li:assertion:aa5b8ded-fef6-53ea-88a5-d7d2f6cb7f9e
+    urn:li:assertion:abe1c79e-ed8a-5e42-b749-b1007f7e78f5
+    urn:li:assertion:c012dc2e-da26-527d-9642-0f9243f6dbcd
+    urn:li:assertion:c25968d4-f6e6-55af-8797-d1842ad41dc3
+    urn:li:assertion:c392230c-1078-54c9-a014-cfcb469ed9ee
+    urn:li:assertion:c62e983e-f6e9-59a0-8857-c513845d2c28
+    urn:li:assertion:c90c435a-241e-5126-bb9c-f168ee6bbe4d
+    urn:li:assertion:cee8ef2e-047b-5564-a149-70a3a36af3c3
+    urn:li:assertion:d44748ea-60e8-59cb-a468-7e268d1de347
+    urn:li:assertion:d5ee0008-fb34-5a04-ae7d-63ac1ddfc8d5
+    urn:li:assertion:d7c4f9a5-8eca-5579-8733-4f56a059c819
+    urn:li:assertion:e6fa5655-ee9a-5a8e-9f00-42e4bc11c382
+    urn:li:assertion:ed3b1090-7550-5bc7-ada7-590947f31ec2
+    urn:li:assertion:ee716cd1-b22f-545f-b923-fc0d491e82ec
+    urn:li:assertion:f00333e1-3702-5515-8d90-70a9b204d068
+    urn:li:assertion:fd0a2ceb-ca04-5b94-9a33-3c6d47682f1e
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: recsys-datahub-governance-cleanup
+  namespace: recsys-dataflow
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: datahub-cli
+          image: acryldata/datahub-ingestion:v1.6.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATAHUB_GMS_URL
+              value: http://datahub-datahub-gms.datahub.svc.cluster.local:8080
+            - name: APPLY_HARD_DELETE
+              value: "false"
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              if [ "${APPLY_HARD_DELETE}" = "true" ]; then
+                datahub delete --urn-file /cleanup/legacy_governance_urns.txt --hard --force
+              else
+                datahub delete --urn-file /cleanup/legacy_governance_urns.txt --hard --dry-run
+              fi
+          volumeMounts:
+            - name: urns
+              mountPath: /cleanup
+              readOnly: true
+      volumes:
+        - name: urns
+          configMap:
+            name: recsys-datahub-legacy-governance-urns

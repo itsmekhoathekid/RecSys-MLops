@@ -61,6 +61,9 @@ lakehouse:
   lakehouseNamespace: lakehouse
   offlineFeatureCatalog: recsys_features
   featureNamespace: feature_store
+  optimizationStrategy: binpack
+  targetFileSizeMb: "128"
+  compactionMinInputFiles: "2"
 
 dataSetup:
   generatorConfig: configs/local/data_generator_e2e_1k.yaml
@@ -85,6 +88,7 @@ spark:
   executorCores: "1"
   executorRequestCores: 100m
   sqlShufflePartitions: "4"
+  advisoryPartitionSizeBytes: "134217728"
   connectionTimeout: "60000"
   requestTimeout: "180000"
 
@@ -117,9 +121,15 @@ flink:
   istioInject: "false"
   taskSlots: "1"
   taskManagerProcessMemory: "6144m"
-  taskManagerTaskHeapMemory: "3072m"
-  taskManagerManagedMemory: "512m"
+  taskManagerTaskHeapMemory: "2048m"
+  taskManagerManagedMemory: "2048m"
   taskManagerJvmOverheadMax: "2048m"
+  stateBackend: rocksdb
+  stateBackendIncremental: "true"
+  managedConsumerWeights: "OPERATOR:70,STATE_BACKEND:30,PYTHON:70"
+  pythonManagedMemory: "true"
+  pythonBundleSize: "1000"
+  pythonBundleTimeMs: "200"
   javaOpens: "--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
 
 realtimeProducer:
@@ -184,6 +194,7 @@ airflow:
   batchFeatureSchedule: "0 1 * * *"
   feastMaterializeSchedule: "20 */2 * * *"
   featureDriftSchedule: "30 3 * * *"
+  lakehouseMaintenanceSchedule: "0 4 * * 0"
 
 drift:
   currentRoot: "s3a://recsys-offline-feature-store/warehouse/feature_store"

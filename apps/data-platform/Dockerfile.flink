@@ -13,6 +13,8 @@ RUN mkdir -p /tmp/recsys-jars \
         https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar /tmp/recsys-jars/hadoop-aws-3.3.4.jar \
         https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-api/3.3.4/hadoop-client-api-3.3.4.jar /tmp/recsys-jars/hadoop-client-api-3.3.4.jar \
         https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-runtime/3.3.4/hadoop-client-runtime-3.3.4.jar /tmp/recsys-jars/hadoop-client-runtime-3.3.4.jar \
+        https://repo1.maven.org/maven2/org/apache/flink/flink-statebackend-rocksdb/1.19.3/flink-statebackend-rocksdb-1.19.3.jar /tmp/recsys-jars/flink-statebackend-rocksdb-1.19.3.jar \
+        https://repo1.maven.org/maven2/com/ververica/frocksdbjni/6.20.3-ververica-2.0/frocksdbjni-6.20.3-ververica-2.0.jar /tmp/recsys-jars/frocksdbjni-6.20.3-ververica-2.0.jar \
         https://repo1.maven.org/maven2/commons-logging/commons-logging/1.2/commons-logging-1.2.jar /tmp/recsys-jars/commons-logging-1.2.jar \
         https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar /tmp/recsys-jars/aws-java-sdk-bundle-1.12.262.jar \
         https://repo1.maven.org/maven2/org/scala-lang/scala-library/2.12.18/scala-library-2.12.18.jar /tmp/recsys-jars/scala-library-2.12.18.jar \

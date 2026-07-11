@@ -14,7 +14,8 @@ This document covers the mini-coursework documentation rows:
 |---|---|---|---|
 | Source/Bronze | source table names and `raw/<run_id>/<table>` | Postgres, MinIO/S3 parquet | Raw generated OLTP/event data. |
 | Silver | `silver_<clean|rejected|order|product|user>...` | Iceberg lakehouse | Cleaned, deduplicated, schema-normalized tables. |
-| Gold/offline features | `user_*_features`, `item_features`, `ml_*` | Iceberg offline feature store | Training and serving feature tables. |
+| Gold/lakehouse features | `user_*_features`, `item_features`, `ml_*` | Iceberg lakehouse feature tables | Versioned/auditable feature tables before export. |
+| Feast offline features | `user_*_features`, `item_features`, streaming feature tables | PostgreSQL Feast offline store | Historical retrieval, training, validation, and materialization. |
 | Online features | `recsys:user:*`, `recsys:item:*` | Redis | Low-latency API serving features. |
 
 Code reference:
@@ -88,4 +89,3 @@ rg -n 'event_timestamp|created_timestamp|valid_from|valid_to|user_sequence_featu
 Image proof:
 
 ![Feature table timestamp columns](../../pngs/table_2_columns.png)
-

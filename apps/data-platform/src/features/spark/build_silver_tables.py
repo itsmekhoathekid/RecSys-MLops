@@ -3,7 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from features.spark.session import read_iceberg_table, read_parquet_table, write_iceberg_table
-from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES, create_spark_namespace
+from lakehouse.iceberg import (
+    IcebergCatalogConfig,
+    RAW_GENERATOR_TABLES,
+    SILVER_LAKEHOUSE_TABLES,
+    create_spark_namespace,
+)
 
 
 def _ensure_column(frame: Any, column: str, expression: Any):
@@ -77,6 +82,14 @@ def read_raw_parquet_tables(spark: Any, run_path: str) -> dict[str, Any]:
 
 def read_raw_lakehouse_tables(spark: Any, catalog: IcebergCatalogConfig) -> dict[str, Any]:
     return {table: read_iceberg_table(spark, catalog.lakehouse_table(table)) for table in RAW_GENERATOR_TABLES}
+
+
+def read_silver_lakehouse_tables(spark: Any, catalog: IcebergCatalogConfig) -> dict[str, Any]:
+    """Read the curated DP2 outputs without rebuilding them from Bronze."""
+    return {
+        table: read_iceberg_table(spark, catalog.lakehouse_table(f"silver_{table}"))
+        for table in SILVER_LAKEHOUSE_TABLES
+    }
 
 
 def build_silver_tables_from_raw(raw: dict[str, Any], catalog: IcebergCatalogConfig) -> dict[str, Any]:

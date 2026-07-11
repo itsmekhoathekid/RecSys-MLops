@@ -246,7 +246,10 @@ def test_airflow_dags_run_native_lakehouse_tasks_only():
         if name == "k8s":
             assert 'dag_id="recsys_batch_feature_pipeline"' in source
             assert 'schedule=env_schedule("BATCH_FEATURE_DAG_SCHEDULE", "0 1 * * *")' in source
-            assert "run_spark_batch_to_offline_store >> verify_postgres_offline_store_updated" in source
+            assert "run_dp2_bronze_to_silver_gold" in source
+            assert "validate_dp2_silver_gold" in source
+            assert ">> run_spark_batch_to_offline_store" in source
+            assert ">> verify_postgres_offline_store_updated" in source
             assert 'dag_id="recsys_feast_materialize"' in source
             assert 'schedule=env_schedule("FEAST_MATERIALIZE_DAG_SCHEDULE", "20 */2 * * *")' in source
             assert "apply_feast_feature_repo >> feast_materialize_incremental >> verify_redis_online_store_updated" in source
@@ -258,7 +261,7 @@ def test_airflow_dags_run_native_lakehouse_tasks_only():
             assert "python -m validate.offline_feature_drift" in source
             assert '"run_offline_feature_drift",\n            DATAFLOW_IMAGE,' in source
             assert "apply_feature_repo" in source
-            assert "PostgresOfflineStoreConfig.from_env()" in source
+            assert "python -m validate.governance_contracts dp3-postgres" in source
             assert "redis_online_store_key_counts" in source
             assert "pushed_drift_report_metrics" in source
             assert "http://flink-jobmanager:8081/jobs/overview" in source
@@ -268,7 +271,6 @@ def test_airflow_dags_run_native_lakehouse_tasks_only():
             assert "--offline-store-enabled" in source
             assert "flink run -m flink-jobmanager:8081" in source
             assert "feature_repo" in source
-        assert "validate_" not in source
 
 
 def test_retrain_trigger_uses_distinct_tune_and_ddp_results_for_default_drift_runs():
@@ -375,9 +377,14 @@ def test_flink_runtime_uses_fixed_mesh_friendly_internal_ports():
         "limits": {"cpu": "2", "memory": "8Gi"},
     }
     assert values["flink"]["taskManagerProcessMemory"] == "6144m"
-    assert values["flink"]["taskManagerTaskHeapMemory"] == "3072m"
-    assert values["flink"]["taskManagerManagedMemory"] == "512m"
+    assert values["flink"]["taskManagerTaskHeapMemory"] == "2048m"
+    assert values["flink"]["taskManagerManagedMemory"] == "2048m"
     assert values["flink"]["taskManagerJvmOverheadMax"] == "2048m"
+    assert values["flink"]["stateBackend"] == "rocksdb"
+    assert values["flink"]["stateBackendIncremental"] == "true"
+    assert values["flink"]["pythonManagedMemory"] == "true"
+    assert values["flink"]["pythonBundleSize"] == "1000"
+    assert values["flink"]["pythonBundleTimeMs"] == "200"
     assert "taskmanager.memory.jvm-overhead.max" in rendered
     assert '"6121", "6122", "6123", "6124", "6125"' in security_rendered
 
@@ -440,8 +447,7 @@ def test_e2e_1k_whole_run_data_setup_configs_are_wired_into_helm_values():
     spark_batch = yaml.safe_load((ROOT / values["dataSetup"]["sparkBatchConfig"]).read_text())
     assert generator["traffic"]["target_behavior_events"] == 50000
     assert generator["output"]["run_id"] == values["dataSetup"]["generatorRunId"] == "test_1k_seed42"
-    assert spark_batch["input"]["source"] == "parquet"
-    assert spark_batch["input"]["run_path"] == "s3a://recsys-lakehouse/warehouse/lakehouse"
+    assert spark_batch["input"]["source"] == "silver_lakehouse"
     assert spark_batch["processing"]["mode"] == "whole_run"
     assert values["spark"]["executorInstances"] == "1"
     assert values["spark"]["driverMemoryOverhead"] == "128m"
@@ -535,10 +541,9 @@ def test_app_charts_do_not_render_literal_runtime_secrets_by_default():
         assert expected in rendered
 
 
-def test_spark_batch_config_reads_python_ingested_parquet_lakehouse():
+def test_spark_batch_config_reads_dp2_silver_iceberg_tables():
     config = yaml.safe_load((ROOT / "configs/local/spark_batch.yaml").read_text())
-    assert config["input"]["source"] == "parquet"
-    assert config["input"]["run_path"] == "s3a://recsys-lakehouse/warehouse/lakehouse"
+    assert config["input"]["source"] == "silver_lakehouse"
     assert config["processing"]["mode"] == "whole_run"
     output = config["output"]
     assert output["lakehouse_warehouse"] == "s3a://recsys-lakehouse/warehouse"

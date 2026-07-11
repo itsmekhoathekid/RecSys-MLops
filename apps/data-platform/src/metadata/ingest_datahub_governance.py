@@ -12,26 +12,37 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
+from lakehouse.iceberg import RAW_GENERATOR_TABLES, SILVER_LAKEHOUSE_TABLES
+from metadata.governance_catalog import (
+    BRONZE_URNS,
+    ICEBERG_FEATURE_URNS,
+    KAFKA_TOPIC_URNS,
+    POSTGRES_FEATURE_URNS,
+    REDIS_FEATURE_URNS,
+    SILVER_URNS,
+    SOURCE_POSTGRES_URNS,
+    flow_urn,
+    job_urn,
+)
+from metadata.governance_schemas import (
+    FEATURE_PRIMARY_KEYS,
+    RAW_PRIMARY_KEYS,
+    SILVER_PRIMARY_KEYS,
+    SchemaColumn,
+    bronze_schema,
+    cdc_topic_schema,
+    feature_schema,
+    raw_schema,
+    silver_schema,
+)
 from monitoring.pushgateway import MetricSample, push_metrics
+from validate.governance_contracts import read_report
 
 
 ACTOR = "urn:li:corpuser:datahub"
-ENV = "PROD"
 GOVERNANCE_DOMAIN_NAME = "RecSys Data Platform"
-GOVERNANCE_DOMAIN_DESCRIPTION = "Governed data platform domain for RecSys DP1/DP2/DP3."
+GOVERNANCE_DOMAIN_DESCRIPTION = "Governed batch, CDC, and streaming pipelines for the RecSys data platform."
 ASSERTION_NAMESPACE = uuid.UUID("5851f697-2fcb-4938-b5c8-34fcb1f9f297")
-
-
-def dataset_urn(platform: str, name: str, env: str = ENV) -> str:
-    return f"urn:li:dataset:(urn:li:dataPlatform:{platform},{name},{env})"
-
-
-def flow_urn(flow_id: str, cluster: str = ENV) -> str:
-    return f"urn:li:dataFlow:(airflow,{flow_id},{cluster})"
-
-
-def job_urn(flow: str, job_id: str) -> str:
-    return f"urn:li:dataJob:({flow},{job_id})"
 
 
 @dataclass(frozen=True)
@@ -41,7 +52,11 @@ class Dataset:
     description: str
     tags: tuple[str, ...]
     custom_properties: dict[str, str]
+    schema: tuple[SchemaColumn, ...]
+    primary_keys: tuple[str, ...] = ()
     upstreams: tuple[str, ...] = ()
+    validation_pipeline: str | None = None
+    required_columns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -53,6 +68,7 @@ class Job:
     outputs: tuple[str, ...]
     tags: tuple[str, ...]
     custom_properties: dict[str, str]
+    input_jobs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -142,8 +158,8 @@ def contract_id(value: str) -> str:
     return slug[:180] or "recsys-data-contract"
 
 
-def assertion_urn(dataset_urn_value: str) -> str:
-    return f"urn:li:assertion:{uuid.uuid5(ASSERTION_NAMESPACE, dataset_urn_value)}"
+def assertion_urn(dataset_urn_value: str, assertion_type: str = "quality") -> str:
+    return f"urn:li:assertion:{uuid.uuid5(ASSERTION_NAMESPACE, f'{dataset_urn_value}:{assertion_type}')}"
 
 
 def tag_associations(tags: tuple[str, ...]) -> dict[str, Any]:
@@ -267,7 +283,12 @@ def emit_data_product(emitter: DataHubEmitter, product: DataProduct) -> str:
     return urn
 
 
-def batch_set_data_product(emitter: DataHubEmitter, product_urn: str, resource_urns: tuple[str, ...]) -> None:
+def batch_set_data_product(
+    emitter: DataHubEmitter,
+    product: DataProduct,
+    product_urn: str,
+    resource_urns: tuple[str, ...],
+) -> None:
     emitter.graphql(
         """
         mutation batchSetDataProduct($input: BatchSetDataProductInput!) {
@@ -275,6 +296,24 @@ def batch_set_data_product(emitter: DataHubEmitter, product_urn: str, resource_u
         }
         """,
         {"input": {"dataProductUrn": product_urn, "resourceUrns": list(resource_urns)}},
+    )
+    stamp = audit_stamp()
+    emitter.emit(
+        product_urn,
+        "dataProduct",
+        "dataProductProperties",
+        {
+            "name": product.id,
+            "description": product.description,
+            "assets": [
+                {
+                    "destinationUrn": resource_urn,
+                    "created": stamp,
+                    "lastModified": stamp,
+                }
+                for resource_urn in resource_urns
+            ],
+        },
     )
 
 
@@ -290,49 +329,175 @@ def emit_dataset(emitter: DataHubEmitter, dataset: Dataset) -> None:
         },
     )
     emitter.emit(dataset.urn, "dataset", "globalTags", tag_associations(dataset.tags))
-    if dataset.upstreams:
-        emitter.emit(
-            dataset.urn,
-            "dataset",
-            "upstreamLineage",
-            {
-                "upstreams": [
-                    {
-                        "dataset": upstream,
-                        "type": "TRANSFORMED",
-                    }
-                    for upstream in dataset.upstreams
-                ],
-                "fineGrainedLineages": [],
-            },
-        )
-    emit_dataset_contract(emitter, dataset)
-
-
-def emit_dataset_contract(emitter: DataHubEmitter, dataset: Dataset) -> None:
-    contract_text = dataset.custom_properties.get("contract", "RecSys governed dataset contract")
-    assertion = emitter.graphql(
-        """
-        mutation upsertAssertion($urn: String, $input: UpsertCustomAssertionInput!) {
-          upsertCustomAssertion(urn: $urn, input: $input) {
-            urn
-          }
-        }
-        """,
+    emitter.emit(dataset.urn, "dataset", "schemaMetadata", schema_metadata(dataset))
+    emitter.emit(
+        dataset.urn,
+        "dataset",
+        "upstreamLineage",
         {
-            "urn": assertion_urn(dataset.urn),
-            "input": {
-                "entityUrn": dataset.urn,
-                "type": "DATA_QUALITY",
-                "description": f"RecSys governance validation for {dataset.name}: {contract_text}",
-                "platform": {"urn": "urn:li:dataPlatform:datahub"},
-                "logic": (
-                    "Dataset is linked to its DP1/DP2/DP3 data product, has the DataContract tag, "
-                    "has contract metadata, and has upstream lineage when produced by another table or job."
-                ),
-            },
+            "upstreams": [
+                {
+                    "dataset": upstream,
+                    "type": "TRANSFORMED",
+                }
+                for upstream in dataset.upstreams
+            ],
+            "fineGrainedLineages": [],
         },
-    )["upsertCustomAssertion"]
+    )
+    if dataset.validation_pipeline:
+        emit_dataset_contract(emitter, dataset)
+
+
+def _platform_urn(dataset_urn: str) -> str:
+    match = re.search(r"urn:li:dataPlatform:([^,]+)", dataset_urn)
+    if not match:
+        raise ValueError(f"Dataset URN does not contain a data platform: {dataset_urn}")
+    return f"urn:li:dataPlatform:{match.group(1)}"
+
+
+def _datahub_type(native_type: str) -> str:
+    normalized = native_type.upper()
+    if "ARRAY" in normalized or normalized.endswith("[]"):
+        return "ArrayType"
+    if any(token in normalized for token in ("STRUCT", "RECORD", "MAP", "JSON")):
+        return "RecordType"
+    if "DATE" in normalized and "TIME" not in normalized:
+        return "DateType"
+    if any(token in normalized for token in ("TIME", "TIMESTAMP")):
+        return "TimeType"
+    if "BOOL" in normalized:
+        return "BooleanType"
+    if any(token in normalized for token in ("INT", "DECIMAL", "NUMERIC", "FLOAT", "DOUBLE", "REAL")):
+        return "NumberType"
+    if any(token in normalized for token in ("BINARY", "BYTES", "BLOB")):
+        return "BytesType"
+    return "StringType"
+
+
+def schema_metadata(dataset: Dataset) -> dict[str, Any]:
+    stamp = audit_stamp()
+    fields = [
+        {
+            "fieldPath": column.name,
+            "nullable": column.nullable,
+            "description": column.description or f"{column.name} field in {dataset.name}.",
+            "type": {"type": {f"com.linkedin.schema.{_datahub_type(column.native_type)}": {}}},
+            "nativeDataType": column.native_type,
+            "recursive": False,
+            "isPartOfKey": column.name in dataset.primary_keys,
+            "lastModified": stamp,
+        }
+        for column in dataset.schema
+    ]
+    raw_schema = {
+        "name": dataset.name,
+        "type": "record",
+        "fields": [
+            {
+                "name": column.name,
+                "type": column.native_type,
+                "nullable": column.nullable,
+            }
+            for column in dataset.schema
+        ],
+    }
+    return {
+        "schemaName": dataset.name,
+        "platform": _platform_urn(dataset.urn),
+        "version": 0,
+        "hash": "",
+        "platformSchema": {"com.linkedin.schema.OtherSchema": {"rawSchema": json.dumps(raw_schema, sort_keys=True)}},
+        "fields": fields,
+        "primaryKeys": list(dataset.primary_keys),
+        "created": stamp,
+        "lastModified": stamp,
+    }
+
+
+def schema_assertion_info(dataset: Dataset) -> dict[str, Any]:
+    return {
+        "type": "DATA_SCHEMA",
+        "schemaAssertion": {
+            "entity": dataset.urn,
+            "schema": schema_metadata(dataset),
+            "compatibility": "EXACT_MATCH",
+        },
+        "source": {"type": "EXTERNAL"},
+        "lastUpdated": audit_stamp(),
+        "description": f"Schema validation for {dataset.name}",
+        "customProperties": {
+            "pipeline": dataset.validation_pipeline or "unknown",
+            "required_columns": json.dumps(dataset.required_columns),
+        },
+    }
+
+
+def validation_result(dataset: Dataset) -> tuple[str, str, list[dict[str, Any]]]:
+    try:
+        report = read_report(dataset.validation_pipeline or "")
+    except Exception as exc:
+        return "ERROR", "unknown", [{"name": "validation_report", "status": "ERROR", "observed": str(exc)}]
+    result = report.get("datasets", {}).get(dataset.urn)
+    if not isinstance(result, dict):
+        return "ERROR", str(report.get("run_id", "unknown")), [
+            {
+                "name": "validation_report",
+                "status": "ERROR",
+                "observed": f"Dataset {dataset.urn} missing from latest {dataset.validation_pipeline} report",
+            }
+        ]
+    status = str(result.get("status", "ERROR"))
+    if status not in {"SUCCESS", "FAILURE", "ERROR"}:
+        status = "ERROR"
+    return status, str(report.get("run_id", "unknown")), list(result.get("checks", []))
+
+
+def _assertion_status(checks: list[dict[str, Any]], names: set[str], fallback: str) -> str:
+    selected = [str(item.get("status", "ERROR")) for item in checks if item.get("name") in names]
+    if not selected:
+        return fallback
+    return "ERROR" if "ERROR" in selected else "FAILURE" if "FAILURE" in selected else "SUCCESS"
+
+
+def _emit_assertion(
+    emitter: DataHubEmitter,
+    dataset: Dataset,
+    *,
+    assertion_type: str,
+    status: str,
+    run_id: str,
+    checks: list[dict[str, Any]],
+) -> str:
+    urn = assertion_urn(dataset.urn, assertion_type.lower())
+    if assertion_type == "SCHEMA":
+        emitter.emit(urn, "assertion", "assertionInfo", schema_assertion_info(dataset))
+        assertion = urn
+    else:
+        assertion = emitter.graphql(
+            """
+            mutation upsertAssertion($urn: String, $input: UpsertCustomAssertionInput!) {
+              upsertCustomAssertion(urn: $urn, input: $input) { urn }
+            }
+            """,
+            {
+                "urn": urn,
+                "input": {
+                    "entityUrn": dataset.urn,
+                    "type": assertion_type,
+                    "description": f"{assertion_type.replace('_', ' ').title()} validation for {dataset.name}",
+                    "platform": {"urn": "urn:li:dataPlatform:datahub"},
+                    "logic": json.dumps(
+                        {
+                            "pipeline": dataset.validation_pipeline,
+                            "required_columns": list(dataset.required_columns),
+                            "checks": checks,
+                        },
+                        sort_keys=True,
+                    ),
+                },
+            },
+        )["upsertCustomAssertion"]["urn"]
     emitter.graphql(
         """
         mutation reportAssertionResult($urn: String!, $result: AssertionResultInput!) {
@@ -340,17 +505,40 @@ def emit_dataset_contract(emitter: DataHubEmitter, dataset: Dataset) -> None:
         }
         """,
         {
-            "urn": assertion["urn"],
+            "urn": assertion,
             "result": {
-                "type": "SUCCESS",
+                "type": status,
                 "timestampMillis": int(time.time() * 1000),
                 "properties": [
-                    {"key": "data_product", "value": dataset.custom_properties.get("data_product", "unknown")},
-                    {"key": "contract", "value": contract_text},
-                    {"key": "source", "value": "metadata.ingest_datahub_governance"},
+                    {"key": "pipeline", "value": dataset.validation_pipeline or "unknown"},
+                    {"key": "run_id", "value": run_id},
+                    {"key": "observed_checks", "value": json.dumps(checks, sort_keys=True)},
                 ],
             },
         },
+    )
+    return assertion
+
+
+def emit_dataset_contract(emitter: DataHubEmitter, dataset: Dataset) -> None:
+    contract_text = dataset.custom_properties.get("contract", "RecSys governed dataset contract")
+    status, run_id, checks = validation_result(dataset)
+    schema_status = _assertion_status(checks, {"required_columns", "schema"}, status)
+    schema_assertion = _emit_assertion(
+        emitter,
+        dataset,
+        assertion_type="SCHEMA",
+        status=schema_status,
+        run_id=run_id,
+        checks=[item for item in checks if item.get("name") in {"required_columns", "schema"}],
+    )
+    quality_assertion = _emit_assertion(
+        emitter,
+        dataset,
+        assertion_type="DATA_QUALITY",
+        status=status,
+        run_id=run_id,
+        checks=checks,
     )
     emitter.graphql(
         """
@@ -363,9 +551,10 @@ def emit_dataset_contract(emitter: DataHubEmitter, dataset: Dataset) -> None:
         {
             "input": {
                 "entityUrn": dataset.urn,
-                "dataQuality": [{"assertionUrn": assertion["urn"]}],
+                "schema": [{"assertionUrn": schema_assertion}],
+                "dataQuality": [{"assertionUrn": quality_assertion}],
                 "state": "ACTIVE",
-                "id": contract_id(f"{dataset.name}-contract"),
+                "id": contract_id(f"{dataset.urn}-contract"),
             }
         },
     )
@@ -412,191 +601,312 @@ def emit_job(emitter: DataHubEmitter, flow: str, job: Job) -> None:
         {
             "inputDatasets": list(job.inputs),
             "outputDatasets": list(job.outputs),
-            "inputDatajobs": [],
+            "inputDatajobs": list(job.input_jobs),
         },
     )
     emitter.emit(urn, "dataJob", "globalTags", tag_associations(job.tags))
 
 
+def _dataset(
+    urn: str,
+    name: str,
+    description: str,
+    product: str,
+    contract: str,
+    *,
+    schema: tuple[SchemaColumn, ...],
+    primary_keys: tuple[str, ...] = (),
+    upstreams: tuple[str, ...] = (),
+    validation_pipeline: str | None = None,
+    required_columns: tuple[str, ...] = (),
+) -> Dataset:
+    return Dataset(
+        urn=urn,
+        name=name,
+        description=description,
+        tags=(product, "DataContract", "NativePipeline"),
+        custom_properties={"data_product": product, "contract": contract},
+        schema=schema,
+        primary_keys=primary_keys,
+        upstreams=upstreams,
+        validation_pipeline=validation_pipeline,
+        required_columns=required_columns,
+    )
+
+
 def dp1() -> DataProduct:
-    source_tables = [
-        "users",
-        "user_preferences",
-        "products",
-        "product_snapshots",
-        "sessions",
-        "recommendation_requests",
-        "impressions",
-        "behavior_events",
-        "orders",
-        "order_items",
-    ]
-    source = tuple(
-        Dataset(
-            urn=dataset_urn("postgres", f"source_postgres.recsys.public.{table}"),
-            name=f"source_postgres.public.{table}",
-            description=(
-                "DP1 source OLTP table captured by Debezium CDC. "
-                "Data contract is defined in ingest.postgres_cdc_contracts with primary-key and topic mapping."
-            ),
-            tags=("DP1", "DataContract", "NativePipeline"),
-            custom_properties={
-                "data_product": "DP1",
-                "contract": "SourceTableContract primary key plus Debezium topic mapping",
-            },
+    bronze = tuple(
+        _dataset(
+            BRONZE_URNS[table],
+            f"recsys.lakehouse.bronze_{table}",
+            "DP1 Bronze Parquet lakehouse table with source-run and ingestion metadata.",
+            "DP1",
+            "Non-empty Bronze table with source key, source_run_id, and lakehouse_ingestion_ts",
+            schema=bronze_schema(table),
+            primary_keys=("source_run_id",) + RAW_PRIMARY_KEYS[table],
+            validation_pipeline="DP1",
+            required_columns=("source_run_id", "lakehouse_ingestion_ts"),
         )
-        for table in source_tables
+        for table in RAW_GENERATOR_TABLES
     )
-    topics = tuple(
-        Dataset(
-            urn=dataset_urn("kafka", f"recsys-dataflow.cdc.{table}"),
-            name=f"cdc.{table}",
-            description="DP1 Kafka CDC topic emitted by the Debezium source connector.",
-            tags=("DP1", "DataContract", "NativePipeline"),
-            custom_properties={
-                "data_product": "DP1",
-                "contract": "Debezium envelope keyed by source table primary key",
-            },
-            upstreams=(dataset_urn("postgres", f"source_postgres.recsys.public.{table}"),),
-        )
-        for table in source_tables
-    )
+    flow = flow_urn("recsys_dp1_raw_to_bronze")
     return DataProduct(
         id="DP1",
-        flow_id="DP1_CDC_Ingestion",
-        flow_name="DP1 CDC Ingestion",
-        description="Source Postgres WAL captured by Debezium and published to cdc.* Kafka topics.",
+        flow_id="recsys_dp1_raw_to_bronze",
+        flow_name="DP1 Data Generator Batch Ingestion To Bronze Lakehouse",
+        description="Direct batch ingestion from Data Generator output into the Bronze Parquet lakehouse.",
         tags=("DP1", "DataContract", "NativePipeline"),
-        datasets=source + topics,
+        datasets=bronze,
         jobs=(
             Job(
-                id="register_debezium_connector",
-                name="Register Debezium Connector",
-                description="Creates the Postgres CDC connector and links source tables to cdc.* Kafka topics.",
-                inputs=tuple(item.urn for item in source),
-                outputs=tuple(item.urn for item in topics),
+                id="ingest_stage",
+                name="Ingest Stage - Data Generator Batch Ingestion",
+                description="Runs the historical Data Generator in the batch pod and ingests its ephemeral output directly into the Bronze Parquet lakehouse.",
+                inputs=(),
+                outputs=tuple(item.urn for item in bronze),
                 tags=("DP1", "DataContract", "NativePipeline"),
-                custom_properties={"contract": "ingest.postgres_cdc_contracts.SOURCE_TABLE_CONTRACTS"},
+                custom_properties={"engine": "Data Generator plus PyArrow Parquet ingestion"},
+            ),
+            Job(
+                id="validate_stage",
+                name="Validate Stage",
+                description="Validates Bronze table existence, row counts, source keys, and ingestion metadata.",
+                inputs=tuple(item.urn for item in bronze),
+                outputs=(),
+                tags=("DP1", "DataContract", "NativePipeline"),
+                custom_properties={"report": "governance/validation/dp1/latest.json"},
+                input_jobs=(job_urn(flow, "ingest_stage"),),
             ),
         ),
     )
 
 
 def dp2() -> DataProduct:
-    behavior_topic = dataset_urn("kafka", "recsys-dataflow.cdc.behavior_events")
-    stream_tables = (
-        Dataset(
-            urn=dataset_urn("postgres", "feature-postgres.feature_store.user_sequence_features"),
-            name="postgres.feature_store.user_sequence_features",
-            description="DP2 PostgreSQL Feast user sequence feature table written continuously by native PyFlink.",
-            tags=("DP2", "DataContract", "NativePipeline"),
-            custom_properties={"contract": "Feast PostgreSQLSource user_sequence_features table"},
-            upstreams=(behavior_topic,),
-        ),
-        Dataset(
-            urn=dataset_urn("postgres", "feature-postgres.feature_store.user_aggregate_features"),
-            name="postgres.feature_store.user_aggregate_features",
-            description="DP2 PostgreSQL Feast user aggregate feature table written continuously by native PyFlink.",
-            tags=("DP2", "DataContract", "NativePipeline"),
-            custom_properties={"contract": "Feast PostgreSQLSource user_aggregate_features table"},
-            upstreams=(behavior_topic,),
-        ),
-        Dataset(
-            urn=dataset_urn("postgres", "feature-postgres.feature_store.item_features"),
-            name="postgres.feature_store.item_features",
-            description="DP2 PostgreSQL Feast item feature table written continuously by native PyFlink.",
-            tags=("DP2", "DataContract", "NativePipeline"),
-            custom_properties={"contract": "Feast PostgreSQLSource item_features table"},
-            upstreams=(behavior_topic,),
-        ),
+    upstreams = {
+        "clean_behavior_events": (BRONZE_URNS["behavior_events"],),
+        "rejected_behavior_events": (BRONZE_URNS["behavior_events"],),
+        "clean_impressions": (BRONZE_URNS["impressions"],),
+        "clean_recommendation_requests": (BRONZE_URNS["recommendation_requests"],),
+        "order_facts": (BRONZE_URNS["orders"], BRONZE_URNS["order_items"]),
+        "product_scd": (BRONZE_URNS["product_snapshots"], BRONZE_URNS["products"]),
+        "users": (BRONZE_URNS["users"],),
+        "products": (BRONZE_URNS["products"],),
+        "user_preferences": (BRONZE_URNS["user_preferences"],),
+    }
+    silver = tuple(
+        _dataset(
+            SILVER_URNS[table],
+            f"iceberg.recsys.lakehouse.silver_{table}",
+            "DP2 curated Silver Iceberg table produced from Bronze Parquet inputs.",
+            "DP2",
+            "Readable Silver Iceberg table; clean_behavior_events must be unique by event_id",
+            schema=silver_schema(table),
+            primary_keys=SILVER_PRIMARY_KEYS[table],
+            upstreams=upstreams[table],
+            validation_pipeline="DP2",
+            required_columns=("event_id", "event_timestamp", "ingestion_ts") if table == "clean_behavior_events" else (),
+        )
+        for table in SILVER_LAKEHOUSE_TABLES
     )
+    flow = flow_urn("recsys_dp2_bronze_to_silver_gold")
     return DataProduct(
         id="DP2",
-        flow_id="DP2_Stream_PostgreSQL_Feast_Features",
-        flow_name="DP2 Stream PostgreSQL Feast Features",
-        description="Native PyFlink stream processing from Kafka into the PostgreSQL Feast offline feature store.",
+        flow_id="recsys_dp2_bronze_to_silver_gold",
+        flow_name="DP2 Bronze To Silver And Gold",
+        description="PySpark curation from Bronze Parquet tables into deduplicated and normalized Silver Iceberg tables.",
         tags=("DP2", "DataContract", "NativePipeline"),
-        datasets=stream_tables,
+        datasets=silver,
         jobs=(
             Job(
-                id="run_flink_stream_to_feature_stores",
-                name="Run Flink Stream To Feature Stores",
-                description="Consumes cdc.behavior_events and writes PostgreSQL Feast offline tables plus Redis online keys.",
-                inputs=(behavior_topic,),
-                outputs=tuple(table.urn for table in stream_tables),
+                id="ingest_stage",
+                name="Ingest Stage",
+                description="Reads Bronze Parquet, normalizes schemas, deduplicates events, and writes Silver Iceberg tables.",
+                inputs=tuple(BRONZE_URNS.values()),
+                outputs=tuple(item.urn for item in silver),
                 tags=("DP2", "DataContract", "NativePipeline"),
-                custom_properties={"engine": "PyFlink DataStream plus psycopg PostgreSQL inserts"},
+                custom_properties={"engine": "PySpark plus Iceberg"},
+            ),
+            Job(
+                id="validate_stage",
+                name="Validate Stage",
+                description="Validates Silver outputs and confirms clean behavior events contain no duplicate event_id values.",
+                inputs=tuple(item.urn for item in silver),
+                outputs=(),
+                tags=("DP2", "DataContract", "NativePipeline"),
+                custom_properties={"report": "governance/validation/dp2/latest.json"},
+                input_jobs=(job_urn(flow, "ingest_stage"),),
             ),
         ),
     )
 
 
 def dp3() -> DataProduct:
-    batch_lakehouse = tuple(
-        Dataset(
-            urn=dataset_urn("s3", f"s3://recsys-lakehouse/warehouse/lakehouse/{name}"),
-            name=f"parquet.recsys_lakehouse.lakehouse.{name}",
-            description="Historical generator batch table ingested into the Parquet data lakehouse.",
-            tags=("DP3", "DataContract", "NativePipeline"),
-            custom_properties={"contract": "Parquet lakehouse raw generator table"},
+    iceberg_upstreams = {
+        "user_sequence_features": (SILVER_URNS["clean_behavior_events"],),
+        "user_aggregate_features": (SILVER_URNS["clean_behavior_events"],),
+        "item_features": (SILVER_URNS["clean_behavior_events"], SILVER_URNS["product_scd"]),
+        "ml_ranking_labels": (SILVER_URNS["clean_impressions"], SILVER_URNS["clean_behavior_events"]),
+        "ml_bst_training": (
+            ICEBERG_FEATURE_URNS["user_sequence_features"],
+            ICEBERG_FEATURE_URNS["user_aggregate_features"],
+            ICEBERG_FEATURE_URNS["item_features"],
+            ICEBERG_FEATURE_URNS["ml_ranking_labels"],
+        ),
+    }
+    required = {
+        "user_sequence_features": ("user_id", "feature_timestamp"),
+        "user_aggregate_features": ("user_id", "feature_timestamp"),
+        "item_features": ("product_id", "feature_timestamp"),
+        "ml_ranking_labels": ("impression_id", "prediction_timestamp"),
+        "ml_bst_training": ("impression_id", "prediction_timestamp"),
+    }
+    iceberg = tuple(
+        _dataset(
+            ICEBERG_FEATURE_URNS[table],
+            f"iceberg.recsys_features.feature_store.{table}",
+            "DP3 batch feature output stored as an Iceberg table.",
+            "DP3",
+            "Non-empty Iceberg feature output with non-null entity key and feature timestamp",
+            schema=feature_schema(table),
+            primary_keys=FEATURE_PRIMARY_KEYS[table],
+            upstreams=iceberg_upstreams[table],
+            validation_pipeline="DP3",
+            required_columns=required[table],
         )
-        for name in ("users", "products", "behavior_events", "impressions", "orders")
+        for table in ICEBERG_FEATURE_URNS
     )
-    offline = tuple(
-        Dataset(
-            urn=dataset_urn("s3", f"s3://recsys-offline-feature-store/warehouse/feature_store/{name}"),
-            name=f"iceberg.recsys_features.feature_store.{name}",
-            description="DP3 Iceberg lakehouse feature table generated by native PySpark batch before export to PostgreSQL Feast offline store.",
-            tags=("DP3", "DataContract", "NativePipeline"),
-            custom_properties={"contract": "Iceberg lakehouse feature table"},
-            upstreams=tuple(table.urn for table in batch_lakehouse),
+    postgres = tuple(
+        _dataset(
+            POSTGRES_FEATURE_URNS[table],
+            f"postgres.feature_store.{table}",
+            "DP3 PostgreSQL Feast offline feature table exported from the matching Iceberg batch output.",
+            "DP3",
+            "Feast PostgreSQL offline table with required schema, non-empty rows, and non-null key/timestamp",
+            schema=feature_schema(table),
+            primary_keys=FEATURE_PRIMARY_KEYS[table],
+            upstreams=(ICEBERG_FEATURE_URNS[table],),
+            validation_pipeline="DP3",
+            required_columns=required[table],
         )
-        for name in ("user_sequence_features", "user_aggregate_features", "item_features")
+        for table in POSTGRES_FEATURE_URNS
     )
-    online = tuple(
-        Dataset(
-            urn=dataset_urn("redis", f"redis://redis.recsys-dataflow.svc.cluster.local:6379/{name}"),
-            name=f"redis_online.{name}",
-            description="DP3 Redis online feature keys written directly by native PyFlink.",
-            tags=("DP3", "DataContract", "NativePipeline"),
-            custom_properties={"contract": "feature_store.online_writer.RedisOnlineWriter"},
-            upstreams=(dataset_urn("kafka", "recsys-dataflow.cdc.behavior_events"),),
-        )
-        for name in ("user_sequence_features", "user_aggregate_features", "item_features")
-    )
+    flow = flow_urn("recsys_dp3_offline_feature_table")
     return DataProduct(
         id="DP3",
-        flow_id="DP3_Native_Feature_Stores",
-        flow_name="DP3 Native Feature Stores",
-        description="Python batch ingestion writes Parquet lakehouse raw tables; PySpark batch writes lakehouse feature tables and exports to the PostgreSQL Feast offline store; PyFlink stream writes PostgreSQL offline rows and Redis online feature keys.",
+        flow_id="recsys_dp3_offline_feature_table",
+        flow_name="DP3 Silver To Feast Offline Features",
+        description="PySpark feature engineering from DP2 Silver Iceberg tables into Iceberg features and PostgreSQL Feast offline tables.",
         tags=("DP3", "DataContract", "NativePipeline"),
-        datasets=batch_lakehouse + offline + online,
+        datasets=iceberg + postgres,
         jobs=(
             Job(
-                id="ingest_historical_batch_to_lakehouse",
-                name="Ingest Historical Batch To Lakehouse",
-                description="Loads generated historical parquet into Parquet raw lakehouse tables.",
-                inputs=(),
-                outputs=tuple(item.urn for item in batch_lakehouse),
+                id="ingest_stage",
+                name="Ingest Stage",
+                description="Reads DP2 Silver tables, computes offline features, writes Iceberg outputs, and exports PostgreSQL Feast tables.",
+                inputs=tuple(SILVER_URNS.values()),
+                outputs=tuple(item.urn for item in iceberg + postgres),
                 tags=("DP3", "DataContract", "NativePipeline"),
-                custom_properties={"engine": "Python pyarrow parquet writer"},
+                custom_properties={"engine": "PySpark, Iceberg, and PostgreSQL"},
             ),
             Job(
-                id="run_spark_batch_to_offline_store",
-                name="Run Spark Batch To Offline Store",
-                description="Reads Parquet lakehouse tables, builds batch feature views with PySpark, writes Iceberg lakehouse feature tables, and exports them to the PostgreSQL Feast offline store.",
-                inputs=tuple(item.urn for item in batch_lakehouse),
-                outputs=tuple(item.urn for item in offline),
+                id="validate_stage",
+                name="Validate Stage",
+                description="Validates both Iceberg feature outputs and PostgreSQL Feast offline-store tables.",
+                inputs=tuple(item.urn for item in iceberg + postgres),
+                outputs=(),
                 tags=("DP3", "DataContract", "NativePipeline"),
-                custom_properties={"engine": "PySpark plus Iceberg Spark writer"},
+                custom_properties={"report": "governance/validation/dp3/latest.json"},
+                input_jobs=(job_urn(flow, "ingest_stage"),),
+            ),
+        ),
+    )
+
+
+def cdc_ingestion() -> DataProduct:
+    source = tuple(
+        _dataset(
+            SOURCE_POSTGRES_URNS[table],
+            f"source_postgres.public.{table}",
+            "Source PostgreSQL table captured from WAL by Debezium.",
+            "CDC_INGESTION",
+            "SourceTableContract primary key and Debezium topic mapping",
+            schema=raw_schema(table),
+            primary_keys=RAW_PRIMARY_KEYS[table],
+        )
+        for table in RAW_GENERATOR_TABLES
+    )
+    topics = tuple(
+        _dataset(
+            KAFKA_TOPIC_URNS[table],
+            f"cdc.{table}",
+            "Kafka CDC topic emitted by the Debezium PostgreSQL connector.",
+            "CDC_INGESTION",
+            "Debezium change-event envelope keyed by the source primary key",
+            schema=cdc_topic_schema(table),
+            upstreams=(SOURCE_POSTGRES_URNS[table],),
+        )
+        for table in RAW_GENERATOR_TABLES
+    )
+    return DataProduct(
+        id="CDC_INGESTION",
+        flow_id="recsys_cdc_postgres_to_kafka",
+        flow_name="CDC PostgreSQL To Kafka",
+        description="PostgreSQL WAL captured by Debezium and published to cdc.* Kafka topics.",
+        tags=("CDC_INGESTION", "DataContract", "NativePipeline"),
+        datasets=source + topics,
+        jobs=(
+            Job(
+                id="register_debezium_connector",
+                name="Register Debezium Connector",
+                description="Registers the Debezium connector linking source PostgreSQL tables to Kafka topics.",
+                inputs=tuple(item.urn for item in source),
+                outputs=tuple(item.urn for item in topics),
+                tags=("CDC_INGESTION", "DataContract", "NativePipeline"),
+                custom_properties={"contract": "ingest.postgres_cdc_contracts.SOURCE_TABLE_CONTRACTS"},
+            ),
+        ),
+    )
+
+
+def streaming_features() -> DataProduct:
+    topic = KAFKA_TOPIC_URNS["behavior_events"]
+    redis = tuple(
+        _dataset(
+            REDIS_FEATURE_URNS[table],
+            f"redis_online.{table}",
+            "Redis online feature keys updated continuously by the PyFlink online-store job.",
+            "STREAMING_FEATURES",
+            "Redis online feature entity key and TTL contract",
+            schema=feature_schema(table),
+            primary_keys=FEATURE_PRIMARY_KEYS[table][:1],
+            upstreams=(topic,),
+        )
+        for table in REDIS_FEATURE_URNS
+    )
+    return DataProduct(
+        id="STREAMING_FEATURES",
+        flow_id="recsys_flink_stream_features",
+        flow_name="Flink Streaming Features",
+        description="Two continuously running Flink jobs consume cdc.behavior_events and update PostgreSQL offline plus Redis online features.",
+        tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
+        datasets=redis,
+        jobs=(
+            Job(
+                id="run_flink_stream_to_offline_store",
+                name="Run Flink Stream To Offline Store",
+                description="Consumes behavior CDC events and updates PostgreSQL Feast offline feature tables.",
+                inputs=(topic,),
+                outputs=tuple(POSTGRES_FEATURE_URNS[table] for table in REDIS_FEATURE_URNS),
+                tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
+                custom_properties={"engine": "PyFlink DataStream plus PostgreSQL sink"},
             ),
             Job(
                 id="run_flink_stream_to_online_store",
                 name="Run Flink Stream To Online Store",
-                description="Updates Redis online feature keys directly from the native PyFlink stream.",
-                inputs=(dataset_urn("kafka", "recsys-dataflow.cdc.behavior_events"),),
-                outputs=tuple(item.urn for item in online),
-                tags=("DP3", "DataContract", "NativePipeline"),
+                description="Consumes behavior CDC events and updates Redis online feature keys.",
+                inputs=(topic,),
+                outputs=tuple(item.urn for item in redis),
+                tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
                 custom_properties={"engine": "PyFlink DataStream plus Redis sink"},
             ),
         ),
@@ -605,9 +915,11 @@ def dp3() -> DataProduct:
 
 def emit_products(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) -> dict[str, str]:
     for tag, description, color in (
-        ("DP1", "Data product DP1: CDC ingestion from source Postgres to Kafka.", "#2E7D32"),
-        ("DP2", "Data product DP2: native Flink stream to Iceberg lakehouse.", "#1565C0"),
-        ("DP3", "Data product DP3: lakehouse feature tables, PostgreSQL Feast offline store, and Redis online feature store.", "#6A1B9A"),
+        ("DP1", "Data product DP1: Data Generator raw S3 to Bronze Parquet lakehouse.", "#2E7D32"),
+        ("DP2", "Data product DP2: Bronze Parquet to curated Silver Iceberg.", "#1565C0"),
+        ("DP3", "Data product DP3: Silver Iceberg to Iceberg features and PostgreSQL Feast offline store.", "#6A1B9A"),
+        ("CDC_INGESTION", "PostgreSQL WAL captured by Debezium and published to Kafka.", "#EF6C00"),
+        ("STREAMING_FEATURES", "Continuous Flink processing into PostgreSQL and Redis feature stores.", "#00838F"),
         ("DataContract", "Entity has an explicit schema or pipeline contract in the RecSys data platform repo.", "#455A64"),
         ("NativePipeline", "Entity is produced by Spark, Flink, Debezium, Iceberg, or Redis native runtime.", "#00897B"),
     ):
@@ -623,8 +935,24 @@ def emit_products(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) ->
         for job in product.jobs:
             emit_job(emitter, flow, job)
         resource_urns = tuple(item.urn for item in product.datasets) + (flow,) + tuple(job_urn(flow, job.id) for job in product.jobs)
-        batch_set_data_product(emitter, product_urn, resource_urns)
+        batch_set_data_product(emitter, product, product_urn, resource_urns)
     return product_urns
+
+
+def emit_schemas(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) -> int:
+    count = 0
+    for product in products:
+        for dataset in product.datasets:
+            emitter.emit(dataset.urn, "dataset", "schemaMetadata", schema_metadata(dataset))
+            if dataset.validation_pipeline:
+                emitter.emit(
+                    assertion_urn(dataset.urn, "schema"),
+                    "assertion",
+                    "assertionInfo",
+                    schema_assertion_info(dataset),
+                )
+            count += 1
+    return count
 
 
 def datahub_metric_samples(summary: dict[str, Any]) -> list[MetricSample]:
@@ -651,15 +979,21 @@ def push_datahub_ingest_metrics(summary: dict[str, Any], pushgateway_url: str | 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Ingest RecSys DP1/DP2/DP3 governance metadata into DataHub.")
+    parser = argparse.ArgumentParser(description="Ingest RecSys batch, CDC, and streaming governance metadata into DataHub.")
     parser.add_argument("--gms-url", default="http://localhost:8088", help="DataHub GMS base URL.")
     parser.add_argument("--pushgateway-url", default=os.getenv("PUSHGATEWAY_URL", ""), help="Optional Pushgateway URL for ingest metrics.")
     parser.add_argument("--strict", action="store_true", default=os.getenv("DATAHUB_INGEST_STRICT", "").lower() in {"1", "true", "yes"})
+    parser.add_argument("--schemas-only", action="store_true", help="Refresh dataset schemas without re-emitting lineage or validation results.")
     args = parser.parse_args()
-    products = (dp1(), dp2(), dp3())
+    products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
     emitter = DataHubEmitter(args.gms_url)
     try:
-        product_urns = emit_products(emitter, products)
+        if args.schemas_only:
+            dataset_count = emit_schemas(emitter, products)
+            product_urns: dict[str, str] = {}
+        else:
+            product_urns = emit_products(emitter, products)
+            dataset_count = sum(len(product.datasets) for product in products)
     except Exception as exc:
         summary = {
             "data_products": [product.id for product in products],
@@ -673,7 +1007,7 @@ def main() -> int:
     summary = {
         "data_products": [product.id for product in products],
         "data_product_entities": product_urns,
-        "datasets": sum(len(product.datasets) for product in products),
+        "datasets": dataset_count,
         "jobs": sum(len(product.jobs) for product in products),
         "gms_url": args.gms_url,
         "ingested": True,

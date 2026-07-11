@@ -1,0 +1,75 @@
+{
+  "config": "/opt/recsys/configs/local/spark_batch_e2e_1k.yaml",
+  "data_source": "generated lakehouse behavior_events",
+  "duplicates": {
+    "baseline_duplicate_extra_rows": 19428,
+    "clean_behavior_event_rows_after_dedup": 30751,
+    "conflicting_duplicate_event_id_count": 5615,
+    "duplicate_event_id_count": 16863,
+    "duplicate_extra_rows_reduction_pct": 100.0,
+    "optimized_duplicate_extra_rows_after_dedup": 0,
+    "raw_behavior_event_rows": 50179,
+    "rejected_duplicate_rows": 19428,
+    "technique": "event_id window dedup ordered by latest ingestion_ts"
+  },
+  "high_cardinality": {
+    "baseline_exact_distinct_product_id": 10109,
+    "baseline_exact_runtime_ms": 387.94,
+    "materialized_result_rows_reduction_pct": 99.99,
+    "optimized_approx_count_distinct_product_id": 9977,
+    "optimized_approx_runtime_ms": 703.46,
+    "relative_error_pct": 1.31,
+    "technique": "approx_count_distinct(product_id, 0.05)"
+  },
+  "schema_evolution": {
+    "baseline_unsupported_schema_v3_rows": 6774,
+    "optimized_quarantined_schema_v3_rows": 6774,
+    "optimized_supported_rows": 43405,
+    "technique": "schema contract gate: normalize v1/v2 and quarantine unsupported v3 rows",
+    "unsupported_rows_entering_feature_path_after_optimize": 0,
+    "unsupported_rows_reduction_pct": 100.0
+  },
+  "skew": {
+    "baseline": {
+      "avg_partition_rows": 3843.88,
+      "hot_category_id": 1,
+      "max_partition_rows": 30698,
+      "median_partition_rows": 8.0,
+      "partition_count": 8,
+      "partition_loads": [
+        4,
+        8,
+        9,
+        8,
+        6,
+        8,
+        30698,
+        10
+      ],
+      "salt_buckets": 0,
+      "skew_ratio_max_over_avg": 7.9862
+    },
+    "max_partition_rows_reduction_pct": 62.21,
+    "optimized": {
+      "avg_partition_rows": 3843.88,
+      "hot_category_id": 1,
+      "max_partition_rows": 11601,
+      "median_partition_rows": 3802.5,
+      "partition_count": 8,
+      "partition_loads": [
+        9,
+        3,
+        3788,
+        3817,
+        7,
+        7689,
+        11601,
+        3837
+      ],
+      "salt_buckets": 8,
+      "skew_ratio_max_over_avg": 3.018
+    },
+    "skew_ratio_reduction_pct": 62.21,
+    "technique": "salt hot category key before partitioned aggregation"
+  }
+}

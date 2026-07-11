@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: recsys-datahub-governance-ingest
+  namespace: recsys-dataflow
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: governance-ingest
+          image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-dataflow-cli:governance-20260711-v4
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+          command: ["python", "-m", "metadata.ingest_datahub_governance"]
+          args:
+            - --gms-url
+            - http://datahub-datahub-gms.datahub.svc.cluster.local:8080
+            - --strict

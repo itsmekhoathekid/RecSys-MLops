@@ -46,6 +46,13 @@ realtimeProducer:
 
 flinkTaskManager:
   replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 6Gi
+    limits:
+      cpu: "2"
+      memory: 10Gi
 
 flink:
   istioInject: "true"

@@ -14,7 +14,7 @@ flowchart TD
     D["Kafka CDC topics<br/>cdc.*"]
     E["PyFlink streaming job"]
     F["Redis online feature store"]
-    G["Iceberg offline feature store<br/>s3a://recsys-offline-feature-store/warehouse/feature_store"]
+    G["PostgreSQL Feast offline store<br/>feature_store schema"]
     H["PySpark batch job"]
     I["Historical data generator"]
     J["Batch ingestion job"]
@@ -29,12 +29,13 @@ flowchart TD
 
 1. PostgreSQL writes source table changes to WAL with logical replication.
 2. Debezium reads WAL through `pgoutput` and publishes JSON CDC events to Kafka.
-3. PyFlink consumes `cdc.behavior_events`, owns streaming state, and writes both
-   Redis online keys and Iceberg stream feature tables.
+3. PyFlink consumes `cdc.behavior_events`, owns streaming state, writes Redis
+   online keys, and writes PostgreSQL Feast offline feature rows.
 4. The historical data generator lands a batch run, then Spark ingestion loads
    the run into raw Iceberg lakehouse tables under `recsys.lakehouse`.
 5. PySpark reads those lakehouse tables, writes clean silver lakehouse tables,
-   and writes batch feature tables to `recsys_features.feature_store`.
+   writes lakehouse feature tables for audit/versioned storage, and exports the
+   serving/training feature tables into PostgreSQL Feast offline store.
 
 ## Implementation Map
 
@@ -56,10 +57,10 @@ flowchart TD
 
 - Kafka Connect is kept only for the Debezium PostgreSQL source connector.
 - The default lakehouse warehouse is `s3a://recsys-lakehouse/warehouse`.
-- The default offline feature store warehouse is `s3a://recsys-offline-feature-store/warehouse`.
+- The default feature lakehouse warehouse is `s3a://recsys-offline-feature-store/warehouse`.
 - The default lakehouse namespace is `recsys.lakehouse`.
-- The default feature namespace is `recsys_features.feature_store`.
-- Offline feature store tables live in Iceberg, not standalone parquet scripts.
+- The default lakehouse feature namespace is `recsys_features.feature_store`.
+- Feast offline feature tables live in PostgreSQL; Iceberg/Hudi/S3 paths are used for lakehouse, audit, and versioning proof storage.
 - Online feature store keys live in Redis with the `fs:*` key templates.
 - Spark and Flink production paths use native Spark/Flink APIs.
 

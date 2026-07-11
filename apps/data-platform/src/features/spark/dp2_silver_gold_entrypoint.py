@@ -8,6 +8,8 @@ from typing import Any
 from features.spark.build_silver_tables import build_silver_tables
 from features.spark.session import read_iceberg_table, row_count, spark_session
 from lakehouse.iceberg import IcebergCatalogConfig, SILVER_LAKEHOUSE_TABLES, create_spark_namespace
+from metadata.governance_catalog import SILVER_URNS
+from validate.governance_contracts import check, dataset_result, write_report
 
 
 def bronze_lakehouse_path(catalog: IcebergCatalogConfig) -> str:
@@ -31,12 +33,31 @@ def validate_dp2_silver_gold() -> dict[str, int]:
     catalog = IcebergCatalogConfig()
     try:
         counts: dict[str, int] = {}
+        datasets: dict[str, dict[str, Any]] = {}
         for table_name in SILVER_LAKEHOUSE_TABLES:
             full_name = catalog.lakehouse_table(f"silver_{table_name}")
-            counts[table_name] = row_count(read_iceberg_table(spark, full_name))
-        missing = {name: count for name, count in counts.items() if count <= 0}
-        if missing:
-            raise AssertionError(f"DP2 silver/gold tables are empty: {missing}; counts={counts}")
+            frame = read_iceberg_table(spark, full_name)
+            counts[table_name] = row_count(frame)
+            expected = ">= 0" if table_name == "rejected_behavior_events" else "> 0"
+            count_ok = counts[table_name] >= 0 if table_name == "rejected_behavior_events" else counts[table_name] > 0
+            checks = [check("row_count", "SUCCESS" if count_ok else "FAILURE", expected, counts[table_name])]
+            if table_name == "clean_behavior_events":
+                duplicate_count = counts[table_name] - frame.select("event_id").distinct().count()
+                checks.extend(
+                    [
+                        check(
+                            "required_columns",
+                            "SUCCESS" if {"event_id", "event_timestamp", "ingestion_ts"}.issubset(frame.columns) else "FAILURE",
+                            ["event_id", "event_timestamp", "ingestion_ts"],
+                            sorted(frame.columns),
+                        ),
+                        check("duplicate_event_id", "SUCCESS" if duplicate_count == 0 else "FAILURE", 0, duplicate_count),
+                    ]
+                )
+            datasets[SILVER_URNS[table_name]] = dataset_result(checks)
+        report = write_report("DP2", datasets)
+        if report["status"] != "SUCCESS":
+            raise AssertionError(f"DP2 validation failed: {report}")
         return counts
     finally:
         spark.stop()

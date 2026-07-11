@@ -230,7 +230,7 @@ data:
                 short_name = table_name.rsplit(".", 1)[-1]
                 run_ui_action(
                     spark,
-                    f"DP3 SPARK - write Iceberg offline feature table {short_name}",
+                    f"DP3 SPARK - write Iceberg lakehouse feature table {short_name}",
                     lambda frame=frame, table_name=table_name: write_iceberg_table(frame, table_name, mode="overwrite"),
                 )
                 output_counts[short_name] = run_ui_action(

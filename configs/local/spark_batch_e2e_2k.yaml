@@ -1,6 +1,5 @@
 input:
-  source: parquet
-  run_path: s3a://recsys-lakehouse/warehouse/lakehouse
+  source: silver_lakehouse
 
 output:
   base_path: data_platform/output

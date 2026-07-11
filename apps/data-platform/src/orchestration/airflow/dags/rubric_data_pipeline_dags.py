@@ -18,6 +18,7 @@ SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "recsys-spar
 DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
+    "VALIDATION_RUN_ID": "{{ run_id }}",
 }
 SPARK_DRIVER_EXECUTOR_ENV = (
     "PYTHONPATH",
@@ -42,6 +43,9 @@ SPARK_DRIVER_EXECUTOR_ENV = (
     "FEAST_POSTGRES_SSLMODE",
     "FEAST_POSTGRES_EXPORT_ENABLED",
     "SPARK_SQL_SHUFFLE_PARTITIONS",
+    "SPARK_ADVISORY_PARTITION_SIZE_BYTES",
+    "GOVERNANCE_VALIDATION_ROOT",
+    "VALIDATION_RUN_ID",
 )
 SPARK_SECRET_ENV = ("MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
 
@@ -143,68 +147,22 @@ SPARK_BATCH_COMMAND = spark_native_submit(
     "--config $SPARK_BATCH_CONFIG",
 )
 
-VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = r"""
-python -c '
-import json
-from psycopg import sql
-from feature_store.postgres_offline_store import OFFLINE_STORE_TABLES, PostgresOfflineStoreConfig
-
-config = PostgresOfflineStoreConfig.from_env()
-counts = {}
-with config.connect() as conn:
-    with conn.cursor() as cur:
-        for table_name in OFFLINE_STORE_TABLES:
-            cur.execute(
-                sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
-                    sql.Identifier(config.schema),
-                    sql.Identifier(table_name),
-                )
-            )
-            counts[table_name] = int(cur.fetchone()[0])
-missing = {name: count for name, count in counts.items() if count <= 0}
-assert not missing, f"PostgreSQL Feast offline tables are empty: {missing}; counts={counts}"
-print(json.dumps({"postgres_feast_offline_store_counts": counts}, sort_keys=True))
-'
-""".strip()
+VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = "python -m validate.governance_contracts dp3-postgres"
 
 
 DP1_INGEST_COMMAND = """
 PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
-python apps/data-platform/data-generator/src/scripts/generate_historical_to_minio.py \
-  --config $DATA_GENERATOR_CONFIG \
-  --target s3 \
-  --bucket $LAKE_BUCKET \
-  --prefix raw
+python apps/data-platform/data-generator/src/cli.py generate \
+  --config $DATA_GENERATOR_CONFIG
 
 python -m ingest.batch_lakehouse_ingestion \
-  --run-path s3a://$LAKE_BUCKET/raw/$DATA_GENERATOR_RUN_ID \
+  --run-path apps/data-platform/data-generator/src/output/$DATA_GENERATOR_RUN_ID \
+  --run-id $DATA_GENERATOR_RUN_ID \
   --lakehouse-warehouse $LAKEHOUSE_WAREHOUSE \
   --mode overwrite
 """.strip()
 
-DP1_VALIDATE_COMMAND = r"""
-python - <<'PY'
-import json
-import os
-
-import pyarrow.parquet as pq
-
-from ingest.batch_lakehouse_ingestion import _filesystem_and_path
-from lakehouse.iceberg import RAW_GENERATOR_TABLES
-
-base = os.getenv("LAKEHOUSE_WAREHOUSE", "s3a://recsys-lakehouse/warehouse").rstrip("/")
-namespace = os.getenv("ICEBERG_LAKEHOUSE_NAMESPACE", "lakehouse")
-counts = {}
-for table_name in RAW_GENERATOR_TABLES:
-    table_uri = f"{base}/{namespace}/{table_name}"
-    filesystem, path = _filesystem_and_path(table_uri)
-    table = pq.read_table(path, filesystem=filesystem)
-    counts[table_name] = table.num_rows
-missing = {name: count for name, count in counts.items() if count <= 0}
-assert not missing, f"DP1 bronze lakehouse tables are empty: {missing}; counts={counts}"
-print(json.dumps({"dp1_bronze_table_counts": counts}, sort_keys=True))
-PY
-""".strip()
+DP1_VALIDATE_COMMAND = "python -m validate.governance_contracts dp1"
 
 DP2_INGEST_COMMAND = spark_native_submit(
     "dp2_ingest_bronze_to_silver_gold",
@@ -216,6 +174,16 @@ DP2_VALIDATE_COMMAND = spark_native_submit(
     "dp2_verify_silver_gold",
     "local:///opt/recsys/apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
     "--action validate",
+)
+
+LAKEHOUSE_OPTIMIZE_COMMAND = spark_native_submit(
+    "lakehouse_optimize",
+    "local:///opt/recsys/apps/data-platform/src/lakehouse/optimize.py",
+    "--scope all "
+    "--strategy ${LAKEHOUSE_OPTIMIZATION_STRATEGY:-binpack} "
+    "--target-file-size-mb ${LAKEHOUSE_TARGET_FILE_SIZE_MB:-128} "
+    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2} "
+    "--skip-missing",
 )
 
 
@@ -282,3 +250,17 @@ if DAG is not None:
         )
 
         ingest_stage >> validate_stage
+
+    with DAG(
+        dag_id="recsys_lakehouse_maintenance",
+        start_date=datetime(2026, 1, 1),
+        schedule=env_schedule("LAKEHOUSE_MAINTENANCE_DAG_SCHEDULE", "manual"),
+        catchup=False,
+        max_active_runs=1,
+        tags=["recsys", "lakehouse", "iceberg", "optimization"],
+    ) as recsys_lakehouse_maintenance:
+        pod_task(
+            "optimize_iceberg_tables",
+            SPARK_IMAGE,
+            LAKEHOUSE_OPTIMIZE_COMMAND,
+        )

@@ -263,7 +263,7 @@ def test_spark_feature_path_is_native_iceberg_not_pandas_or_parquet_writer():
     assert "import pandas" not in sources
     assert "pd." not in sources
     assert "from pyspark.sql" in sources
-    assert 'source", os.getenv("SPARK_BATCH_SOURCE", "lakehouse")' in batch_source
+    assert 'source", os.getenv("SPARK_BATCH_SOURCE", "silver_lakehouse")' in batch_source
     assert "write_iceberg_table" in batch_source
     assert "feast_offline_store_uri" in batch_source
     assert "write_parquet(" in batch_source

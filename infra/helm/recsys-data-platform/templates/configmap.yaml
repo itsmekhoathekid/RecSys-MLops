@@ -11,6 +11,7 @@ data:
   LAKE_BUCKET: {{ .Values.minio.lakeBucket | quote }}
   OFFLINE_FEATURE_BUCKET: {{ .Values.minio.offlineFeatureBucket | quote }}
   LAKEHOUSE_WAREHOUSE: "s3a://{{ .Values.minio.lakeBucket }}/warehouse"
+  GOVERNANCE_VALIDATION_ROOT: "s3a://{{ .Values.minio.lakeBucket }}/governance/validation"
   ICEBERG_CATALOG: {{ .Values.lakehouse.catalog | quote }}
   ICEBERG_LAKEHOUSE_NAMESPACE: {{ .Values.lakehouse.lakehouseNamespace | quote }}
   OFFLINE_FEATURE_CATALOG: {{ .Values.lakehouse.offlineFeatureCatalog | quote }}
@@ -36,6 +37,10 @@ data:
   BATCH_FEATURE_DAG_SCHEDULE: {{ .Values.airflow.batchFeatureSchedule | quote }}
   FEAST_MATERIALIZE_DAG_SCHEDULE: {{ .Values.airflow.feastMaterializeSchedule | quote }}
   FEATURE_DRIFT_DAG_SCHEDULE: {{ .Values.airflow.featureDriftSchedule | quote }}
+  LAKEHOUSE_MAINTENANCE_DAG_SCHEDULE: {{ .Values.airflow.lakehouseMaintenanceSchedule | quote }}
+  LAKEHOUSE_OPTIMIZATION_STRATEGY: {{ .Values.lakehouse.optimizationStrategy | quote }}
+  LAKEHOUSE_TARGET_FILE_SIZE_MB: {{ .Values.lakehouse.targetFileSizeMb | quote }}
+  LAKEHOUSE_COMPACTION_MIN_INPUT_FILES: {{ .Values.lakehouse.compactionMinInputFiles | quote }}
   REALTIME_E2E_ENABLED: {{ .Values.e2e.realtimeEnabled | quote }}
   DATAHUB_INGEST_ENABLED: {{ .Values.e2e.datahubIngestEnabled | quote }}
   SPARK_K8S_MASTER: {{ .Values.spark.k8sMaster | quote }}
@@ -55,6 +60,7 @@ data:
   SPARK_K8S_CONNECTION_TIMEOUT: {{ .Values.spark.connectionTimeout | quote }}
   SPARK_K8S_REQUEST_TIMEOUT: {{ .Values.spark.requestTimeout | quote }}
   SPARK_SQL_SHUFFLE_PARTITIONS: {{ .Values.spark.sqlShufflePartitions | quote }}
+  SPARK_ADVISORY_PARTITION_SIZE_BYTES: {{ .Values.spark.advisoryPartitionSizeBytes | quote }}
   POSTGRES_HOST: {{ .Values.sourcePostgres.name | quote }}
   POSTGRES_PORT: "5432"
   POSTGRES_DB: {{ .Values.sourcePostgres.database | quote }}

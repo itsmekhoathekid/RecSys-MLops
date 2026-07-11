@@ -13,6 +13,7 @@ from features.spark.build_item_features import build_item_features
 from features.spark.build_ranking_labels import build_ranking_labels
 from features.spark.build_silver_tables import (
     build_silver_tables,
+    read_silver_lakehouse_tables,
 )
 from features.spark.build_user_aggregate_features import build_user_aggregate_features
 from features.spark.build_user_sequence_features import build_user_sequence_features
@@ -25,6 +26,8 @@ from feature_store.postgres_offline_store import (
     truncate_offline_store_tables,
 )
 from lakehouse.iceberg import IcebergCatalogConfig, create_spark_namespace
+from metadata.governance_catalog import ICEBERG_FEATURE_URNS
+from validate.governance_contracts import check, dataset_result, write_report
 
 
 def load_config(config_path: str | Path) -> dict:
@@ -33,7 +36,7 @@ def load_config(config_path: str | Path) -> dict:
 
 
 def _batch_source_path(input_config: dict, output: dict) -> tuple[str, str]:
-    source = input_config.get("source", os.getenv("SPARK_BATCH_SOURCE", "lakehouse"))
+    source = input_config.get("source", os.getenv("SPARK_BATCH_SOURCE", "silver_lakehouse"))
     configured_run_path = str(input_config.get("run_path", "apps/data-platform/data-generator/src/output/test_10k_seed42"))
     if os.getenv("DATAFLOW_OUTPUT_MODE") == "s3" and not configured_run_path.startswith(("s3://", "s3a://")):
         return source, f"s3a://{output['lakehouse_bucket']}/raw/{Path(configured_run_path).name}"
@@ -108,6 +111,42 @@ def _write_postgres_tables(outputs: dict[str, Any], *, catalog: IcebergCatalogCo
             insert_offline_rows(conn, config.schema, table_name, frame.to_dict("records"))
 
 
+def _write_dp3_iceberg_validation_report(outputs: dict[str, Any], *, catalog: IcebergCatalogConfig) -> dict[str, Any]:
+    from pyspark.sql import functions as F
+
+    required_columns = {
+        "user_sequence_features": {"user_id", "feature_timestamp"},
+        "user_aggregate_features": {"user_id", "feature_timestamp"},
+        "item_features": {"product_id", "feature_timestamp"},
+        "ml_ranking_labels": {"impression_id", "prediction_timestamp"},
+        "ml_bst_training": {"impression_id", "prediction_timestamp"},
+    }
+    datasets: dict[str, dict[str, Any]] = {}
+    for table_name, required in required_columns.items():
+        frame = outputs[catalog.feature_table(table_name)]
+        observed_rows = row_count(frame)
+        missing = sorted(required.difference(frame.columns))
+        null_keys = None
+        if not missing:
+            null_expression = None
+            for column in sorted(required):
+                expression = F.col(column).isNull()
+                null_expression = expression if null_expression is None else null_expression | expression
+            null_keys = frame.filter(null_expression).count()
+        checks = [
+            check("row_count", "SUCCESS" if observed_rows > 0 else "FAILURE", "> 0", observed_rows),
+            check("required_columns", "SUCCESS" if not missing else "FAILURE", sorted(required), {"missing": missing}),
+            check(
+                "key_and_timestamp_not_null",
+                "ERROR" if null_keys is None else "SUCCESS" if null_keys == 0 else "FAILURE",
+                0,
+                null_keys,
+            ),
+        ]
+        datasets[ICEBERG_FEATURE_URNS[table_name]] = dataset_result(checks)
+    return write_report("DP3", datasets)
+
+
 def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml") -> dict[str, int]:
     spark = spark_session("recsys-pyspark-batch-features")
     config = load_config(config_path)
@@ -135,7 +174,10 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
     source, run_path = _batch_source_path(input_config, output)
 
     try:
-        silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source)
+        if source == "silver_lakehouse":
+            silver = read_silver_lakehouse_tables(spark, catalog)
+        else:
+            silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source)
         outputs = _build_feature_outputs(silver, catalog=catalog, features=features)
         for table_name, frame in outputs.items():
             write_iceberg_table(frame, table_name, mode="overwrite")
@@ -147,6 +189,9 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
                     f"{feast_offline_root.rstrip('/')}/{table_name}",
                 )
         _write_postgres_tables(outputs, catalog=catalog, output=output)
+        report = _write_dp3_iceberg_validation_report(outputs, catalog=catalog)
+        if report["status"] != "SUCCESS":
+            raise AssertionError(f"DP3 Iceberg validation failed: {report}")
         summary = {"clean_behavior_events": row_count(silver["clean_behavior_events"])}
         summary.update(_output_summary(outputs))
         return summary
