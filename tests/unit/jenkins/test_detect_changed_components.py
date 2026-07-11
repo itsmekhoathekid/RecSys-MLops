@@ -275,3 +275,12 @@ def test_jenkins_ci_temp_data_uses_persistent_storage_not_node_ephemeral_disk():
 
     assert 'env.CI_TMP_ROOT = "/var/jenkins_home/ci-tmp/' in jenkinsfile
     assert 'env.CI_TMP_ROOT = "/tmp/' not in jenkinsfile
+
+
+def test_kfp_cicd_reuses_the_prepared_jenkins_python_environment():
+    script = (ROOT / "jenkins/scripts/kubeflow_pipeline_cicd.sh").read_text(encoding="utf-8")
+
+    prepared_env_branch = script.index('UV_PROJECT_ENVIRONMENT:-')
+    uv_fallback_branch = script.index('command -v uv')
+    assert prepared_env_branch < uv_fallback_branch
+    assert 'python_cmd=("${UV_PROJECT_ENVIRONMENT}/bin/python")' in script

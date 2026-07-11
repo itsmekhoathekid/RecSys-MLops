@@ -13,6 +13,11 @@ upload_package="${KFP_UPLOAD_PACKAGE:-1}"
 python_cmd=()
 if [[ -n "${KFP_CICD_PYTHON:-}" ]]; then
   python_cmd=("${KFP_CICD_PYTHON}")
+elif [[ -n "${UV_PROJECT_ENVIRONMENT:-}" && -x "${UV_PROJECT_ENVIRONMENT}/bin/python" ]]; then
+  # Jenkins already provisions the component-specific environment. Reuse it
+  # instead of letting `uv run` sync every project dependency (including GPU
+  # PyTorch/CUDA wheels) just to compile and validate a YAML package.
+  python_cmd=("${UV_PROJECT_ENVIRONMENT}/bin/python")
 elif command -v uv >/dev/null 2>&1; then
   python_cmd=(uv run python)
 else
