@@ -22,6 +22,162 @@ Code reference:
 - [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py): manual/cron `recsys_lakehouse_maintenance` DAG.
 - [configs/local/spark_batch.yaml](../../../configs/local/spark_batch.yaml): Spark batch output warehouse and feature-store locations.
 
+### Code before optimization
+
+Before this optimization, the repository only contained the following isolated helper. The normal DP2/DP3 pipelines did not call it, and it emitted no evidence about the physical files before or after the rewrite.
+
+```python
+def compact_iceberg_table(
+    spark: Any,
+    table_name: str,
+    target_file_size_bytes: int = 134_217_728,
+) -> None:
+    catalog = table_name.split(".", 1)[0]
+    spark.sql(
+        f"""
+        CALL {catalog}.system.rewrite_data_files(
+          table => '{table_name}',
+          options => map(
+            'target-file-size-bytes',
+            '{target_file_size_bytes}'
+          )
+        )
+        """
+    )
+```
+
+Limitations of the baseline:
+
+- The helper had no production or Airflow caller, so defining it did not optimize any table automatically.
+- It did not query the Iceberg `files` metadata table, so file-count or average-size improvement could not be proven.
+- It only requested default bin-packing; there was no clustering strategy for user, product, or time access paths.
+- It did not rewrite manifests after data files changed.
+- It did not set write distribution, compression, or adaptive Spark task sizing for future writes.
+
+### Code after optimization
+
+The current implementation measures the table, applies write properties, rewrites eligible data files, rewrites manifests, and measures the same metadata again. This is a capture-focused excerpt from `features/spark/session.py`:
+
+```python
+def compact_iceberg_table(
+    spark: Any,
+    table_name: str,
+    target_file_size_bytes: int = 134_217_728,
+    *,
+    min_input_files: int = 2,
+    sort_columns: tuple[str, ...] = (),
+    rewrite_all: bool = False,
+    rewrite_manifests: bool = True,
+) -> dict[str, Any]:
+    parts = _iceberg_identifier_parts(table_name, minimum_parts=3)
+    catalog = parts[0]
+    procedure_table = ".".join(parts[1:])
+    before = iceberg_file_metrics(spark, table_name)
+
+    spark.sql(
+        f"""
+        ALTER TABLE {table_name} SET TBLPROPERTIES (
+          'write.target-file-size-bytes' = '{target_file_size_bytes}',
+          'write.distribution-mode' = 'hash',
+          'write.parquet.compression-codec' = 'zstd'
+        )
+        """
+    )
+
+    strategy_arguments = ""
+    strategy = "binpack"
+    if sort_columns:
+        strategy = "zorder"
+        order = ",".join(sort_columns)
+        strategy_arguments = (
+            f"strategy => 'sort', "
+            f"sort_order => 'zorder({order})',"
+        )
+
+    rewrite_rows = spark.sql(
+        f"""
+        CALL {catalog}.system.rewrite_data_files(
+          table => '{procedure_table}',
+          {strategy_arguments}
+          options => map(
+            'target-file-size-bytes', '{target_file_size_bytes}',
+            'min-input-files', '{min_input_files}',
+            'rewrite-all', '{str(rewrite_all).lower()}'
+          )
+        )
+        """
+    ).collect()
+    rewrite_result = _row_dict(rewrite_rows[0]) if rewrite_rows else {}
+
+    manifest_result = {}
+    if rewrite_manifests:
+        manifest_rows = spark.sql(
+            f"CALL {catalog}.system.rewrite_manifests("
+            f"table => '{procedure_table}')"
+        ).collect()
+        manifest_result = (
+            _row_dict(manifest_rows[0]) if manifest_rows else {}
+        )
+
+    after = iceberg_file_metrics(spark, table_name)
+    return {
+        "table": table_name,
+        "strategy": strategy,
+        "sort_columns": list(sort_columns),
+        "before": before,
+        "after": after,
+        "rewrite_data_files": rewrite_result,
+        "rewrite_manifests": manifest_result,
+    }
+```
+
+The repository-level runner applies that operation to all 9 Silver and 10 offline/stream feature tables. Z-order is only assigned to tables with a known hot access path:
+
+```python
+ZORDER_COLUMNS = {
+    "silver_clean_behavior_events": (
+        "user_id", "product_id", "event_timestamp"
+    ),
+    "silver_clean_impressions": (
+        "user_id", "candidate_product_id", "impression_timestamp"
+    ),
+    "user_sequence_features": ("user_id", "feature_timestamp"),
+    "user_aggregate_features": ("user_id", "feature_timestamp"),
+    "item_features": ("product_id", "feature_timestamp"),
+    "ml_ranking_labels": (
+        "user_id", "candidate_product_id", "prediction_timestamp"
+    ),
+    "ml_bst_training": (
+        "user_id", "target_item_id", "prediction_timestamp"
+    ),
+}
+
+for table_name in optimization_tables(scope, catalog):
+    results.append(
+        compact_iceberg_table(
+            spark,
+            table_name,
+            target_file_size_bytes,
+            min_input_files=2,
+            sort_columns=_sort_columns(table_name, strategy),
+        )
+    )
+```
+
+### Before/after analysis
+
+| Area | Before | After | Optimization achieved |
+|---|---|---|---|
+| Execution | Uncalled utility function | Airflow/Spark maintenance job covers 19 Iceberg tables | Optimization is operational instead of dead code. |
+| Small files | One generic rewrite call | Bin-pack with a 128 MiB target and minimum two eligible input files | Reduces the number of small files and file-open overhead. |
+| Measurement | No returned result | Queries `<table>.files` before and after and returns rewrite counters | Produces reproducible evidence: file count, total bytes, and average/min/max file size. |
+| Data layout | No explicit clustering | Optional Z-order for hot user/item/time columns | Improves data skipping for dominant feature and event query paths. |
+| Metadata | Data files only | Data-file rewrite followed by manifest rewrite | Reduces manifest fragmentation and scan-planning work. |
+| Future writes | Spark task defaults | AQE coalescing, 128 MiB advisory size, hash distribution, and Zstandard | Makes subsequent output less likely to recreate the small-file problem. |
+| Safety | Arbitrary SQL identifiers and no job-level failure policy | Identifier validation; only missing tables may be skipped | Configuration or storage failures still fail the maintenance DAG visibly. |
+
+The primary measurable success condition is `after.file_count < before.file_count` while average file size increases. Query latency is not claimed until the job is executed on the deployed lakehouse because the checked-in E2E data is intentionally small; on that scale, the physical file metrics are more stable evidence than a short wall-clock benchmark.
+
 Optimization implemented:
 
 | Technique | Implementation | Effect |
@@ -34,65 +190,6 @@ Optimization implemented:
 | Table write properties | target size 128 MiB, hash distribution, Zstandard compression | Makes future Iceberg writes more scan-friendly; compaction also rewrites existing files using current table properties. |
 | Feature-store warehouse split | Raw lakehouse and offline feature store use separate warehouses | Keeps raw/silver/gold feature data isolated for lifecycle control. |
 
-### Why the repository does not partition by date yet
-
-The checked-in E2E configurations generate only 1,000-2,000 entities/events. Daily partitioning at this scale would create mostly tiny partitions and increase metadata overhead. Iceberg hidden partitioning and partition evolution make it safe to add `days(event_timestamp)` later, when a table is large enough and production queries consistently filter by date. For the current workload, bin-packing plus selective clustering has the better cost/benefit ratio.
-
-### Run and capture real before/after evidence
-
-Safe default for weekly maintenance:
-
-```bash
-/opt/spark/bin/spark-submit \
-  apps/data-platform/src/lakehouse/optimize.py \
-  --scope all \
-  --strategy binpack \
-  --target-file-size-mb 128 \
-  --min-input-files 2 \
-  --skip-missing
-```
-
-For the hot query-path demonstration, run selective Z-order. Tables with no declared hot-column profile still use bin-pack:
-
-```bash
-/opt/spark/bin/spark-submit \
-  apps/data-platform/src/lakehouse/optimize.py \
-  --scope all \
-  --strategy zorder \
-  --target-file-size-mb 128 \
-  --min-input-files 2 \
-  --skip-missing
-```
-
-The same command is available in Airflow as `recsys_lakehouse_maintenance`. Its default Helm schedule is Sunday at 04:00 and can be made manual by setting `airflow.lakehouseMaintenanceSchedule: manual`.
-
-The JSON output is the benchmark evidence. Capture the whole-table summary and one table detail:
-
-```json
-{
-  "before_file_count": "measured from <table>.files",
-  "after_file_count": "measured from <table>.files",
-  "file_count_reduction": "before - after",
-  "tables": [
-    {
-      "before": {"file_count": "...", "avg_file_size_bytes": "..."},
-      "after": {"file_count": "...", "avg_file_size_bytes": "..."},
-      "rewrite_data_files": {"rewritten_data_files_count": "...", "rewritten_bytes_count": "..."}
-    }
-  ]
-}
-```
-
-Do not replace the placeholders above with an estimate. Run the job and use its emitted values; if a table already has fewer than two eligible input files, a zero rewrite count is a valid measured result.
-
-Screenshot proof:
-
-```text
-docs/pngs/lakehouse_compaction_code.png
-docs/pngs/lakehouse_table_files_before_after.png
-```
-
-Suggested analysis caption: “Before optimization, Spark task boundaries can leave multiple small files per Iceberg table. The maintenance job bin-packs eligible files toward 128 MiB, optionally clusters hot tables by user/item/time, then rewrites manifests. Compare file count and average file size from Iceberg metadata; fewer, larger files reduce open and planning overhead. On the tiny E2E dataset, scan-time improvement may be small, so the physical file metrics are the primary reproducible evidence.”
 
 Primary references:
 
@@ -124,24 +221,3 @@ Secondary indexes implemented:
 | `orders` | `(user_id, order_timestamp)` | Purchase labels and user aggregates. |
 | `order_items` | `(product_id)` | Product conversion and order item joins. |
 
-Verify generated DDL without touching a live database:
-
-```bash
-uv run python -c "import sys; sys.path.insert(0, 'apps/data-platform/data-generator/src'); sys.path.insert(0, 'infra/docker/scripts'); import init_postgres_schema as s; ddl=s.build_all_ddl(); print('CREATE TABLE count', ddl.count('CREATE TABLE')); print('CREATE INDEX count', ddl.count('CREATE INDEX')); print('\n'.join(ddl.splitlines()[-10:]))"
-```
-
-Observed result:
-
-```text
-CREATE TABLE count 10
-CREATE INDEX count 10
-CREATE INDEX IF NOT EXISTS idx_behavior_events_user_ts ON behavior_events (user_id, event_timestamp);
-CREATE INDEX IF NOT EXISTS idx_behavior_events_product_ts ON behavior_events (product_id, event_timestamp);
-CREATE INDEX IF NOT EXISTS idx_behavior_events_type_ts ON behavior_events (event_type, event_timestamp);
-```
-
-Image proof to capture:
-
-```text
-docs/pngs/datawarehouse_indexes_ddl.png
-```
