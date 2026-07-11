@@ -116,7 +116,6 @@ for item in \
   "kube-system konnectivity-agent" \
   "kube-system konnectivity-agent-autoscaler" \
   "kube-system kube-dns-autoscaler" \
-  "kube-system l7-default-backend" \
   "kube-system metrics-server-v1.35.1"; do
   read -r namespace deployment <<<"${item}"
   assert_deployment_selector "${namespace}" "${deployment}" "${ML_NODE_SELECTOR_KEY}" "${ML_NODE_SELECTOR_VALUE}"
@@ -124,6 +123,7 @@ done
 
 section "CPU Node Exceptions"
 assert_deployment_selector kube-system kube-dns "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"
+assert_deployment_selector kube-system l7-default-backend "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"
 assert_deployment_selector observability recsys-prometheus "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"
 assert_deployment_selector ci recsys-jenkins "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"
 assert_deployment_selector ci recsys-registry "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"

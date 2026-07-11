@@ -291,3 +291,13 @@ def test_kfp_cicd_reuses_the_prepared_jenkins_python_environment():
     uv_fallback_branch = script.index('command -v uv')
     assert prepared_env_branch < uv_fallback_branch
     assert 'python_cmd=("${UV_PROJECT_ENVIRONMENT}/bin/python")' in script
+
+
+def test_gke_l7_backend_stays_on_the_untainted_cpu_pool():
+    rebalance = (ROOT / "infra/k8s/scripts/rebalance_ml_node_pool.sh").read_text(encoding="utf-8")
+    validator = (ROOT / "jenkins/scripts/validate_node_rebalance.sh").read_text(encoding="utf-8")
+
+    assert "patch_gke_managed_deployment_cpu l7-default-backend" in rebalance
+    ml_list = rebalance.split("kube_system_ml_deployments=(", 1)[1].split(")", 1)[0]
+    assert "l7-default-backend" not in ml_list
+    assert "assert_deployment_selector kube-system l7-default-backend" in validator

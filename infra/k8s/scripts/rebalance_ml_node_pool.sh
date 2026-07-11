@@ -270,7 +270,6 @@ kube_system_ml_deployments=(
   konnectivity-agent
   konnectivity-agent-autoscaler
   kube-dns-autoscaler
-  l7-default-backend
   metrics-server-v1.35.1
 )
 for deployment in "${kube_system_ml_deployments[@]}"; do
@@ -282,6 +281,9 @@ done
 # node quota is raised or a second ML node is available. kube-system DaemonSets are
 # node agents and intentionally remain per-node.
 patch_gke_managed_deployment_cpu kube-dns
+# GKE reconciles custom tolerations off l7-default-backend. Pinning it to the
+# tainted ML pool therefore creates a permanently Pending replacement pod.
+patch_gke_managed_deployment_cpu l7-default-backend
 
 for deployment in "${kubeflow_deployments[@]}"; do
   rollout_deployment kubeflow "${deployment}"
