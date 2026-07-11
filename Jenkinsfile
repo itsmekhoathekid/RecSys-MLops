@@ -176,7 +176,10 @@ pipeline {
           if (!applyForcedComponents(params.FORCE_COMPONENTS ?: '')) {
             echo "Changed components: ${env.CHANGED_COMPONENTS}"
           }
-          env.CI_TMP_ROOT = "/tmp/recsys-ci-${env.JOB_BASE_NAME}-${env.BUILD_NUMBER}"
+          // ML test environments can exceed the GKE node's ephemeral-storage
+          // eviction threshold. Keep disposable CI data on the existing
+          // Jenkins PVC; the post action removes this build-scoped directory.
+          env.CI_TMP_ROOT = "/var/jenkins_home/ci-tmp/recsys-ci-${env.JOB_BASE_NAME}-${env.BUILD_NUMBER}"
           env.UV_PROJECT_ENVIRONMENT = "${env.CI_TMP_ROOT}/venv"
           env.UV_CACHE_DIR = "${env.CI_TMP_ROOT}/uv-cache"
           echo "Using CI temp root: ${env.CI_TMP_ROOT}"

@@ -268,3 +268,10 @@ def test_component_ci_installs_required_clean_environment_dependencies():
     assert "https://download.pytorch.org/whl/cpu" in installer
     assert '"ray[default,train,tune]"' in installer
     assert "mlflow" in installer
+
+
+def test_jenkins_ci_temp_data_uses_persistent_storage_not_node_ephemeral_disk():
+    jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+
+    assert 'env.CI_TMP_ROOT = "/var/jenkins_home/ci-tmp/' in jenkinsfile
+    assert 'env.CI_TMP_ROOT = "/tmp/' not in jenkinsfile
