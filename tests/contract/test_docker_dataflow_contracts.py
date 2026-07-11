@@ -221,11 +221,14 @@ def test_node_rebalance_validation_covers_relocated_control_plane():
     ]:
         assert expected in validator
     assert "kube-system kube-dns" in validator
+    assert "assert_deployment_selector ci recsys-jenkins" in validator
     assert "sidecar.istio.io/inject" in validator
     assert "assert_no_local_images" in validator
     assert "assert_no_bad_pods" in validator
     assert "kube_system_ml_deployments" in rebalance
     assert "patch_gke_managed_deployment_cpu kube-dns" in rebalance
+    assert "patch_deployment_cpu ci" in rebalance
+    assert "ci_cpu_deployments" in rebalance
     assert "enable_ingress_mesh_upstreams" in rebalance
     assert "assert_istio_sidecar_enabled deployment ingress-nginx ingress-nginx-controller" in validator
     assert "kubectl patch deployment ingress-nginx-controller" in power_script

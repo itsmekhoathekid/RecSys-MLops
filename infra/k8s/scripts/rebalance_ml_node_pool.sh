@@ -173,12 +173,15 @@ for deployment in "${kserve_deployments[@]}"; do
   patch_deployment_ml kserve "${deployment}"
 done
 
-ci_deployments=(
+# Jenkins builds are CPU and disk intensive. Keeping CI on the already dense
+# ML control-plane node can trigger node DiskPressure and evict the controller
+# mid-build, so place the stateful CI services on the CPU services pool.
+ci_cpu_deployments=(
   recsys-jenkins
   recsys-registry
 )
-for deployment in "${ci_deployments[@]}"; do
-  patch_deployment_ml ci "${deployment}"
+for deployment in "${ci_cpu_deployments[@]}"; do
+  patch_deployment_cpu ci "${deployment}"
 done
 patch_daemonset_ml ci recsys-registry-node-proxy
 
@@ -286,7 +289,7 @@ done
 for deployment in "${kserve_deployments[@]}"; do
   rollout_deployment kserve "${deployment}"
 done
-for deployment in "${ci_deployments[@]}"; do
+for deployment in "${ci_cpu_deployments[@]}"; do
   rollout_deployment ci "${deployment}"
 done
 rollout_daemonset ci recsys-registry-node-proxy

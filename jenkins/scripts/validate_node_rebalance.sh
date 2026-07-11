@@ -107,8 +107,6 @@ for item in \
   "kubeflow kuberay-operator" \
   "kserve kserve-controller-manager" \
   "kserve kserve-localmodel-controller-manager" \
-  "ci recsys-jenkins" \
-  "ci recsys-registry" \
   "ingress-nginx ingress-nginx-controller" \
   "istio-system istiod" \
   "experiment-tracking minio" \
@@ -127,6 +125,8 @@ done
 section "CPU Node Exceptions"
 assert_deployment_selector kube-system kube-dns "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"
 assert_deployment_selector observability recsys-prometheus "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"
+assert_deployment_selector ci recsys-jenkins "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"
+assert_deployment_selector ci recsys-registry "${CPU_NODE_SELECTOR_KEY}" "${CPU_NODE_SELECTOR_VALUE}"
 
 section "Sidecar Resource Guard"
 assert_istio_sidecar_enabled deployment ingress-nginx ingress-nginx-controller
