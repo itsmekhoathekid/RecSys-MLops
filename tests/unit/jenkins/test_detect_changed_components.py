@@ -228,3 +228,43 @@ def test_jenkinsfile_uses_previous_built_commit_and_has_ci_config_stage():
     assert "resolveChangedBaseRef()" in source
     assert "stage('CI Configuration Validation')" in source
     assert "env.RUN_CI_CONFIG == 'true'" in source
+
+
+def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
+    seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(encoding="utf-8")
+
+    assert "RecSys-KServe-Model-CD" in seed
+    assert "06A KServe Model CD" in seed
+    assert "CpsFlowDefinition" in seed
+    assert "PROMOTION_MANIFEST_URI" in seed
+    assert "RECSYS_CI_WORKSPACE" in seed
+    assert "component_deploy.sh kserve_model_cd" in seed
+    assert "stage('Python Env')" not in seed
+    assert "stage('Checkout')" not in seed
+    assert "checkout scm" not in seed
+
+
+def test_jenkins_admin_secret_is_reconciled_with_persisted_home():
+    init = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(encoding="utf-8")
+    security_script = init.split("basic-security.groovy: |", 1)[1].split(
+        "seed-github-cicd-job.groovy: |", 1
+    )[0]
+
+    assert "HudsonPrivateSecurityRealm.Details.fromPlainPassword(password)" in security_script
+    assert "admin.addProperty" in security_script
+    assert "realm.getUser(username) == null" not in security_script
+
+
+def test_component_ci_installs_required_clean_environment_dependencies():
+    jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    installer = (ROOT / "jenkins/scripts/install_component_ci_dependencies.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "hypothesis" in jenkinsfile
+    assert "jenkins/scripts/install_component_ci_dependencies.sh" in jenkinsfile
+    assert "training" in installer
+    assert "kserve" in installer
+    assert "https://download.pytorch.org/whl/cpu" in installer
+    assert '"ray[default,train,tune]"' in installer
+    assert "mlflow" in installer

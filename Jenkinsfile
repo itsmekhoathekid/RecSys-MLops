@@ -213,6 +213,7 @@ pipeline {
           uv pip install --python "${UV_PROJECT_ENVIRONMENT}/bin/python" \
             pytest \
             pytest-cov \
+            hypothesis \
             pyyaml \
             pydantic \
             numpy \
