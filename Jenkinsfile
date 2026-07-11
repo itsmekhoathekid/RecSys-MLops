@@ -231,6 +231,7 @@ pipeline {
             kfp \
             kubernetes \
             scikit-learn
+          jenkins/scripts/install_component_ci_dependencies.sh
         '''
       }
     }

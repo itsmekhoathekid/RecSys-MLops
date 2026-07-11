@@ -640,3 +640,17 @@ def test_jenkins_admin_secret_is_reconciled_with_persisted_home():
     assert "HudsonPrivateSecurityRealm.Details.fromPlainPassword(password)" in security_script
     assert "admin.addProperty" in security_script
     assert "realm.getUser(username) == null" not in security_script
+
+
+def test_training_ci_installs_the_runtime_ml_stack_in_clean_environments():
+    jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    installer = (ROOT / "jenkins/scripts/install_component_ci_dependencies.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "jenkins/scripts/install_component_ci_dependencies.sh" in jenkinsfile
+    assert "training" in installer
+    assert "kserve" in installer
+    assert "https://download.pytorch.org/whl/cpu" in installer
+    assert '"ray[default,train,tune]"' in installer
+    assert "mlflow" in installer
