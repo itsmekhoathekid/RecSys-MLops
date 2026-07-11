@@ -72,6 +72,10 @@ the target branch merge base. `HEAD~1` is only a first-build fallback. This make
 multi-commit pushes and repeated builds deterministic while preserving a valid
 empty diff as unchanged.
 
+A documentation-only push is expected to log `Changed components: unchanged`;
+CI configuration validation, product CI, image publishing, and deployment must
+all remain skipped for that build.
+
 ## Stage Contract
 
 Each changed component follows the same sequence:
