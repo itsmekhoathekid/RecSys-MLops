@@ -351,6 +351,10 @@ def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
     chart = (ROOT / "infra/helm/recsys-data-platform/templates/airflow.yaml").read_text()
     assert "ENV PYTHONDONTWRITEBYTECODE=1" in dockerfile
     assert "PYTHONDONTWRITEBYTECODE" in chart
+    assert "PATH=/home/airflow/.local/bin:${PATH}" in dockerfile
+    assert "chown -R airflow:root /home/airflow" in dockerfile
+    assert 'command: ["bash", "-c"]' in chart
+    assert 'command: ["bash", "-lc"]' not in chart
     assert "timeout 120 airflow db check-migrations --migration-wait-timeout 120 || true" in chart
     assert "airflow db migrate &&" not in chart
     assert 'value: "900"' in chart

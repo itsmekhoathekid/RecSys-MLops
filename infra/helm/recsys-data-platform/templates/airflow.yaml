@@ -21,7 +21,7 @@ spec:
         - name: airflow-webserver
           image: {{ .Values.images.airflow }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
-          command: ["bash", "-lc"]
+          command: ["bash", "-c"]
           args:
             - >-
               airflow db migrate;
@@ -81,7 +81,7 @@ spec:
         - name: airflow-scheduler
           image: {{ .Values.images.airflow }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
-          command: ["bash", "-lc"]
+          command: ["bash", "-c"]
           args:
             - >-
               timeout 120 airflow db check-migrations --migration-wait-timeout 120 || true;
