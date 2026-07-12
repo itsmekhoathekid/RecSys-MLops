@@ -12,6 +12,17 @@ The evidence is organized around the rubric areas:
 - Distributed traces through OpenTelemetry, Tempo, and Grafana.
 - ML telemetry for feature drift, PushGateway metrics, retrain triggering, Kubeflow workflow proof, and RayJob proof.
 
+## Code References
+
+| Focus | Code reference |
+| --- | --- |
+| API metrics and tracing hooks | [`api_runtime.py`](../../../apps/api-serving/src/api_runtime.py), [`observability.py`](../../../apps/api-serving/src/observability.py) |
+| Prometheus, Grafana, PushGateway, Loki, Tempo, and Promtail | [`recsys-observability/templates/`](../../../infra/helm/recsys-observability/templates/) |
+| Version-controlled dashboards | [`recsys-observability/dashboards/`](../../../infra/helm/recsys-observability/dashboards/) |
+| Offline feature drift | [`offline_feature_drift.py`](../../../apps/data-platform/src/validate/offline_feature_drift.py) |
+| Drift metrics and retrain orchestration | [`pushgateway.py`](../../../apps/data-platform/src/monitoring/pushgateway.py), [`k8s_data_platform_dag.py`](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py) |
+| Kubeflow retrain trigger | [`trigger_kubeflow_retrain.py`](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py) |
+
 ## 0. Observability Stack And Access
 
 The observability namespace contains the monitoring stack used across the data

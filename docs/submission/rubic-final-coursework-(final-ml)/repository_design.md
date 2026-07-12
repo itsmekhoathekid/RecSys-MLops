@@ -53,11 +53,11 @@ The GCP Terraform layout follows the same separation of concerns.
 
 ### Code Reference
 
-- [README.md line 42](../../../README.md#L42): top-level repository structure and navigation.
-- [infra/terraform/gcp/gke.tf line 1](../../../infra/terraform/gcp/gke.tf#L1): GKE cluster and node-pool infrastructure boundary.
-- [infra/helm/recsys-serving/templates/api-deployment.yaml line 1](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L1): API serving deployment boundary.
-- [infra/helm/recsys-data-platform/templates/airflow.yaml line 1](../../../infra/helm/recsys-data-platform/templates/airflow.yaml#L1): data platform orchestration boundary.
-- [infra/helm/recsys-security/templates/istio-authorization.yaml line 1](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L1): security policy boundary.
+- [README.md](../../../README.md): top-level repository structure and navigation.
+- [infra/terraform/gcp/gke.tf](../../../infra/terraform/gcp/gke.tf): GKE cluster and node-pool infrastructure boundary.
+- [infra/helm/recsys-serving/templates/api-deployment.yaml](../../../infra/helm/recsys-serving/templates/api-deployment.yaml): API serving deployment boundary.
+- [infra/helm/recsys-data-platform/templates/airflow.yaml](../../../infra/helm/recsys-data-platform/templates/airflow.yaml): data platform orchestration boundary.
+- [infra/helm/recsys-security/templates/istio-authorization.yaml](../../../infra/helm/recsys-security/templates/istio-authorization.yaml): security policy boundary.
 
 ### Image Proof
 
@@ -77,17 +77,17 @@ The code keeps each runtime responsibility in a focused module:
 
 | Boundary | Main files | Responsibility |
 |---|---|---|
-| API schema | [apps/api-serving/src/api_schemas.py line 1](../../../apps/api-serving/src/api_schemas.py#L1) | Pydantic request/response contracts. |
-| A/B routing | [apps/api-serving/src/ab_testing.py line 20](../../../apps/api-serving/src/ab_testing.py#L20) | Control/candidate routing and experiment labels. |
-| Feature access | [apps/api-serving/src/online_features.py line 82](../../../apps/api-serving/src/online_features.py#L82) | Feast/Redis online feature access behind one client. |
-| Ranking orchestration | [apps/api-serving/src/ranking.py line 122](../../../apps/api-serving/src/ranking.py#L122) | Recommendation flow: pull features, route ranker, build payload, format response. |
-| Triton gateway | [apps/api-serving/src/triton.py line 18](../../../apps/api-serving/src/triton.py#L18) | Triton gRPC inference client. |
-| Training data service | [apps/ml-system/src/cli/prepare_bst_training_data.py line 391](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L391) | Feast/offline-store training table loading, schema validation, and canonical BST dataframe construction. |
-| Temporal split service | [apps/ml-system/src/cli/prepare_bst_training_data.py line 574](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L574) | Time-ordered train/validation/test split creation, JSONL writing, and dataset-version metadata. |
-| Ray Tune training loop | [apps/ml-system/src/models/trainer.py line 58](../../../apps/ml-system/src/models/trainer.py#L58) | Single-node BST trial training/evaluation lifecycle used by Ray Tune. |
-| Ray DDP lifecycle | [apps/ml-system/src/training/ray_distributed_train_bst.py line 104](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L104) | Distributed BST training lifecycle for Ray Train DDP workers. |
-| Model promotion | [apps/ml-system/src/registry/model_promotion.py line 559](../../../apps/ml-system/src/registry/model_promotion.py#L559) | Export, register, upload, and manifest generation. |
-| Data generation pipeline | [apps/data-platform/data-generator/src/pipeline.py line 21](../../../apps/data-platform/data-generator/src/pipeline.py#L21) | Simulation, challenge injection, validation, sink writing, manifest output. |
+| API schema | [apps/api-serving/src/api_schemas.py](../../../apps/api-serving/src/api_schemas.py) | Pydantic request/response contracts. |
+| A/B routing | [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py) | Control/candidate routing and experiment labels. |
+| Feature access | [apps/api-serving/src/online_features.py](../../../apps/api-serving/src/online_features.py) | Feast/Redis online feature access behind one client. |
+| Ranking orchestration | [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py) | Recommendation flow: pull features, route ranker, build payload, format response. |
+| Triton gateway | [apps/api-serving/src/triton.py](../../../apps/api-serving/src/triton.py) | Triton gRPC inference client. |
+| Training data service | [apps/ml-system/src/cli/prepare_bst_training_data.py](../../../apps/ml-system/src/cli/prepare_bst_training_data.py) | Feast/offline-store training table loading, schema validation, and canonical BST dataframe construction. |
+| Temporal split service | [apps/ml-system/src/cli/prepare_bst_training_data.py](../../../apps/ml-system/src/cli/prepare_bst_training_data.py) | Time-ordered train/validation/test split creation, JSONL writing, and dataset-version metadata. |
+| Ray Tune training loop | [apps/ml-system/src/models/trainer.py](../../../apps/ml-system/src/models/trainer.py) | Single-node BST trial training/evaluation lifecycle used by Ray Tune. |
+| Ray DDP lifecycle | [apps/ml-system/src/training/ray_distributed_train_bst.py](../../../apps/ml-system/src/training/ray_distributed_train_bst.py) | Distributed BST training lifecycle for Ray Train DDP workers. |
+| Model promotion | [apps/ml-system/src/registry/model_promotion.py](../../../apps/ml-system/src/registry/model_promotion.py) | Export, register, upload, and manifest generation. |
+| Data generation pipeline | [apps/data-platform/data-generator/src/pipeline.py](../../../apps/data-platform/data-generator/src/pipeline.py) | Simulation, challenge injection, validation, sink writing, manifest output. |
 
 ## Design Patterns In Code
 
@@ -101,10 +101,10 @@ The code keeps each runtime responsibility in a focused module:
 
 | Code reference | What to point out in the screenshot |
 |---|---|
-| [apps/api-serving/src/ab_testing.py line 20](../../../apps/api-serving/src/ab_testing.py#L20) | `TritonABRouter` encapsulates A/B routing state. |
-| [apps/api-serving/src/ab_testing.py line 71](../../../apps/api-serving/src/ab_testing.py#L71) | `assign()` maps a user deterministically to control/candidate. |
-| [apps/api-serving/src/ab_testing.py line 80](../../../apps/api-serving/src/ab_testing.py#L80) | `route()` returns a `TritonRoute` with ranker, variant, experiment, and model version. |
-| [apps/api-serving/src/ranking.py line 128](../../../apps/api-serving/src/ranking.py#L128) | `recommend()` delegates model choice to `select_triton_route()`. |
+| [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py) | `TritonABRouter` encapsulates A/B routing state. |
+| [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py) | `assign()` maps a user deterministically to control/candidate. |
+| [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py) | `route()` returns a `TritonRoute` with ranker, variant, experiment, and model version. |
+| [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py) | `recommend()` delegates model choice to `select_triton_route()`. |
 
 ![Strategy router design pattern proof](../../pngs/repo_design_pattern_strategy_router.png)
 
@@ -120,10 +120,10 @@ The code keeps each runtime responsibility in a focused module:
 
 | Code reference | What to point out in the screenshot |
 |---|---|
-| [apps/api-serving/src/online_features.py line 82](../../../apps/api-serving/src/online_features.py#L82) | `FeatureClient` is the adapter boundary. |
-| [apps/api-serving/src/online_features.py line 122](../../../apps/api-serving/src/online_features.py#L122) | Lazy construction of Feast `FeatureStore`. |
-| [apps/api-serving/src/online_features.py line 139](../../../apps/api-serving/src/online_features.py#L139) | Domain method for user sequence features. |
-| [apps/api-serving/src/online_features.py line 160](../../../apps/api-serving/src/online_features.py#L160) | Domain method for batch item features. |
+| [apps/api-serving/src/online_features.py](../../../apps/api-serving/src/online_features.py) | `FeatureClient` is the adapter boundary. |
+| [apps/api-serving/src/online_features.py](../../../apps/api-serving/src/online_features.py) | Lazy construction of Feast `FeatureStore`. |
+| [apps/api-serving/src/online_features.py](../../../apps/api-serving/src/online_features.py) | Domain method for user sequence features. |
+| [apps/api-serving/src/online_features.py](../../../apps/api-serving/src/online_features.py) | Domain method for batch item features. |
 
 ![Adapter gateway design pattern proof](../../pngs/repo_design_pattern_feature_adapter.png)
 
@@ -139,10 +139,10 @@ The code keeps each runtime responsibility in a focused module:
 
 | Code reference | What to point out in the screenshot |
 |---|---|
-| [apps/api-serving/src/triton.py line 13](../../../apps/api-serving/src/triton.py#L13) | `RankerProtocol` defines the ranker interface. |
-| [apps/api-serving/src/triton.py line 18](../../../apps/api-serving/src/triton.py#L18) | `TritonRanker` implements production gRPC inference. |
-| [apps/api-serving/src/ranking.py line 122](../../../apps/api-serving/src/ranking.py#L122) | `recommend()` receives a `RankerProtocol` or `TritonABRouter` dependency. |
-| [tests/unit/api_serving/test_split_services.py line 22](../../../tests/unit/api_serving/test_split_services.py#L22) | Unit tests inject deterministic rankers. |
+| [apps/api-serving/src/triton.py](../../../apps/api-serving/src/triton.py) | `RankerProtocol` defines the ranker interface. |
+| [apps/api-serving/src/triton.py](../../../apps/api-serving/src/triton.py) | `TritonRanker` implements production gRPC inference. |
+| [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py) | `recommend()` receives a `RankerProtocol` or `TritonABRouter` dependency. |
+| [tests/unit/api_serving/test_split_services.py](../../../tests/unit/api_serving/test_split_services.py) | Unit tests inject deterministic rankers. |
 
 ![Protocol dependency injection proof](../../pngs/repo_design_pattern_ranker_protocol.png)
 
@@ -158,10 +158,10 @@ The code keeps each runtime responsibility in a focused module:
 
 | Code reference | What to point out in the screenshot |
 |---|---|
-| [apps/ml-system/src/cli/prepare_bst_training_data.py line 391](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L391) | `TrainingDataService` class with `read_training_table()`, Feast loading, offline-store loading, schema validation, and canonical frame building. |
-| [apps/ml-system/src/cli/prepare_bst_training_data.py line 574](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L574) | `SplitService` class with temporal sort, row normalization, split boundaries, JSONL output, and dataset metadata. |
-| [apps/ml-system/src/cli/prepare_bst_training_data.py line 647](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L647) | `prepare_bst_jsonl_splits()` wires both services into the actual pipeline flow. |
-| [tests/unit/ml_system/test_prepare_bst_training_data.py line 1](../../../tests/unit/ml_system/test_prepare_bst_training_data.py#L1) | Unit tests prove the service boundary validates schema and creates temporal splits. |
+| [apps/ml-system/src/cli/prepare_bst_training_data.py](../../../apps/ml-system/src/cli/prepare_bst_training_data.py) | `TrainingDataService` class with `read_training_table()`, Feast loading, offline-store loading, schema validation, and canonical frame building. |
+| [apps/ml-system/src/cli/prepare_bst_training_data.py](../../../apps/ml-system/src/cli/prepare_bst_training_data.py) | `SplitService` class with temporal sort, row normalization, split boundaries, JSONL output, and dataset metadata. |
+| [apps/ml-system/src/cli/prepare_bst_training_data.py](../../../apps/ml-system/src/cli/prepare_bst_training_data.py) | `prepare_bst_jsonl_splits()` wires both services into the actual pipeline flow. |
+| [tests/unit/ml_system/test_prepare_bst_training_data.py](../../../tests/unit/ml_system/test_prepare_bst_training_data.py) | Unit tests prove the service boundary validates schema and creates temporal splits. |
 
 ![Training data service facade proof](../../pngs/repo_design_pattern_training_data_service.png)
 
@@ -181,15 +181,15 @@ The code keeps each runtime responsibility in a focused module:
 
 | Code reference | What to point out in the screenshot |
 |---|---|
-| [apps/ml-system/src/models/trainer.py line 88](../../../apps/ml-system/src/models/trainer.py#L88) | `_move_batch_to_device()` shared step. |
-| [apps/ml-system/src/models/trainer.py line 97](../../../apps/ml-system/src/models/trainer.py#L97) | `_forward_batch()` shared step. |
-| [apps/ml-system/src/models/trainer.py line 129](../../../apps/ml-system/src/models/trainer.py#L129) | `train()` algorithm skeleton. |
-| [apps/ml-system/src/models/trainer.py line 175](../../../apps/ml-system/src/models/trainer.py#L175) | `evaluate()` algorithm skeleton. |
-| [apps/ml-system/src/models/trainer.py line 217](../../../apps/ml-system/src/models/trainer.py#L217) | `_compute_metrics()` shared metric step. |
-| [apps/ml-system/src/training/ray_tune_train_bst.py line 207](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L207) | `run_trial()` uses `run_training()` for Ray Tune trials and reports the best trial metrics. |
-| [apps/ml-system/src/training/ray_distributed_train_bst.py line 104](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L104) | `ModelLifecycleService` groups DDP dataset, loader, train, eval, checkpoint, report, and best-result lifecycle methods. |
-| [apps/ml-system/src/training/ray_distributed_train_bst.py line 315](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L315) | `train_loop_per_worker()` instantiates `ModelLifecycleService` for each Ray Train worker. |
-| [apps/ml-system/src/training/ray_distributed_train_bst.py line 415](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L415) | `TorchTrainer` uses `train_loop_per_worker`, so the DDP run goes through the lifecycle service. |
+| [apps/ml-system/src/models/trainer.py](../../../apps/ml-system/src/models/trainer.py) | `_move_batch_to_device()` shared step. |
+| [apps/ml-system/src/models/trainer.py](../../../apps/ml-system/src/models/trainer.py) | `_forward_batch()` shared step. |
+| [apps/ml-system/src/models/trainer.py](../../../apps/ml-system/src/models/trainer.py) | `train()` algorithm skeleton. |
+| [apps/ml-system/src/models/trainer.py](../../../apps/ml-system/src/models/trainer.py) | `evaluate()` algorithm skeleton. |
+| [apps/ml-system/src/models/trainer.py](../../../apps/ml-system/src/models/trainer.py) | `_compute_metrics()` shared metric step. |
+| [apps/ml-system/src/training/ray_tune_train_bst.py](../../../apps/ml-system/src/training/ray_tune_train_bst.py) | `run_trial()` uses `run_training()` for Ray Tune trials and reports the best trial metrics. |
+| [apps/ml-system/src/training/ray_distributed_train_bst.py](../../../apps/ml-system/src/training/ray_distributed_train_bst.py) | `ModelLifecycleService` groups DDP dataset, loader, train, eval, checkpoint, report, and best-result lifecycle methods. |
+| [apps/ml-system/src/training/ray_distributed_train_bst.py](../../../apps/ml-system/src/training/ray_distributed_train_bst.py) | `train_loop_per_worker()` instantiates `ModelLifecycleService` for each Ray Train worker. |
+| [apps/ml-system/src/training/ray_distributed_train_bst.py](../../../apps/ml-system/src/training/ray_distributed_train_bst.py) | `TorchTrainer` uses `train_loop_per_worker`, so the DDP run goes through the lifecycle service. |
 
 ![Template method training loop proof](../../pngs/repo_design_pattern_template_trainer.png)
 
@@ -209,11 +209,11 @@ The code keeps each runtime responsibility in a focused module:
 
 | Code reference | What to point out in the screenshot |
 |---|---|
-| [apps/ml-system/src/models/model.py line 856](../../../apps/ml-system/src/models/model.py#L856) | `PositionalEncoding` is a reusable module. |
-| [apps/ml-system/src/models/model.py line 886](../../../apps/ml-system/src/models/model.py#L886) | `BST` is the composite model. |
-| [apps/ml-system/src/models/model.py line 893](../../../apps/ml-system/src/models/model.py#L893) | Entity embedding modules. |
-| [apps/ml-system/src/models/model.py line 924](../../../apps/ml-system/src/models/model.py#L924) | Transformer layer composition. |
-| [apps/ml-system/src/models/model.py line 938](../../../apps/ml-system/src/models/model.py#L938) | MLP composition with `nn.Sequential`. |
+| [apps/ml-system/src/models/model.py](../../../apps/ml-system/src/models/model.py) | `PositionalEncoding` is a reusable module. |
+| [apps/ml-system/src/models/model.py](../../../apps/ml-system/src/models/model.py) | `BST` is the composite model. |
+| [apps/ml-system/src/models/model.py](../../../apps/ml-system/src/models/model.py) | Entity embedding modules. |
+| [apps/ml-system/src/models/model.py](../../../apps/ml-system/src/models/model.py) | Transformer layer composition. |
+| [apps/ml-system/src/models/model.py](../../../apps/ml-system/src/models/model.py) | MLP composition with `nn.Sequential`. |
 
 ![Composite model design pattern proof](../../pngs/small_component_class.png)
 
@@ -231,10 +231,10 @@ The code keeps each runtime responsibility in a focused module:
 
 | Code reference | What to point out in the screenshot |
 |---|---|
-| [apps/ml-system/src/registry/model_promotion.py line 405](../../../apps/ml-system/src/registry/model_promotion.py#L405) | `build_triton_repository()` assembles Triton model layout. |
-| [apps/ml-system/src/registry/model_promotion.py line 471](../../../apps/ml-system/src/registry/model_promotion.py#L471) | `build_manifest()` constructs deployment metadata. |
-| [apps/ml-system/src/registry/model_promotion.py line 511](../../../apps/ml-system/src/registry/model_promotion.py#L511) | `register_mlflow_model_version()` writes registry metadata. |
-| [apps/ml-system/src/registry/model_promotion.py line 559](../../../apps/ml-system/src/registry/model_promotion.py#L559) | `promote_best_model()` coordinates the promotion flow. |
+| [apps/ml-system/src/registry/model_promotion.py](../../../apps/ml-system/src/registry/model_promotion.py) | `build_triton_repository()` assembles Triton model layout. |
+| [apps/ml-system/src/registry/model_promotion.py](../../../apps/ml-system/src/registry/model_promotion.py) | `build_manifest()` constructs deployment metadata. |
+| [apps/ml-system/src/registry/model_promotion.py](../../../apps/ml-system/src/registry/model_promotion.py) | `register_mlflow_model_version()` writes registry metadata. |
+| [apps/ml-system/src/registry/model_promotion.py](../../../apps/ml-system/src/registry/model_promotion.py) | `promote_best_model()` coordinates the promotion flow. |
 
 ![Builder manifest design pattern proof](../../pngs/repo_design_pattern_builder_manifest.png)
 
@@ -250,12 +250,12 @@ The code keeps each runtime responsibility in a focused module:
 
 | Code reference | What to point out in the screenshot |
 |---|---|
-| [apps/data-platform/data-generator/src/pipeline.py line 21](../../../apps/data-platform/data-generator/src/pipeline.py#L21) | `HistoricalDataPipeline` owns the generation flow. |
-| [apps/data-platform/data-generator/src/pipeline.py line 26](../../../apps/data-platform/data-generator/src/pipeline.py#L26) | Simulation stage. |
-| [apps/data-platform/data-generator/src/pipeline.py line 30](../../../apps/data-platform/data-generator/src/pipeline.py#L30) | Challenge injection stage. |
-| [apps/data-platform/data-generator/src/pipeline.py line 40](../../../apps/data-platform/data-generator/src/pipeline.py#L40) | Validation stage. |
-| [apps/data-platform/data-generator/src/pipeline.py line 51](../../../apps/data-platform/data-generator/src/pipeline.py#L51) | Sink/write stage. |
-| [apps/data-platform/data-generator/src/pipeline.py line 116](../../../apps/data-platform/data-generator/src/pipeline.py#L116) | Manifest/report output stage. |
+| [apps/data-platform/data-generator/src/pipeline.py](../../../apps/data-platform/data-generator/src/pipeline.py) | `HistoricalDataPipeline` owns the generation flow. |
+| [apps/data-platform/data-generator/src/pipeline.py](../../../apps/data-platform/data-generator/src/pipeline.py) | Simulation stage. |
+| [apps/data-platform/data-generator/src/pipeline.py](../../../apps/data-platform/data-generator/src/pipeline.py) | Challenge injection stage. |
+| [apps/data-platform/data-generator/src/pipeline.py](../../../apps/data-platform/data-generator/src/pipeline.py) | Validation stage. |
+| [apps/data-platform/data-generator/src/pipeline.py](../../../apps/data-platform/data-generator/src/pipeline.py) | Sink/write stage. |
+| [apps/data-platform/data-generator/src/pipeline.py](../../../apps/data-platform/data-generator/src/pipeline.py) | Manifest/report output stage. |
 
 ![Pipeline chain design pattern proof](../../pngs/repo_design_pattern_data_pipeline.png)
 

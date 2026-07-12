@@ -6,6 +6,7 @@ from kubeflow.components.runtime import (
     DEFAULT_PVC_MOUNT_PATH,
     DEFAULT_PVC_NAME,
     DEFAULT_RUNTIME_SECRET_NAME,
+    SECRET_KEY_TO_ENV,
     wire_runtime,
 )
 
@@ -22,6 +23,7 @@ SPARK_PACKAGES = os.getenv(
 )
 
 KSERVE_CD_SECRET_KEY_TO_ENV = {
+    **SECRET_KEY_TO_ENV,
     "JENKINS_URL": "JENKINS_URL",
     "JENKINS_USER": "JENKINS_USER",
     "JENKINS_TOKEN": "JENKINS_TOKEN",
@@ -446,7 +448,7 @@ def recsys_bst_pipeline(
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
     ).after(evaluate)
-    deploy = wire_runtime(
+    handoff = wire_runtime(
         trigger_kserve_model_cd(
             manifest_path=promotion_manifest_path,
             score_threshold=kserve_cd_score_threshold,
@@ -460,5 +462,5 @@ def recsys_bst_pipeline(
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
         secret_key_to_env=KSERVE_CD_SECRET_KEY_TO_ENV,
     )
-    deploy.set_display_name("Trigger KServe CD")
-    deploy.after(promote)
+    handoff.set_display_name("Bootstrap Or Await Candidate")
+    handoff.after(promote)

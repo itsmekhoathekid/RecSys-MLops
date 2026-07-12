@@ -15,7 +15,7 @@ spec:
       port: {{ .Values.kserve.grpcService.port }}
       targetPort: {{ .Values.kserve.grpcService.targetPort }}
       protocol: TCP
-{{- if and .Values.abTest.enabled .Values.kserve.inferenceService.candidateStorageUri }}
+{{- if and (or .Values.abTest.enabled .Values.shadow.enabled) .Values.kserve.inferenceService.candidateStorageUri }}
 ---
 apiVersion: v1
 kind: Service

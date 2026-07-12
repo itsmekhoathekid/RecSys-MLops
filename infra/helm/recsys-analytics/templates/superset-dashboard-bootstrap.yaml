@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: recsys-analytics-superset-dashboard-bootstrap
+  namespace: {{ .Values.namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "10"
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels: {app: recsys-analytics-superset-dashboard-bootstrap}
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      containers:
+        - name: bootstrap
+          image: {{ .Values.images.superset | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/app/.venv/bin/python", "/app/pythonpath/bootstrap_dashboards.py"]
+          env:
+            - {name: SUPERSET_URL, value: "http://recsys-analytics-superset:8088"}
+            - {name: SUPERSET_ANALYTICS_DATABASE_NAME, value: "RecSysAnalytics"}
+          envFrom: [{secretRef: {name: recsys-analytics-secret}}]
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}

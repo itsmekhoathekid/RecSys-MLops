@@ -6,7 +6,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /tmp/recsys-jars \
+RUN mkdir -p /tmp/recsys-jars /tmp/recsys-plugins/prometheus \
     && printf '%s %s\n' \
         https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.2.0-1.19/flink-sql-connector-kafka-3.2.0-1.19.jar /tmp/recsys-jars/flink-sql-connector-kafka-3.2.0-1.19.jar \
         https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-flink-runtime-1.19/1.7.1/iceberg-flink-runtime-1.19-1.7.1.jar /tmp/recsys-jars/iceberg-flink-runtime-1.19-1.7.1.jar \
@@ -14,6 +14,7 @@ RUN mkdir -p /tmp/recsys-jars \
         https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-api/3.3.4/hadoop-client-api-3.3.4.jar /tmp/recsys-jars/hadoop-client-api-3.3.4.jar \
         https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-runtime/3.3.4/hadoop-client-runtime-3.3.4.jar /tmp/recsys-jars/hadoop-client-runtime-3.3.4.jar \
         https://repo1.maven.org/maven2/org/apache/flink/flink-statebackend-rocksdb/1.19.3/flink-statebackend-rocksdb-1.19.3.jar /tmp/recsys-jars/flink-statebackend-rocksdb-1.19.3.jar \
+        https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.19.3/flink-metrics-prometheus-1.19.3.jar /tmp/recsys-plugins/prometheus/flink-metrics-prometheus-1.19.3.jar \
         https://repo1.maven.org/maven2/com/ververica/frocksdbjni/6.20.3-ververica-2.0/frocksdbjni-6.20.3-ververica-2.0.jar /tmp/recsys-jars/frocksdbjni-6.20.3-ververica-2.0.jar \
         https://repo1.maven.org/maven2/commons-logging/commons-logging/1.2/commons-logging-1.2.jar /tmp/recsys-jars/commons-logging-1.2.jar \
         https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar /tmp/recsys-jars/aws-java-sdk-bundle-1.12.262.jar \
@@ -62,6 +63,7 @@ RUN python3 -m pip install --no-cache-dir \
         psycopg-pool
 
 COPY --from=jar-downloader /tmp/recsys-jars/*.jar /opt/flink/lib/
+COPY --from=jar-downloader /tmp/recsys-plugins/prometheus /opt/flink/plugins/prometheus
 
 RUN mkdir -p /opt/flink/plugins/s3-fs-hadoop \
     && cp /opt/flink/opt/flink-s3-fs-hadoop-*.jar /opt/flink/plugins/s3-fs-hadoop/

@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-analytics-config
+  namespace: {{ .Values.namespace }}
+data:
+  ANALYTICS_ICEBERG_CATALOG: analytics
+  ANALYTICS_STAGING_SCHEMA: staging
+  ANALYTICS_WAREHOUSE: {{ .Values.catalog.warehouse | replace "s3://" "s3a://" | quote }}
+  DBT_TRINO_HOST: recsys-analytics-trino
+  DBT_TRINO_PORT: "8080"
+  DBT_TRINO_USER: dbt
+  DBT_TRINO_CATALOG: analytics
+  DBT_THREADS: "4"
+  MINIO_ENDPOINT: {{ .Values.objectStorage.endpoint | quote }}
+  AWS_DEFAULT_REGION: {{ .Values.objectStorage.region | quote }}
+  ICEBERG_CATALOG: recsys
+  ICEBERG_LAKEHOUSE_NAMESPACE: lakehouse
+  LAKEHOUSE_WAREHOUSE: s3a://recsys-lakehouse/warehouse
+  RUNTIME_LINEAGE_ENABLED: "true"
+  ANALYTICS_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
+  ANALYTICS_NAMESPACE: {{ .Values.namespace | quote }}
+  ANALYTICS_SPARK_IMAGE: {{ .Values.images.spark | quote }}
+  ANALYTICS_DBT_IMAGE: {{ .Values.images.dbt | quote }}
+

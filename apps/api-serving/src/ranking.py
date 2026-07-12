@@ -4,7 +4,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -181,6 +181,7 @@ def recommend_from_online_features(
     top_k: int,
     route: TritonRoute,
     metric_labels: dict[str, str] | None = None,
+    payload_observer: Callable[[dict[str, np.ndarray]], None] | None = None,
 ) -> RecommendationResponse:
     metric_labels = metric_labels or {}
     candidate_item_ids = online_features.candidate_item_ids
@@ -198,6 +199,8 @@ def recommend_from_online_features(
     item_rows = {int(item_id): row for item_id, row in online_features.item_features.items()}
     with span("recommend.build_triton_payload", candidate_count=len(candidate_item_ids)):
         payload = build_triton_payload(sequence_row, item_rows, candidate_item_ids)
+    if payload_observer is not None:
+        payload_observer(payload)
     _, scores = route.ranker.score(payload)
     if scores:
         METRICS.observe("recsys_api_score_mean", float(np.mean(scores)), labels=metric_labels)

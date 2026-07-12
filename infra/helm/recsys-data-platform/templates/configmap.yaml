@@ -35,6 +35,8 @@ data:
   DATAFLOW_IMAGE: {{ .Values.images.dataflowCli | quote }}
   FLINK_IMAGE: {{ .Values.images.flink | quote }}
   SPARK_IMAGE: {{ .Values.images.spark | quote }}
+  ANALYTICS_SPARK_IMAGE: {{ .Values.images.analyticsSpark | quote }}
+  ANALYTICS_DBT_IMAGE: {{ .Values.images.analyticsDbt | quote }}
   REALTIME_LIMIT_PER_TABLE: {{ .Values.dataSetup.realtimeLimitPerTable | quote }}
   DATA_PLATFORM_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
   BATCH_FEATURE_DAG_SCHEDULE: {{ .Values.airflow.batchFeatureSchedule | quote }}

@@ -30,16 +30,7 @@ The prediction API does not read Redis directly in the split-serving path. It de
 
 ## 2. FastAPI Service
 
-Source: [apps/api-serving/src/inference_api.py line 1](../../../apps/api-serving/src/inference_api.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/inference_api.py line 6](../../../apps/api-serving/src/inference_api.py#L6): imports `FastAPI`.
-- [apps/api-serving/src/inference_api.py line 17](../../../apps/api-serving/src/inference_api.py#L17): creates `RecSys Inference API`.
-- [apps/api-serving/src/inference_api.py line 36](../../../apps/api-serving/src/inference_api.py#L36): exposes `/healthz`.
-- [apps/api-serving/src/inference_api.py line 41](../../../apps/api-serving/src/inference_api.py#L41): exposes `/ready`.
-- [apps/api-serving/src/inference_api.py line 55](../../../apps/api-serving/src/inference_api.py#L55): exposes `/metrics`.
-- [apps/api-serving/src/inference_api.py line 60](../../../apps/api-serving/src/inference_api.py#L60): exposes `POST /recommendations`.
+Code reference: [`inference_api.py`](../../../apps/api-serving/src/inference_api.py) configures the FastAPI app and exposes health, readiness, metrics, version, and async `POST /recommendations` endpoints.
 
 ### Key Evidence
 
@@ -47,17 +38,7 @@ Lines to show:
 
 ## 3. Pydantic Validation
 
-Source: [apps/api-serving/src/api_schemas.py line 1](../../../apps/api-serving/src/api_schemas.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/api_schemas.py line 5](../../../apps/api-serving/src/api_schemas.py#L5): imports `BaseModel` and `Field`.
-- [apps/api-serving/src/api_schemas.py line 8](../../../apps/api-serving/src/api_schemas.py#L8): defines `RecommendationRequest`.
-- [apps/api-serving/src/api_schemas.py line 9](../../../apps/api-serving/src/api_schemas.py#L9): validates `user_id >= 1`.
-- [apps/api-serving/src/api_schemas.py line 10](../../../apps/api-serving/src/api_schemas.py#L10): validates optional candidate ids with `min_length=1` and `max_length=500`.
-- [apps/api-serving/src/api_schemas.py line 11](../../../apps/api-serving/src/api_schemas.py#L11): validates `top_k` with `1 <= top_k <= 100`.
-- [apps/api-serving/src/api_schemas.py line 14](../../../apps/api-serving/src/api_schemas.py#L14): defines `RecommendationItem`.
-- [apps/api-serving/src/api_schemas.py line 19](../../../apps/api-serving/src/api_schemas.py#L19): defines `RecommendationResponse`.
+Code reference: [`api_schemas.py`](../../../apps/api-serving/src/api_schemas.py) defines recommendation request/item/response models and validates `user_id`, candidate-list length, and `top_k`.
 
 ### Key Evidence
 
@@ -65,22 +46,8 @@ Lines to show:
 
 ## 4. Async API Functions
 
-Source: [apps/api-serving/src/inference_api.py line 1](../../../apps/api-serving/src/inference_api.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/inference_api.py line 37](../../../apps/api-serving/src/inference_api.py#L37): async health endpoint.
-- [apps/api-serving/src/inference_api.py line 42](../../../apps/api-serving/src/inference_api.py#L42): async readiness endpoint.
-- [apps/api-serving/src/inference_api.py line 56](../../../apps/api-serving/src/inference_api.py#L56): async metrics endpoint.
-- [apps/api-serving/src/inference_api.py line 61](../../../apps/api-serving/src/inference_api.py#L61): async recommendation handler.
-- [apps/api-serving/src/inference_api.py line 68](../../../apps/api-serving/src/inference_api.py#L68): awaits online feature retrieval before inference.
-
-The service-to-service feature call is also async:
-
-- [apps/api-serving/src/feature_service_client.py line 17](../../../apps/api-serving/src/feature_service_client.py#L17): async `fetch(...)`.
-- [apps/api-serving/src/feature_service_client.py line 22](../../../apps/api-serving/src/feature_service_client.py#L22): uses `httpx.AsyncClient`.
-- [apps/api-serving/src/feature_service_client.py line 23](../../../apps/api-serving/src/feature_service_client.py#L23): posts to `/online-features`.
-- [apps/api-serving/src/feature_service_client.py line 29](../../../apps/api-serving/src/feature_service_client.py#L29): validates response with `OnlineFeaturesResponse.model_validate(...)`.
+- [`inference_api.py`](../../../apps/api-serving/src/inference_api.py): async endpoints and awaited feature retrieval inside `recommendations()`.
+- [`feature_service_client.py`](../../../apps/api-serving/src/feature_service_client.py): `httpx.AsyncClient` POST to `/online-features` with Pydantic response validation.
 
 ### Key Evidence
 
@@ -88,23 +55,7 @@ The service-to-service feature call is also async:
 
 ## 5. Pull Online Features Before Prediction
 
-Source: [apps/api-serving/src/inference_api.py line 1](../../../apps/api-serving/src/inference_api.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/inference_api.py line 22](../../../apps/api-serving/src/inference_api.py#L22): initializes `OnlineFeatureServiceClient`.
-- [apps/api-serving/src/inference_api.py line 68](../../../apps/api-serving/src/inference_api.py#L68): calls the online feature API.
-- [apps/api-serving/src/inference_api.py line 69](../../../apps/api-serving/src/inference_api.py#L69): passes `user_id`.
-- [apps/api-serving/src/inference_api.py line 71](../../../apps/api-serving/src/inference_api.py#L71): passes optional `candidate_item_ids`.
-- [apps/api-serving/src/inference_api.py line 72](../../../apps/api-serving/src/inference_api.py#L72): passes `top_k`.
-
-Source: [apps/api-serving/src/feature_service_client.py line 1](../../../apps/api-serving/src/feature_service_client.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/feature_service_client.py line 14](../../../apps/api-serving/src/feature_service_client.py#L14): default feature API URL is `http://recsys-online-feature-api`.
-- [apps/api-serving/src/feature_service_client.py line 23](../../../apps/api-serving/src/feature_service_client.py#L23): sends HTTP POST to `/online-features`.
-- [apps/api-serving/src/feature_service_client.py line 29](../../../apps/api-serving/src/feature_service_client.py#L29): validates the returned online feature payload.
+Code references: [`inference_api.py`](../../../apps/api-serving/src/inference_api.py) builds `OnlineFeaturesRequest` before prediction; [`feature_service_client.py`](../../../apps/api-serving/src/feature_service_client.py) performs and validates the service call.
 
 ### Key Evidence
 
@@ -112,31 +63,8 @@ Lines to show:
 
 ## 6. Build Triton Payload And Predict
 
-Source: [apps/api-serving/src/ranking.py line 1](../../../apps/api-serving/src/ranking.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/ranking.py line 53](../../../apps/api-serving/src/ranking.py#L53): normalizes user sequence features.
-- [apps/api-serving/src/ranking.py line 70](../../../apps/api-serving/src/ranking.py#L70): normalizes item features.
-- [apps/api-serving/src/ranking.py line 80](../../../apps/api-serving/src/ranking.py#L80): builds the Triton payload.
-- [apps/api-serving/src/ranking.py line 87](../../../apps/api-serving/src/ranking.py#L87): converts history features to `np.int64` tensors.
-- [apps/api-serving/src/ranking.py line 90](../../../apps/api-serving/src/ranking.py#L90): creates candidate item tensors.
-- [apps/api-serving/src/ranking.py line 179](../../../apps/api-serving/src/ranking.py#L179): ranks from `OnlineFeaturesResponse`.
-- [apps/api-serving/src/ranking.py line 199](../../../apps/api-serving/src/ranking.py#L199): builds the Triton tensor payload.
-- [apps/api-serving/src/ranking.py line 201](../../../apps/api-serving/src/ranking.py#L201): calls `route.ranker.score(payload)`.
-- [apps/api-serving/src/ranking.py line 206](../../../apps/api-serving/src/ranking.py#L206): formats the top-k recommendation response.
-
-Source: [apps/api-serving/src/triton.py line 1](../../../apps/api-serving/src/triton.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/triton.py line 18](../../../apps/api-serving/src/triton.py#L18): defines `TritonRanker`.
-- [apps/api-serving/src/triton.py line 30](../../../apps/api-serving/src/triton.py#L30): creates Triton gRPC `InferenceServerClient`.
-- [apps/api-serving/src/triton.py line 36](../../../apps/api-serving/src/triton.py#L36): exposes `score(...)`.
-- [apps/api-serving/src/triton.py line 40](../../../apps/api-serving/src/triton.py#L40): creates Triton `InferInput`.
-- [apps/api-serving/src/triton.py line 49](../../../apps/api-serving/src/triton.py#L49): calls Triton `infer(...)`.
-- [apps/api-serving/src/triton.py line 50](../../../apps/api-serving/src/triton.py#L50): reads output item ids.
-- [apps/api-serving/src/triton.py line 51](../../../apps/api-serving/src/triton.py#L51): reads output scores.
+- [`ranking.py`](../../../apps/api-serving/src/ranking.py): normalizes online features, builds Triton tensors, invokes the selected route, and formats Top-K output.
+- [`triton.py`](../../../apps/api-serving/src/triton.py): `RankerProtocol` and gRPC-backed `TritonRanker.score()`.
 
 ### Key Evidence
 
@@ -144,17 +72,7 @@ Lines to show:
 
 ## 7. KServe/Triton Inference Engine
 
-Source: [infra/helm/recsys-serving/templates/inferenceservice.yaml line 1](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L1)
-
-Lines to show:
-
-- [infra/helm/recsys-serving/templates/inferenceservice.yaml line 3](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L3): defines a KServe `InferenceService`.
-- [infra/helm/recsys-serving/templates/inferenceservice.yaml line 5](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L5): names the inference service from Helm values.
-- [infra/helm/recsys-serving/templates/inferenceservice.yaml line 29](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L29): sets model format to Triton.
-- [infra/helm/recsys-serving/templates/inferenceservice.yaml line 31](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L31): uses protocol version `v2`.
-- [infra/helm/recsys-serving/templates/inferenceservice.yaml line 32](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L32): loads model artifacts from `storageUri`.
-- [infra/helm/recsys-serving/templates/inferenceservice.yaml line 40](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L40): optionally defines the candidate A/B inference service.
-- [infra/helm/recsys-serving/templates/inferenceservice.yaml line 70](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L70): candidate model format is also Triton.
+Code reference: [`inferenceservice.yaml`](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml) renders stable and optional candidate KServe `InferenceService` resources with Triton V2 and model `storageUri`.
 
 Runtime command:
 
@@ -170,17 +88,7 @@ kubectl -n kserve-triton-inference get svc
 
 ## 8. A/B Route Support
 
-Source: [apps/api-serving/src/ab_testing.py line 1](../../../apps/api-serving/src/ab_testing.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/ab_testing.py line 12](../../../apps/api-serving/src/ab_testing.py#L12): defines `TritonRoute`.
-- [apps/api-serving/src/ab_testing.py line 20](../../../apps/api-serving/src/ab_testing.py#L20): defines `TritonABRouter`.
-- [apps/api-serving/src/ab_testing.py line 40](../../../apps/api-serving/src/ab_testing.py#L40): builds the router from environment variables.
-- [apps/api-serving/src/ab_testing.py line 45](../../../apps/api-serving/src/ab_testing.py#L45): creates the control Triton ranker.
-- [apps/api-serving/src/ab_testing.py line 53](../../../apps/api-serving/src/ab_testing.py#L53): enables candidate ranker when A/B test config is present.
-- [apps/api-serving/src/ab_testing.py line 71](../../../apps/api-serving/src/ab_testing.py#L71): assigns traffic by stable user hash.
-- [apps/api-serving/src/ab_testing.py line 80](../../../apps/api-serving/src/ab_testing.py#L80): returns the selected Triton route.
+Code reference: [`ab_testing.py`](../../../apps/api-serving/src/ab_testing.py) defines `TritonRoute`, environment-driven `TritonABRouter`, stable user assignment, shadow support, and route selection.
 
 Runtime command:
 
@@ -240,17 +148,7 @@ Expected recommendation output shape:
 
 ## 10. Helm RollingUpdate + Healthcheck For K8s
 
-Source: [infra/helm/recsys-serving/templates/api-deployment.yaml line 1](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L1)
-
-Lines to show:
-
-- [infra/helm/recsys-serving/templates/api-deployment.yaml line 10](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L10): configures replicas when HTTP autoscaling is disabled.
-- [infra/helm/recsys-serving/templates/api-deployment.yaml line 13](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L13): uses `RollingUpdate`.
-- [infra/helm/recsys-serving/templates/api-deployment.yaml line 15](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L15): configures `maxUnavailable`.
-- [infra/helm/recsys-serving/templates/api-deployment.yaml line 16](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L16): configures `maxSurge`.
-- [infra/helm/recsys-serving/templates/api-deployment.yaml line 58](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L58): startup probe.
-- [infra/helm/recsys-serving/templates/api-deployment.yaml line 65](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L65): readiness probe.
-- [infra/helm/recsys-serving/templates/api-deployment.yaml line 73](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L73): liveness probe.
+Code reference: [`api-deployment.yaml`](../../../infra/helm/recsys-serving/templates/api-deployment.yaml) defines replicas, `RollingUpdate`, surge/unavailable limits, and startup/readiness/liveness probes.
 
 Runtime command:
 
@@ -279,14 +177,7 @@ Fields to capture:
 
 The prediction API does not have a standalone Helm release. It is deployed as a resource inside the `recsys-serving` Helm release. Therefore, auto fallback for `recsys-api-serving` is inherited from the release-level `helm upgrade --install --atomic` command used by CI/CD. If the recommendation API rollout fails, Helm rolls back the whole `recsys-serving` release, including `recsys-api-serving`, `recsys-online-feature-api`, and the related serving resources.
 
-Source: [jenkins/scripts/model_cd.py line 208](../../../jenkins/scripts/model_cd.py#L208)
-
-Lines to show:
-
-- [jenkins/scripts/model_cd.py line 208](../../../jenkins/scripts/model_cd.py#L208): runs Helm lint before deploy.
-- [jenkins/scripts/model_cd.py line 217](../../../jenkins/scripts/model_cd.py#L217): builds the `helm upgrade --install` command.
-- [jenkins/scripts/model_cd.py line 219](../../../jenkins/scripts/model_cd.py#L219): deploys the `recsys-serving` release.
-- [jenkins/scripts/model_cd.py line 231](../../../jenkins/scripts/model_cd.py#L231): inserts `--atomic` for rollback on failure.
+Code reference: [`model_cd.py`](../../../jenkins/scripts/model_cd.py) lints the chart and executes `helm upgrade --install --atomic` for the `recsys-serving` release.
 
 Runtime command:
 

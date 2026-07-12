@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sys
-import urllib.parse
 
 from cli import trigger_kserve_cd
 
@@ -16,6 +15,9 @@ def _manifest(path, metric_value=0.31):
                 "metric_name": "test_ndcg_at_10",
                 "metric_value": metric_value,
                 "promotion_manifest_uri": "s3://recsys-model-store/promotions/bst/trial-001.json",
+                "triton_storage_uri": "s3://recsys-model-store/triton/bst/trial-001",
+                "mlflow_registered_model_name": "recsys_bst_ranker",
+                "mlflow_registered_model_version": "17",
             }
         ),
         encoding="utf-8",
@@ -53,28 +55,22 @@ def test_trigger_kserve_cd_skips_when_score_is_below_threshold(tmp_path, monkeyp
     assert status["metric_value"] == -0.1
 
 
-def test_trigger_kserve_cd_posts_versioned_manifest_to_jenkins(tmp_path, monkeypatch):
+def test_existing_champion_waits_for_candidate_tag_without_calling_jenkins(tmp_path, monkeypatch):
     manifest = _manifest(tmp_path / "promotion.json")
     status_path = tmp_path / "status.json"
-    calls = []
+    registry_calls = []
 
-    def fake_request(url, *, headers=None, data=None, opener=None, timeout=30):
-        calls.append((url, headers or {}, data))
-        if url.endswith("/crumbIssuer/api/json"):
-            return 200, {}, json.dumps({"crumbRequestField": "Jenkins-Crumb", "crumb": "crumb-1"})
-        if url.endswith("/buildWithParameters"):
-            assert headers["Jenkins-Crumb"] == "crumb-1"
-            payload = urllib.parse.parse_qs(data.decode("utf-8"))
-            assert payload["PROMOTION_MANIFEST_URI"] == [
-                "s3://recsys-model-store/promotions/bst/trial-001.json"
-            ]
-            assert payload["MODEL_VERSION"] == ["trial-001"]
-            assert payload["METRIC_NAME"] == ["test_ndcg_at_10"]
-            assert payload["TRIGGER_SOURCE"] == ["kubeflow-ray-training"]
-            return 201, {"Location": "http://jenkins/queue/item/7/"}, ""
-        raise AssertionError(f"Unexpected Jenkins URL: {url}")
-
-    monkeypatch.setattr(trigger_kserve_cd, "request", fake_request)
+    monkeypatch.setattr(trigger_kserve_cd, "manifest_exists", lambda _uri: True)
+    monkeypatch.setattr(
+        trigger_kserve_cd,
+        "set_registry_rollout_state",
+        lambda payload, **kwargs: registry_calls.append((payload, kwargs)) or ("recsys_bst_ranker", "17"),
+    )
+    monkeypatch.setattr(
+        trigger_kserve_cd,
+        "trigger_jenkins_cd",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("Jenkins must wait for candidate=test")),
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -84,17 +80,53 @@ def test_trigger_kserve_cd_posts_versioned_manifest_to_jenkins(tmp_path, monkeyp
             str(manifest),
             "--score-threshold",
             "0",
-            "--jenkins-url",
-            "http://jenkins",
-            "--job-name",
-            "RecSys-KServe-Model-CD",
-            "--jenkins-user",
-            "admin",
-            "--jenkins-token",
-            "token",
             "--status-path",
             str(status_path),
-            "--no-wait",
+        ],
+    )
+
+    assert trigger_kserve_cd.main() == 0
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+
+    assert status["triggered"] is False
+    assert status["reason"] == "champion_exists_waiting_for_candidate_tag"
+    assert status["next_action"] == "set candidate=test on MLflow registry version 17"
+    assert registry_calls[0][1] == {"rollout_status": "awaiting_candidate_selection"}
+
+
+def test_cold_start_bootstraps_jenkins_then_publishes_champion(tmp_path, monkeypatch):
+    manifest = _manifest(tmp_path / "promotion.json")
+    status_path = tmp_path / "status.json"
+    calls = []
+
+    monkeypatch.setattr(trigger_kserve_cd, "manifest_exists", lambda _uri: False)
+    monkeypatch.setattr(
+        trigger_kserve_cd,
+        "trigger_jenkins_cd",
+        lambda **kwargs: calls.append(("jenkins", kwargs))
+        or {"triggered": True, "build_number": 9, "build_result": "SUCCESS"},
+    )
+    monkeypatch.setattr(
+        trigger_kserve_cd,
+        "publish_stable_manifest",
+        lambda payload, uri: calls.append(("publish", uri)) or payload,
+    )
+    monkeypatch.setattr(
+        trigger_kserve_cd,
+        "set_registry_rollout_state",
+        lambda payload, **kwargs: calls.append(("registry", kwargs)) or ("recsys_bst_ranker", "17"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "trigger_kserve_cd.py",
+            "--manifest-path",
+            str(manifest),
+            "--status-path",
+            str(status_path),
+            "--stable-manifest-uri",
+            "s3://recsys-model-store/promotions/bst/latest.json",
         ],
     )
 
@@ -102,9 +134,47 @@ def test_trigger_kserve_cd_posts_versioned_manifest_to_jenkins(tmp_path, monkeyp
     status = json.loads(status_path.read_text(encoding="utf-8"))
 
     assert status["triggered"] is True
-    assert status["job_name"] == "RecSys-KServe-Model-CD"
-    assert status["queue_url"] == "http://jenkins/queue/item/7/"
-    assert len(calls) == 2
+    assert status["reason"] == "initial_champion_bootstrap"
+    assert [call[0] for call in calls] == ["jenkins", "publish", "registry"]
+    params = calls[0][1]["params"]
+    assert params["ROLLOUT_STAGE"] == "deploy"
+    assert params["PROMOTION_MANIFEST_URI"].endswith("trial-001.json")
+    assert params["AB_CANDIDATE_WEIGHT_PERCENT"] == "0"
+    assert params["TRIGGER_SOURCE"] == "kubeflow-cold-start-bootstrap"
+    assert calls[2][1] == {"rollout_status": "champion", "alias": "champion"}
+
+
+def test_cold_start_rejects_no_wait_mode(tmp_path, monkeypatch):
+    manifest = _manifest(tmp_path / "promotion.json")
+    monkeypatch.setattr(trigger_kserve_cd, "manifest_exists", lambda _uri: False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["trigger_kserve_cd.py", "--manifest-path", str(manifest), "--no-wait"],
+    )
+
+    try:
+        trigger_kserve_cd.main()
+    except ValueError as exc:
+        assert "requires --wait" in str(exc)
+    else:
+        raise AssertionError("Cold-start bootstrap must reject asynchronous Jenkins handoff")
+
+
+def test_publish_stable_manifest_preserves_immutable_source_and_sets_stable_target(tmp_path):
+    source = {
+        "model_version": "trial-001",
+        "triton_storage_uri": "s3://models/triton/bst/trial-001",
+        "promotion_manifest_uri": "s3://models/promotions/bst/trial-001.json",
+    }
+    target = tmp_path / "latest.json"
+
+    stable = trigger_kserve_cd.publish_stable_manifest(source, str(target))
+
+    assert stable["promotion_manifest_uri"] == str(target)
+    assert stable["serving_storage_uri"] == "s3://recsys-model-store/triton/bst/latest"
+    assert stable["triton_storage_uri"] == source["triton_storage_uri"]
+    assert json.loads(target.read_text(encoding="utf-8")) == stable
 
 
 def test_trigger_kserve_cd_waits_for_successful_build(monkeypatch):

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-analytics-redis
+  namespace: {{ .Values.namespace }}
+spec:
+  selector: {app: recsys-analytics-redis}
+  ports: [{name: redis, port: 6379, targetPort: 6379}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-analytics-redis
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: recsys-analytics-redis}
+  template:
+    metadata:
+      labels: {app: recsys-analytics-redis}
+      annotations: {sidecar.istio.io/inject: "false"}
+    spec:
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      containers:
+        - name: redis
+          image: {{ .Values.images.redis | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+          ports: [{name: redis, containerPort: 6379}]
+          readinessProbe: {tcpSocket: {port: redis}, initialDelaySeconds: 3, periodSeconds: 5}
+

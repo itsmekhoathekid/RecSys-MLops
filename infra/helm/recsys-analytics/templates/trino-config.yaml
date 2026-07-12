@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-analytics-trino-config
+  namespace: {{ .Values.namespace }}
+data:
+  config.properties: |
+    coordinator=true
+    node-scheduler.include-coordinator=true
+    http-server.http.port=8080
+    discovery.uri=http://localhost:8080
+    query.max-memory=2GB
+    query.max-memory-per-node=1GB
+  node.properties: |
+    node.environment=recsys_analytics
+    node.data-dir=/tmp/trino-data
+  jvm.config: |
+    -server
+    -Xmx2G
+    -XX:+UseG1GC
+    -XX:+ExitOnOutOfMemoryError
+  log.properties: |
+    io.trino=INFO
+  analytics.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=jdbc
+    iceberg.jdbc-catalog.catalog-name=analytics
+    iceberg.jdbc-catalog.driver-class=org.postgresql.Driver
+    iceberg.jdbc-catalog.connection-url=jdbc:postgresql://recsys-analytics-catalog-postgres:5432/{{ .Values.catalog.database }}
+    iceberg.jdbc-catalog.connection-user=${ENV:ANALYTICS_CATALOG_USER}
+    iceberg.jdbc-catalog.connection-password=${ENV:ANALYTICS_CATALOG_PASSWORD}
+    iceberg.jdbc-catalog.default-warehouse-dir={{ .Values.catalog.warehouse }}
+    iceberg.jdbc-catalog.schema-version=V1
+    fs.s3.enabled=true
+    s3.endpoint={{ .Values.objectStorage.endpoint }}
+    s3.region={{ .Values.objectStorage.region }}
+    s3.path-style-access=true
+    s3.aws-access-key=${ENV:AWS_ACCESS_KEY_ID}
+    s3.aws-secret-key=${ENV:AWS_SECRET_ACCESS_KEY}
+  access-control.properties: |
+    access-control.name=file
+    security.config-file=/etc/trino/access-control-rules.json
+  access-control-rules.json: |
+    {
+      "catalogs": [
+        {"user": "dbt", "catalog": "(analytics|system)", "allow": "all"},
+        {"user": "superset", "catalog": "analytics", "allow": "read-only"},
+        {"catalog": ".*", "allow": "none"}
+      ],
+      "schemas": [
+        {"user": "dbt", "catalog": "(analytics|system)", "schema": ".*", "owner": true},
+        {"user": "superset", "catalog": "analytics", "schema": "(core|recsys)", "owner": false}
+      ],
+      "tables": [
+        {"user": "dbt", "catalog": "(analytics|system)", "schema": ".*", "table": ".*", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
+        {"user": "superset", "catalog": "analytics", "schema": "(core|recsys)", "table": ".*", "privileges": ["SELECT"]}
+      ]
+    }

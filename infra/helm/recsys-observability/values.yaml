@@ -28,6 +28,10 @@ storage:
   loki: 10Gi
   tempo: 5Gi
 
+persistence:
+  prometheus:
+    enabled: false
+
 grafana:
   domain: grafana.recsys.local
   rootUrl: http://grafana.recsys.local/

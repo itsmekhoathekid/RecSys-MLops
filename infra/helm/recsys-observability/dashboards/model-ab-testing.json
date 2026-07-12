@@ -5,7 +5,7 @@
   "tags": ["recsys", "bst", "ab-test", "triton", "rollout"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "10s",
   "graphTooltip": 1,
   "editable": true,
@@ -35,7 +35,7 @@
         "label": "Experiment",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "Prometheus" },
-        "query": "label_values(model_predictions_total, experiment_id)",
+        "query": "label_values({__name__=~\"recsys_api_rollout_config_info|model_predictions_total\"}, experiment_id)",
         "refresh": 2,
         "includeAll": true,
         "allValue": ".*",
@@ -72,7 +72,7 @@
       "gridPos": { "x": 0, "y": 3, "w": 4, "h": 4 },
       "targets": [
         {
-          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window]))",
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) or vector(0)",
           "legendFormat": "rps"
         }
       ],
@@ -99,7 +99,7 @@
       "gridPos": { "x": 4, "y": 3, "w": 4, "h": 4 },
       "targets": [
         {
-          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) / clamp_min(sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])), 0.001)",
+          "expr": "(sum(rate(model_predictions_total{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) or vector(0)) / clamp_min((sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) or vector(0)), 0.001)",
           "legendFormat": "candidate"
         }
       ],
@@ -167,7 +167,7 @@
       "gridPos": { "x": 12, "y": 3, "w": 4, "h": 4 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) by (le)) - histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\",ab_variant=\"control\"}[$rate_window])) by (le))",
+          "expr": "(histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) by (le)) or vector(0)) - (histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\",ab_variant=\"control\"}[$rate_window])) by (le)) or vector(0))",
           "legendFormat": "candidate - control"
         }
       ],
@@ -235,7 +235,7 @@
       "gridPos": { "x": 20, "y": 3, "w": 4, "h": 4 },
       "targets": [
         {
-          "expr": "sum(rate(model_prediction_confidence_sum{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) / clamp_min(sum(rate(model_prediction_confidence_count{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])), 0.001)",
+          "expr": "(sum(rate(model_prediction_confidence_sum{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) or vector(0)) / clamp_min((sum(rate(model_prediction_confidence_count{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) or vector(0)), 0.001)",
           "legendFormat": "candidate"
         }
       ],
@@ -269,7 +269,7 @@
       "gridPos": { "x": 0, "y": 8, "w": 16, "h": 8 },
       "targets": [
         {
-          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version,status)",
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version,status) or vector(0)",
           "legendFormat": "{{ab_variant}} / {{model_version}} / {{status}}"
         }
       ],
@@ -297,7 +297,7 @@
       "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
       "targets": [
         {
-          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant)",
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant) or vector(0)",
           "legendFormat": "{{ab_variant}}"
         }
       ],
@@ -324,7 +324,7 @@
       "gridPos": { "x": 0, "y": 16, "w": 24, "h": 7 },
       "targets": [
         {
-          "expr": "sum(rate(recsys_api_ab_assignments_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version)",
+          "expr": "sum(rate(recsys_api_ab_assignments_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version) or vector(0)",
           "legendFormat": "{{ab_variant}} / {{model_version}}"
         }
       ],
@@ -361,7 +361,7 @@
       "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version,le))",
+          "expr": "histogram_quantile(0.95, sum(rate(model_prediction_latency_seconds_bucket{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version,le)) or vector(0)",
           "legendFormat": "{{ab_variant}} / {{model_version}}"
         }
       ],
@@ -385,7 +385,7 @@
       "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "sum(rate(recsys_api_triton_inference_duration_seconds_sum{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(recsys_api_triton_inference_duration_seconds_count{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)",
+          "expr": "(sum(rate(recsys_api_triton_inference_duration_seconds_sum{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version) / clamp_min(sum(rate(recsys_api_triton_inference_duration_seconds_count{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant,model_version), 0.001)) or vector(0)",
           "legendFormat": "mean {{ab_variant}} / {{model_version}}"
         },
         {
@@ -509,7 +509,7 @@
       "gridPos": { "x": 12, "y": 41, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "sum(rate(model_prediction_confidence_bucket{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) by (le)",
+          "expr": "sum(rate(model_prediction_confidence_bucket{experiment_id=~\"$experiment\",ab_variant=\"candidate\"}[$rate_window])) by (le) or vector(0)",
           "format": "heatmap",
           "legendFormat": "{{le}}"
         }
@@ -679,6 +679,145 @@
         "orientation": "horizontal",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "showUnfilled": true
+      }
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Shadow Candidate Before A/B",
+      "gridPos": { "x": 0, "y": 65, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Shadow Inference Count by Status",
+      "description": "Candidate is invoked asynchronously while the API response remains control-only.",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 66, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_api_shadow_inferences_total{experiment_id=~\"$experiment\"}[$rate_window])) by (status,model_version) or vector(0)",
+          "legendFormat": "{{status}} / {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Shadow Candidate P95 Latency",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 12, "y": 66, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(recsys_api_shadow_latency_seconds_bucket{experiment_id=~\"$experiment\"}[$rate_window])) by (model_version,le)) or vector(0)",
+          "legendFormat": "p95 {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Shadow Candidate Score Shape",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 74, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "(sum(rate(recsys_api_shadow_score_mean_sum{experiment_id=~\"$experiment\"}[$rate_window])) by (model_version) / clamp_min(sum(rate(recsys_api_shadow_score_mean_count{experiment_id=~\"$experiment\"}[$rate_window])) by (model_version), 0.001)) or vector(0)",
+          "legendFormat": "mean {{model_version}}"
+        },
+        {
+          "expr": "max(recsys_api_shadow_score_max{experiment_id=~\"$experiment\"}) by (model_version) or vector(0)",
+          "legendFormat": "max {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 4,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Shadow Queue Depth and Drops",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 12, "y": 74, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "max(recsys_api_shadow_queue_depth{experiment_id=~\"$experiment\"}) by (model_version) or vector(0)",
+          "legendFormat": "queue {{model_version}}"
+        },
+        {
+          "expr": "sum(increase(recsys_api_shadow_inferences_total{experiment_id=~\"$experiment\",status=\"dropped\"}[$rate_window])) by (model_version) or vector(0)",
+          "legendFormat": "drops {{model_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 31,
+      "type": "table",
+      "title": "Active Rollout Configuration (Always On)",
+      "description": "Scrape-driven configuration heartbeat. This panel remains populated before user traffic starts.",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "x": 0, "y": 82, "w": 24, "h": 6 },
+      "targets": [
+        {
+          "expr": "recsys_api_rollout_config_info{experiment_id=~\"$experiment\"} or vector(0)",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{mode}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": { "show": false, "reducer": ["sum"], "countRows": false, "fields": "" }
       }
     }
   ]

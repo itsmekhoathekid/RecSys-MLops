@@ -162,7 +162,7 @@ case "${component}" in
   api)
     tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)
     append_integration_dir api
-    cov_paths=(ab_testing api_runtime api_schemas feature_api feature_service_client inference_api online_features ranking serving_utils triton)
+    cov_paths=(ab_testing api_runtime api_schemas feature_api feature_service_client inference_api online_features ranking serving_utils shadow triton)
     component_pytest "${component}" "apps/api-serving/src"
     ;;
   kserve)
@@ -189,6 +189,12 @@ case "${component}" in
     append_integration_dir stream_online
     cov_paths=(features.flink.candidate_pool_job features.flink.item_features_job features.flink.user_aggregate_job features.flink.user_sequence_job features.flink.time_utils feature_store.online_writer)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/src"
+    ;;
+  analytics)
+    run_plain_pytest "analytics" "apps/analytics/src:apps/data-platform/src" \
+      tests/unit/analytics tests/contract/test_analytics_contracts.py
+    helm lint infra/helm/recsys-analytics
+    helm template recsys-analytics infra/helm/recsys-analytics >/dev/null
     ;;
   *)
     echo "Unknown component: ${component}" >&2

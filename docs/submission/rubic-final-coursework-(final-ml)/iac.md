@@ -155,12 +155,9 @@ by their pod `nodeSelector`/toleration policy.
 
 The placement is defined in Terraform/Helm:
 
-- [infra/terraform/gcp/gke.tf line 97](../../../infra/terraform/gcp/gke.tf#L97): creates the `cpu-services` node pool with `recsys.ai/pool=cpu-services` and `recsys.ai/workload=data-platform`.
-- [infra/terraform/gcp/gke.tf line 142](../../../infra/terraform/gcp/gke.tf#L142): creates the tainted `ml-system` node pool.
-- [infra/terraform/gcp/locals.tf line 40](../../../infra/terraform/gcp/locals.tf#L40): defines reusable `ml-system` node selector and toleration overrides.
-- [infra/terraform/gcp/locals.tf line 55](../../../infra/terraform/gcp/locals.tf#L55): applies `ml-system` placement to API serving, online feature API, and KServe/Triton.
-- [infra/terraform/gcp/recsys_services.tf line 44](../../../infra/terraform/gcp/recsys_services.tf#L44): deploys MLflow with the `ml-system` placement overrides.
-- [infra/terraform/gcp/recsys_services.tf line 158](../../../infra/terraform/gcp/recsys_services.tf#L158): deploys serving/KServe with the `ml-system` placement overrides.
+- [`gke.tf`](../../../infra/terraform/gcp/gke.tf): defines the `cpu-services` and tainted `ml-system` node pools.
+- [`locals.tf`](../../../infra/terraform/gcp/locals.tf): reusable ML node selectors and tolerations.
+- [`recsys_services.tf`](../../../infra/terraform/gcp/recsys_services.tf): applies ML placement to MLflow, APIs, and KServe/Triton releases.
 
 The `ml-system` node pool has a taint:
 

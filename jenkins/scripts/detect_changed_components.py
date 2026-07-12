@@ -18,6 +18,7 @@ COMPONENTS = (
     "DRIFT",
     "STREAM_OFFLINE",
     "STREAM_ONLINE",
+    "ANALYTICS",
 )
 
 FLAGS = {f"RUN_{component}": False for component in COMPONENTS}
@@ -268,6 +269,8 @@ def classify_infra(flags: dict[str, bool], path: str) -> None:
         mark(flags, "API", "KSERVE")
     elif path.startswith("infra/helm/recsys-data-platform/"):
         mark_data_platform(flags)
+    elif path.startswith("infra/helm/recsys-analytics/"):
+        mark(flags, "ANALYTICS")
     elif path.startswith(("infra/helm/ray-cluster/", "infra/helm/recsys-runtime/", "infra/helm/mlflow-stack/")):
         mark(flags, "TRAINING")
     elif path.startswith("infra/helm/recsys-observability/"):
@@ -276,6 +279,7 @@ def classify_infra(flags: dict[str, bool], path: str) -> None:
         mark(flags, "MATERIALIZE", "TRAINING", "DP1", "DP3", "DRIFT", "STREAM_ONLINE")
     elif path == "infra/docker/Dockerfile.airflow":
         mark_data_platform(flags)
+        mark(flags, "ANALYTICS")
     elif path == "infra/docker/Dockerfile.kafka-connect":
         mark(flags, "DP1")
     elif path.startswith("infra/docker/"):
@@ -309,6 +313,8 @@ def classify_tests(flags: dict[str, bool], path: str) -> None:
         mark_ci_config(flags)
     elif path.startswith("tests/unit/api_serving/"):
         mark(flags, "API")
+    elif path.startswith("tests/unit/analytics/") or path == "tests/contract/test_analytics_contracts.py":
+        mark(flags, "ANALYTICS")
     elif path.startswith("tests/unit/ml_system/"):
         mark(flags, "TRAINING")
         if name in {"test_model_promotion.py", "test_kserve_cd_trigger.py"}:
@@ -367,6 +373,8 @@ def apply_path_rules(flags: dict[str, bool], normalized: str) -> None:
         mark(flags, "TRAINING")
         if parts[-1] in {"model_promotion.py", "trigger_kserve_cd.py"}:
             mark(flags, "KSERVE")
+    elif normalized.startswith("apps/analytics/"):
+        mark(flags, "ANALYTICS")
     elif normalized.startswith("apps/data-platform/feature-store/"):
         mark(flags, "MATERIALIZE", "DP3", "STREAM_OFFLINE", "STREAM_ONLINE")
     elif normalized.startswith("apps/data-platform/data-generator/"):

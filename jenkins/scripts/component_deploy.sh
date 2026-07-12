@@ -10,11 +10,17 @@ namespace_api="${API_NAMESPACE:-api-serving}"
 namespace_kserve="${KSERVE_NAMESPACE:-kserve-triton-inference}"
 namespace_kubeflow="${KUBEFLOW_NAMESPACE:-kubeflow}"
 namespace_mlops="${MLOPS_NAMESPACE:-experiment-tracking}"
+namespace_analytics="${ANALYTICS_NAMESPACE:-analytics}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
 timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
 run_node_rebalance="${RUN_NODE_REBALANCE:-1}"
 validate_node_rebalance="${VALIDATE_NODE_REBALANCE:-1}"
 kfp_port_forward_pids=()
+local_model_store_endpoint_result=""
+
+if [[ -n "${JENKINS_HOME:-}" ]]; then
+  export UV_CACHE_DIR="${JENKINS_UV_CACHE_DIR:-${JENKINS_HOME}/.cache/uv}"
+fi
 
 if [[ -z "${image_tag}" ]]; then
   image_tag="$(git rev-parse --short=12 HEAD)"
@@ -48,7 +54,9 @@ wait_for_local_port() {
 kfp_endpoint_for_upload() {
   local endpoint="${KFP_ENDPOINT:-http://ml-pipeline.kubeflow.svc.cluster.local:8888}"
   local local_port="${KFP_LOCAL_PORT:-18888}"
-  local log_path="/tmp/recsys-kfp-upload-port-forward.log"
+  local log_dir="${JENKINS_HOME:-/tmp}/ci-tmp"
+  local log_path="${log_dir}/recsys-kfp-upload-port-forward.log"
+  mkdir -p "${log_dir}"
 
   if [[ "${endpoint}" != *".svc.cluster.local"* ]]; then
     printf '%s\n' "${endpoint}"
@@ -67,10 +75,12 @@ kfp_endpoint_for_upload() {
 local_model_store_endpoint() {
   local endpoint="$1"
   local local_port="${MODEL_STORE_LOCAL_PORT:-19000}"
-  local log_path="/tmp/recsys-model-store-port-forward.log"
+  local log_dir="${JENKINS_HOME:-/tmp}/ci-tmp"
+  local log_path="${log_dir}/recsys-model-store-port-forward.log"
+  mkdir -p "${log_dir}"
 
   if [[ -z "${endpoint}" || "${endpoint}" != *".svc.cluster.local"* ]]; then
-    printf '%s\n' "${endpoint}"
+    local_model_store_endpoint_result="${endpoint}"
     return 0
   fi
 
@@ -80,12 +90,13 @@ local_model_store_endpoint() {
     cat "${log_path}" >&2 || true
     return 1
   }
-  printf 'http://127.0.0.1:%s\n' "${local_port}"
+  local_model_store_endpoint_result="http://127.0.0.1:${local_port}"
 }
 
 configure_local_model_store_endpoint() {
   local endpoint="${MODEL_STORE_ENDPOINT:-${MLFLOW_S3_ENDPOINT_URL:-${MINIO_ENDPOINT:-}}}"
-  endpoint="$(local_model_store_endpoint "${endpoint}")"
+  local_model_store_endpoint "${endpoint}"
+  endpoint="${local_model_store_endpoint_result}"
   if [[ -n "${endpoint}" ]]; then
     export MODEL_STORE_ENDPOINT="${endpoint}"
     export MLFLOW_S3_ENDPOINT_URL="${endpoint}"
@@ -256,6 +267,7 @@ deploy_data_platform_unlocked() {
     --set "flinkTaskManager.resources.limits.cpu=${FLINK_TASKMANAGER_LIMIT_CPU:-2}" \
     --set "flinkTaskManager.resources.limits.memory=${FLINK_TASKMANAGER_LIMIT_MEMORY:-8Gi}" \
     --set "flink.taskSlots=${FLINK_TASK_SLOTS:-1}" \
+    --set "flink.metricsPort=${FLINK_METRICS_PORT:-9249}" \
     --set "flink.taskManagerProcessMemory=${FLINK_TASKMANAGER_PROCESS_MEMORY:-6144m}" \
     --set "flink.taskManagerTaskHeapMemory=${FLINK_TASKMANAGER_TASK_HEAP_MEMORY:-3072m}" \
     --set "flink.taskManagerManagedMemory=${FLINK_TASKMANAGER_MANAGED_MEMORY:-512m}" \
@@ -302,6 +314,11 @@ deploy_api_unlocked() {
     --set "api.imagePullPolicy=Always"
     --set "featureApi.image=$(image recsys-api-serving)"
     --set "featureApi.imagePullPolicy=Always"
+    --set "shadow.enabled=false"
+    --set "shadow.samplePercent=100"
+    --set "shadow.timeoutMs=1000"
+    --set "shadow.queueSize=100"
+    --set "shadow.maxConcurrency=4"
   )
   if [[ -n "${API_ROLLOUT_MAX_SURGE:-}" ]]; then
     helm_args+=(--set "api.rollout.maxSurge=${API_ROLLOUT_MAX_SURGE}")
@@ -404,12 +421,25 @@ deploy_kserve_model_cd_unlocked() {
     MODEL_STORE_PREFIX
 
   configure_local_model_store_endpoint
+  local model_cd_args=(
+    --manifest-uri "${promotion_manifest_uri}"
+    --stage "${MODEL_CD_STAGE:-deploy}"
+    --candidate-weight-percent "${AB_CANDIDATE_WEIGHT_PERCENT:-10}"
+    --output-dir .model-cd
+    --timeout "${timeout}"
+  )
+  [[ -n "${CONTROL_MANIFEST_URI:-}" ]] && model_cd_args+=(--control-manifest-uri "${CONTROL_MANIFEST_URI}")
+  [[ -n "${CANDIDATE_MANIFEST_URI:-}" ]] && model_cd_args+=(--candidate-manifest-uri "${CANDIDATE_MANIFEST_URI}")
+  [[ -n "${AB_EXPERIMENT_ID:-}" ]] && model_cd_args+=(--experiment-id "${AB_EXPERIMENT_ID}")
+  [[ -n "${PROMETHEUS_URL:-}" ]] && model_cd_args+=(--prometheus-url "${PROMETHEUS_URL}")
+  [[ -n "${AB_GATE_WINDOW:-}" ]] && model_cd_args+=(--gate-window "${AB_GATE_WINDOW}")
+  [[ -n "${AB_MIN_SAMPLES:-}" ]] && model_cd_args+=(--min-samples "${AB_MIN_SAMPLES}")
+  if [[ "${MODEL_CD_APPLY:-1}" == "1" ]]; then
+    model_cd_args+=(--apply)
+  fi
   RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-0}" \
     uv run --no-project --with boto3 python jenkins/scripts/model_cd.py \
-    --manifest-uri "${promotion_manifest_uri}" \
-    --output-dir .model-cd \
-    --apply \
-    --timeout "${timeout}"
+    "${model_cd_args[@]}"
 }
 
 deploy_kserve() {
@@ -427,6 +457,47 @@ deploy_drift() {
   else
     echo "No infra/knative/recsys-drift manifests yet; deployed drift-capable dataflow image only."
   fi
+}
+
+deploy_analytics() {
+  local secret_create=true
+  local external_secret_enabled=false
+  if [[ "${ANALYTICS_EXTERNAL_SECRET_ENABLED:-1}" == "1" ]]; then
+    secret_create=false
+    external_secret_enabled=true
+  elif [[ "${ANALYTICS_ALLOW_DEV_SECRETS:-0}" != "1" ]]; then
+    if ! kubectl get secret recsys-analytics-secret -n "${namespace_analytics}" >/dev/null 2>&1; then
+      echo "Secret recsys-analytics-secret must be provisioned in ${namespace_analytics} before production deploy." >&2
+      exit 2
+    fi
+    secret_create=false
+  fi
+
+  deploy_data_platform \
+    --set "images.airflow=$(image recsys-airflow)" \
+    --set "images.analyticsSpark=$(image recsys-analytics-spark)" \
+    --set "images.analyticsDbt=$(image recsys-analytics-dbt)"
+  verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "$(image recsys-airflow)"
+
+  helm upgrade --install recsys-analytics infra/helm/recsys-analytics \
+    --namespace "${namespace_analytics}" \
+    --create-namespace \
+    --reuse-values \
+    --timeout "${timeout}" \
+    --wait \
+    --set "namespace=${namespace_analytics}" \
+    --set "secrets.create=${secret_create}" \
+    --set "externalSecret.enabled=${external_secret_enabled}" \
+    --set "images.pullPolicy=Always" \
+    --set "images.spark=$(image recsys-analytics-spark)" \
+    --set "images.dbt=$(image recsys-analytics-dbt)" \
+    --set "images.superset=$(image recsys-analytics-superset)"
+
+  verify_and_wait_workload "deployment" "recsys-analytics-superset" "${namespace_analytics}" "$(image recsys-analytics-superset)"
+  wait_rollout_if_exists "deployment" "recsys-analytics-trino" "${namespace_analytics}"
+  wait_rollout_if_exists "deployment" "recsys-analytics-redis" "${namespace_analytics}"
+  wait_rollout_if_exists "statefulset" "recsys-analytics-catalog-postgres" "${namespace_analytics}"
+  wait_rollout_if_exists "statefulset" "recsys-analytics-superset-postgres" "${namespace_analytics}"
 }
 
 deploy_all() {
@@ -472,6 +543,7 @@ deploy_all() {
 
   deploy_mlflow
   deploy_api
+  deploy_analytics
   deploy_kserve_model_cd
 
   run_node_rebalance_if_enabled
@@ -545,6 +617,9 @@ case "${component}" in
     ;;
   drift)
     deploy_drift
+    ;;
+  analytics)
+    deploy_analytics
     ;;
   mlflow)
     deploy_mlflow

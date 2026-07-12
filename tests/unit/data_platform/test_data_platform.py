@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +16,7 @@ from features.flink.realtime_stream_job import (
     build_realtime_feature_payloads,
     normalize_event,
     parse_message,
+    stream_pipeline_role,
 )
 from features.flink.user_aggregate_job import UserAggregateState
 from features.flink.user_sequence_job import UserSequenceState
@@ -147,6 +149,30 @@ def test_realtime_stream_event_normalization_defaults_optional_dimensions():
     assert event["user_id"] == 1
     assert event["event_type_id"] == 1
     assert event["category_id"] == 0
+
+
+@pytest.mark.parametrize(
+    ("disable_offline_store", "disable_online_store", "offline_store_enabled", "expected"),
+    [
+        (True, False, False, "online"),
+        (False, True, True, "offline"),
+        (False, False, True, "hybrid"),
+        (False, True, False, "disabled"),
+    ],
+)
+def test_stream_pipeline_role_separates_duplicate_consumers(
+    disable_offline_store,
+    disable_online_store,
+    offline_store_enabled,
+    expected,
+):
+    args = SimpleNamespace(
+        disable_offline_store=disable_offline_store,
+        disable_online_store=disable_online_store,
+        offline_store_enabled=offline_store_enabled,
+    )
+
+    assert stream_pipeline_role(args) == expected
 
 
 def test_streaming_payloads_candidate_updates_and_offline_rows():

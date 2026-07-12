@@ -4,12 +4,9 @@
 
 Code reference:
 
-- [configs/local/data_generator_drift.yaml line 60](../../../configs/local/data_generator_drift.yaml#60): drift configuration block that enables the generator drift scenario.
-- [configs/local/data_generator_drift.yaml line 63](../../../configs/local/data_generator_drift.yaml#63): `drift_start_date` boundary used to separate baseline/pre-drift data from post-drift data.
-- [apps/data-platform/data-generator/src/drift/controller.py line 8](../../../apps/data-platform/data-generator/src/drift/controller.py#8): `DriftController` computes the drift phase and drift factor for each generated date.
-- [apps/data-platform/data-generator/src/drift/reporting.py line 137](../../../apps/data-platform/data-generator/src/drift/reporting.py#137): writes drift artifacts, including feature reports, health metrics, and alert rows.
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 135](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#135): prints the `Generator Configuration` table for screenshot proof.
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 159](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#159): prints the `Drift Health Sample` table to show drift status, PSI, and drift factor after generation.
+- [`data_generator_drift.yaml`](../../../configs/local/data_generator_drift.yaml): enables drift and defines the baseline/post-drift boundary.
+- [`controller.py`](../../../apps/data-platform/data-generator/src/drift/controller.py), [`reporting.py`](../../../apps/data-platform/data-generator/src/drift/reporting.py): drift phase/factor, artifacts, health metrics, and alerts.
+- [`summarize_drift_label_merge.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py): configuration and drift-health proof tables.
 
 Running command:
 
@@ -44,13 +41,7 @@ Image proof:
 
 Code reference:
 
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 46](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#46): builds label rows from the generated `users` and `orders` tables.
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 51](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#51): counts each user's orders after the drift start date.
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 56](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#56): creates the label table with the two main columns: `user_id` and `label`.
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 84](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#84): loads the label table for proof output and merge logic.
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 95](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#95): joins labels with feature rows by `user_id`.
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 175](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#175): prints the `Label Table` proof with only `user_id,label`.
-- [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 183](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#183): prints the `Merged Features With Labels` table to prove labels were joined with the feature table.
+- [`summarize_drift_label_merge.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py): builds `user_id,label`, joins labels to features, and prints both proof tables.
 
 Running command:
 

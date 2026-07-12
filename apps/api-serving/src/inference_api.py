@@ -12,11 +12,13 @@ from feature_service_client import OnlineFeatureServiceClient
 from observability import METRICS, observe_model_prediction
 from ranking import recommend_from_online_features
 from serving_utils import ab_labels
+from shadow import ShadowRunner
 
 
 app = configure_api(FastAPI(title="RecSys Inference API", version="0.1.0"))
 _feature_service_client: OnlineFeatureServiceClient | None = None
 _ranker: TritonABRouter | None = None
+_shadow_runner: ShadowRunner | None = None
 
 
 def feature_service_client() -> OnlineFeatureServiceClient:
@@ -31,6 +33,17 @@ def ranker() -> TritonABRouter:
     if _ranker is None:
         _ranker = TritonABRouter.from_env()
     return _ranker
+
+
+def shadow_runner() -> ShadowRunner:
+    global _shadow_runner
+    if _shadow_runner is None:
+        _shadow_runner = ShadowRunner(
+            timeout_seconds=max(1, int(os.getenv("AB_SHADOW_TIMEOUT_MS", "1000"))) / 1000,
+            max_pending=max(1, int(os.getenv("AB_SHADOW_QUEUE_SIZE", "100"))),
+            max_concurrency=max(1, int(os.getenv("AB_SHADOW_MAX_CONCURRENCY", "4"))),
+        )
+    return _shadow_runner
 
 
 @app.get("/healthz")
@@ -54,12 +67,16 @@ async def version() -> dict[str, object]:
 
 @app.get("/metrics")
 async def inference_metrics():
+    # Prometheus must see rollout configuration even before the first user request.
+    ranker()
     return await metrics()
 
 
 @app.post("/recommendations", response_model=RecommendationResponse)
 async def recommendations(request: RecommendationRequest) -> RecommendationResponse:
-    route = select_triton_route(ranker(), request.user_id, os.getenv("MODEL_VERSION", "latest"))
+    router = ranker()
+    route = select_triton_route(router, request.user_id, os.getenv("MODEL_VERSION", "latest"))
+    shadow_route = router.shadow_route(request.user_id) if hasattr(router, "shadow_route") else None
     metric_labels = ab_labels(route.ab_variant, route.model_version, route.ab_experiment_id)
     start = time.perf_counter()
     status = "error"
@@ -77,6 +94,9 @@ async def recommendations(request: RecommendationRequest) -> RecommendationRespo
             top_k=request.top_k,
             route=route,
             metric_labels=metric_labels,
+            payload_observer=(
+                (lambda payload: shadow_runner().submit(shadow_route, payload)) if shadow_route is not None else None
+            ),
         )
         status = "success" if response.items else "empty"
         if response.items:
@@ -97,3 +117,9 @@ async def recommendations(request: RecommendationRequest) -> RecommendationRespo
             },
         )
         METRICS.observe("recsys_api_recommendation_duration_seconds", duration, labels=metric_labels)
+
+
+@app.on_event("shutdown")
+async def drain_shadow_inferences() -> None:
+    if _shadow_runner is not None:
+        await _shadow_runner.drain()

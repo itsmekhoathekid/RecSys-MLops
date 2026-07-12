@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-analytics-trino
+  namespace: {{ .Values.namespace }}
+spec:
+  selector: {app: recsys-analytics-trino}
+  ports: [{name: http, port: 8080, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-analytics-trino
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: recsys-analytics-trino}
+  template:
+    metadata:
+      labels: {app: recsys-analytics-trino}
+      annotations:
+        sidecar.istio.io/inject: "false"
+        checksum/config: {{ include (print $.Template.BasePath "/trino-config.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /v1/jmx/mbean
+    spec:
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      initContainers:
+        - name: initialize-iceberg-jdbc-catalog
+          image: {{ .Values.images.spark | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/opt/spark/bin/spark-submit"]
+          args: ["local:///opt/recsys/apps/analytics/src/init_catalog.py"]
+          envFrom:
+            - configMapRef: {name: recsys-analytics-config}
+            - secretRef: {name: recsys-analytics-secret}
+      containers:
+        - name: trino
+          image: {{ .Values.images.trino | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          envFrom:
+            - secretRef: {name: recsys-analytics-secret}
+          ports: [{name: http, containerPort: 8080}]
+          resources: {{ toYaml .Values.resources.trino | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /v1/info, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - {name: config, mountPath: /etc/trino/config.properties, subPath: config.properties}
+            - {name: config, mountPath: /etc/trino/node.properties, subPath: node.properties}
+            - {name: config, mountPath: /etc/trino/jvm.config, subPath: jvm.config}
+            - {name: config, mountPath: /etc/trino/log.properties, subPath: log.properties}
+            - {name: config, mountPath: /etc/trino/catalog/analytics.properties, subPath: analytics.properties}
+            - {name: config, mountPath: /etc/trino/access-control.properties, subPath: access-control.properties}
+            - {name: config, mountPath: /etc/trino/access-control-rules.json, subPath: access-control-rules.json}
+      volumes:
+        - name: config
+          configMap: {name: recsys-analytics-trino-config}

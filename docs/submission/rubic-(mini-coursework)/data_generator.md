@@ -10,18 +10,8 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 
 ## Document Config Generator
 
-- Config file:
-  - [configs/local/data_generator_test.yaml line 1](../../../configs/local/data_generator_test.yaml#1)
-  - [configs/local/data_generator_e2e_1k.yaml line 1](../../../configs/local/data_generator_e2e_1k.yaml#1)
-  - [configs/local/data_generator_drift.yaml line 1](../../../configs/local/data_generator_drift.yaml#1)
-- Config schema reference:
-  - [apps/data-platform/data-generator/src/config.py line 10](../../../apps/data-platform/data-generator/src/config.py#10)
-  - [apps/data-platform/data-generator/src/config.py line 18](../../../apps/data-platform/data-generator/src/config.py#18)
-  - [apps/data-platform/data-generator/src/config.py line 45](../../../apps/data-platform/data-generator/src/config.py#45)
-  - [apps/data-platform/data-generator/src/config.py line 58](../../../apps/data-platform/data-generator/src/config.py#58)
-  - [apps/data-platform/data-generator/src/config.py line 73](../../../apps/data-platform/data-generator/src/config.py#73)
-  - [apps/data-platform/data-generator/src/config.py line 83](../../../apps/data-platform/data-generator/src/config.py#83)
-  - [apps/data-platform/data-generator/src/config.py line 122](../../../apps/data-platform/data-generator/src/config.py#122)
+- Configs: [`data_generator_test.yaml`](../../../configs/local/data_generator_test.yaml), [`data_generator_e2e_1k.yaml`](../../../configs/local/data_generator_e2e_1k.yaml), and [`data_generator_drift.yaml`](../../../configs/local/data_generator_drift.yaml).
+- Schema and validation: [`config.py`](../../../apps/data-platform/data-generator/src/config.py).
 
 | Config group | Purpose | Example key |
 | --- | --- | --- |
@@ -40,8 +30,8 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 
 The generator has two useful proof configs:
 
-- [configs/local/data_generator_test.yaml line 1](../../../configs/local/data_generator_test.yaml#1) is the normal documentation proof config. It is small enough to run quickly for screenshots that explain generator behavior.
-- [configs/local/data_generator_e2e_1k.yaml line 1](../../../configs/local/data_generator_e2e_1k.yaml#1) is the local Kubernetes stress config used before the Spark UI proof. It intentionally increases data volume, skew, high cardinality, late arrivals, and duplicates so Spark/Flink data-quality problems are visible in runtime UIs.
+- [configs/local/data_generator_test.yaml](../../../configs/local/data_generator_test.yaml) is the normal documentation proof config. It is small enough to run quickly for screenshots that explain generator behavior.
+- [configs/local/data_generator_e2e_1k.yaml](../../../configs/local/data_generator_e2e_1k.yaml) is the local Kubernetes stress config used before the Spark UI proof. It intentionally increases data volume, skew, high cardinality, late arrivals, and duplicates so Spark/Flink data-quality problems are visible in runtime UIs.
 
 | Config group | What it controls | Why it matters for proof |
 | --- | --- | --- |
@@ -59,17 +49,13 @@ The generator has two useful proof configs:
 
 ### Implementation Mapping
 
-- [apps/data-platform/data-generator/src/config.py line 10](../../../apps/data-platform/data-generator/src/config.py#L10): validates entity cardinality (`n_users`, `n_products`, `n_categories`, `n_brands`, `preferences_per_user`).
-- [apps/data-platform/data-generator/src/config.py line 18](../../../apps/data-platform/data-generator/src/config.py#L18): validates traffic volume and per-session/request ranges.
-- [apps/data-platform/data-generator/src/config.py line 45](../../../apps/data-platform/data-generator/src/config.py#L45): validates skew controls (`top_city_ratio`, `top_category_ratio`).
-- [apps/data-platform/data-generator/src/config.py line 58](../../../apps/data-platform/data-generator/src/config.py#L58): validates data challenge rates for duplicates, late arrivals, and out-of-order events.
-- [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 254](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L254): prints observed skew distribution from generated output.
-- [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 266](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L266): prints observed entity/table cardinality from generated output.
-- [apps/data-platform/data-generator/src/challenges.py line 76](../../../apps/data-platform/data-generator/src/challenges.py#L76): applies schema evolution before/after the configured cutover date.
-- [apps/data-platform/data-generator/src/challenges.py line 89](../../../apps/data-platform/data-generator/src/challenges.py#L89): injects late arrivals by delaying `created_ts`.
-- [apps/data-platform/data-generator/src/challenges.py line 102](../../../apps/data-platform/data-generator/src/challenges.py#L102): injects out-of-order ingestion timestamps.
-- [apps/data-platform/data-generator/src/challenges.py line 123](../../../apps/data-platform/data-generator/src/challenges.py#L123): injects conflicting duplicates with changed payloads.
-- [apps/data-platform/data-generator/src/challenges.py line 138](../../../apps/data-platform/data-generator/src/challenges.py#L138): injects exact duplicate events.
+| Focus | Code reference |
+| --- | --- |
+| Configuration and validation | [`config.py`](../../../apps/data-platform/data-generator/src/config.py) — Pydantic contracts for entity volume, traffic, skew, challenge rates, schema evolution, and drift. |
+| Problem injection | [`challenges.py`](../../../apps/data-platform/data-generator/src/challenges.py) — schema evolution, late/out-of-order events, and exact/conflicting duplicates. |
+| Historical generation and storage | [`pipeline.py`](../../../apps/data-platform/data-generator/src/pipeline.py), [`sink.py`](../../../apps/data-platform/data-generator/src/sink.py) — generate, validate, and persist a run. |
+| Quality proof | [`summarize_generation_quality.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py) — volume, skew, cardinality, schema, duplicate, and streaming summaries. |
+| Drift/label proof | [`summarize_drift_label_merge.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py) — drift health and training-label join evidence. |
 
 ### Running Command
 
@@ -84,43 +70,12 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 
 ## Offline Data Problems
 
-### Generate Skew
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 27](../../../configs/local/data_generator_test.yaml#27)
-  - [apps/data-platform/data-generator/src/config.py line 45](../../../apps/data-platform/data-generator/src/config.py#45)
-  - [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 254](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#254)
-
-### Generate High Cardinality
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 5](../../../configs/local/data_generator_test.yaml#5)
-  - [apps/data-platform/data-generator/src/config.py line 10](../../../apps/data-platform/data-generator/src/config.py#10)
-  - [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 266](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#266)
-
-### Generate Schema Evolution
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 57](../../../configs/local/data_generator_test.yaml#57)
-  - [apps/data-platform/data-generator/src/config.py line 79](../../../apps/data-platform/data-generator/src/config.py#79)
-  - [apps/data-platform/data-generator/src/challenges.py line 76](../../../apps/data-platform/data-generator/src/challenges.py#76)
-  - [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 148](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#148)
-
-### Generate Duplicate Rate
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 42](../../../configs/local/data_generator_test.yaml#42)
-  - [apps/data-platform/data-generator/src/config.py line 58](../../../apps/data-platform/data-generator/src/config.py#58)
-  - [apps/data-platform/data-generator/src/challenges.py line 123](../../../apps/data-platform/data-generator/src/challenges.py#123)
-  - [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 129](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#129)
-
-### Store Data For Bronze Ingestion
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 60](../../../configs/local/data_generator_test.yaml#60)
-  - [apps/data-platform/data-generator/src/sink.py line 33](../../../apps/data-platform/data-generator/src/sink.py#33)
-  - [apps/data-platform/data-generator/src/sink.py line 66](../../../apps/data-platform/data-generator/src/sink.py#66)
-  - [apps/data-platform/data-generator/src/scripts/generate_historical_to_minio.py line 34](../../../apps/data-platform/data-generator/src/scripts/generate_historical_to_minio.py#34)
+| Problem | Focused code reference |
+| --- | --- |
+| Skew and high cardinality | [`data_generator_test.yaml`](../../../configs/local/data_generator_test.yaml), [`config.py`](../../../apps/data-platform/data-generator/src/config.py), [`summarize_generation_quality.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py) |
+| Schema evolution | [`challenges.py`](../../../apps/data-platform/data-generator/src/challenges.py) — `ChallengePipeline.apply()` handles the configured schema cutover. |
+| Exact/conflicting duplicates | [`challenges.py`](../../../apps/data-platform/data-generator/src/challenges.py) — `ChallengePipeline.apply()` injects both duplicate modes. |
+| Bronze input storage | [`sink.py`](../../../apps/data-platform/data-generator/src/sink.py), [`generate_historical_to_minio.py`](../../../apps/data-platform/data-generator/src/scripts/generate_historical_to_minio.py) |
 
 ### Running Command
 
@@ -140,36 +95,12 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 
 ## Online Data Problems
 
-### Generate Burst
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 49](../../../configs/local/data_generator_test.yaml#49)
-  - [apps/data-platform/data-generator/src/config.py line 73](../../../apps/data-platform/data-generator/src/config.py#73)
-  - [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 168](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#168)
-
-### Generate Late Arrivals
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 44](../../../configs/local/data_generator_test.yaml#44)
-  - [apps/data-platform/data-generator/src/config.py line 61](../../../apps/data-platform/data-generator/src/config.py#61)
-  - [apps/data-platform/data-generator/src/challenges.py line 89](../../../apps/data-platform/data-generator/src/challenges.py#89)
-  - [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 156](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#156)
-
-### Generate Streaming Duplicate Rate
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 42](../../../configs/local/data_generator_test.yaml#42)
-  - [apps/data-platform/data-generator/src/challenges.py line 138](../../../apps/data-platform/data-generator/src/challenges.py#138)
-  - [apps/data-platform/data-generator/src/challenges.py line 144](../../../apps/data-platform/data-generator/src/challenges.py#144)
-  - [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 132](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#132)
-
-### Generate Out-Of-Order Ingestion
-
-- Code reference:
-  - [configs/local/data_generator_test.yaml line 45](../../../configs/local/data_generator_test.yaml#45)
-  - [apps/data-platform/data-generator/src/config.py line 62](../../../apps/data-platform/data-generator/src/config.py#62)
-  - [apps/data-platform/data-generator/src/challenges.py line 102](../../../apps/data-platform/data-generator/src/challenges.py#102)
-  - [apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py line 162](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#162)
+| Problem | Focused code reference |
+| --- | --- |
+| Burst windows | [`data_generator_test.yaml`](../../../configs/local/data_generator_test.yaml), [`config.py`](../../../apps/data-platform/data-generator/src/config.py) |
+| Late and out-of-order events | [`challenges.py`](../../../apps/data-platform/data-generator/src/challenges.py) |
+| Streaming duplicates | [`challenges.py`](../../../apps/data-platform/data-generator/src/challenges.py) — duplicate branch in `ChallengePipeline.apply()`. |
+| Observed rates | [`summarize_generation_quality.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py) |
 
 ### Running Command
 
@@ -185,20 +116,11 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platfor
 
 ### Generate Data Drift
 
-- Code reference:
-  - [configs/local/data_generator_drift.yaml line 60](../../../configs/local/data_generator_drift.yaml#60)
-  - [apps/data-platform/data-generator/src/drift/controller.py line 8](../../../apps/data-platform/data-generator/src/drift/controller.py#8)
-  - [apps/data-platform/data-generator/src/drift/reporting.py line 137](../../../apps/data-platform/data-generator/src/drift/reporting.py#137)
-  - [apps/data-platform/data-generator/src/drift/reporting.py line 161](../../../apps/data-platform/data-generator/src/drift/reporting.py#161)
+Code reference: [`data_generator_drift.yaml`](../../../configs/local/data_generator_drift.yaml), [`controller.py`](../../../apps/data-platform/data-generator/src/drift/controller.py), and [`reporting.py`](../../../apps/data-platform/data-generator/src/drift/reporting.py).
 
 ### Create Label Table And Merge With Features
 
-- Code reference:
-  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 46](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#46)
-  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 84](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#84)
-  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 95](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#95)
-  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 175](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#175)
-  - [apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py line 183](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#183)
+Code reference: [`summarize_drift_label_merge.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py) generates labels, merges features, and reports join health.
 
 ### Running Command
 

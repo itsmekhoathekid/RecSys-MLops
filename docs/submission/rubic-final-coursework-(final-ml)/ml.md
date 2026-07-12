@@ -15,36 +15,25 @@ The Feast offline store is PostgreSQL and the online store is Redis.
 
 ## Code Reference
 
-- [notebooks/ml.ipynb line 8 (line 8)](../../../notebooks/ml.ipynb): local Jupyter notebook for the ML workflow.
-- [notebooks/ml.ipynb line 301 (line 301)](../../../notebooks/ml.ipynb): imports Feast `FeatureStore`.
-- [notebooks/ml.ipynb line 328 (line 328)](../../../notebooks/ml.ipynb): calls `FeatureStore.get_historical_features(...)` for `bst_ranking_v1`.
-- [notebooks/ml.ipynb line 869 (line 869)](../../../notebooks/ml.ipynb): saves the trained notebook artifact as `.joblib`.
-- [apps/data-platform/feature-store/feature_repo/feature_store.yaml line 8 (line 8)](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L8): Feast PostgreSQL offline-store config.
-- [apps/data-platform/feature-store/feature_repo/feature_store.yaml line 18 (line 18)](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L18): Feast Redis online-store config.
-- [apps/data-platform/feature-store/feature_repo/features.py line 22 (line 22)](../../../apps/data-platform/feature-store/feature_repo/features.py#L22): PostgreSQL source for the user sequence FeatureView.
-- [apps/data-platform/feature-store/feature_repo/features.py line 112 (line 112)](../../../apps/data-platform/feature-store/feature_repo/features.py#L112): FeatureService `bst_ranking_v1`.
-- [apps/ml-system/src/cli/prepare_bst_training_data.py line 149 (line 149)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L149): reads PostgreSQL label/entity input.
-- [apps/ml-system/src/cli/prepare_bst_training_data.py line 344 (line 344)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L344): calls Feast native historical retrieval in the production data-prep CLI.
-- [apps/ml-system/src/cli/prepare_bst_training_data.py line 509 (line 509)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L509): writes BST train/validation/test JSONL splits.
-- [apps/ml-system/src/models/dataset.py line 6 (line 6)](../../../apps/ml-system/src/models/dataset.py#L6): `recommenderDataset` used to load BST JSONL samples.
-- [apps/ml-system/src/models/model.py line 886 (line 886)](../../../apps/ml-system/src/models/model.py#L886): `BST` recommendation model.
-- [apps/ml-system/src/models/trainer.py line 58 (line 58)](../../../apps/ml-system/src/models/trainer.py#L58): training and validation loop.
-- [apps/ml-system/src/training/train.py line 25 (line 25)](../../../apps/ml-system/src/training/train.py#L25): MLflow logging for model params, metrics, and artifacts.
-- [apps/ml-system/src/cli/evaluate_bst.py line 67 (line 67)](../../../apps/ml-system/src/cli/evaluate_bst.py#L67): test-set evaluation entrypoint.
-- [apps/ml-system/src/registry/model_promotion.py line 557 (line 557)](../../../apps/ml-system/src/registry/model_promotion.py#L557): export, MLflow model registry update, Triton layout generation, and promotion manifest upload.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 44 (line 44)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L44): Kubeflow prepare-data component.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 194 (line 194)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L194): Kubeflow promotion component.
+| Workflow step | Code reference |
+| --- | --- |
+| Notebook proof | [`notebooks/ml.ipynb`](../../../notebooks/ml.ipynb) — Feast retrieval, split, BST training/evaluation, and `.joblib` output. |
+| Feast stores and feature service | [`feature_store.yaml`](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml), [`features.py`](../../../apps/data-platform/feature-store/feature_repo/features.py) |
+| Production data preparation | [`prepare_bst_training_data.py`](../../../apps/ml-system/src/cli/prepare_bst_training_data.py) — PostgreSQL labels, Feast historical features, and temporal JSONL splits. |
+| Dataset, model, and trainer | [`dataset.py`](../../../apps/ml-system/src/models/dataset.py), [`model.py`](../../../apps/ml-system/src/models/model.py), [`trainer.py`](../../../apps/ml-system/src/models/trainer.py) |
+| Evaluation and MLflow logging | [`evaluate_bst.py`](../../../apps/ml-system/src/cli/evaluate_bst.py), [`train.py`](../../../apps/ml-system/src/training/train.py) |
+| Promotion and orchestration | [`model_promotion.py`](../../../apps/ml-system/src/registry/model_promotion.py), [`bst_training_pipeline.py`](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py) |
 
 ## Notebook Main Steps
 
 | Step | What the notebook does | Notebook code reference |
 | --- | --- | --- |
-| Connect to Feast offline store | Uses PostgreSQL connection settings for `feature_store.ml_ranking_labels`. When running locally, a PostgreSQL port-forward can expose the cloud service at `127.0.0.1:15432`; the data retrieval itself still uses Feast native APIs. | [notebooks/ml.ipynb line 110 (line 110)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 122 (line 122)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 246 (line 246)](../../../notebooks/ml.ipynb) |
-| Load historical features | Reads labels as the Feast entity dataframe, then calls `FeatureStore.get_historical_features(...)` with FeatureService `bst_ranking_v1`. | [notebooks/ml.ipynb line 301 (line 301)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 321 (line 321)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 328 (line 328)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 339 (line 339)](../../../notebooks/ml.ipynb) |
-| Split train, validation, and test sets | Converts historical features to BST JSONL rows and writes temporal splits under `notebooks/data/feast_postgres_bst_split/`. | [notebooks/ml.ipynb line 350 (line 350)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 450 (line 450)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 529 (line 529)](../../../notebooks/ml.ipynb) |
-| Train model | Trains the existing `BST` model through the existing `Trainer` class. The task is binary recommendation classification, so the proof focuses on loss, AUC, and ranking metrics rather than regression metrics. | [notebooks/ml.ipynb line 541 (line 541)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 714 (line 714)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 718 (line 718)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 733 (line 733)](../../../notebooks/ml.ipynb) |
-| Evaluate model | Runs validation/test evaluation with AUC, loss, hitrate, MRR, and NDCG metrics. | [notebooks/ml.ipynb line 758 (line 758)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 795 (line 795)](../../../notebooks/ml.ipynb) |
-| Save model | Saves local notebook artifact to `notebooks/models/feast_postgres_bst_10epoch.joblib` with model weights, config, metrics, Feast lineage, PostgreSQL lineage, and split metadata. | [notebooks/ml.ipynb line 819 (line 819)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 869 (line 869)](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb line 871 (line 871)](../../../notebooks/ml.ipynb) |
+| Connect to Feast offline store | Uses PostgreSQL connection settings for `feature_store.ml_ranking_labels`. When running locally, a PostgreSQL port-forward can expose the cloud service at `127.0.0.1:15432`; the data retrieval itself still uses Feast native APIs. | [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb) |
+| Load historical features | Reads labels as the Feast entity dataframe, then calls `FeatureStore.get_historical_features(...)` with FeatureService `bst_ranking_v1`. | [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb) |
+| Split train, validation, and test sets | Converts historical features to BST JSONL rows and writes temporal splits under `notebooks/data/feast_postgres_bst_split/`. | [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb) |
+| Train model | Trains the existing `BST` model through the existing `Trainer` class. The task is binary recommendation classification, so the proof focuses on loss, AUC, and ranking metrics rather than regression metrics. | [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb) |
+| Evaluate model | Runs validation/test evaluation with AUC, loss, hitrate, MRR, and NDCG metrics. | [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb) |
+| Save model | Saves local notebook artifact to `notebooks/models/feast_postgres_bst_10epoch.joblib` with model weights, config, metrics, Feast lineage, PostgreSQL lineage, and split metadata. | [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb), [notebooks/ml.ipynb](../../../notebooks/ml.ipynb) |
 
 ## Latest Cluster Proof
 

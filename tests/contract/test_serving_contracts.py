@@ -77,6 +77,8 @@ def test_serving_chart_renders_expected_namespaces():
     assert api_config["data"]["ALLOW_FEATURE_FALLBACK"] == "0"
     assert api_config["data"]["RECSYS_JSON_LOGS"] == "1"
     assert api_config["data"]["OTEL_SERVICE_NAME"] == "recsys-api-serving"
+    assert api_config["data"]["AB_SHADOW_ENABLED"] == "0"
+    assert api_config["data"]["AB_SHADOW_SAMPLE_PERCENT"] == "100"
     assert ("ServiceMonitor", "recsys-api-serving") in by_kind_name
     assert ("HTTPScaledObject", "recsys-api-serving-http") not in by_kind_name
     api_scaledobject = by_kind_name[("ScaledObject", "recsys-api-serving-prometheus")]
@@ -185,6 +187,7 @@ def test_serving_chart_renders_candidate_for_ab_testing():
     assert candidate["spec"]["predictor"]["model"]["storageUri"] == (
         "s3://recsys-model-store/triton/bst/candidate-001"
     )
+    assert candidate.get("metadata", {}).get("annotations", {}).get("helm.sh/resource-policy") is None
     candidate_grpc = by_kind_name[("Service", "recsys-bst-triton-candidate-grpc")]
     assert candidate_grpc["spec"]["selector"] == {"app": "isvc.recsys-bst-triton-candidate-predictor"}
     candidate_scaledobject = by_kind_name[("ScaledObject", "recsys-bst-triton-candidate-resource")]
@@ -194,6 +197,162 @@ def test_serving_chart_renders_candidate_for_ab_testing():
     assert api_config["data"]["AB_CANDIDATE_WEIGHT_PERCENT"] == "10"
     assert api_config["data"]["AB_CONTROL_MODEL_VERSION"] == "stable-001"
     assert api_config["data"]["AB_CANDIDATE_MODEL_VERSION"] == "candidate-001"
+
+
+def test_serving_chart_renders_candidate_for_shadow_with_zero_ab_weight():
+    if shutil.which("helm") is None:
+        pytest.skip("helm is not installed")
+    rendered = subprocess.check_output(
+        [
+            "helm",
+            "template",
+            "recsys-serving",
+            "infra/helm/recsys-serving",
+            "--namespace",
+            "kserve-triton-inference",
+            "--set",
+            "shadow.enabled=true",
+            "--set",
+            "abTest.enabled=false",
+            "--set",
+            "abTest.candidateWeightPercent=0",
+            "--set",
+            "kserve.inferenceService.candidateStorageUri=s3://recsys-model-store/triton/bst/shadow-001",
+        ],
+        text=True,
+    )
+    docs = _documents(rendered)
+    by_kind_name = {(doc["kind"], doc["metadata"]["name"]): doc for doc in docs}
+
+    assert ("InferenceService", "recsys-bst-triton-candidate") in by_kind_name
+    assert ("Service", "recsys-bst-triton-candidate-grpc") in by_kind_name
+    api_config = by_kind_name[("ConfigMap", "recsys-api-serving")]
+    assert api_config["data"]["AB_SHADOW_ENABLED"] == "1"
+    assert api_config["data"]["AB_TEST_ENABLED"] == "0"
+    assert api_config["data"]["AB_CANDIDATE_WEIGHT_PERCENT"] == "0"
+
+
+def test_model_cd_writes_shadow_and_explicit_rollback_values(tmp_path):
+    control = {"model_name": "bst", "model_version": "stable-001", "triton_storage_uri": "/control"}
+    candidate = {"model_name": "bst", "model_version": "candidate-001", "triton_storage_uri": "/candidate"}
+
+    shadow_path = model_cd.write_values(
+        control,
+        tmp_path / "shadow",
+        control_manifest=control,
+        candidate_manifest=candidate,
+        stage="shadow-start",
+        candidate_weight_percent=0,
+        experiment_id="exp-shadow",
+    )
+    shadow_values = json.loads(shadow_path.read_text(encoding="utf-8"))
+    assert shadow_values["shadow"]["enabled"] is True
+    assert shadow_values["kserve"]["enabled"] is True
+    assert shadow_values["kserve"]["secret"]["create"] is False
+    assert shadow_values["abTest"]["enabled"] is False
+    assert shadow_values["abTest"]["candidateWeightPercent"] == 0
+    assert shadow_values["abTest"]["candidateTritonUrl"].startswith(
+        "recsys-bst-triton-candidate-predictor."
+    )
+    assert shadow_values["abTest"]["controlTritonUrl"].startswith(
+        "recsys-bst-triton-predictor."
+    )
+    assert shadow_values["kserve"]["inferenceService"]["candidateStorageUri"] == "/candidate"
+
+    rollback_path = model_cd.write_values(
+        control,
+        tmp_path / "rollback",
+        stage="rollback",
+        candidate_weight_percent=50,
+        experiment_id="exp-shadow",
+    )
+    rollback_values = json.loads(rollback_path.read_text(encoding="utf-8"))
+    assert rollback_values["shadow"]["enabled"] is False
+    assert rollback_values["kserve"]["enabled"] is True
+    assert rollback_values["kserve"]["secret"]["create"] is False
+    assert rollback_values["abTest"]["enabled"] is False
+    assert rollback_values["abTest"]["candidateWeightPercent"] == 0
+    assert rollback_values["abTest"]["candidateTritonUrl"] == ""
+    assert rollback_values["kserve"]["inferenceService"]["candidateStorageUri"] == ""
+
+    if shutil.which("helm") is not None:
+        shadow_rendered = subprocess.check_output(
+            ["helm", "template", "recsys-serving", "infra/helm/recsys-serving", "-f", str(shadow_path)],
+            text=True,
+        )
+        rollback_rendered = subprocess.check_output(
+            ["helm", "template", "recsys-serving", "infra/helm/recsys-serving", "-f", str(rollback_path)],
+            text=True,
+        )
+        shadow_resources = {(doc["kind"], doc["metadata"]["name"]) for doc in _documents(shadow_rendered)}
+        rollback_resources = {(doc["kind"], doc["metadata"]["name"]) for doc in _documents(rollback_rendered)}
+        assert ("InferenceService", "recsys-bst-triton-candidate") in shadow_resources
+        assert ("InferenceService", "recsys-bst-triton-candidate") not in rollback_resources
+
+
+def test_model_cd_evaluate_writes_decision_and_auto_renders_rollback(tmp_path, monkeypatch):
+    control_repo = tmp_path / "control-repo"
+    candidate_repo = tmp_path / "candidate-repo"
+    for root in [control_repo, candidate_repo]:
+        for relative in REQUIRED_MODEL_FILES:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"test")
+    control_manifest = tmp_path / "control.json"
+    candidate_manifest = tmp_path / "candidate.json"
+    control_manifest.write_text(
+        json.dumps(
+            {"model_name": "bst", "model_version": "stable-001", "triton_storage_uri": str(control_repo)}
+        ),
+        encoding="utf-8",
+    )
+    candidate_manifest.write_text(
+        json.dumps(
+            {"model_name": "bst", "model_version": "candidate-001", "triton_storage_uri": str(candidate_repo)}
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    monkeypatch.setattr(
+        model_cd,
+        "evaluate_candidate_gates",
+        lambda *_args, **_kwargs: model_cd.GateDecision(
+            "rollback",
+            ["candidate error gate failed"],
+            {"candidate_error_rate": 0.2, "control_error_rate": 0.01},
+            "exp-auto-rollback",
+            "10m",
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "model_cd.py",
+            "--stage",
+            "evaluate",
+            "--control-manifest-uri",
+            str(control_manifest),
+            "--candidate-manifest-uri",
+            str(candidate_manifest),
+            "--experiment-id",
+            "exp-auto-rollback",
+            "--prometheus-url",
+            "http://prometheus",
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert model_cd_main() == 0
+    decision = json.loads((output_dir / "ab-decision.json").read_text(encoding="utf-8"))
+    values = json.loads((output_dir / "recsys-serving-values.json").read_text(encoding="utf-8"))
+    deployed = json.loads((output_dir / "deployed-model.json").read_text(encoding="utf-8"))
+    assert decision["decision"] == "rollback"
+    assert values["abTest"]["candidateWeightPercent"] == 0
+    assert values["shadow"]["enabled"] is False
+    assert values["kserve"]["inferenceService"]["candidateStorageUri"] == ""
+    assert deployed["stage"] == "rollback"
 
 
 def test_model_cd_validates_local_manifest_and_writes_values(tmp_path, monkeypatch):
@@ -440,6 +599,30 @@ def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_
     assert "observability.serviceMonitor.enabled=false" in final_helm_upgrade
 
 
+def test_model_cd_deploy_waits_for_shadow_candidate(monkeypatch, tmp_path):
+    commands = []
+
+    monkeypatch.setattr(model_cd, "run", lambda command: commands.append(command))
+    monkeypatch.setattr(model_cd, "crd_exists", lambda _: True)
+    values_path = tmp_path / "values.json"
+    values_path.write_text(
+        json.dumps(
+            {
+                "kserve": {"inferenceService": {"candidateStorageUri": "s3://store/candidate"}},
+                "abTest": {"enabled": False},
+                "shadow": {"enabled": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    model_cd.deploy(values_path, timeout="90s")
+
+    flattened = [" ".join(command) for command in commands]
+    assert any("inferenceservice/recsys-bst-triton-candidate" in command for command in flattened)
+    assert any("deployment/recsys-bst-triton-candidate-predictor" in command for command in flattened)
+
+
 def test_model_cd_s3_helpers_copy_upload_and_read(monkeypatch):
     class Body:
         def read(self):
@@ -566,6 +749,56 @@ def test_model_cd_prometheus_gates(monkeypatch):
         model_cd.assert_promote_gates("http://prometheus", "10m")
 
 
+def test_model_cd_gate_decision_filters_experiment_and_covers_hold_promote_rollback(monkeypatch):
+    values = {
+        "candidate_samples": 200.0,
+        "control_samples": 250.0,
+        "candidate_error": 0.01,
+        "control_error": 0.01,
+        "candidate_latency": 0.10,
+        "control_latency": 0.10,
+        "candidate_quality": 0.80,
+        "control_quality": 0.82,
+    }
+    queries = []
+
+    def fake_query(_url, query):
+        queries.append(query)
+        candidate = 'ab_variant="candidate"' in query
+        if "increase(model_predictions_total" in query:
+            return values["candidate_samples" if candidate else "control_samples"]
+        if 'status="error"' in query:
+            return values["candidate_error" if candidate else "control_error"]
+        if "model_prediction_latency_seconds_bucket" in query:
+            return values["candidate_latency" if candidate else "control_latency"]
+        return values["candidate_quality" if candidate else "control_quality"]
+
+    monkeypatch.setattr(model_cd, "query_prometheus", fake_query)
+    decision = model_cd.evaluate_candidate_gates(
+        "http://prometheus",
+        "10m",
+        experiment_id="exp-gated",
+        min_samples=100,
+    )
+    assert decision.decision == "promote"
+    assert all('experiment_id="exp-gated"' in query for query in queries)
+
+    values["candidate_samples"] = 5
+    assert model_cd.evaluate_candidate_gates("http://prometheus", "10m", min_samples=100).decision == "hold"
+
+    values["candidate_samples"] = 200
+    values["candidate_error"] = 0.20
+    rollback = model_cd.evaluate_candidate_gates("http://prometheus", "10m", min_samples=100)
+    assert rollback.decision == "rollback"
+    assert "candidate error gate failed" in rollback.reasons[0]
+
+    values["candidate_error"] = 0.01
+    values["candidate_quality"] = 0.20
+    rollback = model_cd.evaluate_candidate_gates("http://prometheus", "10m", min_samples=100)
+    assert rollback.decision == "rollback"
+    assert any("quality proxy" in reason for reason in rollback.reasons)
+
+
 def test_model_cd_query_prometheus_and_crd_exists(monkeypatch):
     class Response:
         def __enter__(self):
@@ -615,4 +848,3 @@ def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
     assert "model_cd.py" in cd_block.group("body")
     assert "--apply" in cd_block.group("body")
     assert "kserve_model_cd)" in deploy_script
-

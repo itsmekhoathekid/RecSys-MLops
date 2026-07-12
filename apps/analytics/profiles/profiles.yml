@@ -1,0 +1,16 @@
+recsys_analytics:
+  target: prod
+  outputs:
+    prod:
+      type: trino
+      method: none
+      host: "{{ env_var('DBT_TRINO_HOST', 'recsys-analytics-trino') }}"
+      port: "{{ env_var('DBT_TRINO_PORT', '8080') | int }}"
+      user: "{{ env_var('DBT_TRINO_USER', 'dbt') }}"
+      database: "{{ env_var('DBT_TRINO_CATALOG', 'analytics') }}"
+      schema: core
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
+      http_scheme: http
+      session_properties:
+        query_max_run_time: 30m
+

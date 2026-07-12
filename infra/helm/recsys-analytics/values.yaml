@@ -1,0 +1,59 @@
+namespace: analytics
+
+secrets:
+  create: true
+
+externalSecret:
+  enabled: false
+  storeName: recsys-central-secrets
+  remoteKey: analytics
+  refreshInterval: 1h
+
+images:
+  trino: trinodb/trino:482
+  superset: recsys-analytics-superset:local
+  dbt: recsys-analytics-dbt:local
+  spark: recsys-analytics-spark:local
+  postgres: postgres:16-alpine
+  redis: redis:7.4-alpine
+  pullPolicy: IfNotPresent
+
+catalog:
+  database: iceberg_catalog
+  user: iceberg
+  password: iceberg-local-change-me
+  warehouse: s3://recsys-lakehouse/analytics
+  storage: 5Gi
+  storageClassName: standard
+
+superset:
+  database: superset
+  databaseUser: superset
+  databasePassword: superset-local-change-me
+  secretKey: local-only-change-this-superset-secret-key
+  adminUser: admin
+  adminPassword: admin-local-change-me
+  storage: 5Gi
+  storageClassName: standard
+
+objectStorage:
+  endpoint: http://data-platform-minio.recsys-dataflow.svc.cluster.local:9000
+  region: us-east-1
+  accessKey: minio
+  secretKey: minio123
+
+airflow:
+  namespace: recsys-dataflow
+  serviceAccount: default
+  schedule: "30 2 * * *"
+
+nodeSelector:
+  recsys.ai/pool: cpu-services
+
+resources:
+  trino:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 3Gi}
+  superset:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}

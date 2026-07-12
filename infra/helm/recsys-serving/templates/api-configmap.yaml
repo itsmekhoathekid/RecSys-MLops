@@ -19,6 +19,11 @@ data:
   AB_CANDIDATE_MODEL_VERSION: {{ .Values.abTest.candidateModelVersion | quote }}
   AB_CONTROL_TRITON_URL: {{ .Values.abTest.controlTritonUrl | quote }}
   AB_CANDIDATE_TRITON_URL: {{ .Values.abTest.candidateTritonUrl | quote }}
+  AB_SHADOW_ENABLED: {{ ternary "1" "0" .Values.shadow.enabled | quote }}
+  AB_SHADOW_SAMPLE_PERCENT: {{ .Values.shadow.samplePercent | quote }}
+  AB_SHADOW_TIMEOUT_MS: {{ .Values.shadow.timeoutMs | quote }}
+  AB_SHADOW_QUEUE_SIZE: {{ .Values.shadow.queueSize | quote }}
+  AB_SHADOW_MAX_CONCURRENCY: {{ .Values.shadow.maxConcurrency | quote }}
   FORCE_NOT_READY: {{ .Values.api.config.forceNotReady | quote }}
   ALLOW_FEATURE_FALLBACK: {{ .Values.api.config.allowFeatureFallback | quote }}
   MODEL_ITEM_NUM: {{ .Values.api.config.modelItemNum | quote }}

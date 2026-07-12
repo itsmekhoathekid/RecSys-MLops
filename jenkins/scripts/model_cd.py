@@ -7,6 +7,7 @@ import subprocess
 import time
 import urllib.parse
 import urllib.request
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -116,33 +117,118 @@ def query_prometheus(prometheus_url: str, query: str) -> float:
     return float(result[0]["value"][1])
 
 
-def assert_promote_gates(prometheus_url: str, gate_window: str) -> None:
+@dataclass(frozen=True)
+class GateDecision:
+    decision: str
+    reasons: list[str]
+    metrics: dict[str, float]
+    experiment_id: str
+    gate_window: str
+
+
+def evaluate_candidate_gates(
+    prometheus_url: str,
+    gate_window: str,
+    *,
+    experiment_id: str = "",
+    max_error_delta: float = 0.02,
+    max_latency_ratio: float = 1.5,
+    min_quality_ratio: float = 0.95,
+    min_samples: int = 100,
+) -> GateDecision:
     if not prometheus_url:
-        return
+        return GateDecision("hold", ["prometheus URL is required"], {}, experiment_id, gate_window)
+    experiment = experiment_id.replace("\\", "\\\\").replace('"', '\\"')
+    experiment_matcher = f',experiment_id="{experiment}"' if experiment else ""
+    candidate_samples = query_prometheus(
+        prometheus_url,
+        f'sum(increase(model_predictions_total{{ab_variant="candidate"{experiment_matcher}}}[{gate_window}]))',
+    )
+    control_samples = query_prometheus(
+        prometheus_url,
+        f'sum(increase(model_predictions_total{{ab_variant="control"{experiment_matcher}}}[{gate_window}]))',
+    )
     candidate_error = query_prometheus(
         prometheus_url,
-        f'sum(rate(model_predictions_total{{ab_variant="candidate",status="error"}}[{gate_window}])) '
-        f'/ clamp_min(sum(rate(model_predictions_total{{ab_variant="candidate"}}[{gate_window}])), 0.001)',
+        f'sum(rate(model_predictions_total{{ab_variant="candidate",status="error"{experiment_matcher}}}[{gate_window}])) '
+        f'/ clamp_min(sum(rate(model_predictions_total{{ab_variant="candidate"{experiment_matcher}}}[{gate_window}])), 0.001)',
     )
     control_error = query_prometheus(
         prometheus_url,
-        f'sum(rate(model_predictions_total{{ab_variant="control",status="error"}}[{gate_window}])) '
-        f'/ clamp_min(sum(rate(model_predictions_total{{ab_variant="control"}}[{gate_window}])), 0.001)',
+        f'sum(rate(model_predictions_total{{ab_variant="control",status="error"{experiment_matcher}}}[{gate_window}])) '
+        f'/ clamp_min(sum(rate(model_predictions_total{{ab_variant="control"{experiment_matcher}}}[{gate_window}])), 0.001)',
     )
     candidate_latency = query_prometheus(
         prometheus_url,
         "histogram_quantile(0.95, "
-        f'sum(rate(model_prediction_latency_seconds_bucket{{ab_variant="candidate"}}[{gate_window}])) by (le))',
+        f'sum(rate(model_prediction_latency_seconds_bucket{{ab_variant="candidate"{experiment_matcher}}}[{gate_window}])) by (le))',
     )
     control_latency = query_prometheus(
         prometheus_url,
         "histogram_quantile(0.95, "
-        f'sum(rate(model_prediction_latency_seconds_bucket{{ab_variant="control"}}[{gate_window}])) by (le))',
+        f'sum(rate(model_prediction_latency_seconds_bucket{{ab_variant="control"{experiment_matcher}}}[{gate_window}])) by (le))',
     )
-    if candidate_error > control_error + 0.02:
-        raise RuntimeError(f"candidate error gate failed: candidate={candidate_error}, control={control_error}")
-    if control_latency > 0 and candidate_latency > control_latency * 1.5:
-        raise RuntimeError(f"candidate latency gate failed: candidate={candidate_latency}, control={control_latency}")
+    candidate_quality = query_prometheus(
+        prometheus_url,
+        f'sum(rate(model_prediction_confidence_sum{{ab_variant="candidate"{experiment_matcher}}}[{gate_window}])) '
+        f'/ clamp_min(sum(rate(model_prediction_confidence_count{{ab_variant="candidate"{experiment_matcher}}}[{gate_window}])), 0.001)',
+    )
+    control_quality = query_prometheus(
+        prometheus_url,
+        f'sum(rate(model_prediction_confidence_sum{{ab_variant="control"{experiment_matcher}}}[{gate_window}])) '
+        f'/ clamp_min(sum(rate(model_prediction_confidence_count{{ab_variant="control"{experiment_matcher}}}[{gate_window}])), 0.001)',
+    )
+    metrics = {
+        "candidate_samples": candidate_samples,
+        "control_samples": control_samples,
+        "candidate_error_rate": candidate_error,
+        "control_error_rate": control_error,
+        "candidate_p95_latency_seconds": candidate_latency,
+        "control_p95_latency_seconds": control_latency,
+        "candidate_quality_proxy": candidate_quality,
+        "control_quality_proxy": control_quality,
+    }
+    if candidate_samples < min_samples or control_samples < min_samples:
+        return GateDecision(
+            "hold",
+            [f"insufficient samples: candidate={candidate_samples}, control={control_samples}, minimum={min_samples}"],
+            metrics,
+            experiment_id,
+            gate_window,
+        )
+    reasons = []
+    if candidate_error > control_error + max_error_delta:
+        reasons.append(f"candidate error gate failed: candidate={candidate_error}, control={control_error}")
+    if control_latency > 0 and candidate_latency > control_latency * max_latency_ratio:
+        reasons.append(f"candidate latency gate failed: candidate={candidate_latency}, control={control_latency}")
+    if control_quality > 0 and candidate_quality < control_quality * min_quality_ratio:
+        reasons.append(f"candidate quality proxy gate failed: candidate={candidate_quality}, control={control_quality}")
+    return GateDecision("rollback" if reasons else "promote", reasons, metrics, experiment_id, gate_window)
+
+
+def assert_promote_gates(
+    prometheus_url: str,
+    gate_window: str,
+    experiment_id: str = "",
+    *,
+    max_error_delta: float = 0.02,
+    max_latency_ratio: float = 1.5,
+    min_quality_ratio: float = 0.95,
+    min_samples: int = 0,
+) -> None:
+    if not prometheus_url:
+        return
+    decision = evaluate_candidate_gates(
+        prometheus_url,
+        gate_window,
+        experiment_id=experiment_id,
+        max_error_delta=max_error_delta,
+        max_latency_ratio=max_latency_ratio,
+        min_quality_ratio=min_quality_ratio,
+        min_samples=min_samples,
+    )
+    if decision.decision != "promote":
+        raise RuntimeError(decision.reasons[0])
 
 
 def write_values(
@@ -158,12 +244,16 @@ def write_values(
     control = control_manifest or manifest
     candidate = candidate_manifest
     ab_enabled = stage in {"ab-start", "ab-step"} and candidate is not None and candidate_weight_percent > 0
+    shadow_enabled = stage == "shadow-start" and candidate is not None
     values = {
         "kserve": {
+            "enabled": True,
             "namespace": {"name": "kserve-triton-inference"},
+            "secret": {"create": False},
             "inferenceService": {
                 "name": "recsys-bst-triton",
                 "storageUri": control["triton_storage_uri"],
+                "candidateStorageUri": candidate["triton_storage_uri"] if candidate else "",
             },
         },
         "api": {
@@ -178,10 +268,25 @@ def write_values(
             "candidateWeightPercent": candidate_weight_percent if ab_enabled else 0,
             "controlModelVersion": control["model_version"],
             "candidateModelVersion": candidate["model_version"] if candidate else "",
+            "controlTritonUrl": (
+                "recsys-bst-triton-predictor."
+                "kserve-triton-inference.svc.cluster.local:9000"
+            ),
+            "candidateTritonUrl": (
+                "recsys-bst-triton-candidate-predictor."
+                "kserve-triton-inference.svc.cluster.local:9000"
+                if candidate
+                else ""
+            ),
+        },
+        "shadow": {
+            "enabled": shadow_enabled,
+            "samplePercent": 100,
+            "timeoutMs": 1000,
+            "queueSize": 100,
+            "maxConcurrency": 4,
         },
     }
-    if candidate is not None:
-        values["kserve"]["inferenceService"]["candidateStorageUri"] = candidate["triton_storage_uri"]
     output_dir.mkdir(parents=True, exist_ok=True)
     target = output_dir / "recsys-serving-values.json"
     target.write_text(json.dumps(values, indent=2, sort_keys=True), encoding="utf-8")
@@ -205,6 +310,12 @@ def crd_exists(name: str) -> bool:
 
 
 def deploy(values_path: Path, timeout: str) -> None:
+    rendered_values = json.loads(values_path.read_text(encoding="utf-8"))
+    candidate_uri = rendered_values.get("kserve", {}).get("inferenceService", {}).get("candidateStorageUri", "")
+    candidate_requested = bool(candidate_uri) and (
+        rendered_values.get("abTest", {}).get("enabled", False)
+        or rendered_values.get("shadow", {}).get("enabled", False)
+    )
     run(["helm", "lint", "infra/helm/recsys-serving", "-f", str(values_path)])
     bootstrap_set_args = ["--set", "autoscaling.kserveResource.enabled=false"]
     final_set_args = ["--set", "autoscaling.kserveResource.enabled=true"]
@@ -252,6 +363,29 @@ def deploy(values_path: Path, timeout: str) -> None:
             f"--timeout={timeout}",
         ]
     )
+    if candidate_requested:
+        run(
+            [
+                "kubectl",
+                "wait",
+                "--for=condition=Ready",
+                "inferenceservice/recsys-bst-triton-candidate",
+                "-n",
+                "kserve-triton-inference",
+                f"--timeout={timeout}",
+            ]
+        )
+        run(
+            [
+                "kubectl",
+                "wait",
+                "--for=condition=Available",
+                "deployment/recsys-bst-triton-candidate-predictor",
+                "-n",
+                "kserve-triton-inference",
+                f"--timeout={timeout}",
+            ]
+        )
     run(base_command + final_set_args)
 
 
@@ -259,7 +393,11 @@ def stage_manifests(args: argparse.Namespace) -> tuple[dict, dict | None]:
     control_uri = args.control_manifest_uri or args.manifest_uri
     candidate_uri = args.candidate_manifest_uri or args.manifest_uri
     control_manifest = read_manifest(control_uri)
-    candidate_manifest = read_manifest(candidate_uri) if args.stage in {"ab-start", "ab-step", "promote"} else None
+    candidate_manifest = (
+        read_manifest(candidate_uri)
+        if args.stage in {"shadow-start", "ab-start", "ab-step", "evaluate", "promote"}
+        else None
+    )
     return control_manifest, candidate_manifest
 
 
@@ -270,21 +408,60 @@ def main() -> int:
     parser.add_argument("--candidate-manifest-uri", default="")
     parser.add_argument("--candidate-weight-percent", type=int, default=10)
     parser.add_argument("--experiment-id", default="")
-    parser.add_argument("--stage", choices=["deploy", "ab-start", "ab-step", "promote", "rollback"], default="deploy")
+    parser.add_argument(
+        "--stage",
+        choices=["deploy", "shadow-start", "ab-start", "ab-step", "evaluate", "promote", "rollback"],
+        default="deploy",
+    )
     parser.add_argument("--prometheus-url", default="")
     parser.add_argument("--gate-window", default="10m")
+    parser.add_argument("--max-error-delta", type=float, default=0.02)
+    parser.add_argument("--max-latency-ratio", type=float, default=1.5)
+    parser.add_argument("--min-quality-ratio", type=float, default=0.95)
+    parser.add_argument("--min-samples", type=int, default=100)
     parser.add_argument("--output-dir", default=".model-cd")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--timeout", default="300s")
     args = parser.parse_args()
 
     manifest, candidate_manifest = stage_manifests(args)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    experiment_id = args.experiment_id or f"bst-{int(time.time())}"
     skip_final_verify = False
+    if args.stage == "evaluate":
+        decision = evaluate_candidate_gates(
+            args.prometheus_url,
+            args.gate_window,
+            experiment_id=experiment_id,
+            max_error_delta=args.max_error_delta,
+            max_latency_ratio=args.max_latency_ratio,
+            min_quality_ratio=args.min_quality_ratio,
+            min_samples=max(0, args.min_samples),
+        )
+        (output_dir / "ab-decision.json").write_text(
+            json.dumps(asdict(decision), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        if decision.decision == "rollback":
+            candidate_manifest = None
+            args.stage = "rollback"
+            args.candidate_weight_percent = 0
+        else:
+            args.stage = "ab-step"
     if args.stage == "promote":
         if not candidate_manifest:
             raise ValueError("--candidate-manifest-uri is required for promote")
         verify_model_repository(candidate_manifest["triton_storage_uri"])
-        assert_promote_gates(args.prometheus_url, args.gate_window)
+        assert_promote_gates(
+            args.prometheus_url,
+            args.gate_window,
+            experiment_id,
+            max_error_delta=args.max_error_delta,
+            max_latency_ratio=args.max_latency_ratio,
+            min_quality_ratio=args.min_quality_ratio,
+            min_samples=max(0, args.min_samples),
+        )
         serving_uri = latest_storage_uri(manifest, candidate_manifest)
         if args.apply:
             copy_s3_prefix(candidate_manifest["triton_storage_uri"], serving_uri)
@@ -304,8 +481,6 @@ def main() -> int:
         verify_model_repository(manifest["triton_storage_uri"])
     if candidate_manifest:
         verify_model_repository(candidate_manifest["triton_storage_uri"])
-    output_dir = Path(args.output_dir)
-    experiment_id = args.experiment_id or f"bst-{int(time.time())}"
     values_path = write_values(
         manifest,
         output_dir,

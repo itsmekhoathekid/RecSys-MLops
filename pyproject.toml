@@ -41,4 +41,5 @@ pythonpath = [
     "apps/api-serving/src",
     "apps/ml-system/src",
     "apps/data-platform/src",
+    "apps/analytics/src",
 ]

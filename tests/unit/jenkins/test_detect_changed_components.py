@@ -35,6 +35,7 @@ def product_components(paths: list[str]) -> set[str]:
         ("jenkins/scripts/component_ci.sh", set(), True),
         ("apps/api-serving/src/main.py", {"API"}, False),
         ("apps/ml-system/src/training/train.py", {"TRAINING"}, False),
+        ("apps/analytics/models/marts/recsys/mart_recsys_funnel_daily.sql", {"ANALYTICS"}, False),
         ("apps/ml-system/src/registry/model_promotion.py", {"TRAINING", "KSERVE"}, False),
         (
             "apps/data-platform/src/features/spark/build_user_sequence_features.py",
@@ -95,6 +96,7 @@ def product_components(paths: list[str]) -> set[str]:
             False,
         ),
         ("infra/helm/recsys-serving/templates/inferenceservice.yaml", {"API", "KSERVE"}, False),
+        ("infra/helm/recsys-analytics/templates/trino.yaml", {"ANALYTICS"}, False),
         ("infra/helm/recsys-observability/values.yaml", {"API", "KSERVE", "DRIFT"}, False),
         ("infra/k8s/processing-baseline/spark-baseline-ui-job.yaml", {"SPARK_BATCH", "STREAM_OFFLINE"}, False),
         ("notebooks/ml.ipynb", {"TRAINING"}, False),
@@ -247,6 +249,12 @@ def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
     assert "PROMOTION_MANIFEST_URI" in seed
     assert "RECSYS_CI_WORKSPACE" in seed
     assert "component_deploy.sh kserve_model_cd" in seed
+    assert "stage('Deploy Shadow Candidate')" in seed
+    assert "stage('Evaluate Candidate')" in seed
+    assert "stage('Rollback Candidate')" in seed
+    assert "stage('Verify Champion Only')" in seed
+    assert "AB_CANDIDATE_WEIGHT_PERCENT" in seed
+    assert "AB_MIN_SAMPLES" in seed
     assert "stage('Python Env')" not in seed
     assert "stage('Checkout')" not in seed
     assert "checkout scm" not in seed

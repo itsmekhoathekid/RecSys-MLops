@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
 import feature_api
 import inference_api
-from api_schemas import OnlineFeaturesResponse
+from ab_testing import TritonABRouter
+from api_schemas import OnlineFeaturesResponse, RecommendationRequest
+from shadow import ShadowRunner
 
 
 class DeterministicFeatureClient:
@@ -55,6 +59,7 @@ def reset_singletons(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(feature_api, "_feature_client", None)
     monkeypatch.setattr(inference_api, "_feature_service_client", None)
     monkeypatch.setattr(inference_api, "_ranker", None)
+    monkeypatch.setattr(inference_api, "_shadow_runner", None)
 
 
 def test_feature_api_exposes_online_features_with_pydantic_validation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,3 +95,45 @@ def test_inference_api_calls_feature_service_then_ranks(monkeypatch: pytest.Monk
     assert body["model_version"] == "split-test"
     assert body["ab_variant"] == "control"
     assert [item["item_id"] for item in body["items"]] == [102, 103]
+
+
+def test_inference_api_returns_control_while_shadow_candidate_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    class CountingRanker:
+        def __init__(self, scores):
+            self.scores = scores
+            self.calls = 0
+
+        def score(self, payload):
+            self.calls += 1
+            return payload["candidate_item_id"].tolist(), self.scores
+
+    control = CountingRanker([0.1, 0.9, 0.3])
+    candidate = CountingRanker([0.8, 0.2, 0.4])
+    router = TritonABRouter(
+        control_ranker=control,
+        control_model_version="stable-v1",
+        candidate_ranker=candidate,
+        candidate_model_version="candidate-v2",
+        shadow_enabled=True,
+        shadow_sample_percent=100,
+        experiment_id="shadow-split",
+    )
+    runner = ShadowRunner(timeout_seconds=1, max_pending=4, max_concurrency=1)
+    monkeypatch.setattr(inference_api, "feature_service_client", lambda: DeterministicFeatureService())
+    monkeypatch.setattr(inference_api, "ranker", lambda: router)
+    monkeypatch.setattr(inference_api, "shadow_runner", lambda: runner)
+
+    async def exercise():
+        response = await inference_api.recommendations(
+            RecommendationRequest(user_id=42, candidate_item_ids=[101, 102, 103], top_k=2)
+        )
+        await runner.drain()
+        return response
+
+    response = asyncio.run(exercise())
+
+    assert response.model_version == "stable-v1"
+    assert response.ab_variant == "control"
+    assert [item.item_id for item in response.items] == [102, 103]
+    assert control.calls == 1
+    assert candidate.calls == 1

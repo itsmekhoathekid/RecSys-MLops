@@ -122,6 +122,40 @@ jenkins:
       cpu: "1"
       memory: 2Gi
 
+modelRolloutWatcher:
+  enabled: false
+  image: localhost:5001/recsys/recsys-mlops-training:latest
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  mlflowTrackingUri: http://mlflow.experiment-tracking.svc.cluster.local:5000
+  registeredModelName: recsys_bst_ranker
+  candidateTagKey: candidate
+  pendingValue: test
+  claimedValue: testing
+  testedValue: tested
+  controlManifestUri: s3://recsys-model-store/promotions/bst/latest.json
+  stableManifestUri: s3://recsys-model-store/promotions/bst/latest.json
+  jenkinsUrl: http://recsys-jenkins.ci.svc.cluster.local:8080
+  jenkinsJobName: RecSys-KServe-Model-CD
+  jenkinsAdminSecretName: recsys-jenkins-admin
+  jenkinsWorkspace: /var/jenkins_home/recsys-workspace
+  imageTag: manual
+  prometheusUrl: http://recsys-prometheus.observability.svc.cluster.local:9090
+  gateWindow: 10m
+  minSamples: 100
+  autoProgressiveEnabled: true
+  progressiveWeights: "10,25,50"
+  stageMinObservationSeconds: 30
+  pollSeconds: 15
+  buildTimeoutSeconds: 1800
+  resources:
+    requests:
+      cpu: 25m
+      memory: 96Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
 rbac:
   create: true
   serviceAccountName: recsys-jenkins

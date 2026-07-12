@@ -1,0 +1,93 @@
+{{- if .Values.modelRolloutWatcher.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-model-rollout-watcher
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-model-rollout-watcher
+    app.kubernetes.io/part-of: recsys-ci
+spec:
+  replicas: {{ .Values.modelRolloutWatcher.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recsys-model-rollout-watcher
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+      labels:
+        app.kubernetes.io/name: recsys-model-rollout-watcher
+        app.kubernetes.io/part-of: recsys-ci
+    spec:
+      containers:
+        - name: watcher
+          image: {{ .Values.modelRolloutWatcher.image }}
+          imagePullPolicy: {{ .Values.modelRolloutWatcher.imagePullPolicy }}
+          command:
+            - python
+            - /opt/recsys/apps/ml-system/src/cli/model_rollout_controller.py
+            - watch
+          env:
+            - name: HOME
+              value: /tmp
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .Values.modelRolloutWatcher.mlflowTrackingUri | quote }}
+            - name: MLFLOW_REGISTERED_MODEL_NAME
+              value: {{ .Values.modelRolloutWatcher.registeredModelName | quote }}
+            - name: CANDIDATE_TAG_KEY
+              value: {{ .Values.modelRolloutWatcher.candidateTagKey | quote }}
+            - name: CANDIDATE_PENDING_VALUE
+              value: {{ .Values.modelRolloutWatcher.pendingValue | quote }}
+            - name: CANDIDATE_CLAIMED_VALUE
+              value: {{ .Values.modelRolloutWatcher.claimedValue | quote }}
+            - name: CANDIDATE_TESTED_VALUE
+              value: {{ .Values.modelRolloutWatcher.testedValue | quote }}
+            - name: CONTROL_MANIFEST_URI
+              value: {{ .Values.modelRolloutWatcher.controlManifestUri | quote }}
+            - name: PROMOTION_MANIFEST_URI
+              value: {{ .Values.modelRolloutWatcher.stableManifestUri | quote }}
+            - name: JENKINS_URL
+              value: {{ .Values.modelRolloutWatcher.jenkinsUrl | quote }}
+            - name: KSERVE_CD_JOB_NAME
+              value: {{ .Values.modelRolloutWatcher.jenkinsJobName | quote }}
+            - name: JENKINS_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.modelRolloutWatcher.jenkinsAdminSecretName }}
+                  key: username
+            - name: JENKINS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.modelRolloutWatcher.jenkinsAdminSecretName }}
+                  key: password
+            - name: RECSYS_CI_WORKSPACE
+              value: {{ .Values.modelRolloutWatcher.jenkinsWorkspace | quote }}
+            - name: IMAGE_TAG
+              value: {{ .Values.modelRolloutWatcher.imageTag | quote }}
+            - name: PROMETHEUS_URL
+              value: {{ .Values.modelRolloutWatcher.prometheusUrl | quote }}
+            - name: AB_GATE_WINDOW
+              value: {{ .Values.modelRolloutWatcher.gateWindow | quote }}
+            - name: AB_MIN_SAMPLES
+              value: {{ .Values.modelRolloutWatcher.minSamples | quote }}
+            - name: ROLLOUT_AUTO_PROGRESSIVE_ENABLED
+              value: {{ .Values.modelRolloutWatcher.autoProgressiveEnabled | quote }}
+            - name: ROLLOUT_PROGRESSIVE_WEIGHTS
+              value: {{ .Values.modelRolloutWatcher.progressiveWeights | quote }}
+            - name: ROLLOUT_STAGE_MIN_OBSERVATION_SECONDS
+              value: {{ .Values.modelRolloutWatcher.stageMinObservationSeconds | quote }}
+            - name: ROLLOUT_WATCH_POLL_SECONDS
+              value: {{ .Values.modelRolloutWatcher.pollSeconds | quote }}
+            - name: ROLLOUT_BUILD_TIMEOUT_SECONDS
+              value: {{ .Values.modelRolloutWatcher.buildTimeoutSeconds | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          resources:
+{{ toYaml .Values.modelRolloutWatcher.resources | indent 12 }}
+{{- end }}

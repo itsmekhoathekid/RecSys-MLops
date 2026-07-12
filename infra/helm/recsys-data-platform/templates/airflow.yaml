@@ -52,6 +52,10 @@ spec:
               value: "900"
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
+            - name: ANALYTICS_SPARK_IMAGE
+              value: {{ .Values.images.analyticsSpark | quote }}
+            - name: ANALYTICS_DBT_IMAGE
+              value: {{ .Values.images.analyticsDbt | quote }}
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
@@ -111,6 +115,10 @@ spec:
               value: "900"
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
+            - name: ANALYTICS_SPARK_IMAGE
+              value: {{ .Values.images.analyticsSpark | quote }}
+            - name: ANALYTICS_DBT_IMAGE
+              value: {{ .Values.images.analyticsDbt | quote }}
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

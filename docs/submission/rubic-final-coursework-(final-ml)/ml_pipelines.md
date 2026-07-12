@@ -12,7 +12,8 @@
 - **KubeRay RayJob + Ray Tune:** the first Ray step runs small, fast hyperparameter tuning trials (`1` epoch, `1%` training data by default) and writes `tune_result.json`.
 - **KubeRay RayJob + Ray Train DDP:** the second Ray step consumes the best tune config and runs real distributed PyTorch training (`DistributedDataParallel`) with small defaults (`1` epoch, `2%` training data, `2` workers) so proof runs quickly.
 - **MLflow + MinIO + Postgres model registry:** stores metrics, checkpoints, artifacts, model registry versions, and promoted model metadata.
-- **Triton-compatible promotion:** exports the best BST checkpoint into a Triton serving layout and writes a promotion manifest.
+- **Triton-compatible promotion:** exports the best BST checkpoint into an immutable Triton serving layout, uploads a versioned promotion manifest, and records that manifest URI on the MLflow model version.
+- **Champion-aware deployment handoff:** automatically bootstraps the first valid model, but never deploys a later retrained model until an operator explicitly sets `candidate=test` in MLflow.
 
 Notebook-to-pipeline mapping:
 
@@ -24,40 +25,80 @@ Notebook-to-pipeline mapping:
 | Distributed train model | `Distributed training` (`submit-rayjob-2`, `job_mode=distributed-train`) | Submits KubeRay `RayJob` `recsys-bst-ray-ddp-train`, then runs Ray Train `TorchTrainer` with PyTorch DDP, rank-aware data sharding, gradient synchronization, checkpointing, and Ray reporting. |
 | Evaluate model | `evaluate-bst` | Evaluates the best Ray result on the test split and logs evaluation metrics. |
 | Save/promote model | `promote-bst-model` | Exports the best checkpoint, writes Triton serving files, updates model metadata, and writes the promotion manifest. |
-| Deploy promoted model | `Trigger KServe CD` | Checks the promotion metric against the deployment threshold, then triggers Jenkins job `RecSys-KServe-Model-CD` to deploy the promoted Triton repository to KServe. |
+| Decide deployment handoff | `Bootstrap Or Await Candidate` | Checks the offline metric and `latest.json`. With no champion, it bootstraps the first model through Jenkins. With an existing champion, it leaves the new registry version undeployed until `candidate=test`. |
+
+### Post-training deployment lifecycle
+
+```mermaid
+flowchart TD
+  A["Ray Tune and DDP training"] --> B["Evaluate offline metrics"]
+  B --> C{"Offline threshold passed?"}
+  C -->|"No"| X["Reject deployment<br/>production unchanged"]
+  C -->|"Yes"| D["Export immutable Triton repository"]
+  D --> E["Upload versioned manifest<br/>promotions/bst/model-version.json"]
+  E --> F["Register MLflow version<br/>with promotion_manifest_uri"]
+  F --> G{"Does latest.json exist?"}
+
+  G -->|"No: cold start"| H["Trigger Jenkins deploy<br/>candidate weight = 0"]
+  H --> I{"Jenkins deploy succeeded?"}
+  I -->|"No"| Y["Fail pipeline<br/>do not publish latest.json"]
+  I -->|"Yes"| J["Publish latest.json<br/>set MLflow alias champion"]
+  J --> K["One stable Triton inference service"]
+
+  G -->|"Yes: champion exists"| L["rollout_status = awaiting_candidate_selection"]
+  L --> M["No Jenkins deployment<br/>champion keeps 100% traffic"]
+  M --> N["Operator sets candidate = test"]
+  N --> O["Watcher triggers Jenkins shadow-start"]
+  O --> P["candidate = tested<br/>API still returns control"]
+  P --> Q["Watcher opens A/B at 10%"]
+  Q --> V["Locust sends real sticky traffic"]
+  V --> W["Watcher counts fresh samples in Prometheus"]
+  W --> R{"Enough samples and online gate passes?"}
+  R -->|"Not enough"| V
+  R -->|"Pass at 10% or 25%"| Z["Watcher increases next weight"]
+  Z --> V
+  R -->|"Regression"| S["Automatic rollback<br/>keep old champion"]
+  R -->|"Final pass"| T["Promote new champion"]
+  S --> U["Delete temporary candidate Triton"]
+  T --> U
+```
+
+The important boundary is that successful training creates a **deployable
+candidate artifact**, not an automatic production replacement. The only
+automatic direct deployment is the cold-start bootstrap when
+`s3://recsys-model-store/promotions/bst/latest.json` does not exist. Once a
+champion exists, the Kubeflow run finishes with
+`reason=champion_exists_waiting_for_candidate_tag`; it does not call Jenkins.
+
+`candidate=test` starts shadow deployment, not A/B traffic. After shadow
+deployment succeeds, the watcher changes the tag to `candidate=tested`. The
+watcher then opens 10% automatically. Locust supplies real sticky traffic, but
+does not issue rollout commands. At each stage the watcher waits until
+Prometheus reports at least 100 fresh samples for both variants, asks Jenkins
+to evaluate the online gate, then automatically advances 10% → 25% → 50% →
+champion. `hold` keeps the current weight and waits for another fresh batch; a
+failed gate rolls back automatically. Both terminal paths remove the temporary
+candidate Triton service.
+
+Newly promoted MLflow versions always carry `promotion_manifest_uri`. For a
+legacy version created before this contract existed, the watcher quarantines a
+missing URI as `candidate=invalid` and `rollout_status=manifest_missing`
+instead of retrying forever. The operator can repair it deterministically with
+`model_rollout_demo.sh mark <registry-version> <versioned-manifest-uri>`.
 
 ### Code reference
 
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 232 (line 232)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L232): defines the KFP pipeline `recsys_bst_pipeline`.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 44 (line 44)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L44): `prepare_training_data` component runs the data-prep CLI through Spark submit.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 241 (line 241)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L241): pipeline default entity input is PostgreSQL `feature_store.ml_ranking_labels`.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 260 (line 260)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L260): pipeline default FeatureService is `bst_ranking_v1`.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 302 (line 302)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L302): wires the Ray Tune step before distributed training.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 333 (line 333)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L333): wires the DDP distributed training step after Ray Tune.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 364 (line 364)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L364): wires `evaluate-bst` after DDP training.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 375 (line 375)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L375): wires `promote-bst-model`.
-- [apps/ml-system/src/cli/prepare_bst_training_data.py line 149 (line 149)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L149): reads `postgresql://...` entity/label input.
-- [apps/ml-system/src/cli/prepare_bst_training_data.py line 344 (line 344)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L344): calls Feast `FeatureStore.get_historical_features(...)`.
-- [apps/ml-system/src/cli/prepare_bst_training_data.py line 509 (line 509)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L509): writes BST JSONL train/validation/test splits.
-- [apps/ml-system/src/cli/submit_ray_job.py line 95 (line 95)](../../../apps/ml-system/src/cli/submit_ray_job.py#L95): switches RayJob entrypoint between `tune` and `distributed-train`.
-- [apps/ml-system/src/cli/submit_ray_job.py line 152 (line 152)](../../../apps/ml-system/src/cli/submit_ray_job.py#L152): builds the KubeRay RayJob spec with runtime secret, shared PVC, head pod, and worker pods.
-- [apps/ml-system/src/training/ray_tune_train_bst.py line 126 (line 126)](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L126): runs each Ray Tune BST trial.
-- [apps/ml-system/src/training/ray_tune_train_bst.py line 197 (line 197)](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L197): keeps Ray Tune small by default (`1` epoch, `2` trials, serial concurrency unless overridden).
-- [apps/ml-system/src/training/ray_distributed_train_bst.py line 214 (line 214)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L214): Ray Train worker loop initializes rank/world size and prepares the DDP model.
-- [apps/ml-system/src/training/ray_distributed_train_bst.py line 236 (line 236)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L236): uses `DistributedSampler` so each rank receives its own shard of training data.
-- [apps/ml-system/src/training/ray_distributed_train_bst.py line 261 (line 261)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L261): runs `loss.backward()` through the DDP-wrapped model, which synchronizes gradients across ranks.
-- [apps/ml-system/src/training/ray_distributed_train_bst.py line 287 (line 287)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L287): broadcasts rank-0 validation metrics back to all workers before Ray reporting.
-- [apps/ml-system/src/training/ray_distributed_train_bst.py line 301 (line 301)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L301): reports metrics/checkpoints through Ray Train.
-- [apps/ml-system/src/training/ray_distributed_train_bst.py line 303 (line 303)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L303): rank 0 logs the final DDP checkpoint, metrics, and dataset lineage to MLflow/model registry.
-- [apps/ml-system/src/cli/evaluate_bst.py line 34 (line 34)](../../../apps/ml-system/src/cli/evaluate_bst.py#L34): evaluates a trained BST checkpoint on the selected split.
-- [apps/ml-system/src/registry/model_promotion.py line 557 (line 557)](../../../apps/ml-system/src/registry/model_promotion.py#L557): promotes the best checkpoint to Triton/MinIO/model registry metadata.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 238 (line 238)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L238): defines the `Trigger KServe CD` container component.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 437 (line 437)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L437): wires `Trigger KServe CD` after `promote-bst-model`.
-- [apps/ml-system/src/cli/trigger_kserve_cd.py line 188 (line 188)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L188): loads the promotion manifest, checks the score threshold, and triggers Jenkins.
-- [jenkins/KServeModelCD.Jenkinsfile line 1 (line 1)](../../../jenkins/KServeModelCD.Jenkinsfile#L1): Jenkins job that deploys the promoted model after training/retraining.
-- [apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py line 26 (line 26)](../../../apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py#L26): compiles the KFP package to `infra/kubeflow/compiled/bst_training_pipeline.yaml`.
-- [apps/ml-system/src/kubeflow/submit_pipeline_run.py line 116 (line 116)](../../../apps/ml-system/src/kubeflow/submit_pipeline_run.py#L116): submits and optionally waits for the KFP run.
-- [apps/ml-system/src/kubeflow/components/runtime.py line 37 (line 37)](../../../apps/ml-system/src/kubeflow/components/runtime.py#L37): mounts the shared PVC and runtime secret into KFP tasks.
+| Pipeline concern | Code reference |
+| --- | --- |
+| KFP components and dependency graph | [`bst_training_pipeline.py`](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py) |
+| Feast historical retrieval and temporal splits | [`prepare_bst_training_data.py`](../../../apps/ml-system/src/cli/prepare_bst_training_data.py) |
+| KubeRay `RayJob` construction | [`submit_ray_job.py`](../../../apps/ml-system/src/cli/submit_ray_job.py) |
+| Hyperparameter tuning | [`ray_tune_train_bst.py`](../../../apps/ml-system/src/training/ray_tune_train_bst.py) |
+| Ray Train DDP lifecycle | [`ray_distributed_train_bst.py`](../../../apps/ml-system/src/training/ray_distributed_train_bst.py) |
+| Evaluation and immutable Triton promotion | [`evaluate_bst.py`](../../../apps/ml-system/src/cli/evaluate_bst.py), [`model_promotion.py`](../../../apps/ml-system/src/registry/model_promotion.py) |
+| Champion-aware handoff and rollout watcher | [`trigger_kserve_cd.py`](../../../apps/ml-system/src/cli/trigger_kserve_cd.py), [`model_rollout_controller.py`](../../../apps/ml-system/src/cli/model_rollout_controller.py) |
+| Compilation, submission, and runtime mounts | [`compile_training_pipeline.py`](../../../apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py), [`submit_pipeline_run.py`](../../../apps/ml-system/src/kubeflow/submit_pipeline_run.py), [`runtime.py`](../../../apps/ml-system/src/kubeflow/components/runtime.py) |
+| Jenkins model rollout state machine | [`KServeModelCD.Jenkinsfile`](../../../jenkins/KServeModelCD.Jenkinsfile) |
 
 ### Compiled pipeline defaults
 
@@ -80,8 +121,10 @@ Notebook-to-pipeline mapping:
 | Promotion manifest | `/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json` |
 | Promotion metric | `test_ndcg_at_10` |
 | KServe CD threshold | `0.0` |
-| KServe CD Jenkins job | `RecSys-KServe-Model-CD` |
-| KServe CD status | `/workspace/recsys/data_platform/output/ml/serving/kserve_cd_status.json` |
+| Stable champion manifest | `s3://recsys-model-store/promotions/bst/latest.json` |
+| Versioned candidate manifest | `s3://recsys-model-store/promotions/bst/<model-version>.json` |
+| Cold-start Jenkins job | `RecSys-KServe-Model-CD`, `ROLLOUT_STAGE=deploy` |
+| Rollout handoff status | `/workspace/recsys/data_platform/output/ml/serving/kserve_cd_status.json` |
 
 ### Description
 
@@ -91,8 +134,9 @@ Notebook-to-pipeline mapping:
 - The DDP training step is the real distributed training proof: `TorchTrainer` creates multiple workers, PyTorch DDP syncs gradients during `loss.backward()`, `DistributedSampler` shards data by rank, rank 0 saves the checkpoint, and all workers call Ray Train report with synced metrics.
 - Both RayJobs should end with `jobStatus: SUCCEEDED`.
 - `evaluate-bst` writes metrics to `/workspace/recsys/data_platform/output/ml/eval_metrics.json`.
-- `promote-bst-model` writes the serving/promotion manifest to `/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json`.
-- `Trigger KServe CD` is the post-training/post-retraining deployment handoff: it reads the promotion manifest, verifies the metric threshold, triggers Jenkins `RecSys-KServe-Model-CD`, waits for the Jenkins build, and writes `/workspace/recsys/data_platform/output/ml/serving/kserve_cd_status.json`.
+- `promote-bst-model` writes `/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json`, uploads the matching versioned manifest to MinIO, and stores its URI on the new MLflow registry version.
+- `Bootstrap Or Await Candidate` is the post-training decision step. When no stable manifest exists, it waits for a successful Jenkins deployment before publishing `latest.json` and assigning the MLflow `champion` alias. When a champion exists, it writes `rollout_status=awaiting_candidate_selection` and exits without calling Jenkins.
+- A later model remains only a deployable registry candidate until an operator sets `candidate=test`. The watcher owns shadow deployment and the complete Prometheus-sample-driven 10% → 25% → 50% → terminal lifecycle; Locust only supplies request traffic.
 
 ### Image proof of Kubeflow pipeline preparing training data log
 
@@ -122,9 +166,9 @@ Notebook-to-pipeline mapping:
 
 **Figure: Kubeflow `promote-bst-model` proof.** The log shows the selected DDP checkpoint being exported into the Triton model repository layout, registered with MLflow/model metadata, uploaded to the model store, and recorded in `promotion_manifest.json`. The manifest is the handoff artifact for model deployment.
 
-![Kubeflow KServe CD trigger log](../../pngs/cd_model_log.png)
+![Kubeflow bootstrap or candidate wait log](../../pngs/cd_model_log.png)
 
-**Figure: Kubeflow `Trigger KServe CD` proof.** The log shows the post-promotion deployment handoff after training or retraining: the step reads `promotion_manifest.json`, checks the promotion metric against the configured threshold, triggers Jenkins job `RecSys-KServe-Model-CD`, waits for that job, and writes `kserve_cd_status.json`. This proves training does not stop at model promotion; it hands the promoted Triton model to the KServe deployment CD flow.
+**Figure: Kubeflow `Bootstrap Or Await Candidate` proof.** For a normal retraining run, capture `triggered=false`, `reason=champion_exists_waiting_for_candidate_tag`, the MLflow registry version, and the versioned `promotion_manifest_uri`; no Jenkins build should appear. For a clean cold-start run, capture `reason=initial_champion_bootstrap`, the successful Jenkins build number, the published `stable_manifest_uri`, and the MLflow champion version. These two outcomes prove that the first model is bootstrapped automatically while later models require explicit candidate selection.
 
 Pipeline proof comments:
 

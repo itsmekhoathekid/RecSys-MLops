@@ -256,3 +256,10 @@ abTest:
   candidateModelVersion: ""
   controlTritonUrl: recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
   candidateTritonUrl: recsys-bst-triton-candidate-predictor.kserve-triton-inference.svc.cluster.local:9000
+
+shadow:
+  enabled: false
+  samplePercent: 100
+  timeoutMs: 1000
+  queueSize: 100
+  maxConcurrency: 4

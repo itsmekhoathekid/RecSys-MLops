@@ -35,7 +35,7 @@ spec:
           mountPath: /dev/shm
       resources:
 {{ toYaml .Values.kserve.resources | indent 8 }}
-{{- if and .Values.abTest.enabled .Values.kserve.inferenceService.candidateStorageUri }}
+{{- if and (or .Values.abTest.enabled .Values.shadow.enabled) .Values.kserve.inferenceService.candidateStorageUri }}
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
@@ -47,7 +47,6 @@ metadata:
     app.kubernetes.io/part-of: {{ .Values.kserve.inferenceService.name }}
     recsys.ai/ab-variant: candidate
   annotations:
-    "helm.sh/resource-policy": keep
     serving.kserve.io/deploymentMode: {{ .Values.kserve.inferenceService.deploymentMode | quote }}
 spec:
   predictor:

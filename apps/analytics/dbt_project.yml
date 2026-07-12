@@ -1,0 +1,29 @@
+name: recsys_analytics
+version: 1.0.0
+config-version: 2
+
+profile: recsys_analytics
+model-paths: ["models"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages", "logs"]
+
+models:
+  recsys_analytics:
+    staging:
+      +schema: staging_views
+      +materialized: view
+      +tags: [staging]
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+      +tags: [intermediate]
+    marts:
+      core:
+        +schema: core
+        +materialized: table
+        +tags: [gold, core]
+      recsys:
+        +schema: recsys
+        +materialized: table
+        +tags: [gold, recsys]
+

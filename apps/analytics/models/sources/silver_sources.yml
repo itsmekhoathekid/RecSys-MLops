@@ -1,0 +1,20 @@
+version: 2
+
+sources:
+  - name: silver
+    description: Curated Silver Iceberg snapshots copied into the isolated analytics JDBC catalog.
+    database: "{{ env_var('DBT_TRINO_CATALOG', 'analytics') }}"
+    schema: staging
+    loaded_at_field: analytics_synced_at
+    freshness:
+      warn_after: {count: 26, period: hour}
+      error_after: {count: 50, period: hour}
+    tables:
+      - name: clean_behavior_events
+      - name: clean_impressions
+      - name: clean_recommendation_requests
+      - name: order_facts
+      - name: product_scd
+      - name: users
+      - name: products
+

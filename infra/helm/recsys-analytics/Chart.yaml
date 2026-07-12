@@ -1,0 +1,7 @@
+apiVersion: v2
+name: recsys-analytics
+description: Isolated Iceberg JDBC catalog, Trino query engine, and Superset BI stack.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+

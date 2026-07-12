@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: dim_product
+    description: Type-2 product dimension at product_id and valid_from grain.
+    columns:
+      - name: product_id
+        data_tests: [not_null]
+      - name: valid_from
+        data_tests: [not_null]
+
+  - name: fct_order_items
+    description: One row per order item; invalid cancelled/refunded purchases remain explicitly flagged.
+    columns:
+      - name: order_item_id
+        data_tests: [not_null, unique]
+      - name: order_timestamp
+        data_tests: [not_null]
+
+  - name: fct_recommendation_impressions
+    description: One row per impression and candidate product with downstream outcome attribution.
+    columns:
+      - name: impression_id
+        data_tests: [not_null]
+      - name: product_id
+        data_tests: [not_null]
+      - name: has_click
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
+      - name: has_cart
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
+      - name: has_purchase
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+                quote: false
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [impression_id, product_id]
+
+  - name: mart_recsys_funnel_daily
+    description: Daily recommendation funnel and revenue KPIs.
+    columns:
+      - name: metric_date
+        data_tests: [not_null, unique]
+
+  - name: mart_ab_experiment_daily
+    description: Daily experiment metrics; only requests carrying real experiment_id and variant are included.
+    columns:
+      - name: experiment_id
+        data_tests: [not_null]
+      - name: variant
+        data_tests: [not_null]
+
+  - name: mart_product_performance_daily
+    description: Daily product recommendation exposure and attributed outcome metrics.
+    columns:
+      - name: metric_date
+        data_tests: [not_null]
+      - name: product_id
+        data_tests: [not_null]

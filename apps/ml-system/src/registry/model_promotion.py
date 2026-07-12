@@ -516,6 +516,7 @@ def register_mlflow_model_version(
     model_version: str,
     metric_name: str,
     metric_value: float,
+    promotion_manifest_uri: str = "",
     source_tag: str = "kubeflow-ray-tune",
 ) -> dict[str, Any]:
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
@@ -538,16 +539,19 @@ def register_mlflow_model_version(
                 "model_family": MODEL_NAME,
             },
         )
+    version_tags = {
+        "model_version": model_version,
+        "metric_name": metric_name,
+        "metric_value": str(metric_value),
+        "source": source_tag,
+    }
+    if promotion_manifest_uri:
+        version_tags["promotion_manifest_uri"] = promotion_manifest_uri
     created = client.create_model_version(
         name=registered_model_name,
         source=source_uri,
         run_id=run_id,
-        tags={
-            "model_version": model_version,
-            "metric_name": metric_name,
-            "metric_value": str(metric_value),
-            "source": source_tag,
-        },
+        tags=version_tags,
     )
     return {
         "mlflow_registered_model_name": registered_model_name,
@@ -610,6 +614,7 @@ def promote_best_model(
                 model_version=version,
                 metric_name=manifest["metric_name"],
                 metric_value=manifest["metric_value"],
+                promotion_manifest_uri=manifest_uri,
                 source_tag=manifest.get("source", "kubeflow-ray-tune"),
             )
         )

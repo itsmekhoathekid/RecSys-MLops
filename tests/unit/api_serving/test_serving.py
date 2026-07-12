@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import asyncio
+import time
 import types
 
 import numpy as np
@@ -21,6 +23,7 @@ from ranking import (
     recommend,
 )
 from triton import TritonRanker
+from shadow import ShadowRunner
 
 
 def test_build_triton_payload_maps_feature_rows_to_tensors():
@@ -189,6 +192,107 @@ def test_ab_disabled_uses_control_route():
 
     assert route.ab_variant is None
     assert route.model_version == "stable"
+    text = metrics_text()
+    assert "recsys_api_rollout_config_info" in text
+    assert 'control_model_version="stable"' in text
+    assert 'mode="stable"' in text
+
+
+def test_shadow_route_keeps_user_response_on_control_and_samples_candidate():
+    class Ranker:
+        def score(self, payload):
+            return [], []
+
+    control = Ranker()
+    candidate = Ranker()
+    router = TritonABRouter(
+        control_ranker=control,
+        control_model_version="stable",
+        candidate_ranker=candidate,
+        candidate_model_version="candidate",
+        shadow_enabled=True,
+        shadow_sample_percent=100,
+        experiment_id="shadow-exp",
+    )
+
+    response_route = router.route(42)
+    shadow_route = router.shadow_route(42)
+
+    assert response_route.ranker is control
+    assert response_route.ab_variant == "control"
+    assert response_route.model_version == "stable"
+    assert shadow_route is not None
+    assert shadow_route.ranker is candidate
+    assert shadow_route.ab_variant == "shadow_candidate"
+    assert shadow_route.model_version == "candidate"
+    text = metrics_text()
+    assert 'candidate_model_version="candidate"' in text
+    assert 'experiment_id="shadow-exp"' in text
+    assert 'mode="shadow"' in text
+
+    sampled_router = TritonABRouter(
+        control_ranker=control,
+        control_model_version="stable",
+        candidate_ranker=candidate,
+        candidate_model_version="candidate",
+        shadow_enabled=True,
+        shadow_sample_percent=50,
+        experiment_id="shadow-sample",
+    )
+    sampled = [sampled_router.shadow_route(user_id) for user_id in range(1, 1001)]
+    sampled_ratio = sum(route is not None for route in sampled) / len(sampled)
+    assert 0.45 <= sampled_ratio <= 0.55
+
+    disabled_sample = TritonABRouter(
+        control_ranker=control,
+        control_model_version="stable",
+        candidate_ranker=candidate,
+        shadow_enabled=True,
+        shadow_sample_percent=0,
+    )
+    assert disabled_sample.shadow_route(1) is None
+
+
+def test_shadow_runner_records_success_error_timeout_and_drop():
+    from ab_testing import TritonRoute
+
+    class SuccessRanker:
+        def score(self, payload):
+            return [1, 2], [0.2, 0.8]
+
+    class ErrorRanker:
+        def score(self, payload):
+            raise RuntimeError("candidate unavailable")
+
+    class SlowRanker:
+        def score(self, payload):
+            time.sleep(0.05)
+            return [1], [0.1]
+
+    async def exercise():
+        payload = {"candidate_item_id": np.asarray([1, 2], dtype=np.int64)}
+        success = ShadowRunner(timeout_seconds=1, max_pending=2, max_concurrency=1)
+        assert success.submit(TritonRoute(SuccessRanker(), "candidate", "shadow_candidate", "shadow-ok"), payload)
+        await success.drain()
+
+        error = ShadowRunner(timeout_seconds=1, max_pending=2, max_concurrency=1)
+        assert error.submit(TritonRoute(ErrorRanker(), "candidate", "shadow_candidate", "shadow-error"), payload)
+        await error.drain()
+
+        timeout = ShadowRunner(timeout_seconds=0.001, max_pending=1, max_concurrency=1)
+        route = TritonRoute(SlowRanker(), "candidate", "shadow_candidate", "shadow-timeout")
+        assert timeout.submit(route, payload)
+        assert timeout.submit(route, payload) is False
+        await timeout.drain()
+
+    asyncio.run(exercise())
+    text = metrics_text()
+    assert 'experiment_id="shadow-ok",model_version="candidate",status="success"' in text
+    assert 'experiment_id="shadow-error",model_version="candidate",status="error"' in text
+    assert 'experiment_id="shadow-timeout",model_version="candidate",status="timeout"' in text
+    assert 'experiment_id="shadow-timeout",model_version="candidate",status="dropped"' in text
+    assert "recsys_api_shadow_latency_seconds_bucket" in text
+    assert "recsys_api_shadow_score_mean" in text
 
 
 def test_recommend_ab_router_returns_variant_metadata_and_metrics():
@@ -415,6 +519,36 @@ def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
     assert router.experiment_id == "exp-env"
     assert created[0]["model_version"] == "stable-v1"
     assert created[1]["model_version"] == "candidate-v1"
+
+
+def test_ab_router_from_env_builds_shadow_candidate_with_zero_user_weight(monkeypatch):
+    import ab_testing
+
+    created = []
+
+    class FakeRanker:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+        def score(self, payload):
+            return [], []
+
+    monkeypatch.setattr(ab_testing, "TritonRanker", FakeRanker)
+    monkeypatch.setenv("AB_TEST_ENABLED", "0")
+    monkeypatch.setenv("AB_SHADOW_ENABLED", "1")
+    monkeypatch.setenv("AB_SHADOW_SAMPLE_PERCENT", "100")
+    monkeypatch.setenv("AB_CANDIDATE_TRITON_URL", "candidate:9000")
+    monkeypatch.setenv("AB_CANDIDATE_MODEL_VERSION", "candidate-v2")
+    monkeypatch.setenv("AB_CANDIDATE_WEIGHT_PERCENT", "0")
+
+    router = TritonABRouter.from_env()
+
+    assert router.enabled is False
+    assert router.shadow_enabled is True
+    assert router.route(1).ab_variant == "control"
+    assert router.shadow_route(1).model_version == "candidate-v2"
+    assert len(created) == 2
+    assert created[1]["ab_variant"] == "shadow_candidate"
 
 
 def test_observability_metrics_expose_api_redis_and_triton_series():

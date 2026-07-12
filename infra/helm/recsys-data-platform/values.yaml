@@ -14,6 +14,8 @@ images:
   kafka: confluentinc/cp-kafka:7.5.0
   kafkaConnect: recsys-kafka-connect:local
   airflow: recsys-airflow:local
+  analyticsSpark: recsys-analytics-spark:local
+  analyticsDbt: recsys-analytics-dbt:local
   pullPolicy: IfNotPresent
 
 storageClassName: ""
@@ -119,6 +121,7 @@ flinkTaskManager:
 flink:
   checkpointStorageUri: s3a://recsys-lakehouse/flink-checkpoints
   istioInject: "false"
+  metricsPort: 9249
   taskSlots: "1"
   taskManagerProcessMemory: "6144m"
   taskManagerTaskHeapMemory: "2048m"

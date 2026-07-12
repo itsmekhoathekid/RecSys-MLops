@@ -35,17 +35,7 @@ Client
 
 ## 2. FastAPI Service
 
-Source: [apps/api-serving/src/feature_api.py line 1](../../../apps/api-serving/src/feature_api.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/feature_api.py line 5](../../../apps/api-serving/src/feature_api.py#L5): imports `FastAPI`.
-- [apps/api-serving/src/feature_api.py line 12](../../../apps/api-serving/src/feature_api.py#L12): creates `RecSys Online Feature API`.
-- [apps/api-serving/src/feature_api.py line 23](../../../apps/api-serving/src/feature_api.py#L23): exposes `/healthz`.
-- [apps/api-serving/src/feature_api.py line 28](../../../apps/api-serving/src/feature_api.py#L28): exposes `/ready`.
-- [apps/api-serving/src/feature_api.py line 43](../../../apps/api-serving/src/feature_api.py#L43): exposes `/metrics`.
-- [apps/api-serving/src/feature_api.py line 48](../../../apps/api-serving/src/feature_api.py#L48): exposes `POST /online-features`.
-- [apps/api-serving/src/feature_api.py line 62](../../../apps/api-serving/src/feature_api.py#L62): exposes `GET /online-features/{user_id}`.
+Code reference: [`feature_api.py`](../../../apps/api-serving/src/feature_api.py) configures the FastAPI app and exposes health, readiness, metrics, plus async POST/GET online-feature handlers.
 
 ### Key Evidence
 
@@ -53,16 +43,7 @@ Lines to show:
 
 ## 3. Pydantic Validation
 
-Source: [apps/api-serving/src/api_schemas.py line 1](../../../apps/api-serving/src/api_schemas.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/api_schemas.py line 5](../../../apps/api-serving/src/api_schemas.py#L5): imports `BaseModel` and `Field`.
-- [apps/api-serving/src/api_schemas.py line 27](../../../apps/api-serving/src/api_schemas.py#L27): defines `OnlineFeaturesResponse`.
-- [apps/api-serving/src/api_schemas.py line 34](../../../apps/api-serving/src/api_schemas.py#L34): defines `OnlineFeaturesRequest`.
-- [apps/api-serving/src/api_schemas.py line 35](../../../apps/api-serving/src/api_schemas.py#L35): validates `user_id >= 1`.
-- [apps/api-serving/src/api_schemas.py line 36](../../../apps/api-serving/src/api_schemas.py#L36): validates optional candidate ids with `min_length=1` and `max_length=500`.
-- [apps/api-serving/src/api_schemas.py line 37](../../../apps/api-serving/src/api_schemas.py#L37): validates `top_k` with `1 <= top_k <= 100`.
+Code reference: [`api_schemas.py`](../../../apps/api-serving/src/api_schemas.py) defines `OnlineFeaturesRequest`/`OnlineFeaturesResponse` and validates `user_id`, candidate-list length, and `top_k`.
 
 ### Key Evidence
 
@@ -70,23 +51,8 @@ Lines to show:
 
 ## 4. Async API Functions
 
-Source: [apps/api-serving/src/feature_api.py line 1](../../../apps/api-serving/src/feature_api.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/feature_api.py line 24](../../../apps/api-serving/src/feature_api.py#L24): async health endpoint.
-- [apps/api-serving/src/feature_api.py line 29](../../../apps/api-serving/src/feature_api.py#L29): async readiness endpoint.
-- [apps/api-serving/src/feature_api.py line 44](../../../apps/api-serving/src/feature_api.py#L44): async metrics endpoint.
-- [apps/api-serving/src/feature_api.py line 49](../../../apps/api-serving/src/feature_api.py#L49): async online feature POST handler.
-- [apps/api-serving/src/feature_api.py line 51](../../../apps/api-serving/src/feature_api.py#L51): uses `await asyncio.to_thread(...)` so the synchronous Feast/Redis read does not block the event loop.
-- [apps/api-serving/src/feature_api.py line 63](../../../apps/api-serving/src/feature_api.py#L63): async online feature GET handler.
-
-The inference API also uses async service-to-service calls:
-
-- [apps/api-serving/src/feature_service_client.py line 17](../../../apps/api-serving/src/feature_service_client.py#L17): async `fetch(...)`.
-- [apps/api-serving/src/feature_service_client.py line 22](../../../apps/api-serving/src/feature_service_client.py#L22): uses `httpx.AsyncClient`.
-- [apps/api-serving/src/inference_api.py line 60](../../../apps/api-serving/src/inference_api.py#L60): async `POST /recommendations`.
-- [apps/api-serving/src/inference_api.py line 68](../../../apps/api-serving/src/inference_api.py#L68): awaits online feature API response before inference.
+- [`feature_api.py`](../../../apps/api-serving/src/feature_api.py): async endpoints and `asyncio.to_thread(...)` around synchronous Feast access.
+- [`feature_service_client.py`](../../../apps/api-serving/src/feature_service_client.py), [`inference_api.py`](../../../apps/api-serving/src/inference_api.py): async `httpx` service call before recommendation inference.
 
 ### Key Evidence
 
@@ -94,20 +60,7 @@ The inference API also uses async service-to-service calls:
 
 ## 5. Pull Data From Online Feature Store
 
-Source: [apps/api-serving/src/online_features.py line 1](../../../apps/api-serving/src/online_features.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/online_features.py line 81](../../../apps/api-serving/src/online_features.py#L81): `FeatureClient` owns the online feature retrieval logic.
-- [apps/api-serving/src/online_features.py line 88](../../../apps/api-serving/src/online_features.py#L88): reads the Feast repository path.
-- [apps/api-serving/src/online_features.py line 100](../../../apps/api-serving/src/online_features.py#L100): builds the Redis connection string for Feast online store.
-- [apps/api-serving/src/online_features.py line 120](../../../apps/api-serving/src/online_features.py#L120): creates the Feast `FeatureStore`.
-- [apps/api-serving/src/online_features.py line 127](../../../apps/api-serving/src/online_features.py#L127): applies the Feast repo at startup.
-- [apps/api-serving/src/online_features.py line 131](../../../apps/api-serving/src/online_features.py#L131): calls `FeatureStore.get_online_features(...)`.
-- [apps/api-serving/src/online_features.py line 134](../../../apps/api-serving/src/online_features.py#L134): pulls user sequence and aggregate features by `user_id`.
-- [apps/api-serving/src/online_features.py line 155](../../../apps/api-serving/src/online_features.py#L155): pulls item features in batch by `product_id`.
-- [apps/api-serving/src/online_features.py line 181](../../../apps/api-serving/src/online_features.py#L181): reads candidate ids from the Redis candidate pool.
-- [apps/api-serving/src/online_features.py line 198](../../../apps/api-serving/src/online_features.py#L198): builds the final `OnlineFeaturesResponse`.
+Code reference: [`online_features.py`](../../../apps/api-serving/src/online_features.py) contains `FeatureClient` and `get_online_features()`: it configures Feast/Redis, loads user and item features, resolves candidate ids, and returns `OnlineFeaturesResponse`.
 
 Feast store definition:
 
@@ -129,23 +82,10 @@ The rubric sentence says this Web API pulls data from the Online Feature Store a
 | `recsys-online-feature-api` | Pulls user and item online features from Feast/Redis. |
 | `recsys-api-serving` | Calls `recsys-online-feature-api`, prepares ranking features, and calls Triton inference. |
 
-Source: [apps/api-serving/src/inference_api.py line 1](../../../apps/api-serving/src/inference_api.py#L1)
+Code references:
 
-Lines to show:
-
-- [apps/api-serving/src/inference_api.py line 17](../../../apps/api-serving/src/inference_api.py#L17): creates the inference FastAPI service.
-- [apps/api-serving/src/inference_api.py line 22](../../../apps/api-serving/src/inference_api.py#L22): initializes `OnlineFeatureServiceClient`.
-- [apps/api-serving/src/inference_api.py line 60](../../../apps/api-serving/src/inference_api.py#L60): exposes `POST /recommendations`.
-- [apps/api-serving/src/inference_api.py line 68](../../../apps/api-serving/src/inference_api.py#L68): pulls online features from the feature API.
-- [apps/api-serving/src/inference_api.py line 75](../../../apps/api-serving/src/inference_api.py#L75): ranks using Triton route and online feature payload.
-
-Source: [apps/api-serving/src/feature_service_client.py line 1](../../../apps/api-serving/src/feature_service_client.py#L1)
-
-Lines to show:
-
-- [apps/api-serving/src/feature_service_client.py line 14](../../../apps/api-serving/src/feature_service_client.py#L14): default URL is `http://recsys-online-feature-api`.
-- [apps/api-serving/src/feature_service_client.py line 23](../../../apps/api-serving/src/feature_service_client.py#L23): posts to `/online-features`.
-- [apps/api-serving/src/feature_service_client.py line 29](../../../apps/api-serving/src/feature_service_client.py#L29): validates response with `OnlineFeaturesResponse.model_validate(...)`.
+- [`inference_api.py`](../../../apps/api-serving/src/inference_api.py): `recommendations()` fetches online features, selects a Triton route, and ranks candidates.
+- [`feature_service_client.py`](../../../apps/api-serving/src/feature_service_client.py): async POST to `/online-features` plus Pydantic response validation.
 
 ## 7. Runtime Verification Commands
 
@@ -207,17 +147,7 @@ Expected online feature output shape:
 
 ## 8. Helm RollingUpdate + Healthcheck For K8s
 
-Source: [infra/helm/recsys-serving/templates/feature-api-deployment.yaml line 1](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L1)
-
-Lines to show:
-
-- [infra/helm/recsys-serving/templates/feature-api-deployment.yaml line 11](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L11): configures replicas.
-- [infra/helm/recsys-serving/templates/feature-api-deployment.yaml line 13](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L13): uses `RollingUpdate`.
-- [infra/helm/recsys-serving/templates/feature-api-deployment.yaml line 15](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L15): configures `maxUnavailable`.
-- [infra/helm/recsys-serving/templates/feature-api-deployment.yaml line 16](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L16): configures `maxSurge`.
-- [infra/helm/recsys-serving/templates/feature-api-deployment.yaml line 59](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L59): startup probe.
-- [infra/helm/recsys-serving/templates/feature-api-deployment.yaml line 65](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L65): readiness probe.
-- [infra/helm/recsys-serving/templates/feature-api-deployment.yaml line 72](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L72): liveness probe.
+Code reference: [`feature-api-deployment.yaml`](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml) defines replicas, `RollingUpdate`, surge/unavailable limits, and startup/readiness/liveness probes.
 
 Runtime command:
 
@@ -244,14 +174,7 @@ Fields to capture:
 
 Auto fallback is handled at the Helm release level. The service is part of the `recsys-serving` release. When CI/CD deploys this release with `helm upgrade --install --atomic`, Helm automatically rolls the release back if the new rollout fails.
 
-Source: [jenkins/scripts/model_cd.py line 208](../../../jenkins/scripts/model_cd.py#L208)
-
-Lines to show:
-
-- [jenkins/scripts/model_cd.py line 208](../../../jenkins/scripts/model_cd.py#L208): runs Helm lint before deploy.
-- [jenkins/scripts/model_cd.py line 217](../../../jenkins/scripts/model_cd.py#L217): builds the `helm upgrade --install` command.
-- [jenkins/scripts/model_cd.py line 219](../../../jenkins/scripts/model_cd.py#L219): deploys the `recsys-serving` release.
-- [jenkins/scripts/model_cd.py line 231](../../../jenkins/scripts/model_cd.py#L231): inserts `--atomic` for rollback on failure.
+Code reference: [`model_cd.py`](../../../jenkins/scripts/model_cd.py) lints the chart and executes `helm upgrade --install --atomic` for the `recsys-serving` release.
 
 Runtime command:
 

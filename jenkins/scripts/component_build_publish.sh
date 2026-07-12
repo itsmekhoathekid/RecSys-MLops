@@ -9,6 +9,7 @@ image_tag="${IMAGE_TAG:-${GIT_COMMIT:-}}"
 publish_images="${PUBLISH_IMAGES:-1}"
 require_gcp_artifact_registry="${REQUIRE_GCP_ARTIFACT_REGISTRY:-1}"
 manifest_dir="${IMAGE_MANIFEST_DIR:-.ci-image-manifest}"
+docker_platform="${DOCKER_PLATFORM:-linux/amd64}"
 
 if [[ -z "${image_tag}" ]]; then
   image_tag="$(git rev-parse --short=12 HEAD)"
@@ -46,12 +47,19 @@ refresh_registry_login_if_gcp() {
     return 0
   fi
 
-  local token
-  token="$(
+  local token=""
+  if token="$(
     curl -fsS -H 'Metadata-Flavor: Google' \
-      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-      | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
-  )"
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' 2>/dev/null \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' 2>/dev/null
+  )"; then
+    :
+  elif command -v gcloud >/dev/null 2>&1; then
+    token="$(gcloud auth print-access-token)"
+  else
+    echo "Unable to obtain an Artifact Registry access token from metadata server or gcloud." >&2
+    return 1
+  fi
   echo "${token}" | docker login "https://${registry_host}" --username oauth2accesstoken --password-stdin >/dev/null
   echo "Refreshed Docker login for ${registry_host}"
 }
@@ -63,7 +71,7 @@ build_and_optionally_push() {
   local local_image="${name}:${image_tag}"
   local remote_image="${image_registry}/${name}:${image_tag}"
 
-  docker build "$@" -f "${dockerfile}" -t "${local_image}" .
+  docker build --platform "${docker_platform}" "$@" -f "${dockerfile}" -t "${local_image}" .
   docker tag "${local_image}" "${remote_image}"
   record_image "$(echo "${name}" | tr '[:lower:]-' '[:upper:]_')_IMAGE" "${remote_image}"
   if [[ "${publish_images}" == "1" || "${publish_images}" == "true" ]]; then
@@ -76,7 +84,7 @@ build_and_optionally_push() {
 
 ensure_base_python() {
   if [[ "${build_base_python}" == "0" ]]; then
-    docker build -f infra/docker/Dockerfile.base-python -t "recsys-base-python:${image_tag}" .
+    docker build --platform "${docker_platform}" -f infra/docker/Dockerfile.base-python -t "recsys-base-python:${image_tag}" .
     build_base_python=1
   fi
 }
@@ -130,6 +138,15 @@ build_flink() {
 
 build_api() {
   build_and_optionally_push "recsys-api-serving" "apps/api-serving/Dockerfile"
+}
+
+build_analytics() {
+  ensure_spark_base
+  build_and_optionally_push "recsys-analytics-spark" "apps/analytics/Dockerfile.spark" \
+    --build-arg "RECSYS_SPARK_BASE_IMAGE=recsys-spark:${image_tag}"
+  build_and_optionally_push "recsys-analytics-dbt" "apps/analytics/Dockerfile.dbt"
+  build_and_optionally_push "recsys-analytics-superset" "apps/analytics/Dockerfile.superset"
+  build_airflow
 }
 
 compile_kfp_package_for_image_refs() {
@@ -188,6 +205,9 @@ case "${component}" in
     build_flink
     build_dataflow_cli
     ;;
+  analytics)
+    build_analytics
+    ;;
   mlflow)
     build_mlflow
     ;;
@@ -202,6 +222,7 @@ case "${component}" in
     build_mlflow
     build_flink
     build_api
+    build_analytics
     echo "Built/published all RecSys service images and compiled the Kubeflow package for ${image_registry}:${image_tag}."
     ;;
   *)

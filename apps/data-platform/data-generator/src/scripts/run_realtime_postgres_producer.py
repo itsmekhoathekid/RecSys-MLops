@@ -119,6 +119,23 @@ def env_int(name: str, default: str) -> int:
     return int(os.getenv(name, default))
 
 
+def push_realtime_metrics(samples: dict[str, float]) -> bool:
+    try:
+        from monitoring.pushgateway import MetricSample, push_metrics
+    except ImportError:
+        return False
+
+    return push_metrics(
+        [MetricSample(name, value) for name, value in samples.items()],
+        "recsys_streaming_source_live",
+        gateway_url=os.getenv("PUSHGATEWAY_URL") or None,
+        grouping_key={
+            "pipeline_role": "online",
+            "source_topic": os.getenv("REALTIME_STREAM_TOPIC", "cdc.behavior_events"),
+        },
+    )
+
+
 def build_event_rows(
     counter: int,
     now: datetime,
@@ -319,6 +336,9 @@ def main() -> int:
     rng = random.Random(args.seed)
     counter = 0
     tick = 0
+    duplicates_total = 0
+    late_total = 0
+    out_of_order_total = 0
     recent_rows: list[dict[str, dict[str, Any]]] = []
     with psycopg.connect(conninfo()) as connection:
         with connection.cursor() as cursor:
@@ -330,6 +350,7 @@ def main() -> int:
             duplicated = 0
             late = 0
             out_of_order = 0
+            max_late_seconds = 0
             tick += 1
             events_this_tick = args.events_per_tick
             if args.burst_every_n_ticks > 0 and tick % args.burst_every_n_ticks == 0:
@@ -351,9 +372,12 @@ def main() -> int:
                         if rng.random() < args.late_arrival_rate:
                             delay = rng.randint(args.late_delay_minutes_min, args.late_delay_minutes_max)
                             event_timestamp = now - timedelta(minutes=delay)
+                            max_late_seconds = max(max_late_seconds, delay * 60)
                             late += 1
                         elif rng.random() < args.out_of_order_rate:
-                            event_timestamp = now - timedelta(seconds=rng.randint(60, 30 * 60))
+                            delay_seconds = rng.randint(60, 30 * 60)
+                            event_timestamp = now - timedelta(seconds=delay_seconds)
+                            max_late_seconds = max(max_late_seconds, delay_seconds)
                             out_of_order += 1
                         rows = build_event_rows(
                             counter,
@@ -380,6 +404,20 @@ def main() -> int:
                     counter += 1
                     inserted += 1
             connection.commit()
+            duplicates_total += duplicated
+            late_total += late
+            out_of_order_total += out_of_order
+            push_realtime_metrics(
+                {
+                    "recsys_streaming_events_total": counter,
+                    "recsys_streaming_late_events_total": late_total,
+                    "recsys_streaming_duplicate_events_total": duplicates_total,
+                    "recsys_streaming_out_of_order_events_total": out_of_order_total,
+                    "recsys_streaming_last_event_unixtime": int(datetime.now(timezone.utc).timestamp()),
+                    "recsys_streaming_current_max_late_seconds": max_late_seconds,
+                    "recsys_streaming_current_window_bursty": int(events_this_tick > args.events_per_tick),
+                }
+            )
             print(
                 json.dumps(
                     {

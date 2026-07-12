@@ -15,10 +15,10 @@ The security setup keeps source credentials centralized and lets workloads consu
 
 ### Code Reference
 
-- [infra/terraform/gcp/dependencies.tf line 1](../../../infra/terraform/gcp/dependencies.tf#L1): installs External Secrets Operator with Helm and CRDs.
-- [infra/terraform/gcp/secret_management.tf line 1](../../../infra/terraform/gcp/secret_management.tf#L1): creates central source secrets for data platform, MLflow, runtime, KServe, and gateway credentials.
-- [infra/helm/recsys-security/templates/secretstore.yaml line 1](../../../infra/helm/recsys-security/templates/secretstore.yaml#L1): renders the central `ClusterSecretStore`.
-- [infra/helm/recsys-security/templates/externalsecrets.yaml line 1](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L1): renders `ExternalSecret` objects that sync target Kubernetes Secrets.
+- [infra/terraform/gcp/dependencies.tf](../../../infra/terraform/gcp/dependencies.tf): installs External Secrets Operator with Helm and CRDs.
+- [infra/terraform/gcp/secret_management.tf](../../../infra/terraform/gcp/secret_management.tf): creates central source secrets for data platform, MLflow, runtime, KServe, and gateway credentials.
+- [infra/helm/recsys-security/templates/secretstore.yaml](../../../infra/helm/recsys-security/templates/secretstore.yaml): renders the central `ClusterSecretStore`.
+- [infra/helm/recsys-security/templates/externalsecrets.yaml](../../../infra/helm/recsys-security/templates/externalsecrets.yaml): renders `ExternalSecret` objects that sync target Kubernetes Secrets.
 
 ### External Secrets Operator Runtime
 
@@ -78,8 +78,8 @@ Istio enforces service identity and network-level access control. The baseline p
 
 ### Code Reference
 
-- [infra/helm/recsys-security/templates/istio-mtls.yaml line 1](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L1): renders namespace STRICT mTLS and selected permissive exceptions for non-mesh clients or special ingest ports.
-- [infra/helm/recsys-security/templates/istio-authorization.yaml line 1](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L1): renders default-deny and explicit allow policies for API, KServe/Triton, Dataflow, Kubeflow, MLflow, and Observability traffic.
+- [infra/helm/recsys-security/templates/istio-mtls.yaml](../../../infra/helm/recsys-security/templates/istio-mtls.yaml): renders namespace STRICT mTLS and selected permissive exceptions for non-mesh clients or special ingest ports.
+- [infra/helm/recsys-security/templates/istio-authorization.yaml](../../../infra/helm/recsys-security/templates/istio-authorization.yaml): renders default-deny and explicit allow policies for API, KServe/Triton, Dataflow, Kubeflow, MLflow, and Observability traffic.
 
 ### Mesh-Enabled Namespaces
 

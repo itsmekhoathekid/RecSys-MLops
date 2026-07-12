@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-analytics-superset-config
+  namespace: {{ .Values.namespace }}
+data:
+  superset_config.py: |
+    import os
+    from urllib.parse import quote_plus
+
+    SECRET_KEY = os.environ["SUPERSET_SECRET_KEY"]
+    SQLALCHEMY_DATABASE_URI = (
+        "postgresql+psycopg2://"
+        f"{quote_plus(os.environ['SUPERSET_DATABASE_USER'])}:"
+        f"{quote_plus(os.environ['SUPERSET_DATABASE_PASSWORD'])}"
+        f"@recsys-analytics-superset-postgres:5432/{os.environ['SUPERSET_DATABASE_NAME']}"
+    )
+    CACHE_CONFIG = {
+        "CACHE_TYPE": "RedisCache",
+        "CACHE_DEFAULT_TIMEOUT": 300,
+        "CACHE_KEY_PREFIX": "superset_",
+        "CACHE_REDIS_URL": "redis://recsys-analytics-redis:6379/1",
+    }
+    DATA_CACHE_CONFIG = CACHE_CONFIG
+    FILTER_STATE_CACHE_CONFIG = CACHE_CONFIG
+    EXPLORE_FORM_DATA_CACHE_CONFIG = CACHE_CONFIG
+    RATELIMIT_STORAGE_URI = "redis://recsys-analytics-redis:6379/2"
+    TALISMAN_ENABLED = False
+    ENABLE_PROXY_FIX = True
+    FEATURE_FLAGS = {"DASHBOARD_RBAC": True, "ENABLE_TEMPLATE_PROCESSING": True}

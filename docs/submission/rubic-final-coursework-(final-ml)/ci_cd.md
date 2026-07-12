@@ -67,30 +67,15 @@ from the promotion manifest instead of building a new serving image.
 
 ## Code Reference
 
-- [Jenkinsfile line 1 (line 1)](../../../Jenkinsfile#L1): declares the CI/CD component list and the Jenkins UI branch labels.
-- [Jenkinsfile line 17 (line 17)](../../../Jenkinsfile#L17): fans enabled components into parallel Jenkins branches.
-- [Jenkinsfile line 35 (line 35)](../../../Jenkinsfile#L35): applies `FORCE_COMPONENTS` for one-pipeline proof jobs.
-- [Jenkinsfile line 83 (line 83)](../../../Jenkinsfile#L83): gates deploy/update to `main` or `FORCE_DEPLOY=true`.
-- [Jenkinsfile line 101 (line 101)](../../../Jenkinsfile#L101): declares Jenkins parameters, including `FORCE_COMPONENTS` for manual proof jobs.
-- [Jenkinsfile line 132 (line 132)](../../../Jenkinsfile#L132): runs path detection, loads `.ci-components.env`, then optionally overrides with `FORCE_COMPONENTS`.
-- [Jenkinsfile line 154 (line 154)](../../../Jenkinsfile#L154): runs the component Test stage.
-- [Jenkinsfile line 166 (line 166)](../../../Jenkinsfile#L166): logs Docker in to GCP Artifact Registry with either Jenkins credentials or a GKE metadata access token.
-- [Jenkinsfile line 179 (line 179)](../../../Jenkinsfile#L179): runs the component Build and Publish stage.
-- [Jenkinsfile line 202 (line 202)](../../../Jenkinsfile#L202): runs the component Deploy or Update stage.
-- [infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml line 124 (line 124)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L124): enables the GitHub webhook trigger only on the main auto-deploy job.
-- [infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml line 131 (line 131)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L131): seeds the main webhook job, manual component proof jobs, and Jenkins views.
-- [jenkins/scripts/detect_changed_components.py line 8 (line 8)](../../../jenkins/scripts/detect_changed_components.py#L8): defines all path-based CI/CD components.
-- [jenkins/scripts/detect_changed_components.py line 96 (line 96)](../../../jenkins/scripts/detect_changed_components.py#L96): maps config changes to the affected component pipelines.
-- [jenkins/scripts/detect_changed_components.py line 110 (line 110)](../../../jenkins/scripts/detect_changed_components.py#L110): maps data-platform source paths to DP/materialize/streaming components.
-- [jenkins/scripts/detect_changed_components.py line 149 (line 149)](../../../jenkins/scripts/detect_changed_components.py#L149): maps infra/Helm/Kubeflow paths to deployable components.
-- [jenkins/scripts/component_ci.sh line 1 (line 1)](../../../jenkins/scripts/component_ci.sh#L1): implements per-component test gates and coverage reports.
-- [jenkins/scripts/component_build_publish.sh line 1 (line 1)](../../../jenkins/scripts/component_build_publish.sh#L1): builds, tags, pushes images to GCP Artifact Registry, and writes `.ci-image-manifest`.
-- [jenkins/scripts/component_build_publish.sh line 16 (line 16)](../../../jenkins/scripts/component_build_publish.sh#L16): fails the build if the proof run is not pushing to GCP Artifact Registry.
-- [jenkins/scripts/component_deploy.sh line 24 (line 24)](../../../jenkins/scripts/component_deploy.sh#L24): verifies updated workload images and waits for rollout status where a Deployment/StatefulSet exists.
-- [jenkins/scripts/component_deploy.sh line 75 (line 75)](../../../jenkins/scripts/component_deploy.sh#L75): verifies data-platform ConfigMap image keys such as `DATAFLOW_IMAGE`, `SPARK_IMAGE`, and `FLINK_IMAGE`.
-- [jenkins/scripts/component_deploy.sh line 107 (line 107)](../../../jenkins/scripts/component_deploy.sh#L107): updates Kubernetes, Helm, Kubeflow, Ray, and KServe runtime references with `--wait`.
-- [jenkins/scripts/model_cd.py line 266 (line 266)](../../../jenkins/scripts/model_cd.py#L266): deploys the promoted Triton model from a promotion manifest to KServe.
-- [infra/terraform/gcp/gke.tf line 8 (line 8)](../../../infra/terraform/gcp/gke.tf#L8): grants the GKE node service account Artifact Registry reader/writer permissions used by Jenkins image pull/push proof runs.
+| Responsibility | Code reference |
+| --- | --- |
+| Pipeline stages, parallel branches, and deploy gate | [`Jenkinsfile`](../../../Jenkinsfile) |
+| Path-to-component mapping | [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py) |
+| Component tests and coverage | [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh) |
+| Image build, tag, push, and manifest | [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh) |
+| Helm/Kubernetes/Kubeflow deployment and readiness | [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) |
+| Promoted Triton model CD | [`model_cd.py`](../../../jenkins/scripts/model_cd.py) |
+| Jenkins jobs, webhook, and views | [`jenkins-init-configmap.yaml`](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml) |
 
 
 ## CI/CD For Pipelines
@@ -166,7 +151,7 @@ paths change, especially `apps/data-platform/src/feature_store/`,
 metadata code, or shared dataflow CLI Docker/runtime files.
 
 **Test:** `component_ci.sh materialize` runs data-platform unit tests,
-dataflow Docker contract tests, optional `tests/integration/materialize`, and
+dataflow Docker contract tests, any matching integration suite that exists, and
 coverage for `feature_store.online_writer` and `local.run_batch_features`.
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/cicd_materialize_test.png)
@@ -206,8 +191,8 @@ training, MLflow/runtime, BST config, or training image paths change, especially
 `infra/helm/recsys-runtime/`, `infra/helm/mlflow-stack/`, and
 `configs/local/bst.yaml`.
 
-**Test:** `component_ci.sh training` runs ML-system tests, optional
-`tests/integration/training`, coverage for Kubeflow pipeline helpers, and
+**Test:** `component_ci.sh training` runs ML-system tests, any matching
+integration suite that exists, coverage for Kubeflow pipeline helpers, and
 compiles the KFP package.
 
 ![Training Pipeline Test Jenkins UI proof](../../pngs/cicd_training_test.png)
@@ -250,8 +235,8 @@ Airflow paths change, especially `apps/data-platform/data-generator/`,
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp1_cicd_ui.png)
 
 **Test:** `component_ci.sh dp1` runs data-generator unit tests, ingest tests,
-data-platform tests, Docker/dataflow contract tests, optional
-`tests/integration/dp1`, and coverage for `ingest.debezium` and
+data-platform tests, Docker/dataflow contract tests, any matching integration
+suite that exists, and coverage for `ingest.debezium` and
 `ingest.batch_lakehouse_ingestion`.
 
 ![DP1 Test Jenkins UI proof](../../pngs/cicd_dp1_test.png)
@@ -292,7 +277,7 @@ change, especially `apps/data-platform/src/features/spark/`,
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp2_cicd_ui.png)
 
 **Test:** `component_ci.sh dp2` runs data-platform tests, Docker/dataflow
-contract tests, optional `tests/integration/dp2`, and coverage for
+contract tests, any matching integration suite that exists, and coverage for
 `lakehouse.iceberg`.
 
 ![DP2 Test Jenkins UI proof](../../pngs/cicd_dp2_test.png)
@@ -336,7 +321,7 @@ offline feature table config changes, especially
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp3_cicd_ui.png)
 
 **Test:** `component_ci.sh dp3` runs data-platform tests, BST training-data prep
-tests, Docker/dataflow contract tests, optional `tests/integration/dp3`, and
+tests, Docker/dataflow contract tests, any matching integration suite that exists, and
 coverage for `lakehouse.iceberg` and `feature_store.online_writer`.
 
 ![DP3 Test Jenkins UI proof](../../pngs/cicd_dp3_test.png)
@@ -386,7 +371,7 @@ deploy is owned by the post-promotion Jenkins job `RecSys-KServe-Model-CD`,
 documented below.
 
 **Test:** `component_ci.sh kserve` runs model promotion tests, serving contract
-tests, optional `tests/integration/kserve`, and coverage for `model_cd`.
+tests, any matching integration suite that exists, and coverage for `model_cd`.
 
 ![Triton Inference Engine Test Jenkins UI proof](../../pngs/cicd_kserve_test.png)
 
@@ -452,14 +437,14 @@ release.
 
 **Code reference:**
 
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 238 (line 238)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L238): defines the `trigger_kserve_model_cd` KFP component.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 292 (line 292)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L292): sets the default promotion score threshold to `0.0`.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py line 437 (line 437)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L437): wires `Trigger KServe CD` after `promote-bst-model`.
-- [apps/ml-system/src/cli/trigger_kserve_cd.py line 188 (line 188)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L188): loads the promotion manifest, checks the metric gate, and triggers Jenkins.
-- [apps/ml-system/src/cli/trigger_kserve_cd.py line 211 (line 211)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L211): posts the Jenkins build parameters for `RecSys-KServe-Model-CD`.
-- [jenkins/KServeModelCD.Jenkinsfile line 1 (line 1)](../../../jenkins/KServeModelCD.Jenkinsfile#L1): defines the dedicated post-promotion Jenkins CD job.
-- [jenkins/scripts/component_deploy.sh line 248 (line 248)](../../../jenkins/scripts/component_deploy.sh#L248): runs the production KServe model CD path with `model_cd.py --apply`.
-- [infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml line 352 (line 352)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L352): seeds the Jenkins job and the `06A KServe Model CD` view.
+- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): defines the `trigger_kserve_model_cd` KFP component.
+- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): sets the default promotion score threshold to `0.0`.
+- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): wires `Trigger KServe CD` after `promote-bst-model`.
+- [apps/ml-system/src/cli/trigger_kserve_cd.py](../../../apps/ml-system/src/cli/trigger_kserve_cd.py): loads the promotion manifest, checks the metric gate, and triggers Jenkins.
+- [apps/ml-system/src/cli/trigger_kserve_cd.py](../../../apps/ml-system/src/cli/trigger_kserve_cd.py): posts the Jenkins build parameters for `RecSys-KServe-Model-CD`.
+- [jenkins/KServeModelCD.Jenkinsfile](../../../jenkins/KServeModelCD.Jenkinsfile): defines the dedicated post-promotion Jenkins CD job.
+- [jenkins/scripts/component_deploy.sh](../../../jenkins/scripts/component_deploy.sh): runs the production KServe model CD path with `model_cd.py --apply`.
+- [infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml): seeds the Jenkins job and the `06A KServe Model CD` view.
 
 
 
@@ -501,7 +486,7 @@ API tests change, especially `apps/api-serving/`,
 ![FastAPI Test Jenkins UI proof](../../pngs/api_cicd_ui.png)
 
 **Test:** `component_ci.sh api` runs API unit tests, serving contracts, gateway
-contracts, optional `tests/integration/api`, and coverage for the FastAPI,
+contracts, any matching integration suite that exists, and coverage for the FastAPI,
 online feature API, ranking, A/B, and Triton client modules.
 
 ![FastAPI Test Jenkins UI proof](../../pngs/cicd_api_test.png)
@@ -545,7 +530,7 @@ paths change, especially `apps/data-platform/src/features/flink/`,
 ![FastAPI Deploy Jenkins UI proof](../../pngs/job1_cicd_ui.png)
 
 **Test:** `component_ci.sh stream_offline` runs data-platform tests,
-Docker/dataflow contract tests, optional `tests/integration/stream_offline`, and
+Docker/dataflow contract tests, any matching integration suite that exists, and
 coverage for the Flink job modules plus the offline sink/lakehouse code.
 
 ![Stream Offline Test Jenkins UI proof](../../pngs/cicd_stream_offline_test.png)
@@ -591,8 +576,8 @@ Dockerfile, or Redis online-store config changes, especially
 ![FastAPI Deploy Jenkins UI proof](../../pngs/job2_cicd_ui.png)
 
 **Test:** `component_ci.sh stream_online` runs data-platform tests, selected API
-serving tests, Docker/dataflow contract tests, optional
-`tests/integration/stream_online`, and coverage for Flink job modules plus
+serving tests, Docker/dataflow contract tests, any matching integration suite
+that exists, and coverage for Flink job modules plus
 `feature_store.online_writer`.
 
 ![Stream Online Test Jenkins UI proof](../../pngs/cicd_stream_online_test.png)

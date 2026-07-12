@@ -41,11 +41,8 @@ The metric service is Grafana behind the NGINX gateway. The production host is
 
 ### Code Reference
 
-- [infra/helm/recsys-gateway/values.yaml line 60 (line 60)](../../../infra/helm/recsys-gateway/values.yaml#L60): enables the Grafana gateway route.
-- [infra/helm/recsys-gateway/templates/grafana-ingress.yaml line 1 (line 1)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L1): renders the Grafana NGINX `Ingress`.
-- [infra/helm/recsys-gateway/templates/grafana-ingress.yaml line 8 (line 8)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L8): enables Basic Auth annotations.
-- [infra/helm/recsys-gateway/templates/grafana-ingress.yaml line 17 (line 17)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L17): renders rate-limit annotations.
-- [infra/helm/recsys-gateway/templates/grafana-ingress.yaml line 23 (line 23)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L23): enables HTTPS redirect and cert-manager annotations when TLS is enabled.
+- [`values.yaml`](../../../infra/helm/recsys-gateway/values.yaml): Grafana host, TLS, authentication, and rate-limit values.
+- [`grafana-ingress.yaml`](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml): renders the NGINX `Ingress` and security annotations.
 
 ### Basic Auth & Rate Limit Proof
 
@@ -79,11 +76,8 @@ The trace service is Tempo behind the NGINX gateway. The production host is
 
 ### Code Reference
 
-- [infra/helm/recsys-gateway/values.yaml line 93 (line 93)](../../../infra/helm/recsys-gateway/values.yaml#L93): enables the trace gateway route.
-- [infra/helm/recsys-gateway/templates/traces-ingress.yaml line 1 (line 1)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L1): renders the trace NGINX `Ingress`.
-- [infra/helm/recsys-gateway/templates/traces-ingress.yaml line 8 (line 8)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L8): enables Basic Auth annotations.
-- [infra/helm/recsys-gateway/templates/traces-ingress.yaml line 15 (line 15)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L15): renders rate-limit annotations.
-- [infra/helm/recsys-gateway/templates/traces-ingress.yaml line 21 (line 21)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L21): enables HTTPS redirect and cert-manager annotations when TLS is enabled.
+- [`values.yaml`](../../../infra/helm/recsys-gateway/values.yaml): Tempo host, TLS, authentication, and rate-limit values.
+- [`traces-ingress.yaml`](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml): renders the trace route and security annotations.
 
 ### Basic Auth & Rate Limit Proof
 
@@ -116,11 +110,8 @@ The log service is Loki behind the NGINX gateway. The production host is
 
 ### Code Reference
 
-- [infra/helm/recsys-gateway/values.yaml line 76 (line 76)](../../../infra/helm/recsys-gateway/values.yaml#L76): enables the log gateway route.
-- [infra/helm/recsys-gateway/templates/logs-ingress.yaml line 1 (line 1)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L1): renders the log NGINX `Ingress`.
-- [infra/helm/recsys-gateway/templates/logs-ingress.yaml line 8 (line 8)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L8): enables Basic Auth annotations.
-- [infra/helm/recsys-gateway/templates/logs-ingress.yaml line 15 (line 15)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L15): renders rate-limit annotations.
-- [infra/helm/recsys-gateway/templates/logs-ingress.yaml line 21 (line 21)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L21): enables HTTPS redirect and cert-manager annotations when TLS is enabled.
+- [`values.yaml`](../../../infra/helm/recsys-gateway/values.yaml): Loki host, TLS, authentication, and rate-limit values.
+- [`logs-ingress.yaml`](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml): renders the log route and security annotations.
 
 ### Basic Auth & Rate Limit Proof
 
@@ -154,14 +145,9 @@ gateway. The production host is `https://api.recsys-mlops.site`.
 
 ### Code Reference
 
-- [apps/api-serving/src/feature_api.py line 13 (line 13)](../../../apps/api-serving/src/feature_api.py#L13): creates the `RecSys Online Feature API` FastAPI app.
-- [apps/api-serving/src/feature_api.py line 55 (line 55)](../../../apps/api-serving/src/feature_api.py#L55): exposes `POST /online-features` for online feature retrieval.
-- [infra/helm/recsys-gateway/values.yaml line 46 (line 46)](../../../infra/helm/recsys-gateway/values.yaml#L46): enables the online-feature API gateway route.
-- [infra/helm/recsys-gateway/templates/feature-api-ingress.yaml line 1 (line 1)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L1): renders the online-feature API NGINX `Ingress`.
-- [infra/helm/recsys-gateway/templates/feature-api-ingress.yaml line 8 (line 8)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L8): enables Basic Auth annotations.
-- [infra/helm/recsys-gateway/templates/feature-api-ingress.yaml line 15 (line 15)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L15): renders rate-limit annotations.
-- [infra/helm/recsys-gateway/templates/feature-api-ingress.yaml line 21 (line 21)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L21): enables HTTPS redirect and cert-manager annotations when TLS is enabled.
-- [infra/terraform/gcp/recsys_services.tf line 252 (line 252)](../../../infra/terraform/gcp/recsys_services.tf#L252): maps the feature API gateway host from `gateway_domain`.
+- [`feature_api.py`](../../../apps/api-serving/src/feature_api.py): `RecSys Online Feature API` and `POST /online-features`.
+- [`feature-api-ingress.yaml`](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml): route, Basic Auth, rate limit, and TLS annotations.
+- [`values.yaml`](../../../infra/helm/recsys-gateway/values.yaml), [`recsys_services.tf`](../../../infra/terraform/gcp/recsys_services.tf): enable the route and derive its host from `gateway_domain`.
 
 ### Basic Auth & Rate Limit Proof
 

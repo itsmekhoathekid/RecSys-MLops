@@ -42,6 +42,16 @@ from metadata.runtime_lineage import RuntimeLineageRecorder, lineage_run_id
 EVENT_TYPE_IDS = {"view": 1, "cart": 2, "purchase": 3}
 
 
+def stream_pipeline_role(args: argparse.Namespace) -> str:
+    if args.disable_offline_store and not args.disable_online_store:
+        return "online"
+    if args.disable_online_store and args.offline_store_enabled:
+        return "offline"
+    if args.disable_online_store and not args.offline_store_enabled:
+        return "disabled"
+    return "hybrid"
+
+
 def emit_progress(payload: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(payload, sort_keys=True) + "\n")
     sys.stdout.flush()
@@ -638,6 +648,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             self.redis_client = redis.Redis(host=args.redis_host, port=args.redis_port, decode_responses=True)
             self.writer = RedisOnlineWriter(self.redis_client)
             self.writes = 0
+            self.last_write_unixtime = 0
 
         def map(self, envelope: dict[str, Any]) -> str:
             event = envelope["event"]
@@ -646,7 +657,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             sequence_payload = envelope["sequence_payload"]
             aggregate_payload = envelope["aggregate_payload"]
             item_payload = envelope["item_payload"]
-            self.writes += write_payloads_to_redis(
+            writes = write_payloads_to_redis(
                 event,
                 self.writer,
                 self.redis_client,
@@ -654,6 +665,9 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 aggregate_payload,
                 item_payload,
             )
+            self.writes += writes
+            if writes:
+                self.last_write_unixtime = int(datetime.now(timezone.utc).timestamp())
             if args.progress_log_events > 0 and self.writes % args.progress_log_events == 0:
                 emit_progress({"status": "running", "topic": args.topic, "redis_writes": self.writes})
             return json.dumps(
@@ -886,6 +900,9 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 args.state_ttl_seconds,
             )
             self.window_state = runtime_context.get_state(descriptor)
+            self.last_event_unixtime = 0
+            self.current_max_late_seconds = 0
+            self.current_window_bursty = 0
 
         def _row(self, window: dict[str, Any]) -> dict[str, Any]:
             return {
@@ -904,6 +921,8 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
 
         def process_element(self, event: dict[str, Any], ctx):
             late_by_seconds, is_late = late_arrival_metrics(event, args.allowed_lateness_seconds)
+            is_duplicate = bool(event.get("_is_duplicate"))
+            self.last_event_unixtime = int(datetime.now(timezone.utc).timestamp())
             event_ts = parse_event_time(event["event_timestamp"])
             event_unix_seconds = int(event_ts.timestamp())
             window_start_seconds = event_unix_seconds - (event_unix_seconds % args.quality_window_seconds)
@@ -926,12 +945,16 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                     "duplicate_event_count": 0,
                     "max_late_by_seconds": 0.0,
                 }
+                self.current_max_late_seconds = 0
+                self.current_window_bursty = 0
             current["event_count"] += 1
             current["late_event_count"] += 1 if is_late else 0
             current["late_events_dropped"] += 1 if is_late and args.drop_late_events else 0
             current["side_output_late_events"] += 1 if is_late else 0
-            current["duplicate_event_count"] += 1 if event.get("_is_duplicate") else 0
+            current["duplicate_event_count"] += 1 if is_duplicate else 0
             current["max_late_by_seconds"] = max(float(current["max_late_by_seconds"]), late_by_seconds)
+            self.current_max_late_seconds = int(round(float(current["max_late_by_seconds"])))
+            self.current_window_bursty = int(current["event_count"] >= args.burst_threshold_event_count)
             self.window_state.update(current)
             rows.append(self._row(current))
             for row in rows:

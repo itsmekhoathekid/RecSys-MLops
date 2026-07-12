@@ -1,0 +1,12 @@
+ARG RECSYS_SPARK_BASE_IMAGE=recsys-spark:local
+FROM ${RECSYS_SPARK_BASE_IMAGE}
+
+ARG POSTGRES_JDBC_VERSION=42.7.7
+USER root
+ADD --chmod=0644 \
+  https://repo1.maven.org/maven2/org/postgresql/postgresql/${POSTGRES_JDBC_VERSION}/postgresql-${POSTGRES_JDBC_VERSION}.jar \
+  /opt/spark/jars/postgresql-${POSTGRES_JDBC_VERSION}.jar
+
+COPY apps/analytics /opt/recsys/apps/analytics
+ENV PYTHONPATH=/opt/recsys/apps/analytics/src:/opt/recsys/apps/data-platform/src:/opt/recsys
+

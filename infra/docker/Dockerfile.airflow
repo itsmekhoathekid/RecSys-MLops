@@ -26,6 +26,7 @@ COPY --chown=airflow:root infra/docker/scripts /opt/recsys/infra/docker/scripts
 COPY --chown=airflow:root apps/data-platform/src /opt/recsys/apps/data-platform/src
 COPY --chown=airflow:root apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
 COPY --chown=airflow:root apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
+COPY --chown=airflow:root apps/analytics/orchestration/airflow/dags /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
 RUN chown -R airflow:root /home/airflow \
     && chmod -R g+rwX /home/airflow
 USER airflow

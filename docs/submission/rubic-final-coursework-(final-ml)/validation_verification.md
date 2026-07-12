@@ -13,27 +13,10 @@
 
 Source references:
 
-- [feature_api.py line 17](../../../apps/api-serving/src/feature_api.py#L17): online feature service singleton.
-- [feature_api.py line 24](../../../apps/api-serving/src/feature_api.py#L24): feature store startup warmup.
-- [feature_api.py line 30](../../../apps/api-serving/src/feature_api.py#L30): `/healthz` endpoint.
-- [feature_api.py line 35](../../../apps/api-serving/src/feature_api.py#L35): `/ready` endpoint.
-- [feature_api.py line 40](../../../apps/api-serving/src/feature_api.py#L40): `/version` endpoint.
-- [feature_api.py line 50](../../../apps/api-serving/src/feature_api.py#L50): `/metrics` endpoint.
-- [feature_api.py line 55](../../../apps/api-serving/src/feature_api.py#L55): `POST /online-features` endpoint.
-- [feature_api.py line 69](../../../apps/api-serving/src/feature_api.py#L69): `GET /online-features/{user_id}` endpoint.
-- [inference_api.py line 22](../../../apps/api-serving/src/inference_api.py#L22): feature API client singleton.
-- [inference_api.py line 29](../../../apps/api-serving/src/inference_api.py#L29): Triton router singleton.
-- [inference_api.py line 36](../../../apps/api-serving/src/inference_api.py#L36): `/healthz` endpoint.
-- [inference_api.py line 41](../../../apps/api-serving/src/inference_api.py#L41): `/ready` endpoint.
-- [inference_api.py line 46](../../../apps/api-serving/src/inference_api.py#L46): `/version` endpoint.
-- [inference_api.py line 55](../../../apps/api-serving/src/inference_api.py#L55): `/metrics` endpoint.
-- [inference_api.py line 60](../../../apps/api-serving/src/inference_api.py#L60): `POST /recommendations` endpoint.
-- [feature_service_client.py line 17](../../../apps/api-serving/src/feature_service_client.py#L17): inference service feature API HTTP client.
-- [test_validation_verification.py line 129](../../../tests/unit/api_serving/test_validation_verification.py#L129): health/readiness/version/metrics and online-feature route tests.
-- [test_validation_verification.py line 186](../../../tests/unit/api_serving/test_validation_verification.py#L186): `502 Bad Gateway` error-path tests for both services.
-- [test_validation_verification.py line 228](../../../tests/unit/api_serving/test_validation_verification.py#L228): singleton/env-helper tests.
-- [test_validation_verification.py line 267](../../../tests/unit/api_serving/test_validation_verification.py#L267): feature API warmup branch test.
-- [test_validation_verification.py line 285](../../../tests/unit/api_serving/test_validation_verification.py#L285): mocked feature-service HTTP client test.
+- [`feature_api.py`](../../../apps/api-serving/src/feature_api.py): online-feature singleton/warmup and health, readiness, version, metrics, POST, and GET routes.
+- [`inference_api.py`](../../../apps/api-serving/src/inference_api.py): feature client/router singletons and recommendation service routes.
+- [`feature_service_client.py`](../../../apps/api-serving/src/feature_service_client.py): async feature-service HTTP boundary.
+- [`test_validation_verification.py`](../../../tests/unit/api_serving/test_validation_verification.py): success, dependency failure, singleton, warmup, and mocked-client tests.
 
 ### 1.2 Command used
 
@@ -75,24 +58,18 @@ TOTAL                                              669     63    91%
 
 Source references:
 
-- [test_validation_verification.py line 6](../../../tests/unit/api_serving/test_validation_verification.py#L6): FastAPI `TestClient` import.
-- [test_validation_verification.py line 17](../../../tests/unit/api_serving/test_validation_verification.py#L17): deterministic mocked feature client.
-- [test_validation_verification.py line 39](../../../tests/unit/api_serving/test_validation_verification.py#L39): deterministic mocked ranker.
-- [test_validation_verification.py line 47](../../../tests/unit/api_serving/test_validation_verification.py#L47): deterministic mocked feature-service client.
-- [test_validation_verification.py line 59](../../../tests/unit/api_serving/test_validation_verification.py#L59): inference API fixture using `monkeypatch`.
-- [test_validation_verification.py line 68](../../../tests/unit/api_serving/test_validation_verification.py#L68): online feature API fixture using `monkeypatch`.
-- [test_split_services.py line 60](../../../tests/unit/api_serving/test_split_services.py#L60): split-service online feature API route test.
-- [test_split_services.py line 81](../../../tests/unit/api_serving/test_split_services.py#L81): split-service inference API route test.
+- [`test_validation_verification.py`](../../../tests/unit/api_serving/test_validation_verification.py): deterministic feature/ranker mocks plus `monkeypatch` API fixtures.
+- [`test_split_services.py`](../../../tests/unit/api_serving/test_split_services.py): route-level tests for both split services.
 
 ### 2.2 Test design
 
 | Test area | Fixture/mock used | Expected behavior | Evidence |
 | --- | --- | --- | --- |
-| `POST /recommendations` | `deterministic_api` fixture mocks feature-service client and ranker | HTTP 200 with deterministic ranked items | [test_validation_verification.py line 74](../../../tests/unit/api_serving/test_validation_verification.py#L74) |
-| `POST /online-features` and `GET /online-features/{user_id}` | `deterministic_feature_api` fixture mocks Feast/Redis feature client | HTTP 200 with deterministic online feature payload | [test_validation_verification.py line 128](../../../tests/unit/api_serving/test_validation_verification.py#L128) |
-| Feature API warmup | `WarmupFeatureClient` mock | startup warmup runs when enabled and skips when disabled | [test_validation_verification.py line 266](../../../tests/unit/api_serving/test_validation_verification.py#L266) |
-| API error handling | broken feature client, broken feature-service client, broken ranker | both services return HTTP 502 on dependency failure | [test_validation_verification.py line 185](../../../tests/unit/api_serving/test_validation_verification.py#L185) |
-| Singleton helpers | fake client/router classes | lazy singletons are created once | [test_validation_verification.py line 227](../../../tests/unit/api_serving/test_validation_verification.py#L227) |
+| `POST /recommendations` | `deterministic_api` fixture mocks feature-service client and ranker | HTTP 200 with deterministic ranked items | [test_validation_verification.py](../../../tests/unit/api_serving/test_validation_verification.py) |
+| `POST /online-features` and `GET /online-features/{user_id}` | `deterministic_feature_api` fixture mocks Feast/Redis feature client | HTTP 200 with deterministic online feature payload | [test_validation_verification.py](../../../tests/unit/api_serving/test_validation_verification.py) |
+| Feature API warmup | `WarmupFeatureClient` mock | startup warmup runs when enabled and skips when disabled | [test_validation_verification.py](../../../tests/unit/api_serving/test_validation_verification.py) |
+| API error handling | broken feature client, broken feature-service client, broken ranker | both services return HTTP 502 on dependency failure | [test_validation_verification.py](../../../tests/unit/api_serving/test_validation_verification.py) |
+| Singleton helpers | fake client/router classes | lazy singletons are created once | [test_validation_verification.py](../../../tests/unit/api_serving/test_validation_verification.py) |
 
 ### 2.3 Commands used
 
@@ -128,10 +105,8 @@ Terminal summaries:
 
 Source references:
 
-- [api_schemas.py line 8](../../../apps/api-serving/src/api_schemas.py#L8): `RecommendationRequest`.
-- [api_schemas.py line 34](../../../apps/api-serving/src/api_schemas.py#L34): `OnlineFeaturesRequest`.
-- [test_validation_verification.py line 74](../../../tests/unit/api_serving/test_validation_verification.py#L74): parametrized valid EP/BVA cases.
-- [test_validation_verification.py line 102](../../../tests/unit/api_serving/test_validation_verification.py#L102): parametrized invalid boundary cases.
+- [`api_schemas.py`](../../../apps/api-serving/src/api_schemas.py): validated recommendation and online-feature request models.
+- [`test_validation_verification.py`](../../../tests/unit/api_serving/test_validation_verification.py): parametrized valid partitions and invalid boundary cases.
 
 ### 3.2 Cases
 
@@ -171,11 +146,9 @@ The verbose output shows all `equivalence-*` and `boundary-*` test IDs as `PASSE
 
 Source references:
 
-- [pyproject.toml line 27](../../../pyproject.toml#L27): `mutmut` dependency.
-- [jenkins/scripts/validation_mutation.sh line 148](../../../jenkins/scripts/validation_mutation.sh#L148): safe mutation command construction.
-- [jenkins/scripts/validation_mutation.sh line 132](../../../jenkins/scripts/validation_mutation.sh#L132): mutate only covered lines.
-- [jenkins/scripts/validation_mutation.sh line 134](../../../jenkins/scripts/validation_mutation.sh#L134): restrict mutation to selected targets.
-- [validation-verification/mutation-summary.md line 3](validation-verification/mutation-summary.md#L3): mutation score.
+- [pyproject.toml](../../../pyproject.toml): `mutmut` dependency.
+- [`validation_mutation.sh`](../../../jenkins/scripts/validation_mutation.sh): safe command construction, covered-line filtering, and selected targets.
+- [validation-verification/mutation-summary.md](validation-verification/mutation-summary.md): mutation score.
 - [validation-verification/mutation-results.txt](validation-verification/mutation-results.txt): full mutant list.
 
 ### 4.2 Command used
@@ -215,11 +188,8 @@ bash jenkins/scripts/validation_mutation.sh
 
 Source references:
 
-- [pyproject.toml line 26](../../../pyproject.toml#L26): `hypothesis` dependency.
-- [test_validation_verification.py line 284](../../../tests/unit/api_serving/test_validation_verification.py#L284): `@given` property-based input strategies.
-- [test_validation_verification.py line 293](../../../tests/unit/api_serving/test_validation_verification.py#L293): `60` generated examples.
-- [test_validation_verification.py line 307](../../../tests/unit/api_serving/test_validation_verification.py#L307): repeated predictions.
-- [test_validation_verification.py line 317](../../../tests/unit/api_serving/test_validation_verification.py#L317): idempotency assertion.
+- [pyproject.toml](../../../pyproject.toml): `hypothesis` dependency.
+- [`test_validation_verification.py`](../../../tests/unit/api_serving/test_validation_verification.py): Hypothesis strategies, 60 generated examples, repeated predictions, and idempotency assertion.
 
 ### 5.2 Command used
 
@@ -256,15 +226,9 @@ uv run pytest \
 
 Source references:
 
-- [pyproject.toml line 28](../../../pyproject.toml#L28): `locust` dependency.
-- [pyproject.toml line 30](../../../pyproject.toml#L30): `uvicorn` local FastAPI runtime dependency.
-- [tests/load/locustfile_serving.py line 18](../../../tests/load/locustfile_serving.py#L18): `RECSYS_LOAD_TARGET` target selector.
-- [tests/load/locustfile_serving.py line 36](../../../tests/load/locustfile_serving.py#L36): Locust task dispatch.
-- [tests/load/locustfile_serving.py line 42](../../../tests/load/locustfile_serving.py#L42): `/recommendations` load-test payload.
-- [tests/load/locustfile_serving.py line 64](../../../tests/load/locustfile_serving.py#L64): `/online-features` load-test payload.
-- [jenkins/scripts/validation_load_test.sh line 19](../../../jenkins/scripts/validation_load_test.sh#L19): headless Locust command.
-- [jenkins/scripts/validation_load_test.sh line 26](../../../jenkins/scripts/validation_load_test.sh#L26): HTML report output.
-- [jenkins/scripts/validation_load_test.sh line 44](../../../jenkins/scripts/validation_load_test.sh#L44): SLA pass/fail condition.
+- [`pyproject.toml`](../../../pyproject.toml): Locust and Uvicorn dependencies.
+- [`locustfile_serving.py`](../../../tests/load/locustfile_serving.py): target selection, task dispatch, and both API payloads.
+- [`validation_load_test.sh`](../../../jenkins/scripts/validation_load_test.sh): headless execution, HTML report, and SLA gate.
 
 ### 6.2 Commands used
 

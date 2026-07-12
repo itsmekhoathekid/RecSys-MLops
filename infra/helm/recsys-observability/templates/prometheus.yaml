@@ -44,25 +44,12 @@ data:
     rule_files:
       - /etc/prometheus/rules/*.yml
     scrape_configs:
-      - job_name: recsys-api-serving
-        metrics_path: /metrics
-        static_configs:
-          - targets: ["recsys-api-serving.{{ .Values.targets.apiNamespace }}.svc.cluster.local:80"]
-            labels:
-              service: recsys-api-serving
-      - job_name: recsys-online-feature-api
-        metrics_path: /metrics
-        static_configs:
-          - targets: ["recsys-online-feature-api.{{ .Values.targets.apiNamespace }}.svc.cluster.local:80"]
-            labels:
-              service: recsys-online-feature-api
+      # API workloads are scraped once per annotated pod by recsys-kubernetes-pods.
+      # Scraping their ClusterIP services as well would duplicate counters and make rates unstable.
       - job_name: recsys-pushgateway
         honor_labels: true
         static_configs:
           - targets: ["recsys-pushgateway.{{ .Values.namespace.name }}.svc.cluster.local:9091"]
-      - job_name: recsys-monitoring-sql-exporter
-        static_configs:
-          - targets: ["monitoring-sql-exporter.{{ .Values.targets.dataNamespace }}.svc.cluster.local:9102"]
       - job_name: recsys-redis-exporter
         static_configs:
           - targets: ["redis-exporter.{{ .Values.namespace.name }}.svc.cluster.local:9121"]
@@ -226,10 +213,15 @@ spec:
       app: recsys-prometheus
   template:
     metadata:
+      annotations:
+        checksum/prometheus-config: {{ printf "%s-%s-%s-%s" .Values.targets.apiNamespace .Values.targets.kserveNamespace .Values.images.prometheus "pod-scrape-v2" | sha256sum | quote }}
       labels:
         app: recsys-prometheus
     spec:
       serviceAccountName: recsys-prometheus
+      securityContext:
+        fsGroup: 65534
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: prometheus
           image: {{ .Values.images.prometheus }}
@@ -256,7 +248,28 @@ spec:
           configMap:
             name: recsys-prometheus-rules
         - name: data
+{{- if .Values.persistence.prometheus.enabled }}
+          persistentVolumeClaim:
+            claimName: recsys-prometheus-data
+{{- else }}
           emptyDir: {}
+{{- end }}
+{{- if .Values.persistence.prometheus.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: recsys-prometheus-data
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.storage.prometheus }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -35,7 +35,7 @@ spec:
       metadata:
         value: {{ .Values.autoscaling.kserveResource.memory.value | quote }}
 {{- end }}
-{{- if and .Values.abTest.enabled .Values.kserve.inferenceService.candidateStorageUri }}
+{{- if and (or .Values.abTest.enabled .Values.shadow.enabled) .Values.kserve.inferenceService.candidateStorageUri }}
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject

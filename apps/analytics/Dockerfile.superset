@@ -1,0 +1,8 @@
+FROM apache/superset:6.0.0
+
+USER root
+RUN uv pip install --python /app/.venv/bin/python \
+    "trino==0.338.0" \
+    "psycopg2-binary==2.9.12"
+COPY apps/analytics/superset/bootstrap_dashboards.py /app/pythonpath/bootstrap_dashboards.py
+USER superset

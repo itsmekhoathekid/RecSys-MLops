@@ -40,7 +40,7 @@
 #    pvc_mount_path: str [Default: '/workspace']
 #    pvc_name: str [Default: 'recsys-mlops-pvc']
 #    ray_best_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/best_result.json']
-#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7']
+#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:rollout-lifecycle-20260712-r2']
 #    ray_job_name: str [Default: 'recsys-bst-ray-tune']
 #    ray_namespace: str [Default: 'kubeflow']
 #    ray_node_selector: str [Default: 'recsys.ai/pool=ml-system']
@@ -266,7 +266,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:rollout-lifecycle-20260712-r2
     exec-prepare-training-data:
       container:
         args:
@@ -319,7 +319,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/registry/model_promotion.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:rollout-lifecycle-20260712-r2
     exec-submit-rayjob:
       container:
         args:
@@ -380,7 +380,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:rollout-lifecycle-20260712-r2
     exec-submit-rayjob-2:
       container:
         args:
@@ -441,7 +441,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:rollout-lifecycle-20260712-r2
     exec-trigger-kserve-model-cd:
       container:
         args:
@@ -461,7 +461,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
+        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:rollout-lifecycle-20260712-r2
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.
@@ -694,7 +694,7 @@ root:
             status_path:
               componentInputParameter: kserve_cd_status_path
         taskInfo:
-          name: Trigger KServe CD
+          name: Bootstrap Or Await Candidate
   inputDefinitions:
     parameters:
       bst_config_path:
@@ -850,7 +850,7 @@ root:
         isOptional: true
         parameterType: STRING
       ray_image:
-        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:docker-opt-20260707-r7
+        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:rollout-lifecycle-20260712-r2
         isOptional: true
         parameterType: STRING
       ray_job_name:
@@ -1278,6 +1278,46 @@ platforms:
                 constant: recsys-mlops-pvc
           secretAsEnv:
           - keyToEnv:
+            - envVar: MINIO_ENDPOINT
+              secretKey: MINIO_ENDPOINT
+            - envVar: MINIO_ROOT_USER
+              secretKey: MINIO_ROOT_USER
+            - envVar: MINIO_ROOT_PASSWORD
+              secretKey: MINIO_ROOT_PASSWORD
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: MODEL_STORE_ENDPOINT
+              secretKey: MODEL_STORE_ENDPOINT
+            - envVar: MODEL_REGISTRY_POSTGRES_URI
+              secretKey: MODEL_REGISTRY_POSTGRES_URI
+            - envVar: MODEL_STORE_BUCKET
+              secretKey: MODEL_STORE_BUCKET
+            - envVar: MODEL_STORE_PREFIX
+              secretKey: MODEL_STORE_PREFIX
+            - envVar: PROMOTION_MANIFEST_KEY
+              secretKey: PROMOTION_MANIFEST_KEY
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            - envVar: ICEBERG_ENABLED
+              secretKey: ICEBERG_ENABLED
+            - envVar: ICEBERG_CATALOG_NAME
+              secretKey: ICEBERG_CATALOG_NAME
+            - envVar: ICEBERG_WAREHOUSE
+              secretKey: ICEBERG_WAREHOUSE
+            - envVar: HUDI_ENABLED
+              secretKey: HUDI_ENABLED
+            - envVar: HUDI_CATALOG_NAME
+              secretKey: HUDI_CATALOG_NAME
+            - envVar: HUDI_WAREHOUSE
+              secretKey: HUDI_WAREHOUSE
             - envVar: JENKINS_URL
               secretKey: JENKINS_URL
             - envVar: JENKINS_USER

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import os
 
 from locust import HttpUser, between, task
@@ -19,9 +20,18 @@ def _candidates() -> list[int]:
 
 TARGET = os.getenv("RECSYS_LOAD_TARGET", "api").lower()
 HOST_HEADER = os.getenv("RECSYS_HOST_HEADER")
-USER_ID = int(os.getenv("RECSYS_USER_ID", "50"))
+FIXED_USER_ID = os.getenv("RECSYS_USER_ID", "").strip()
+USER_ID_START = int(os.getenv("RECSYS_USER_ID_START", "1"))
+USER_ID_RANGE = max(1, int(os.getenv("RECSYS_USER_ID_RANGE", "1000000")))
+USER_IDS = itertools.count(USER_ID_START)
 CANDIDATES = _candidates()
 TOP_K = int(os.getenv("RECSYS_TOP_K", "3"))
+
+
+def _next_user_id() -> int:
+    if FIXED_USER_ID:
+        return int(FIXED_USER_ID)
+    return USER_ID_START + ((next(USER_IDS) - USER_ID_START) % USER_ID_RANGE)
 
 
 class RecsysServingUser(HttpUser):
@@ -44,7 +54,7 @@ class RecsysServingUser(HttpUser):
 
     def _api_recommendations(self) -> None:
         payload = {
-            "user_id": USER_ID,
+            "user_id": _next_user_id(),
             "candidate_item_ids": CANDIDATES,
             "top_k": TOP_K,
         }
@@ -64,7 +74,7 @@ class RecsysServingUser(HttpUser):
 
     def _online_features(self) -> None:
         payload = {
-            "user_id": USER_ID,
+            "user_id": _next_user_id(),
             "candidate_item_ids": CANDIDATES,
             "top_k": TOP_K,
         }

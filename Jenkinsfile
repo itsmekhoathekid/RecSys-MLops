@@ -11,6 +11,7 @@ def componentDefinitions() {
     [flag: 'RUN_DRIFT', name: 'drift', label: 'Realtime Drift Detection'],
     [flag: 'RUN_STREAM_OFFLINE', name: 'stream_offline', label: 'Stream Features To Offline Store'],
     [flag: 'RUN_STREAM_ONLINE', name: 'stream_online', label: 'Stream Features To Online Store'],
+    [flag: 'RUN_ANALYTICS', name: 'analytics', label: 'Analytics And BI'],
   ]
 }
 

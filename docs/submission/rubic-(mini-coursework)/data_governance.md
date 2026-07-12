@@ -20,9 +20,9 @@ Common code:
 
 - [apps/data-platform/src/metadata/runtime_lineage.py](../../../apps/data-platform/src/metadata/runtime_lineage.py): records run-scoped OpenLineage events from actual executions.
 - [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): clears old static edges, verifies complete coverage, and emits only runtime-observed job lineage.
-- [apps/data-platform/src/metadata/ingest_datahub_governance.py line 436](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L436): maps the latest runtime validation report to a DataHub assertion result.
-- [apps/data-platform/src/metadata/ingest_datahub_governance.py line 523](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L523): attaches native schema and data-quality assertions to an active Data Contract.
-- [apps/data-platform/src/validate/governance_contracts.py line 1](../../../apps/data-platform/src/validate/governance_contracts.py#L1): writes and reads the shared validation-report format.
+- [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): maps the latest runtime validation report to a DataHub assertion result.
+- [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): attaches native schema and data-quality assertions to an active Data Contract.
+- [apps/data-platform/src/validate/governance_contracts.py](../../../apps/data-platform/src/validate/governance_contracts.py): writes and reads the shared validation-report format.
 
 ## DP1 Linked With Related Tables
 
@@ -42,9 +42,9 @@ Common code:
 
 ### Code Reference
 
-- [apps/data-platform/src/ingest/batch_lakehouse_ingestion.py](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py): records the Bronze datasets actually written by the DP1 execution.
-- [apps/data-platform/src/validate/governance_contracts.py line 101](../../../apps/data-platform/src/validate/governance_contracts.py#L101): Bronze runtime validation checks.
-- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py line 199](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L199): Airflow `ingest_stage -> validate_stage` dependency.
+- [`batch_lakehouse_ingestion.py`](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py): DP1 Bronze output lineage.
+- [`governance_contracts.py`](../../../apps/data-platform/src/validate/governance_contracts.py): `validate_dp1_bronze()` and report publication.
+- [`rubric_data_pipeline_dags.py`](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py): `ingest_stage >> validate_stage` orchestration.
 
 ## DP2 Linked With Related Tables
 
@@ -64,9 +64,8 @@ Common code:
 
 ### Code Reference
 
-- [apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py): records actual Bronze inputs, Silver outputs, run status, and contract validation.
-- [apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py line 31](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L31): Silver validation and report publication.
-- [apps/data-platform/src/features/spark/build_silver_tables.py line 95](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L95): normalization, deduplication, and Iceberg writes.
+- [`dp2_silver_gold_entrypoint.py`](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py): DP2 runtime lineage plus Silver validation/report publication.
+- [`build_silver_tables.py`](../../../apps/data-platform/src/features/spark/build_silver_tables.py): normalization, deduplication, rejected rows, and Iceberg writes.
 
 ## DP3 Linked With Related Tables
 
@@ -86,10 +85,8 @@ Common code:
 
 ### Code Reference
 
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py): records actual Silver inputs and only the Iceberg/PostgreSQL outputs successfully written by the run.
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 177](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L177): reads existing DP2 Silver tables rather than rebuilding them.
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 114](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L114): publishes DP3 Iceberg validation observations.
-- [apps/data-platform/src/validate/governance_contracts.py line 122](../../../apps/data-platform/src/validate/governance_contracts.py#L122): validates PostgreSQL Feast offline tables.
+- [`spark_batch_entrypoint.py`](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py): DP3 Silver inputs, Iceberg/PostgreSQL outputs, and Iceberg validation report.
+- [`governance_contracts.py`](../../../apps/data-platform/src/validate/governance_contracts.py): `validate_dp3_postgres()` for Feast offline-store contracts.
 
 ## CDC Ingestion
 
