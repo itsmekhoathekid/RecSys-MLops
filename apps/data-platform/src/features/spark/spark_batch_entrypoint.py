@@ -26,7 +26,8 @@ from feature_store.postgres_offline_store import (
     truncate_offline_store_tables,
 )
 from lakehouse.iceberg import IcebergCatalogConfig, create_spark_namespace
-from metadata.governance_catalog import ICEBERG_FEATURE_URNS
+from metadata.governance_catalog import BRONZE_URNS, ICEBERG_FEATURE_URNS, POSTGRES_FEATURE_URNS, SILVER_URNS
+from metadata.runtime_lineage import RuntimeLineageRecorder
 from validate.governance_contracts import check, dataset_result, write_report
 
 
@@ -98,10 +99,10 @@ def _postgres_export_config(output: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _write_postgres_tables(outputs: dict[str, Any], *, catalog: IcebergCatalogConfig, output: dict[str, Any]) -> None:
+def _write_postgres_tables(outputs: dict[str, Any], *, catalog: IcebergCatalogConfig, output: dict[str, Any]) -> tuple[str, ...]:
     export = _postgres_export_config(output)
     if not export["enabled"]:
-        return
+        return ()
     config: PostgresOfflineStoreConfig = export["config"]
     with config.connect() as conn:
         ensure_offline_store_tables(conn, config.schema, OFFLINE_STORE_TABLES)
@@ -109,6 +110,7 @@ def _write_postgres_tables(outputs: dict[str, Any], *, catalog: IcebergCatalogCo
         for table_name in OFFLINE_STORE_TABLES:
             frame = outputs[catalog.feature_table(table_name)].toPandas()
             insert_offline_rows(conn, config.schema, table_name, frame.to_dict("records"))
+    return tuple(POSTGRES_FEATURE_URNS[table_name] for table_name in OFFLINE_STORE_TABLES)
 
 
 def _write_dp3_iceberg_validation_report(outputs: dict[str, Any], *, catalog: IcebergCatalogConfig) -> dict[str, Any]:
@@ -174,27 +176,32 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
     source, run_path = _batch_source_path(input_config, output)
 
     try:
-        if source == "silver_lakehouse":
-            silver = read_silver_lakehouse_tables(spark, catalog)
-        else:
-            silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source)
-        outputs = _build_feature_outputs(silver, catalog=catalog, features=features)
-        for table_name, frame in outputs.items():
-            write_iceberg_table(frame, table_name, mode="overwrite")
-        feast_offline_root = output.get("feast_offline_store_uri")
-        if feast_offline_root:
-            for table_name in ("user_sequence_features", "user_aggregate_features", "item_features"):
-                write_parquet(
-                    outputs[catalog.feature_table(table_name)],
-                    f"{feast_offline_root.rstrip('/')}/{table_name}",
-                )
-        _write_postgres_tables(outputs, catalog=catalog, output=output)
-        report = _write_dp3_iceberg_validation_report(outputs, catalog=catalog)
-        if report["status"] != "SUCCESS":
-            raise AssertionError(f"DP3 Iceberg validation failed: {report}")
-        summary = {"clean_behavior_events": row_count(silver["clean_behavior_events"])}
-        summary.update(_output_summary(outputs))
-        return summary
+        with RuntimeLineageRecorder("DP3", "ingest_stage") as lineage:
+            if source == "silver_lakehouse":
+                silver = read_silver_lakehouse_tables(spark, catalog)
+                lineage.add_inputs(*SILVER_URNS.values())
+            else:
+                silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source)
+                lineage.add_inputs(*BRONZE_URNS.values())
+            outputs = _build_feature_outputs(silver, catalog=catalog, features=features)
+            for table_name, frame in outputs.items():
+                write_iceberg_table(frame, table_name, mode="overwrite")
+                lineage.add_outputs(ICEBERG_FEATURE_URNS[table_name.rsplit(".", 1)[-1]])
+            feast_offline_root = output.get("feast_offline_store_uri")
+            if feast_offline_root:
+                for table_name in ("user_sequence_features", "user_aggregate_features", "item_features"):
+                    write_parquet(
+                        outputs[catalog.feature_table(table_name)],
+                        f"{feast_offline_root.rstrip('/')}/{table_name}",
+                    )
+            lineage.add_outputs(*_write_postgres_tables(outputs, catalog=catalog, output=output))
+            report = _write_dp3_iceberg_validation_report(outputs, catalog=catalog)
+            if report["status"] != "SUCCESS":
+                lineage.fail(f"DP3 Iceberg data contract status: {report['status']}")
+                raise AssertionError(f"DP3 Iceberg validation failed: {report}")
+            summary = {"clean_behavior_events": row_count(silver["clean_behavior_events"])}
+            summary.update(_output_summary(outputs))
+            return summary
     finally:
         spark.stop()
 

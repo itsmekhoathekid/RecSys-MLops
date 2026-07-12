@@ -8,6 +8,11 @@ from typing import Any
 
 import requests
 
+from lakehouse.iceberg import RAW_GENERATOR_TABLES
+from metadata.governance_catalog import KAFKA_TOPIC_URNS, SOURCE_POSTGRES_URNS
+from metadata.runtime_lineage import RuntimeLineageRecorder
+from validate.governance_contracts import check, dataset_result, write_report
+
 
 TABLE_INCLUDE_LIST = (
     "public.users,public.user_preferences,public.products,public.product_snapshots,"
@@ -80,10 +85,31 @@ def main() -> int:
     parser.add_argument("--connector", choices=sorted(CONNECTORS), required=True)
     parser.add_argument("--wait-timeout-seconds", type=int, default=180)
     args = parser.parse_args()
-    wait_for_connect(timeout_seconds=args.wait_timeout_seconds)
     name, config_factory = CONNECTORS[args.connector]
-    result = register_connector(name, config_factory())
-    print(json.dumps({"name": name, "result": result}, indent=2, sort_keys=True))
+    with RuntimeLineageRecorder("CDC_INGESTION", "register_debezium_connector") as lineage:
+        wait_for_connect(timeout_seconds=args.wait_timeout_seconds)
+        config = config_factory()
+        result = register_connector(name, config)
+        included_tables = {
+            item.rsplit(".", 1)[-1]
+            for item in str(config.get("table.include.list", "")).split(",")
+            if item.strip()
+        }
+        actual_tables = sorted(included_tables.intersection(RAW_GENERATOR_TABLES))
+        lineage.add_inputs(*(SOURCE_POSTGRES_URNS[table] for table in actual_tables))
+        lineage.add_outputs(*(KAFKA_TOPIC_URNS[table] for table in actual_tables))
+        datasets: dict[str, dict[str, Any]] = {}
+        for table in RAW_GENERATOR_TABLES:
+            status = "SUCCESS" if table in included_tables else "FAILURE"
+            source_check = check("connector_source_mapping", status, f"public.{table}", sorted(included_tables))
+            topic_check = check("connector_topic_mapping", status, f"cdc.{table}", f"cdc.{table}" if status == "SUCCESS" else None)
+            datasets[SOURCE_POSTGRES_URNS[table]] = dataset_result([source_check])
+            datasets[KAFKA_TOPIC_URNS[table]] = dataset_result([topic_check])
+        report = write_report("CDC_INGESTION", datasets)
+        if report["status"] != "SUCCESS":
+            lineage.fail(f"CDC connector data contract status: {report['status']}")
+            raise RuntimeError(f"CDC connector contract failed: {report}")
+        print(json.dumps({"name": name, "result": result, "contract": report["status"]}, indent=2, sort_keys=True))
     return 0
 
 

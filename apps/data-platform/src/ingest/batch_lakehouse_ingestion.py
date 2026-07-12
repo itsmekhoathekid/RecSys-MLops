@@ -14,6 +14,8 @@ import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 
 from lakehouse.iceberg import RAW_GENERATOR_TABLES
+from metadata.governance_catalog import BRONZE_URNS
+from metadata.runtime_lineage import RuntimeLineageRecorder
 
 
 @dataclass(frozen=True)
@@ -116,21 +118,23 @@ def load_generator_run_to_lakehouse(
     layout = layout or LakehouseParquetLayout()
     source_run_id = infer_run_id(run_path, run_id)
     ingestion_ts = datetime.now(timezone.utc)
-    counts: dict[str, int] = {}
-    for table_name in RAW_GENERATOR_TABLES:
-        source_uri = f"{str(run_path).rstrip('/')}/{table_name}"
-        output_uri = layout.table_uri(table_name)
-        table = _read_parquet_table(source_uri)
-        enriched = _enrich_table(table, source_run_id=source_run_id, ingestion_ts=ingestion_ts)
-        _write_parquet_table(
-            enriched,
-            output_uri,
-            table_name=table_name,
-            source_run_id=source_run_id,
-            mode=mode,
-        )
-        counts[table_name] = enriched.num_rows
-    return counts
+    with RuntimeLineageRecorder("DP1", "ingest_stage") as lineage:
+        counts: dict[str, int] = {}
+        for table_name in RAW_GENERATOR_TABLES:
+            source_uri = f"{str(run_path).rstrip('/')}/{table_name}"
+            output_uri = layout.table_uri(table_name)
+            table = _read_parquet_table(source_uri)
+            enriched = _enrich_table(table, source_run_id=source_run_id, ingestion_ts=ingestion_ts)
+            _write_parquet_table(
+                enriched,
+                output_uri,
+                table_name=table_name,
+                source_run_id=source_run_id,
+                mode=mode,
+            )
+            counts[table_name] = enriched.num_rows
+            lineage.add_outputs(BRONZE_URNS[table_name])
+        return counts
 
 
 def main() -> int:

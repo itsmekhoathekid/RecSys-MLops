@@ -184,7 +184,7 @@ realtimeFlinkConsumer:
 
 realtimeCdcConnector:
   enabled: true
-  tableIncludeList: public.behavior_events
+  tableIncludeList: public.users,public.user_preferences,public.products,public.product_snapshots,public.sessions,public.recommendation_requests,public.impressions,public.behavior_events,public.orders,public.order_items
   snapshotMode: never
   slotName: recsys_slot_e2e
 

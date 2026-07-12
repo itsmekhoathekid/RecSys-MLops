@@ -20,6 +20,8 @@ DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
     "VALIDATION_RUN_ID": "{{ run_id }}",
+    "RUNTIME_LINEAGE_ENABLED": "true",
+    "RUNTIME_LINEAGE_STRICT": "true",
 }
 SPARK_DRIVER_EXECUTOR_ENV = (
     "PYTHONPATH",
@@ -50,6 +52,9 @@ SPARK_DRIVER_EXECUTOR_ENV = (
     "RECSYS_JSON_LOGS",
     "SPARK_SQL_SHUFFLE_PARTITIONS",
     "GOVERNANCE_VALIDATION_ROOT",
+    "RUNTIME_LINEAGE_ROOT",
+    "RUNTIME_LINEAGE_ENABLED",
+    "RUNTIME_LINEAGE_STRICT",
     "VALIDATION_RUN_ID",
 )
 SPARK_SECRET_ENV = ("MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
@@ -225,24 +230,7 @@ feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)
 
 VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = "python -m validate.governance_contracts dp3-postgres"
 
-VERIFY_REDIS_ONLINE_STORE_COMMAND = r"""
-python -c '
-import json
-import os
-import redis
-
-client = redis.Redis(
-    host=os.getenv("REDIS_HOST", "redis"),
-    port=int(os.getenv("REDIS_PORT", "6379")),
-    decode_responses=True,
-)
-patterns = ("fs:user_sequence:*", "fs:user_aggregate:*", "fs:item:*")
-counts = {pattern: sum(1 for _ in client.scan_iter(match=pattern, count=1000)) for pattern in patterns}
-total = sum(counts.values())
-assert total > 0, f"Redis online store has no feature keys for patterns {patterns}"
-print(json.dumps({"redis_online_store_key_counts": counts, "total": total}, sort_keys=True))
-'
-""".strip()
+VERIFY_REDIS_ONLINE_STORE_COMMAND = "python -m validate.governance_contracts streaming-redis"
 
 RUN_OFFLINE_FEATURE_DRIFT_COMMAND = (
     "python -m validate.offline_feature_drift "
@@ -344,6 +332,12 @@ if DAG is not None:
             "--mode overwrite",
             mesh=False,
         )
+        validate_dp1_bronze = pod_task(
+            "validate_dp1_bronze",
+            DATAFLOW_IMAGE,
+            "python -m validate.governance_contracts dp1",
+            mesh=False,
+        )
         run_dp2_bronze_to_silver_gold = pod_task(
             "run_dp2_bronze_to_silver_gold",
             SPARK_IMAGE,
@@ -374,6 +368,11 @@ if DAG is not None:
             SPARK_BATCH_COMMAND,
             mesh=False,
         )
+        validate_dp3_postgres = pod_task(
+            "validate_dp3_postgres",
+            DATAFLOW_IMAGE,
+            VERIFY_POSTGRES_OFFLINE_STORE_COMMAND,
+        )
         run_flink_stream_to_feature_stores = pod_task(
             "run_flink_stream_to_feature_stores",
             DATAFLOW_IMAGE,
@@ -387,6 +386,16 @@ if DAG is not None:
                 "realtime Flink feature-store sync",
             ),
         )
+        validate_streaming_redis = pod_task(
+            "validate_streaming_redis",
+            DATAFLOW_IMAGE,
+            VERIFY_REDIS_ONLINE_STORE_COMMAND,
+        )
+        verify_governance_coverage = pod_task(
+            "verify_governance_coverage",
+            DATAFLOW_IMAGE,
+            "python -m metadata.ingest_datahub_governance --verify-only",
+        )
         datahub_ingest = pod_task(
             "datahub_ingest",
             DATAFLOW_IMAGE,
@@ -394,7 +403,8 @@ if DAG is not None:
                 "DATAHUB_INGEST_ENABLED",
                 "python -m metadata.ingest_datahub_governance "
                 "--gms-url $DATAHUB_GMS_URL "
-                "--pushgateway-url $PUSHGATEWAY_URL",
+                "--pushgateway-url $PUSHGATEWAY_URL "
+                "--strict",
                 "DataHub governance ingest",
             ),
         )
@@ -409,12 +419,14 @@ if DAG is not None:
         (
             generate_historical_raw_files
             >> ingest_historical_batch_to_lakehouse
+            >> validate_dp1_bronze
             >> run_dp2_bronze_to_silver_gold
             >> validate_dp2_silver_gold
             >> run_spark_batch_to_offline_store
+            >> validate_dp3_postgres
         )
-        load_realtime_to_source_postgres >> run_flink_stream_to_feature_stores
-        [run_spark_batch_to_offline_store, run_flink_stream_to_feature_stores] >> datahub_ingest >> end
+        load_realtime_to_source_postgres >> run_flink_stream_to_feature_stores >> validate_streaming_redis
+        [validate_dp3_postgres, validate_streaming_redis] >> verify_governance_coverage >> datahub_ingest >> end
 
     with DAG(
         dag_id="recsys_batch_feature_pipeline",

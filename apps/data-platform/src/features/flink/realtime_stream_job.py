@@ -30,6 +30,13 @@ from feature_store.postgres_offline_store import (
     insert_offline_rows,
 )
 from ingest.debezium import extract_debezium_after
+from metadata.governance_catalog import (
+    ICEBERG_FEATURE_URNS,
+    KAFKA_TOPIC_URNS,
+    POSTGRES_FEATURE_URNS,
+    REDIS_FEATURE_URNS,
+)
+from metadata.runtime_lineage import RuntimeLineageRecorder, lineage_run_id
 
 
 EVENT_TYPE_IDS = {"view": 1, "cart": 2, "purchase": 3}
@@ -1273,7 +1280,43 @@ def main() -> int:
     if args.disable_offline_store:
         args.offline_store_enabled = False
 
-    run_pyflink_stream(args)
+    offline_outputs: set[str] = set()
+    if args.offline_store_enabled:
+        configured_outputs = POSTGRES_FEATURE_URNS if args.offline_store_sink == "postgres" else ICEBERG_FEATURE_URNS
+        offline_outputs.update(configured_outputs[table] for table in REDIS_FEATURE_URNS)
+    runtime_run_id = lineage_run_id()
+    recorders: list[RuntimeLineageRecorder] = []
+    if args.offline_store_enabled:
+        recorders.append(
+            RuntimeLineageRecorder(
+                "STREAMING_FEATURES",
+                "run_flink_stream_to_offline_store",
+                inputs={KAFKA_TOPIC_URNS["behavior_events"]},
+                outputs=offline_outputs,
+                run_id=runtime_run_id,
+            )
+        )
+    if not args.disable_online_store:
+        recorders.append(
+            RuntimeLineageRecorder(
+                "STREAMING_FEATURES",
+                "run_flink_stream_to_online_store",
+                inputs={KAFKA_TOPIC_URNS["behavior_events"]},
+                outputs=set(REDIS_FEATURE_URNS.values()),
+                run_id=runtime_run_id,
+            )
+        )
+    for recorder in recorders:
+        recorder.__enter__()
+    try:
+        run_pyflink_stream(args)
+    except Exception as exc:
+        for recorder in recorders:
+            recorder.fail(str(exc))
+        raise
+    else:
+        for recorder in recorders:
+            recorder.complete()
     return 0
 
 

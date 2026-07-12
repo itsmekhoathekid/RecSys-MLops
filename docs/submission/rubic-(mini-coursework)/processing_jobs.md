@@ -490,6 +490,19 @@ Code reference:
 
 ![Flink optimized streaming metrics](../../pngs/flink_optimized.png)
 
+> **Comparison with the baseline burst graphs above:** at the captured snapshot,
+> `accumulateBackPressuredTimeMs` is about `6.12k ms`, compared with about
+> `10.30k ms` in the baseline (`~4.18k ms`, or `~41%`, lower). The observed
+> `mailboxLatencyMs_p95` peak is about `2.10 s`, down from the baseline peak of
+> about `2.28 s` (`~180 ms`, or `~8%`, lower). Operator utilization remains high
+> (`Busy (max): 100%` versus `99%`), so the improvement is not lower workload;
+> it is that the same burst is handled with lower accumulated pressure and a
+> lower mailbox-latency peak while the job remains `RUNNING`. Because
+> `accumulateBackPressuredTimeMs` is cumulative and the screenshots come from
+> different runtime windows, the `41%` value is snapshot evidence rather than a
+> controlled benchmark. The stronger runtime result is confirmed by the next
+> image: Back Pressure is `OK` and the subtask reports `0%` backpressure.
+
 **Figure: optimized Flink operator metrics under bursty traffic.** The selected
 `KEYED PROCESS -> (_stream_key_by_map_operator, late-events-side-output,
 late-event-drop-policy, _stream_key_by_map_operator)` vertex remains `RUNNING`
@@ -572,4 +585,3 @@ Code reference:
 - [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 111](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L111): production Spark batch entrypoint.
 - [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 43](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L43): computes the DP3 feature and training outputs.
 - [apps/data-platform/src/features/spark/spark_batch_entrypoint.py line 98](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L98): exports Feast-facing feature tables into PostgreSQL.
-

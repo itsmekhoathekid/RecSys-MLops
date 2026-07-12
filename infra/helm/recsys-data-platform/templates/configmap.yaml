@@ -12,6 +12,9 @@ data:
   OFFLINE_FEATURE_BUCKET: {{ .Values.minio.offlineFeatureBucket | quote }}
   LAKEHOUSE_WAREHOUSE: "s3a://{{ .Values.minio.lakeBucket }}/warehouse"
   GOVERNANCE_VALIDATION_ROOT: "s3a://{{ .Values.minio.lakeBucket }}/governance/validation"
+  RUNTIME_LINEAGE_ROOT: "s3a://{{ .Values.minio.lakeBucket }}/governance/lineage"
+  RUNTIME_LINEAGE_ENABLED: "true"
+  RUNTIME_LINEAGE_STRICT: "true"
   ICEBERG_CATALOG: {{ .Values.lakehouse.catalog | quote }}
   ICEBERG_LAKEHOUSE_NAMESPACE: {{ .Values.lakehouse.lakehouseNamespace | quote }}
   OFFLINE_FEATURE_CATALOG: {{ .Values.lakehouse.offlineFeatureCatalog | quote }}

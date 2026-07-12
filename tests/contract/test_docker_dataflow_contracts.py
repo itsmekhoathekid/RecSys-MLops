@@ -265,7 +265,9 @@ def test_airflow_dags_run_native_lakehouse_tasks_only():
             assert '"run_offline_feature_drift",\n            DATAFLOW_IMAGE,' in source
             assert "apply_feature_repo" in source
             assert "python -m validate.governance_contracts dp3-postgres" in source
-            assert "redis_online_store_key_counts" in source
+            assert "python -m validate.governance_contracts streaming-redis" in source
+            assert "python -m metadata.ingest_datahub_governance --verify-only" in source
+            assert '"RUNTIME_LINEAGE_STRICT": "true"' in source
             assert "pushed_drift_report_metrics" in source
             assert "http://flink-jobmanager:8081/jobs/overview" in source
             assert "No RUNNING Flink jobs found" in source

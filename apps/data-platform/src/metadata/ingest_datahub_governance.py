@@ -35,6 +35,7 @@ from metadata.governance_schemas import (
     raw_schema,
     silver_schema,
 )
+from metadata.runtime_lineage import event_dataset_urns, event_runtime, read_latest_event
 from monitoring.pushgateway import MetricSample, push_metrics
 from validate.governance_contracts import read_report
 
@@ -54,7 +55,6 @@ class Dataset:
     custom_properties: dict[str, str]
     schema: tuple[SchemaColumn, ...]
     primary_keys: tuple[str, ...] = ()
-    upstreams: tuple[str, ...] = ()
     validation_pipeline: str | None = None
     required_columns: tuple[str, ...] = ()
 
@@ -64,11 +64,8 @@ class Job:
     id: str
     name: str
     description: str
-    inputs: tuple[str, ...]
-    outputs: tuple[str, ...]
     tags: tuple[str, ...]
     custom_properties: dict[str, str]
-    input_jobs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -335,13 +332,10 @@ def emit_dataset(emitter: DataHubEmitter, dataset: Dataset) -> None:
         "dataset",
         "upstreamLineage",
         {
-            "upstreams": [
-                {
-                    "dataset": upstream,
-                    "type": "TRANSFORMED",
-                }
-                for upstream in dataset.upstreams
-            ],
+            # Direct dataset lineage used to be declared in this catalog. Emptying
+            # the aspect removes those stale edges; runtime DataJob events are now
+            # the only lineage source.
+            "upstreams": [],
             "fineGrainedLineages": [],
         },
     )
@@ -581,8 +575,19 @@ def emit_flow(emitter: DataHubEmitter, product: DataProduct) -> str:
     return urn
 
 
-def emit_job(emitter: DataHubEmitter, flow: str, job: Job) -> None:
+def emit_job(emitter: DataHubEmitter, flow: str, job: Job, runtime_event: dict[str, Any]) -> None:
     urn = job_urn(flow, job.id)
+    runtime = event_runtime(runtime_event)
+    runtime_properties = {
+        "runtime_event_type": str(runtime_event["eventType"]),
+        "runtime_event_time": str(runtime_event["eventTime"]),
+        "runtime_run_uuid": str(runtime_event["run"]["runId"]),
+        "airflow_run_id": str(runtime["airflowRunId"]),
+        "lineage_source": "OpenLineage runtime event",
+    }
+    error_facet = runtime_event.get("run", {}).get("facets", {}).get("errorMessage", {})
+    if error_facet.get("message"):
+        runtime_properties["runtime_error"] = str(error_facet["message"])
     emitter.emit(
         urn,
         "dataJob",
@@ -591,7 +596,7 @@ def emit_job(emitter: DataHubEmitter, flow: str, job: Job) -> None:
             "name": job.name,
             "type": {"string": "COMMAND"},
             "description": job.description,
-            "customProperties": job.custom_properties,
+            "customProperties": {**job.custom_properties, **runtime_properties},
         },
     )
     emitter.emit(
@@ -599,9 +604,9 @@ def emit_job(emitter: DataHubEmitter, flow: str, job: Job) -> None:
         "dataJob",
         "dataJobInputOutput",
         {
-            "inputDatasets": list(job.inputs),
-            "outputDatasets": list(job.outputs),
-            "inputDatajobs": list(job.input_jobs),
+            "inputDatasets": list(event_dataset_urns(runtime_event, "inputs")),
+            "outputDatasets": list(event_dataset_urns(runtime_event, "outputs")),
+            "inputDatajobs": [job_urn(flow, job_id) for job_id in runtime.get("upstreamJobs", [])],
         },
     )
     emitter.emit(urn, "dataJob", "globalTags", tag_associations(job.tags))
@@ -616,7 +621,6 @@ def _dataset(
     *,
     schema: tuple[SchemaColumn, ...],
     primary_keys: tuple[str, ...] = (),
-    upstreams: tuple[str, ...] = (),
     validation_pipeline: str | None = None,
     required_columns: tuple[str, ...] = (),
 ) -> Dataset:
@@ -628,7 +632,6 @@ def _dataset(
         custom_properties={"data_product": product, "contract": contract},
         schema=schema,
         primary_keys=primary_keys,
-        upstreams=upstreams,
         validation_pipeline=validation_pipeline,
         required_columns=required_columns,
     )
@@ -649,7 +652,6 @@ def dp1() -> DataProduct:
         )
         for table in RAW_GENERATOR_TABLES
     )
-    flow = flow_urn("recsys_dp1_raw_to_bronze")
     return DataProduct(
         id="DP1",
         flow_id="recsys_dp1_raw_to_bronze",
@@ -662,8 +664,6 @@ def dp1() -> DataProduct:
                 id="ingest_stage",
                 name="Ingest Stage - Data Generator Batch Ingestion",
                 description="Runs the historical Data Generator in the batch pod and ingests its ephemeral output directly into the Bronze Parquet lakehouse.",
-                inputs=(),
-                outputs=tuple(item.urn for item in bronze),
                 tags=("DP1", "DataContract", "NativePipeline"),
                 custom_properties={"engine": "Data Generator plus PyArrow Parquet ingestion"},
             ),
@@ -671,28 +671,14 @@ def dp1() -> DataProduct:
                 id="validate_stage",
                 name="Validate Stage",
                 description="Validates Bronze table existence, row counts, source keys, and ingestion metadata.",
-                inputs=tuple(item.urn for item in bronze),
-                outputs=(),
                 tags=("DP1", "DataContract", "NativePipeline"),
                 custom_properties={"report": "governance/validation/dp1/latest.json"},
-                input_jobs=(job_urn(flow, "ingest_stage"),),
             ),
         ),
     )
 
 
 def dp2() -> DataProduct:
-    upstreams = {
-        "clean_behavior_events": (BRONZE_URNS["behavior_events"],),
-        "rejected_behavior_events": (BRONZE_URNS["behavior_events"],),
-        "clean_impressions": (BRONZE_URNS["impressions"],),
-        "clean_recommendation_requests": (BRONZE_URNS["recommendation_requests"],),
-        "order_facts": (BRONZE_URNS["orders"], BRONZE_URNS["order_items"]),
-        "product_scd": (BRONZE_URNS["product_snapshots"], BRONZE_URNS["products"]),
-        "users": (BRONZE_URNS["users"],),
-        "products": (BRONZE_URNS["products"],),
-        "user_preferences": (BRONZE_URNS["user_preferences"],),
-    }
     silver = tuple(
         _dataset(
             SILVER_URNS[table],
@@ -702,13 +688,11 @@ def dp2() -> DataProduct:
             "Readable Silver Iceberg table; clean_behavior_events must be unique by event_id",
             schema=silver_schema(table),
             primary_keys=SILVER_PRIMARY_KEYS[table],
-            upstreams=upstreams[table],
             validation_pipeline="DP2",
             required_columns=("event_id", "event_timestamp", "ingestion_ts") if table == "clean_behavior_events" else (),
         )
         for table in SILVER_LAKEHOUSE_TABLES
     )
-    flow = flow_urn("recsys_dp2_bronze_to_silver_gold")
     return DataProduct(
         id="DP2",
         flow_id="recsys_dp2_bronze_to_silver_gold",
@@ -721,8 +705,6 @@ def dp2() -> DataProduct:
                 id="ingest_stage",
                 name="Ingest Stage",
                 description="Reads Bronze Parquet, normalizes schemas, deduplicates events, and writes Silver Iceberg tables.",
-                inputs=tuple(BRONZE_URNS.values()),
-                outputs=tuple(item.urn for item in silver),
                 tags=("DP2", "DataContract", "NativePipeline"),
                 custom_properties={"engine": "PySpark plus Iceberg"},
             ),
@@ -730,29 +712,14 @@ def dp2() -> DataProduct:
                 id="validate_stage",
                 name="Validate Stage",
                 description="Validates Silver outputs and confirms clean behavior events contain no duplicate event_id values.",
-                inputs=tuple(item.urn for item in silver),
-                outputs=(),
                 tags=("DP2", "DataContract", "NativePipeline"),
                 custom_properties={"report": "governance/validation/dp2/latest.json"},
-                input_jobs=(job_urn(flow, "ingest_stage"),),
             ),
         ),
     )
 
 
 def dp3() -> DataProduct:
-    iceberg_upstreams = {
-        "user_sequence_features": (SILVER_URNS["clean_behavior_events"],),
-        "user_aggregate_features": (SILVER_URNS["clean_behavior_events"],),
-        "item_features": (SILVER_URNS["clean_behavior_events"], SILVER_URNS["product_scd"]),
-        "ml_ranking_labels": (SILVER_URNS["clean_impressions"], SILVER_URNS["clean_behavior_events"]),
-        "ml_bst_training": (
-            ICEBERG_FEATURE_URNS["user_sequence_features"],
-            ICEBERG_FEATURE_URNS["user_aggregate_features"],
-            ICEBERG_FEATURE_URNS["item_features"],
-            ICEBERG_FEATURE_URNS["ml_ranking_labels"],
-        ),
-    }
     required = {
         "user_sequence_features": ("user_id", "feature_timestamp"),
         "user_aggregate_features": ("user_id", "feature_timestamp"),
@@ -769,7 +736,6 @@ def dp3() -> DataProduct:
             "Non-empty Iceberg feature output with non-null entity key and feature timestamp",
             schema=feature_schema(table),
             primary_keys=FEATURE_PRIMARY_KEYS[table],
-            upstreams=iceberg_upstreams[table],
             validation_pipeline="DP3",
             required_columns=required[table],
         )
@@ -784,13 +750,11 @@ def dp3() -> DataProduct:
             "Feast PostgreSQL offline table with required schema, non-empty rows, and non-null key/timestamp",
             schema=feature_schema(table),
             primary_keys=FEATURE_PRIMARY_KEYS[table],
-            upstreams=(ICEBERG_FEATURE_URNS[table],),
             validation_pipeline="DP3",
             required_columns=required[table],
         )
         for table in POSTGRES_FEATURE_URNS
     )
-    flow = flow_urn("recsys_dp3_offline_feature_table")
     return DataProduct(
         id="DP3",
         flow_id="recsys_dp3_offline_feature_table",
@@ -803,8 +767,6 @@ def dp3() -> DataProduct:
                 id="ingest_stage",
                 name="Ingest Stage",
                 description="Reads DP2 Silver tables, computes offline features, writes Iceberg outputs, and exports PostgreSQL Feast tables.",
-                inputs=tuple(SILVER_URNS.values()),
-                outputs=tuple(item.urn for item in iceberg + postgres),
                 tags=("DP3", "DataContract", "NativePipeline"),
                 custom_properties={"engine": "PySpark, Iceberg, and PostgreSQL"},
             ),
@@ -812,11 +774,8 @@ def dp3() -> DataProduct:
                 id="validate_stage",
                 name="Validate Stage",
                 description="Validates both Iceberg feature outputs and PostgreSQL Feast offline-store tables.",
-                inputs=tuple(item.urn for item in iceberg + postgres),
-                outputs=(),
                 tags=("DP3", "DataContract", "NativePipeline"),
                 custom_properties={"report": "governance/validation/dp3/latest.json"},
-                input_jobs=(job_urn(flow, "ingest_stage"),),
             ),
         ),
     )
@@ -832,6 +791,7 @@ def cdc_ingestion() -> DataProduct:
             "SourceTableContract primary key and Debezium topic mapping",
             schema=raw_schema(table),
             primary_keys=RAW_PRIMARY_KEYS[table],
+            validation_pipeline="CDC_INGESTION",
         )
         for table in RAW_GENERATOR_TABLES
     )
@@ -843,7 +803,7 @@ def cdc_ingestion() -> DataProduct:
             "CDC_INGESTION",
             "Debezium change-event envelope keyed by the source primary key",
             schema=cdc_topic_schema(table),
-            upstreams=(SOURCE_POSTGRES_URNS[table],),
+            validation_pipeline="CDC_INGESTION",
         )
         for table in RAW_GENERATOR_TABLES
     )
@@ -859,8 +819,6 @@ def cdc_ingestion() -> DataProduct:
                 id="register_debezium_connector",
                 name="Register Debezium Connector",
                 description="Registers the Debezium connector linking source PostgreSQL tables to Kafka topics.",
-                inputs=tuple(item.urn for item in source),
-                outputs=tuple(item.urn for item in topics),
                 tags=("CDC_INGESTION", "DataContract", "NativePipeline"),
                 custom_properties={"contract": "ingest.postgres_cdc_contracts.SOURCE_TABLE_CONTRACTS"},
             ),
@@ -869,7 +827,6 @@ def cdc_ingestion() -> DataProduct:
 
 
 def streaming_features() -> DataProduct:
-    topic = KAFKA_TOPIC_URNS["behavior_events"]
     redis = tuple(
         _dataset(
             REDIS_FEATURE_URNS[table],
@@ -879,7 +836,7 @@ def streaming_features() -> DataProduct:
             "Redis online feature entity key and TTL contract",
             schema=feature_schema(table),
             primary_keys=FEATURE_PRIMARY_KEYS[table][:1],
-            upstreams=(topic,),
+            validation_pipeline="STREAMING_FEATURES",
         )
         for table in REDIS_FEATURE_URNS
     )
@@ -887,25 +844,21 @@ def streaming_features() -> DataProduct:
         id="STREAMING_FEATURES",
         flow_id="recsys_flink_stream_features",
         flow_name="Flink Streaming Features",
-        description="Two continuously running Flink jobs consume cdc.behavior_events and update PostgreSQL offline plus Redis online features.",
+        description="Two continuously running Flink jobs consume cdc.behavior_events and update the configured offline store plus Redis online features.",
         tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
         datasets=redis,
         jobs=(
             Job(
                 id="run_flink_stream_to_offline_store",
                 name="Run Flink Stream To Offline Store",
-                description="Consumes behavior CDC events and updates PostgreSQL Feast offline feature tables.",
-                inputs=(topic,),
-                outputs=tuple(POSTGRES_FEATURE_URNS[table] for table in REDIS_FEATURE_URNS),
+                description="Consumes behavior CDC events and updates the runtime-configured Iceberg or PostgreSQL offline feature tables.",
                 tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
-                custom_properties={"engine": "PyFlink DataStream plus PostgreSQL sink"},
+                custom_properties={"engine": "PyFlink DataStream plus runtime-configured offline sink"},
             ),
             Job(
                 id="run_flink_stream_to_online_store",
                 name="Run Flink Stream To Online Store",
                 description="Consumes behavior CDC events and updates Redis online feature keys.",
-                inputs=(topic,),
-                outputs=tuple(item.urn for item in redis),
                 tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
                 custom_properties={"engine": "PyFlink DataStream plus Redis sink"},
             ),
@@ -913,7 +866,109 @@ def streaming_features() -> DataProduct:
     )
 
 
-def emit_products(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) -> dict[str, str]:
+def load_runtime_events(products: tuple[DataProduct, ...]) -> dict[tuple[str, str], dict[str, Any]]:
+    events: dict[tuple[str, str], dict[str, Any]] = {}
+    errors: list[str] = []
+    for product in products:
+        for job in product.jobs:
+            try:
+                events[(product.id, job.id)] = read_latest_event(product.id, job.id)
+            except Exception as exc:
+                errors.append(f"{product.id}.{job.id}: {exc}")
+    if errors:
+        raise RuntimeError("Missing runtime lineage events: " + "; ".join(errors))
+    return events
+
+
+def verify_governance_coverage(
+    products: tuple[DataProduct, ...],
+    runtime_events: dict[tuple[str, str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    runtime_events = runtime_events or load_runtime_events(products)
+    known_datasets = {dataset.urn for product in products for dataset in product.datasets}
+    observed_datasets: set[str] = set()
+    lineage_runs: dict[str, dict[str, str]] = {}
+    errors: list[str] = []
+
+    for product in products:
+        product_runs: dict[str, str] = {}
+        product_run_ids: set[str] = set()
+        for job in product.jobs:
+            event = runtime_events.get((product.id, job.id))
+            if event is None:
+                errors.append(f"Missing runtime lineage for {product.id}.{job.id}")
+                continue
+            runtime = event_runtime(event)
+            if runtime.get("pipeline") != product.id or runtime.get("jobId") != job.id:
+                errors.append(f"Runtime identity mismatch for {product.id}.{job.id}")
+            if event.get("eventType") not in {"START", "COMPLETE", "FAIL"}:
+                errors.append(f"Invalid runtime status for {product.id}.{job.id}: {event.get('eventType')}")
+            input_urns = set(event_dataset_urns(event, "inputs"))
+            output_urns = set(event_dataset_urns(event, "outputs"))
+            unknown = (input_urns | output_urns).difference(known_datasets)
+            if unknown:
+                errors.append(f"Unknown datasets in {product.id}.{job.id}: {sorted(unknown)}")
+            observed_datasets.update(input_urns | output_urns)
+            airflow_run_id = str(runtime.get("airflowRunId", "unknown"))
+            product_run_ids.add(airflow_run_id)
+            product_runs[job.id] = f"{event['eventType']}:{airflow_run_id}"
+        if product.id != "STREAMING_FEATURES" and len(product_run_ids) > 1:
+            errors.append(f"Runtime jobs for {product.id} came from different runs: {sorted(product_run_ids)}")
+        lineage_runs[product.id] = product_runs
+
+    contract_runs: dict[str, str] = {}
+    for product in products:
+        expected = {dataset.urn for dataset in product.datasets}
+        for dataset in product.datasets:
+            if not dataset.schema:
+                errors.append(f"Missing schema contract for {dataset.urn}")
+            if not dataset.validation_pipeline:
+                errors.append(f"Missing validation pipeline for {dataset.urn}")
+            if not dataset.custom_properties.get("contract"):
+                errors.append(f"Missing contract description for {dataset.urn}")
+        try:
+            report = read_report(product.id)
+        except Exception as exc:
+            errors.append(f"Missing data contract report for {product.id}: {exc}")
+            continue
+        reported = set(report.get("datasets", {}))
+        missing = expected.difference(reported)
+        if missing:
+            errors.append(f"Data contract report {product.id} is missing: {sorted(missing)}")
+        invalid_statuses = {
+            urn: result.get("status")
+            for urn, result in report.get("datasets", {}).items()
+            if urn in expected and result.get("status") not in {"SUCCESS", "FAILURE", "ERROR"}
+        }
+        if invalid_statuses:
+            errors.append(f"Invalid data contract statuses for {product.id}: {invalid_statuses}")
+        if report.get("status") not in {"SUCCESS", "FAILURE", "ERROR"}:
+            errors.append(f"Invalid overall data contract status for {product.id}: {report.get('status')}")
+        if not report.get("run_id"):
+            errors.append(f"Data contract report {product.id} has no run_id")
+        contract_runs[product.id] = f"{report.get('status', 'ERROR')}:{report.get('run_id', 'unknown')}"
+
+    missing_observations = known_datasets.difference(observed_datasets)
+    if missing_observations:
+        errors.append(f"Datasets absent from runtime lineage: {sorted(missing_observations)}")
+    if errors:
+        raise RuntimeError("Governance coverage verification failed: " + " | ".join(errors))
+    return {
+        "contracts": contract_runs,
+        "datasets": len(known_datasets),
+        "jobs": len(runtime_events),
+        "lineage": lineage_runs,
+        "verified": True,
+    }
+
+
+def emit_products(
+    emitter: DataHubEmitter,
+    products: tuple[DataProduct, ...],
+    runtime_events: dict[tuple[str, str], dict[str, Any]] | None = None,
+) -> tuple[dict[str, str], dict[str, Any]]:
+    runtime_events = runtime_events or load_runtime_events(products)
+    coverage = verify_governance_coverage(products, runtime_events)
     for tag, description, color in (
         ("DP1", "Data product DP1: Data Generator raw S3 to Bronze Parquet lakehouse.", "#2E7D32"),
         ("DP2", "Data product DP2: Bronze Parquet to curated Silver Iceberg.", "#1565C0"),
@@ -933,10 +988,10 @@ def emit_products(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) ->
             emit_dataset(emitter, dataset)
         flow = emit_flow(emitter, product)
         for job in product.jobs:
-            emit_job(emitter, flow, job)
+            emit_job(emitter, flow, job, runtime_events[(product.id, job.id)])
         resource_urns = tuple(item.urn for item in product.datasets) + (flow,) + tuple(job_urn(flow, job.id) for job in product.jobs)
         batch_set_data_product(emitter, product, product_urn, resource_urns)
-    return product_urns
+    return product_urns, coverage
 
 
 def emit_schemas(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) -> int:
@@ -984,15 +1039,25 @@ def main() -> int:
     parser.add_argument("--pushgateway-url", default=os.getenv("PUSHGATEWAY_URL", ""), help="Optional Pushgateway URL for ingest metrics.")
     parser.add_argument("--strict", action="store_true", default=os.getenv("DATAHUB_INGEST_STRICT", "").lower() in {"1", "true", "yes"})
     parser.add_argument("--schemas-only", action="store_true", help="Refresh dataset schemas without re-emitting lineage or validation results.")
+    parser.add_argument("--verify-only", action="store_true", help="Verify runtime-lineage and data-contract coverage without contacting DataHub.")
     args = parser.parse_args()
     products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
+    if args.verify_only:
+        try:
+            coverage = verify_governance_coverage(products)
+        except Exception as exc:
+            print(json.dumps({"verified": False, "error": str(exc)}, indent=2, sort_keys=True))
+            return 1
+        print(json.dumps(coverage, indent=2, sort_keys=True))
+        return 0
     emitter = DataHubEmitter(args.gms_url)
     try:
         if args.schemas_only:
             dataset_count = emit_schemas(emitter, products)
             product_urns: dict[str, str] = {}
+            coverage: dict[str, Any] = {"verified": False, "reason": "schemas-only"}
         else:
-            product_urns = emit_products(emitter, products)
+            product_urns, coverage = emit_products(emitter, products)
             dataset_count = sum(len(product.datasets) for product in products)
     except Exception as exc:
         summary = {
@@ -1011,6 +1076,7 @@ def main() -> int:
         "jobs": sum(len(product.jobs) for product in products),
         "gms_url": args.gms_url,
         "ingested": True,
+        "governance_coverage": coverage,
     }
     push_datahub_ingest_metrics(summary, args.pushgateway_url or None)
     print(json.dumps(summary, indent=2, sort_keys=True))
