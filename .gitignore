@@ -72,6 +72,8 @@ credentials.db
 *.p12
 
 temp/
+/tmp/
+/tools/proofs/
 .coverage
 
 .docker-metrics/

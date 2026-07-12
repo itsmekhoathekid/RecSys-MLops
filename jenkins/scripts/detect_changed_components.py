@@ -317,6 +317,8 @@ def classify_tests(flags: dict[str, bool], path: str) -> None:
         mark(flags, "SPARK_BATCH", "DP2", "DP3")
     elif path.endswith("tests/unit/data_platform/test_governance_lineage.py"):
         mark(flags, "MATERIALIZE", "DP1", "DP2", "DP3")
+    elif path == "tests/unit/test_runtime_lineage.py":
+        mark(flags, "MATERIALIZE", "DP1", "DP2", "DP3")
     elif path.startswith("tests/unit/data_platform/"):
         mark_data_platform(flags)
     elif path.startswith("tests/unit/data_generator/"):

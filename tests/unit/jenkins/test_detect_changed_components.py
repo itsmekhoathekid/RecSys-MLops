@@ -105,6 +105,7 @@ def product_components(paths: list[str]) -> set[str]:
         ("tests/unit/api_serving/test_serving.py", {"API"}, False),
         ("tests/unit/ml_system/test_model_promotion.py", {"TRAINING", "KSERVE"}, False),
         ("tests/unit/data_platform/test_lakehouse_optimization.py", {"SPARK_BATCH", "DP2", "DP3"}, False),
+        ("tests/unit/test_runtime_lineage.py", {"MATERIALIZE", "DP1", "DP2", "DP3"}, False),
     ],
 )
 def test_path_classification_matrix(path, expected, ci_config):
