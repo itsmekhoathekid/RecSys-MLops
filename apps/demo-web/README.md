@@ -31,6 +31,11 @@ the `demo_web` component. A `main` build creates `recsys-demo-api` and
 findings, pushes both to Artifact Registry, records tag and digest manifests,
 and performs an atomic Helm deployment.
 
+On GKE the root Ingress sets `nginx.ingress.kubernetes.io/service-upstream=true`.
+The ingress-nginx pod therefore targets the Service ClusterIP, allowing its
+Istio sidecar to identify the destination and originate STRICT mTLS instead of
+opening an unclassified passthrough connection directly to pod IPs.
+
 Jenkins view `10 Recommendation Web App` contains:
 
 - `RecSys-GitHub-CICD`: webhook/main pipeline.
@@ -60,7 +65,7 @@ the chart defaults.
 
 Current production deployment (2026-07-13):
 
-- Application Git/image SHA: `94a9ca74f6e332e7735c4a381cee5ed03d37fbeb`.
-- Helm release: `recsys-demo-web`, namespace `api-serving`, revision `1`.
-- Jenkins: `RecSys-Recommendation-Web-CICD` build `#7` ([cluster-internal build URL](http://recsys-jenkins.ci.svc.cluster.local:8080/job/RecSys-Recommendation-Web-CICD/7/)).
-- Images: API `sha256:da002d7ceafff04ab85f5dfe8fab777a7bb184826f7010170125620cafa2062c`, demo API `sha256:2acc45876e1661f190a8f8489b38d0dd7bc33bcb492d9dac3541430929ee7e7a`, web `sha256:f5cb79ce89194c04b9e830860e499c4cf642a2768c06630448714fb3764e246f`.
+- Application Git/image SHA: `a468c7b1bc4a118bf71415551566c04506b26b39`.
+- Helm release: `recsys-demo-web`, namespace `api-serving`, revision `2`.
+- Jenkins: `RecSys-GitHub-CICD` build `#61` ([cluster-internal build URL](http://recsys-jenkins.ci.svc.cluster.local:8080/job/RecSys-GitHub-CICD/61/)).
+- Images: API dependency `sha256:da002d7ceafff04ab85f5dfe8fab777a7bb184826f7010170125620cafa2062c`, demo API `sha256:2f3c1e0ff7b34956a7d855ad9b4c1b259b154852506dcb7d5fb57ee369226cc6`, web `sha256:f5cb79ce89194c04b9e830860e499c4cf642a2768c06630448714fb3764e246f`.
