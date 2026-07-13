@@ -20,6 +20,7 @@ topologySpread:
 
 ingress:
   host: recsys-mlops.site
+  serviceUpstream: true
   tls:
     enabled: true
     clusterIssuerName: letsencrypt-prod

@@ -57,6 +57,7 @@ def test_gcp_chart_renders_two_hardened_workloads_and_root_tls_ingress() -> None
     assert ingress["metadata"]["annotations"]["nginx.ingress.kubernetes.io/auth-secret"] == (
         "recsys-gateway-basic-auth"
     )
+    assert ingress["metadata"]["annotations"]["nginx.ingress.kubernetes.io/service-upstream"] == "true"
     assert ingress["metadata"]["annotations"]["cert-manager.io/cluster-issuer"] == "letsencrypt-prod"
     assert pod_monitoring["apiVersion"] == "monitoring.googleapis.com/v1"
     assert pod_monitoring["spec"]["selector"]["matchLabels"] == {
