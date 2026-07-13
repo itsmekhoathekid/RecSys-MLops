@@ -11,6 +11,7 @@ namespace_kserve="${KSERVE_NAMESPACE:-kserve-triton-inference}"
 namespace_kubeflow="${KUBEFLOW_NAMESPACE:-kubeflow}"
 namespace_mlops="${MLOPS_NAMESPACE:-experiment-tracking}"
 namespace_analytics="${ANALYTICS_NAMESPACE:-analytics}"
+namespace_demo="${DEMO_WEB_NAMESPACE:-api-serving}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
 timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
 run_node_rebalance="${RUN_NODE_REBALANCE:-1}"
@@ -336,6 +337,89 @@ deploy_api() {
   with_file_lock "/tmp/recsys-serving-helm.lock" deploy_api_unlocked
 }
 
+deploy_demo_security_unlocked() {
+  helm upgrade --install recsys-security infra/helm/recsys-security \
+    --namespace recsys-security \
+    --create-namespace \
+    --reuse-values \
+    --wait \
+    --timeout "${timeout}"
+}
+
+collect_demo_diagnostics() {
+  kubectl get pods,ingress,certificate,externalsecret -n "${namespace_demo}" -o wide \
+    >.demo-web/resources.txt 2>&1 || true
+  kubectl get events -n "${namespace_demo}" --sort-by=.lastTimestamp \
+    >.demo-web/events.txt 2>&1 || true
+  kubectl describe deploy/recsys-demo-api -n "${namespace_demo}" \
+    >.demo-web/backend-describe.txt 2>&1 || true
+  kubectl logs deploy/recsys-demo-api -n "${namespace_demo}" --all-containers --tail=300 \
+    >.demo-web/backend.log 2>&1 || true
+  helm history "${DEMO_WEB_RELEASE:-recsys-demo-web}" -n "${namespace_demo}" \
+    >.demo-web/helm-history.txt 2>&1 || true
+}
+
+rollback_demo_release() {
+  local release="$1"
+  local previous_revision="$2"
+  if [[ -n "${previous_revision}" ]]; then
+    helm rollback "${release}" "${previous_revision}" -n "${namespace_demo}" --wait --timeout "${timeout}"
+  elif helm status "${release}" -n "${namespace_demo}" >/dev/null 2>&1; then
+    helm uninstall "${release}" -n "${namespace_demo}" --wait --timeout "${timeout}"
+  fi
+}
+
+deploy_demo_web() {
+  mkdir -p .demo-web
+  local release="${DEMO_WEB_RELEASE:-recsys-demo-web}"
+  local previous_revision=""
+
+  # The demo API must reach source Postgres while the internal inference and
+  # feature APIs remain covered by the existing mesh authorization rules.
+  with_file_lock "/tmp/recsys-security-helm.lock" deploy_demo_security_unlocked
+
+  previous_revision="$(helm history "${release}" -n "${namespace_demo}" -o json 2>/dev/null \
+    | python3 -c 'import json,sys; rows=json.load(sys.stdin); deployed=[row for row in rows if row.get("status")=="deployed"]; print(deployed[-1]["revision"] if deployed else "")' 2>/dev/null || true)"
+  printf '%s\n' "${previous_revision}" >.demo-web/previous-revision
+
+  if ! helm upgrade --install "${release}" infra/helm/recsys-demo-web \
+    --namespace "${namespace_demo}" \
+    --create-namespace \
+    -f infra/helm/recsys-demo-web/values-gcp.yaml \
+    --atomic \
+    --cleanup-on-fail \
+    --wait \
+    --history-max 10 \
+    --timeout "${timeout}" \
+    --set "frontend.image=$(image recsys-demo-web)" \
+    --set "backend.image=$(image recsys-demo-api)"; then
+    collect_demo_diagnostics
+    rollback_demo_release "${release}" "${previous_revision}"
+    echo "Demo web rollout failed; production release was restored." >&2
+    return 1
+  fi
+
+  verify_and_wait_workload "deployment" "recsys-demo-web" "${namespace_demo}" "$(image recsys-demo-web)"
+  verify_and_wait_workload "deployment" "recsys-demo-api" "${namespace_demo}" "$(image recsys-demo-api)"
+  kubectl wait --for=condition=Ready externalsecret/recsys-demo-web-db \
+    -n "${namespace_demo}" --timeout="${timeout}"
+  for _ in $(seq 1 60); do
+    kubectl get certificate/recsys-web-tls -n "${namespace_demo}" >/dev/null 2>&1 && break
+    sleep 2
+  done
+  kubectl wait --for=condition=Ready certificate/recsys-web-tls \
+    -n "${namespace_demo}" --timeout="${timeout}"
+  kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0].ip}' ingress/recsys-demo-web \
+    -n "${namespace_demo}" --timeout="${timeout}"
+
+  if ! bash jenkins/scripts/demo_web_smoke.sh; then
+    collect_demo_diagnostics
+    rollback_demo_release "${release}" "${previous_revision}"
+    echo "Demo web smoke failed; production release was rolled back." >&2
+    return 1
+  fi
+}
+
 deploy_mlflow() {
   kubectl delete job/minio-create-mlflow-bucket -n "${namespace_mlops}" --ignore-not-found=true
   helm upgrade --install recsys-mlflow infra/helm/mlflow-stack \
@@ -621,11 +705,15 @@ case "${component}" in
   analytics)
     deploy_analytics
     ;;
+  demo_web)
+    deploy_demo_web
+    ;;
   mlflow)
     deploy_mlflow
     ;;
   all)
     deploy_all
+    deploy_demo_web
     ;;
   *)
     echo "Unknown component: ${component}" >&2

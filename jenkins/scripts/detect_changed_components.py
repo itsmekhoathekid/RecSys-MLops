@@ -19,6 +19,7 @@ COMPONENTS = (
     "STREAM_OFFLINE",
     "STREAM_ONLINE",
     "ANALYTICS",
+    "DEMO_WEB",
 )
 
 FLAGS = {f"RUN_{component}": False for component in COMPONENTS}
@@ -267,6 +268,11 @@ def classify_infra(flags: dict[str, bool], path: str) -> None:
         mark(flags, "TRAINING")
     elif path.startswith("infra/helm/recsys-serving/"):
         mark(flags, "API", "KSERVE")
+    elif path.startswith("infra/helm/recsys-demo-web/"):
+        mark(flags, "DEMO_WEB")
+    elif path == "infra/helm/recsys-security/templates/istio-authorization.yaml":
+        mark(flags, "DEMO_WEB")
+        mark_ci_config(flags)
     elif path.startswith("infra/helm/recsys-data-platform/"):
         mark_data_platform(flags)
     elif path.startswith("infra/helm/recsys-analytics/"):
@@ -299,18 +305,24 @@ def classify_infra(flags: dict[str, bool], path: str) -> None:
 
 def classify_jenkins(flags: dict[str, bool], path: str) -> None:
     mark_ci_config(flags)
-    if path in {"jenkins/KServeModelCD.Jenkinsfile", "jenkins/scripts/model_cd.py"}:
+    if path.startswith("jenkins/demo-web-rollback/"):
+        mark(flags, "DEMO_WEB")
+    elif path in {"jenkins/KServeModelCD.Jenkinsfile", "jenkins/scripts/model_cd.py"}:
         mark(flags, "KSERVE")
     elif path == "jenkins/scripts/kubeflow_pipeline_cicd.sh":
         mark(flags, "TRAINING")
     elif Path(path).name in {"validation_evidence.sh", "validation_load_test.sh", "validation_mutation.sh"}:
         mark(flags, "API")
+    elif Path(path).name in {"demo_web_smoke.sh", "demo_web_rollback.sh"}:
+        mark(flags, "DEMO_WEB")
 
 
 def classify_tests(flags: dict[str, bool], path: str) -> None:
     name = Path(path).name
     if path.startswith("tests/unit/jenkins/"):
         mark_ci_config(flags)
+    elif path.startswith("tests/unit/demo_web/") or path == "tests/contract/test_demo_web_contracts.py":
+        mark(flags, "DEMO_WEB")
     elif path.startswith("tests/unit/api_serving/"):
         mark(flags, "API")
     elif path.startswith("tests/unit/analytics/") or path == "tests/contract/test_analytics_contracts.py":
@@ -334,7 +346,7 @@ def classify_tests(flags: dict[str, bool], path: str) -> None:
     elif path == "tests/contract/test_serving_contracts.py":
         mark(flags, "API", "KSERVE")
     elif path == "tests/contract/test_gateway_contracts.py":
-        mark(flags, "API")
+        mark(flags, "API", "DEMO_WEB")
     elif path == "tests/contract/test_observability_contracts.py":
         mark(flags, "API", "KSERVE", "DRIFT")
     elif path == "tests/contract/test_docker_dataflow_contracts.py":
@@ -369,6 +381,8 @@ def apply_path_rules(flags: dict[str, bool], normalized: str) -> None:
         mark(flags, "TRAINING")
     elif normalized.startswith(("apps/api-serving/", "apps/api/")):
         mark(flags, "API")
+    elif normalized.startswith("apps/demo-web/"):
+        mark(flags, "DEMO_WEB")
     elif normalized.startswith("apps/ml-system/"):
         mark(flags, "TRAINING")
         if parts[-1] in {"model_promotion.py", "trigger_kserve_cd.py"}:

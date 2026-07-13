@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.backend.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.backend.name }}
+    app.kubernetes.io/part-of: recsys-demo-web
+data:
+  POSTGRES_HOST: {{ .Values.backend.config.postgresHost | quote }}
+  POSTGRES_PORT: {{ .Values.backend.config.postgresPort | quote }}
+  POSTGRES_DB: {{ .Values.backend.config.postgresDb | quote }}
+  POSTGRES_POOL_MIN_SIZE: {{ .Values.backend.config.postgresPoolMinSize | quote }}
+  POSTGRES_POOL_MAX_SIZE: {{ .Values.backend.config.postgresPoolMaxSize | quote }}
+  INFERENCE_API_URL: {{ .Values.backend.config.inferenceApiUrl | quote }}
+  FEATURE_API_URL: {{ .Values.backend.config.featureApiUrl | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.backend.config.otelEndpoint | quote }}
+  OTEL_EXPORTER_OTLP_INSECURE: {{ .Values.backend.config.otelInsecure | quote }}
+  OTEL_SERVICE_NAME: recsys-demo-api

@@ -160,7 +160,7 @@ data:
         .replace("'", "&apos;")
     }
 
-    def scmPipelineXml = { jobName, description, forceComponents, forceDeploy, githubTrigger ->
+    def scmPipelineXml = { jobName, description, forceComponents, forceDeploy, githubTrigger, jobScriptPath ->
       def triggerBlock = githubTrigger ? """<triggers>
         <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
           <spec></spec>
@@ -220,6 +220,11 @@ data:
               <trim>true</trim>
             </hudson.model.StringParameterDefinition>
             <hudson.model.StringParameterDefinition>
+              <name>GATEWAY_SMOKE_CREDENTIALS_ID</name>
+              <defaultValue></defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
               <name>PROMOTION_MANIFEST_URI</name>
               <defaultValue>s3://recsys-model-store/promotions/bst/latest.json</defaultValue>
               <trim>true</trim>
@@ -254,7 +259,7 @@ data:
           <submoduleCfg class="empty-list"/>
           <extensions/>
         </scm>
-        <scriptPath>${xmlEscape(scriptPath)}</scriptPath>
+        <scriptPath>${xmlEscape(jobScriptPath)}</scriptPath>
         <lightweight>true</lightweight>
       </definition>
       ${triggerBlock}
@@ -523,6 +528,7 @@ data:
       [view: "02 Training Pipeline", job: "RecSys-Training-CICD", component: "training", label: "Training Pipeline"],
       [view: "03 Data Pipeline 1", job: "RecSys-DP1-Raw-To-Bronze-CICD", component: "dp1", label: "DP1 Raw To Bronze"],
       [view: "04 Data Pipeline 2", job: "RecSys-DP2-Bronze-To-Silver-Gold-CICD", component: "dp2", label: "DP2 Bronze To Silver Gold"],
+      [view: "10 Recommendation Web App", job: "RecSys-Recommendation-Web-CICD", component: "demo_web", label: "Recommendation Demo Web"],
       [view: "05 Data Pipeline 3", job: "RecSys-DP3-Offline-Feature-Table-CICD", component: "dp3", label: "DP3 Offline Feature Table"],
       [view: "06 Triton Inference Engine", job: "RecSys-Triton-KServe-CICD", component: "kserve", label: "KServe Inference Engine"],
       [view: "07 FastAPI Services", job: "RecSys-FastAPI-CICD", component: "api", label: "FastAPI Web API"],
@@ -530,14 +536,27 @@ data:
       [view: "09 Streaming Online Store", job: "RecSys-Stream-Online-Store-CICD", component: "stream_online", label: "Stream Features To Online Store"],
     ]
     def kserveCdJobName = "RecSys-KServe-Model-CD"
+    def demoWebRollbackJobName = "RecSys-Recommendation-Web-Rollback"
 
     def mainDescription = "Main GitHub webhook CI/CD entrypoint. Push/merge events call /github-webhook/, Jenkins detects changed paths, runs test/build for affected components, and deploys automatically when the resolved branch is main."
-    upsertJob(mainJobName, scmPipelineXml(mainJobName, mainDescription, "", false, true))
+    upsertJob(mainJobName, scmPipelineXml(mainJobName, mainDescription, "", false, true, scriptPath))
 
     componentJobs.each { componentJob ->
       def description = "Manual CI/CD proof job for ${componentJob.label}. It runs the shared Jenkinsfile with FORCE_COMPONENTS=${componentJob.component} so the UI shows Test, Build, and Deploy evidence for this pipeline only."
-      upsertJob(componentJob.job, scmPipelineXml(componentJob.job, description, componentJob.component, true, false))
+      upsertJob(componentJob.job, scmPipelineXml(componentJob.job, description, componentJob.component, true, false, scriptPath))
     }
+
+    upsertJob(
+      demoWebRollbackJobName,
+      scmPipelineXml(
+        demoWebRollbackJobName,
+        "Manual production rollback for the Recommendation Web App Helm release. Empty TARGET_REVISION restores the previous deployed revision and reruns live smoke checks.",
+        "",
+        false,
+        false,
+        "jenkins/demo-web-rollback/Jenkinsfile"
+      )
+    )
 
     upsertJob(
       kserveCdJobName,
@@ -581,10 +600,11 @@ data:
     )
 
     componentJobs.each { componentJob ->
+      def viewJobs = componentJob.component == "demo_web" ? [mainJobName, componentJob.job, demoWebRollbackJobName] : [componentJob.job]
       resetListView(
         componentJob.view,
         "Capture proof for ${componentJob.label}. Open this view, run ${componentJob.job}, then capture Component CI, Component Build And Publish, and Component Deploy Or Update.",
-        [componentJob.job],
+        viewJobs,
         false
       )
     }
@@ -599,7 +619,7 @@ data:
     resetListView(
       "99 All Component CI/CD",
       "All manual component CI/CD and model CD proof jobs in one place.",
-      componentJobs.collect { it.job } + [kserveCdJobName],
+      componentJobs.collect { it.job } + [kserveCdJobName, demoWebRollbackJobName],
       false
     )
 

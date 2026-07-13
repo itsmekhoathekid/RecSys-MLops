@@ -1,0 +1,28 @@
+frontend:
+  image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-demo-web:gcp
+  imagePullPolicy: Always
+  replicas: 2
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+
+backend:
+  image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-demo-api:gcp
+  imagePullPolicy: Always
+  replicas: 2
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+
+podDisruptionBudget:
+  enabled: true
+
+topologySpread:
+  enabled: true
+
+ingress:
+  host: recsys-mlops.site
+  tls:
+    enabled: true
+    clusterIssuerName: letsencrypt-prod
+
+serviceMonitor:
+  enabled: true

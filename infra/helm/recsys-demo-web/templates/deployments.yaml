@@ -1,0 +1,160 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.frontend.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.frontend.name }}
+    app.kubernetes.io/part-of: recsys-demo-web
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  minReadySeconds: {{ .Values.rollout.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.rollout.progressDeadlineSeconds }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.rollout.maxUnavailable }}
+      maxSurge: {{ .Values.rollout.maxSurge }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.frontend.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.frontend.name }}
+        app.kubernetes.io/part-of: recsys-demo-web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.frontend.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.tolerations }}
+      tolerations:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.topologySpread.topologyKey }}
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.frontend.name }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: {{ .Values.frontend.image }}
+          imagePullPolicy: {{ .Values.frontend.imagePullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.targetPort }}
+          livenessProbe:
+            httpGet:
+              path: /nginx-health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /nginx-health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+{{ toYaml .Values.frontend.resources | nindent 12 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.backend.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.backend.name }}
+    app.kubernetes.io/part-of: recsys-demo-web
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  minReadySeconds: {{ .Values.rollout.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.rollout.progressDeadlineSeconds }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.rollout.maxUnavailable }}
+      maxSurge: {{ .Values.rollout.maxSurge }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.backend.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.backend.name }}
+        app.kubernetes.io/part-of: recsys-demo-web
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ .Values.backend.service.targetPort | quote }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+{{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.topologySpread.topologyKey }}
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.backend.name }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: {{ .Values.backend.image }}
+          imagePullPolicy: {{ .Values.backend.imagePullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.backend.name }}
+            - secretRef:
+                name: {{ .Values.externalSecret.name }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.targetPort }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+{{ toYaml .Values.backend.resources | nindent 12 }}

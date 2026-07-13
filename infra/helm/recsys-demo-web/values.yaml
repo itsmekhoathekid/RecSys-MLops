@@ -1,0 +1,92 @@
+namespace: api-serving
+
+frontend:
+  name: recsys-demo-web
+  image: recsys-demo-web:local
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 80
+    targetPort: 8080
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+
+backend:
+  name: recsys-demo-api
+  image: recsys-demo-api:local
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 80
+    targetPort: 8080
+  config:
+    postgresHost: source-postgres.recsys-dataflow.svc.cluster.local
+    postgresPort: "5432"
+    postgresDb: recsys
+    postgresPoolMinSize: "1"
+    postgresPoolMaxSize: "8"
+    inferenceApiUrl: http://recsys-api-serving.api-serving.svc.cluster.local
+    featureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
+    otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317
+    otelInsecure: "true"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 750m
+      memory: 512Mi
+  nodeSelector: {}
+  tolerations: []
+
+rollout:
+  maxUnavailable: 0
+  maxSurge: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 300
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+topologySpread:
+  enabled: false
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+
+externalSecret:
+  enabled: true
+  name: recsys-demo-web-db
+  refreshInterval: 1h
+  secretStoreName: recsys-central-secrets
+  remoteKey: data-platform
+
+ingress:
+  enabled: true
+  className: nginx
+  host: recsys.local
+  auth:
+    enabled: true
+    secretName: recsys-gateway-basic-auth
+    realm: RecSys Gateway
+  rateLimit:
+    enabled: true
+    rps: "10"
+    rpm: "300"
+    connections: "20"
+    statusCode: "429"
+  tls:
+    enabled: false
+    clusterIssuerName: letsencrypt-prod
+    secretName: recsys-web-tls
+
+serviceMonitor:
+  enabled: false
+  interval: 30s

@@ -12,6 +12,7 @@ def componentDefinitions() {
     [flag: 'RUN_STREAM_OFFLINE', name: 'stream_offline', label: 'Stream Features To Offline Store'],
     [flag: 'RUN_STREAM_ONLINE', name: 'stream_online', label: 'Stream Features To Online Store'],
     [flag: 'RUN_ANALYTICS', name: 'analytics', label: 'Analytics And BI'],
+    [flag: 'RUN_DEMO_WEB', name: 'demo_web', label: 'Recommendation Demo Web'],
   ]
 }
 
@@ -144,6 +145,7 @@ pipeline {
     booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'Allow deploy/update from a non-main branch.')
     string(name: 'REGISTRY_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins username/password credential for docker login.')
     string(name: 'KUBECONFIG_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins file credential containing kubeconfig.')
+    string(name: 'GATEWAY_SMOKE_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins username/password credential for authenticated demo web smoke.')
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
     string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, including ci_config. Empty keeps path-based detection.')
@@ -298,6 +300,16 @@ pipeline {
           def commandEnv = "IMAGE_PULL_REGISTRY='${pullRegistry}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}'"
           if (params.KUBECONFIG_CREDENTIALS_ID?.trim()) {
             withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+              if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
+                withCredentials([usernamePassword(credentialsId: params.GATEWAY_SMOKE_CREDENTIALS_ID, usernameVariable: 'GATEWAY_SMOKE_USER', passwordVariable: 'GATEWAY_SMOKE_PASSWORD')]) {
+                  runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+                }
+              } else {
+                runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+              }
+            }
+          } else if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
+            withCredentials([usernamePassword(credentialsId: params.GATEWAY_SMOKE_CREDENTIALS_ID, usernameVariable: 'GATEWAY_SMOKE_USER', passwordVariable: 'GATEWAY_SMOKE_PASSWORD')]) {
               runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
             }
           } else {

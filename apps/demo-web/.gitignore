@@ -1,0 +1,8 @@
+backend/.coverage
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.venv/
+backend/__pycache__/
+frontend/coverage/
+frontend/dist/
+frontend/node_modules/

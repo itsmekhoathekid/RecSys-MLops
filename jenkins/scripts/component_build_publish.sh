@@ -10,6 +10,7 @@ publish_images="${PUBLISH_IMAGES:-1}"
 require_gcp_artifact_registry="${REQUIRE_GCP_ARTIFACT_REGISTRY:-1}"
 manifest_dir="${IMAGE_MANIFEST_DIR:-.ci-image-manifest}"
 docker_platform="${DOCKER_PLATFORM:-linux/amd64}"
+container_scan_enabled="${CONTAINER_SCAN_ENABLED:-1}"
 
 if [[ -z "${image_tag}" ]]; then
   image_tag="$(git rev-parse --short=12 HEAD)"
@@ -37,6 +38,28 @@ record_image() {
   local key="$1"
   local image="$2"
   printf '%s=%s\n' "${key}" "${image}" >>"${manifest_path}"
+}
+
+scan_demo_image() {
+  local image="$1"
+  local image_name="$2"
+  if [[ "${container_scan_enabled}" != "1" && "${container_scan_enabled}" != "true" ]]; then
+    echo "Skipping vulnerability scan for ${image}; CONTAINER_SCAN_ENABLED=${container_scan_enabled}"
+    return 0
+  fi
+
+  local args=(image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL "${image}")
+  if command -v trivy >/dev/null 2>&1; then
+    trivy "${args[@]}"
+    return
+  fi
+
+  local archive="${manifest_dir}/${image_name}-${image_tag}.tar"
+  docker save --output "${archive}" "${image}"
+  docker run --rm -v "${PWD}:/workspace:ro" aquasec/trivy:0.58.2 \
+    image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL \
+    --input "/workspace/${archive}"
+  rm -f "${archive}"
 }
 
 refresh_registry_login_if_gcp() {
@@ -73,10 +96,20 @@ build_and_optionally_push() {
 
   docker build --platform "${docker_platform}" "$@" -f "${dockerfile}" -t "${local_image}" .
   docker tag "${local_image}" "${remote_image}"
-  record_image "$(echo "${name}" | tr '[:lower:]-' '[:upper:]_')_IMAGE" "${remote_image}"
+  local image_key
+  image_key="$(echo "${name}" | tr '[:lower:]-' '[:upper:]_')"
+  record_image "${image_key}_IMAGE" "${remote_image}"
+  if [[ "${name}" == "recsys-demo-api" || "${name}" == "recsys-demo-web" ]]; then
+    scan_demo_image "${local_image}" "${name}"
+  fi
   if [[ "${publish_images}" == "1" || "${publish_images}" == "true" ]]; then
     refresh_registry_login_if_gcp
     docker push "${remote_image}"
+    local digest
+    digest="$(docker image inspect "${remote_image}" --format '{{join .RepoDigests " "}}' | tr ' ' '\n' | grep -F "${image_registry}/${name}@" | head -n 1 || true)"
+    if [[ -n "${digest}" ]]; then
+      record_image "${image_key}_DIGEST" "${digest}"
+    fi
   else
     echo "Skipping docker push for ${remote_image}; PUBLISH_IMAGES=${publish_images}"
   fi
@@ -138,6 +171,11 @@ build_flink() {
 
 build_api() {
   build_and_optionally_push "recsys-api-serving" "apps/api-serving/Dockerfile"
+}
+
+build_demo_web() {
+  build_and_optionally_push "recsys-demo-api" "apps/demo-web/backend/Dockerfile"
+  build_and_optionally_push "recsys-demo-web" "apps/demo-web/frontend/Dockerfile"
 }
 
 build_analytics() {
@@ -208,6 +246,9 @@ case "${component}" in
   analytics)
     build_analytics
     ;;
+  demo_web)
+    build_demo_web
+    ;;
   mlflow)
     build_mlflow
     ;;
@@ -222,6 +263,7 @@ case "${component}" in
     build_mlflow
     build_flink
     build_api
+    build_demo_web
     build_analytics
     echo "Built/published all RecSys service images and compiled the Kubeflow package for ${image_registry}:${image_tag}."
     ;;

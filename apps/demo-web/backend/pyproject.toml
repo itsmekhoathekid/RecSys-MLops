@@ -1,0 +1,37 @@
+[project]
+name = "recsys-demo-api"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<1",
+  "opentelemetry-api>=1.30,<2",
+  "opentelemetry-exporter-otlp>=1.30,<2",
+  "opentelemetry-instrumentation-fastapi>=0.51b0,<1",
+  "opentelemetry-sdk>=1.30,<2",
+  "prometheus-client>=0.21,<1",
+  "psycopg[binary]>=3.2,<4",
+  "psycopg-pool>=3.2,<4",
+  "pydantic>=2.10,<3",
+  "uvicorn>=0.34,<1",
+]
+
+[dependency-groups]
+dev = [
+  "pip-audit>=2.9,<3",
+  "pytest>=9.0.3,<10",
+  "pytest-cov>=6,<8",
+  "pyyaml>=6,<7",
+  "ruff>=0.11,<1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
