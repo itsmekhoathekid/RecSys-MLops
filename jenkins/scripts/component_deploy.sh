@@ -369,7 +369,7 @@ rollback_demo_release() {
   fi
 }
 
-deploy_demo_web() {
+deploy_demo_web_unlocked() {
   mkdir -p .demo-web
   local release="${DEMO_WEB_RELEASE:-recsys-demo-web}"
   local previous_revision=""
@@ -418,6 +418,10 @@ deploy_demo_web() {
     echo "Demo web smoke failed; production release was rolled back." >&2
     return 1
   fi
+}
+
+deploy_demo_web() {
+  with_file_lock "/tmp/recsys-demo-web-helm.lock" deploy_demo_web_unlocked
 }
 
 deploy_mlflow() {

@@ -114,5 +114,6 @@ def test_jenkins_seeds_demo_view_cicd_and_rollback_jobs() -> None:
     assert "jenkins/demo-web-rollback/Jenkinsfile" in seed
     assert "--atomic" in deploy
     assert "demo_web_smoke.sh" in deploy
+    assert 'with_file_lock "/tmp/recsys-demo-web-helm.lock" deploy_demo_web_unlocked' in deploy
     assert 'build_and_optionally_push "recsys-demo-api"' in build
     assert 'build_and_optionally_push "recsys-demo-web"' in build
