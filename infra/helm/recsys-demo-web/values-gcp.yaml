@@ -25,4 +25,7 @@ ingress:
     clusterIssuerName: letsencrypt-prod
 
 serviceMonitor:
+  enabled: false
+
+podMonitoring:
   enabled: true

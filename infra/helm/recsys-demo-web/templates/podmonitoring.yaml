@@ -1,0 +1,17 @@
+{{- if .Values.podMonitoring.enabled }}
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ .Values.backend.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: recsys-demo-web
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.backend.name }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.podMonitoring.interval }}
+{{- end }}

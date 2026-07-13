@@ -43,6 +43,7 @@ def test_gcp_chart_renders_two_hardened_workloads_and_root_tls_ingress() -> None
     frontend = documents[("Deployment", "recsys-demo-web")]
     backend = documents[("Deployment", "recsys-demo-api")]
     ingress = documents[("Ingress", "recsys-demo-web")]
+    pod_monitoring = documents[("PodMonitoring", "recsys-demo-api")]
 
     assert frontend["spec"]["replicas"] == 2
     assert backend["spec"]["replicas"] == 2
@@ -57,6 +58,14 @@ def test_gcp_chart_renders_two_hardened_workloads_and_root_tls_ingress() -> None
         "recsys-gateway-basic-auth"
     )
     assert ingress["metadata"]["annotations"]["cert-manager.io/cluster-issuer"] == "letsencrypt-prod"
+    assert pod_monitoring["apiVersion"] == "monitoring.googleapis.com/v1"
+    assert pod_monitoring["spec"]["selector"]["matchLabels"] == {
+        "app.kubernetes.io/name": "recsys-demo-api"
+    }
+    assert pod_monitoring["spec"]["endpoints"] == [
+        {"port": "http", "path": "/metrics", "interval": "30s"}
+    ]
+    assert all(document.get("kind") != "ServiceMonitor" for document in rendered_chart())
     paths = {path["path"]: path["backend"]["service"]["name"] for path in ingress["spec"]["rules"][0]["http"]["paths"]}
     assert paths == {
         "/api": "recsys-demo-api",
