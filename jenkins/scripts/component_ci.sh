@@ -197,10 +197,14 @@ case "${component}" in
     helm template recsys-analytics infra/helm/recsys-analytics >/dev/null
     ;;
   demo_web)
-    PYTHONPATH=apps/demo-web/backend uv run --project apps/demo-web/backend ruff check apps/demo-web/backend/app apps/demo-web/backend/tests
-    PYTHONPATH=apps/demo-web/backend uv run --project apps/demo-web/backend ruff format --check apps/demo-web/backend/app apps/demo-web/backend/tests
-    uv run --project apps/demo-web/backend pip-audit
-    PYTHONPATH=apps/demo-web/backend uv run --project apps/demo-web/backend pytest \
+    demo_backend_env="${PWD}/apps/demo-web/backend/.venv"
+    PYTHONPATH=apps/demo-web/backend UV_PROJECT_ENVIRONMENT="${demo_backend_env}" \
+      uv run --project apps/demo-web/backend ruff check apps/demo-web/backend/app apps/demo-web/backend/tests
+    PYTHONPATH=apps/demo-web/backend UV_PROJECT_ENVIRONMENT="${demo_backend_env}" \
+      uv run --project apps/demo-web/backend ruff format --check apps/demo-web/backend/app apps/demo-web/backend/tests
+    UV_PROJECT_ENVIRONMENT="${demo_backend_env}" uv run --project apps/demo-web/backend pip-audit
+    PYTHONPATH=apps/demo-web/backend UV_PROJECT_ENVIRONMENT="${demo_backend_env}" \
+      uv run --project apps/demo-web/backend pytest \
       apps/demo-web/backend/tests tests/contract/test_demo_web_contracts.py -q \
       --cov=apps/demo-web/backend/app \
       --cov-report="xml:${reports_dir}/coverage/demo_web_backend.xml" \
@@ -212,10 +216,27 @@ case "${component}" in
       run_demo_frontend() {
         (cd apps/demo-web/frontend && "$@")
       }
+      copy_demo_frontend_coverage() {
+        cp -R apps/demo-web/frontend/coverage/. "${reports_dir}/coverage/demo_web_frontend/"
+      }
     else
+      frontend_container="recsys-demo-web-ci-${BUILD_NUMBER:-$$}"
+      frontend_container="${frontend_container//[^a-zA-Z0-9_.-]/-}"
+      docker rm -f "${frontend_container}" >/dev/null 2>&1 || true
+      docker create --name "${frontend_container}" -w /workspace \
+        node:24-bookworm-slim sleep infinity >/dev/null
+      docker cp apps/demo-web/frontend/. "${frontend_container}:/workspace"
+      docker start "${frontend_container}" >/dev/null
+      cleanup_demo_frontend() {
+        docker rm -f "${frontend_container}" >/dev/null 2>&1 || true
+      }
+      trap cleanup_demo_frontend EXIT
       run_demo_frontend() {
-        docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-          -v "${PWD}:/workspace" -w /workspace/apps/demo-web/frontend node:24-bookworm-slim "$@"
+        docker exec -e HOME=/tmp "${frontend_container}" "$@"
+      }
+      copy_demo_frontend_coverage() {
+        docker cp "${frontend_container}:/workspace/coverage/." \
+          "${reports_dir}/coverage/demo_web_frontend/"
       }
     fi
     run_demo_frontend npm ci
@@ -226,7 +247,7 @@ case "${component}" in
     run_demo_frontend npm test
     run_demo_frontend npm run build
     mkdir -p "${reports_dir}/coverage/demo_web_frontend"
-    cp -R apps/demo-web/frontend/coverage/. "${reports_dir}/coverage/demo_web_frontend/"
+    copy_demo_frontend_coverage
     helm lint infra/helm/recsys-demo-web -f infra/helm/recsys-demo-web/values-gcp.yaml
     helm template recsys-demo-web infra/helm/recsys-demo-web \
       -f infra/helm/recsys-demo-web/values-gcp.yaml --namespace api-serving >/dev/null
