@@ -11,7 +11,7 @@ routes and never receives the gateway Basic Auth credential.
 
 - `frontend/`: React, strict TypeScript, Vite, TanStack Query, generated OpenAPI types, and non-root NGINX image.
 - `backend/`: FastAPI, bounded Psycopg pool, transactional event/order writes, HTTPX dependency clients, Prometheus, and OTLP tracing.
-- `../../infra/helm/recsys-demo-web/`: atomic production release for both workloads, services, PDBs, ExternalSecret, ServiceMonitor, and apex ingress.
+- `../../infra/helm/recsys-demo-web/`: atomic production release for both workloads, services, PDBs, ExternalSecret, GKE PodMonitoring (or optional ServiceMonitor), and apex ingress.
 
 ## Local verification
 
@@ -57,3 +57,10 @@ After a rollout, archive `.ci-image-manifest/demo_web.env`, `.demo-web/`, and th
 Jenkins build artifacts. Record the Git SHA, Helm revision, and Jenkins build
 URL in the deployment ticket; none of these mutable production values belong in
 the chart defaults.
+
+Current production deployment (2026-07-13):
+
+- Application Git/image SHA: `94a9ca74f6e332e7735c4a381cee5ed03d37fbeb`.
+- Helm release: `recsys-demo-web`, namespace `api-serving`, revision `1`.
+- Jenkins: `RecSys-Recommendation-Web-CICD` build `#7` ([cluster-internal build URL](http://recsys-jenkins.ci.svc.cluster.local:8080/job/RecSys-Recommendation-Web-CICD/7/)).
+- Images: API `sha256:da002d7ceafff04ab85f5dfe8fab777a7bb184826f7010170125620cafa2062c`, demo API `sha256:2acc45876e1661f190a8f8489b38d0dd7bc33bcb492d9dac3541430929ee7e7a`, web `sha256:f5cb79ce89194c04b9e830860e499c4cf642a2768c06630448714fb3764e246f`.
