@@ -53,7 +53,7 @@ The demo shows the production web flow from user interactions and streaming feat
 
 The following diagram presents the **End-to-End Platform** architecture documented in [high-level system design](<docs/submission/rubic-final-coursework-(final-ml)/high_level_system_design.md>).
 
-![End-to-End Recommendation Platform Architecture](docs/pngs/overview_final.png)
+![End-to-End Recommendation Platform Architecture](docs/pngs/overview.png)
 
 ### Serving Pipeline High-Level Architecture
 
