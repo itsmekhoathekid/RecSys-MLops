@@ -14,6 +14,10 @@ __pycache__
 .ci-image-manifest
 graphify-out
 reports
+apps/demo-web/backend/.venv
+apps/demo-web/frontend/coverage
+apps/demo-web/frontend/dist
+apps/demo-web/frontend/node_modules
 
 notebooks
 notebooks/data

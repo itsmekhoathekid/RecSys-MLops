@@ -55,11 +55,19 @@ scan_demo_image() {
   fi
 
   local archive="${manifest_dir}/${image_name}-${image_tag}.tar"
+  local scan_container="trivy-${image_name}-${BUILD_NUMBER:-$$}"
+  scan_container="${scan_container//[^a-zA-Z0-9_.-]/-}"
   docker save --output "${archive}" "${image}"
-  docker run --rm -v "${PWD}:/workspace:ro" aquasec/trivy:0.58.2 \
+  docker rm -f "${scan_container}" >/dev/null 2>&1 || true
+  docker create --name "${scan_container}" aquasec/trivy:0.58.2 \
     image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL \
-    --input "/workspace/${archive}"
+    --input /image.tar >/dev/null
+  docker cp "${archive}" "${scan_container}:/image.tar"
+  local scan_status=0
+  docker start -a "${scan_container}" || scan_status=$?
+  docker rm -f "${scan_container}" >/dev/null 2>&1 || true
   rm -f "${archive}"
+  return "${scan_status}"
 }
 
 refresh_registry_login_if_gcp() {
