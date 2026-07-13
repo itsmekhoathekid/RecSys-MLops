@@ -21,6 +21,8 @@ RUN groupadd --gid 10001 recsys \
     && useradd --uid 10001 --gid recsys --no-create-home --shell /usr/sbin/nologin recsys
 COPY --from=deps /opt/venv /opt/venv
 COPY apps/demo-web/backend/app ./app
+RUN pip uninstall -y wheel setuptools jaraco.context \
+    && pip uninstall -y pip
 USER 10001:10001
 EXPOSE 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log"]
