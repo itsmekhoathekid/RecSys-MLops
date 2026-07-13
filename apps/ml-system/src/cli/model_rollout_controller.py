@@ -43,8 +43,6 @@ class RolloutConfig:
     jenkins_job_name: str = "RecSys-KServe-Model-CD"
     jenkins_user: str = ""
     jenkins_token: str = ""
-    jenkins_workspace: str = "/var/jenkins_home/recsys-workspace"
-    image_tag: str = "manual"
     prometheus_url: str = "http://recsys-prometheus.observability.svc.cluster.local:9090"
     gate_window: str = "10m"
     min_samples: int = 100
@@ -76,8 +74,6 @@ class RolloutConfig:
             jenkins_job_name=os.getenv("KSERVE_CD_JOB_NAME", cls.jenkins_job_name),
             jenkins_user=os.getenv("JENKINS_USER") or os.getenv("JENKINS_USERNAME", ""),
             jenkins_token=os.getenv("JENKINS_TOKEN") or os.getenv("JENKINS_PASSWORD", ""),
-            jenkins_workspace=os.getenv("RECSYS_CI_WORKSPACE", cls.jenkins_workspace),
-            image_tag=os.getenv("IMAGE_TAG", cls.image_tag),
             prometheus_url=os.getenv("PROMETHEUS_URL", cls.prometheus_url),
             gate_window=os.getenv("AB_GATE_WINDOW", cls.gate_window),
             min_samples=int(os.getenv("AB_MIN_SAMPLES", str(cls.min_samples))),
@@ -215,8 +211,6 @@ def rollout_params(
         "METRIC_NAME": tags.get("metric_name", ""),
         "METRIC_VALUE": tags.get("metric_value", ""),
         "TRIGGER_SOURCE": "mlflow-candidate-watcher",
-        "RECSYS_CI_WORKSPACE": config.jenkins_workspace,
-        "IMAGE_TAG": config.image_tag,
     }
 
 

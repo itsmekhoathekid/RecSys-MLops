@@ -1,6 +1,10 @@
 pipeline {
   agent any
 
+  options {
+    skipDefaultCheckout(true)
+  }
+
   parameters {
     choice(name: 'ROLLOUT_STAGE', choices: ['deploy', 'shadow-start', 'ab-start', 'ab-step', 'evaluate', 'promote', 'rollback'], description: 'Champion/challenger lifecycle action.')
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Stable production manifest updated on promotion.')
@@ -20,6 +24,7 @@ pipeline {
 
   environment {
     MODEL_CD_STAGE = "${params.ROLLOUT_STAGE}"
+    PROMOTION_MANIFEST_URI = "${params.PROMOTION_MANIFEST_URI}"
     CONTROL_MANIFEST_URI = "${params.CONTROL_MANIFEST_URI}"
     CANDIDATE_MANIFEST_URI = "${params.CANDIDATE_MANIFEST_URI}"
     AB_EXPERIMENT_ID = "${params.AB_EXPERIMENT_ID}"
@@ -30,6 +35,13 @@ pipeline {
   }
 
   stages {
+    stage('Checkout Rollout Source') {
+      steps {
+        checkout scm
+        sh 'test -f jenkins/scripts/model_cd.py && test -d infra/helm/recsys-serving'
+      }
+    }
+
     stage('Deploy Champion') {
       when { expression { params.ROLLOUT_STAGE == 'deploy' } }
       steps {

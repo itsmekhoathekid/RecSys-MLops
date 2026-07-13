@@ -69,7 +69,6 @@ def config() -> controller.RolloutConfig:
         jenkins_url="http://jenkins",
         jenkins_user="admin",
         jenkins_token="token",
-        jenkins_workspace="/var/jenkins_home/recsys-workspace",
     )
 
 
@@ -104,6 +103,8 @@ def test_process_candidate_claims_then_marks_shadow_tested(monkeypatch):
     assert params["AB_CANDIDATE_WEIGHT_PERCENT"] == "0"
     assert params["CONTROL_MANIFEST_URI"].endswith("/latest.json")
     assert params["CANDIDATE_MANIFEST_URI"].endswith("/bst-42.json")
+    assert "RECSYS_CI_WORKSPACE" not in params
+    assert "IMAGE_TAG" not in params
 
 
 def test_process_candidate_failure_releases_alias_and_marks_failed(monkeypatch):

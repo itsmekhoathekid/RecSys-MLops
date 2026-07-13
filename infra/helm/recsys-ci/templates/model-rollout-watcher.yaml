@@ -63,10 +63,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.modelRolloutWatcher.jenkinsAdminSecretName }}
                   key: password
-            - name: RECSYS_CI_WORKSPACE
-              value: {{ .Values.modelRolloutWatcher.jenkinsWorkspace | quote }}
-            - name: IMAGE_TAG
-              value: {{ .Values.modelRolloutWatcher.imageTag | quote }}
             - name: PROMETHEUS_URL
               value: {{ .Values.modelRolloutWatcher.prometheusUrl | quote }}
             - name: AB_GATE_WINDOW

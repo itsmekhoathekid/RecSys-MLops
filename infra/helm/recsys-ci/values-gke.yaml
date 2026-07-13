@@ -24,3 +24,10 @@ jenkins:
     volumeName: ""
     storage: 50Gi
     storageClassName: standard-rwo
+
+modelRolloutWatcher:
+  enabled: true
+  image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:latest
+  imagePullPolicy: Always
+  autoProgressiveEnabled: true
+  progressiveWeights: "10,25,50"

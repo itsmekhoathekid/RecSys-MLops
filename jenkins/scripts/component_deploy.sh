@@ -12,6 +12,7 @@ namespace_kubeflow="${KUBEFLOW_NAMESPACE:-kubeflow}"
 namespace_mlops="${MLOPS_NAMESPACE:-experiment-tracking}"
 namespace_analytics="${ANALYTICS_NAMESPACE:-analytics}"
 namespace_demo="${DEMO_WEB_NAMESPACE:-api-serving}"
+namespace_ci="${CI_NAMESPACE:-ci}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
 timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
 run_node_rebalance="${RUN_NODE_REBALANCE:-1}"
@@ -538,6 +539,76 @@ deploy_kserve_model_cd() {
   with_file_lock "/tmp/recsys-serving-helm.lock" deploy_kserve_model_cd_unlocked
 }
 
+reconcile_rollout_jenkins_jobs() {
+  local values_file="$1"
+  local jenkins_url="${JENKINS_URL:-http://recsys-jenkins.${namespace_ci}.svc.cluster.local:8080}"
+  local admin_secret="${JENKINS_ADMIN_SECRET_NAME:-recsys-jenkins-admin}"
+  local seed_dir="${JENKINS_HOME:-/tmp}/ci-tmp"
+  local seed_script="${seed_dir}/recsys-rollout-seed.groovy"
+  local username password crumb_json crumb_header
+  jenkins_url="${jenkins_url%/}"
+
+  if [[ "${RECONCILE_JENKINS_ROLLOUT_JOBS:-1}" == "0" ]]; then
+    echo "Skipping Jenkins rollout job reconciliation."
+    return 0
+  fi
+
+  # Update the init ConfigMap without rolling the Jenkins pod, then execute the
+  # idempotent seed script through Jenkins. This creates/updates the rollout
+  # proof job and migrates Model-CD to Pipeline-from-SCM in the same deploy.
+  helm template recsys-ci infra/helm/recsys-ci \
+    --namespace "${namespace_ci}" \
+    -f "${values_file}" \
+    --set "namespace.name=${namespace_ci}" \
+    --show-only templates/jenkins-init-configmap.yaml \
+    | kubectl apply -f -
+
+  mkdir -p "${seed_dir}"
+  kubectl get configmap recsys-jenkins-init -n "${namespace_ci}" \
+    -o 'jsonpath={.data.zz-seed-cicd-views\.groovy}' >"${seed_script}"
+  username="$(kubectl get secret "${admin_secret}" -n "${namespace_ci}" -o 'jsonpath={.data.username}' | base64 -d)"
+  password="$(kubectl get secret "${admin_secret}" -n "${namespace_ci}" -o 'jsonpath={.data.password}' | base64 -d)"
+  crumb_json="$(curl -fsS -u "${username}:${password}" "${jenkins_url}/crumbIssuer/api/json")"
+  crumb_header="$(python3 -c 'import json,sys; p=json.load(sys.stdin); print(f"{p[\"crumbRequestField\"]}: {p[\"crumb\"]}")' <<<"${crumb_json}")"
+  curl -fsS \
+    -u "${username}:${password}" \
+    -H "${crumb_header}" \
+    --data-urlencode "script@${seed_script}" \
+    "${jenkins_url}/scriptText" >/dev/null
+  rm -f "${seed_script}"
+  echo "Reconciled RecSys-Progressive-Rollout-CICD and SCM-backed RecSys-KServe-Model-CD without restarting Jenkins."
+}
+
+deploy_rollout_watcher() {
+  local watcher_image
+  local values_file
+  watcher_image="$(image recsys-mlops-training)"
+  values_file="${ROLLOUT_CI_VALUES_FILE:-infra/helm/recsys-ci/values-gke.yaml}"
+
+  reconcile_rollout_jenkins_jobs "${values_file}"
+
+  # Render and apply only the watcher resource. Upgrading the complete recsys-ci
+  # release from a build running inside Jenkins would restart its own controller.
+  helm template recsys-ci infra/helm/recsys-ci \
+    --namespace "${namespace_ci}" \
+    -f "${values_file}" \
+    --set "namespace.name=${namespace_ci}" \
+    --set "modelRolloutWatcher.enabled=true" \
+    --set "modelRolloutWatcher.image=${watcher_image}" \
+    --set "modelRolloutWatcher.imagePullPolicy=Always" \
+    --set "modelRolloutWatcher.autoProgressiveEnabled=true" \
+    --set-string 'modelRolloutWatcher.progressiveWeights=10\,25\,50' \
+    --show-only templates/model-rollout-watcher.yaml \
+    | kubectl apply -f -
+
+  verify_and_wait_workload \
+    "deployment" \
+    "recsys-model-rollout-watcher" \
+    "${namespace_ci}" \
+    "${watcher_image}"
+  echo "Progressive rollout watcher deployed from immutable image ${watcher_image}."
+}
+
 deploy_drift() {
   deploy_data_platform --set "images.dataflowCli=$(image recsys-dataflow-cli)"
   if [[ -d infra/knative/recsys-drift ]]; then
@@ -632,6 +703,7 @@ deploy_all() {
   deploy_mlflow
   deploy_api
   deploy_analytics
+  deploy_rollout_watcher
   deploy_kserve_model_cd
 
   run_node_rebalance_if_enabled
@@ -702,6 +774,9 @@ case "${component}" in
     ;;
   kserve_model_cd)
     deploy_kserve_model_cd
+    ;;
+  rollout)
+    deploy_rollout_watcher
     ;;
   drift)
     deploy_drift

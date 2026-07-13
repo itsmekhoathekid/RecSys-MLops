@@ -1,0 +1,16 @@
+# Resource overrides for the single-node local Minikube profile.
+flinkTaskManager:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+
+flink:
+  taskManagerProcessMemory: "2560m"
+  taskManagerTaskHeapMemory: "768m"
+  taskManagerManagedMemory: "768m"
+  taskManagerJvmOverheadMax: "512m"

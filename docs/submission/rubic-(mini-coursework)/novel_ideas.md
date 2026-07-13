@@ -91,7 +91,9 @@ Superset receives read-only access to the `core` and `recsys` Gold schemas and p
 The separation keeps ML feature engineering, operational streaming, and BI semantics independent.
 Business metrics are version-controlled as dbt models, checked by data tests, orchestrated by
 Airflow, queryable through Trino, and reproducibly visualized by an idempotent Superset bootstrap
-job.
+job. The analytics plane also has its own component-aware CI/CD route: Jenkins detects changes to
+the analytics application, tests, or Helm chart; validates and publishes only the affected analytics
+images; and upgrades the data-platform and analytics releases automatically after a merge to `main`.
 
 ### Mermaid workflow
 
@@ -107,6 +109,14 @@ flowchart LR
     DASH["RecSys Business Pulse<br/>12 charts"]
     AIRFLOW["Airflow daily DAG"]
     DATAHUB["DataHub lineage"]
+    GIT["GitHub push or merge"]
+    JENKINS["Jenkins shared pipeline<br/>RecSys-GitHub-CICD"]
+    DETECT{"Detect changed components<br/>RUN_ANALYTICS=true"}
+    CI["Analytics CI<br/>unit + contract tests<br/>Helm lint and render"]
+    BUILD["Build and publish<br/>Spark + dbt + Superset<br/>and Airflow images"]
+    REGISTRY[("GCP Artifact Registry")]
+    DEPLOY["Deploy on main<br/>Helm upgrade data-platform<br/>and recsys-analytics"]
+    VIEW["Jenkins proof view<br/>10 Analytics And BI<br/>FORCE_COMPONENTS=analytics"]
 
     SILVER --> SYNC --> STAGING --> DBT
     DBT --> CORE
@@ -116,6 +126,14 @@ flowchart LR
     AIRFLOW -. orchestrates .-> SYNC
     AIRFLOW -. orchestrates .-> DBT
     SYNC -. runtime lineage .-> DATAHUB
+
+    GIT --> JENKINS --> DETECT
+    DETECT -->|"analytics paths changed"| CI
+    CI --> BUILD --> REGISTRY --> DEPLOY
+    VIEW -. reuses the same Jenkinsfile .-> CI
+    DEPLOY -. rolls out .-> AIRFLOW
+    DEPLOY -. rolls out .-> DBT
+    DEPLOY -. rolls out .-> SUPERSET
 ```
 
 ### Code reference
@@ -127,6 +145,11 @@ flowchart LR
 | Gold semantics and tests | [`models/marts/`](../../../apps/analytics/models/marts), [`schema.yml`](../../../apps/analytics/models/schema.yml) — dimensions, facts, marts, grains, and quality tests. |
 | Read-only query boundary | [`trino-config.yaml`](../../../infra/helm/recsys-analytics/templates/trino-config.yaml) — shared catalog and restricted Superset access. |
 | BI provisioning | [`bootstrap_dashboards.py`](../../../apps/analytics/superset/bootstrap_dashboards.py), [`superset-dashboard-bootstrap.yaml`](../../../infra/helm/recsys-analytics/templates/superset-dashboard-bootstrap.yaml) — idempotent datasets, charts, and dashboard deployment. |
+| Main-flow change detection | [`Jenkinsfile`](../../../Jenkinsfile), [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py) — maps analytics application, tests, and Helm changes to `RUN_ANALYTICS=true` and enables component CI, build, and deploy stages. |
+| Analytics CI gates | [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh) — runs analytics unit/contract tests plus Helm lint and template validation. |
+| Image build and publish | [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh) — builds the analytics Spark, dbt, Superset, and shared Airflow images with an immutable commit tag. |
+| Deployment | [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) — upgrades the data-platform Airflow runtime and the `recsys-analytics` Helm release, then waits for its workloads. |
+| Jenkins analytics view | [`jenkins-init-configmap.yaml`](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml) — provisions `RecSys-Analytics-BI-CICD` under the `10 Analytics And BI` view with `FORCE_COMPONENTS=analytics`. |
 
 ### Image proof
 
@@ -157,3 +180,9 @@ impressions, clicks, carts, purchases, CTR, and CVR.
   the first records KPIs and trends; the second records category, brand, and product-level analysis.
 - The production proof has three semantic datasets and twelve charts. Every chart reads only from tested Gold marts through the read-only `superset` Trino user.
 - `mart_ab_experiment_daily` can legitimately contain zero rows until real recommendation requests include both `experiment_id` and `variant`; this does not indicate an analytics pipeline failure.
+- Analytics delivery is part of the main path-based pipeline, not a duplicated Jenkinsfile. Changes
+  under `apps/analytics/`, analytics tests, or `infra/helm/recsys-analytics/` select only the analytics
+  component; deployment is gated to `main` unless a manual proof run explicitly enables forced deploy.
+- The GKE Jenkins release was upgraded to revision `46` and verified with the live Jenkins API. The
+  `10 Analytics And BI` view contains the buildable `RecSys-Analytics-BI-CICD` job, whose default is
+  `FORCE_COMPONENTS=analytics`.

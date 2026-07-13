@@ -29,7 +29,7 @@ pipeline {
           set -eu
           test -f Jenkinsfile
           test -f jenkins/scripts/detect_changed_components.py
-          printf '%s\n' "materialize training dp1 dp2 dp3 api kserve drift stream_offline stream_online spark_batch"
+          printf '%s\n' "materialize training dp1 dp2 dp3 api kserve rollout drift stream_offline stream_online spark_batch"
         '''
       }
     }

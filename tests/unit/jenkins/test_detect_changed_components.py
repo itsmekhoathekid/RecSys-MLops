@@ -30,11 +30,12 @@ def product_components(paths: list[str]) -> set[str]:
         ("README.md", set(), False),
         ("graphify-out/graph.json", set(), False),
         ("Jenkinsfile", set(), True),
-        ("infra/helm/recsys-ci/values.yaml", set(), True),
+        ("infra/helm/recsys-ci/values.yaml", {"ROLLOUT"}, True),
         ("jenkins/jobs/recsys-cicd-proof-config.xml", set(), True),
         ("jenkins/scripts/component_ci.sh", set(), True),
         ("apps/api-serving/src/main.py", {"API"}, False),
         ("apps/ml-system/src/training/train.py", {"TRAINING"}, False),
+        ("apps/ml-system/src/cli/model_rollout_controller.py", {"ROLLOUT"}, False),
         ("apps/analytics/models/marts/recsys/mart_recsys_funnel_daily.sql", {"ANALYTICS"}, False),
         ("apps/ml-system/src/registry/model_promotion.py", {"TRAINING", "KSERVE"}, False),
         (
@@ -95,17 +96,21 @@ def product_components(paths: list[str]) -> set[str]:
             {"MATERIALIZE", "SPARK_BATCH", "DP1", "DP2", "DP3", "DRIFT", "STREAM_OFFLINE", "STREAM_ONLINE"},
             False,
         ),
-        ("infra/helm/recsys-serving/templates/inferenceservice.yaml", {"API", "KSERVE"}, False),
+        ("infra/helm/recsys-serving/templates/inferenceservice.yaml", {"API", "KSERVE", "ROLLOUT"}, False),
         ("infra/helm/recsys-analytics/templates/trino.yaml", {"ANALYTICS"}, False),
-        ("infra/helm/recsys-observability/values.yaml", {"API", "KSERVE", "DRIFT"}, False),
+        ("infra/helm/recsys-observability/values.yaml", {"API", "KSERVE", "ROLLOUT", "DRIFT"}, False),
         ("infra/k8s/processing-baseline/spark-baseline-ui-job.yaml", {"SPARK_BATCH", "STREAM_OFFLINE"}, False),
         ("notebooks/ml.ipynb", {"TRAINING"}, False),
-        ("jenkins/KServeModelCD.Jenkinsfile", {"KSERVE"}, True),
+        ("jenkins/KServeModelCD.Jenkinsfile", {"ROLLOUT"}, True),
+        ("jenkins/scripts/model_cd.py", {"KSERVE", "ROLLOUT"}, True),
+        ("jenkins/scripts/autonomous_rollout_locust.sh", {"ROLLOUT"}, True),
         ("jenkins/scripts/kubeflow_pipeline_cicd.sh", {"TRAINING"}, True),
         ("jenkins/scripts/validation_load_test.sh", {"API"}, True),
         ("tests/unit/jenkins/test_detect_changed_components.py", set(), True),
+        ("tests/contract/test_gateway_contracts.py", {"API", "DEMO_WEB"}, False),
         ("tests/unit/api_serving/test_serving.py", {"API"}, False),
         ("tests/unit/ml_system/test_model_promotion.py", {"TRAINING", "KSERVE"}, False),
+        ("tests/unit/ml_system/test_model_rollout_controller.py", {"TRAINING", "ROLLOUT"}, False),
         ("tests/unit/data_platform/test_lakehouse_optimization.py", {"SPARK_BATCH", "DP2", "DP3"}, False),
         ("tests/unit/test_runtime_lineage.py", {"MATERIALIZE", "DP1", "DP2", "DP3"}, False),
     ],
@@ -133,7 +138,7 @@ def test_root_dependency_change_intentionally_routes_all_python_components():
 def test_docs_and_ci_config_regression_does_not_route_product_components():
     paths = [
         "docs/submission/rubic-(mini-coursework)/data_storage.md",
-        "infra/helm/recsys-ci/values.yaml",
+        "infra/helm/recsys-ci/templates/jenkins.yaml",
         "jenkins/jobs/recsys-cicd-proof-config.xml",
     ]
     result = classify_paths(paths)
@@ -242,22 +247,81 @@ def test_jenkinsfile_uses_previous_built_commit_and_has_ci_config_stage():
 
 def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
     seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(encoding="utf-8")
+    model_cd_pipeline = (ROOT / "jenkins/KServeModelCD.Jenkinsfile").read_text(encoding="utf-8")
 
     assert "RecSys-KServe-Model-CD" in seed
     assert "06A KServe Model CD" in seed
-    assert "CpsFlowDefinition" in seed
+    assert "CpsScmFlowDefinition" in seed
+    assert "jenkins/KServeModelCD.Jenkinsfile" in seed
     assert "PROMOTION_MANIFEST_URI" in seed
-    assert "RECSYS_CI_WORKSPACE" in seed
-    assert "component_deploy.sh kserve_model_cd" in seed
-    assert "stage('Deploy Shadow Candidate')" in seed
-    assert "stage('Evaluate Candidate')" in seed
-    assert "stage('Rollback Candidate')" in seed
-    assert "stage('Verify Champion Only')" in seed
+    assert "RECSYS_CI_WORKSPACE" not in seed
     assert "AB_CANDIDATE_WEIGHT_PERCENT" in seed
     assert "AB_MIN_SAMPLES" in seed
-    assert "stage('Python Env')" not in seed
-    assert "stage('Checkout')" not in seed
-    assert "checkout scm" not in seed
+    assert "CpsFlowDefinition" not in seed
+    assert "stage('Checkout Rollout Source')" in model_cd_pipeline
+    assert "checkout scm" in model_cd_pipeline
+
+
+def test_progressive_rollout_cicd_is_wired_into_main_flow():
+    jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    component_ci = (ROOT / "jenkins/scripts/component_ci.sh").read_text(encoding="utf-8")
+    component_build = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text(encoding="utf-8")
+    component_deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    result = classify_paths(["apps/ml-system/src/cli/model_rollout_controller.py"])
+
+    assert result.component_names == ("rollout",)
+    assert result.flags["RUN_ROLLOUT"] is True
+    assert result.flags["RUN_COMPONENT_CI"] is True
+    assert result.flags["RUN_COMPONENT_BUILD"] is True
+    assert result.flags["RUN_COMPONENT_DEPLOY"] is True
+    assert "[flag: 'RUN_ROLLOUT', name: 'rollout', label: 'Progressive Model Rollout']" in jenkinsfile
+    assert "rollout)" in component_ci
+    assert "rollout)" in component_build
+    assert "rollout)" in component_deploy
+    assert "deploy_rollout_watcher" in component_deploy
+    assert "reconcile_rollout_jenkins_jobs" in component_deploy
+    assert 'data.zz-seed-cicd-views\\.groovy' in component_deploy
+    assert '"${jenkins_url}/scriptText"' in component_deploy
+    assert 'view: "06B Progressive Model Rollout"' in seed
+    assert 'job: "RecSys-Progressive-Rollout-CICD"' in seed
+    assert 'component: "rollout"' in seed
+
+
+def test_analytics_cicd_is_wired_from_main_detector_to_dedicated_view():
+    jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    detector = (ROOT / "jenkins/scripts/detect_changed_components.py").read_text(encoding="utf-8")
+    component_ci = (ROOT / "jenkins/scripts/component_ci.sh").read_text(encoding="utf-8")
+    component_build = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text(encoding="utf-8")
+    component_deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    result = classify_paths(
+        [
+            "apps/analytics/models/marts/recsys/mart_recsys_funnel_daily.sql",
+            "infra/helm/recsys-analytics/templates/superset.yaml",
+        ]
+    )
+
+    assert result.component_names == ("analytics",)
+    assert result.flags["RUN_ANALYTICS"] is True
+    assert result.flags["RUN_COMPONENT_CI"] is True
+    assert result.flags["RUN_COMPONENT_BUILD"] is True
+    assert result.flags["RUN_COMPONENT_DEPLOY"] is True
+    assert "[flag: 'RUN_ANALYTICS', name: 'analytics', label: 'Analytics And BI']" in jenkinsfile
+    assert 'normalized.startswith("apps/analytics/")' in detector
+    assert 'path.startswith("infra/helm/recsys-analytics/")' in detector
+    assert "analytics)" in component_ci
+    assert "analytics)" in component_build
+    assert "analytics)" in component_deploy
+    assert 'view: "11 Analytics And BI"' in seed
+    assert 'job: "RecSys-Analytics-BI-CICD"' in seed
+    assert 'component: "analytics"' in seed
 
 
 def test_jenkins_admin_secret_is_reconciled_with_persisted_home():
@@ -281,6 +345,7 @@ def test_component_ci_installs_required_clean_environment_dependencies():
     assert "jenkins/scripts/install_component_ci_dependencies.sh" in jenkinsfile
     assert "training" in installer
     assert "kserve" in installer
+    assert "rollout" in installer
     assert "https://download.pytorch.org/whl/cpu" in installer
     assert '"ray[default,train,tune]"' in installer
     assert "mlflow" in installer

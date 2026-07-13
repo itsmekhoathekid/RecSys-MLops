@@ -12,7 +12,12 @@ import online_features
 from ab_testing import TritonABRouter
 from api_schemas import RecommendationRequest
 from observability import METRICS, metrics_text, span
-from online_features import FeatureClient, get_online_features, parse_json_bytes
+from online_features import (
+    FeatureClient,
+    get_online_features,
+    normalize_realtime_user_features,
+    parse_json_bytes,
+)
 from ranking import (
     as_int_list,
     build_triton_payload,
@@ -73,6 +78,31 @@ def test_json_and_embedding_helpers_handle_empty_and_invalid_values(monkeypatch)
         }
     )
     assert sequence["hist_item_id"] == [1, 2]
+
+
+def test_realtime_flink_sequence_is_mapped_to_feature_api_schema():
+    payload = normalize_realtime_user_features(
+        {
+            "item_ids": [15],
+            "event_type_ids": [1],
+            "category_ids": [6],
+            "brand_ids": [3],
+            "price_bucket_ids": [2],
+            "event_timestamps": ["2026-07-13T06:15:26Z"],
+            "request_ids": ["web-event-123"],
+            "impression_ids": [""],
+            "sequence_length": 1,
+            "max_history_length": 50,
+            "feature_version": "bst_sequence_v2",
+        },
+        {"views_30m": 1, "carts_30m": 0, "purchases_24h": 0},
+    )
+
+    assert payload["hist_item_ids"] == [15]
+    assert payload["hist_event_type_ids"] == [1]
+    assert payload["hist_request_ids"] == ["web-event-123"]
+    assert payload["hist_length"] == 1
+    assert payload["views_30m"] == 1
 
 
 def test_build_triton_payload_maps_raw_online_ids_to_embedding_space(monkeypatch):

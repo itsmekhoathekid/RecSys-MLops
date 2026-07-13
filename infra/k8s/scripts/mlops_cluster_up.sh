@@ -11,7 +11,8 @@ WAIT_TIMEOUT="${RECSYS_CLUSTER_WAIT_TIMEOUT:-600s}"
 KFP_VERSION="${KFP_VERSION:-2.16.1}"
 KSERVE_VERSION="${KSERVE_VERSION:-v0.15.2}"
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.16.2}"
-BUILD_IMAGES="${RECSYS_CLUSTER_BUILD_IMAGES:-0}"
+BUILD_IMAGES="${RECSYS_CLUSTER_BUILD_IMAGES:-auto}"
+DEPLOY_PREDICTOR="${RECSYS_CLUSTER_DEPLOY_PREDICTOR:-auto}"
 INSTALL_DATAHUB="${RECSYS_CLUSTER_INSTALL_DATAHUB:-0}"
 SCALE_OPTIONAL_KFP="${RECSYS_CLUSTER_SCALE_OPTIONAL_KFP:-1}"
 SECURITY_ENABLED="${RECSYS_CLUSTER_SECURITY_ENABLED:-1}"
@@ -26,6 +27,7 @@ TARGET_NAMESPACES=(
   observability
   ingress-nginx
   keda
+  cert-manager
   external-secrets
   vault
   istio-system
@@ -84,6 +86,83 @@ run_make() {
   make -C "${ROOT_DIR}" "$@"
 }
 
+build_local_images_if_needed() {
+  local image_list mlops_missing=0 data_platform_missing=0 image
+  local mlops_images=(recsys-api-serving:local recsys-mlflow:local)
+  local data_platform_images=(
+    recsys-dataflow-cli:local
+    recsys-spark:local
+    recsys-flink:local
+    recsys-kafka-connect:local
+    recsys-airflow:local
+  )
+
+  case "${BUILD_IMAGES}" in
+    1)
+      run_make mlops-images-minikube
+      run_make data-platform-images-minikube
+      return
+      ;;
+    0)
+      echo "Skipping local image checks because RECSYS_CLUSTER_BUILD_IMAGES=0."
+      return
+      ;;
+    auto)
+      ;;
+    *)
+      echo "RECSYS_CLUSTER_BUILD_IMAGES must be auto, 0, or 1 (got ${BUILD_IMAGES})"
+      return 2
+      ;;
+  esac
+
+  image_list="$(minikube -p "${PROFILE}" image ls)"
+  for image in "${mlops_images[@]}"; do
+    if ! grep -Fxq "docker.io/library/${image}" <<<"${image_list}"; then
+      echo "Missing Minikube image: ${image}"
+      mlops_missing=1
+    fi
+  done
+  for image in "${data_platform_images[@]}"; do
+    if ! grep -Fxq "docker.io/library/${image}" <<<"${image_list}"; then
+      echo "Missing Minikube image: ${image}"
+      data_platform_missing=1
+    fi
+  done
+
+  if [[ "${mlops_missing}" == "1" ]]; then
+    run_make mlops-runtime-images-minikube
+  fi
+  if [[ "${data_platform_missing}" == "1" ]]; then
+    run_make data-platform-images-minikube
+  fi
+  if [[ "${mlops_missing}" == "0" && "${data_platform_missing}" == "0" ]]; then
+    echo "All required local images are already available in Minikube."
+  fi
+}
+
+model_artifact_available() {
+  kubectl rollout status deployment/minio -n experiment-tracking --timeout="${WAIT_TIMEOUT}" >/dev/null
+  kubectl exec -n experiment-tracking deployment/mlflow -- python -c '
+import boto3
+import os
+import sys
+
+client = boto3.client(
+    "s3",
+    endpoint_url="http://minio.experiment-tracking.svc.cluster.local:9000",
+    aws_access_key_id=os.environ["MINIO_ROOT_USER"],
+    aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
+    region_name="us-east-1",
+)
+result = client.list_objects_v2(
+    Bucket="recsys-model-store",
+    Prefix="triton/bst/latest/",
+    MaxKeys=1,
+)
+sys.exit(0 if result.get("KeyCount", 0) > 0 else 1)
+' >/dev/null 2>&1
+}
+
 helm_uninstall_if_failed() {
   local release="$1"
   local namespace="$2"
@@ -131,16 +210,41 @@ install_kuberay_if_needed() {
   helm upgrade --install kuberay-operator kuberay/kuberay-operator --namespace kubeflow --create-namespace
 }
 
-scale_optional_kfp_components() {
-  if [[ "${SCALE_OPTIONAL_KFP}" != "1" ]]; then
-    return
+reconcile_optional_kfp_components() {
+  local replicas=1
+  if [[ "${SCALE_OPTIONAL_KFP}" == "1" ]]; then
+    replicas=0
   fi
   if kubectl get namespace kubeflow >/dev/null 2>&1; then
     for deployment in metadata-writer proxy-agent; do
       if kubectl get deploy "${deployment}" -n kubeflow >/dev/null 2>&1; then
-        kubectl scale deploy "${deployment}" -n kubeflow --replicas=0
+        kubectl scale deploy "${deployment}" -n kubeflow --replicas="${replicas}"
       fi
     done
+  fi
+}
+
+verify_all_pods_ready() {
+  local failures=0
+  local namespace name ready status rest current total
+
+  while read -r namespace name ready status rest; do
+    [[ -z "${namespace}" ]] && continue
+    if [[ "${status}" == "Completed" ]]; then
+      continue
+    fi
+    current="${ready%%/*}"
+    total="${ready##*/}"
+    if [[ "${status}" != "Running" || "${current}" != "${total}" || "${total}" == "0" ]]; then
+      echo "Pod not Ready: namespace=${namespace} name=${name} ready=${ready} status=${status}"
+      failures=1
+    fi
+  done < <(kubectl get pods -A --no-headers)
+
+  if [[ "${failures}" != "0" ]]; then
+    echo "One or more cluster pods are not Running/Ready"
+    kubectl get pods -A -o wide
+    return 1
   fi
 }
 
@@ -313,14 +417,22 @@ verify_required_service() {
 }
 
 section "Start Minikube"
-minikube start \
-  --profile "${PROFILE}" \
-  --driver=docker \
-  --cpus="${CPUS}" \
-  --memory="${MEMORY_MB}" \
-  --disk-size="${DISK_SIZE}"
+if [[ "$(minikube -p "${PROFILE}" status --format='{{.Host}}' 2>/dev/null || true)" == "Running" ]]; then
+  echo "Minikube profile ${PROFILE} is already running; skipping minikube start."
+else
+  minikube start \
+    --profile "${PROFILE}" \
+    --driver=docker \
+    --cpus="${CPUS}" \
+    --memory="${MEMORY_MB}" \
+    --disk-size="${DISK_SIZE}"
+fi
 
 kubectl config use-context "${PROFILE}"
+if [[ "$(kubectl config current-context)" != "${PROFILE}" ]]; then
+  echo "Refusing to continue: kubectl context is not ${PROFILE}"
+  exit 1
+fi
 
 section "Enforce Docker Container Memory"
 if docker inspect "${PROFILE}" >/dev/null 2>&1; then
@@ -333,14 +445,8 @@ fi
 section "Wait Node"
 kubectl wait --for=condition=Ready "node/${PROFILE}" --timeout=240s
 
-if [[ "${BUILD_IMAGES}" == "1" ]]; then
-  section "Build Local Images In Minikube"
-  run_make mlops-images-minikube
-  run_make data-platform-images-minikube
-else
-  section "Build Local Images In Minikube"
-  echo "Skipping image build. Set RECSYS_CLUSTER_BUILD_IMAGES=1 to rebuild local images before install."
-fi
+section "Ensure Local Images In Minikube"
+build_local_images_if_needed
 
 section "Install Cluster Dependencies"
 install_keda_if_needed
@@ -359,13 +465,30 @@ fi
 section "Install Kubeflow And KubeRay"
 install_kfp_if_needed
 install_kuberay_if_needed
-scale_optional_kfp_components
+reconcile_optional_kfp_components
 
 section "Install Core RecSys Services"
 run_make observability-install
 run_make mlops-install-stack
 run_make data-platform-install
-run_make mlops-install-serving
+case "${DEPLOY_PREDICTOR}" in
+  auto)
+    if model_artifact_available; then
+      echo "Model artifact found at s3://recsys-model-store/triton/bst/latest; deploying Triton predictor."
+      DEPLOY_PREDICTOR=1
+    else
+      echo "No model artifact found at s3://recsys-model-store/triton/bst/latest; predictor will be deployed by the model promotion flow."
+      DEPLOY_PREDICTOR=0
+    fi
+    ;;
+  0|1)
+    ;;
+  *)
+    echo "RECSYS_CLUSTER_DEPLOY_PREDICTOR must be auto, 0, or 1 (got ${DEPLOY_PREDICTOR})"
+    exit 2
+    ;;
+esac
+run_make mlops-install-serving RECSYS_SERVING_KSERVE_ENABLED="${DEPLOY_PREDICTOR}"
 run_make gateway-install-controller
 run_make gateway-install
 if [[ "${INSTALL_DATAHUB}" == "1" ]]; then
@@ -399,6 +522,9 @@ section "Verify Required Services"
 for resource in "${REQUIRED_SERVICES[@]}"; do
   verify_required_service "${resource}"
 done
+
+section "Verify Every Pod Is Running And Ready"
+verify_all_pods_ready
 
 section "Final Status"
 "$(dirname "$0")/mlops_cluster_status.sh"

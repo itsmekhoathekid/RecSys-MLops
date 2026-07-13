@@ -45,6 +45,11 @@ GATEWAY_TRACES_HOST ?= traces.$(GATEWAY_DOMAIN)
 GATEWAY_SCHEME ?= https
 GATEWAY_CURL_FLAGS ?= -k
 RECSYS_CLUSTER_SECURITY_ENABLED ?= 1
+RECSYS_CLUSTER_SCALE_OPTIONAL_KFP ?= 1
+RECSYS_CLUSTER_INSTALL_DATAHUB ?= 0
+RECSYS_CLUSTER_BUILD_IMAGES ?= auto
+RECSYS_CLUSTER_DEPLOY_PREDICTOR ?= auto
+RECSYS_SERVING_KSERVE_ENABLED ?= 1
 GCP_POWER_SCRIPT := infra/terraform/gcp/scripts/gcp_services_power.sh
 
 .PHONY: help
@@ -92,7 +97,7 @@ help:
 	@echo ""
 	@echo "Kubeflow/MLflow:"
 	@echo "  make cluster-up             Start minikube and install/wait the full RecSys service stack"
-	@echo "  make cluster-down           Stop minikube and keep namespaces, PVCs, data, and model weights"
+	@echo "  make cluster-down           Stop minikube, verify all cluster pods are down, and preserve data"
 	@echo "  make cluster-destroy        Delete full service namespaces/PVCs, then stop or delete minikube"
 	@echo "  make cluster-status         Show cluster memory and full service status"
 	@echo "  make cluster-data-setup     Run full data setup and verify Iceberg + Redis feature stores"
@@ -158,7 +163,7 @@ cluster-mlops-serving-e2e: mlops-cluster-serving-e2e
 
 .PHONY: mlops-cluster-up
 mlops-cluster-up:
-	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) MINIKUBE_CPUS=$(MINIKUBE_CPUS) MINIKUBE_MEMORY_MB=$(MINIKUBE_MEMORY_MB) MINIKUBE_DISK_SIZE=$(MINIKUBE_DISK_SIZE) RECSYS_CLUSTER_SECURITY_ENABLED=$(RECSYS_CLUSTER_SECURITY_ENABLED) infra/k8s/scripts/mlops_cluster_up.sh
+	@MINIKUBE_PROFILE=$(MINIKUBE_PROFILE) MINIKUBE_CPUS=$(MINIKUBE_CPUS) MINIKUBE_MEMORY_MB=$(MINIKUBE_MEMORY_MB) MINIKUBE_DISK_SIZE=$(MINIKUBE_DISK_SIZE) RECSYS_CLUSTER_SECURITY_ENABLED=$(RECSYS_CLUSTER_SECURITY_ENABLED) RECSYS_CLUSTER_SCALE_OPTIONAL_KFP=$(RECSYS_CLUSTER_SCALE_OPTIONAL_KFP) RECSYS_CLUSTER_INSTALL_DATAHUB=$(RECSYS_CLUSTER_INSTALL_DATAHUB) RECSYS_CLUSTER_BUILD_IMAGES=$(RECSYS_CLUSTER_BUILD_IMAGES) RECSYS_CLUSTER_DEPLOY_PREDICTOR=$(RECSYS_CLUSTER_DEPLOY_PREDICTOR) infra/k8s/scripts/mlops_cluster_up.sh
 
 .PHONY: mlops-cluster-down
 mlops-cluster-down:
@@ -267,7 +272,7 @@ data-platform-template:
 
 .PHONY: data-platform-install
 data-platform-install:
-	@helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform --namespace recsys-dataflow --create-namespace --timeout 15m --reset-values
+	@helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform --namespace recsys-dataflow --create-namespace --timeout 15m --reset-values --force-conflicts --take-ownership -f infra/helm/recsys-data-platform/values-local.yaml
 
 .PHONY: data-platform-trigger
 data-platform-trigger:
@@ -387,9 +392,18 @@ mlops-images:
 	@docker build -f apps/api-serving/Dockerfile -t recsys-api-serving:local .
 	@docker build -f infra/docker/Dockerfile.mlflow -t recsys-mlflow:local .
 
+.PHONY: mlops-runtime-images
+mlops-runtime-images:
+	@docker build -f apps/api-serving/Dockerfile -t recsys-api-serving:local .
+	@docker build -f infra/docker/Dockerfile.mlflow -t recsys-mlflow:local .
+
 .PHONY: mlops-images-minikube
 mlops-images-minikube:
 	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && $(MAKE) mlops-images
+
+.PHONY: mlops-runtime-images-minikube
+mlops-runtime-images-minikube:
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && $(MAKE) mlops-runtime-images
 
 .PHONY: mlops-install-kfp
 mlops-install-kfp:
@@ -405,23 +419,38 @@ mlops-install-kuberay:
 
 .PHONY: mlops-install-stack
 mlops-install-stack:
-	@helm upgrade --install recsys-mlflow infra/helm/mlflow-stack --namespace $(MLOPS_NAMESPACE) --create-namespace
+	@helm upgrade --install recsys-mlflow infra/helm/mlflow-stack --namespace $(MLOPS_NAMESPACE) --create-namespace --set namespace.create=false
 	@helm upgrade --install recsys-runtime infra/helm/recsys-runtime --namespace $(KUBEFLOW_NAMESPACE) --set namespace.name=$(KUBEFLOW_NAMESPACE)
 
 .PHONY: mlops-install-serving
 mlops-install-serving:
 	@set -euo pipefail; \
-	helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace \
-		--set observability.serviceMonitor.enabled=false \
-		--set autoscaling.kserveResource.enabled=false; \
-	for _ in $$(seq 1 60); do \
-		if kubectl get deploy/recsys-bst-triton-predictor -n kserve-triton-inference >/dev/null 2>&1; then break; fi; \
-		sleep 5; \
-	done; \
-	kubectl get deploy/recsys-bst-triton-predictor -n kserve-triton-inference >/dev/null; \
-	helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace \
-		--set observability.serviceMonitor.enabled=false \
-		--set autoscaling.kserveResource.enabled=true
+	if [[ "$(RECSYS_SERVING_KSERVE_ENABLED)" == "1" ]]; then \
+		helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace \
+			--set kserve.namespace.create=false \
+			--set api.namespace.create=false \
+			--set observability.serviceMonitor.enabled=false \
+			--set autoscaling.kserveResource.enabled=false; \
+		for _ in $$(seq 1 60); do \
+			if kubectl get deploy/recsys-bst-triton-predictor -n kserve-triton-inference >/dev/null 2>&1; then break; fi; \
+			sleep 5; \
+		done; \
+		kubectl get deploy/recsys-bst-triton-predictor -n kserve-triton-inference >/dev/null; \
+		helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace \
+			--set kserve.namespace.create=false \
+			--set api.namespace.create=false \
+			--set observability.serviceMonitor.enabled=false \
+			--set autoscaling.kserveResource.enabled=true; \
+	else \
+		helm upgrade --install recsys-serving infra/helm/recsys-serving --namespace kserve-triton-inference --create-namespace \
+			--set kserve.enabled=false \
+			--set kserve.namespace.create=false \
+			--set api.namespace.create=false \
+			--set observability.serviceMonitor.enabled=false \
+			--set autoscaling.kserveResource.enabled=false; \
+		kubectl delete inferenceservice recsys-bst-triton recsys-bst-triton-candidate \
+			-n kserve-triton-inference --ignore-not-found; \
+	fi
 	@kubectl rollout status deployment/recsys-online-feature-api -n api-serving --timeout=300s
 	@kubectl rollout status deployment/recsys-api-serving -n api-serving --timeout=300s
 
@@ -452,7 +481,7 @@ observability-template:
 
 .PHONY: observability-install
 observability-install:
-	@helm upgrade --install recsys-observability infra/helm/recsys-observability --namespace observability --create-namespace
+	@helm upgrade --install recsys-observability infra/helm/recsys-observability --namespace observability --create-namespace --set namespace.create=false
 
 .PHONY: observability-port-forward
 observability-port-forward:
@@ -519,10 +548,10 @@ gateway-create-auth:
 gateway-install:
 	@set -euo pipefail; \
 	extra=""; \
-	if [ -f "$(GATEWAY_AUTH_FILE)" ]; then \
-		extra="$$extra --set-file auth.htpasswd=$(GATEWAY_AUTH_FILE)"; \
-	elif [ "$(RECSYS_CLUSTER_SECURITY_ENABLED)" = "1" ]; then \
+	if [ "$(RECSYS_CLUSTER_SECURITY_ENABLED)" = "1" ]; then \
 		extra="$$extra --set auth.createSecret=false"; \
+	elif [ -f "$(GATEWAY_AUTH_FILE)" ]; then \
+		extra="$$extra --set-file auth.htpasswd=$(GATEWAY_AUTH_FILE)"; \
 	else \
 		echo "Missing $(GATEWAY_AUTH_FILE); run make gateway-create-auth GATEWAY_PASSWORD='<password>' first." >&2; \
 		exit 1; \

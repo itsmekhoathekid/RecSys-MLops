@@ -241,6 +241,14 @@ case "${component}" in
   kserve)
     echo "KServe uses Triton runtime plus model artifacts; no application image build is required." | tee -a "${manifest_path}"
     ;;
+  rollout)
+    if [[ ",${CHANGED_COMPONENTS:-}," == *,training,* ]]; then
+      record_image "RECSYS_MLOPS_TRAINING_IMAGE" "${image_registry}/recsys-mlops-training:${image_tag}"
+      echo "Training component owns the shared recsys-mlops-training image build for this change." | tee -a "${manifest_path}"
+    else
+      build_training
+    fi
+    ;;
   drift)
     build_dataflow_cli
     ;;

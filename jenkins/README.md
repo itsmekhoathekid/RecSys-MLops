@@ -51,9 +51,11 @@ kubectl port-forward -n ci svc/recsys-jenkins 18090:8080
 | `dp3` | offline feature builders and feature store config | `recsys-spark`, `recsys-dataflow-cli`, `recsys-airflow` |
 | `api` | `apps/api-serving/`, API tests, serving chart | `recsys-api-serving` |
 | `kserve` | `infra/helm/recsys-serving/`, `model_cd.py`, model promotion serving code | production model manifest update |
+| `rollout` | rollout controller, Model-CD pipeline/script, watcher Helm resource, rollout load test, serving/observability contracts | immutable `recsys-mlops-training` watcher image and updated watcher Deployment |
 | `drift` | `validate/`, `mlops/`, future Knative/KServe drift manifests | `recsys-dataflow-cli` |
 | `stream_offline` | Flink stream jobs and Iceberg sink code | `recsys-flink` |
 | `stream_online` | Flink stream jobs, Redis/online writer code | `recsys-flink`, `recsys-dataflow-cli` |
+| `analytics` | `apps/analytics/`, analytics tests, Airflow analytics DAG, and `infra/helm/recsys-analytics/` | `recsys-analytics-spark`, `recsys-analytics-dbt`, `recsys-analytics-superset`, `recsys-airflow` |
 
 `jenkins/scripts/detect_changed_components.py` is the source of truth for path
 classification. It writes `.ci-components.env` so Jenkins can run the matching
@@ -66,6 +68,25 @@ Documentation and generated evidence paths (`docs/`, Markdown, images,
 pipeline. Any non-documentation path without a routing rule fails closed with an
 `Unmapped runtime path` error so a new component cannot silently run everything
 or skip validation.
+
+Analytics changes set `RUN_ANALYTICS=true` in the main webhook flow. The shared
+pipeline runs analytics unit and contract tests plus Helm validation, publishes
+the Spark, dbt, Superset, and Airflow images, and upgrades the data-platform and
+analytics Helm releases on `main`. Jenkins also seeds the manual proof job
+`RecSys-Analytics-BI-CICD` under the `10 Analytics And BI` view; that job reuses
+the same root `Jenkinsfile` with `FORCE_COMPONENTS=analytics` rather than
+duplicating the production pipeline definition.
+
+Progressive rollout changes set `RUN_ROLLOUT=true`. The same main webhook flow
+tests the controller, model-CD contracts, Helm templates, and demo scripts;
+publishes the watcher image with the Git commit tag; and applies only the
+watcher Deployment on `main`. The deploy step runs the idempotent Jenkins seed
+through `/scriptText`, updating rollout jobs without restarting the Jenkins
+controller. Jenkins also seeds
+`RecSys-Progressive-Rollout-CICD` in `06B Progressive Model Rollout` for manual
+proof. `RecSys-KServe-Model-CD` is Pipeline-from-SCM, so every runtime rollout
+stage checks out `jenkins/KServeModelCD.Jenkinsfile` and its scripts from the
+current main revision instead of using a manually synchronized workspace.
 
 For push builds, Jenkins compares `GIT_PREVIOUS_COMMIT...HEAD`. Pull requests use
 the target branch merge base. `HEAD~1` is only a first-build fallback. This makes

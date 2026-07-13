@@ -10,8 +10,13 @@ This project is an end-to-end recommendation platform for e-commerce. It turns c
 
 ## 📝 System Overview
 
-- **Functionality:** Generate and ingest data; process batch and streaming features; govern and validate data; train, version, and deploy models; serve recommendations; monitor quality and runtime health.
-- **Tech stack:** Python, FastAPI, PostgreSQL, MinIO, Iceberg, Kafka, Debezium, Spark, Flink, Airflow, Feast, Redis, Kubeflow, KubeRay, MLflow, KServe, Triton, Jenkins, Helm, Terraform, Prometheus, Grafana, Loki, Tempo, and DataHub.
+- **Data and analytics platform:** Generates configurable historical and real-time e-commerce events in PostgreSQL and MinIO, then streams CDC records through Debezium and Kafka. Spark builds batch features and Iceberg Bronze/Silver/Gold tables, while Flink handles event-time processing, deduplication, watermarking, streaming quality windows, and online feature updates. Airflow orchestrates ingestion, validation, compaction, materialization, drift, and analytics workflows; Feast serves PostgreSQL offline features and Redis online features; Hudi, DataHub, Trino, dbt, Superset, and Evidently provide dataset versioning, lineage, governed analytics, data quality, and drift monitoring.
+
+- **ML training and retraining platform:** Trains a PyTorch Behavior Sequence Transformer with time-aware datasets, negative sampling, ranking metrics, checkpointing, and ONNX/Triton model packaging. Kubeflow Pipelines coordinates data preparation, KubeRay/Ray Tune hyperparameter search and distributed training, evaluation, and promotion. MLflow uses PostgreSQL for tracking and registry metadata and MinIO for artifacts and versioned models; offline NDCG gates, feature-drift checks, and online candidate error/latency gates control promotion and drift-triggered retraining.
+
+- **Serving, infrastructure, and delivery:** FastAPI retrieves Feast online features, calls the Triton V2 inference API, ranks candidates, and returns personalized Top-K recommendations through NGINX. KServe manages stable and candidate Triton deployments, while KEDA HTTP/resource scalers and HPA policies autoscale API and inference workloads. Terraform and Helm provision GCP/GKE and Kubernetes resources; Jenkins and Cloud Build automate testing, image publishing, and deployment with shadow traffic, sticky progressive A/B rollout, model promotion, champion fallback, Helm rollback, and candidate cleanup.
+
+- **Security and observability:** Vault and External Secrets Operator manage runtime credentials; Istio mTLS, authorization policies, and Kubernetes NetworkPolicies secure service-to-service communication. Prometheus and Pushgateway collect infrastructure, pipeline, quality, drift, API, and model-rollout metrics; Grafana provides dashboards and alerts, Loki/Promtail centralize logs, and Tempo/OpenTelemetry provide distributed tracing.
 
 ---
 
@@ -21,7 +26,7 @@ This project is an end-to-end recommendation platform for e-commerce. It turns c
 2. [📝 System Overview](#-system-overview)
 3. [🏗️ Architecture](#-architecture)
    - [Overall System Flow](#overall-system-flow)
-   - [Serving Pipeline](#serving-pipeline)
+   - [Serving Pipeline High-Level Architecture](#serving-pipeline-high-level-architecture)
    - [Data Platform Pipeline](#data-platform-pipeline)
    - [Ranking Sequence Model Architecture](#ranking-sequence-model-architecture)
 4. [📁 Repository Main Folder Structure](#-repository-main-folder-structure)
@@ -158,22 +163,30 @@ flowchart LR
     API["Recommendation FastAPI"]
     FeatureAPI["Online Feature FastAPI"]
     Router["Stable / A-B / Shadow Router"]
-    Triton["KServe + Triton<br/>Stable and Candidate Models"]
+    StableServing["Stable KServe + Triton"]
+    CandidateServing["Candidate KServe + Triton"]
+    RankTopK["Candidate Scoring + Top-K"]
     TopK["Top-K Recommendations"]
 
     Gateway --> API
     API --> FeatureAPI
     FeatureAPI --> API
-    API --> Router --> Triton --> TopK
+    API --> Router
+    Router -->|control| StableServing
+    Router -->|candidate| CandidateServing
+    Router -.->|shadow copy| CandidateServing
+    StableServing --> RankTopK
+    CandidateServing --> RankTopK
+    RankTopK --> TopK
   end
 
   FeatureAPI -->|read via Feast SDK| Online
   Online -->|user, item and candidate features| FeatureAPI
-  ShadowDeploy -.->|deploy candidate at 0% response traffic| Triton
-  Progressive -->|set candidate weight| Triton
-  PromoteModel -->|replace stable champion| Triton
-  Fallback -->|restore stable-only serving| Triton
-  Cleanup -.->|remove temporary candidate| Triton
+  ShadowDeploy -.->|deploy candidate at 0% response traffic| CandidateServing
+  Progressive -->|set candidate weight 10 / 25 / 50| Router
+  PromoteModel -->|replace stable champion| StableServing
+  Fallback -->|set candidate weight to 0| Router
+  Cleanup -.->|remove temporary candidate| CandidateServing
 
   subgraph UX["User / Client"]
     direction TB
@@ -212,7 +225,8 @@ flowchart LR
   API -.-> Prometheus
   API -.-> Logs
   API -.-> OTel
-  Triton -.-> Prometheus
+  StableServing -.-> Prometheus
+  CandidateServing -.-> Prometheus
 
   subgraph DELIVERY["Platform Delivery"]
     direction TB
@@ -234,12 +248,14 @@ flowchart LR
   AppCD -->|upgrade analytics| Superset
   AppCD -->|upgrade ML runtime| KFP
   AppCD -->|upgrade API serving| API
-  AppCD -->|upgrade model serving| Triton
+  AppCD -->|helm upgrade stable serving| StableServing
+  AppCD -->|helm upgrade candidate serving| CandidateServing
   AppCD -->|upgrade observability| Grafana
   Platform -.-> Airflow
   Platform -.-> KFP
   Platform -.-> API
-  Platform -.-> Triton
+  Platform -.-> StableServing
+  Platform -.-> CandidateServing
 
   classDef data fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
   classDef store fill:#e8f5e9,stroke:#388e3c,color:#1b5e20;
@@ -250,11 +266,11 @@ flowchart LR
   class Generator,SourceDB,Raw,Debezium,Kafka,BronzeLake,Spark,SilverGoldLake,Flink,Airflow,DataChecks,DataHub,SilverSync,Analytics,Superset,AnalyticsStakeholder data;
   class Offline,Materialize,Online,TrackingDB,Artifacts,ModelStore,Registry store;
   class Drift,KFP,Ray,Evaluate,MLflow,CandidateSelect,ModelCD,ShadowDeploy,ShadowGate,Progressive,RolloutGate,PromoteModel,Fallback,Cleanup ml;
-  class EndUser,ClientApp,Gateway,API,FeatureAPI,Router,Triton,TopK serve;
+  class EndUser,ClientApp,Gateway,API,FeatureAPI,Router,StableServing,CandidateServing,RankTopK,TopK serve;
   class Pushgateway,Prometheus,Logs,OTel,Tempo,Grafana,Alerts,Dev,Tests,Coverage,CIFail,Build,AppCD,Platform ops;
 ```
 
-### Serving Pipeline
+### Serving Pipeline High-Level Architecture
 
 The serving module retrieves fresh online features, routes stable, candidate, or shadow traffic, scores candidates with KServe/Triton, and returns Top-K recommendations.
 
@@ -291,10 +307,13 @@ flowchart LR
     direction TB
     Stable2["Stable KServe + Triton"]
     Candidate2["Candidate KServe + Triton"]
-    TopK2["Candidate Scores + Top-K"]
+    Scores2["Candidate Scores"]
+    TopK2["Top-K Ranking"]
+    Response2["Recommendation Response<br/>items + model + experiment metadata"]
 
-    Stable2 --> TopK2
-    Candidate2 --> TopK2
+    Stable2 --> Scores2
+    Candidate2 --> Scores2
+    Scores2 --> TopK2 --> Response2
   end
 
   Router2 -->|control| Stable2
@@ -302,7 +321,7 @@ flowchart LR
   Router2 -.->|shadow copy| Candidate2
 
   Client2 -->|recommendation request| Gateway2
-  TopK2 -->|recommendations + model metadata| Client2
+  Response2 -->|recommendations| Client2
   Client2 --> EndUser2
 
   subgraph MD2["Model Delivery"]
@@ -315,12 +334,25 @@ flowchart LR
   ModelCD2 -.-> Candidate2
 
   subgraph OBS2["Serving Observability"]
-    Observe2["Prometheus + Grafana<br/>Loki + OpenTelemetry → Tempo"]
+    direction TB
+    Prometheus2["Prometheus Metrics"]
+    Loki2["Promtail + Loki Logs"]
+    OTel2["OpenTelemetry OTLP"]
+    Tempo2["Tempo Traces"]
+    Grafana2["Grafana Dashboards"]
+
+    Prometheus2 --> Grafana2
+    Loki2 --> Grafana2
+    OTel2 --> Tempo2 --> Grafana2
   end
-  RecAPI2 -.-> Observe2
-  FeatureAPI2 -.-> Observe2
-  Stable2 -.-> Observe2
-  Candidate2 -.-> Observe2
+  RecAPI2 -.-> Prometheus2
+  RecAPI2 -.-> Loki2
+  RecAPI2 -.-> OTel2
+  FeatureAPI2 -.-> Prometheus2
+  FeatureAPI2 -.-> Loki2
+  FeatureAPI2 -.-> OTel2
+  Stable2 -.-> Prometheus2
+  Candidate2 -.-> Prometheus2
 
   classDef edge fill:#fff3e0,stroke:#ef6c00,color:#4e342e;
   classDef service fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
@@ -332,7 +364,7 @@ flowchart LR
   class RecAPI2,FeatureAPI2,ModelCD2 service;
   class Redis2,ModelStore2 store;
   class Router2,Stable2,Candidate2 model;
-  class TopK2,Observe2 result;
+  class Scores2,TopK2,Response2,Prometheus2,Loki2,OTel2,Tempo2,Grafana2 result;
 ```
 
 ### Data Platform Pipeline
@@ -419,51 +451,23 @@ flowchart LR
 ## 📁 Repository Main Folder Structure
 
 ```txt
-├── apps                                      /* Deployable application and data/ML workloads */
-│   ├── analytics                             /* Trino/dbt Gold models and Superset dashboard bootstrap */
-│   ├── api-serving                           /* Online-feature and recommendation FastAPI services */
-│   ├── data-platform                         /* Generator, ingestion, Spark/Flink, Airflow, Feast, quality, and governance */
-│   └── ml-system                             /* BST training, Kubeflow, Ray, MLflow, promotion, and Triton packaging */
-├── configs                                   /* Local, proof, and Kubernetes runtime configuration */
-├── docs                                      /* Design notes, coursework evidence, screenshots, and tracking workbook */
-│   ├── submission/rubic-(mini-coursework)    /* Data Platform rubric documentation */
-│   └── submission/rubic-final-coursework-(final-ml) /* ML System rubric documentation */
-├── graphify-out                              /* Generated knowledge graph, architecture report, and code relationships */
-├── infra                                     /* Runtime and cloud infrastructure */
-│   ├── cloudbuild                            /* GCP Cloud Build image pipelines */
-│   ├── docker                                /* Local Docker Compose stack and shared service images */
-│   ├── helm                                  /* Kubernetes charts for platform, serving, security, CI, and observability */
-│   ├── k8s                                   /* Standalone proof and verification manifests */
-│   ├── kubeflow                              /* Compiled Kubeflow pipeline packages */
-│   └── terraform/gcp                         /* Terraform-managed GCP/GKE resources and Helm releases */
-├── jenkins                                   /* Component CI/CD, model rollout, deployment, and verification scripts */
-├── notebooks                                 /* Interactive ML workflow and local experimentation */
-├── tests                                     /* Unit, contract, integration, end-to-end, mutation, and load tests */
-├── Jenkinsfile                               /* Monorepo path-based CI/CD pipeline entrypoint */
-├── Makefile                                  /* Common local, Docker, GCP, test, and proof commands */
-└── pyproject.toml                            /* Python dependencies and tooling configuration */
-```
-
----
-
-## 📖 Code Documentation Standards
-
-All production source code must follow these documentation rules:
-
-- Every source file starts with a concise **module-level docstring** that explains the file's responsibility.
-- Every **class, function, and method** has a docstring describing its purpose.
-- Docstrings document inputs, return values, important side effects, and raised exceptions when they are not obvious from the signature.
-- Documentation stays focused on behavior and contracts; it should not repeat the implementation line by line.
-
-```python
-"""Build and validate recommendation features for offline training."""
-
-
-class FeatureBuilder:
-    """Create model-ready features from governed Silver tables."""
-
-    def build(self, source_uri: str) -> dict[str, int]:
-        """Build feature tables and return their row counts."""
+├── apps/                         # Deployable product and data/ML workloads
+│   ├── analytics/                # Analytics models and dashboard bootstrap
+│   ├── api-serving/              # Online feature and recommendation APIs
+│   ├── data-platform/            # Ingestion, processing, orchestration, feature store, and governance
+│   └── ml-system/                # Training, experimentation, model promotion, and serving packaging
+├── configs/                      # Versioned environment and service configuration
+├── docs/                         # Architecture, design, and coursework documentation
+├── infra/                        # Local and cloud infrastructure definitions
+│   ├── cloudbuild/               # Cloud image build pipelines
+│   ├── docker/                   # Docker images and local Compose runtime
+│   ├── helm/                     # Kubernetes application charts
+│   ├── k8s/                      # Kubernetes manifests and cluster lifecycle scripts
+│   ├── kubeflow/                 # Kubeflow pipeline deployment artifacts
+│   └── terraform/                # Cloud infrastructure as code
+├── jenkins/                      # CI/CD jobs, model rollout, and deployment automation
+├── notebooks/                    # Tracked exploration and ML workflow notebooks
+└── tests/                        # Unit, contract, integration, end-to-end, and load tests
 ```
 
 ---

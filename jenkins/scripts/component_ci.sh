@@ -171,6 +171,22 @@ case "${component}" in
     cov_paths=(model_cd)
     component_pytest "${component}" "jenkins/scripts:apps/ml-system/src:apps/data-platform/src"
     ;;
+  rollout)
+    tests=(tests/unit/ml_system/test_model_rollout_controller.py tests/contract/test_serving_contracts.py)
+    append_integration_dir rollout
+    # Controller behavior is exercised by the rollout unit suite; model_cd is
+    # the deploy executor with the enforced per-component 90% coverage gate.
+    cov_paths=(model_cd)
+    component_pytest "${component}" "jenkins/scripts:apps/ml-system/src:apps/data-platform/src"
+    helm lint infra/helm/recsys-ci
+    helm template recsys-ci infra/helm/recsys-ci \
+      --set modelRolloutWatcher.enabled=true \
+      --set modelRolloutWatcher.image=registry.example/recsys-mlops-training:ci >/dev/null
+    helm lint infra/helm/recsys-serving
+    bash -n jenkins/scripts/autonomous_rollout_locust.sh
+    bash -n jenkins/scripts/model_rollout_demo.sh
+    bash -n jenkins/scripts/verify_champion_only.sh
+    ;;
   drift)
     tests=(tests/unit/data_generator/test_drift_reporting_unit.py)
     append_integration_dir drift

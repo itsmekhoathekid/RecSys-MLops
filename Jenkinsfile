@@ -8,6 +8,7 @@ def componentDefinitions() {
     [flag: 'RUN_DP3', name: 'dp3', label: 'DP3 Offline Feature Table'],
     [flag: 'RUN_API', name: 'api', label: 'FastAPI Web API'],
     [flag: 'RUN_KSERVE', name: 'kserve', label: 'KServe Inference Engine'],
+    [flag: 'RUN_ROLLOUT', name: 'rollout', label: 'Progressive Model Rollout'],
     [flag: 'RUN_DRIFT', name: 'drift', label: 'Realtime Drift Detection'],
     [flag: 'RUN_STREAM_OFFLINE', name: 'stream_offline', label: 'Stream Features To Offline Store'],
     [flag: 'RUN_STREAM_ONLINE', name: 'stream_online', label: 'Stream Features To Online Store'],

@@ -43,6 +43,11 @@ externalSecrets:
     namespace: kserve-triton-inference
     secretName: recsys-kserve-minio
     vaultPath: kserve-minio
+    annotations:
+      serving.kserve.io/s3-endpoint: minio.experiment-tracking.svc.cluster.local:9000
+      serving.kserve.io/s3-usehttps: "0"
+      serving.kserve.io/s3-region: us-east-1
+      serving.kserve.io/s3-useanoncredential: "false"
   gateway:
     namespace: api-serving
     secretName: recsys-gateway-basic-auth

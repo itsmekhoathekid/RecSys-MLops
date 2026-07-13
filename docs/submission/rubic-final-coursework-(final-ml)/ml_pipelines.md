@@ -99,6 +99,7 @@ instead of retrying forever. The operator can repair it deterministically with
 | Champion-aware handoff and rollout watcher | [`trigger_kserve_cd.py`](../../../apps/ml-system/src/cli/trigger_kserve_cd.py), [`model_rollout_controller.py`](../../../apps/ml-system/src/cli/model_rollout_controller.py) |
 | Compilation, submission, and runtime mounts | [`compile_training_pipeline.py`](../../../apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py), [`submit_pipeline_run.py`](../../../apps/ml-system/src/kubeflow/submit_pipeline_run.py), [`runtime.py`](../../../apps/ml-system/src/kubeflow/components/runtime.py) |
 | Jenkins model rollout state machine | [`KServeModelCD.Jenkinsfile`](../../../jenkins/KServeModelCD.Jenkinsfile) |
+| Progressive rollout changed-component CI/CD | [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py), [`Jenkinsfile`](../../../Jenkinsfile), [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh), [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh), [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) |
 
 ### Compiled pipeline defaults
 

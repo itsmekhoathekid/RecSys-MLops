@@ -48,6 +48,29 @@ ITEM_FEATURE_REFS = [
     "item_features:feature_version",
 ]
 
+REALTIME_SEQUENCE_FIELDS = {
+    "item_ids": "hist_item_ids",
+    "event_type_ids": "hist_event_type_ids",
+    "category_ids": "hist_category_ids",
+    "brand_ids": "hist_brand_ids",
+    "price_bucket_ids": "hist_price_bucket_ids",
+    "event_timestamps": "hist_event_timestamps",
+    "request_ids": "hist_request_ids",
+    "impression_ids": "hist_impression_ids",
+    "sequence_length": "hist_length",
+    "max_history_length": "max_history_length",
+    "feature_version": "feature_version",
+}
+REALTIME_AGGREGATE_FIELDS = {
+    "views_30m",
+    "carts_30m",
+    "purchases_24h",
+    "distinct_categories_7d",
+    "avg_viewed_price_7d",
+    "cart_to_purchase_ratio_7d",
+    "last_event_age_seconds",
+}
+
 
 def parse_json_bytes(value: bytes | str | None) -> dict[str, Any]:
     if value is None:
@@ -77,6 +100,25 @@ def first_feature_row(features: dict[str, list[Any]], entity_keys: set[str]) -> 
             continue
         row[name] = value
     return row
+
+
+def normalize_realtime_user_features(
+    sequence: dict[str, Any], aggregate: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    payload = {
+        target: normalize_feature_value(sequence[source])
+        for source, target in REALTIME_SEQUENCE_FIELDS.items()
+        if source in sequence and sequence[source] is not None
+    }
+    if aggregate:
+        payload.update(
+            {
+                name: normalize_feature_value(aggregate[name])
+                for name in REALTIME_AGGREGATE_FIELDS
+                if name in aggregate and aggregate[name] is not None
+            }
+        )
+    return payload
 
 
 class FeatureClient:
@@ -139,11 +181,21 @@ class FeatureClient:
     def user_sequence(self, user_id: int) -> dict[str, Any]:
         start = time.perf_counter()
         try:
-            with span("feast.user_features", operation="user_features"):
-                payload = first_feature_row(
-                    self._get_feast_online_features(USER_SEQUENCE_FEATURE_REFS, [{"user_id": user_id}]),
-                    {"user_id"},
-                )
+            with span("redis.realtime_user_features", operation="user_features"):
+                try:
+                    realtime_sequence = parse_json_bytes(self.client.get(f"fs:user_sequence:{user_id}"))
+                    realtime_aggregate = parse_json_bytes(self.client.get(f"fs:user_aggregate:{user_id}"))
+                except Exception:
+                    realtime_sequence = {}
+                    realtime_aggregate = {}
+            if realtime_sequence:
+                payload = normalize_realtime_user_features(realtime_sequence, realtime_aggregate)
+            else:
+                with span("feast.user_features", operation="user_features"):
+                    payload = first_feature_row(
+                        self._get_feast_online_features(USER_SEQUENCE_FEATURE_REFS, [{"user_id": user_id}]),
+                        {"user_id"},
+                    )
             observe_redis("user_sequence", time.perf_counter() - start)
             if not payload:
                 METRICS.inc("recsys_api_empty_feature_total", labels={"feature": "user_sequence"})

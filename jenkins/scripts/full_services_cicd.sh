@@ -4,7 +4,7 @@ set -euo pipefail
 image_registry="${IMAGE_REGISTRY:-${IMAGE_PUSH_REGISTRY:-asia-southeast1-docker.pkg.dev/fsds-coursework/recsys}}"
 image_registry="${image_registry%/}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-}}"
-components_csv="${FULL_CICD_COMPONENTS:-materialize,training,spark_batch,dp1,dp2,dp3,api,kserve,drift,stream_offline,stream_online,analytics}"
+components_csv="${FULL_CICD_COMPONENTS:-materialize,training,spark_batch,dp1,dp2,dp3,api,kserve,rollout,drift,stream_offline,stream_online,analytics}"
 kube_context="${KUBE_CONTEXT:-gke_fsds-coursework_asia-southeast1-b_recsys-mlops-gke}"
 run_component_ci="${RUN_COMPONENT_CI:-1}"
 run_build="${RUN_COMPONENT_BUILD:-1}"

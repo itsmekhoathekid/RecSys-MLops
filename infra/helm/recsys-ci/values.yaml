@@ -138,8 +138,6 @@ modelRolloutWatcher:
   jenkinsUrl: http://recsys-jenkins.ci.svc.cluster.local:8080
   jenkinsJobName: RecSys-KServe-Model-CD
   jenkinsAdminSecretName: recsys-jenkins-admin
-  jenkinsWorkspace: /var/jenkins_home/recsys-workspace
-  imageTag: manual
   prometheusUrl: http://recsys-prometheus.observability.svc.cluster.local:9090
   gateWindow: 10m
   minSamples: 100

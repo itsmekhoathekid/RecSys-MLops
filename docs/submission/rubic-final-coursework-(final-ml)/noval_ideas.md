@@ -1,18 +1,25 @@
 # Novel MLOps Rollout Ideas
 
 This document records the runnable lifecycle and proof plan for two connected
-MLOps features:
+MLOps runtime features plus their production CI/CD integration:
 
 1. **Shadow Deployment Before A/B**: the candidate receives asynchronous
    shadow inference, while every user response still comes from the champion.
 2. **Champion/Challenger Automatic Rollback**: Prometheus gates compare the
    candidate with the control; a regression automatically restores
    champion-only traffic.
+3. **Progressive Rollout CI/CD**: source changes are detected as the dedicated
+   `rollout` component, tested, built, published, and deployed automatically by
+   the main Jenkins pipeline.
 
 The workflow uses MLflow as the model registry, a watcher pod as the trigger,
 Jenkins as the rollout executor, KServe/Triton as the inference runtime,
 FastAPI as the shadow/A/B router, and Prometheus/Grafana as the decision and
 evidence layer.
+
+The complete shadow → 10% → 25% → 50% → promote/rollback lifecycle is now
+covered by CI/CD. It is no longer only a demo script or a manually synchronized
+Jenkins workspace.
 
 ## End-To-End Lifecycle
 
@@ -90,6 +97,45 @@ flowchart TD
    temporary candidate inference service. Therefore the old Triton candidate
    is not kept after the experiment.
 
+### CI/CD Integration - Implemented
+
+The main `RecSys-GitHub-CICD` flow treats this feature as the changed component
+`rollout`. Changes to the watcher controller, Model-CD executor, watcher Helm
+resource, serving/observability contracts, or rollout load test set
+`RUN_ROLLOUT=true` and execute one production path:
+
+```mermaid
+flowchart LR
+  A["Git push or merge"] --> B["Detect changed component<br/>RUN_ROLLOUT = true"]
+  B --> C["CI<br/>controller + model-CD tests<br/>Helm + shell validation"]
+  C --> D["Build and publish<br/>recsys-mlops-training:GIT_COMMIT"]
+  D --> E["Deploy watcher only<br/>immutable image"]
+  E --> F["Watcher observes MLflow<br/>candidate = test"]
+  F --> G["RecSys-KServe-Model-CD<br/>Pipeline from SCM"]
+  G --> H["Shadow → 10% → 25% → 50%<br/>promote or rollback"]
+```
+
+`RecSys-Progressive-Rollout-CICD` is the manual proof job for the same shared
+pipeline; it does not duplicate deployment logic. The runtime
+`RecSys-KServe-Model-CD` job checks out the current main revision for every
+stage, so progressive rollout no longer depends on a copied
+`RECSYS_CI_WORKSPACE`. During component CD, the idempotent Jenkins seed updates
+both jobs through the authenticated Jenkins script endpoint without restarting
+the controller that is executing the deployment.
+
+| CI/CD responsibility | Implemented behavior |
+|---|---|
+| Change detection | Controller, Model-CD, watcher Helm, serving/observability, and rollout load-test changes set `RUN_ROLLOUT=true`. |
+| Continuous integration | Runs rollout controller tests, Model-CD serving contracts, Helm lint/template validation, and shell syntax checks. |
+| Build and publish | Builds `recsys-mlops-training` and publishes an immutable image tagged with `GIT_COMMIT`. |
+| Continuous deployment | Applies the new image to `deployment/recsys-model-rollout-watcher` and waits until the rollout is Ready. |
+| Jenkins job reconciliation | Creates or updates `RecSys-Progressive-Rollout-CICD` and the SCM-backed `RecSys-KServe-Model-CD` without restarting Jenkins. |
+| Runtime model delivery | The watcher triggers SCM-backed Jenkins stages for shadow, 10%, 25%, 50%, evaluation, promotion, or rollback. |
+
+Therefore the two runtime ideas in this document have both layers of
+automation: software CI/CD maintains the rollout controller itself, while
+model CD executes the lifecycle for each MLflow candidate.
+
 ### MLflow Tag State Machine
 
 ```mermaid
@@ -120,6 +166,7 @@ Grafana, and Jenkins evidence for one rollout.
 | Jenkins rollout stages and gates | [`KServeModelCD.Jenkinsfile`](../../../jenkins/KServeModelCD.Jenkinsfile), [`model_cd.py`](../../../jenkins/scripts/model_cd.py) |
 | Champion-only verification | [`verify_champion_only.sh`](../../../jenkins/scripts/verify_champion_only.sh) |
 | Watcher deployment | [`model-rollout-watcher.yaml`](../../../infra/helm/recsys-ci/templates/model-rollout-watcher.yaml) |
+| Changed-component CI/CD | [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py), [`Jenkinsfile`](../../../Jenkinsfile), [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh), [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh), [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) |
 | Shadow/A/B serving | [`shadow.py`](../../../apps/api-serving/src/shadow.py), [`ab_testing.py`](../../../apps/api-serving/src/ab_testing.py) |
 | KServe/Triton resources | [`inferenceservice.yaml`](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml) |
 | Grafana dashboard | [`model-ab-testing.json`](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json) |

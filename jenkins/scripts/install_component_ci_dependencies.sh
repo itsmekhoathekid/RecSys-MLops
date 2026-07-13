@@ -7,7 +7,7 @@ python_bin="${UV_PROJECT_ENVIRONMENT:?UV_PROJECT_ENVIRONMENT is required}/bin/py
 # The shared Jenkins environment intentionally stays small for data-only
 # components. Training and KServe tests import the same ML stack baked into
 # Dockerfile.training, so install that stack only when either component runs.
-if [[ "${components}" == *,training,* || "${components}" == *,kserve,* ]]; then
+if [[ "${components}" == *,training,* || "${components}" == *,kserve,* || "${components}" == *,rollout,* ]]; then
   uv pip install --python "${python_bin}" --index-url https://download.pytorch.org/whl/cpu \
     torch
 

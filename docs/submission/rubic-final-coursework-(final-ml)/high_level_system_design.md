@@ -128,22 +128,30 @@ flowchart LR
     API["Recommendation FastAPI"]
     FeatureAPI["Online Feature FastAPI"]
     Router["Stable / A-B / Shadow Router"]
-    Triton["KServe + Triton<br/>Stable and Candidate Models"]
+    StableServing["Stable KServe + Triton"]
+    CandidateServing["Candidate KServe + Triton"]
+    RankTopK["Candidate Scoring + Top-K"]
     TopK["Top-K Recommendations"]
 
     Gateway --> API
     API --> FeatureAPI
     FeatureAPI --> API
-    API --> Router --> Triton --> TopK
+    API --> Router
+    Router -->|control| StableServing
+    Router -->|candidate| CandidateServing
+    Router -.->|shadow copy| CandidateServing
+    StableServing --> RankTopK
+    CandidateServing --> RankTopK
+    RankTopK --> TopK
   end
 
   FeatureAPI -->|read via Feast SDK| Online
   Online -->|user, item and candidate features| FeatureAPI
-  ShadowDeploy -.->|deploy candidate at 0% response traffic| Triton
-  Progressive -->|set candidate weight| Triton
-  PromoteModel -->|replace stable champion| Triton
-  Fallback -->|restore stable-only serving| Triton
-  Cleanup -.->|remove temporary candidate| Triton
+  ShadowDeploy -.->|deploy candidate at 0% response traffic| CandidateServing
+  Progressive -->|set candidate weight 10 / 25 / 50| Router
+  PromoteModel -->|replace stable champion| StableServing
+  Fallback -->|set candidate weight to 0| Router
+  Cleanup -.->|remove temporary candidate| CandidateServing
 
   subgraph UX["User / Client"]
     direction TB
@@ -182,7 +190,8 @@ flowchart LR
   API -.-> Prometheus
   API -.-> Logs
   API -.-> OTel
-  Triton -.-> Prometheus
+  StableServing -.-> Prometheus
+  CandidateServing -.-> Prometheus
 
   subgraph DELIVERY["Platform Delivery"]
     direction TB
@@ -204,12 +213,14 @@ flowchart LR
   AppCD -->|upgrade analytics| Superset
   AppCD -->|upgrade ML runtime| KFP
   AppCD -->|upgrade API serving| API
-  AppCD -->|upgrade model serving| Triton
+  AppCD -->|helm upgrade stable serving| StableServing
+  AppCD -->|helm upgrade candidate serving| CandidateServing
   AppCD -->|upgrade observability| Grafana
   Platform -.-> Airflow
   Platform -.-> KFP
   Platform -.-> API
-  Platform -.-> Triton
+  Platform -.-> StableServing
+  Platform -.-> CandidateServing
 
   classDef data fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
   classDef store fill:#e8f5e9,stroke:#388e3c,color:#1b5e20;
@@ -220,7 +231,7 @@ flowchart LR
   class Generator,SourceDB,Raw,Debezium,Kafka,BronzeLake,Spark,SilverGoldLake,Flink,Airflow,DataChecks,DataHub,SilverSync,Analytics,Superset,AnalyticsStakeholder data;
   class Offline,Materialize,Online,TrackingDB,Artifacts,ModelStore,Registry store;
   class Drift,KFP,Ray,Evaluate,MLflow,CandidateSelect,ModelCD,ShadowDeploy,ShadowGate,Progressive,RolloutGate,PromoteModel,Fallback,Cleanup ml;
-  class EndUser,ClientApp,Gateway,API,FeatureAPI,Router,Triton,TopK serve;
+  class EndUser,ClientApp,Gateway,API,FeatureAPI,Router,StableServing,CandidateServing,RankTopK,TopK serve;
   class Pushgateway,Prometheus,Logs,OTel,Tempo,Grafana,Alerts,Dev,Tests,Coverage,CIFail,Build,AppCD,Platform ops;
 ```
 
@@ -547,10 +558,13 @@ flowchart LR
     direction TB
     Stable2["Stable KServe + Triton"]
     Candidate2["Candidate KServe + Triton"]
-    TopK2["Candidate Scores + Top-K"]
+    Scores2["Candidate Scores"]
+    TopK2["Top-K Ranking"]
+    Response2["Recommendation Response<br/>items + model + experiment metadata"]
 
-    Stable2 --> TopK2
-    Candidate2 --> TopK2
+    Stable2 --> Scores2
+    Candidate2 --> Scores2
+    Scores2 --> TopK2 --> Response2
   end
 
   Router2 -->|control| Stable2
@@ -558,7 +572,7 @@ flowchart LR
   Router2 -.->|shadow copy| Candidate2
 
   Client2 -->|recommendation request| Gateway2
-  TopK2 -->|recommendations + model metadata| Client2
+  Response2 -->|recommendations| Client2
   Client2 --> EndUser2
 
   subgraph MD2["Model Delivery"]
@@ -571,12 +585,25 @@ flowchart LR
   ModelCD2 -.-> Candidate2
 
   subgraph OBS2["Serving Observability"]
-    Observe2["Prometheus + Grafana<br/>Loki + OpenTelemetry → Tempo"]
+    direction TB
+    Prometheus2["Prometheus Metrics"]
+    Loki2["Promtail + Loki Logs"]
+    OTel2["OpenTelemetry OTLP"]
+    Tempo2["Tempo Traces"]
+    Grafana2["Grafana Dashboards"]
+
+    Prometheus2 --> Grafana2
+    Loki2 --> Grafana2
+    OTel2 --> Tempo2 --> Grafana2
   end
-  RecAPI2 -.-> Observe2
-  FeatureAPI2 -.-> Observe2
-  Stable2 -.-> Observe2
-  Candidate2 -.-> Observe2
+  RecAPI2 -.-> Prometheus2
+  RecAPI2 -.-> Loki2
+  RecAPI2 -.-> OTel2
+  FeatureAPI2 -.-> Prometheus2
+  FeatureAPI2 -.-> Loki2
+  FeatureAPI2 -.-> OTel2
+  Stable2 -.-> Prometheus2
+  Candidate2 -.-> Prometheus2
 
   classDef edge fill:#fff3e0,stroke:#ef6c00,color:#4e342e;
   classDef service fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
@@ -588,7 +615,7 @@ flowchart LR
   class RecAPI2,FeatureAPI2,ModelCD2 service;
   class Redis2,ModelStore2 store;
   class Router2,Stable2,Candidate2 model;
-  class TopK2,Observe2 result;
+  class Scores2,TopK2,Response2,Prometheus2,Loki2,OTel2,Tempo2,Grafana2 result;
 ```
 
 ## 3. BST Model Architecture
