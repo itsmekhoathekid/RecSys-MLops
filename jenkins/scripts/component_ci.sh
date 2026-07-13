@@ -225,17 +225,23 @@ case "${component}" in
       docker rm -f "${frontend_container}" >/dev/null 2>&1 || true
       docker create --name "${frontend_container}" -w /workspace \
         node:24-bookworm-slim sleep infinity >/dev/null
-      docker cp apps/demo-web/frontend/. "${frontend_container}:/workspace"
       docker start "${frontend_container}" >/dev/null
+      docker exec "${frontend_container}" mkdir -p \
+        /workspace/apps/demo-web/frontend /workspace/apps/demo-web/backend
+      docker cp apps/demo-web/frontend/. \
+        "${frontend_container}:/workspace/apps/demo-web/frontend"
+      docker cp apps/demo-web/backend/openapi.json \
+        "${frontend_container}:/workspace/apps/demo-web/backend/openapi.json"
       cleanup_demo_frontend() {
         docker rm -f "${frontend_container}" >/dev/null 2>&1 || true
       }
       trap cleanup_demo_frontend EXIT
       run_demo_frontend() {
-        docker exec -e HOME=/tmp "${frontend_container}" "$@"
+        docker exec -e HOME=/tmp -w /workspace/apps/demo-web/frontend \
+          "${frontend_container}" "$@"
       }
       copy_demo_frontend_coverage() {
-        docker cp "${frontend_container}:/workspace/coverage/." \
+        docker cp "${frontend_container}:/workspace/apps/demo-web/frontend/coverage/." \
           "${reports_dir}/coverage/demo_web_frontend/"
       }
     fi
