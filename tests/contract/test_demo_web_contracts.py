@@ -43,6 +43,7 @@ def test_gcp_chart_renders_two_hardened_workloads_and_root_tls_ingress() -> None
     frontend = documents[("Deployment", "recsys-demo-web")]
     backend = documents[("Deployment", "recsys-demo-api")]
     ingress = documents[("Ingress", "recsys-demo-web")]
+    api_ingress = documents[("Ingress", "recsys-demo-api")]
     pod_monitoring = documents[("PodMonitoring", "recsys-demo-api")]
 
     assert frontend["spec"]["replicas"] == 2
@@ -58,6 +59,15 @@ def test_gcp_chart_renders_two_hardened_workloads_and_root_tls_ingress() -> None
         "recsys-gateway-basic-auth"
     )
     assert ingress["metadata"]["annotations"]["nginx.ingress.kubernetes.io/service-upstream"] == "true"
+    assert ingress["metadata"]["annotations"]["nginx.ingress.kubernetes.io/upstream-vhost"] == (
+        "recsys-demo-web.api-serving.svc.cluster.local"
+    )
+    assert api_ingress["metadata"]["annotations"]["nginx.ingress.kubernetes.io/upstream-vhost"] == (
+        "recsys-demo-api.api-serving.svc.cluster.local"
+    )
+    assert api_ingress["metadata"]["annotations"]["nginx.ingress.kubernetes.io/auth-secret"] == (
+        "recsys-gateway-basic-auth"
+    )
     assert ingress["metadata"]["annotations"]["cert-manager.io/cluster-issuer"] == "letsencrypt-prod"
     assert pod_monitoring["apiVersion"] == "monitoring.googleapis.com/v1"
     assert pod_monitoring["spec"]["selector"]["matchLabels"] == {
@@ -67,12 +77,19 @@ def test_gcp_chart_renders_two_hardened_workloads_and_root_tls_ingress() -> None
         {"port": "http", "path": "/metrics", "interval": "30s"}
     ]
     assert all(document.get("kind") != "ServiceMonitor" for document in rendered_chart())
-    paths = {path["path"]: path["backend"]["service"]["name"] for path in ingress["spec"]["rules"][0]["http"]["paths"]}
-    assert paths == {
+    paths = {
+        path["path"]: path["backend"]["service"]["name"]
+        for path in ingress["spec"]["rules"][0]["http"]["paths"]
+    }
+    api_paths = {
+        path["path"]: path["backend"]["service"]["name"]
+        for path in api_ingress["spec"]["rules"][0]["http"]["paths"]
+    }
+    assert paths == {"/": "recsys-demo-web"}
+    assert api_paths == {
         "/api": "recsys-demo-api",
         "/healthz": "recsys-demo-api",
         "/ready": "recsys-demo-api",
-        "/": "recsys-demo-web",
     }
 
 
