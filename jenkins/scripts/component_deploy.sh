@@ -370,6 +370,29 @@ rollback_demo_release() {
   fi
 }
 
+migrate_demo_ingress_split() {
+  local legacy_api_path=""
+  local frontend_upstream="recsys-demo-web.${namespace_demo}.svc.cluster.local"
+
+  # ingress-nginx rejects two resources that temporarily claim the same
+  # host/path. Older releases kept /, /api, /healthz and /ready in one
+  # Ingress, while the mesh-safe chart needs separate frontend/backend
+  # Ingresses so each location gets the correct upstream Host header.
+  legacy_api_path="$(kubectl get ingress/recsys-demo-web -n "${namespace_demo}" \
+    -o jsonpath='{range .spec.rules[*].http.paths[*]}{.path}{"\n"}{end}' 2>/dev/null \
+    | grep -Fx '/api' || true)"
+  if [[ -z "${legacy_api_path}" ]] || kubectl get ingress/recsys-demo-api \
+    -n "${namespace_demo}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  kubectl patch ingress/recsys-demo-web -n "${namespace_demo}" --type=json \
+    --patch "[\
+      {\"op\":\"add\",\"path\":\"/metadata/annotations/nginx.ingress.kubernetes.io~1upstream-vhost\",\"value\":\"${frontend_upstream}\"},\
+      {\"op\":\"replace\",\"path\":\"/spec/rules/0/http/paths\",\"value\":[{\"path\":\"/\",\"pathType\":\"Prefix\",\"backend\":{\"service\":{\"name\":\"recsys-demo-web\",\"port\":{\"number\":80}}}}]}\
+    ]"
+}
+
 deploy_demo_web_unlocked() {
   mkdir -p .demo-web
   local release="${DEMO_WEB_RELEASE:-recsys-demo-web}"
@@ -382,6 +405,8 @@ deploy_demo_web_unlocked() {
   previous_revision="$(helm history "${release}" -n "${namespace_demo}" -o json 2>/dev/null \
     | python3 -c 'import json,sys; rows=json.load(sys.stdin); deployed=[row for row in rows if row.get("status")=="deployed"]; print(deployed[-1]["revision"] if deployed else "")' 2>/dev/null || true)"
   printf '%s\n' "${previous_revision}" >.demo-web/previous-revision
+
+  migrate_demo_ingress_split
 
   if ! helm upgrade --install "${release}" infra/helm/recsys-demo-web \
     --namespace "${namespace_demo}" \

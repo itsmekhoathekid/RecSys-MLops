@@ -132,6 +132,9 @@ def test_jenkins_seeds_demo_view_cicd_and_rollback_jobs() -> None:
     assert "jenkins/demo-web-rollback/Jenkinsfile" in seed
     assert "--atomic" in deploy
     assert "demo_web_smoke.sh" in deploy
+    assert "migrate_demo_ingress_split" in deploy
+    assert "ingress/recsys-demo-api" in deploy
+    assert "nginx.ingress.kubernetes.io~1upstream-vhost" in deploy
     assert 'with_file_lock "/tmp/recsys-demo-web-helm.lock" deploy_demo_web_unlocked' in deploy
     smoke = (ROOT / "jenkins/scripts/demo_web_smoke.sh").read_text(encoding="utf-8")
     assert 'kubectl exec -n "${namespace}" deploy/recsys-demo-api -c backend' in smoke
