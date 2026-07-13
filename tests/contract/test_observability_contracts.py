@@ -169,6 +169,13 @@ def test_data_pipeline_dashboard_uses_live_metrics_and_explicit_freshness():
     assert "Event Throughput" in panels
     assert "Stream Freshness" in panels
     assert "Redis Connected Clients" in panels
+    throughput_expression = panels["Event Throughput"]["targets"][0]["expr"]
+    assert "flink_taskmanager_job_task_numRecordsOutPerSecond" in throughput_expression
+    assert 'namespace="recsys-dataflow"' in throughput_expression
+    assert 'job_name=~".*realtime_online$"' in throughput_expression
+    assert 'task_name=~"Source:_cdc_behavior_events_source.*"' in throughput_expression
+    assert "recsys_streaming_events_total" not in throughput_expression
+    assert panels["Event Throughput"]["fieldConfig"]["defaults"]["decimals"] >= 2
     assert "recsys_streaming_events_total" in expressions
     assert "pipeline_role=\"online\"" in expressions
     assert "recsys_ml_feature_drift_psi" in expressions
@@ -178,6 +185,14 @@ def test_data_pipeline_dashboard_uses_live_metrics_and_explicit_freshness():
     assert "recsys_streaming_event_count" not in expressions
     assert "recsys_feature_drift_score" not in expressions
     assert "window_start" not in expressions
+
+
+def test_gcp_observability_values_do_not_take_ownership_of_existing_namespace():
+    values = yaml.safe_load(
+        Path("infra/helm/recsys-observability/values-gcp.yaml").read_text(encoding="utf-8")
+    )
+
+    assert values["namespace"] == {"create": False, "name": "observability"}
 
 
 def test_observability_does_not_scrape_missing_sql_exporter():

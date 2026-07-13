@@ -133,7 +133,6 @@ flowchart LR
     RankTopK["Candidate Scoring + Top-K"]
     TopK["Top-K Recommendations"]
 
-    Gateway --> API
     API --> FeatureAPI
     FeatureAPI --> API
     API --> Router
@@ -156,14 +155,19 @@ flowchart LR
   subgraph UX["User / Client"]
     direction TB
     EndUser["End User"]
-    ClientApp["Client Application"]
+    WebUI["React Recommendation Web UI"]
+    DemoAPI["Demo Web FastAPI"]
 
-    EndUser --> ClientApp
+    WebUI --> DemoAPI
   end
-  ClientApp -->|recommendation request| Gateway
-  TopK -->|recommendations| ClientApp
-  ClientApp --> EndUser
-  ClientApp -.->|clicks, carts, purchases| SourceDB
+  EndUser -->|HTTPS| Gateway
+  Gateway -->|serve web application| WebUI
+  DemoAPI -->|request recommendations| API
+  TopK -->|recommendation response| DemoAPI
+  DemoAPI -->|return recommendations| WebUI
+  WebUI -->|render recommendations| EndUser
+  DemoAPI -->|write views, carts, purchases,<br/>requests and impressions| SourceDB
+  DemoAPI -->|poll realtime feature status| FeatureAPI
 
   %% ===== Cross-cutting platform capabilities =====
   subgraph OBS["Observability"]
@@ -190,6 +194,9 @@ flowchart LR
   API -.-> Prometheus
   API -.-> Logs
   API -.-> OTel
+  DemoAPI -.-> Prometheus
+  DemoAPI -.-> Logs
+  DemoAPI -.-> OTel
   StableServing -.-> Prometheus
   CandidateServing -.-> Prometheus
 
@@ -213,12 +220,16 @@ flowchart LR
   AppCD -->|upgrade analytics| Superset
   AppCD -->|upgrade ML runtime| KFP
   AppCD -->|upgrade API serving| API
+  AppCD -->|helm upgrade demo web| DemoAPI
+  AppCD -->|helm upgrade React UI| WebUI
   AppCD -->|helm upgrade stable serving| StableServing
   AppCD -->|helm upgrade candidate serving| CandidateServing
   AppCD -->|upgrade observability| Grafana
   Platform -.-> Airflow
   Platform -.-> KFP
   Platform -.-> API
+  Platform -.-> DemoAPI
+  Platform -.-> WebUI
   Platform -.-> StableServing
   Platform -.-> CandidateServing
 
@@ -231,7 +242,7 @@ flowchart LR
   class Generator,SourceDB,Raw,Debezium,Kafka,BronzeLake,Spark,SilverGoldLake,Flink,Airflow,DataChecks,DataHub,SilverSync,Analytics,Superset,AnalyticsStakeholder data;
   class Offline,Materialize,Online,TrackingDB,Artifacts,ModelStore,Registry store;
   class Drift,KFP,Ray,Evaluate,MLflow,CandidateSelect,ModelCD,ShadowDeploy,ShadowGate,Progressive,RolloutGate,PromoteModel,Fallback,Cleanup ml;
-  class EndUser,ClientApp,Gateway,API,FeatureAPI,Router,StableServing,CandidateServing,RankTopK,TopK serve;
+  class EndUser,WebUI,DemoAPI,Gateway,API,FeatureAPI,Router,StableServing,CandidateServing,RankTopK,TopK serve;
   class Pushgateway,Prometheus,Logs,OTel,Tempo,Grafana,Alerts,Dev,Tests,Coverage,CIFail,Build,AppCD,Platform ops;
 ```
 
@@ -247,12 +258,15 @@ flowchart LR
   %% =========================
   subgraph S0["1. Data Sources & Feedback"]
     direction TB
-    User["Users / Client Applications"]
+    User["End User"]
+    WebUIRef["React Recommendation Web UI"]
+    DemoAPIRef["Demo Web FastAPI"]
     Generator["Historical + Realtime Data Generator"]
     SourceDB[("Operational PostgreSQL<br/>users, products, sessions,<br/>requests, impressions, events, orders")]
     RawFiles["Historical raw files<br/>run manifest + table files"]
 
-    User -. "business interactions / feedback" .-> SourceDB
+    User --> WebUIRef --> DemoAPIRef
+    DemoAPIRef -- "write web events, requests and impressions" --> SourceDB
     Generator --> SourceDB
     Generator --> RawFiles
   end
@@ -454,7 +468,6 @@ flowchart LR
     Rank["Score candidates + Top-K ranking"]
     Response["Recommendation response<br/>items + model version + experiment variant"]
 
-    Gateway --> RecommendationAPI
     RecommendationAPI --> FeatureAPI
     FeatureAPI --> RecommendationAPI
     RecommendationAPI --> ABRouter
@@ -464,7 +477,10 @@ flowchart LR
     CandidateTriton --> Rank
     Rank --> Response
   end
-  User -- "HTTPS recommendation request" --> Gateway
+  User -- "HTTPS" --> Gateway
+  Gateway -- "serve React UI" --> WebUIRef
+  DemoAPIRef -- "request recommendations" --> RecommendationAPI
+  DemoAPIRef -. "poll feature status" .-> FeatureAPI
   FeatureAPI -- "Feast get_online_features" --> OnlineFS
   OnlineFS -- "user, item and candidate features" --> FeatureAPI
   Champion --> StableTriton
@@ -472,7 +488,7 @@ flowchart LR
   CandidateCleanup -. "delete candidate service" .-> CandidateTriton
   JenkinsCD -. "deploy / update" .-> StableTriton
   JenkinsCD -. "temporary candidate" .-> CandidateTriton
-  Response --> User
+  Response --> DemoAPIRef --> WebUIRef --> User
 
   %% =========================
   %% Observability feedback loop
@@ -494,6 +510,9 @@ flowchart LR
   Airflow -. "task / quality metrics" .-> Pushgateway
   Drift -. "PSI + retrain status" .-> Pushgateway
   RecommendationAPI -. "request, latency, inference, A/B metrics" .-> Prometheus
+  DemoAPIRef -. "web API metrics" .-> Prometheus
+  DemoAPIRef -. "structured logs" .-> Promtail
+  DemoAPIRef -. "distributed traces" .-> OTel
   FeatureAPI -. "feature lookup metrics" .-> Prometheus
   StableTriton -. "runtime metrics" .-> Prometheus
   CandidateTriton -. "runtime metrics" .-> Prometheus
@@ -515,7 +534,7 @@ flowchart LR
   class Airflow,Debezium,Kafka,RawLake,BatchIngest,Bronze,SparkDP2,SilverGold,SparkFeatures,FeatureAudit,Flink,StreamOnline,StreamOffline,CandidatePool,DataQuality,LakeOptimize,AnalyticsSync,Trino,dbt,Superset,AnalyticsStakeholder data;
   class FeastRepo,OfflineFS,Materialize,OnlineFS,AnalyticsCatalog,MLflowDB,ArtifactStore,VersionedModel store;
   class Drift,KFP,PITJoin,Dataset,RayTune,RayDDP,BST,Evaluate,Promote,MLflow,Watcher,JenkinsCD,Shadow,Progressive,Champion,Rollback,CandidateCleanup ml;
-  class Gateway,RecommendationAPI,FeatureAPI,ABRouter,StableTriton,CandidateTriton,Rank,Response serving;
+  class WebUIRef,DemoAPIRef,Gateway,RecommendationAPI,FeatureAPI,ABRouter,StableTriton,CandidateTriton,Rank,Response serving;
   class Pushgateway,Prometheus,Promtail,Loki,OTel,Tempo,Grafana,Governance observe;
   class RetrainDecision,OfflineGate,ChampionCheck,ShadowGate,OnlineGate decision;
 ```
@@ -530,8 +549,9 @@ flowchart LR
   subgraph UX2["User / Client"]
     direction TB
     EndUser2["End User"]
-    Client2["Client Application"]
-    EndUser2 --> Client2
+    WebUI2["React Recommendation Web UI"]
+    DemoAPI2["Demo Web FastAPI"]
+    WebUI2 --> DemoAPI2
   end
 
   subgraph API2["API Serving"]
@@ -541,7 +561,6 @@ flowchart LR
     FeatureAPI2["Online Feature FastAPI"]
     Router2{"Stable / A-B / Shadow Router"}
 
-    Gateway2 --> RecAPI2
     RecAPI2 --> FeatureAPI2 --> RecAPI2
     RecAPI2 --> Router2
   end
@@ -553,6 +572,16 @@ flowchart LR
 
   FeatureAPI2 -->|Feast SDK get_online_features| Redis2
   Redis2 -->|online features| FeatureAPI2
+
+  subgraph FB2["Realtime Web Feedback"]
+    direction TB
+    SourcePostgres2[("Source PostgreSQL")]
+    CDC2["Debezium → Kafka → Flink"]
+    SourcePostgres2 --> CDC2
+  end
+  DemoAPI2 -->|write views, carts, purchases,<br/>requests and impressions| SourcePostgres2
+  CDC2 -->|update online features| Redis2
+  DemoAPI2 -->|poll feature update status| FeatureAPI2
 
   subgraph MS2["Model Serving"]
     direction TB
@@ -571,9 +600,12 @@ flowchart LR
   Router2 -->|candidate| Candidate2
   Router2 -.->|shadow copy| Candidate2
 
-  Client2 -->|recommendation request| Gateway2
-  Response2 -->|recommendations| Client2
-  Client2 --> EndUser2
+  EndUser2 -->|HTTPS| Gateway2
+  Gateway2 -->|serve React UI| WebUI2
+  DemoAPI2 -->|request recommendations| RecAPI2
+  Response2 -->|recommendations| DemoAPI2
+  DemoAPI2 -->|return response| WebUI2
+  WebUI2 -->|render recommendations| EndUser2
 
   subgraph MD2["Model Delivery"]
     direction TB
@@ -599,6 +631,9 @@ flowchart LR
   RecAPI2 -.-> Prometheus2
   RecAPI2 -.-> Loki2
   RecAPI2 -.-> OTel2
+  DemoAPI2 -.-> Prometheus2
+  DemoAPI2 -.-> Loki2
+  DemoAPI2 -.-> OTel2
   FeatureAPI2 -.-> Prometheus2
   FeatureAPI2 -.-> Loki2
   FeatureAPI2 -.-> OTel2
@@ -611,11 +646,11 @@ flowchart LR
   classDef model fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c;
   classDef result fill:#fce4ec,stroke:#c2185b,color:#880e4f;
 
-  class EndUser2,Client2,Gateway2 edge;
-  class RecAPI2,FeatureAPI2,ModelCD2 service;
-  class Redis2,ModelStore2 store;
+  class EndUser2,WebUI2,Gateway2 edge;
+  class DemoAPI2,RecAPI2,FeatureAPI2,ModelCD2 service;
+  class Redis2,SourcePostgres2,ModelStore2 store;
   class Router2,Stable2,Candidate2 model;
-  class Scores2,TopK2,Response2,Prometheus2,Loki2,OTel2,Tempo2,Grafana2 result;
+  class CDC2,Scores2,TopK2,Response2,Prometheus2,Loki2,OTel2,Tempo2,Grafana2 result;
 ```
 
 ## 3. BST Model Architecture
@@ -721,6 +756,7 @@ flowchart TB
 | Analytics, dbt, Trino-facing models, Superset bootstrap | [`apps/analytics/`](../../../apps/analytics/) |
 | Kubeflow, KubeRay, BST training, evaluation, promotion | [`apps/ml-system/`](../../../apps/ml-system/) |
 | Online feature and recommendation APIs | [`apps/api-serving/`](../../../apps/api-serving/) |
+| React recommendation UI and event-writing demo API | [`apps/demo-web/`](../../../apps/demo-web/) |
 | Helm, Terraform, Kubernetes, Cloud Build | [`infra/`](../../../infra/) |
 | Jenkins CI/CD and controlled model rollout | [`Jenkinsfile`](../../../Jenkinsfile), [`jenkins/`](../../../jenkins/) |
 | Unit, contract, integration, E2E, and load verification | [`tests/`](../../../tests/) |

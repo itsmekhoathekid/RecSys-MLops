@@ -1,3 +1,7 @@
+namespace:
+  create: false
+  name: observability
+
 retention:
   prometheus: 7d
 

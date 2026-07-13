@@ -4,7 +4,7 @@
   "tags": ["recsys", "data-platform", "streaming"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 6,
   "refresh": "15s",
   "graphTooltip": 1,
   "time": { "from": "now-1h", "to": "now" },
@@ -13,10 +13,10 @@
       "id": 1,
       "type": "stat",
       "title": "Event Throughput",
-      "description": "Live source event rate published by the meshed realtime producer before CDC and Flink processing.",
+      "description": "Behavior-event rate observed at the online Flink CDC source. Both generated traffic and demo-web view/cart/purchase events converge here; the offline consumer is excluded to avoid double counting.",
       "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
-      "targets": [{ "expr": "sum(rate(recsys_streaming_events_total{pipeline_role=\"online\"}[$__rate_interval])) or vector(0)", "legendFormat": "events/s" }],
-      "fieldConfig": { "defaults": { "unit": "eps", "decimals": 1, "color": { "mode": "palette-classic" } } },
+      "targets": [{ "expr": "sum(flink_taskmanager_job_task_numRecordsOutPerSecond{namespace=\"recsys-dataflow\",job_name=~\".*realtime_online$\",task_name=~\"Source:_cdc_behavior_events_source.*\"}) or vector(0)", "legendFormat": "events/s" }],
+      "fieldConfig": { "defaults": { "unit": "eps", "decimals": 2, "color": { "mode": "palette-classic" } } },
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
     },
     {
@@ -53,7 +53,7 @@
       "title": "Streaming Event Rates",
       "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
       "targets": [
-        { "expr": "sum(rate(recsys_streaming_events_total{pipeline_role=\"online\"}[$__rate_interval]))", "legendFormat": "events/s" },
+        { "expr": "sum(flink_taskmanager_job_task_numRecordsOutPerSecond{namespace=\"recsys-dataflow\",job_name=~\".*realtime_online$\",task_name=~\"Source:_cdc_behavior_events_source.*\"})", "legendFormat": "events/s" },
         { "expr": "sum(rate(recsys_streaming_late_events_total{pipeline_role=\"online\"}[$__rate_interval]))", "legendFormat": "late/s" },
         { "expr": "sum(rate(recsys_streaming_duplicate_events_total{pipeline_role=\"online\"}[$__rate_interval]))", "legendFormat": "duplicates/s" }
       ],

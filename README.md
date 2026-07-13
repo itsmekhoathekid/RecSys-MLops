@@ -16,7 +16,17 @@ This project is an end-to-end recommendation platform for e-commerce. It turns c
 
 - **Serving, infrastructure, and delivery:** FastAPI retrieves Feast online features, calls the Triton V2 inference API, ranks candidates, and returns personalized Top-K recommendations through NGINX. KServe manages stable and candidate Triton deployments, while KEDA HTTP/resource scalers and HPA policies autoscale API and inference workloads. Terraform and Helm provision GCP/GKE and Kubernetes resources; Jenkins and Cloud Build automate testing, image publishing, and deployment with shadow traffic, sticky progressive A/B rollout, model promotion, champion fallback, Helm rollback, and candidate cleanup.
 
+- **Web UI module:** Provides a React, TypeScript, Vite, and TanStack Query storefront served by a non-root NGINX container, backed by a same-origin FastAPI API. The backend uses a bounded PostgreSQL connection pool for transactional user, event, and order writes, and calls the feature and recommendation services to exercise the complete `PostgreSQL → Debezium → Kafka → Flink → Redis/Feast → Triton` real-time path. The frontend and backend are released atomically with Helm and include ingress routing, PDBs, External Secrets, Prometheus/OpenTelemetry instrumentation, CI security checks, deployment smoke tests, and revision-based rollback.
+
 - **Security and observability:** Vault and External Secrets Operator manage runtime credentials; Istio mTLS, authorization policies, and Kubernetes NetworkPolicies secure service-to-service communication. Prometheus and Pushgateway collect infrastructure, pipeline, quality, drift, API, and model-rollout metrics; Grafana provides dashboards and alerts, Loki/Promtail centralize logs, and Tempo/OpenTelemetry provide distributed tracing.
+
+---
+
+## 🎬 Recommendation Web Demo
+
+The demo shows the production web flow from user interactions and streaming feature updates through personalized recommendation serving.
+
+[![Recommendation Web Demo](docs/pngs/web_demo.gif)](docs/pngs/web_demo.mp4)
 
 ---
 
@@ -24,14 +34,16 @@ This project is an end-to-end recommendation platform for e-commerce. It turns c
 
 1. [🛍️ Business Domain](#-business-domain)
 2. [📝 System Overview](#-system-overview)
-3. [🏗️ Architecture](#-architecture)
+3. [🎬 Recommendation Web Demo](#-recommendation-web-demo)
+4. [🏗️ Architecture](#-architecture)
    - [Overall System Flow](#overall-system-flow)
    - [Serving Pipeline High-Level Architecture](#serving-pipeline-high-level-architecture)
+   - [Progressive A/B Testing and Automatic Rollback](#progressive-ab-testing-and-automatic-rollback)
    - [Data Platform Pipeline](#data-platform-pipeline)
    - [Ranking Sequence Model Architecture](#ranking-sequence-model-architecture)
-4. [📁 Repository Main Folder Structure](#-repository-main-folder-structure)
-5. [📖 Code Documentation Standards](#-code-documentation-standards)
-6. [🗂️ Coursework Documentation](#-coursework-documentation)
+5. [📁 Repository Main Folder Structure](#-repository-main-folder-structure)
+6. [📖 Code Documentation Standards](#-code-documentation-standards)
+7. [🗂️ Coursework Documentation](#-coursework-documentation)
 
 ---
 
@@ -39,236 +51,9 @@ This project is an end-to-end recommendation platform for e-commerce. It turns c
 
 ### Overall System Flow
 
-The following Mermaid diagram is the **End-to-End Platform** view from [high-level system design](<docs/submission/rubic-final-coursework-(final-ml)/high_level_system_design.md>).
+The following diagram presents the **End-to-End Platform** architecture documented in [high-level system design](<docs/submission/rubic-final-coursework-(final-ml)/high_level_system_design.md>).
 
-```mermaid
-flowchart LR
-  %% ===== Data platform and feature store =====
-  subgraph DP["Data Platform & Feature Store"]
-    direction TB
-    Generator["Historical + Realtime<br/>Data Generator"]
-    SourceDB[("Operational PostgreSQL")]
-    Raw[("Raw Data / MinIO")]
-    Debezium["Debezium CDC"]
-    Kafka["Kafka"]
-    BronzeLake[("Iceberg Bronze Tables")]
-    Spark["Spark Batch<br/>Feature Engineering"]
-    SilverGoldLake[("Iceberg Silver / Gold Tables")]
-    Flink["Flink Realtime<br/>Feature Engineering"]
-    Airflow["Airflow Orchestration"]
-    DataChecks["Data Quality + Pipeline Health<br/>failures, freshness, contracts, lag"]
-    DataHub["DataHub Governance<br/>Catalog + Lineage"]
-
-    Generator --> Raw --> BronzeLake --> Spark --> SilverGoldLake
-    Generator --> SourceDB --> Debezium --> Kafka --> Flink
-    Airflow -.-> Spark
-    Airflow -.-> Flink
-    Airflow -.-> DataChecks
-    Spark -.-> DataChecks
-    Flink -.-> DataChecks
-    Kafka -.-> DataChecks
-    BronzeLake -.-> DataHub
-    SilverGoldLake -.-> DataHub
-    Kafka -.-> DataHub
-
-    subgraph FP["Feast Feature Store"]
-      direction TB
-      Offline[("Feast Offline Store<br/>PostgreSQL")]
-      Materialize["Feast Materialization"]
-      Online[("Feast Online Store<br/>Redis")]
-
-      Offline --> Materialize --> Online
-    end
-
-    Spark --> Offline
-    Flink --> Offline
-    Flink --> Online
-    Airflow -.-> Materialize
-  end
-
-  %% ===== Analytics platform =====
-  subgraph AP["Analytics Platform"]
-    direction TB
-    SilverSync["Silver Sync<br/>Iceberg Silver → Analytics Staging"]
-    Analytics["Trino + dbt<br/>Gold marts"]
-    Superset["Superset BI"]
-    AnalyticsStakeholder["Analytics Stakeholders<br/>Business / Product / ML"]
-
-    SilverSync --> Analytics --> Superset --> AnalyticsStakeholder
-  end
-
-  SilverGoldLake -->|read curated Silver tables| SilverSync
-  Airflow -.-> SilverSync
-
-  %% ===== ML platform =====
-  subgraph ML["ML Training Platform"]
-    direction TB
-    Drift["Feature Drift Monitoring"]
-    KFP["Kubeflow Pipeline<br/>prepare → train → evaluate"]
-    Ray["KubeRay<br/>Ray Tune + Distributed Training"]
-    Evaluate["Model Evaluation<br/>& Promotion Gate"]
-
-    Drift -->|retrain trigger| KFP
-    KFP --> Ray --> Evaluate
-  end
-
-  Offline --> Drift
-  Offline -->|historical training features| KFP
-  Airflow -.-> Drift
-
-  %% ===== Tracking, artifacts and model delivery =====
-  subgraph MR["Experiment Tracking & Model Registry"]
-    direction TB
-    MLflow["MLflow"]
-    TrackingDB[("PostgreSQL<br/>metadata + registry")]
-    Artifacts[("MinIO<br/>checkpoints + artifacts")]
-    ModelStore[("Versioned Triton<br/>Model Repository")]
-
-    MLflow --> TrackingDB
-    MLflow --> Artifacts
-  end
-
-  Ray --> MLflow
-  Evaluate --> MLflow
-  Evaluate --> ModelStore
-
-  subgraph CD["Controlled Model CD"]
-    direction TB
-    CandidateSelect["Select MLflow Candidate<br/>candidate=test"]
-    ModelCD["Jenkins Model CD"]
-    ShadowDeploy["Shadow Deployment<br/>candidate gets async traffic copy<br/>user response stays on control"]
-    ShadowGate{"Candidate ready and<br/>shadow healthy?"}
-    Progressive["Progressive A/B<br/>10% → 25% → 50%<br/>wait for samples at each stage"]
-    RolloutGate{"Online gates pass?<br/>sample count, errors, p95 latency"}
-    PromoteModel["Promote Candidate<br/>update latest + champion alias"]
-    Fallback["Automatic Fallback<br/>candidate weight = 0<br/>keep old champion"]
-    Cleanup["Delete Temporary<br/>Candidate Triton"]
-
-    CandidateSelect --> ModelCD --> ShadowDeploy --> ShadowGate
-    ShadowGate -->|pass| Progressive --> RolloutGate
-    ShadowGate -->|fail| Fallback
-    RolloutGate -->|hold: need more samples| Progressive
-    RolloutGate -->|pass at 50%| PromoteModel
-    RolloutGate -->|regression| Fallback
-    PromoteModel --> Cleanup
-    Fallback --> Cleanup
-  end
-  ModelStore --> ModelCD
-  MLflow -.->|candidate and champion aliases| CandidateSelect
-
-  %% ===== Online serving =====
-  subgraph OS["Online Serving"]
-    direction TB
-    Gateway["NGINX HTTPS Gateway"]
-    API["Recommendation FastAPI"]
-    FeatureAPI["Online Feature FastAPI"]
-    Router["Stable / A-B / Shadow Router"]
-    StableServing["Stable KServe + Triton"]
-    CandidateServing["Candidate KServe + Triton"]
-    RankTopK["Candidate Scoring + Top-K"]
-    TopK["Top-K Recommendations"]
-
-    Gateway --> API
-    API --> FeatureAPI
-    FeatureAPI --> API
-    API --> Router
-    Router -->|control| StableServing
-    Router -->|candidate| CandidateServing
-    Router -.->|shadow copy| CandidateServing
-    StableServing --> RankTopK
-    CandidateServing --> RankTopK
-    RankTopK --> TopK
-  end
-
-  FeatureAPI -->|read via Feast SDK| Online
-  Online -->|user, item and candidate features| FeatureAPI
-  ShadowDeploy -.->|deploy candidate at 0% response traffic| CandidateServing
-  Progressive -->|set candidate weight 10 / 25 / 50| Router
-  PromoteModel -->|replace stable champion| StableServing
-  Fallback -->|set candidate weight to 0| Router
-  Cleanup -.->|remove temporary candidate| CandidateServing
-
-  subgraph UX["User / Client"]
-    direction TB
-    EndUser["End User"]
-    ClientApp["Client Application"]
-
-    EndUser --> ClientApp
-  end
-  ClientApp -->|recommendation request| Gateway
-  TopK -->|recommendations| ClientApp
-  ClientApp --> EndUser
-  ClientApp -.->|clicks, carts, purchases| SourceDB
-
-  %% ===== Cross-cutting platform capabilities =====
-  subgraph OBS["Observability"]
-    direction TB
-    Pushgateway["PushGateway + Exporters"]
-    Prometheus["Prometheus Metrics"]
-    Logs["Promtail + Loki Logs"]
-    OTel["OpenTelemetry<br/>OTLP Traces"]
-    Tempo["Tempo Trace Backend"]
-    Grafana["Grafana Dashboards"]
-    Alerts["Grafana Alerts<br/>data quality, job failures,<br/>stream lag and service health"]
-
-    Pushgateway --> Prometheus --> Grafana --> Alerts
-    Logs --> Grafana
-    OTel --> Tempo --> Grafana
-  end
-  DataChecks -.-> Pushgateway
-  Airflow -.-> Prometheus
-  Airflow -.-> Logs
-  Spark -.-> Logs
-  Flink -.-> Logs
-  KFP -.-> Prometheus
-  ModelCD -.-> Prometheus
-  API -.-> Prometheus
-  API -.-> Logs
-  API -.-> OTel
-  StableServing -.-> Prometheus
-  CandidateServing -.-> Prometheus
-
-  subgraph DELIVERY["Platform Delivery"]
-    direction TB
-    Dev["Developer + Git"]
-    Tests["Unit + Integration Tests"]
-    Coverage{"Coverage > 90%?"}
-    CIFail["Fail CI"]
-    Build["Build Versioned Docker Images<br/>Jenkins + Cloud Build"]
-    Registry[("GCP Artifact Registry")]
-    AppCD["Application CD<br/>helm upgrade --install"]
-    Platform["Infrastructure: Terraform<br/>GKE, security, secrets, autoscaling"]
-
-    Dev --> Tests --> Coverage
-    Coverage -->|pass| Build --> Registry
-    Coverage -->|fail| CIFail
-    Registry -->|pull versioned images| AppCD
-  end
-  AppCD -->|upgrade data platform| Airflow
-  AppCD -->|upgrade analytics| Superset
-  AppCD -->|upgrade ML runtime| KFP
-  AppCD -->|upgrade API serving| API
-  AppCD -->|helm upgrade stable serving| StableServing
-  AppCD -->|helm upgrade candidate serving| CandidateServing
-  AppCD -->|upgrade observability| Grafana
-  Platform -.-> Airflow
-  Platform -.-> KFP
-  Platform -.-> API
-  Platform -.-> StableServing
-  Platform -.-> CandidateServing
-
-  classDef data fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
-  classDef store fill:#e8f5e9,stroke:#388e3c,color:#1b5e20;
-  classDef ml fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c;
-  classDef serve fill:#fce4ec,stroke:#c2185b,color:#880e4f;
-  classDef ops fill:#fff3e0,stroke:#ef6c00,color:#4e342e;
-
-  class Generator,SourceDB,Raw,Debezium,Kafka,BronzeLake,Spark,SilverGoldLake,Flink,Airflow,DataChecks,DataHub,SilverSync,Analytics,Superset,AnalyticsStakeholder data;
-  class Offline,Materialize,Online,TrackingDB,Artifacts,ModelStore,Registry store;
-  class Drift,KFP,Ray,Evaluate,MLflow,CandidateSelect,ModelCD,ShadowDeploy,ShadowGate,Progressive,RolloutGate,PromoteModel,Fallback,Cleanup ml;
-  class EndUser,ClientApp,Gateway,API,FeatureAPI,Router,StableServing,CandidateServing,RankTopK,TopK serve;
-  class Pushgateway,Prometheus,Logs,OTel,Tempo,Grafana,Alerts,Dev,Tests,Coverage,CIFail,Build,AppCD,Platform ops;
-```
+![End-to-End Recommendation Platform Architecture](docs/pngs/overview_final.png)
 
 ### Serving Pipeline High-Level Architecture
 
@@ -365,6 +150,47 @@ flowchart LR
   class Redis2,ModelStore2 store;
   class Router2,Stable2,Candidate2 model;
   class Scores2,TopK2,Response2,Prometheus2,Loki2,OTel2,Tempo2,Grafana2 result;
+```
+
+### Progressive A/B Testing and Automatic Rollback
+
+The model-delivery controller turns an MLflow candidate into a shadow deployment, then progressively exposes sticky user traffic at **10% → 25% → 50%**. At every step, Jenkins evaluates fresh control/candidate samples from Prometheus; a regression immediately restores champion-only traffic, while a final pass promotes the candidate and removes the temporary Triton service. See [A/B testing](<docs/submission/rubic-final-coursework-(final-ml)/ab_testing.md>) and [progressive rollout details](<docs/submission/rubic-final-coursework-(final-ml)/noval_ideas.md>).
+
+```mermaid
+flowchart TD
+  Candidate["Kubeflow registers versioned model<br/>MLflow candidate = test"] --> Watcher["Rollout watcher claims candidate<br/>and triggers Jenkins Model CD"]
+  Watcher --> Shadow["Deploy candidate KServe/Triton<br/>shadow traffic, user response from champion"]
+  Shadow --> ShadowGate{"Candidate Ready and<br/>shadow health gates pass?"}
+
+  ShadowGate -->|No| Rollback["Automatic rollback<br/>A/B weight = 0, shadow disabled"]
+  ShadowGate -->|Yes| AB10["Sticky A/B rollout<br/>candidate weight = 10%"]
+
+  AB10 --> Samples["Collect fresh control/candidate samples<br/>Prometheus + Grafana"]
+  AB25["Increase candidate weight to 25%"] --> Samples
+  AB50["Increase candidate weight to 50%"] --> Samples
+  Samples --> SampleGate{"At least 100 fresh samples<br/>for both variants?"}
+  SampleGate -->|No: HOLD| Samples
+  SampleGate -->|Yes| OnlineGate{"Online gates pass?<br/>error delta <= 0.02<br/>p95 latency <= 1.5x control<br/>confidence >= 0.95x control"}
+
+  OnlineGate -->|Fail| Rollback
+  OnlineGate -->|Pass at 10%| AB25
+  OnlineGate -->|Pass at 25%| AB50
+  OnlineGate -->|Pass at 50%| Promote["Promote candidate<br/>update stable manifest and MLflow champion"]
+
+  Rollback --> Stable["Delete candidate Triton<br/>serve previous champion only"]
+  Promote --> NewStable["Delete temporary candidate Triton<br/>serve new champion only"]
+
+  classDef control fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
+  classDef candidate fill:#fff3e0,stroke:#ef6c00,color:#4e342e;
+  classDef decision fill:#fff8e1,stroke:#f9a825,color:#5d4037;
+  classDef safe fill:#e8f5e9,stroke:#388e3c,color:#1b5e20;
+  classDef rollback fill:#ffebee,stroke:#c62828,color:#b71c1c;
+
+  class Candidate,Watcher control;
+  class Shadow,AB10,AB25,AB50,Samples candidate;
+  class ShadowGate,SampleGate,OnlineGate decision;
+  class Promote,Stable,NewStable safe;
+  class Rollback rollback;
 ```
 
 ### Data Platform Pipeline
