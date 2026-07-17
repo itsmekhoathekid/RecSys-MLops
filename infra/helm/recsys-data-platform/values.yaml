@@ -167,6 +167,7 @@ realtimeFlinkConsumer:
     enabled: true
     name: realtime-flink-online-store
     groupIdSuffix: online
+    startingOffsets: committed-offsets
   offline:
     enabled: true
     name: realtime-flink-offline-store
