@@ -17,7 +17,7 @@ RUNTIME_ROOTS = [
 ]
 LEGACY_TOKENS = [
     "great_expectations",
-    "dbt",
+    "dbt-core",
     "kafka-minio",
     "s3-sink",
     "bronze/kafka",

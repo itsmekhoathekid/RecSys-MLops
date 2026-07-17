@@ -89,23 +89,41 @@ def _enrich_table(table: pa.Table, *, source_run_id: str, ingestion_ts: datetime
     return _set_column(enriched, "lakehouse_ingestion_ts", timestamps)
 
 
-def _part_name(table_name: str, source_run_id: str) -> str:
+def _part_name(table_name: str, source_run_id: str, fragment_index: int = 0) -> str:
     safe_run_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", source_run_id).strip("-") or "run"
-    return f"part-{safe_run_id}-{table_name}.parquet"
+    return f"part-{safe_run_id}-{fragment_index:05d}-{table_name}.parquet"
 
 
-def _read_parquet_table(table_uri: str) -> pa.Table:
+def _read_parquet_fragments(table_uri: str) -> list[pa.Table]:
     filesystem, path = _filesystem_and_path(table_uri)
-    return pq.read_table(path, filesystem=filesystem)
+    selector = pafs.FileSelector(path, recursive=True)
+    files = sorted(
+        info.path
+        for info in filesystem.get_file_info(selector)
+        if info.type == pafs.FileType.File and info.path.endswith(".parquet")
+    )
+    if not files:
+        raise FileNotFoundError(f"No Parquet files found under {table_uri}")
+    # Read the file's physical schema only. Dataset discovery would otherwise
+    # synthesize Hive partition columns from parent directory names.
+    return [pq.ParquetFile(file_path, filesystem=filesystem).read() for file_path in files]
 
 
-def _write_parquet_table(table: pa.Table, table_uri: str, *, table_name: str, source_run_id: str, mode: str) -> None:
+def _write_parquet_fragments(
+    tables: list[pa.Table],
+    table_uri: str,
+    *,
+    table_name: str,
+    source_run_id: str,
+    mode: str,
+) -> None:
     filesystem, path = _filesystem_and_path(table_uri)
     if mode == "overwrite":
         _delete_dir_if_exists(filesystem, path)
     filesystem.create_dir(path, recursive=True)
-    output_path = f"{path.rstrip('/')}/{_part_name(table_name, source_run_id)}"
-    pq.write_table(table, output_path, filesystem=filesystem, compression="snappy")
+    for fragment_index, table in enumerate(tables):
+        output_path = f"{path.rstrip('/')}/{_part_name(table_name, source_run_id, fragment_index)}"
+        pq.write_table(table, output_path, filesystem=filesystem, compression="snappy")
 
 
 def load_generator_run_to_lakehouse(
@@ -123,16 +141,19 @@ def load_generator_run_to_lakehouse(
         for table_name in RAW_GENERATOR_TABLES:
             source_uri = f"{str(run_path).rstrip('/')}/{table_name}"
             output_uri = layout.table_uri(table_name)
-            table = _read_parquet_table(source_uri)
-            enriched = _enrich_table(table, source_run_id=source_run_id, ingestion_ts=ingestion_ts)
-            _write_parquet_table(
-                enriched,
+            fragments = _read_parquet_fragments(source_uri)
+            enriched_fragments = [
+                _enrich_table(fragment, source_run_id=source_run_id, ingestion_ts=ingestion_ts)
+                for fragment in fragments
+            ]
+            _write_parquet_fragments(
+                enriched_fragments,
                 output_uri,
                 table_name=table_name,
                 source_run_id=source_run_id,
                 mode=mode,
             )
-            counts[table_name] = enriched.num_rows
+            counts[table_name] = sum(fragment.num_rows for fragment in enriched_fragments)
             lineage.add_outputs(BRONZE_URNS[table_name])
         return counts
 

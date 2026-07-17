@@ -57,6 +57,10 @@ spec:
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --checkpoint-min-pause-seconds "$STREAM_CHECKPOINT_MIN_PAUSE_SECONDS" \
+                --checkpoint-timeout-seconds "$STREAM_CHECKPOINT_TIMEOUT_SECONDS" \
+                --tolerable-checkpoint-failures "$STREAM_TOLERABLE_CHECKPOINT_FAILURES" \
+                $([ "$STREAM_UNALIGNED_CHECKPOINTS_ENABLED" = "true" ] && echo "--unaligned-checkpoints-enabled" || echo "--no-unaligned-checkpoints-enabled") \
                 --watermark-delay-minutes "$STREAM_WATERMARK_DELAY_MINUTES" \
                 --allowed-lateness-seconds "$STREAM_ALLOWED_LATENESS_SECONDS" \
                 --watermark-idleness-seconds "$STREAM_WATERMARK_IDLENESS_SECONDS" \
@@ -145,6 +149,10 @@ spec:
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --checkpoint-min-pause-seconds "$STREAM_CHECKPOINT_MIN_PAUSE_SECONDS" \
+                --checkpoint-timeout-seconds "$STREAM_CHECKPOINT_TIMEOUT_SECONDS" \
+                --tolerable-checkpoint-failures "$STREAM_TOLERABLE_CHECKPOINT_FAILURES" \
+                $([ "$STREAM_UNALIGNED_CHECKPOINTS_ENABLED" = "true" ] && echo "--unaligned-checkpoints-enabled" || echo "--no-unaligned-checkpoints-enabled") \
                 --watermark-delay-minutes "$STREAM_WATERMARK_DELAY_MINUTES" \
                 --allowed-lateness-seconds "$STREAM_ALLOWED_LATENESS_SECONDS" \
                 --watermark-idleness-seconds "$STREAM_WATERMARK_IDLENESS_SECONDS" \

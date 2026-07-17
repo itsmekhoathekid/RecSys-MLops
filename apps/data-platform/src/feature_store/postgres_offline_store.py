@@ -20,6 +20,7 @@ OFFLINE_STORE_TABLES = FEATURE_TABLES + ("ml_ranking_labels",)
 
 TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "user_sequence_features": [
+        ("source_event_id", "TEXT"),
         ("user_id", "BIGINT"),
         ("feature_timestamp", "TIMESTAMPTZ"),
         ("event_timestamp", "TIMESTAMPTZ"),
@@ -37,6 +38,7 @@ TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
         ("feature_version", "TEXT"),
     ],
     "user_aggregate_features": [
+        ("source_event_id", "TEXT"),
         ("user_id", "BIGINT"),
         ("feature_timestamp", "TIMESTAMPTZ"),
         ("event_timestamp", "TIMESTAMPTZ"),
@@ -53,6 +55,7 @@ TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
         ("feature_version", "TEXT"),
     ],
     "item_features": [
+        ("source_event_id", "TEXT"),
         ("product_id", "BIGINT"),
         ("feature_timestamp", "TIMESTAMPTZ"),
         ("event_timestamp", "TIMESTAMPTZ"),
@@ -176,6 +179,34 @@ def ensure_offline_store_tables(conn: psycopg.Connection, schema: str, tables: I
                     columns,
                 )
             )
+            for name, pg_type in _column_defs(table_name):
+                cur.execute(
+                    sql.SQL("ALTER TABLE {}.{} ADD COLUMN IF NOT EXISTS {} {}").format(
+                        sql.Identifier(schema),
+                        sql.Identifier(table_name),
+                        sql.Identifier(name),
+                        sql.SQL(pg_type),
+                    )
+                )
+            if table_name in FEATURE_TABLES:
+                cur.execute(
+                    sql.SQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {}.{} (source_event_id) "
+                        "WHERE source_event_id IS NOT NULL"
+                    ).format(
+                        sql.Identifier(f"ux_{table_name}_source_event_id"),
+                        sql.Identifier(schema),
+                        sql.Identifier(table_name),
+                    )
+                )
+            elif table_name == "stream_late_events_dlq":
+                cur.execute(
+                    sql.SQL("CREATE UNIQUE INDEX IF NOT EXISTS {} ON {}.{} (event_id, reason)").format(
+                        sql.Identifier("ux_stream_late_events_dlq_event_reason"),
+                        sql.Identifier(schema),
+                        sql.Identifier(table_name),
+                    )
+                )
         conn.commit()
 
 
@@ -191,7 +222,14 @@ def truncate_offline_store_tables(conn: psycopg.Connection, schema: str, tables:
         conn.commit()
 
 
-def insert_offline_rows(conn: psycopg.Connection, schema: str, table_name: str, rows: list[dict[str, Any]]) -> int:
+def insert_offline_rows(
+    conn: psycopg.Connection,
+    schema: str,
+    table_name: str,
+    rows: list[dict[str, Any]],
+    *,
+    commit: bool = True,
+) -> int:
     if not rows:
         return 0
     known_columns = [name for name, _ in _column_defs(table_name)]
@@ -203,10 +241,21 @@ def insert_offline_rows(conn: psycopg.Connection, schema: str, table_name: str, 
         sql.SQL(", ").join(sql.Identifier(column) for column in columns),
         placeholders,
     )
+    if "source_event_id" in columns:
+        update_columns = [column for column in columns if column != "source_event_id"]
+        assignments = sql.SQL(", ").join(
+            sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(column), sql.Identifier(column))
+            for column in update_columns
+        )
+        statement += sql.SQL(" ON CONFLICT (source_event_id) WHERE source_event_id IS NOT NULL DO UPDATE SET ")
+        statement += assignments
+    elif table_name == "stream_late_events_dlq" and {"event_id", "reason"}.issubset(columns):
+        statement += sql.SQL(" ON CONFLICT (event_id, reason) DO NOTHING")
     values = [[_coerce_value(row.get(column)) for column in columns] for row in rows]
     with conn.cursor() as cur:
         cur.executemany(statement, values)
-        conn.commit()
+        if commit:
+            conn.commit()
     return len(rows)
 
 

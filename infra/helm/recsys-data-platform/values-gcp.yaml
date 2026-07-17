@@ -45,7 +45,7 @@ realtimeProducer:
   nProducts: "5000"
 
 flinkTaskManager:
-  replicas: 1
+  replicas: 2
   resources:
     requests:
       cpu: 500m
@@ -64,7 +64,7 @@ redis:
 realtimeFlinkConsumer:
   replicas: 1
   istioInject: "true"
-  parallelism: "1"
+  parallelism: "2"
   checkpointIntervalSeconds: "120"
   offlineStoreEnabled: true
 

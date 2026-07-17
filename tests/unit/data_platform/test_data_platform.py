@@ -69,7 +69,7 @@ def test_batch_ingestion_uri_helpers_and_column_replacement(monkeypatch):
     table = pa.table({"source_run_id": ["old"], "value": [1]})
     enriched = ingestion._enrich_table(table, source_run_id="run-2", ingestion_ts=ingestion.datetime.now(ingestion.timezone.utc))
     assert enriched.column("source_run_id").to_pylist() == ["run-2"]
-    assert ingestion._part_name("behavior_events", "raw/run id!") == "part-raw-run-id-behavior_events.parquet"
+    assert ingestion._part_name("behavior_events", "raw/run id!") == "part-raw-run-id-00000-behavior_events.parquet"
 
     class MissingDirFilesystem:
         def delete_dir(self, path):
@@ -204,6 +204,9 @@ def test_streaming_payloads_candidate_updates_and_offline_rows():
     assert ("candidate:trending:1h", 10, item["views_1h"] + item["carts_1h"] * 3.0) in candidate_updates(item)
 
     postgres_rows = build_postgres_feast_rows(event, sequence, aggregate, item)
+    assert postgres_rows["user_sequence_features"][0]["source_event_id"] == "e1"
+    assert postgres_rows["user_aggregate_features"][0]["source_event_id"] == "e1"
+    assert postgres_rows["item_features"][0]["source_event_id"] == "e1"
     assert postgres_rows["user_sequence_features"][0]["hist_item_ids"] == [10]
     assert postgres_rows["user_sequence_features"][0]["hist_length"] == 1
     assert postgres_rows["user_aggregate_features"][0]["carts_30m"] == 1

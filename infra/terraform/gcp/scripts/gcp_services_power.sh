@@ -518,16 +518,26 @@ ensure_realtime_kafka_topic() {
   fi
 
   local topic
+  local partitions
   topic="$(kubectl get configmap -n recsys-dataflow recsys-data-platform-config -o jsonpath='{.data.REALTIME_STREAM_TOPIC}' 2>/dev/null || true)"
   topic="${topic:-cdc.behavior_events}"
+  partitions="$(kubectl get configmap -n recsys-dataflow recsys-data-platform-config -o jsonpath='{.data.REALTIME_STREAM_TOPIC_PARTITIONS}' 2>/dev/null || true)"
+  partitions="${partitions:-4}"
 
   echo "Ensure realtime Kafka topic: ${topic}"
   kubectl exec -n recsys-dataflow deploy/kafka -- \
     kafka-topics --bootstrap-server localhost:29092 \
       --create --if-not-exists \
       --topic "${topic}" \
-      --partitions 1 \
+      --partitions "${partitions}" \
       --replication-factor 1 >/dev/null
+
+  local current
+  current="$(kubectl exec -n recsys-dataflow deploy/kafka -- kafka-topics --bootstrap-server localhost:29092 --describe --topic "${topic}" | sed -n 's/.*PartitionCount: \([0-9][0-9]*\).*/\1/p' | head -n 1)"
+  if [[ "${current:-0}" -lt "${partitions}" ]]; then
+    kubectl exec -n recsys-dataflow deploy/kafka -- \
+      kafka-topics --bootstrap-server localhost:29092 --alter --topic "${topic}" --partitions "${partitions}" >/dev/null
+  fi
 }
 
 flink_has_running_job() {

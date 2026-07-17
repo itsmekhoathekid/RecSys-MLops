@@ -15,7 +15,7 @@ locals {
   }
 
   data_platform_sets = {
-    "chartRevision"        = sha1(join("", [for path in ["configmap.yaml", "airflow.yaml", "realtime-flink-consumer.yaml"] : filemd5("${local.helm_dir}/recsys-data-platform/templates/${path}")]))
+    "chartRevision"        = sha1(join("", [for path in ["configmap.yaml", "airflow.yaml", "realtime-flink-consumer.yaml", "kafka-topic-init.yaml"] : filemd5("${local.helm_dir}/recsys-data-platform/templates/${path}")]))
     "namespace.create"     = "false"
     "images.dataflowCli"   = local.images.dataflow_cli
     "images.spark"         = local.images.spark

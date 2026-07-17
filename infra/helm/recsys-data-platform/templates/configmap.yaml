@@ -113,6 +113,7 @@ data:
   REALTIME_STREAM_OFFLINE_GROUP_ID: "{{ .Values.realtimeFlinkConsumer.groupId }}-{{ .Values.realtimeFlinkConsumer.offline.groupIdSuffix }}"
   REALTIME_STREAM_MIN_EVENTS: {{ .Values.realtimeFlinkConsumer.minEvents | quote }}
   REALTIME_STREAM_MAX_EVENTS: {{ .Values.realtimeFlinkConsumer.maxEvents | quote }}
+  REALTIME_STREAM_TOPIC_PARTITIONS: {{ .Values.kafka.topicPartitions | quote }}
   DEBEZIUM_TABLE_INCLUDE_LIST: {{ .Values.realtimeCdcConnector.tableIncludeList | quote }}
   DEBEZIUM_SNAPSHOT_MODE: {{ .Values.realtimeCdcConnector.snapshotMode | quote }}
   DEBEZIUM_SLOT_NAME: {{ .Values.realtimeCdcConnector.slotName | quote }}
@@ -137,3 +138,7 @@ data:
   STREAM_ENABLE_LATE_EVENT_DLQ: {{ .Values.streaming.enableLateEventDlq | quote }}
   STREAM_STATE_TTL_SECONDS: {{ .Values.streaming.stateTtlSeconds | quote }}
   STREAM_DEDUP_STATE_TTL_SECONDS: {{ .Values.streaming.dedupStateTtlSeconds | quote }}
+  STREAM_CHECKPOINT_MIN_PAUSE_SECONDS: {{ .Values.streaming.checkpointMinPauseSeconds | quote }}
+  STREAM_CHECKPOINT_TIMEOUT_SECONDS: {{ .Values.streaming.checkpointTimeoutSeconds | quote }}
+  STREAM_TOLERABLE_CHECKPOINT_FAILURES: {{ .Values.streaming.tolerableCheckpointFailures | quote }}
+  STREAM_UNALIGNED_CHECKPOINTS_ENABLED: {{ .Values.streaming.unalignedCheckpointsEnabled | quote }}

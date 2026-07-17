@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: recsys-realtime-topic-init
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: recsys-realtime-topic-init
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topic-init
+          image: {{ .Values.images.kafka }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-ec"]
+          args:
+            - |
+              until kafka-topics --bootstrap-server {{ .Values.kafka.bootstrapServers }} --list >/dev/null 2>&1; do sleep 5; done
+              kafka-topics --bootstrap-server {{ .Values.kafka.bootstrapServers }} --create --if-not-exists --topic {{ .Values.realtimeFlinkConsumer.topic }} --partitions {{ .Values.kafka.topicPartitions }} --replication-factor 1
+              current="$(kafka-topics --bootstrap-server {{ .Values.kafka.bootstrapServers }} --describe --topic {{ .Values.realtimeFlinkConsumer.topic }} | sed -n 's/.*PartitionCount: \([0-9][0-9]*\).*/\1/p' | head -n 1)"
+              if [ "${current:-0}" -lt {{ .Values.kafka.topicPartitions }} ]; then
+                kafka-topics --bootstrap-server {{ .Values.kafka.bootstrapServers }} --alter --topic {{ .Values.realtimeFlinkConsumer.topic }} --partitions {{ .Values.kafka.topicPartitions }}
+              fi

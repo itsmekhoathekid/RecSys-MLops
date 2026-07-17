@@ -97,6 +97,7 @@ spark:
 kafka:
   name: kafka
   bootstrapServers: kafka:29092
+  topicPartitions: 4
 
 kafkaConnect:
   name: kafka-connect
@@ -122,7 +123,7 @@ flink:
   checkpointStorageUri: s3a://recsys-lakehouse/flink-checkpoints
   istioInject: "false"
   metricsPort: 9249
-  taskSlots: "1"
+  taskSlots: "2"
   taskManagerProcessMemory: "6144m"
   taskManagerTaskHeapMemory: "2048m"
   taskManagerManagedMemory: "2048m"
@@ -175,7 +176,7 @@ realtimeFlinkConsumer:
   groupId: recsys-flink-realtime
   minEvents: "0"
   maxEvents: "0"
-  parallelism: "1"
+  parallelism: "2"
   maxHistoryLength: "50"
   progressLogEvents: "100"
   checkpointIntervalSeconds: "30"
@@ -211,7 +212,7 @@ streaming:
   watermarkDelayMinutes: 5
   allowedLatenessSeconds: 300
   watermarkIdlenessSeconds: 120
-  watermarkAlignmentEnabled: "false"
+  watermarkAlignmentEnabled: "true"
   watermarkAlignmentGroup: recsys-cdc
   watermarkAlignmentMaxDriftSeconds: 60
   watermarkAlignmentUpdateIntervalSeconds: 5
@@ -221,6 +222,10 @@ streaming:
   enableLateEventDlq: "true"
   stateTtlSeconds: 604800
   dedupStateTtlSeconds: 86400
+  checkpointMinPauseSeconds: 10
+  checkpointTimeoutSeconds: 300
+  tolerableCheckpointFailures: 2
+  unalignedCheckpointsEnabled: "true"
 
 observability:
   enabled: true

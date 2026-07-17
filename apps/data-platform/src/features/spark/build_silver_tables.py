@@ -11,16 +11,24 @@ from lakehouse.iceberg import (
 )
 
 
-def _ensure_column(frame: Any, column: str, expression: Any):
-    return frame if column in frame.columns else frame.withColumn(column, expression)
+SUPPORTED_BEHAVIOR_SCHEMA_VERSION = 2
+
+
+def _normalize_optional_column(frame: Any, column: str, default_expression: Any):
+    from pyspark.sql import functions as F
+
+    if column not in frame.columns:
+        return frame.withColumn(column, default_expression)
+    return frame.withColumn(column, F.coalesce(F.col(column), default_expression))
 
 
 def build_clean_behavior_events(events: Any) -> tuple[Any, Any]:
     from pyspark.sql import Window
     from pyspark.sql import functions as F
 
-    normalized = _ensure_column(events, "device_type", F.lit("unknown"))
-    normalized = _ensure_column(normalized, "campaign_id", F.lit("none"))
+    normalized = _normalize_optional_column(events, "device_type", F.lit("unknown"))
+    normalized = _normalize_optional_column(normalized, "campaign_id", F.lit("none"))
+    normalized = _normalize_optional_column(normalized, "schema_version", F.lit(1).cast("smallint"))
     normalized = normalized.withColumn("event_timestamp", F.to_timestamp("event_timestamp"))
     normalized = normalized.withColumn("ingestion_ts", F.to_timestamp("ingestion_ts"))
     normalized = normalized.withColumn(
@@ -31,10 +39,17 @@ def build_clean_behavior_events(events: Any) -> tuple[Any, Any]:
         .otherwise(F.lit(0))
         .cast("smallint"),
     )
+    unsupported = normalized.filter(F.col("schema_version") > F.lit(SUPPORTED_BEHAVIOR_SCHEMA_VERSION)).withColumn(
+        "rejection_reason", F.lit("unsupported_schema_version")
+    )
+    supported = normalized.filter(F.col("schema_version") <= F.lit(SUPPORTED_BEHAVIOR_SCHEMA_VERSION))
     window = Window.partitionBy("event_id").orderBy(F.col("ingestion_ts").desc_nulls_last())
-    ranked = normalized.withColumn("_dedup_rank", F.row_number().over(window))
+    ranked = supported.withColumn("_dedup_rank", F.row_number().over(window))
     clean = ranked.filter(F.col("_dedup_rank") == 1).drop("_dedup_rank")
-    rejected = ranked.filter(F.col("_dedup_rank") > 1).drop("_dedup_rank")
+    duplicates = ranked.filter(F.col("_dedup_rank") > 1).drop("_dedup_rank").withColumn(
+        "rejection_reason", F.lit("duplicate_event_id")
+    )
+    rejected = duplicates.unionByName(unsupported, allowMissingColumns=True)
     return clean.orderBy("event_timestamp", "event_id"), rejected
 
 
@@ -51,7 +66,7 @@ def build_clean_impressions(impressions: Any) -> Any:
 def build_clean_recommendation_requests(requests: Any) -> Any:
     from pyspark.sql import functions as F
 
-    frame = _ensure_column(requests, "request_context", F.lit("{}"))
+    frame = _normalize_optional_column(requests, "request_context", F.lit("{}"))
     return frame.withColumn("request_timestamp", F.to_timestamp("request_timestamp"))
 
 

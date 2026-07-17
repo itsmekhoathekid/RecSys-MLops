@@ -1,5 +1,8 @@
 from collections import defaultdict
 from datetime import date
+from pathlib import Path
+
+import pyarrow.parquet as pq
 
 from behavior import SessionState
 from challenges import ChallengePipeline
@@ -158,8 +161,16 @@ def test_breaking_schema_evolution_can_generate_version_three(small_config):
 
 def test_parquet_round_trip(small_config):
     result = HistoricalDataPipeline(small_config).run()
+    run_path = Path(result["run_path"])
     validation = validate_parquet_output(
-        __import__("pathlib").Path(result["run_path"])
+        run_path
     )
     assert validation.passed, validation.errors
     assert validation.metrics["row_counts"]["behavior_events"] > 0
+
+    physical_schemas = [
+        pq.ParquetFile(path).schema_arrow
+        for path in sorted((run_path / "behavior_events").rglob("*.parquet"))
+    ]
+    assert any("device_type" not in schema.names for schema in physical_schemas)
+    assert any("device_type" in schema.names for schema in physical_schemas)

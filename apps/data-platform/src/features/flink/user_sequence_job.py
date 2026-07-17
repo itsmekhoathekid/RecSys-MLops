@@ -4,6 +4,8 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any
 
+from features.flink.time_utils import isoformat_utc, parse_event_time
+
 
 @dataclass
 class UserSequenceState:
@@ -32,10 +34,10 @@ class UserSequenceState:
             "impression_ids": [str(row.get("impression_id") or "") for row in rows],
             "sequence_length": len(rows),
             "max_history_length": self.max_history_length,
+            "updated_at": isoformat_utc(parse_event_time(event["event_timestamp"])),
             "feature_version": "bst_sequence_v2",
         }
 
 
 def build_user_sequence_payload(event: dict[str, Any], state: UserSequenceState) -> dict[str, Any]:
     return state.update(event)
-
