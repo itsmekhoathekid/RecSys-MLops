@@ -411,6 +411,7 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
     assert values["e2e"]["realtimeEnabled"] == "true"
     assert values["e2e"]["datahubIngestEnabled"] == "false"
     assert values["realtimeFlinkConsumer"]["offlineStoreSink"] == "postgres"
+    assert values["realtimeFlinkConsumer"]["online"]["startingOffsets"] == "committed-offsets"
     assert values["featurePostgres"]["name"] == "feature-postgres"
     assert values["featurePostgres"]["schema"] == "feature_store"
     assert "LAKEHOUSE_WAREHOUSE" in rendered
