@@ -63,5 +63,10 @@ realtimeFlinkConsumer:
   checkpointIntervalSeconds: "120"
   offlineStoreEnabled: true
 
+streaming:
+  # The proof workload backdates events by 45-180 minutes; one hour yields
+  # both accepted-late and post-cleanup events for the three UI counters.
+  allowedLatenessSeconds: 3600
+
 drift:
   sampleRows: "5000"

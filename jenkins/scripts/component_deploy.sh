@@ -277,7 +277,7 @@ deploy_data_platform_unlocked() {
     --set "flink.taskManagerJvmOverheadMax=${FLINK_TASKMANAGER_JVM_OVERHEAD_MAX:-2048m}" \
     --set "realtimeFlinkConsumer.parallelism=${FLINK_PARALLELISM:-2}" \
     --set "streaming.watermarkDelayMinutes=${STREAM_WATERMARK_DELAY_MINUTES:-5}" \
-    --set "streaming.allowedLatenessSeconds=${STREAM_ALLOWED_LATENESS_SECONDS:-300}" \
+    --set "streaming.allowedLatenessSeconds=${STREAM_ALLOWED_LATENESS_SECONDS:-3600}" \
     --set "streaming.watermarkIdlenessSeconds=${STREAM_WATERMARK_IDLENESS_SECONDS:-120}" \
     --set "streaming.watermarkAlignmentEnabled=${STREAM_WATERMARK_ALIGNMENT_ENABLED:-true}" \
     --set "streaming.watermarkAlignmentGroup=${STREAM_WATERMARK_ALIGNMENT_GROUP:-recsys-cdc}" \
