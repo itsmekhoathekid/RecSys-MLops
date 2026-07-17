@@ -238,13 +238,31 @@ class FeatureClient:
     def candidates(self, user_id: int, limit: int) -> list[int]:
         start = time.perf_counter()
         try:
-            with span("redis.candidates", operation="candidates", limit=limit):
-                raw = self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
-            candidates = [int(item.decode("utf-8") if isinstance(item, bytes) else item) for item in raw]
+            with span("redis.candidates", operation="candidates", user_id=user_id, limit=limit):
+                personalized = self.client.zrevrange(
+                    f"candidate:user:{user_id}",
+                    0,
+                    max(limit - 1, 0),
+                )
+                global_candidates = (
+                    self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
+                    if len(personalized) < limit
+                    else []
+                )
+            candidates: list[int] = []
+            seen: set[int] = set()
+            for item in [*personalized, *global_candidates]:
+                product_id = int(item.decode("utf-8") if isinstance(item, bytes) else item)
+                if product_id in seen:
+                    continue
+                seen.add(product_id)
+                candidates.append(product_id)
+                if len(candidates) >= limit:
+                    break
             observe_redis("candidates", time.perf_counter() - start)
             if candidates or self.allow_fallback:
                 return candidates
-            raise RuntimeError("candidate:popular:global returned no candidates")
+            raise RuntimeError(f"candidate:user:{user_id} and candidate:popular:global returned no candidates")
         except Exception as exc:
             observe_redis("candidates", time.perf_counter() - start, error=True)
             if self.allow_fallback:

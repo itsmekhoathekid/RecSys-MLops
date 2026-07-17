@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from features.flink.candidate_pool_job import candidate_updates
+from features.flink.candidate_pool_job import candidate_updates, refresh_user_candidate_pool
 from features.flink.item_features_job import ItemFeatureState
 from features.flink.realtime_stream_job import (
-    StreamQualityTracker,
     build_postgres_feast_rows,
     build_offline_feature_rows,
     build_realtime_feature_payloads,
@@ -18,6 +16,7 @@ from features.flink.realtime_stream_job import (
     parse_message,
     stream_pipeline_role,
 )
+from features.flink.quality_windows import StreamQualityTracker
 from features.flink.user_aggregate_job import UserAggregateState
 from features.flink.user_sequence_job import UserSequenceState
 from feature_store.online_writer import RedisKeyTemplate, RedisOnlineWriter, dumps_feature_payload
@@ -211,6 +210,35 @@ def test_streaming_payloads_candidate_updates_and_offline_rows():
     assert postgres_rows["user_sequence_features"][0]["hist_length"] == 1
     assert postgres_rows["user_aggregate_features"][0]["carts_30m"] == 1
     assert postgres_rows["item_features"][0]["conversion_rate_7d"] == item["conversion_rate_7d"]
+
+
+def test_refresh_user_candidate_pool_merges_category_candidates_with_ttl():
+    class Redis:
+        def __init__(self):
+            self.calls = []
+
+        def zrevrange(self, key, start, end, withscores=False):
+            self.calls.append(("zrevrange", key, start, end, withscores))
+            return [(b"10", 9.5), ("11", 8.0)]
+
+        def zadd(self, key, values):
+            self.calls.append(("zadd", key, values))
+
+        def zremrangebyrank(self, key, start, end):
+            self.calls.append(("zremrangebyrank", key, start, end))
+
+        def expire(self, key, seconds):
+            self.calls.append(("expire", key, seconds))
+
+    redis = Redis()
+
+    assert refresh_user_candidate_pool(redis, user_id=7, category_id=2, limit=2, ttl_seconds=60) == 2
+    assert redis.calls == [
+        ("zrevrange", "candidate:popular:category:2", 0, 1, True),
+        ("zadd", "candidate:user:7", {"10": 9.5, "11": 8.0}),
+        ("zremrangebyrank", "candidate:user:7", 0, -3),
+        ("expire", "candidate:user:7", 60),
+    ]
 
 
 def test_stream_quality_tracker_marks_bursty_and_late_windows():

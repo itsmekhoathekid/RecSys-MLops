@@ -11,6 +11,7 @@ from typing import Any
 
 from features.flink.candidate_pool_job import (
     candidate_updates,
+    refresh_user_candidate_pool,
 )
 from features.flink.item_features_job import (
     ItemFeatureState,
@@ -27,7 +28,7 @@ from features.flink.event_time import (
     event_time_status,
     late_arrival_metrics,
 )
-from features.flink.quality_windows import StreamQualityTracker, native_quality_window_aggregate
+from features.flink.quality_windows import native_quality_window_aggregate
 from features.flink.runtime_config import apply_state_ttl, configure_checkpointing
 from feature_store.online_writer import RedisOnlineWriter, dumps_feature_payload
 from feature_store.postgres_offline_store import (
@@ -162,7 +163,12 @@ def write_payloads_to_redis(
     candidate_payloads = candidate_updates(item_payload)
     for key, product_id, score in candidate_payloads:
         redis_client.zadd(key, {str(product_id): float(score)})
-    return 3 + len(candidate_payloads)
+    personalized_candidates = refresh_user_candidate_pool(
+        redis_client,
+        user_id=event["user_id"],
+        category_id=item_payload["category_id"],
+    )
+    return 3 + len(candidate_payloads) + int(personalized_candidates > 0)
 
 
 def write_event_to_redis(
@@ -418,7 +424,7 @@ def kafka_offsets_initializer(name: str):
 
 def build_kafka_source(args: argparse.Namespace):
     from pyflink.common.serialization import SimpleStringSchema
-    from pyflink.datastream.connectors.kafka import KafkaSource
+    from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaSource
 
     builder = (
         KafkaSource.builder()
