@@ -131,7 +131,7 @@
       "title": "Offline Data Issues",
       "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
       "targets": [
-        { "expr": "recsys_data_quality_metric{check_name=\"generator.offline.synthetic_issues\",metric_name=~\"duplicate_rate_before_dedup|duplicate_rate_after_dedup|late_arrival_rate|out_of_order_rate|top_city_ratio|top_event_category_ratio\"}", "legendFormat": "{{metric_name}}" }
+        { "expr": "recsys_data_quality_metric{check_name=\"generator.offline.synthetic_issues\",metric_name=~\"duplicate_rate_before_dedup|duplicate_rate_after_dedup|top_city_ratio|top_event_category_ratio\"}", "legendFormat": "{{metric_name}}" }
       ],
       "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.05 }, { "color": "red", "value": 0.15 }] } } },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }
@@ -142,7 +142,7 @@
       "title": "Schema Evolution Nulls",
       "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
       "targets": [
-        { "expr": "recsys_data_quality_metric{check_name=\"generator.offline.synthetic_issues\",metric_name=~\"schema_v1_events|schema_v2_events|null_device_type_events|exact_duplicate_rows|conflicting_duplicate_event_ids\"}", "legendFormat": "{{metric_name}}" }
+        { "expr": "recsys_data_quality_metric{check_name=\"generator.offline.synthetic_issues\",metric_name=~\"schema_v1_events|schema_v2_events|null_device_type_events|exact_duplicate_rows\"}", "legendFormat": "{{metric_name}}" }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 100 }] } } },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true }

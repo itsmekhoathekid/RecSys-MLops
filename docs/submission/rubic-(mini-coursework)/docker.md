@@ -10,17 +10,36 @@ This document covers the rubric rows:
 
 Docker Compose is the local data-platform runtime. GCP proof builds use Cloud Build so image build does not depend on local Docker.
 
-Code reference:
+Runtime orchestration references:
 
-- [infra/docker/docker-compose.dataflow.yml](../../../infra/docker/docker-compose.dataflow.yml): local data platform compose stack.
-- [infra/docker/Dockerfile.base-python](../../../infra/docker/Dockerfile.base-python): shared slim Python base image.
-- [apps/data-platform/Dockerfile.dataflow-cli](../../../apps/data-platform/Dockerfile.dataflow-cli): dataflow CLI, Airflow task, Feast/materialize/drift runtime.
-- [apps/data-platform/Dockerfile.spark](../../../apps/data-platform/Dockerfile.spark): Spark + Iceberg/Hudi runtime.
-- [apps/data-platform/Dockerfile.flink](../../../apps/data-platform/Dockerfile.flink): Flink + Kafka/Iceberg/Redis streaming runtime.
-- [infra/docker/Dockerfile.kafka-connect](../../../infra/docker/Dockerfile.kafka-connect): Kafka Connect Debezium CDC runtime.
-- [infra/docker/Dockerfile.mlflow](../../../infra/docker/Dockerfile.mlflow): MLflow tracking runtime.
-- [apps/ml-system/Dockerfile.spark](../../../apps/ml-system/Dockerfile.spark): ML-specific Spark runtime layered on the shared Spark image.
-- [infra/cloudbuild/recsys-images.yaml](../../../infra/cloudbuild/recsys-images.yaml): GCP Cloud Build image pipeline.
+- [docker-compose.dataflow.yml (line 44)](../../../infra/docker/docker-compose.dataflow.yml#L44), [docker-compose.dataflow.yml (line 371)](../../../infra/docker/docker-compose.dataflow.yml#L371): local data-platform Compose services and build mappings.
+- [recsys-images.yaml (line 1)](../../../infra/cloudbuild/recsys-images.yaml#L1), [recsys-images.yaml (line 176)](../../../infra/cloudbuild/recsys-images.yaml#L176): GCP Cloud Build image pipeline.
+
+### Shared Base
+
+| Image | Purpose | Dockerfile |
+|---|---|---|
+| `recsys-base-python` | Shared slim Python base image | [Dockerfile.base-python (line 1)](../../../infra/docker/Dockerfile.base-python#L1), [Dockerfile.base-python (line 19)](../../../infra/docker/Dockerfile.base-python#L19) |
+
+### Data Platform
+
+| Image / component | Purpose | Dockerfile |
+|---|---|---|
+| `recsys-dataflow-cli` | Data pipeline CLI, Feast materialization, and drift jobs | [Dockerfile.dataflow-cli (line 1)](../../../apps/data-platform/Dockerfile.dataflow-cli#L1), [Dockerfile.dataflow-cli (line 49)](../../../apps/data-platform/Dockerfile.dataflow-cli#L49) |
+| `recsys-data-generator` | Synthetic source-data generation | [Dockerfile (line 1)](../../../apps/data-platform/data-generator/Dockerfile#L1), [Dockerfile (line 27)](../../../apps/data-platform/data-generator/Dockerfile#L27) |
+| `recsys-airflow` | Data-pipeline orchestration with the Airflow scheduler and webserver | [Dockerfile.airflow (line 1)](../../../infra/docker/Dockerfile.airflow#L1), [Dockerfile.airflow (line 34)](../../../infra/docker/Dockerfile.airflow#L34) |
+| `recsys-spark` | Batch processing with Spark, Iceberg, and Hudi | [Dockerfile.spark (line 1)](../../../apps/data-platform/Dockerfile.spark#L1), [Dockerfile.spark (line 50)](../../../apps/data-platform/Dockerfile.spark#L50) |
+| `recsys-flink` | Streaming from Kafka to the PostgreSQL offline store and Redis online store | [Dockerfile.flink (line 1)](../../../apps/data-platform/Dockerfile.flink#L1), [Dockerfile.flink (line 94)](../../../apps/data-platform/Dockerfile.flink#L94) |
+| `recsys-kafka-connect` | Debezium CDC from PostgreSQL into Kafka | [Dockerfile.kafka-connect (line 1)](../../../infra/docker/Dockerfile.kafka-connect#L1), [Dockerfile.kafka-connect (line 23)](../../../infra/docker/Dockerfile.kafka-connect#L23) |
+
+### ML/MLOps
+
+| Image / component | Purpose | Dockerfile |
+|---|---|---|
+| `recsys-mlflow` | Experiment tracking and model registry | [Dockerfile.mlflow (line 1)](../../../infra/docker/Dockerfile.mlflow#L1), [Dockerfile.mlflow (line 30)](../../../infra/docker/Dockerfile.mlflow#L30) |
+| `recsys-api-serving` | Online model inference and recommendation API | [Dockerfile (line 1)](../../../apps/api-serving/Dockerfile#L1), [Dockerfile (line 46)](../../../apps/api-serving/Dockerfile#L46) |
+| `recsys-mlops-training` | Model training and Kubeflow pipeline runtime | [Dockerfile.training (line 1)](../../../apps/ml-system/Dockerfile.training#L1), [Dockerfile.training (line 61)](../../../apps/ml-system/Dockerfile.training#L61) |
+| `recsys-mlops-spark` | ML jobs running on the shared Spark image | [Dockerfile.spark (line 1)](../../../apps/ml-system/Dockerfile.spark#L1), [Dockerfile.spark (line 40)](../../../apps/ml-system/Dockerfile.spark#L40) |
 
 ## Optimization Notes
 

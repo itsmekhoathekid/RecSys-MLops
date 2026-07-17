@@ -34,11 +34,9 @@ spec:
                 sleep 5
               done
               PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys \
-              /opt/venv/bin/python apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py
-              if [ "${REALTIME_MAX_EVENTS:-0}" != "0" ]; then
-                echo "Realtime producer reached REALTIME_MAX_EVENTS=${REALTIME_MAX_EVENTS}; keeping pod alive to avoid deployment restart loops."
-                sleep infinity
-              fi
+              /opt/venv/bin/python -m streaming.producer \
+                --config "$DATA_GENERATOR_CONFIG"
+              sleep infinity
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

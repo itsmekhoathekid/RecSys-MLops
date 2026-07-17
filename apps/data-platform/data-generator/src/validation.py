@@ -195,19 +195,11 @@ class InvariantValidator:
 
 
 def duplicate_metrics(data: GeneratedData) -> dict[str, int]:
-    hashes_by_event: dict[Any, Counter] = defaultdict(Counter)
-    for event in data.behavior_events:
-        hashes_by_event[event.event_id][event.payload_hash] += 1
-    exact = 0
-    conflicting_ids = 0
-    for hashes in hashes_by_event.values():
-        exact += sum(max(count - 1, 0) for count in hashes.values())
-        if len(hashes) > 1:
-            conflicting_ids += 1
-    return {
-        "exact_duplicate_rows": exact,
-        "conflicting_duplicate_event_ids": conflicting_ids,
-    }
+    counts = Counter(
+        (event.event_id, event.payload_hash) for event in data.behavior_events
+    )
+    exact = sum(max(count - 1, 0) for count in counts.values())
+    return {"exact_duplicate_rows": exact}
 
 
 def validate_parquet_output(

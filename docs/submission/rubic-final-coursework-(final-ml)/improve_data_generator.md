@@ -4,9 +4,9 @@
 
 Code reference:
 
-- [`data_generator_drift.yaml`](../../../configs/local/data_generator_drift.yaml): enables drift and defines the baseline/post-drift boundary.
-- [`controller.py`](../../../apps/data-platform/data-generator/src/drift/controller.py), [`reporting.py`](../../../apps/data-platform/data-generator/src/drift/reporting.py): drift phase/factor, artifacts, health metrics, and alerts.
-- [`summarize_drift_label_merge.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py): configuration and drift-health proof tables.
+- [data_generator_drift.yaml (line 27)](../../../configs/local/data_generator_drift.yaml#L27), [data_generator_drift.yaml (line 35)](../../../configs/local/data_generator_drift.yaml#L35): enables drift and defines the baseline/post-drift boundary.
+- [controller.py (line 8)](../../../apps/data-platform/data-generator/src/drift/controller.py#L8), [controller.py (line 48)](../../../apps/data-platform/data-generator/src/drift/controller.py#L48), [reporting.py (line 71)](../../../apps/data-platform/data-generator/src/drift/reporting.py#L71), [reporting.py (line 197)](../../../apps/data-platform/data-generator/src/drift/reporting.py#L197): drift phase/factor, artifacts, health metrics, and alerts.
+- [summarize_drift_label_merge.py (line 75)](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#L75), [summarize_drift_label_merge.py (line 206)](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#L206): configuration and drift-health proof tables.
 
 Running command:
 
@@ -41,7 +41,7 @@ Image proof:
 
 Code reference:
 
-- [`summarize_drift_label_merge.py`](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py): builds `user_id,label`, joins labels to features, and prints both proof tables.
+- [summarize_drift_label_merge.py (line 46)](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#L46), [summarize_drift_label_merge.py (line 111)](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#L111): builds `user_id,label`, joins labels to features, and prints both proof tables.
 
 Running command:
 

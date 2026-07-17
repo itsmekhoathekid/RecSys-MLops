@@ -10,12 +10,12 @@ The batch generator writes raw recommendation-system data into the lakehouse wit
 
 Code reference:
 
-- [configs/local/data_generator_e2e_1k.yaml L5-L20](../../../configs/local/data_generator_e2e_1k.yaml#L5-L20): batch entity and traffic volume for high-cardinality proof.
-- [configs/local/data_generator_e2e_1k.yaml L27-L41](../../../configs/local/data_generator_e2e_1k.yaml#L27-L41): skewed city/category distribution knobs.
-- [configs/local/data_generator_e2e_1k.yaml L43-L57](../../../configs/local/data_generator_e2e_1k.yaml#L43-L57): duplicate, late-arrival, out-of-order, and burst injection rates.
-- [configs/local/data_generator_e2e_1k.yaml L59-L62](../../../configs/local/data_generator_e2e_1k.yaml#L59-L62): schema evolution and breaking-schema config.
+- [data_generator_e2e_1k.yaml (line 7)](../../../configs/local/data_generator_e2e_1k.yaml#L7), [data_generator_e2e_1k.yaml (line 48)](../../../configs/local/data_generator_e2e_1k.yaml#L48): batch traffic and high-cardinality volume.
+- [data_generator_e2e_1k.yaml (line 33)](../../../configs/local/data_generator_e2e_1k.yaml#L33), [data_generator_e2e_1k.yaml (line 47)](../../../configs/local/data_generator_e2e_1k.yaml#L47): skewed city/category distribution knobs.
+- [data_generator_e2e_1k.yaml (line 58)](../../../configs/local/data_generator_e2e_1k.yaml#L58): exact-duplicate configuration.
+- [data_generator_e2e_1k.yaml (line 54)](../../../configs/local/data_generator_e2e_1k.yaml#L54), [data_generator_e2e_1k.yaml (line 57)](../../../configs/local/data_generator_e2e_1k.yaml#L57): schema evolution and breaking-schema config.
 
-The current config is intentionally stress-heavy. It uses a large entity space (`20,000` products, `8,000` users, `5,000` brands, `1,000` categories) so Spark can show high-cardinality aggregations. It also makes the category and city distributions very uneven (`top_category_ratio=0.99`, `top_city_ratio=0.96`), which creates a hot-key skew pattern around the dominant category. Duplicate issues are injected with `duplicate_event_rate=0.45` and `conflicting_duplicate_rate=0.18`, so the silver layer has to reject repeated `event_id` rows before writing offline features. Schema evolution is enabled with a compatible cutover on `2026-03-23` and a breaking v3 schema after `2026-03-27`, so the normal job can count breaking rows and the fail-proof job can demonstrate what happens when unsupported schema reaches Spark. Late and out-of-order settings are also enabled for the Flink proof path.
+The current batch config is intentionally stress-heavy. It uses a large entity space (`20,000` products, `8,000` users, `5,000` brands, `1,000` categories) for high-cardinality proof. Category and city distributions are uneven (`top_category_ratio=0.99`, `top_city_ratio=0.96`) for skew proof. Exact duplicates use `duplicate_event_rate=0.45`, and schema evolution has a compatible cutover on `2026-03-23` plus breaking v3 rows after `2026-03-27`. These are the four offline problem groups: skew, high cardinality, schema evolution, and duplicates.
 
 ### Streaming generator for Kafka CDC and Flink jobs
 
@@ -26,10 +26,10 @@ The realtime producer continuously inserts source rows into PostgreSQL. CDC then
 
 Code reference:
 
-- [infra/helm/recsys-data-platform/values.yaml L138-L160](../../../infra/helm/recsys-data-platform/values.yaml#L138-L160): realtime producer rate, hot-product, duplicate, late, out-of-order, and burst settings.
-- [apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py L302-L435](../../../apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py#L302-L435): runtime emission logic for burst, duplicate, late, out-of-order events, and metrics.
+- [data_generator_e2e_1k.yaml (line 61)](../../../configs/local/data_generator_e2e_1k.yaml#L61), [data_generator_e2e_1k.yaml (line 78)](../../../configs/local/data_generator_e2e_1k.yaml#L78): streaming generator plus burst, late-arrival, and duplicate settings in the shared scenario config.
+- [problem_pipeline.py (line 23)](../../../apps/data-platform/data-generator/src/streaming/problem_pipeline.py#L23), [producer.py (line 34)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L34): three-class wiring and continuous runtime emission loop.
 
-The streaming config is tuned to make Flink runtime issues visible without turning on the full ML system. A normal producer tick emits `40` events, while every 5th tick is multiplied by `8`, creating `320`-event burst windows. Hot-product skew is produced with `hotProductRatio=0.70` across `3` hot products. Duplicate and conflicting duplicate events are replayed into the CDC stream, and late/out-of-order timestamps are emitted so Flink watermark, window, dedup, throughput, checkpoint, and backpressure behavior can be captured from the Flink UI and quality windows.
+The streaming config contains exactly three problems. A normal tick emits `40` events and every fifth tick multiplies it by `8`; recent events are replayed at `14%`; and late events are backdated by `45–180` minutes at `28%`.
 
 ## Spark Job To Handle Offline Data Problems
 
@@ -37,9 +37,9 @@ The Spark batch job reads raw tables from the data lakehouse, normalizes/dedupli
 
 Code reference:
 
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py L34-L45, L152-L207](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L34-L207): production Spark configuration and entrypoint.
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py L47-L83](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L47-L83): builds normalized Silver inputs and offline feature outputs.
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py L93-L114](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L93-L114): exports batch features into the PostgreSQL Feast offline store.
+- [spark_batch_entrypoint.py (line 34)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L34), [spark_batch_entrypoint.py (line 45)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L45), [spark_batch_entrypoint.py (line 152)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L152), [spark_batch_entrypoint.py (line 207)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L207): production Spark configuration and entrypoint.
+- [spark_batch_entrypoint.py (line 47)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L47), [spark_batch_entrypoint.py (line 83)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L83): builds normalized Silver inputs and offline feature outputs.
+- [spark_batch_entrypoint.py (line 93)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L93), [spark_batch_entrypoint.py (line 114)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L114): exports batch features into the PostgreSQL Feast offline store.
 
 #### Skew Problems
 
@@ -58,7 +58,7 @@ Code reference:
 
 Reference Spark SQL code here:
 
-[infra/k8s/processing-baseline/spark-baseline-ui-job.yaml L68-L84, L166-L221](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L68-L221) defines the baseline Spark settings and heavy skew/cardinality SQL used by the Spark UI proof. The core line is the `CASE WHEN category_id = 1 THEN 24 ELSE 2 END` multiplier: rows from the hot category are expanded 24 times, while other categories are expanded only 2 times. This keeps the proof deterministic and makes the skew obvious in one SQL execution with 32 shuffle tasks.
+[spark-baseline-ui-job.yaml (line 68)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L68), [spark-baseline-ui-job.yaml (line 84)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L84), [spark-baseline-ui-job.yaml (line 166)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L166), [spark-baseline-ui-job.yaml (line 221)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L221) defines the baseline Spark settings and heavy skew/cardinality SQL used by the Spark UI proof. The core line is the `CASE WHEN category_id = 1 THEN 24 ELSE 2 END` multiplier: rows from the hot category are expanded 24 times, while other categories are expanded only 2 times. This keeps the proof deterministic and makes the skew obvious in one SQL execution with 32 shuffle tasks.
 
 ```sql
 WITH amplified AS (
@@ -101,8 +101,8 @@ LIMIT 20
 
 Code reference:
 
-- [configs/local/data_generator_e2e_1k.yaml L27-L41](../../../configs/local/data_generator_e2e_1k.yaml#L27-L41): skewed category and city distribution config.
-- [infra/k8s/processing-baseline/spark-baseline-ui-job.yaml L166-L191](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L166-L191): heavy skew SQL with hot-category amplification.
+- [data_generator_e2e_1k.yaml (line 33)](../../../configs/local/data_generator_e2e_1k.yaml#L33), [data_generator_e2e_1k.yaml (line 47)](../../../configs/local/data_generator_e2e_1k.yaml#L47): skewed category and city distribution config.
+- [spark-baseline-ui-job.yaml (line 166)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L166), [spark-baseline-ui-job.yaml (line 191)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L191): heavy skew SQL with hot-category amplification.
 
 #### High Cardinality
 
@@ -121,7 +121,7 @@ Code reference:
 
 Reference Spark SQL code here:
 
-[infra/k8s/processing-baseline/spark-baseline-ui-job.yaml L193-L221](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L193-L221) defines the heavy high-cardinality SQL used by the Spark UI proof. The important field is `product_event_key`, which combines `product_id`, `event_id`, and `repeat_id` so Spark has to aggregate many near-unique keys. The query also includes both exact distinct counting and `approx_count_distinct(product_event_key, 0.05)` to show the optimized estimator in the same SQL path.
+[spark-baseline-ui-job.yaml (line 193)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L193), [spark-baseline-ui-job.yaml (line 221)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L221) defines the heavy high-cardinality SQL used by the Spark UI proof. The important field is `product_event_key`, which combines `product_id`, `event_id`, and `repeat_id` so Spark has to aggregate many near-unique keys. The query also includes both exact distinct counting and `approx_count_distinct(product_event_key, 0.05)` to show the optimized estimator in the same SQL path.
 
 ```sql
 WITH amplified AS (
@@ -165,8 +165,8 @@ LIMIT 100
 
 Code reference:
 
-- [configs/local/data_generator_e2e_1k.yaml L5-L18](../../../configs/local/data_generator_e2e_1k.yaml#L5-L18): high-cardinality entity and interaction counts.
-- [infra/k8s/processing-baseline/spark-baseline-ui-job.yaml L193-L221](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L193-L221): composite key, exact distinct count, and `approx_count_distinct(..., 0.05)`.
+- [data_generator_e2e_1k.yaml (line 48)](../../../configs/local/data_generator_e2e_1k.yaml#L48), [data_generator_e2e_1k.yaml (line 53)](../../../configs/local/data_generator_e2e_1k.yaml#L53): high-cardinality entity counts and preferences per user.
+- [spark-baseline-ui-job.yaml (line 193)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L193), [spark-baseline-ui-job.yaml (line 221)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L221): composite key, exact distinct count, and `approx_count_distinct(..., 0.05)`.
 
 #### Schema Evolution
 
@@ -201,11 +201,11 @@ Task 0 in stage 13.0 failed 1 times; aborting job
 
 Code reference:
 
-- [configs/local/data_generator_e2e_1k.yaml L59-L62](../../../configs/local/data_generator_e2e_1k.yaml#L59-L62): schema evolution dates and breaking version.
-- [apps/data-platform/data-generator/src/simulation.py L236-L243, L281-L295](../../../apps/data-platform/data-generator/src/simulation.py#L236-L295): schema-version selection and request-field population for v1/v2/v3 rows.
-- [apps/data-platform/src/features/spark/build_silver_tables.py L14-L38](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L14-L38): compatible missing-column normalization and event deduplication.
-- [infra/k8s/processing-baseline/spark-baseline-ui-job.yaml L55-L64, L119-L137](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L55-L137): counts breaking rows and optionally fails on unsupported versions.
-- [infra/k8s/processing-baseline/spark-schema-evolution-fail-job.yaml L1-L70](../../../infra/k8s/processing-baseline/spark-schema-evolution-fail-job.yaml#L1-L70): intentional schema-evolution failure manifest.
+- [data_generator_e2e_1k.yaml (line 54)](../../../configs/local/data_generator_e2e_1k.yaml#L54), [data_generator_e2e_1k.yaml (line 57)](../../../configs/local/data_generator_e2e_1k.yaml#L57): schema evolution dates and breaking version.
+- [simulation.py (line 234)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L234), [simulation.py (line 240)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L240), [simulation.py (line 279)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L279), [simulation.py (line 292)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L292): schema-version selection and request-field population for v1/v2/v3 rows.
+- [build_silver_tables.py (line 14)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L14), [build_silver_tables.py (line 38)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L38): compatible missing-column normalization and event deduplication.
+- [spark-baseline-ui-job.yaml (line 55)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L55), [spark-baseline-ui-job.yaml (line 64)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L64), [spark-baseline-ui-job.yaml (line 119)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L119), [spark-baseline-ui-job.yaml (line 137)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L137): counts breaking rows and optionally fails on unsupported versions.
+- [spark-schema-evolution-fail-job.yaml (line 1)](../../../infra/k8s/processing-baseline/spark-schema-evolution-fail-job.yaml#L1), [spark-schema-evolution-fail-job.yaml (line 70)](../../../infra/k8s/processing-baseline/spark-schema-evolution-fail-job.yaml#L70): intentional schema-evolution failure manifest.
 
 #### Duplicate Records, Events
 
@@ -216,25 +216,25 @@ PYTHONPATH=apps/data-platform/data-generator/src uv run python \
   apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py \
   --config configs/local/data_generator_e2e_1k.yaml \
   --lake-root data_platform/lake | \
-  awk '/## Duplicate Rate Before And After Dedup/{flag=1} /^## Streaming Problems/{flag=0} flag'
+  awk '/## Duplicate Rate Before And After Dedup/{flag=1} /^## Injected Vs Observed/{flag=0} flag'
 ```
 
 **Image proof: duplicate events detected in generated data**
 
 ![Duplicate events proof from Spark duplicate detection script](../../pngs/duplicate_events_proof.png)
 
-**Figure: Duplicate-event proof from `docs/pngs/duplicate_events_proof.png`.** The capture records raw row count, distinct event ids, duplicate extras, and conflicting duplicate ids from the generated input used by the Spark proof.
+**Figure: Duplicate-event proof from `docs/pngs/duplicate_events_proof.png`.** The capture records raw row count, distinct event IDs, and exact duplicate rows from the generated input used by the Spark proof.
 
 **Spark UI companion proof:** capture the Spark UI SQL execution labelled `DP3 CHECK - count rejected duplicate event_id rows before offline-store write`. That UI stage proves the batch job rejects duplicate rows before writing offline feature tables, while the terminal proof above proves the duplicate events exist in the raw lakehouse input.
 
-**Analysis:** the generator injects exact and conflicting duplicates. The Silver builder ranks rows by `event_id` and latest `ingestion_ts`, keeps the latest row, and sends older rows to the rejected dataset before offline-store export.
+**Analysis:** the generator injects exact duplicates. The Silver builder ranks rows by `event_id` and latest `ingestion_ts`, keeps one row, and sends repeated rows to the rejected dataset before offline-store export.
 
 Code reference:
 
-- [configs/local/data_generator_e2e_1k.yaml L43-L49](../../../configs/local/data_generator_e2e_1k.yaml#L43-L49): duplicate and conflicting-duplicate rates.
-- [summarize_generation_quality.py L129-L146](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L129-L146): reproducible exact/conflicting duplicate summary.
-- [apps/data-platform/src/features/spark/build_silver_tables.py L18-L38](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L18-L38): event-ID deduplication by latest `ingestion_ts` and rejected-row split.
-- [infra/k8s/processing-baseline/spark-baseline-ui-job.yaml L137-L155](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L137-L155): Spark UI action that counts rejected duplicates.
+- [data_generator_e2e_1k.yaml (line 58)](../../../configs/local/data_generator_e2e_1k.yaml#L58), [data_generator_e2e_1k.yaml (line 59)](../../../configs/local/data_generator_e2e_1k.yaml#L59): exact-duplicate rate.
+- [summarize_generation_quality.py (line 119)](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L119), [summarize_generation_quality.py (line 129)](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L129): reproducible exact-duplicate calculation.
+- [build_silver_tables.py (line 18)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L18), [build_silver_tables.py (line 38)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L38): event-ID deduplication by latest `ingestion_ts` and rejected-row split.
+- [spark-baseline-ui-job.yaml (line 137)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L137), [spark-baseline-ui-job.yaml (line 155)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L155): Spark UI action that counts rejected duplicates.
 
 ### Develop Batch Processing Script To Handle Offline Problems
 
@@ -246,8 +246,8 @@ Code reference:
 
 Code reference:
 
-- [spark-baseline-ui-job.yaml L68-L84, L166-L191](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L68-L191): reproducible skew-amplification query with AQE disabled for baseline visibility.
-- [session.py L11-L30](../../../apps/data-platform/src/features/spark/session.py#L11-L30): production AQE, coalescing, and advisory partition sizing.
+- [spark-baseline-ui-job.yaml (line 68)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L68), [spark-baseline-ui-job.yaml (line 84)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L84), [spark-baseline-ui-job.yaml (line 166)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L166), [spark-baseline-ui-job.yaml (line 191)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L191): reproducible skew-amplification query with AQE disabled for baseline visibility.
+- [session.py (line 11)](../../../apps/data-platform/src/features/spark/session.py#L11), [session.py (line 30)](../../../apps/data-platform/src/features/spark/session.py#L30): production AQE, coalescing, and advisory partition sizing.
 
 #### High Cardinality
 
@@ -257,7 +257,7 @@ Code reference:
 
 Code reference:
 
-- [spark-baseline-ui-job.yaml L193-L221](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L193-L221): runs exact and `approx_count_distinct(..., 0.05)` cardinality measures in the same proof query.
+- [spark-baseline-ui-job.yaml (line 193)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L193), [spark-baseline-ui-job.yaml (line 221)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L221): runs exact and `approx_count_distinct(..., 0.05)` cardinality measures in the same proof query.
 
 #### Schema Evolution
 
@@ -267,20 +267,20 @@ Code reference:
 
 Code reference:
 
-- [`sink.py` (line 58)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/sink.py:58): removes the V2-only fields from the physical V1 Arrow schema.
-- [`sink.py` (line 97)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/sink.py:97): chooses the physical schema separately for each date partition.
-- [`sink.py` (line 110)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/sink.py:110): writes that physical schema into each Parquet file.
-- [`batch_lakehouse_ingestion.py` (line 109)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/ingest/batch_lakehouse_ingestion.py:109): reads each physical Parquet fragment without dataset-level schema merging.
-- [`batch_lakehouse_ingestion.py` (line 125)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/ingest/batch_lakehouse_ingestion.py:125): gives every fragment a distinct output file.
-- [`batch_lakehouse_ingestion.py` (line 126)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/ingest/batch_lakehouse_ingestion.py:126): persists each fragment independently, preserving its schema.
-- [`session.py` (line 20)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/session.py:20): enables Parquet schema merging for the production Spark session.
-- [`session.py` (line 55)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/session.py:55): explicitly enables `mergeSchema` on each Parquet table read.
-- [`build_silver_tables.py` (line 29)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_silver_tables.py:29): supplies the V1 default for missing/null `device_type`.
-- [`build_silver_tables.py` (line 30)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_silver_tables.py:30): supplies the V1 default for missing/null `campaign_id`.
-- [`build_silver_tables.py` (line 42)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_silver_tables.py:42): selects unsupported V3+ rows.
-- [`build_silver_tables.py` (line 43)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_silver_tables.py:43): labels those rows `unsupported_schema_version`.
-- [`build_silver_tables.py` (line 45)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_silver_tables.py:45): gates the feature path to supported V1/V2 rows.
-- [`build_silver_tables.py` (line 52)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_silver_tables.py:52): combines duplicate and unsupported rows in the rejected Silver output.
+- [sink.py (line 58)](../../../apps/data-platform/data-generator/src/sink.py#L58): removes the V2-only fields from the physical V1 Arrow schema.
+- [sink.py (line 97)](../../../apps/data-platform/data-generator/src/sink.py#L97): chooses the physical schema separately for each date partition.
+- [sink.py (line 110)](../../../apps/data-platform/data-generator/src/sink.py#L110): writes that physical schema into each Parquet file.
+- [batch_lakehouse_ingestion.py (line 109)](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L109): reads each physical Parquet fragment without dataset-level schema merging.
+- [batch_lakehouse_ingestion.py (line 125)](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L125): gives every fragment a distinct output file.
+- [batch_lakehouse_ingestion.py (line 126)](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L126): persists each fragment independently, preserving its schema.
+- [session.py (line 20)](../../../apps/data-platform/src/features/spark/session.py#L20): enables Parquet schema merging for the production Spark session.
+- [session.py (line 55)](../../../apps/data-platform/src/features/spark/session.py#L55): explicitly enables `mergeSchema` on each Parquet table read.
+- [build_silver_tables.py (line 29)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L29): supplies the V1 default for missing/null `device_type`.
+- [build_silver_tables.py (line 30)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L30): supplies the V1 default for missing/null `campaign_id`.
+- [build_silver_tables.py (line 42)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L42): selects unsupported V3+ rows.
+- [build_silver_tables.py (line 43)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L43): labels those rows `unsupported_schema_version`.
+- [build_silver_tables.py (line 45)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L45): gates the feature path to supported V1/V2 rows.
+- [build_silver_tables.py (line 52)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L52): combines duplicate and unsupported rows in the rejected Silver output.
 
 #### Duplicate Records, Events
 
@@ -290,7 +290,7 @@ Code reference:
 
 Code reference:
 
-- [apps/data-platform/src/features/spark/build_silver_tables.py L18-L38](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L18-L38): applies event-ID deduplication with latest `ingestion_ts` ordering in the Spark Silver-table job.
+- [build_silver_tables.py (line 18)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L18), [build_silver_tables.py (line 38)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L38): applies event-ID deduplication with latest `ingestion_ts` ordering in the Spark Silver-table job.
 
 ### View Spark UI To Show Problems Have Been Minimized
 
@@ -311,7 +311,7 @@ kubectl -n recsys-dataflow logs job/spark-baseline-ui | \
 
 Current comparison report:
 
-- [docs/submission/rubic-(mini-coursework)/spark_offline_optimization_comparison.json line 1](spark_offline_optimization_comparison.json#L1): baseline vs optimized comparison output from the latest run.
+- [spark_offline_optimization_comparison.json (line 1)](spark_offline_optimization_comparison.json#L1): baseline vs optimized comparison output from the latest run.
 
 **Result explanation from the artifact:** skew salting reduced max partition rows from `30,698` to `11,601`, so the hottest partition pressure dropped by `62.21%`. The partition skew ratio moved from `7.9862` to `3.018`, matching the more balanced Spark UI task distribution below. For high cardinality, exact `product_id` distinct count was `10,109`; the optimized `approx_count_distinct(product_id, 0.05)` estimate was `9,977`, only `1.31%` away from exact while avoiding a full exact distinct materialization for monitoring. Schema handling quarantined all `6,774` unsupported v3 rows before the feature path. Duplicate handling rejected `19,428` extra duplicate rows, leaving `0` duplicate extras after dedup.
 
@@ -356,12 +356,12 @@ The streaming path uses PostgreSQL CDC to Kafka topic `cdc.behavior_events`, the
 
 Code reference:
 
-- [`realtime-flink-consumer.yaml` (line 52)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml:52): gives the Redis job its own Kafka consumer group.
-- [`realtime-flink-consumer.yaml` (line 144)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml:144): gives the PostgreSQL job a different Kafka consumer group.
-- [`realtime_stream_job.py` (line 420)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:420): builds the native `KafkaSource`.
-- [`realtime_stream_job.py` (line 875)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:875): connects that source to the production event-time graph.
-- [`realtime_stream_job.py` (line 941)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:941): names the Redis online-store writer.
-- [`realtime_stream_job.py` (line 951)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:951): names the PostgreSQL offline-store writer.
+- [realtime-flink-consumer.yaml (line 52)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L52): gives the Redis job its own Kafka consumer group.
+- [realtime-flink-consumer.yaml (line 144)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L144): gives the PostgreSQL job a different Kafka consumer group.
+- [realtime_stream_job.py (line 420)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L420): builds the native `KafkaSource`.
+- [realtime_stream_job.py (line 875)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L875): connects that source to the production event-time graph.
+- [realtime_stream_job.py (line 941)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L941): names the Redis online-store writer.
+- [realtime_stream_job.py (line 951)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L951): names the PostgreSQL offline-store writer.
 
 ### View Flink UI To Show Baseline Problems
 
@@ -398,12 +398,12 @@ Code reference:
 
 Code reference:
 
-- [`values.yaml` (line 147)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:147): configures 40 normal events per producer tick.
-- [`values.yaml` (line 160)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:160): triggers a burst every fifth tick.
-- [`values.yaml` (line 161)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:161): multiplies burst ticks by eight.
-- [`run_realtime_postgres_producer.py` (line 356)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py:356): detects a configured burst tick.
-- [`run_realtime_postgres_producer.py` (line 357)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py:357): applies the burst multiplier.
-- [`quality_windows.py` (line 124)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:124): emits the production `is_bursty` flag.
+- [data_generator_e2e_1k.yaml (line 64)](../../../configs/local/data_generator_e2e_1k.yaml#L64): configures 40 normal events per producer tick.
+- [data_generator_e2e_1k.yaml (line 70)](../../../configs/local/data_generator_e2e_1k.yaml#L70): triggers a burst every fifth tick.
+- [data_generator_e2e_1k.yaml (line 71)](../../../configs/local/data_generator_e2e_1k.yaml#L71): multiplies burst ticks by eight.
+- [burst_traffic.py (line 6)](../../../apps/data-platform/data-generator/src/streaming/problems/burst_traffic.py#L6): calculates the per-tick event count.
+- [producer.py (line 38)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L38): applies the result in the live loop.
+- [quality_windows.py (line 124)](../../../apps/data-platform/src/features/flink/quality_windows.py#L124): emits the production `is_bursty` flag.
 
 #### Late Arrival Problems
 
@@ -432,16 +432,11 @@ Code reference:
 
 Code reference:
 
-- [`values.yaml` (line 156)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:156): configures the late-arrival simulation rate.
-- [`values.yaml` (line 157)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:157): configures the out-of-order simulation rate.
-- [`values.yaml` (line 158)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:158): sets the minimum late delay.
-- [`values.yaml` (line 159)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:159): sets the maximum late delay.
-- [`run_realtime_postgres_producer.py` (line 372)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py:372): chooses the late-arrival branch.
-- [`run_realtime_postgres_producer.py` (line 374)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py:374): shifts the event timestamp backward by the configured delay.
-- [`run_realtime_postgres_producer.py` (line 377)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py:377): chooses the out-of-order branch.
-- [`run_realtime_postgres_producer.py` (line 379)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py:379): shifts the out-of-order timestamp.
-- [`realtime_stream_job.py` (line 655)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:655): reads the native current watermark used for classification.
-- [`realtime_stream_job.py` (line 922)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:922): exposes the native too-late side output.
+- [data_generator_e2e_1k.yaml (line 75)](../../../configs/local/data_generator_e2e_1k.yaml#L75), [data_generator_e2e_1k.yaml (line 78)](../../../configs/local/data_generator_e2e_1k.yaml#L78): configures late-arrival rate and delay range.
+- [late_arrival.py (line 14)](../../../apps/data-platform/data-generator/src/streaming/problems/late_arrival.py#L14): samples and backdates a late event.
+- [problem_pipeline.py (line 38)](../../../apps/data-platform/data-generator/src/streaming/problem_pipeline.py#L38): applies the late-arrival class to new events.
+- [realtime_stream_job.py (line 655)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L655): reads the native current watermark used for classification.
+- [realtime_stream_job.py (line 922)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L922): exposes the native too-late side output.
 
 ### Develop Stream Processing Script To Handle Streaming Problems
 
@@ -455,21 +450,21 @@ Code reference:
 
 Code reference:
 
-- [`quality_windows.py` (line 89)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:89): implements the native incremental `AggregateFunction`.
-- [`quality_windows.py` (line 102)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:102): increments the event counter without retaining the full window contents.
-- [`quality_windows.py` (line 124)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:124): derives `is_bursty` from the configured event threshold.
-- [`realtime_stream_job.py` (line 908)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:908): creates the native `TumblingEventTimeWindows` operator.
-- [`realtime_stream_job.py` (line 911)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:911): attaches the incremental aggregate to that window.
-- [`values.yaml` (line 100)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:100): declares four Kafka partitions.
-- [`values.yaml` (line 113)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:113): runs two Flink TaskManagers.
-- [`values.yaml` (line 126)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:126): gives each TaskManager two task slots.
-- [`values.yaml` (line 131)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:131): selects RocksDB for production state.
-- [`values.yaml` (line 132)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:132): enables incremental RocksDB checkpoints.
-- [`values.yaml` (line 179)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:179): runs each realtime Flink job at parallelism two.
-- [`kafka-topic-init.yaml` (line 27)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/kafka-topic-init.yaml:27): creates the CDC topic with the requested partition count.
-- [`kafka-topic-init.yaml` (line 30)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/kafka-topic-init.yaml:30): raises the partition count on an existing topic when necessary.
-- [`kafka-redis-flink.yaml` (line 271)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml:271): configures task slots, RocksDB/incremental state, exponential-delay restart, and checkpoint storage for JobManager.
-- [`kafka-redis-flink.yaml` (line 330)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml:330): applies the matching runtime properties to TaskManager.
+- [quality_windows.py (line 89)](../../../apps/data-platform/src/features/flink/quality_windows.py#L89): implements the native incremental `AggregateFunction`.
+- [quality_windows.py (line 102)](../../../apps/data-platform/src/features/flink/quality_windows.py#L102): increments the event counter without retaining the full window contents.
+- [quality_windows.py (line 124)](../../../apps/data-platform/src/features/flink/quality_windows.py#L124): derives `is_bursty` from the configured event threshold.
+- [realtime_stream_job.py (line 908)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L908): creates the native `TumblingEventTimeWindows` operator.
+- [realtime_stream_job.py (line 911)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L911): attaches the incremental aggregate to that window.
+- [values.yaml (line 100)](../../../infra/helm/recsys-data-platform/values.yaml#L100): declares four Kafka partitions.
+- [values.yaml (line 113)](../../../infra/helm/recsys-data-platform/values.yaml#L113): runs two Flink TaskManagers.
+- [values.yaml (line 126)](../../../infra/helm/recsys-data-platform/values.yaml#L126): gives each TaskManager two task slots.
+- [values.yaml (line 131)](../../../infra/helm/recsys-data-platform/values.yaml#L131): selects RocksDB for production state.
+- [values.yaml (line 132)](../../../infra/helm/recsys-data-platform/values.yaml#L132): enables incremental RocksDB checkpoints.
+- [values.yaml (line 179)](../../../infra/helm/recsys-data-platform/values.yaml#L179): runs each realtime Flink job at parallelism two.
+- [kafka-topic-init.yaml (line 27)](../../../infra/helm/recsys-data-platform/templates/kafka-topic-init.yaml#L27): creates the CDC topic with the requested partition count.
+- [kafka-topic-init.yaml (line 30)](../../../infra/helm/recsys-data-platform/templates/kafka-topic-init.yaml#L30): raises the partition count on an existing topic when necessary.
+- [kafka-redis-flink.yaml (line 271)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L271): configures task slots, RocksDB/incremental state, exponential-delay restart, and checkpoint storage for JobManager.
+- [kafka-redis-flink.yaml (line 330)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L330): applies the matching runtime properties to TaskManager.
 
 #### Late Arrival
 
@@ -485,24 +480,24 @@ Code reference:
 
 Code reference:
 
-- [`realtime_stream_job.py` (line 876)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:876): creates the bounded-out-of-orderness watermark strategy.
-- [`realtime_stream_job.py` (line 878)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:878): assigns `event_timestamp` as native event time.
-- [`realtime_stream_job.py` (line 880)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:880): marks idle Kafka partitions so they do not stall the global watermark.
-- [`realtime_stream_job.py` (line 882)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:882): enables watermark alignment for uneven Kafka partitions.
-- [`realtime_stream_job.py` (line 655)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:655): reads Flink's current operator watermark.
-- [`event_time.py` (line 30)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/event_time.py:30): calculates the event's event-time window end.
-- [`event_time.py` (line 33)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/event_time.py:33): uses `window_end + allowed_lateness` as the too-late boundary.
-- [`realtime_stream_job.py` (line 905)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:905): declares the native late-event `OutputTag`.
-- [`realtime_stream_job.py` (line 909)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:909): configures native allowed lateness in milliseconds.
-- [`realtime_stream_job.py` (line 910)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:910): attaches native late-data side output to the window.
-- [`realtime_stream_job.py` (line 922)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:922): reads the native late-data side output.
-- [`realtime_stream_job.py` (line 925)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:925): writes too-late events to the PostgreSQL DLQ.
-- [`realtime_stream_job.py` (line 928)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:928): prevents too-late events from entering the feature path.
-- [`runtime_config.py` (line 13)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:13): builds native state TTL.
-- [`runtime_config.py` (line 18)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:18): enables TTL on each keyed-state descriptor.
-- [`values.yaml` (line 212)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:212): sets the production watermark delay.
-- [`values.yaml` (line 213)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:213): sets the allowed-lateness interval.
-- [`values.yaml` (line 215)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:215): enables watermark alignment in production.
+- [realtime_stream_job.py (line 876)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L876): creates the bounded-out-of-orderness watermark strategy.
+- [realtime_stream_job.py (line 878)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L878): assigns `event_timestamp` as native event time.
+- [realtime_stream_job.py (line 880)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L880): marks idle Kafka partitions so they do not stall the global watermark.
+- [realtime_stream_job.py (line 882)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L882): enables watermark alignment for uneven Kafka partitions.
+- [realtime_stream_job.py (line 655)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L655): reads Flink's current operator watermark.
+- [event_time.py (line 30)](../../../apps/data-platform/src/features/flink/event_time.py#L30): calculates the event's event-time window end.
+- [event_time.py (line 33)](../../../apps/data-platform/src/features/flink/event_time.py#L33): uses `window_end + allowed_lateness` as the too-late boundary.
+- [realtime_stream_job.py (line 905)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L905): declares the native late-event `OutputTag`.
+- [realtime_stream_job.py (line 909)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L909): configures native allowed lateness in milliseconds.
+- [realtime_stream_job.py (line 910)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L910): attaches native late-data side output to the window.
+- [realtime_stream_job.py (line 922)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L922): reads the native late-data side output.
+- [realtime_stream_job.py (line 925)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L925): writes too-late events to the PostgreSQL DLQ.
+- [realtime_stream_job.py (line 928)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L928): prevents too-late events from entering the feature path.
+- [runtime_config.py (line 13)](../../../apps/data-platform/src/features/flink/runtime_config.py#L13): builds native state TTL.
+- [runtime_config.py (line 18)](../../../apps/data-platform/src/features/flink/runtime_config.py#L18): enables TTL on each keyed-state descriptor.
+- [values.yaml (line 212)](../../../infra/helm/recsys-data-platform/values.yaml#L212): sets the production watermark delay.
+- [values.yaml (line 213)](../../../infra/helm/recsys-data-platform/values.yaml#L213): sets the allowed-lateness interval.
+- [values.yaml (line 215)](../../../infra/helm/recsys-data-platform/values.yaml#L215): enables watermark alignment in production.
 
 #### Failure Recovery And Sink Replay
 
@@ -512,27 +507,27 @@ Flink's checkpoint mode does not make a synchronous Python PostgreSQL/Redis clie
 
 Code reference:
 
-- [`runtime_config.py` (line 28)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:28): selects Flink `CheckpointingMode.EXACTLY_ONCE`.
-- [`runtime_config.py` (line 29)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:29): enforces a minimum pause between checkpoints.
-- [`runtime_config.py` (line 30)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:30): bounds checkpoint duration.
-- [`runtime_config.py` (line 31)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:31): limits concurrent checkpoints to one.
-- [`runtime_config.py` (line 32)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:32): configures tolerated checkpoint failures.
-- [`runtime_config.py` (line 33)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:33): retains externalized checkpoints on cancellation.
-- [`runtime_config.py` (line 35)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/runtime_config.py:35): enables unaligned checkpoints for backpressured streams.
-- [`realtime_stream_job.py` (line 1088)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:1088): applies checkpoint configuration before building/executing the job.
-- [`realtime_stream_job.py` (line 279)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:279): carries the source event id into user-sequence rows.
-- [`realtime_stream_job.py` (line 299)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:299): carries the source event id into user-aggregate rows.
-- [`realtime_stream_job.py` (line 318)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:318): carries the source event id into item-feature rows.
-- [`postgres_offline_store.py` (line 194)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/feature_store/postgres_offline_store.py:194): creates the partial unique index on `source_event_id`.
-- [`postgres_offline_store.py` (line 204)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/feature_store/postgres_offline_store.py:204): creates the DLQ uniqueness constraint.
-- [`postgres_offline_store.py` (line 250)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/feature_store/postgres_offline_store.py:250): upserts replayed feature events.
-- [`postgres_offline_store.py` (line 253)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/feature_store/postgres_offline_store.py:253): ignores a replayed DLQ event.
-- [`online_writer.py` (line 35)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/feature_store/online_writer.py:35): compares the stored and incoming `updated_at` values atomically in Redis Lua.
-- [`online_writer.py` (line 39)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/feature_store/online_writer.py:39): atomically writes the accepted latest payload with TTL.
-- [`online_writer.py` (line 51)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/feature_store/online_writer.py:51): executes the Lua compare-and-set through Redis.
-- [`values.yaml` (line 225)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:225): configures checkpoint minimum pause.
-- [`values.yaml` (line 226)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:226): configures checkpoint timeout.
-- [`values.yaml` (line 228)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:228): enables unaligned checkpoints in production.
+- [runtime_config.py (line 28)](../../../apps/data-platform/src/features/flink/runtime_config.py#L28): selects Flink `CheckpointingMode.EXACTLY_ONCE`.
+- [runtime_config.py (line 29)](../../../apps/data-platform/src/features/flink/runtime_config.py#L29): enforces a minimum pause between checkpoints.
+- [runtime_config.py (line 30)](../../../apps/data-platform/src/features/flink/runtime_config.py#L30): bounds checkpoint duration.
+- [runtime_config.py (line 31)](../../../apps/data-platform/src/features/flink/runtime_config.py#L31): limits concurrent checkpoints to one.
+- [runtime_config.py (line 32)](../../../apps/data-platform/src/features/flink/runtime_config.py#L32): configures tolerated checkpoint failures.
+- [runtime_config.py (line 33)](../../../apps/data-platform/src/features/flink/runtime_config.py#L33): retains externalized checkpoints on cancellation.
+- [runtime_config.py (line 35)](../../../apps/data-platform/src/features/flink/runtime_config.py#L35): enables unaligned checkpoints for backpressured streams.
+- [realtime_stream_job.py (line 1088)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1088): applies checkpoint configuration before building/executing the job.
+- [realtime_stream_job.py (line 279)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L279): carries the source event id into user-sequence rows.
+- [realtime_stream_job.py (line 299)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L299): carries the source event id into user-aggregate rows.
+- [realtime_stream_job.py (line 318)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L318): carries the source event id into item-feature rows.
+- [postgres_offline_store.py (line 194)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L194): creates the partial unique index on `source_event_id`.
+- [postgres_offline_store.py (line 204)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L204): creates the DLQ uniqueness constraint.
+- [postgres_offline_store.py (line 250)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L250): upserts replayed feature events.
+- [postgres_offline_store.py (line 253)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L253): ignores a replayed DLQ event.
+- [online_writer.py (line 35)](../../../apps/data-platform/src/feature_store/online_writer.py#L35): compares the stored and incoming `updated_at` values atomically in Redis Lua.
+- [online_writer.py (line 39)](../../../apps/data-platform/src/feature_store/online_writer.py#L39): atomically writes the accepted latest payload with TTL.
+- [online_writer.py (line 51)](../../../apps/data-platform/src/feature_store/online_writer.py#L51): executes the Lua compare-and-set through Redis.
+- [values.yaml (line 209)](../../../infra/helm/recsys-data-platform/values.yaml#L209): configures checkpoint minimum pause.
+- [values.yaml (line 210)](../../../infra/helm/recsys-data-platform/values.yaml#L210): configures checkpoint timeout.
+- [values.yaml (line 212)](../../../infra/helm/recsys-data-platform/values.yaml#L212): enables unaligned checkpoints in production.
 
 #### Production Runtime Routing
 
@@ -540,11 +535,11 @@ The deployed streaming layout is `Kafka CDC -> Flink -> PostgreSQL Feast offline
 
 Code reference:
 
-- [`values.yaml` (line 187)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/values.yaml:187): selects PostgreSQL as the realtime offline sink.
-- [`realtime-flink-consumer.yaml` (line 77)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml:77): disables the offline branch in the Redis online-store consumer.
-- [`realtime-flink-consumer.yaml` (line 169)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml:169): enables the offline branch in the PostgreSQL consumer.
-- [`realtime-flink-consumer.yaml` (line 170)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml:170): disables Redis writes in the PostgreSQL consumer.
-- [`realtime-flink-consumer.yaml` (line 171)](/Users/KHOAI/anhkhoa/RecSys-MLops/infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml:171): passes the configured PostgreSQL sink selection.
+- [values.yaml (line 187)](../../../infra/helm/recsys-data-platform/values.yaml#L187): selects PostgreSQL as the realtime offline sink.
+- [realtime-flink-consumer.yaml (line 77)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L77): disables the offline branch in the Redis online-store consumer.
+- [realtime-flink-consumer.yaml (line 169)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L169): enables the offline branch in the PostgreSQL consumer.
+- [realtime-flink-consumer.yaml (line 170)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L170): disables Redis writes in the PostgreSQL consumer.
+- [realtime-flink-consumer.yaml (line 171)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L171): passes the configured PostgreSQL sink selection.
 
 
 ### View Flink UI To Show Problems Have Been Minimized
@@ -604,16 +599,16 @@ For each accepted window event, the accumulator increments `event_count`, `late_
 
 Code reference:
 
-- [`realtime_stream_job.py` (line 901)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:901): keys and classifies each event against the native watermark.
-- [`realtime_stream_job.py` (line 907)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:907): keys quality aggregation by Kafka topic.
-- [`realtime_stream_job.py` (line 908)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:908): defines the native tumbling event-time window.
-- [`realtime_stream_job.py` (line 909)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:909): retains fired windows for configured allowed lateness.
-- [`realtime_stream_job.py` (line 910)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/realtime_stream_job.py:910): routes post-cleanup late records to native side output.
-- [`quality_windows.py` (line 93)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:93): initializes constant-size window counters.
-- [`quality_windows.py` (line 103)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:103): counts accepted late updates.
-- [`quality_windows.py` (line 104)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:104): counts duplicate markers.
-- [`quality_windows.py` (line 105)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:105): keeps only the maximum lateness value.
-- [`quality_windows.py` (line 124)](/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/flink/quality_windows.py:124): computes the burst flag.
+- [realtime_stream_job.py (line 901)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L901): keys and classifies each event against the native watermark.
+- [realtime_stream_job.py (line 907)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L907): keys quality aggregation by Kafka topic.
+- [realtime_stream_job.py (line 908)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L908): defines the native tumbling event-time window.
+- [realtime_stream_job.py (line 909)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L909): retains fired windows for configured allowed lateness.
+- [realtime_stream_job.py (line 910)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L910): routes post-cleanup late records to native side output.
+- [quality_windows.py (line 93)](../../../apps/data-platform/src/features/flink/quality_windows.py#L93): initializes constant-size window counters.
+- [quality_windows.py (line 103)](../../../apps/data-platform/src/features/flink/quality_windows.py#L103): counts accepted late updates.
+- [quality_windows.py (line 104)](../../../apps/data-platform/src/features/flink/quality_windows.py#L104): counts duplicate markers.
+- [quality_windows.py (line 105)](../../../apps/data-platform/src/features/flink/quality_windows.py#L105): keeps only the maximum lateness value.
+- [quality_windows.py (line 124)](../../../apps/data-platform/src/features/flink/quality_windows.py#L124): computes the burst flag.
 
 ## Production Integration Proof
 
@@ -641,7 +636,7 @@ The DP3 `validate_stage` does not perform feature engineering. It connects to Po
 
 Code reference:
 
-- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py L105-L181](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L105-L181): shared Spark-on-Kubernetes submission plus DP2/DP3 commands.
-- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py L218-L258](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L218-L258): ordered DP2 and DP3 Airflow DAG stages.
-- [apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py L20-L75](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L20-L75): DP2 Bronze-to-Silver/Gold Spark processing and validation.
-- [apps/data-platform/src/features/spark/spark_batch_entrypoint.py L34-L207](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L34-L207): DP3 feature/training outputs, PostgreSQL export, validation, and production entrypoint.
+- [rubric_data_pipeline_dags.py (line 105)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L105), [rubric_data_pipeline_dags.py (line 181)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L181): shared Spark-on-Kubernetes submission plus DP2/DP3 commands.
+- [rubric_data_pipeline_dags.py (line 218)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L218), [rubric_data_pipeline_dags.py (line 258)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L258): ordered DP2 and DP3 Airflow DAG stages.
+- [dp2_silver_gold_entrypoint.py (line 20)](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L20), [dp2_silver_gold_entrypoint.py (line 75)](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L75): DP2 Bronze-to-Silver/Gold Spark processing and validation.
+- [spark_batch_entrypoint.py (line 34)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L34), [spark_batch_entrypoint.py (line 207)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L207): DP3 feature/training outputs, PostgreSQL export, validation, and production entrypoint.

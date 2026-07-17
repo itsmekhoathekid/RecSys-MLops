@@ -4,10 +4,10 @@
 
 ### Code reference
 
-- [`train.py`](../../../apps/ml-system/src/training/train.py): MLflow parameters, metrics, checkpoint, config, and dataset lineage.
-- [`ray_tune_train_bst.py`](../../../apps/ml-system/src/training/ray_tune_train_bst.py): best-trial checkpoint, metrics, hyperparameters, and MLflow identifiers.
-- [`model_registry.py`](../../../apps/ml-system/src/registry/model_registry.py): PostgreSQL model metadata schema and writes.
-- [`model_promotion.py`](../../../apps/ml-system/src/registry/model_promotion.py): versioned Triton export, MLflow model version, promotion manifest, and serving metadata.
+- [train.py (line 25)](../../../apps/ml-system/src/training/train.py#L25), [train.py (line 146)](../../../apps/ml-system/src/training/train.py#L146): MLflow parameters, metrics, checkpoint, config, and dataset lineage.
+- [ray_tune_train_bst.py (line 136)](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L136), [ray_tune_train_bst.py (line 271)](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L271): best-trial checkpoint, metrics, hyperparameters, and MLflow identifiers.
+- [model_registry.py (line 8)](../../../apps/ml-system/src/registry/model_registry.py#L8), [model_registry.py (line 68)](../../../apps/ml-system/src/registry/model_registry.py#L68): PostgreSQL model metadata schema and writes.
+- [model_promotion.py (line 405)](../../../apps/ml-system/src/registry/model_promotion.py#L405), [model_promotion.py (line 653)](../../../apps/ml-system/src/registry/model_promotion.py#L653): versioned Triton export, MLflow model version, promotion manifest, and serving metadata.
 
 ### Image proof
 
@@ -27,10 +27,10 @@
 
 ### Code reference
 
-- [`prepare_bst_training_data.py`](../../../apps/ml-system/src/cli/prepare_bst_training_data.py): builds version metadata and commits prepared splits when Hudi versioning is enabled.
-- [`dataset_versioning.py`](../../../apps/ml-system/src/lineage/dataset_versioning.py): stable sample identity, row hashing, Hudi upsert, table routing, and JSONL export.
-- [`mlflow_dataset_lineage.py`](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py): logs dataset version fields and the full manifest to MLflow.
-- [`hudi-cli-data-versioning-proof.yaml`](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml): reproducible Hudi CLI inspection pod.
+- [prepare_bst_training_data.py (line 647)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L647), [prepare_bst_training_data.py (line 726)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L726): builds version metadata and commits prepared splits when Hudi versioning is enabled.
+- [dataset_versioning.py (line 138)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L138), [dataset_versioning.py (line 212)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L212): stable sample identity and row hashing; [dataset_versioning.py (line 346)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L346), [dataset_versioning.py (line 468)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L468).
+- [mlflow_dataset_lineage.py (line 8)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L8), [mlflow_dataset_lineage.py (line 48)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L48): logs dataset version fields and the full manifest to MLflow.
+- [hudi-cli-data-versioning-proof.yaml (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L130): reproducible Hudi CLI inspection pod.
 
 ### Apache Hudi incremental versioning flow
 
@@ -38,7 +38,7 @@ This project uses Apache Hudi for incremental dataset versioning. The flow is: F
 
 Hudi proof is captured with Hudi CLI by connecting directly to the Hudi table path and showing the active commit timeline. The CLI proof includes the table connection banner, `desc` output with `COPY_ON_WRITE`, `sample_id` record key, `updated_at` precombine field, and `split` partition field, plus `commits show` / `show fsview all` output showing commit instants and the versioned parquet file slices written by each incremental Hudi upsert.
 
-**Proof pod note:** the Hudi CLI proof is now reproducible from the reusable Kubernetes manifest [infra/k8s/hudi-cli-data-versioning-proof.yaml](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml). The manifest creates the fixed pod name `hudi-cli-data-versioning-proof` in namespace `recsys-dataflow`, mounts `recsys-data-platform-config` and `recsys-data-platform-secret`, connects to `s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_training_samples`, and prints `desc`, `commits show`, and `show fsview all` to pod logs. The pod is intentionally a one-shot `Pod` instead of a `Job`, so the screenshot command stays stable. To refresh and capture the proof again, run:
+**Proof pod note:** the Hudi CLI proof is now reproducible from the reusable Kubernetes manifest [hudi-cli-data-versioning-proof.yaml (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L130). The manifest creates the fixed pod name `hudi-cli-data-versioning-proof` in namespace `recsys-dataflow`, mounts `recsys-data-platform-config` and `recsys-data-platform-secret`, connects to `s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_training_samples`, and prints `desc`, `commits show`, and `show fsview all` to pod logs. The pod is intentionally a one-shot `Pod` instead of a `Job`, so the screenshot command stays stable. To refresh and capture the proof again, run:
 
 ```bash
 kubectl delete pod -n recsys-dataflow hudi-cli-data-versioning-proof --ignore-not-found

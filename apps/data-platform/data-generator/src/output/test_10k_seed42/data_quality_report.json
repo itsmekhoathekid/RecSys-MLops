@@ -1,29 +1,23 @@
 {
   "injected": {
-    "conflicting_duplicates": 7,
-    "exact_duplicates": 172,
-    "late_arrivals": 1146,
-    "out_of_order": 330
+    "exact_duplicates": 141
   },
   "observed": {
-    "conflicting_duplicate_event_ids": 7,
-    "exact_duplicate_rows": 172,
-    "late_arrival_rate": 0.116404,
-    "null_device_type_events": 5607,
-    "out_of_order_rate": 0.03352,
-    "schema_v1_events": 5500,
-    "schema_v2_events": 4345,
+    "exact_duplicate_rows": 141,
+    "null_device_type_events": 5621,
+    "schema_v1_events": 5544,
+    "schema_v2_events": 4309,
     "top_city": "HCMC",
-    "top_city_ratio": 0.338,
+    "top_city_ratio": 0.338333,
     "top_event_category_id": 1,
-    "top_event_category_ratio": 0.462291
+    "top_event_category_ratio": 0.431059
   },
   "validation_errors": [],
   "validation_metrics": {
-    "canonical_event_count": 9845,
+    "canonical_event_count": 9853,
     "foreign_key_error_count": 0,
-    "order_count": 628,
-    "purchase_event_count": 628
+    "order_count": 568,
+    "purchase_event_count": 568
   },
   "validation_passed": true
 }

@@ -4,26 +4,26 @@
 
 The first novel idea is to treat data quality as a live production signal rather than a batch-only
 validation report. The realtime generator deliberately produces duplicates, late arrivals,
-out-of-order events, hot-product skew, and periodic bursts. Flink evaluates those events with
+and periodic bursts. Flink evaluates those events with
 event-time windows and exports counters and freshness gauges. Prometheus scrapes the live Flink
 metrics and Grafana turns them into an operational Data Platform dashboard.
 
 This gives the platform team one place to answer three questions: **Is data still arriving? Is it
 fresh? Is its quality changing?** The dashboard also relates quality problems to downstream Redis
-and Iceberg feature-store writes, so an operator can distinguish a source-data problem from a sink
+and PostgreSQL/Redis feature-store writes, so an operator can distinguish a source-data problem from a sink
 or processing problem.
 
 ### Mermaid workflow
 
 ```mermaid
 flowchart LR
-    GEN["Realtime data generator<br/>duplicates, late data,<br/>out-of-order data, bursts"]
+    GEN["Realtime data generator<br/>duplicates, late data, bursts"]
     PG[("PostgreSQL source tables")]
     CDC["Debezium / Kafka Connect<br/>CDC"]
     KAFKA[("Kafka<br/>cdc.behavior_events")]
     FLINK["Flink event-time pipeline<br/>watermark + dedup +<br/>quality windows"]
     DLQ[("Late-event DLQ")]
-    ICE[("Iceberg streaming tables")]
+    OFFLINE[("PostgreSQL offline features")]
     REDIS[("Redis online features")]
     METRICS["Meshed producer live metrics<br/>throughput, late, duplicate,<br/>freshness, burst state"]
     PUSH[("Prometheus Pushgateway")]
@@ -32,7 +32,7 @@ flowchart LR
 
     GEN --> PG --> CDC --> KAFKA --> FLINK
     FLINK --> DLQ
-    FLINK --> ICE
+    FLINK --> OFFLINE
     FLINK --> REDIS
     FLINK --> METRICS --> PUSH --> PROM --> GRAFANA
 ```
@@ -41,11 +41,11 @@ flowchart LR
 
 | Focus | Code reference |
 | --- | --- |
-| Source issue injection | [`run_realtime_postgres_producer.py`](../../../apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py) — duplicate, late, out-of-order, and burst controls. |
-| Event-time quality metrics | [`realtime_stream_job.py`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py) — quality windows, freshness, and structured reconciliation output. |
-| Metric publication | [`pushgateway.py`](../../../apps/data-platform/src/monitoring/pushgateway.py), [`prometheus.yaml`](../../../infra/helm/recsys-observability/templates/prometheus.yaml) — publish and scrape runtime signals. |
-| Dashboard | [`data-pipeline-observability.json`](../../../infra/helm/recsys-observability/dashboards/data-pipeline-observability.json) — PromQL and panels for data quality and sink health. |
-| Regression contract | [`test_observability_contracts.py`](../../../tests/contract/test_observability_contracts.py) — verifies live queries are not replaced by constant demo series. |
+| Source issue injection | [problem_pipeline.py (line 23)](../../../apps/data-platform/data-generator/src/streaming/problem_pipeline.py#L23), [producer.py (line 34)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L34) — burst, late-arrival, and duplicate classes plus the runtime loop. |
+| Event-time quality metrics | [realtime_stream_job.py (line 80)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L80), [realtime_stream_job.py (line 155)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L155), [realtime_stream_job.py (line 896)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L896), [realtime_stream_job.py (line 1018)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1018) — quality windows, freshness, and structured reconciliation output. |
+| Metric publication | [pushgateway.py (line 12)](../../../apps/data-platform/src/monitoring/pushgateway.py#L12), [pushgateway.py (line 55)](../../../apps/data-platform/src/monitoring/pushgateway.py#L55), [prometheus.yaml (line 49)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L49), [prometheus.yaml (line 55)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L55) — publish and scrape runtime signals. |
+| Dashboard | [data-pipeline-observability.json (line 1)](../../../infra/helm/recsys-observability/dashboards/data-pipeline-observability.json#L1), [data-pipeline-observability.json (line 151)](../../../infra/helm/recsys-observability/dashboards/data-pipeline-observability.json#L151) — PromQL and panels for data quality and sink health. |
+| Regression contract | [test_observability_contracts.py (line 156)](../../../tests/contract/test_observability_contracts.py#L156), [test_observability_contracts.py (line 188)](../../../tests/contract/test_observability_contracts.py#L188) — verifies live queries are not replaced by constant demo series. |
 
 ### Image proof
 
@@ -63,8 +63,7 @@ clients, and offline drift scores.
 ![Grafana offline generator and data-quality evidence](../../pngs/grafana-offline-data-quality.png)
 
 **Figure 2 — Offline quality and volume evidence.** This continuation of the same dashboard shows
-generated row volume and cardinality together with duplicate, late-arrival, out-of-order, skew, and
-schema-evolution indicators.
+generated row volume and cardinality together with exact-duplicate, skew, and schema-evolution indicators.
 
 > **Note:** The panels distinguish defects deliberately injected before processing from the cleaned
 > result after deduplication. A zero post-deduplication value is therefore evidence of the correction,
@@ -75,7 +74,7 @@ schema-evolution indicators.
 - Open Grafana with `kubectl port-forward -n observability svc/recsys-grafana 3000:3000`, then select **RecSys / Data Pipeline Observability**.
 - The screenshots use the **Last 5 minutes** range and were captured after a controlled five-minute
   producer run with `40 events/tick`, `14%` duplicate probability, `28%` late-arrival probability,
-  `10%` out-of-order probability, and an `8x` burst every fifth tick.
+  and an `8x` burst every fifth tick.
 - The proof window is **2026-07-12 22:41:14–22:46:46 (Asia/Ho_Chi_Minh)**. Use this absolute range
   if the historical run needs to be inspected again after the live series expires.
 - A nearly horizontal line is valid only when the measured rate is stable. The proof should still show movement or spikes around burst ticks; a permanently constant value across unrelated panels is not sufficient evidence.
@@ -140,16 +139,16 @@ flowchart LR
 
 | Focus | Code reference |
 | --- | --- |
-| Silver isolation and lineage | [`sync_silver.py`](../../../apps/analytics/src/sync_silver.py) — snapshots operational Silver into the analytics catalog. |
-| Orchestration | [`analytics_dag.py`](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py) — orders Silver sync before dbt build/test. |
-| Gold semantics and tests | [`models/marts/`](../../../apps/analytics/models/marts), [`schema.yml`](../../../apps/analytics/models/schema.yml) — dimensions, facts, marts, grains, and quality tests. |
-| Read-only query boundary | [`trino-config.yaml`](../../../infra/helm/recsys-analytics/templates/trino-config.yaml) — shared catalog and restricted Superset access. |
-| BI provisioning | [`bootstrap_dashboards.py`](../../../apps/analytics/superset/bootstrap_dashboards.py), [`superset-dashboard-bootstrap.yaml`](../../../infra/helm/recsys-analytics/templates/superset-dashboard-bootstrap.yaml) — idempotent datasets, charts, and dashboard deployment. |
-| Main-flow change detection | [`Jenkinsfile`](../../../Jenkinsfile), [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py) — maps analytics application, tests, and Helm changes to `RUN_ANALYTICS=true` and enables component CI, build, and deploy stages. |
-| Analytics CI gates | [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh) — runs analytics unit/contract tests plus Helm lint and template validation. |
-| Image build and publish | [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh) — builds the analytics Spark, dbt, Superset, and shared Airflow images with an immutable commit tag. |
-| Deployment | [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) — upgrades the data-platform Airflow runtime and the `recsys-analytics` Helm release, then waits for its workloads. |
-| Jenkins analytics view | [`jenkins-init-configmap.yaml`](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml) — provisions `RecSys-Analytics-BI-CICD` under the `10 Analytics And BI` view with `FORCE_COMPONENTS=analytics`. |
+| Silver isolation and lineage | [sync_silver.py (line 21)](../../../apps/analytics/src/sync_silver.py#L21), [sync_silver.py (line 127)](../../../apps/analytics/src/sync_silver.py#L127) — snapshots operational Silver into the analytics catalog. |
+| Orchestration | [analytics_dag.py (line 19)](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py#L19), [analytics_dag.py (line 68)](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py#L68) — orders Silver sync before dbt build/test. |
+| Gold semantics and tests | [`models/marts/`](../../../apps/analytics/models/marts), [schema.yml (line 1)](../../../apps/analytics/models/schema.yml#L1), [schema.yml (line 70)](../../../apps/analytics/models/schema.yml#L70) — dimensions, facts, marts, grains, and quality tests. |
+| Read-only query boundary | [trino-config.yaml (line 1)](../../../infra/helm/recsys-analytics/templates/trino-config.yaml#L1), [trino-config.yaml (line 58)](../../../infra/helm/recsys-analytics/templates/trino-config.yaml#L58) — shared catalog and restricted Superset access. |
+| BI provisioning | [bootstrap_dashboards.py (line 67)](../../../apps/analytics/superset/bootstrap_dashboards.py#L67), [bootstrap_dashboards.py (line 596)](../../../apps/analytics/superset/bootstrap_dashboards.py#L596), [superset-dashboard-bootstrap.yaml (line 1)](../../../infra/helm/recsys-analytics/templates/superset-dashboard-bootstrap.yaml#L1), [superset-dashboard-bootstrap.yaml (line 32)](../../../infra/helm/recsys-analytics/templates/superset-dashboard-bootstrap.yaml#L32) — idempotent datasets, charts, and dashboard deployment. |
+| Main-flow change detection | [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 18)](../../../Jenkinsfile#L18), [Jenkinsfile (line 153)](../../../Jenkinsfile#L153), [Jenkinsfile (line 314)](../../../Jenkinsfile#L314), [detect_changed_components.py (line 265)](../../../jenkins/scripts/detect_changed_components.py#L265), [detect_changed_components.py (line 342)](../../../jenkins/scripts/detect_changed_components.py#L342), [detect_changed_components.py (line 386)](../../../jenkins/scripts/detect_changed_components.py#L386), [detect_changed_components.py (line 486)](../../../jenkins/scripts/detect_changed_components.py#L486) — maps analytics application, tests, and Helm changes to `RUN_ANALYTICS=true` and enables component CI, build, and deploy stages. |
+| Analytics CI gates | [component_ci.sh (line 209)](../../../jenkins/scripts/component_ci.sh#L209), [component_ci.sh (line 214)](../../../jenkins/scripts/component_ci.sh#L214) — runs analytics unit/contract tests plus Helm lint and template validation. |
+| Image build and publish | [component_build_publish.sh (line 189)](../../../jenkins/scripts/component_build_publish.sh#L189), [component_build_publish.sh (line 195)](../../../jenkins/scripts/component_build_publish.sh#L195), [component_build_publish.sh (line 262)](../../../jenkins/scripts/component_build_publish.sh#L262), [component_build_publish.sh (line 263)](../../../jenkins/scripts/component_build_publish.sh#L263) — builds the analytics Spark, dbt, Superset, and shared Airflow images with an immutable commit tag. |
+| Deployment | [component_deploy.sh (line 646)](../../../jenkins/scripts/component_deploy.sh#L646), [component_deploy.sh (line 684)](../../../jenkins/scripts/component_deploy.sh#L684) — upgrades the data-platform Airflow runtime and the `recsys-analytics` Helm release, then waits for its workloads. |
+| Jenkins analytics view | [jenkins-init-configmap.yaml (line 391)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L391), [jenkins-init-configmap.yaml (line 470)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L470) — provisions `RecSys-Analytics-BI-CICD` with `FORCE_COMPONENTS=analytics`. |
 
 ### Image proof
 

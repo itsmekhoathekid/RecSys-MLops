@@ -16,12 +16,12 @@ Groundtruth assumption: we do not have online groundtruth labels in this proof, 
 
 Code references:
 
-- [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py): `TritonABRouter` assigns users to `control` or `candidate` with a stable hash of `experiment_id:user_id`.
-- [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py): recommendation flow selects a route, calls the selected ranker, and emits A/B labels.
-- [apps/api-serving/src/observability.py](../../../apps/api-serving/src/observability.py): emits `model_predictions_total`, `model_prediction_latency_seconds`, and `model_prediction_confidence`.
-- [infra/helm/recsys-serving/templates/inferenceservice.yaml](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml): renders both control and candidate `InferenceService` resources.
-- [infra/helm/recsys-serving/templates/api-configmap.yaml](../../../infra/helm/recsys-serving/templates/api-configmap.yaml): passes A/B config into the API pod.
-- [infra/helm/recsys-observability/dashboards/model-ab-testing.json](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json): Grafana dashboard.
+- [ab_testing.py (line 91)](../../../apps/api-serving/src/ab_testing.py#L91), [ab_testing.py (line 141)](../../../apps/api-serving/src/ab_testing.py#L141): `TritonABRouter` assigns users to `control` or `candidate` with a stable hash of `experiment_id:user_id`.
+- [ranking.py (line 122)](../../../apps/api-serving/src/ranking.py#L122), [ranking.py (line 176)](../../../apps/api-serving/src/ranking.py#L176): recommendation flow selects a route, calls the selected ranker, and emits A/B labels.
+- [observability.py (line 213)](../../../apps/api-serving/src/observability.py#L213), [observability.py (line 251)](../../../apps/api-serving/src/observability.py#L251): emits `model_predictions_total`, `model_prediction_latency_seconds`, and `model_prediction_confidence`.
+- [inferenceservice.yaml (line 1)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L1), [inferenceservice.yaml (line 78)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L78): renders both control and candidate `InferenceService` resources.
+- [api-configmap.yaml (line 15)](../../../infra/helm/recsys-serving/templates/api-configmap.yaml#L15), [api-configmap.yaml (line 26)](../../../infra/helm/recsys-serving/templates/api-configmap.yaml#L26): passes A/B config into the API pod.
+- [model-ab-testing.json (line 1)](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json#L1), [model-ab-testing.json (line 824)](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json#L824): Grafana dashboard.
 
 Current GCP values:
 
@@ -45,7 +45,7 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
 2. Render serving values for the desired stage.
 
-   [jenkins/scripts/model_cd.py](../../../jenkins/scripts/model_cd.py) accepts these stages:
+   [model_cd.py (line 406)](../../../jenkins/scripts/model_cd.py#L406), [model_cd.py (line 425)](../../../jenkins/scripts/model_cd.py#L425) accepts these stages:
 
    | Stage | Purpose | Resulting A/B state |
    |---|---|---|
@@ -59,11 +59,11 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
 3. Deploy two KServe/Triton inference services during A/B.
 
-   [infra/helm/recsys-serving/templates/inferenceservice.yaml](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml) always renders the control `InferenceService`. When A/B is enabled and `candidateStorageUri` is present, it also renders the candidate `InferenceService` with label `recsys.ai/ab-variant: candidate`.
+   [inferenceservice.yaml (line 1)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L1), [inferenceservice.yaml (line 78)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L78) always renders the control `InferenceService`. When A/B is enabled and `candidateStorageUri` is present, it also renders the candidate `InferenceService` with label `recsys.ai/ab-variant: candidate`.
 
 4. Pass A/B config into the API pod.
 
-   [infra/helm/recsys-serving/templates/api-configmap.yaml](../../../infra/helm/recsys-serving/templates/api-configmap.yaml) exposes the runtime config to FastAPI:
+   [api-configmap.yaml (line 15)](../../../infra/helm/recsys-serving/templates/api-configmap.yaml#L15), [api-configmap.yaml (line 26)](../../../infra/helm/recsys-serving/templates/api-configmap.yaml#L26) exposes the runtime config to FastAPI:
 
    ```text
    AB_TEST_ENABLED
@@ -77,15 +77,15 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
 5. Route each recommendation request.
 
-   [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py) builds one Triton ranker for `control` and one Triton ranker for `candidate`. `TritonABRouter.assign()` hashes `experiment_id:user_id` into a bucket from `0..99`; if the bucket is below `AB_CANDIDATE_WEIGHT_PERCENT`, the user is assigned to `candidate`, otherwise to `control`.
+   [ab_testing.py (line 55)](../../../apps/api-serving/src/ab_testing.py#L55), [ab_testing.py (line 107)](../../../apps/api-serving/src/ab_testing.py#L107) builds one Triton ranker for `control` and one Triton ranker for `candidate`. `TritonABRouter.assign()` hashes `experiment_id:user_id` into a bucket from `0..99`; if the bucket is below `AB_CANDIDATE_WEIGHT_PERCENT`, the user is assigned to `candidate`, otherwise to `control`.
 
 6. Return and monitor variant metadata.
 
-   [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py) passes the selected route into the recommendation response, so each response includes `ab_variant`, `ab_experiment_id`, and `model_version`. The same labels are also attached to Prometheus metrics through [apps/api-serving/src/serving_utils.py](../../../apps/api-serving/src/serving_utils.py), which lets Grafana compare control and candidate request volume, errors, latency, confidence, and score shape.
+   [ranking.py (line 99)](../../../apps/api-serving/src/ranking.py#L99), [ranking.py (line 154)](../../../apps/api-serving/src/ranking.py#L154) passes the selected route into the recommendation response, so each response includes `ab_variant`, `ab_experiment_id`, and `model_version`. The same labels are also attached to Prometheus metrics through [serving_utils.py (line 17)](../../../apps/api-serving/src/serving_utils.py#L17), [serving_utils.py (line 26)](../../../apps/api-serving/src/serving_utils.py#L26), which lets Grafana compare control and candidate request volume, errors, latency, confidence, and score shape.
 
 7. Decide promote or rollback.
 
-   [jenkins/scripts/model_cd.py](../../../jenkins/scripts/model_cd.py) implements promotion gates in `assert_promote_gates()`:
+   [model_cd.py (line 129)](../../../jenkins/scripts/model_cd.py#L129), [model_cd.py (line 231)](../../../jenkins/scripts/model_cd.py#L231) implements promotion gates in `assert_promote_gates()`:
 
    - Promote is allowed when candidate error rate is not more than `0.02` above control error rate.
    - Promote is allowed when candidate p95 latency is not more than `1.5x` control p95 latency.
@@ -167,12 +167,12 @@ What this proves:
 
 The `ab_variant` value is not inferred from Kubernetes after the fact. It is an explicit response field emitted by the API:
 
-- [apps/api-serving/src/api_schemas.py](../../../apps/api-serving/src/api_schemas.py): `RecommendationResponse` includes `ab_variant` and `ab_experiment_id`.
-- [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py): `TritonABRouter.from_env()` creates a control Triton ranker with `ab_variant="control"` and a candidate Triton ranker with `ab_variant="candidate"`.
-- [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py): `TritonABRouter.assign()` hashes `experiment_id:user_id` into a bucket and compares it with `AB_CANDIDATE_WEIGHT_PERCENT`.
-- [apps/api-serving/src/ab_testing.py](../../../apps/api-serving/src/ab_testing.py): `TritonABRouter.route()` returns a `TritonRoute` carrying the selected `model_version`, `ab_variant`, and `ab_experiment_id`.
-- [apps/api-serving/src/ranking.py](../../../apps/api-serving/src/ranking.py): `recommend()` passes the route metadata into `format_top_k()`, so the API response exposes whether that request used `control` or `candidate`.
-- [apps/api-serving/src/serving_utils.py](../../../apps/api-serving/src/serving_utils.py): `ab_labels()` also attaches `ab_variant`, `model_version`, and `experiment_id` to Prometheus metrics.
+- [api_schemas.py (line 16)](../../../apps/api-serving/src/api_schemas.py#L16), [api_schemas.py (line 23)](../../../apps/api-serving/src/api_schemas.py#L23): `RecommendationResponse` includes `ab_variant` and `ab_experiment_id`.
+- [ab_testing.py (line 55)](../../../apps/api-serving/src/ab_testing.py#L55), [ab_testing.py (line 89)](../../../apps/api-serving/src/ab_testing.py#L89): `TritonABRouter.from_env()` creates a control Triton ranker with `ab_variant="control"` and a candidate Triton ranker with `ab_variant="candidate"`.
+- [ab_testing.py (line 91)](../../../apps/api-serving/src/ab_testing.py#L91), [ab_testing.py (line 107)](../../../apps/api-serving/src/ab_testing.py#L107): `TritonABRouter.assign()` hashes `experiment_id:user_id` into a bucket and compares it with `AB_CANDIDATE_WEIGHT_PERCENT`.
+- [ab_testing.py (line 121)](../../../apps/api-serving/src/ab_testing.py#L121), [ab_testing.py (line 141)](../../../apps/api-serving/src/ab_testing.py#L141): `TritonABRouter.route()` returns a `TritonRoute` carrying the selected `model_version`, `ab_variant`, and `ab_experiment_id`.
+- [ranking.py (line 99)](../../../apps/api-serving/src/ranking.py#L99), [ranking.py (line 176)](../../../apps/api-serving/src/ranking.py#L176): `recommend()` passes the route metadata into `format_top_k()`, so the API response exposes whether that request used `control` or `candidate`.
+- [serving_utils.py (line 17)](../../../apps/api-serving/src/serving_utils.py#L17), [serving_utils.py (line 26)](../../../apps/api-serving/src/serving_utils.py#L26): `ab_labels()` also attaches `ab_variant`, `model_version`, and `experiment_id` to Prometheus metrics.
 
 With `AB_CANDIDATE_WEIGHT_PERCENT=50`, the expected long-run candidate share is about 50%. This short proof uses only user IDs `1..80`, so the observed 42/80 candidate assignments are deterministic for this exact range and can differ slightly from exactly 50%. The key evidence is that both variants receive successful traffic and the response/metrics identify which model version served each request.
 

@@ -1,63 +1,74 @@
 seed: 42
-history_start_date: "2026-03-15"
-history_days: 30
 
-entities:
-  n_users: 3000
-  n_products: 3000
-  n_categories: 160
-  n_brands: 500
-  preferences_per_user: 8
+offline:
+  generator:
+    history_start_date: "2026-03-15"
+    history_days: 30
+    traffic:
+      target_behavior_events: 10000
+      target_tolerance: 0.02
+      requests_per_session_min: 1
+      requests_per_session_max: 2
+      impressions_per_request_min: 5
+      impressions_per_request_max: 9
+      session_gap_minutes_min: 5
+      session_gap_minutes_max: 240
+    session_behavior:
+      view_after_impression_base: 0.32
+      cart_after_view_base: 0.20
+      purchase_after_cart_base: 0.30
+    burst_windows:
+      - start_hour: 12
+        end_hour: 13
+        traffic_weight: 3.0
+      - start_hour: 20
+        end_hour: 21
+        traffic_weight: 3.0
+    output:
+      base_path: "apps/data-platform/data-generator/src/output"
+      run_id: "test_10k_seed42"
+      overwrite: true
 
-traffic:
-  target_behavior_events: 10000
-  target_tolerance: 0.02
-  requests_per_session_min: 1
-  requests_per_session_max: 2
-  impressions_per_request_min: 5
-  impressions_per_request_max: 9
-  session_gap_minutes_min: 5
-  session_gap_minutes_max: 240
+  problems:
+    skew:
+      top_city: "HCMC"
+      top_city_ratio: 0.35
+      cities:
+        - "HCMC"
+        - "Hanoi"
+        - "Da Nang"
+        - "Can Tho"
+        - "Hai Phong"
+        - "Hue"
+        - "Nha Trang"
+        - "Bien Hoa"
+      top_category_ratio: 0.30
+    high_cardinality:
+      n_users: 3000
+      n_products: 3000
+      n_categories: 160
+      n_brands: 500
+      preferences_per_user: 8
+    schema_evolution:
+      change_date: "2026-04-01"
+    exact_duplicate:
+      rate: 0.015
 
-session_behavior:
-  view_after_impression_base: 0.32
-  cart_after_view_base: 0.20
-  purchase_after_cart_base: 0.30
-
-distribution:
-  top_city: "HCMC"
-  top_city_ratio: 0.35
-  cities:
-    - "HCMC"
-    - "Hanoi"
-    - "Da Nang"
-    - "Can Tho"
-    - "Hai Phong"
-    - "Hue"
-    - "Nha Trang"
-    - "Bien Hoa"
-  top_category_ratio: 0.30
-
-challenges:
-  duplicate_event_rate: 0.015
-  conflicting_duplicate_rate: 0.001
-  late_arrival_rate: 0.12
-  out_of_order_rate: 0.03
-  late_delay_minutes_min: 5
-  late_delay_minutes_max: 45
-
-burst_windows:
-  - start_hour: 12
-    end_hour: 13
-    traffic_weight: 3.0
-  - start_hour: 20
-    end_hour: 21
-    traffic_weight: 3.0
-
-schema_evolution:
-  change_date: "2026-04-01"
-
-output:
-  base_path: "apps/data-platform/data-generator/src/output"
-  run_id: "test_10k_seed42"
-  overwrite: true
+streaming:
+  generator:
+    interval_seconds: 1
+    events_per_tick: 40
+    max_events: 0
+    n_users: 80
+    n_products: 160
+  problems:
+    burst_traffic:
+      every_n_ticks: 5
+      multiplier: 8
+    duplicate_replay:
+      rate: 0.14
+      history_size: 1000
+    late_arrival:
+      rate: 0.28
+      delay_minutes_min: 45
+      delay_minutes_max: 180

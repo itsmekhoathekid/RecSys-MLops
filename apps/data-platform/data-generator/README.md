@@ -37,26 +37,40 @@ users/products
   -> partitioned Parquet
 ```
 
-The configured target is the number of `behavior_events` after duplicate and
-conflicting-duplicate injection. Generation finishes the current session before
+The configured target is the number of `behavior_events` after exact-duplicate
+injection. Generation finishes the current session before
 stopping, so the final count uses the configured tolerance.
+
+## Unified configuration
+
+Each scenario YAML contains both paths under one document:
+
+```yaml
+seed: 42
+offline:
+  generator: {}
+  problems:
+    skew: {}
+    high_cardinality: {}
+    schema_evolution: {}
+    exact_duplicate: {}
+streaming:
+  generator: {}
+  problems:
+    burst_traffic: {}
+    duplicate_replay: {}
+    late_arrival: {}
+```
+
+The historical CLI reads `offline`; the continuous producer reads `streaming`;
+both reuse the root seed.
 
 ## Purchase-frequency drift
 
 `configs/local/data_generator_drift.yaml` enables Scenario A over 150 historical days:
 
-```yaml
-drift:
-  enabled: true
-  scenario: user_purchase_frequency
-  drift_start_date: "2025-07-30"
-  drift_mode: gradual
-  purchase_probability_multiplier: 1.50
-  ramp_up_days: 30
-  baseline_start_date: "2025-06-30"
-  baseline_end_date: "2025-07-29"
-  psi_alert_threshold: 0.15
-```
+The drift block lives at `offline.generator.drift`; it remains separate from
+the assessed offline problem classes.
 
 The controller multiplies only the `cart -> purchase` probability. It does not
 rewrite feature values, so order and rolling-feature drift emerge from upstream
@@ -104,10 +118,9 @@ duplicate breakpoints.
 | High cardinality | Deterministic UUIDs for sessions, requests, impressions, events, and orders |
 | Schema evolution | V1 events omit `device_type` and `campaign_id`; V2 populates them |
 | Exact duplicate | Repeated row with the same `event_id` and `payload_hash` |
-| Conflicting duplicate | Same `event_id` with a changed price and payload hash |
-| Late arrival | `created_ts` delayed 5-45 minutes from `event_timestamp` |
-| Out of order | Selected events receive a delayed `ingestion_ts` |
-| Burst traffic | Session-hour weights increase in configured windows |
+| Bursty streaming traffic | Continuous producer periodically multiplies the tick size |
+| Streaming late arrival | Continuous events arrive now with a backdated `event_timestamp` |
+| Streaming duplicate replay | A recent event bundle is replayed with the same business identity |
 
 ## Table dictionary
 

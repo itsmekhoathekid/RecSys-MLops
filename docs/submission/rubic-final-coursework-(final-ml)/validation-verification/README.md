@@ -18,11 +18,13 @@
 
 ## Required Proof
 
-- Web API unit tests use `TestClient`, pytest fixtures, and mocked Redis/Triton services.
-- EP/BVA cases are visible in pytest IDs containing `equivalence-*` and `boundary-*`.
-- Property-based idempotency uses Hypothesis in `tests/unit/api_serving/test_validation_verification.py`.
+- Web API unit tests use `TestClient`, pytest fixtures, and mocked Redis/Triton services ([test_validation_verification.py (line 18)](../../../../tests/unit/api_serving/test_validation_verification.py#L18), [test_validation_verification.py (line 73)](../../../../tests/unit/api_serving/test_validation_verification.py#L73)).
+- EP/BVA cases are visible in pytest IDs containing `equivalence-*` and `boundary-*` ([test_validation_verification.py (line 75)](../../../../tests/unit/api_serving/test_validation_verification.py#L75), [test_validation_verification.py (line 127)](../../../../tests/unit/api_serving/test_validation_verification.py#L127)).
+- Property-based idempotency uses Hypothesis ([test_validation_verification.py (line 341)](../../../../tests/unit/api_serving/test_validation_verification.py#L341), [test_validation_verification.py (line 378)](../../../../tests/unit/api_serving/test_validation_verification.py#L378)).
 - Mutation score: 90.74%.
-- Locust HTML SLA report: `locust-api.html` after `validation_load_test.sh` runs.
+- Locust HTML SLA report: `locust-api.html` after [validation_load_test.sh (line 1)](../../../../jenkins/scripts/validation_load_test.sh#L1), [validation_load_test.sh (line 65)](../../../../jenkins/scripts/validation_load_test.sh#L65) runs.
+
+The evidence aggregation command is implemented in [validation_evidence.sh (line 1)](../../../../jenkins/scripts/validation_evidence.sh#L1), [validation_evidence.sh (line 80)](../../../../jenkins/scripts/validation_evidence.sh#L80); mutation target selection and score gating are in [validation_mutation.sh (line 1)](../../../../jenkins/scripts/validation_mutation.sh#L1), [validation_mutation.sh (line 205)](../../../../jenkins/scripts/validation_mutation.sh#L205).
 
 ## Commands
 

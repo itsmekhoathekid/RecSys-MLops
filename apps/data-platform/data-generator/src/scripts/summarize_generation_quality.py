@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -41,16 +41,6 @@ def top_counts(
     counter = Counter(row[column] for row in rows)
     total = len(rows)
     return [(value, count, percent(count, total)) for value, count in counter.most_common(limit)]
-
-
-def in_burst_window(hour: int, windows: list[Any]) -> bool:
-    for window in windows:
-        if window.start_hour <= window.end_hour:
-            if window.start_hour <= hour < window.end_hour:
-                return True
-        elif hour >= window.start_hour or hour < window.end_hour:
-            return True
-    return False
 
 
 def parquet_storage_summary(path: Path) -> dict[str, Any]:
@@ -137,14 +127,6 @@ def summarize(config: GeneratorConfig, config_path: Path, lake_root: Path | None
         ).values()
         if count > 1
     )
-    payload_hashes_by_event_id: dict[Any, set[str]] = defaultdict(set)
-    for row in events:
-        payload_hashes_by_event_id[row["event_id"]].add(row["payload_hash"])
-    conflicting_duplicate_ids = sum(
-        len(payload_hashes) > 1
-        for payload_hashes in payload_hashes_by_event_id.values()
-    )
-
     change_date = config.schema_evolution.change_date
     breaking_change_date = config.schema_evolution.breaking_change_date
     old_partition_rows = [
@@ -165,23 +147,6 @@ def summarize(config: GeneratorConfig, config_path: Path, lake_root: Path | None
         if breaking_change_date is not None
         and row["event_timestamp"].date() >= breaking_change_date
     ]
-
-    late_threshold_seconds = config.challenges.late_delay_minutes_min * 60
-    late_rows = sum(
-        (row["created_ts"] - row["event_timestamp"]).total_seconds()
-        >= late_threshold_seconds
-        for row in events
-    )
-    out_of_order_rows = sum(
-        (row["ingestion_ts"] - max(row["created_ts"], row["event_timestamp"]))
-        .total_seconds()
-        > 50
-        for row in events
-    )
-    burst_rows = sum(
-        in_burst_window(row["event_timestamp"].hour, config.burst_windows)
-        for row in events
-    )
 
     run_storage = parquet_storage_summary(run_path)
     lake_path = (
@@ -214,9 +179,6 @@ def summarize(config: GeneratorConfig, config_path: Path, lake_root: Path | None
             ["top_city_ratio", config.distribution.top_city_ratio],
             ["top_category_ratio", config.distribution.top_category_ratio],
             ["duplicate_event_rate", config.challenges.duplicate_event_rate],
-            ["conflicting_duplicate_rate", config.challenges.conflicting_duplicate_rate],
-            ["late_arrival_rate", config.challenges.late_arrival_rate],
-            ["out_of_order_rate", config.challenges.out_of_order_rate],
             [
                 "burst_windows",
                 ", ".join(
@@ -383,46 +345,6 @@ def summarize(config: GeneratorConfig, config_path: Path, lake_root: Path | None
                 "exact duplicate rows",
                 exact_duplicate_rows,
                 percent(exact_duplicate_rows, raw_event_count),
-            ],
-            [
-                "conflicting duplicate event ids",
-                conflicting_duplicate_ids,
-                percent(conflicting_duplicate_ids, distinct_event_ids),
-            ],
-        ],
-    )
-
-    print_section("Streaming Problems")
-    print_markdown_table(
-        ["problem", "count", "rate", "proof"],
-        [
-            [
-                "burst events in configured windows",
-                burst_rows,
-                percent(burst_rows, raw_event_count),
-                ", ".join(
-                    f"{window.start_hour}:00-{window.end_hour}:00 x{window.traffic_weight}"
-                    for window in config.burst_windows
-                )
-                or "none",
-            ],
-            [
-                "late arrivals",
-                late_rows,
-                percent(late_rows, raw_event_count),
-                f"created_ts-event_timestamp >= {config.challenges.late_delay_minutes_min} minutes",
-            ],
-            [
-                "stream duplicate rows",
-                duplicate_rows,
-                percent(duplicate_rows, raw_event_count),
-                "same event_id appears more than once",
-            ],
-            [
-                "out-of-order ingestion",
-                out_of_order_rows,
-                percent(out_of_order_rows, raw_event_count),
-                "ingestion_ts is delayed > 50 seconds after created_ts/event_ts",
             ],
         ],
     )

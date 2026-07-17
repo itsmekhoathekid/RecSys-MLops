@@ -4,7 +4,9 @@ from datetime import date
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from streaming.config import StreamGeneratorConfig, StreamSectionConfig
 
 
 class EntityConfig(BaseModel):
@@ -56,18 +58,9 @@ class DistributionConfig(BaseModel):
 
 
 class ChallengeConfig(BaseModel):
-    duplicate_event_rate: float = Field(ge=0, le=1)
-    conflicting_duplicate_rate: float = Field(ge=0, le=1)
-    late_arrival_rate: float = Field(ge=0, le=1)
-    out_of_order_rate: float = Field(ge=0, le=1)
-    late_delay_minutes_min: int = Field(gt=0)
-    late_delay_minutes_max: int = Field(gt=0)
+    model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="after")
-    def validate_delays(self) -> "ChallengeConfig":
-        if self.late_delay_minutes_min > self.late_delay_minutes_max:
-            raise ValueError("late delay min must be <= max")
-        return self
+    duplicate_event_rate: float = Field(ge=0, le=1)
 
 
 class BurstWindow(BaseModel):
@@ -130,6 +123,50 @@ class OutputConfig(BaseModel):
     overwrite: bool = True
 
 
+class ExactDuplicateConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rate: float = Field(ge=0, le=1)
+
+
+class OfflineProblemConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skew: DistributionConfig
+    high_cardinality: EntityConfig
+    schema_evolution: SchemaEvolutionConfig
+    exact_duplicate: ExactDuplicateConfig
+
+
+class OfflineGeneratorSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    history_start_date: date
+    history_days: int = Field(gt=0)
+    traffic: TrafficConfig
+    session_behavior: SessionBehaviorConfig
+    burst_windows: list[BurstWindow] = Field(default_factory=list)
+    drift: DriftConfig = Field(default_factory=DriftConfig)
+    output: OutputConfig
+
+
+class OfflineConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generator: OfflineGeneratorSettings
+    problems: OfflineProblemConfig
+
+
+class DataGeneratorConfig(BaseModel):
+    """Single YAML contract containing both offline and streaming problems."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    seed: int
+    offline: OfflineConfig
+    streaming: StreamSectionConfig
+
+
 class GeneratorConfig(BaseModel):
     seed: int
     history_start_date: date
@@ -179,8 +216,39 @@ class GeneratorConfig(BaseModel):
         return self
 
 
-def load_config(path: str | Path) -> GeneratorConfig:
+def load_data_generator_config(path: str | Path) -> DataGeneratorConfig:
     config_path = Path(path)
     with config_path.open("r", encoding="utf-8") as file:
         payload = yaml.safe_load(file)
-    return GeneratorConfig.model_validate(payload)
+    return DataGeneratorConfig.model_validate(payload)
+
+
+def load_config(path: str | Path) -> GeneratorConfig:
+    document = load_data_generator_config(path)
+    generator = document.offline.generator
+    problems = document.offline.problems
+    return GeneratorConfig(
+        seed=document.seed,
+        history_start_date=generator.history_start_date,
+        history_days=generator.history_days,
+        entities=problems.high_cardinality,
+        traffic=generator.traffic,
+        session_behavior=generator.session_behavior,
+        distribution=problems.skew,
+        challenges=ChallengeConfig(
+            duplicate_event_rate=problems.exact_duplicate.rate
+        ),
+        burst_windows=generator.burst_windows,
+        schema_evolution=problems.schema_evolution,
+        drift=generator.drift,
+        output=generator.output,
+    )
+
+
+def load_stream_config(path: str | Path) -> StreamGeneratorConfig:
+    document = load_data_generator_config(path)
+    return StreamGeneratorConfig(
+        seed=document.seed,
+        generator=document.streaming.generator,
+        problems=document.streaming.problems,
+    )

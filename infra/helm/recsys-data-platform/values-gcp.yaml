@@ -38,11 +38,6 @@ spark:
 
 realtimeProducer:
   replicas: 1
-  intervalSeconds: "1"
-  eventsPerTick: "10"
-  maxEvents: "0"
-  nUsers: "1000"
-  nProducts: "5000"
 
 flinkTaskManager:
   replicas: 2

@@ -30,7 +30,7 @@ The prediction API does not read Redis directly in the split-serving path. It de
 
 ## 2. FastAPI Service
 
-Code reference: [`inference_api.py`](../../../apps/api-serving/src/inference_api.py) configures the FastAPI app and exposes health, readiness, metrics, version, and async `POST /recommendations` endpoints.
+Code reference: [inference_api.py (line 18)](../../../apps/api-serving/src/inference_api.py#L18), [inference_api.py (line 123)](../../../apps/api-serving/src/inference_api.py#L123) configures the FastAPI app and exposes health, readiness, metrics, version, recommendation, and shutdown handlers.
 
 ### Key Evidence
 
@@ -38,7 +38,7 @@ Code reference: [`inference_api.py`](../../../apps/api-serving/src/inference_api
 
 ## 3. Pydantic Validation
 
-Code reference: [`api_schemas.py`](../../../apps/api-serving/src/api_schemas.py) defines recommendation request/item/response models and validates `user_id`, candidate-list length, and `top_k`.
+Code reference: [api_schemas.py (line 8)](../../../apps/api-serving/src/api_schemas.py#L8), [api_schemas.py (line 37)](../../../apps/api-serving/src/api_schemas.py#L37) defines recommendation and online-feature request/response models and validation bounds.
 
 ### Key Evidence
 
@@ -46,8 +46,8 @@ Code reference: [`api_schemas.py`](../../../apps/api-serving/src/api_schemas.py)
 
 ## 4. Async API Functions
 
-- [`inference_api.py`](../../../apps/api-serving/src/inference_api.py): async endpoints and awaited feature retrieval inside `recommendations()`.
-- [`feature_service_client.py`](../../../apps/api-serving/src/feature_service_client.py): `httpx.AsyncClient` POST to `/online-features` with Pydantic response validation.
+- [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 119)](../../../apps/api-serving/src/inference_api.py#L119): async recommendation endpoint and awaited feature retrieval.
+- [feature_service_client.py (line 12)](../../../apps/api-serving/src/feature_service_client.py#L12), [feature_service_client.py (line 34)](../../../apps/api-serving/src/feature_service_client.py#L34): `httpx.AsyncClient` POST to `/online-features` with Pydantic response validation.
 
 ### Key Evidence
 
@@ -55,7 +55,7 @@ Code reference: [`api_schemas.py`](../../../apps/api-serving/src/api_schemas.py)
 
 ## 5. Pull Online Features Before Prediction
 
-Code references: [`inference_api.py`](../../../apps/api-serving/src/inference_api.py) builds `OnlineFeaturesRequest` before prediction; [`feature_service_client.py`](../../../apps/api-serving/src/feature_service_client.py) performs and validates the service call.
+Code references: [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 92)](../../../apps/api-serving/src/inference_api.py#L92) builds `OnlineFeaturesRequest` before prediction; [feature_service_client.py (line 12)](../../../apps/api-serving/src/feature_service_client.py#L12), [feature_service_client.py (line 34)](../../../apps/api-serving/src/feature_service_client.py#L34) performs and validates the service call.
 
 ### Key Evidence
 
@@ -63,8 +63,8 @@ Code references: [`inference_api.py`](../../../apps/api-serving/src/inference_ap
 
 ## 6. Build Triton Payload And Predict
 
-- [`ranking.py`](../../../apps/api-serving/src/ranking.py): normalizes online features, builds Triton tensors, invokes the selected route, and formats Top-K output.
-- [`triton.py`](../../../apps/api-serving/src/triton.py): `RankerProtocol` and gRPC-backed `TritonRanker.score()`.
+- [ranking.py (line 53)](../../../apps/api-serving/src/ranking.py#L53), [ranking.py (line 119)](../../../apps/api-serving/src/ranking.py#L119), [ranking.py (line 179)](../../../apps/api-serving/src/ranking.py#L179), [ranking.py (line 219)](../../../apps/api-serving/src/ranking.py#L219): normalizes online features, builds Triton tensors, invokes the selected route, and formats Top-K output.
+- [triton.py (line 13)](../../../apps/api-serving/src/triton.py#L13), [triton.py (line 52)](../../../apps/api-serving/src/triton.py#L52): `RankerProtocol` and gRPC-backed `TritonRanker.score()`.
 
 ### Key Evidence
 
@@ -72,7 +72,7 @@ Code references: [`inference_api.py`](../../../apps/api-serving/src/inference_ap
 
 ## 7. KServe/Triton Inference Engine
 
-Code reference: [`inferenceservice.yaml`](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml) renders stable and optional candidate KServe `InferenceService` resources with Triton V2 and model `storageUri`.
+Code reference: [inferenceservice.yaml (line 1)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L1), [inferenceservice.yaml (line 75)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L75) renders stable and optional candidate KServe `InferenceService` resources with Triton V2 and model `storageUri`.
 
 Runtime command:
 
@@ -88,7 +88,7 @@ kubectl -n kserve-triton-inference get svc
 
 ## 8. A/B Route Support
 
-Code reference: [`ab_testing.py`](../../../apps/api-serving/src/ab_testing.py) defines `TritonRoute`, environment-driven `TritonABRouter`, stable user assignment, shadow support, and route selection.
+Code reference: [ab_testing.py (line 13)](../../../apps/api-serving/src/ab_testing.py#L13), [ab_testing.py (line 151)](../../../apps/api-serving/src/ab_testing.py#L151) defines `TritonRoute`, environment-driven `TritonABRouter`, stable user assignment, shadow support, and route selection.
 
 Runtime command:
 
@@ -148,7 +148,7 @@ Expected recommendation output shape:
 
 ## 10. Helm RollingUpdate + Healthcheck For K8s
 
-Code reference: [`api-deployment.yaml`](../../../infra/helm/recsys-serving/templates/api-deployment.yaml) defines replicas, `RollingUpdate`, surge/unavailable limits, and startup/readiness/liveness probes.
+Code reference: [api-deployment.yaml (line 9)](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L9), [api-deployment.yaml (line 84)](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L84) defines replicas, `RollingUpdate`, surge/unavailable limits, metrics annotations, and startup/readiness/liveness probes.
 
 Runtime command:
 
@@ -177,7 +177,7 @@ Fields to capture:
 
 The prediction API does not have a standalone Helm release. It is deployed as a resource inside the `recsys-serving` Helm release. Therefore, auto fallback for `recsys-api-serving` is inherited from the release-level `helm upgrade --install --atomic` command used by CI/CD. If the recommendation API rollout fails, Helm rolls back the whole `recsys-serving` release, including `recsys-api-serving`, `recsys-online-feature-api`, and the related serving resources.
 
-Code reference: [`model_cd.py`](../../../jenkins/scripts/model_cd.py) lints the chart and executes `helm upgrade --install --atomic` for the `recsys-serving` release.
+Code reference: [model_cd.py (line 296)](../../../jenkins/scripts/model_cd.py#L296), [model_cd.py (line 390)](../../../jenkins/scripts/model_cd.py#L390) lints the chart and executes `helm upgrade --install --atomic` for the `recsys-serving` release.
 
 Runtime command:
 

@@ -69,13 +69,13 @@ from the promotion manifest instead of building a new serving image.
 
 | Responsibility | Code reference |
 | --- | --- |
-| Pipeline stages, parallel branches, and deploy gate | [`Jenkinsfile`](../../../Jenkinsfile) |
-| Path-to-component mapping | [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py) |
-| Component tests and coverage | [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh) |
-| Image build, tag, push, and manifest | [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh) |
-| Helm/Kubernetes/Kubeflow deployment and readiness | [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) |
-| Promoted Triton model CD | [`model_cd.py`](../../../jenkins/scripts/model_cd.py) |
-| Jenkins jobs, webhook, and views | [`jenkins-init-configmap.yaml`](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml) |
+| Pipeline stages, parallel branches, and deploy gate | [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 336)](../../../Jenkinsfile#L336) |
+| Path-to-component mapping | [detect_changed_components.py (line 86)](../../../jenkins/scripts/detect_changed_components.py#L86), [detect_changed_components.py (line 522)](../../../jenkins/scripts/detect_changed_components.py#L522) |
+| Component tests and coverage | [component_ci.sh (line 1)](../../../jenkins/scripts/component_ci.sh#L1), [component_ci.sh (line 281)](../../../jenkins/scripts/component_ci.sh#L281) |
+| Image build, tag, push, and manifest | [component_build_publish.sh (line 1)](../../../jenkins/scripts/component_build_publish.sh#L1), [component_build_publish.sh (line 292)](../../../jenkins/scripts/component_build_publish.sh#L292) |
+| Helm/Kubernetes/Kubeflow deployment and readiness | [component_deploy.sh (line 1)](../../../jenkins/scripts/component_deploy.sh#L1), [component_deploy.sh (line 826)](../../../jenkins/scripts/component_deploy.sh#L826) |
+| Promoted Triton model CD | [model_cd.py (line 129)](../../../jenkins/scripts/model_cd.py#L129), [model_cd.py (line 516)](../../../jenkins/scripts/model_cd.py#L516) |
+| Jenkins jobs, webhook, and views | [jenkins-init-configmap.yaml (line 330)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L330), [jenkins-init-configmap.yaml (line 495)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L495) |
 
 
 ## CI/CD For Pipelines
@@ -437,14 +437,14 @@ release.
 
 **Code reference:**
 
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): defines the `trigger_kserve_model_cd` KFP component.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): sets the default promotion score threshold to `0.0`.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): wires `Trigger KServe CD` after `promote-bst-model`.
-- [apps/ml-system/src/cli/trigger_kserve_cd.py](../../../apps/ml-system/src/cli/trigger_kserve_cd.py): loads the promotion manifest, checks the metric gate, and triggers Jenkins.
-- [apps/ml-system/src/cli/trigger_kserve_cd.py](../../../apps/ml-system/src/cli/trigger_kserve_cd.py): posts the Jenkins build parameters for `RecSys-KServe-Model-CD`.
-- [jenkins/KServeModelCD.Jenkinsfile](../../../jenkins/KServeModelCD.Jenkinsfile): defines the dedicated post-promotion Jenkins CD job.
-- [jenkins/scripts/component_deploy.sh](../../../jenkins/scripts/component_deploy.sh): runs the production KServe model CD path with `model_cd.py --apply`.
-- [infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml): seeds the Jenkins job and the `06A KServe Model CD` view.
+- [bst_training_pipeline.py (line 243)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L243), [bst_training_pipeline.py (line 271)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L271): defines the `trigger_kserve_model_cd` KFP component.
+- [bst_training_pipeline.py (line 277)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L277), [bst_training_pipeline.py (line 324)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L324): sets the default promotion score threshold to `0.0`.
+- [bst_training_pipeline.py (line 439)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L439), [bst_training_pipeline.py (line 466)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L466): wires `Trigger KServe CD` after `promote-bst-model`.
+- [trigger_kserve_cd.py (line 299)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L299), [trigger_kserve_cd.py (line 382)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L382): loads the promotion manifest, checks the metric gate, and triggers Jenkins.
+- [trigger_kserve_cd.py (line 191)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L191), [trigger_kserve_cd.py (line 268)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L268): posts the Jenkins build parameters for `RecSys-KServe-Model-CD`.
+- [KServeModelCD.Jenkinsfile (line 1)](../../../jenkins/KServeModelCD.Jenkinsfile#L1), [KServeModelCD.Jenkinsfile (line 137)](../../../jenkins/KServeModelCD.Jenkinsfile#L137): defines the dedicated post-promotion Jenkins CD job.
+- [component_deploy.sh (line 510)](../../../jenkins/scripts/component_deploy.sh#L510), [component_deploy.sh (line 565)](../../../jenkins/scripts/component_deploy.sh#L565): runs the production KServe model CD path with `model_cd.py --apply`.
+- [jenkins-init-configmap.yaml (line 373)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L373), [jenkins-init-configmap.yaml (line 495)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L495): seeds the Jenkins job and the `06A KServe Model CD` view.
 
 
 

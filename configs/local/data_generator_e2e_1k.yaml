@@ -1,65 +1,78 @@
 seed: 42
-history_start_date: "2026-03-15"
-history_days: 14
 
-entities:
-  n_users: 8000
-  n_products: 20000
-  n_categories: 1000
-  n_brands: 5000
-  preferences_per_user: 10
+offline:
+  generator:
+    history_start_date: "2026-03-15"
+    history_days: 14
+    traffic:
+      target_behavior_events: 50000
+      target_tolerance: 0.02
+      requests_per_session_min: 4
+      requests_per_session_max: 8
+      impressions_per_request_min: 12
+      impressions_per_request_max: 24
+      session_gap_minutes_min: 5
+      session_gap_minutes_max: 240
+    session_behavior:
+      view_after_impression_base: 0.32
+      cart_after_view_base: 0.20
+      purchase_after_cart_base: 0.30
+    burst_windows:
+      - start_hour: 12
+        end_hour: 13
+        traffic_weight: 50.0
+      - start_hour: 20
+        end_hour: 21
+        traffic_weight: 50.0
+    output:
+      base_path: "apps/data-platform/data-generator/src/output"
+      run_id: "test_1k_seed42"
+      overwrite: true
 
-traffic:
-  target_behavior_events: 50000
-  target_tolerance: 0.02
-  requests_per_session_min: 4
-  requests_per_session_max: 8
-  impressions_per_request_min: 12
-  impressions_per_request_max: 24
-  session_gap_minutes_min: 5
-  session_gap_minutes_max: 240
+  problems:
+    skew:
+      top_city: "HCMC"
+      top_city_ratio: 0.96
+      cities:
+        - "HCMC"
+        - "Hanoi"
+        - "Da Nang"
+        - "Can Tho"
+        - "Hai Phong"
+        - "Hue"
+        - "Nha Trang"
+        - "Bien Hoa"
+        - "Quang Ngai"
+        - "Da Lat"
+      top_category_ratio: 0.99
+    high_cardinality:
+      n_users: 8000
+      n_products: 20000
+      n_categories: 1000
+      n_brands: 5000
+      preferences_per_user: 10
+    schema_evolution:
+      change_date: "2026-03-23"
+      breaking_change_date: "2026-03-27"
+      breaking_schema_version: 3
+    exact_duplicate:
+      rate: 0.45
 
-session_behavior:
-  view_after_impression_base: 0.32
-  cart_after_view_base: 0.20
-  purchase_after_cart_base: 0.30
-
-distribution:
-  top_city: "HCMC"
-  top_city_ratio: 0.96
-  cities:
-    - "HCMC"
-    - "Hanoi"
-    - "Da Nang"
-    - "Can Tho"
-    - "Hai Phong"
-    - "Hue"
-    - "Nha Trang"
-    - "Bien Hoa"
-  top_category_ratio: 0.99
-
-challenges:
-  duplicate_event_rate: 0.45
-  conflicting_duplicate_rate: 0.18
-  late_arrival_rate: 0.65
-  out_of_order_rate: 0.40
-  late_delay_minutes_min: 90
-  late_delay_minutes_max: 480
-
-burst_windows:
-  - start_hour: 12
-    end_hour: 13
-    traffic_weight: 50.0
-  - start_hour: 20
-    end_hour: 21
-    traffic_weight: 50.0
-
-schema_evolution:
-  change_date: "2026-03-23"
-  breaking_change_date: "2026-03-27"
-  breaking_schema_version: 3
-
-output:
-  base_path: "apps/data-platform/data-generator/src/output"
-  run_id: "test_1k_seed42"
-  overwrite: true
+streaming:
+  generator:
+    interval_seconds: 1
+    events_per_tick: 40
+    max_events: 0
+    n_users: 80
+    n_products: 160
+  problems:
+    burst_traffic:
+      every_n_ticks: 5
+      multiplier: 8
+    duplicate_replay:
+      rate: 0.14
+      history_size: 1000
+    late_arrival:
+      rate: 0.28
+      delay_minutes_min: 45
+      delay_minutes_max: 180

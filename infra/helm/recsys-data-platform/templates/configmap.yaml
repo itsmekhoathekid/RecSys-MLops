@@ -91,22 +91,6 @@ data:
   RETRAIN_ON_DRIFT: {{ .Values.observability.retrainOnDrift | quote }}
   RETRAIN_PSI_THRESHOLD: {{ .Values.observability.retrainPsiThreshold | quote }}
   RECSYS_JSON_LOGS: "1"
-  REALTIME_INTERVAL_SECONDS: {{ .Values.realtimeProducer.intervalSeconds | quote }}
-  REALTIME_EVENTS_PER_TICK: {{ .Values.realtimeProducer.eventsPerTick | quote }}
-  REALTIME_MAX_EVENTS: {{ .Values.realtimeProducer.maxEvents | quote }}
-  REALTIME_N_USERS: {{ .Values.realtimeProducer.nUsers | quote }}
-  REALTIME_N_PRODUCTS: {{ .Values.realtimeProducer.nProducts | quote }}
-  REALTIME_SEED: {{ .Values.realtimeProducer.seed | quote }}
-  REALTIME_HOT_PRODUCT_RATIO: {{ .Values.realtimeProducer.hotProductRatio | quote }}
-  REALTIME_HOT_PRODUCT_COUNT: {{ .Values.realtimeProducer.hotProductCount | quote }}
-  REALTIME_DUPLICATE_EVENT_RATE: {{ .Values.realtimeProducer.duplicateEventRate | quote }}
-  REALTIME_CONFLICTING_DUPLICATE_RATE: {{ .Values.realtimeProducer.conflictingDuplicateRate | quote }}
-  REALTIME_LATE_ARRIVAL_RATE: {{ .Values.realtimeProducer.lateArrivalRate | quote }}
-  REALTIME_OUT_OF_ORDER_RATE: {{ .Values.realtimeProducer.outOfOrderRate | quote }}
-  REALTIME_LATE_DELAY_MINUTES_MIN: {{ .Values.realtimeProducer.lateDelayMinutesMin | quote }}
-  REALTIME_LATE_DELAY_MINUTES_MAX: {{ .Values.realtimeProducer.lateDelayMinutesMax | quote }}
-  REALTIME_BURST_EVERY_N_TICKS: {{ .Values.realtimeProducer.burstEveryNTicks | quote }}
-  REALTIME_BURST_MULTIPLIER: {{ .Values.realtimeProducer.burstMultiplier | quote }}
   REALTIME_STREAM_TOPIC: {{ .Values.realtimeFlinkConsumer.topic | quote }}
   REALTIME_STREAM_GROUP_ID: {{ .Values.realtimeFlinkConsumer.groupId | quote }}
   REALTIME_STREAM_ONLINE_GROUP_ID: "{{ .Values.realtimeFlinkConsumer.groupId }}-{{ .Values.realtimeFlinkConsumer.online.groupIdSuffix }}"

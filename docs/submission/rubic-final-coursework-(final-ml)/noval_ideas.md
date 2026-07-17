@@ -161,15 +161,15 @@ Grafana, and Jenkins evidence for one rollout.
 
 | Responsibility | Implementation |
 |---|---|
-| Watch MLflow and drive lifecycle tags | [`model_rollout_controller.py`](../../../apps/ml-system/src/cli/model_rollout_controller.py) |
-| Progressive rollout demo commands | [`model_rollout_demo.sh`](../../../jenkins/scripts/model_rollout_demo.sh) |
-| Jenkins rollout stages and gates | [`KServeModelCD.Jenkinsfile`](../../../jenkins/KServeModelCD.Jenkinsfile), [`model_cd.py`](../../../jenkins/scripts/model_cd.py) |
-| Champion-only verification | [`verify_champion_only.sh`](../../../jenkins/scripts/verify_champion_only.sh) |
-| Watcher deployment | [`model-rollout-watcher.yaml`](../../../infra/helm/recsys-ci/templates/model-rollout-watcher.yaml) |
-| Changed-component CI/CD | [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py), [`Jenkinsfile`](../../../Jenkinsfile), [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh), [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh), [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) |
-| Shadow/A/B serving | [`shadow.py`](../../../apps/api-serving/src/shadow.py), [`ab_testing.py`](../../../apps/api-serving/src/ab_testing.py) |
-| KServe/Triton resources | [`inferenceservice.yaml`](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml) |
-| Grafana dashboard | [`model-ab-testing.json`](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json) |
+| Watch MLflow and drive lifecycle tags | [model_rollout_controller.py (line 112)](../../../apps/ml-system/src/cli/model_rollout_controller.py#L112), [model_rollout_controller.py (line 550)](../../../apps/ml-system/src/cli/model_rollout_controller.py#L550) |
+| Progressive rollout demo commands | [model_rollout_demo.sh (line 1)](../../../jenkins/scripts/model_rollout_demo.sh#L1), [model_rollout_demo.sh (line 74)](../../../jenkins/scripts/model_rollout_demo.sh#L74) |
+| Jenkins rollout stages and gates | [KServeModelCD.Jenkinsfile (line 1)](../../../jenkins/KServeModelCD.Jenkinsfile#L1), [KServeModelCD.Jenkinsfile (line 137)](../../../jenkins/KServeModelCD.Jenkinsfile#L137), [model_cd.py (line 129)](../../../jenkins/scripts/model_cd.py#L129), [model_cd.py (line 516)](../../../jenkins/scripts/model_cd.py#L516) |
+| Champion-only verification | [verify_champion_only.sh (line 1)](../../../jenkins/scripts/verify_champion_only.sh#L1), [verify_champion_only.sh (line 39)](../../../jenkins/scripts/verify_champion_only.sh#L39) |
+| Watcher deployment | [model-rollout-watcher.yaml (line 1)](../../../infra/helm/recsys-ci/templates/model-rollout-watcher.yaml#L1), [model-rollout-watcher.yaml (line 89)](../../../infra/helm/recsys-ci/templates/model-rollout-watcher.yaml#L89) |
+| Changed-component CI/CD | [detect_changed_components.py (line 86)](../../../jenkins/scripts/detect_changed_components.py#L86), [detect_changed_components.py (line 522)](../../../jenkins/scripts/detect_changed_components.py#L522), [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 336)](../../../Jenkinsfile#L336), [component_ci.sh (line 1)](../../../jenkins/scripts/component_ci.sh#L1), [component_ci.sh (line 281)](../../../jenkins/scripts/component_ci.sh#L281), [component_build_publish.sh (line 1)](../../../jenkins/scripts/component_build_publish.sh#L1), [component_build_publish.sh (line 292)](../../../jenkins/scripts/component_build_publish.sh#L292), [component_deploy.sh (line 1)](../../../jenkins/scripts/component_deploy.sh#L1), [component_deploy.sh (line 826)](../../../jenkins/scripts/component_deploy.sh#L826) |
+| Shadow/A/B serving | [shadow.py (line 13)](../../../apps/api-serving/src/shadow.py#L13), [shadow.py (line 89)](../../../apps/api-serving/src/shadow.py#L89), [ab_testing.py (line 20)](../../../apps/api-serving/src/ab_testing.py#L20), [ab_testing.py (line 151)](../../../apps/api-serving/src/ab_testing.py#L151) |
+| KServe/Triton resources | [inferenceservice.yaml (line 1)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L1), [inferenceservice.yaml (line 78)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L78) |
+| Grafana dashboard | [model-ab-testing.json (line 1)](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json#L1), [model-ab-testing.json (line 824)](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json#L824) |
 
 ## Proof Environment
 

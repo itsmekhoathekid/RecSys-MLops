@@ -18,11 +18,11 @@ Before DataHub ingestion, `verify_governance_coverage` fails the Airflow run unl
 
 Common code:
 
-- [apps/data-platform/src/metadata/runtime_lineage.py](../../../apps/data-platform/src/metadata/runtime_lineage.py): records run-scoped OpenLineage events from actual executions.
-- [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): clears old static edges, verifies complete coverage, and emits only runtime-observed job lineage.
-- [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): maps the latest runtime validation report to a DataHub assertion result.
-- [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): attaches native schema and data-quality assertions to an active Data Contract.
-- [apps/data-platform/src/validate/governance_contracts.py](../../../apps/data-platform/src/validate/governance_contracts.py): writes and reads the shared validation-report format.
+- [runtime_lineage.py (line 102)](../../../apps/data-platform/src/metadata/runtime_lineage.py#L102), [runtime_lineage.py (line 188)](../../../apps/data-platform/src/metadata/runtime_lineage.py#L188), [runtime_lineage.py (line 201)](../../../apps/data-platform/src/metadata/runtime_lineage.py#L201), [runtime_lineage.py (line 235)](../../../apps/data-platform/src/metadata/runtime_lineage.py#L235): builds, writes, and records run-scoped OpenLineage events from actual executions.
+- [ingest_datahub_governance.py (line 869)](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L869), [ingest_datahub_governance.py (line 996)](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L996): loads runtime events, verifies complete coverage, and emits only runtime-observed job lineage.
+- [ingest_datahub_governance.py (line 430)](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L430), [ingest_datahub_governance.py (line 515)](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L515): maps the latest runtime validation report to DataHub assertion results.
+- [ingest_datahub_governance.py (line 372)](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L372), [ingest_datahub_governance.py (line 429)](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L429), [ingest_datahub_governance.py (line 517)](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L517), [ingest_datahub_governance.py (line 556)](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L556): attaches native schema and data-quality assertions to an active Data Contract.
+- [governance_contracts.py (line 23)](../../../apps/data-platform/src/validate/governance_contracts.py#L23), [governance_contracts.py (line 99)](../../../apps/data-platform/src/validate/governance_contracts.py#L99): writes and reads the shared validation-report format.
 
 ## DP1 Linked With Related Tables
 
@@ -42,9 +42,9 @@ Common code:
 
 ### Code Reference
 
-- [`batch_lakehouse_ingestion.py`](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py): DP1 Bronze output lineage.
-- [`governance_contracts.py`](../../../apps/data-platform/src/validate/governance_contracts.py): `validate_dp1_bronze()` and report publication.
-- [`rubric_data_pipeline_dags.py`](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py): `ingest_stage >> validate_stage` orchestration.
+- [batch_lakehouse_ingestion.py (line 85)](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L85), [batch_lakehouse_ingestion.py (line 138)](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L138): DP1 Bronze enrichment, output, and lineage.
+- [governance_contracts.py (line 102)](../../../apps/data-platform/src/validate/governance_contracts.py#L102), [governance_contracts.py (line 133)](../../../apps/data-platform/src/validate/governance_contracts.py#L133): `validate_dp1_bronze()` and report publication.
+- [rubric_data_pipeline_dags.py (line 158)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L158), [rubric_data_pipeline_dags.py (line 216)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L216): DP1 commands and `ingest_stage >> validate_stage` orchestration.
 
 ## DP2 Linked With Related Tables
 
@@ -64,8 +64,8 @@ Common code:
 
 ### Code Reference
 
-- [`dp2_silver_gold_entrypoint.py`](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py): DP2 runtime lineage plus Silver validation/report publication.
-- [`build_silver_tables.py`](../../../apps/data-platform/src/features/spark/build_silver_tables.py): normalization, deduplication, rejected rows, and Iceberg writes.
+- [dp2_silver_gold_entrypoint.py (line 20)](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L20), [dp2_silver_gold_entrypoint.py (line 75)](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L75): DP2 runtime lineage plus Silver validation/report publication.
+- [build_silver_tables.py (line 14)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L14), [build_silver_tables.py (line 111)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L111): normalization, deduplication, rejected rows, and curated table construction.
 
 ## DP3 Linked With Related Tables
 
@@ -85,8 +85,8 @@ Common code:
 
 ### Code Reference
 
-- [`spark_batch_entrypoint.py`](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py): DP3 Silver inputs, Iceberg/PostgreSQL outputs, and Iceberg validation report.
-- [`governance_contracts.py`](../../../apps/data-platform/src/validate/governance_contracts.py): `validate_dp3_postgres()` for Feast offline-store contracts.
+- [spark_batch_entrypoint.py (line 39)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L39), [spark_batch_entrypoint.py (line 207)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L207): DP3 Silver inputs, Iceberg/PostgreSQL outputs, and validation report.
+- [governance_contracts.py (line 134)](../../../apps/data-platform/src/validate/governance_contracts.py#L134), [governance_contracts.py (line 203)](../../../apps/data-platform/src/validate/governance_contracts.py#L203): `validate_dp3_postgres()` for Feast offline-store contracts.
 
 ## CDC Ingestion
 
@@ -96,7 +96,7 @@ Common code:
 
 **Figure 7 — CDC ingestion lineage.** Ten source PostgreSQL tables feed the `Register Debezium Connector` task and map to ten `cdc.*` Kafka topics. The connector is represented as the processing node between the source tables and topics, and the dedicated `CDC PostgreSQL To Kafka` flow keeps this real-time ingestion path separate from rubric DP1.
 
-Code reference: [apps/data-platform/src/ingest/register_k8s_connectors.py](../../../apps/data-platform/src/ingest/register_k8s_connectors.py). The accepted connector configuration determines the runtime source-table and Kafka-topic observations.
+Code reference: [register_k8s_connectors.py (line 28)](../../../apps/data-platform/src/ingest/register_k8s_connectors.py#L28), [register_k8s_connectors.py (line 91)](../../../apps/data-platform/src/ingest/register_k8s_connectors.py#L91). The accepted connector configuration determines the runtime source-table and Kafka-topic observations.
 
 ## Streaming Features
 
@@ -111,7 +111,7 @@ The PostgreSQL datasets remain owned by DP3 and are only referenced by the strea
 
 **Figure 8 — Streaming feature-store processing.** The `cdc.behavior_events` topic branches into distinct `Run Flink Stream To Online Store` and `Run Flink Stream To Offline Store` jobs. The expanded offline branch shows the three PostgreSQL feature tables; the Redis children of the online-store job are collapsed in this capture. The two job nodes still make the online and offline processing responsibilities explicit.
 
-Code reference: [apps/data-platform/src/features/flink/realtime_stream_job.py](../../../apps/data-platform/src/features/flink/realtime_stream_job.py). The event reports PostgreSQL or Iceberg offline outputs according to the sink actually enabled, and reports Redis outputs only when the online sink is enabled.
+Code reference: [realtime_stream_job.py (line 1182)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1182), [realtime_stream_job.py (line 1190)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1190), [realtime_stream_job.py (line 1200)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1200), [realtime_stream_job.py (line 1202)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1202). The event reports PostgreSQL or Iceberg offline outputs according to the sink actually enabled, and reports Redis outputs only when the online sink is enabled.
 
 ## Runtime Governance Verification
 

@@ -8,19 +8,17 @@ This document covers the rubric rows:
 
 ## Lakehouse Optimization
 
-The repository has two storage patterns:
-
-- DP1 Bronze is immutable/run-oriented Parquet. The scheduled DP1 flow uses `overwrite`, so each table currently has one deterministic file instead of accumulating tiny append files.
-- DP2 Silver and DP3 offline/stream features are Iceberg tables. These are the curated tables that benefit from file compaction, clustering, and manifest maintenance.
+The optimization scope is the DP2 Silver and DP3 offline/stream feature tables
+stored as Iceberg. These curated tables benefit from file compaction,
+clustering, write sizing, and manifest maintenance.
 
 Code reference:
 
-- [apps/data-platform/src/lakehouse/iceberg.py](../../../apps/data-platform/src/lakehouse/iceberg.py): Iceberg catalog configuration for lakehouse and feature-store warehouses.
-- [apps/data-platform/src/ingest/batch_lakehouse_ingestion.py](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py): writes generated raw tables to lakehouse paths with deterministic `part-<run>-<table>.parquet` files.
-- [apps/data-platform/src/features/spark/session.py](../../../apps/data-platform/src/features/spark/session.py): AQE write sizing, file metrics, compaction, optional Z-order, and manifest rewrite.
-- [apps/data-platform/src/lakehouse/optimize.py](../../../apps/data-platform/src/lakehouse/optimize.py): runnable maintenance job for all 19 curated Iceberg tables.
-- [apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py): manual/cron `recsys_lakehouse_maintenance` DAG.
-- [configs/local/spark_batch.yaml](../../../configs/local/spark_batch.yaml): Spark batch output warehouse and feature-store locations.
+- [iceberg.py (line 8)](../../../apps/data-platform/src/lakehouse/iceberg.py#L8), [iceberg.py (line 113)](../../../apps/data-platform/src/lakehouse/iceberg.py#L113): Iceberg catalog configuration for lakehouse and feature-store warehouses.
+- [session.py (line 11)](../../../apps/data-platform/src/features/spark/session.py#L11), [session.py (line 191)](../../../apps/data-platform/src/features/spark/session.py#L191): AQE write sizing, file metrics, compaction, optional Z-order, and manifest rewrite.
+- [optimize.py (line 24)](../../../apps/data-platform/src/lakehouse/optimize.py#L24), [optimize.py (line 92)](../../../apps/data-platform/src/lakehouse/optimize.py#L92): runnable maintenance job for curated Iceberg tables.
+- [rubric_data_pipeline_dags.py (line 260)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L260), [rubric_data_pipeline_dags.py (line 271)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L271): manual/cron `recsys_lakehouse_maintenance` DAG.
+- [spark_batch.yaml (line 7)](../../../configs/local/spark_batch.yaml#L7), [spark_batch.yaml (line 31)](../../../configs/local/spark_batch.yaml#L31): Spark batch output warehouse and feature-store locations.
 
 ### Code before optimization
 
@@ -180,49 +178,79 @@ The primary measurable success condition is `after.file_count < before.file_coun
 
 Optimization implemented:
 
-| Technique | Implementation | Effect | Official reference |
-|---|---|---|---|
-| Bronze compression | `pq.write_table(..., compression="snappy")` in batch ingestion | Reduces raw storage and scan IO while retaining broadly compatible Parquet. | [Apache Arrow: Parquet compression](https://arrow.apache.org/docs/python/parquet.html#compression-encoding-and-file-compatibility) |
-| Iceberg bin-pack | `rewrite_data_files` with 128 MiB target and minimum 2 input files | Combines small files, reducing file-open and metadata overhead. | [Apache Iceberg 1.7.1: `rewrite_data_files`](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_data_files) |
-| Selective Z-order | `--strategy zorder` only maps hot event/feature tables to user/item/time columns | Improves data skipping for the repository's dominant point/range access paths without paying a sort cost on every table. | [Apache Iceberg 1.7.1: sort strategy and Z-order](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_data_files) |
-| Manifest rewrite | `rewrite_manifests` after data-file rewrite | Improves scan planning after files have moved or been regrouped. | [Apache Iceberg 1.7.1: `rewrite_manifests`](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_manifests) |
-| Adaptive write sizing | Spark AQE coalescing with `parallelismFirst=false` and a 128 MiB advisory size | Prevents four configured shuffle partitions from automatically becoming four tiny output files for small jobs. | [Spark 3.5.8: AQE configuration](https://spark.apache.org/docs/3.5.8/configuration.html#adaptive-query-execution) and [Iceberg: controlling file sizes](https://iceberg.apache.org/docs/1.7.1/spark-writes/#controlling-file-sizes) |
-| Table write properties | target size 128 MiB, hash distribution, Zstandard compression | Makes future Iceberg writes more scan-friendly; compaction also rewrites existing files using current table properties. | [Iceberg 1.7.1: write properties](https://iceberg.apache.org/docs/1.7.1/configuration/#write-properties) and [write distribution modes](https://iceberg.apache.org/docs/1.7.1/spark-writes/#writing-distribution-modes) |
-| Feature-store warehouse split | Raw lakehouse and offline feature store use separate catalog warehouse roots | Keeps raw/silver/gold feature data isolated for lifecycle control. | [Iceberg 1.7.1: catalog properties and `warehouse`](https://iceberg.apache.org/docs/1.7.1/configuration/#catalog-properties) |
+| Technique | Implementation | Exact code reference | How it is optimized | Official reference |
+|---|---|---|---|---|
+| Iceberg bin-pack compaction | Run `rewrite_data_files` with a 128 MiB target and at least two eligible input files. | [session.py (line 118)](../../../apps/data-platform/src/features/spark/session.py#L118): defaults the target to 128 MiB.<br>[session.py (line 120)](../../../apps/data-platform/src/features/spark/session.py#L120): requires at least two input files.<br>[session.py (line 153)](../../../apps/data-platform/src/features/spark/session.py#L153): selects `binpack` as the safe default.<br>[session.py (line 159)](../../../apps/data-platform/src/features/spark/session.py#L159): passes the target file size to Iceberg.<br>[session.py (line 160)](../../../apps/data-platform/src/features/spark/session.py#L160): passes the minimum input-file count.<br>[session.py (line 165)](../../../apps/data-platform/src/features/spark/session.py#L165): executes `rewrite_data_files`. | Iceberg reads several small data files, bin-packs their rows, and writes fewer larger files near the target size. This reduces file-open overhead, object-store requests, and planning metadata. A table with fewer than two eligible files is intentionally left unchanged. | [Apache Iceberg 1.7.1: `rewrite_data_files`](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_data_files) |
+| Selective Z-order clustering | Use Z-order only for tables with known user/item/time access paths; all other tables remain bin-packed. | [optimize.py (line 13)](../../../apps/data-platform/src/lakehouse/optimize.py#L13): defines the per-table Z-order map.<br>[optimize.py (line 14)](../../../apps/data-platform/src/lakehouse/optimize.py#L14): clusters behavior events by user, product, and event time.<br>[optimize.py (line 16)](../../../apps/data-platform/src/lakehouse/optimize.py#L16): clusters user-sequence features by user and feature time.<br>[optimize.py (line 18)](../../../apps/data-platform/src/lakehouse/optimize.py#L18): clusters item features by product and feature time.<br>[optimize.py (line 33)](../../../apps/data-platform/src/lakehouse/optimize.py#L33): resolves sort columns for each table.<br>[session.py (line 154)](../../../apps/data-platform/src/features/spark/session.py#L154): activates the sorted rewrite only when sort columns exist.<br>[session.py (line 157)](../../../apps/data-platform/src/features/spark/session.py#L157): builds Iceberg `zorder(...)`.<br>[optimize.py (line 97)](../../../apps/data-platform/src/lakehouse/optimize.py#L97): exposes `--strategy zorder`; the CLI default remains `binpack`. | Z-order places rows with similar entity IDs and timestamps near one another across Parquet files. Iceberg/Parquet statistics can then skip more unrelated files for point and time-range filters. It is selective because sorting every table would add unnecessary shuffle and rewrite cost. | [Apache Iceberg 1.7.1: sort strategy and Z-order](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_data_files) |
+| Manifest rewrite | Rewrite Iceberg manifests after data files have been compacted or clustered. | [session.py (line 175)](../../../apps/data-platform/src/features/spark/session.py#L175): checks whether manifest rewrite is enabled.<br>[session.py (line 177)](../../../apps/data-platform/src/features/spark/session.py#L177): executes `rewrite_manifests`.<br>[session.py (line 179)](../../../apps/data-platform/src/features/spark/session.py#L179): captures the manifest rewrite result. | Data-file rewrite invalidates the usefulness of old manifest grouping. Rewriting manifests regroups current file metadata, so Iceberg performs less manifest scanning and faster scan planning. | [Apache Iceberg 1.7.1: `rewrite_manifests`](https://iceberg.apache.org/docs/1.7.1/spark-procedures/#rewrite_manifests) |
+| Adaptive write sizing | Enable Spark AQE partition coalescing and use a 128 MiB advisory partition size. | [session.py (line 16)](../../../apps/data-platform/src/features/spark/session.py#L16): sets the base shuffle partition count.<br>[session.py (line 17)](../../../apps/data-platform/src/features/spark/session.py#L17): enables AQE.<br>[session.py (line 18)](../../../apps/data-platform/src/features/spark/session.py#L18): enables adaptive partition coalescing.<br>[session.py (line 19)](../../../apps/data-platform/src/features/spark/session.py#L19): sets `parallelismFirst=false` so target sizing takes priority.<br>[session.py (line 21)](../../../apps/data-platform/src/features/spark/session.py#L21): configures advisory partition sizing.<br>[session.py (line 22)](../../../apps/data-platform/src/features/spark/session.py#L22): defaults the advisory size to 134,217,728 bytes. | Spark can merge undersized shuffle partitions before writing instead of blindly producing one output file per configured partition. This prevents new writes from immediately recreating many tiny files. The advisory size guides task size; it does not guarantee every physical file is exactly 128 MiB. | [Spark 3.5.8: AQE configuration](https://spark.apache.org/docs/3.5.8/configuration.html#adaptive-query-execution) and [Iceberg: controlling file sizes](https://iceberg.apache.org/docs/1.7.1/spark-writes/#controlling-file-sizes) |
+| Iceberg table write properties | Persist target file size, hash distribution, and Zstandard compression on each optimized table. | [session.py (line 144)](../../../apps/data-platform/src/features/spark/session.py#L144): alters the Iceberg table properties.<br>[session.py (line 145)](../../../apps/data-platform/src/features/spark/session.py#L145): stores the target file size.<br>[session.py (line 146)](../../../apps/data-platform/src/features/spark/session.py#L146): selects hash write distribution.<br>[session.py (line 147)](../../../apps/data-platform/src/features/spark/session.py#L147): selects Zstandard Parquet compression. | These properties affect later Iceberg writes, not only the current maintenance run. The target size guides sufficiently large future writes, and Zstandard reduces curated-table storage and scan I/O. Hash distribution follows the table's Iceberg partition spec; it does not by itself cluster an unpartitioned table. | [Iceberg 1.7.1: write properties](https://iceberg.apache.org/docs/1.7.1/configuration/#write-properties) and [write distribution modes](https://iceberg.apache.org/docs/1.7.1/spark-writes/#writing-distribution-modes) |
+
+### Measuring The Physical File Change
+
+Measurement is evidence for the optimization, not an optimization technique.
+The maintenance job reads the Iceberg `files` metadata table before and after
+the rewrite, then reports file-count reduction and file-size changes.
+
+- Code reference:
+  - [session.py (line 97)](../../../apps/data-platform/src/features/spark/session.py#L97): counts physical files.
+  - [session.py (line 98)](../../../apps/data-platform/src/features/spark/session.py#L98): sums physical file bytes.
+  - [session.py (line 101)](../../../apps/data-platform/src/features/spark/session.py#L101): calculates average file size.
+  - [session.py (line 102)](../../../apps/data-platform/src/features/spark/session.py#L102): reads the Iceberg `files` metadata table.
+  - [session.py (line 140)](../../../apps/data-platform/src/features/spark/session.py#L140): captures metrics before the rewrite.
+  - [session.py (line 181)](../../../apps/data-platform/src/features/spark/session.py#L181): captures metrics after the rewrite.
+  - [optimize.py (line 79)](../../../apps/data-platform/src/lakehouse/optimize.py#L79): aggregates the before-file count.
+  - [optimize.py (line 80)](../../../apps/data-platform/src/lakehouse/optimize.py#L80): aggregates the after-file count.
+  - [optimize.py (line 89)](../../../apps/data-platform/src/lakehouse/optimize.py#L89): reports the file-count reduction.
+
+The main success signal is fewer physical files with a larger average file
+size. This document does not infer a latency improvement from the small local
+dataset without a separate query benchmark.
+
+### Running Lakehouse Maintenance
+
+The runner and Airflow DAG make the optimization operational; they are not
+physical layout techniques themselves.
+
+- Code reference:
+  - [optimize.py (line 24)](../../../apps/data-platform/src/lakehouse/optimize.py#L24): selects tables by `silver`, `features`, or `all` scope.
+  - [optimize.py (line 27)](../../../apps/data-platform/src/lakehouse/optimize.py#L27): adds Silver tables.
+  - [optimize.py (line 29)](../../../apps/data-platform/src/lakehouse/optimize.py#L29): adds feature tables.
+  - [optimize.py (line 62)](../../../apps/data-platform/src/lakehouse/optimize.py#L62): iterates over the selected tables.
+  - [optimize.py (line 65)](../../../apps/data-platform/src/lakehouse/optimize.py#L65): invokes compaction for each table.
+  - [rubric_data_pipeline_dags.py (line 184)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L184): constructs the Spark maintenance command.
+  - [rubric_data_pipeline_dags.py (line 186)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L186): points the command to `lakehouse/optimize.py`.
+  - [rubric_data_pipeline_dags.py (line 260)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L260): defines the maintenance DAG.
+  - [rubric_data_pipeline_dags.py (line 268)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L268): creates the optimization task.
+  - [rubric_data_pipeline_dags.py (line 270)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L270): runs the maintenance command.
+
+The scheduled command currently uses the CLI default `binpack`. Z-order is only
+used when the job is invoked with `--strategy zorder`.
+
+### Lakehouse And Feature Warehouse Isolation
+
+The two Iceberg catalog roots provide storage and lifecycle isolation; this is
+architecture organization, not a performance optimization technique.
+
+- Code reference:
+  - [iceberg.py (line 9)](../../../apps/data-platform/src/lakehouse/iceberg.py#L9): names the lakehouse catalog.
+  - [iceberg.py (line 11)](../../../apps/data-platform/src/lakehouse/iceberg.py#L11): names the offline-feature catalog.
+  - [iceberg.py (line 13)](../../../apps/data-platform/src/lakehouse/iceberg.py#L13): defines the lakehouse warehouse root.
+  - [iceberg.py (line 16)](../../../apps/data-platform/src/lakehouse/iceberg.py#L16): defines the offline-feature warehouse root.
+  - [iceberg.py (line 93)](../../../apps/data-platform/src/lakehouse/iceberg.py#L93): registers the lakehouse catalog with Spark.
+  - [iceberg.py (line 94)](../../../apps/data-platform/src/lakehouse/iceberg.py#L94): registers the feature catalog with Spark.
+  - [spark_batch.yaml (line 10)](../../../configs/local/spark_batch.yaml#L10): configures the lakehouse URI.
+  - [spark_batch.yaml (line 14)](../../../configs/local/spark_batch.yaml#L14): configures the offline-feature URI.
+
+The separation allows independent retention, ownership, governance, and
+maintenance scope for curated lakehouse data and ML feature data.
 
 ### Official reference notes
 
 All links below are primary project documentation and were checked on 2026-07-11:
 
-- [Apache Arrow Parquet documentation](https://arrow.apache.org/docs/python/parquet.html) lists Snappy and Zstandard among supported Parquet codecs and shows the `pq.write_table(..., compression=...)` API used by Bronze ingestion.
 - [Apache Iceberg 1.7.1 Spark procedures](https://iceberg.apache.org/docs/1.7.1/spark-procedures/) defines `rewrite_data_files`, the `binpack` and `sort` strategies, `zorder(c1,c2,...)`, rewrite result counters, and `rewrite_manifests`.
 - [Apache Iceberg 1.7.1 Spark writes](https://iceberg.apache.org/docs/1.7.1/spark-writes/) explains hash/range distribution and why Spark task size constrains the resulting Iceberg file size.
 - [Apache Iceberg 1.7.1 configuration](https://iceberg.apache.org/docs/1.7.1/configuration/) defines `write.target-file-size-bytes`, `write.parquet.compression-codec`, and catalog `warehouse` properties.
 - [Apache Spark 3.5.8 configuration](https://spark.apache.org/docs/3.5.8/configuration.html#adaptive-query-execution) documents `spark.sql.adaptive.advisoryPartitionSizeInBytes` and `spark.sql.adaptive.coalescePartitions.parallelismFirst`.
 - [Apache Iceberg 1.7.1 partition evolution](https://iceberg.apache.org/docs/1.7.1/evolution/#partition-evolution) supports the decision to defer daily partitioning at the current small scale and add or evolve a partition spec later without rewriting old data eagerly.
-
-## Data Warehouse Indexing
-
-Source Postgres is initialized with primary keys plus secondary indexes for the query patterns used by CDC, joining, validation, feature generation, and recommendation training.
-
-Official basis: [PostgreSQL Chapter 11 — Indexes](https://www.postgresql.org/docs/current/indexes.html) explains the read-performance/write-overhead tradeoff, while [PostgreSQL multicolumn indexes](https://www.postgresql.org/docs/current/indexes-multicolumn.html) documents the composite B-tree pattern used for entity-plus-timestamp access paths below.
-
-Code reference:
-
-- [infra/docker/scripts/init_postgres_schema.py](../../../infra/docker/scripts/init_postgres_schema.py): source table DDL, primary keys, and secondary index DDL.
-- [apps/data-platform/src/ingest/postgres_cdc_contracts.py](../../../apps/data-platform/src/ingest/postgres_cdc_contracts.py): CDC table contract and primary key/topic mapping.
-
-Secondary indexes implemented:
-
-| Table | Index | Query pattern |
-|---|---|---|
-| `product_snapshots` | `(product_id, valid_from, valid_to)` | SCD2 validity lookup by product and timestamp. |
-| `sessions` | `(user_id, session_start_ts)` | User-session lookup by event time. |
-| `recommendation_requests` | `(user_id, request_timestamp)` | Request history and label generation. |
-| `impressions` | `(request_id, impression_timestamp)` | Request to candidates join. |
-| `impressions` | `(user_id, candidate_product_id)` | User-product exposure lookup. |
-| `behavior_events` | `(user_id, event_timestamp)` | User sequence features. |
-| `behavior_events` | `(product_id, event_timestamp)` | Item aggregate features. |
-| `behavior_events` | `(event_type, event_timestamp)` | Event type filtering for labels and quality checks. |
-| `orders` | `(user_id, order_timestamp)` | Purchase labels and user aggregates. |
-| `order_items` | `(product_id)` | Product conversion and order item joins. |

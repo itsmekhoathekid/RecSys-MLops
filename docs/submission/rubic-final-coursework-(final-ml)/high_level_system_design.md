@@ -751,12 +751,12 @@ flowchart TB
 
 | Architecture area | Primary repository locations |
 | --- | --- |
-| Data generation and source simulation | [`apps/data-platform/data-generator/`](../../../apps/data-platform/data-generator/) |
-| Ingestion, CDC, Spark, Flink, Feast, data quality | [`apps/data-platform/`](../../../apps/data-platform/) |
-| Analytics, dbt, Trino-facing models, Superset bootstrap | [`apps/analytics/`](../../../apps/analytics/) |
-| Kubeflow, KubeRay, BST training, evaluation, promotion | [`apps/ml-system/`](../../../apps/ml-system/) |
-| Online feature and recommendation APIs | [`apps/api-serving/`](../../../apps/api-serving/) |
-| React recommendation UI and event-writing demo API | [`apps/demo-web/`](../../../apps/demo-web/) |
-| Helm, Terraform, Kubernetes, Cloud Build | [`infra/`](../../../infra/) |
-| Jenkins CI/CD and controlled model rollout | [`Jenkinsfile`](../../../Jenkinsfile), [`jenkins/`](../../../jenkins/) |
-| Unit, contract, integration, E2E, and load verification | [`tests/`](../../../tests/) |
+| Data generation and source simulation | [historical_pipeline.py (line 21)](../../../apps/data-platform/data-generator/src/offline/historical_pipeline.py#L21), [producer.py (line 19)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L19) |
+| Ingestion, CDC, Spark, Flink, Feast, data quality | [spark_batch_entrypoint.py (line 47)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L47), [spark_batch_entrypoint.py (line 218)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L218), [realtime_stream_job.py (line 507)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L507), [realtime_stream_job.py (line 1086)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1086) |
+| Analytics, dbt, Trino-facing models, Superset bootstrap | [sync_silver.py (line 21)](../../../apps/analytics/src/sync_silver.py#L21), [sync_silver.py (line 127)](../../../apps/analytics/src/sync_silver.py#L127), [schema.yml (line 1)](../../../apps/analytics/models/schema.yml#L1), [schema.yml (line 70)](../../../apps/analytics/models/schema.yml#L70) |
+| Kubeflow, KubeRay, BST training, evaluation, promotion | [bst_training_pipeline.py (line 277)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L277), [bst_training_pipeline.py (line 466)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L466) |
+| Online feature and recommendation APIs | [feature_api.py (line 13)](../../../apps/api-serving/src/feature_api.py#L13), [feature_api.py (line 77)](../../../apps/api-serving/src/feature_api.py#L77), [inference_api.py (line 18)](../../../apps/api-serving/src/inference_api.py#L18), [inference_api.py (line 123)](../../../apps/api-serving/src/inference_api.py#L123) |
+| React recommendation UI and event-writing demo API | [App.tsx (line 1)](../../../apps/demo-web/frontend/src/App.tsx#L1), [App.tsx (line 300)](../../../apps/demo-web/frontend/src/App.tsx#L300), [main.py (line 1)](../../../apps/demo-web/backend/app/main.py#L1), [main.py (line 261)](../../../apps/demo-web/backend/app/main.py#L261) |
+| Helm, Terraform, Kubernetes, Cloud Build | [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97), [gke.tf (line 220)](../../../infra/terraform/gcp/gke.tf#L220), [recsys_services.tf (line 44)](../../../infra/terraform/gcp/recsys_services.tf#L44), [recsys_services.tf (line 299)](../../../infra/terraform/gcp/recsys_services.tf#L299) |
+| Jenkins CI/CD and controlled model rollout | [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 336)](../../../Jenkinsfile#L336), [`jenkins/`](../../../jenkins/) |
+| Unit, contract, integration, E2E, and load verification | [test_validation_verification.py (line 60)](../../../tests/unit/api_serving/test_validation_verification.py#L60), [test_validation_verification.py (line 378)](../../../tests/unit/api_serving/test_validation_verification.py#L378), [locustfile_serving.py (line 1)](../../../tests/load/locustfile_serving.py#L1), [locustfile_serving.py (line 127)](../../../tests/load/locustfile_serving.py#L127) |

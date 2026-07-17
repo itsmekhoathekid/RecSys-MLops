@@ -6,8 +6,8 @@
 
 #### Code References
 
-- [`values-gcp-autoscale-proof.yaml`](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml): enables online-feature autoscaling and defines replicas, request-rate, and latency thresholds.
-- [`fastapi-prometheus-scaledobjects.yaml`](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml): renders the KEDA `ScaledObject` and Prometheus triggers.
+- [values-gcp-autoscale-proof.yaml (line 6)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L6), [values-gcp-autoscale-proof.yaml (line 45)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L45): enables API/feature autoscaling and defines replicas, request-rate, and latency thresholds.
+- [fastapi-prometheus-scaledobjects.yaml (line 43)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L43), [fastapi-prometheus-scaledobjects.yaml (line 78)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L78): renders the online-feature KEDA `ScaledObject` and Prometheus triggers.
 
 #### Configuration
 
@@ -41,9 +41,9 @@ autoscaling:
 
 #### Code References
 
-- [`inference_api.py`](../../../apps/api-serving/src/inference_api.py): async `/recommendations` workload measured by the scaler.
-- [`values-gcp-autoscale-proof.yaml`](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml): API replica and threshold settings.
-- [`fastapi-prometheus-scaledobjects.yaml`](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml): API-serving KEDA object and Prometheus queries.
+- [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 123)](../../../apps/api-serving/src/inference_api.py#L123): async `/recommendations` workload measured by the scaler.
+- [values-gcp-autoscale-proof.yaml (line 6)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L6), [values-gcp-autoscale-proof.yaml (line 29)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L29): API replica and threshold settings.
+- [fastapi-prometheus-scaledobjects.yaml (line 1)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L1), [fastapi-prometheus-scaledobjects.yaml (line 39)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L39): API-serving KEDA object and Prometheus queries.
 
 #### Configuration
 
@@ -77,8 +77,8 @@ autoscaling:
 
 #### Code References
 
-- [`values-gcp-autoscale-proof.yaml`](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml): Triton/KServe replica, CPU, and proof resource settings.
-- [`kserve-resource-scaledobject.yaml`](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml): renders the Triton KEDA `ScaledObject` and CPU trigger.
+- [values-gcp-autoscale-proof.yaml (line 47)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L47), [values-gcp-autoscale-proof.yaml (line 58)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L58): Triton/KServe replica, CPU, and proof resource settings.
+- [kserve-resource-scaledobject.yaml (line 1)](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L1), [kserve-resource-scaledobject.yaml (line 66)](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L66): renders control/candidate Triton KEDA `ScaledObject` resources and CPU triggers.
 
 #### Configuration
 
@@ -114,15 +114,9 @@ kserve:
 
 Code references:
 
-- [infra/k8s/scripts/serving_autoscale_load_test.sh](../../../infra/k8s/scripts/serving_autoscale_load_test.sh): load-test script target namespace/service defaults.
-- [infra/k8s/scripts/serving_autoscale_load_test.sh](../../../infra/k8s/scripts/serving_autoscale_load_test.sh): port-forwards the selected Kubernetes Service.
-- [infra/k8s/scripts/serving_autoscale_load_test.sh](../../../infra/k8s/scripts/serving_autoscale_load_test.sh): prints initial HPA/ScaledObject/deployment state.
-- [infra/k8s/scripts/serving_autoscale_load_test.sh](../../../infra/k8s/scripts/serving_autoscale_load_test.sh): runs Locust with the selected load target.
-- [infra/k8s/scripts/serving_autoscale_load_test.sh](../../../infra/k8s/scripts/serving_autoscale_load_test.sh): prints autoscale state after load.
-- [tests/load/locustfile_serving.py](../../../tests/load/locustfile_serving.py): selects the `api` load target for the end-to-end serving path.
-- [tests/load/locustfile_serving.py](../../../tests/load/locustfile_serving.py): `api` target calls `/recommendations`.
-- [apps/api-serving/src/inference_api.py](../../../apps/api-serving/src/inference_api.py): API serving calls the online feature API.
-- [apps/api-serving/src/inference_api.py](../../../apps/api-serving/src/inference_api.py): API serving sends the feature payload to the ranking path backed by Triton.
+- [serving_autoscale_load_test.sh (line 1)](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L1), [serving_autoscale_load_test.sh (line 48)](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L48): selects the target, port-forwards the Service, prints autoscale state, runs Locust, and prints the post-load state.
+- [locustfile_serving.py (line 21)](../../../tests/load/locustfile_serving.py#L21), [locustfile_serving.py (line 89)](../../../tests/load/locustfile_serving.py#L89): selects the load target and calls `/recommendations` or `/online-features`.
+- [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 119)](../../../apps/api-serving/src/inference_api.py#L119): recommendation serving calls the online-feature client and sends the feature payload through the Triton-backed ranking path.
 
 Run one end-to-end recommendation API load test. This single command triggers the full serving path:
 

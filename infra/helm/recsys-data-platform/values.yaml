@@ -143,22 +143,6 @@ realtimeProducer:
   rollout:
     maxSurge: 0
     maxUnavailable: 1
-  intervalSeconds: "1"
-  eventsPerTick: "40"
-  maxEvents: "0"
-  nUsers: "80"
-  nProducts: "160"
-  seed: "42"
-  hotProductRatio: "0.70"
-  hotProductCount: "3"
-  duplicateEventRate: "0.14"
-  conflictingDuplicateRate: "0.04"
-  lateArrivalRate: "0.28"
-  outOfOrderRate: "0.10"
-  lateDelayMinutesMin: "45"
-  lateDelayMinutesMax: "180"
-  burstEveryNTicks: "5"
-  burstMultiplier: "8"
 
 realtimeFlinkConsumer:
   enabled: true
