@@ -13,6 +13,12 @@ class LateArrivalMetricCounters:
         self.late_arrivals_total = metric_group.counter("late_arrivals_total")
         self.accepted_late_events_total = metric_group.counter("accepted_late_events_total")
         self.too_late_events_total = metric_group.counter("too_late_events_total")
+        for counter in (
+            self.late_arrivals_total,
+            self.accepted_late_events_total,
+            self.too_late_events_total,
+        ):
+            counter.inc(0)
 
     @classmethod
     def from_runtime_context(cls, runtime_context: Any) -> "LateArrivalMetricCounters":

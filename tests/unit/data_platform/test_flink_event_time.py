@@ -7,8 +7,8 @@ class FakeCounter:
     def __init__(self):
         self.count = 0
 
-    def inc(self):
-        self.count += 1
+    def inc(self, value: int = 1):
+        self.count += value
 
 
 class FakeMetricGroup:
