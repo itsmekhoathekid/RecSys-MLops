@@ -263,6 +263,7 @@ deploy_data_platform_unlocked() {
     --set "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1g}" \
     --set "spark.executorInstances=${SPARK_K8S_EXECUTOR_INSTANCES:-1}" \
     --set "spark.sqlShufflePartitions=${SPARK_SQL_SHUFFLE_PARTITIONS:-16}" \
+    --set "spark.advisoryPartitionSizeBytes=${SPARK_ADVISORY_PARTITION_SIZE_BYTES:-134217728}" \
     --set "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-2}" \
     --set "flinkTaskManager.resources.requests.cpu=${FLINK_TASKMANAGER_REQUEST_CPU:-500m}" \
     --set "flinkTaskManager.resources.requests.memory=${FLINK_TASKMANAGER_REQUEST_MEMORY:-4Gi}" \

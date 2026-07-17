@@ -10,6 +10,9 @@ class FakeCounter:
     def inc(self, value: int = 1):
         self.count += value
 
+    def dec(self, value: int = 1):
+        self.count -= value
+
 
 class FakeMetricGroup:
     def __init__(self):

@@ -8,6 +8,10 @@ from typing import Any
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def _env_or_default(name: str, default: str) -> str:
+    return os.getenv(name) or default
+
+
 def spark_session(app_name: str = "recsys-data-platform"):
     from pyspark.sql import SparkSession
     from lakehouse.iceberg import spark_iceberg_conf
@@ -20,7 +24,7 @@ def spark_session(app_name: str = "recsys-data-platform"):
     builder = builder.config("spark.sql.parquet.mergeSchema", "true")
     builder = builder.config(
         "spark.sql.adaptive.advisoryPartitionSizeInBytes",
-        os.getenv("SPARK_ADVISORY_PARTITION_SIZE_BYTES", "134217728"),
+        _env_or_default("SPARK_ADVISORY_PARTITION_SIZE_BYTES", "134217728"),
     )
     for key, value in spark_iceberg_conf().items():
         builder = builder.config(key, value)

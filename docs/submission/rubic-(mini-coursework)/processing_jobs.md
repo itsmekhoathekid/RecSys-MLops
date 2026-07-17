@@ -600,7 +600,8 @@ class LateArrivalMetricCounters:
             self.accepted_late_events_total,
             self.too_late_events_total,
         ):
-            counter.inc(0)  # Materialize zero-valued counters in the Flink UI.
+            counter.inc()
+            counter.dec()  # Materialize the counter while preserving a zero value.
 
     def record(self, is_late, is_too_late):
         if not is_late:
@@ -639,7 +640,7 @@ quality_rows = (
 )
 ```
 
-In the Flink UI, open the `watermark-lateness-classifier` vertex, select **Metrics**, and search for `late_arrivals_total`, `accepted_late_events_total`, and `too_late_events_total`. The runtime IDs are prefixed with the operator name, for example `watermark-lateness-classifier.accepted_late_events_total`. PyFlink publishes the custom counters after its first metric bundle; the zero-value increments above ensure all three names appear even when one category has no events. The current GCP profile runs each realtime job at parallelism one, so each job exposes one subtask value. At higher parallelism, sum the subtask counters before comparing runs. Counters are cumulative for one job attempt and reset after a fresh deployment or restart.
+In the Flink UI, open the `watermark-lateness-classifier` vertex, select **Metrics**, and search for `late_arrivals_total`, `accepted_late_events_total`, and `too_late_events_total`. The runtime IDs are prefixed with the operator name, for example `watermark-lateness-classifier.accepted_late_events_total`. PyFlink publishes the custom counters after its first metric bundle. Beam omits counters that have never been updated, so the balanced increment/decrement above materializes all three names while preserving a correct initial value of zero. The current GCP profile runs each realtime job at parallelism one, so each job exposes one subtask value. At higher parallelism, sum the subtask counters before comparing runs. Counters are cumulative for one job attempt and reset after a fresh deployment or restart.
 
 The counter invariant is `late_arrivals_total = accepted_late_events_total + too_late_events_total`. Use the same input, Kafka starting offsets, duration, watermark delay, allowed lateness, and parallelism for baseline and optimized captures. `late_arrivals_total` measures the input condition and should remain comparable; optimization evidence is a higher accepted-late ratio, a lower too-late ratio, and lower backpressure/mailbox latency at comparable throughput. If only state/window efficiency changes, the late-event ratios may remain stable and the improvement should instead be claimed from the runtime pressure metrics.
 

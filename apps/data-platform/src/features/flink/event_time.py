@@ -18,7 +18,8 @@ class LateArrivalMetricCounters:
             self.accepted_late_events_total,
             self.too_late_events_total,
         ):
-            counter.inc(0)
+            counter.inc()
+            counter.dec()
 
     @classmethod
     def from_runtime_context(cls, runtime_context: Any) -> "LateArrivalMetricCounters":
