@@ -22,7 +22,11 @@ from features.flink.user_sequence_job import (
     UserSequenceState,
 )
 from features.flink.time_utils import isoformat_utc, parse_event_time
-from features.flink.event_time import event_time_status, late_arrival_metrics
+from features.flink.event_time import (
+    LateArrivalMetricCounters,
+    event_time_status,
+    late_arrival_metrics,
+)
 from features.flink.quality_windows import StreamQualityTracker, native_quality_window_aggregate
 from features.flink.runtime_config import apply_state_ttl, configure_checkpointing
 from feature_store.online_writer import RedisOnlineWriter, dumps_feature_payload
@@ -651,6 +655,9 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             return value is not None
 
     class MarkEventTimeStatus(KeyedProcessFunction):
+        def open(self, runtime_context):
+            self.late_arrival_metrics = LateArrivalMetricCounters.from_runtime_context(runtime_context)
+
         def process_element(self, event: dict[str, Any], ctx):
             watermark_ms = int(ctx.timer_service().current_watermark())
             late_by_seconds, is_late, is_too_late = event_time_status(
@@ -659,6 +666,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 args.allowed_lateness_seconds,
                 args.quality_window_seconds,
             )
+            self.late_arrival_metrics.record(is_late, is_too_late)
             marked = dict(event)
             marked["_late_by_seconds"] = late_by_seconds
             marked["_is_late"] = is_late

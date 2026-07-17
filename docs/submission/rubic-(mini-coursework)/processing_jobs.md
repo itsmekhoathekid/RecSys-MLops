@@ -587,9 +587,57 @@ Flink jobs, not from an isolated test operator.
 
 ### Window Processing
 
-![Flink window processing proof](../../pngs/window_processing.png)
+The production graph classifies every deduplicated event against Flink's current watermark before the native window operator. The classifier registers three cumulative Flink counters through the operator's `MetricGroup`, then partitions every late arrival into exactly one accepted or too-late bucket:
 
-**Figure: Flink window processing proof.** Capture the Flink UI operator graph and the `streaming-quality-window-metrics` TaskManager log records with `window_start`, `window_end`, `event_count`, `late_event_count`, `duplicate_event_count`, `max_late_by_seconds`, and `is_bursty`. In the PostgreSQL production-sink branch, quality windows are emitted as structured metrics logs; the job does not claim that a `streaming_quality_windows` PostgreSQL table is persisted. Too-late records are verified separately through `native-late-events-side-output` and `stream_late_events_dlq`.
+```python
+class LateArrivalMetricCounters:
+    def __init__(self, metric_group):
+        self.late_arrivals_total = metric_group.counter("late_arrivals_total")
+        self.accepted_late_events_total = metric_group.counter("accepted_late_events_total")
+        self.too_late_events_total = metric_group.counter("too_late_events_total")
+
+    def record(self, is_late, is_too_late):
+        if not is_late:
+            return
+        self.late_arrivals_total.inc()
+        if is_too_late:
+            self.too_late_events_total.inc()
+        else:
+            self.accepted_late_events_total.inc()
+
+
+class MarkEventTimeStatus(KeyedProcessFunction):
+    def open(self, runtime_context):
+        self.late_arrival_metrics = LateArrivalMetricCounters(
+            runtime_context.get_metrics_group()
+        )
+
+    def process_element(self, event, ctx):
+        watermark_ms = int(ctx.timer_service().current_watermark())
+        late_by_seconds, is_late, is_too_late = event_time_status(
+            event,
+            watermark_ms,
+            args.allowed_lateness_seconds,
+            args.quality_window_seconds,
+        )
+        self.late_arrival_metrics.record(is_late, is_too_late)
+        # The marked event continues into the native window and feature branches.
+
+
+quality_rows = (
+    marked.key_by(lambda event: args.topic)
+    .window(TumblingEventTimeWindows.of(Time.seconds(args.quality_window_seconds)))
+    .allowed_lateness(args.allowed_lateness_seconds * 1000)
+    .side_output_late_data(late_event_tag)
+    .aggregate(native_quality_window_aggregate(args))
+)
+```
+
+In the Flink UI, open the `watermark-lateness-classifier` vertex, select **Metrics**, and search for `late_arrivals_total`, `accepted_late_events_total`, and `too_late_events_total`. The current GCP profile runs each realtime job at parallelism one, so each job exposes one subtask value. At higher parallelism, sum the subtask counters before comparing runs. Counters are cumulative for one job attempt and reset after a fresh deployment or restart.
+
+The counter invariant is `late_arrivals_total = accepted_late_events_total + too_late_events_total`. Use the same input, Kafka starting offsets, duration, watermark delay, allowed lateness, and parallelism for baseline and optimized captures. `late_arrivals_total` measures the input condition and should remain comparable; optimization evidence is a higher accepted-late ratio, a lower too-late ratio, and lower backpressure/mailbox latency at comparable throughput. If only state/window efficiency changes, the late-event ratios may remain stable and the improvement should instead be claimed from the runtime pressure metrics.
+
+The `streaming-quality-window-metrics` operator also writes structured TaskManager log records with `window_start`, `window_end`, `event_count`, `late_event_count`, `duplicate_event_count`, `max_late_by_seconds`, and `is_bursty`. In the PostgreSQL production-sink branch, quality windows are logged rather than persisted to a `streaming_quality_windows` table. Too-late records are additionally verified through `native-late-events-side-output` and `stream_late_events_dlq`.
 
 **How the production window works:** the deduplicated event stream is marked against Flink's current watermark, keyed by topic, and passed into native `TumblingEventTimeWindows`. Flink owns window lifecycle and cleanup. `allowed_lateness` keeps a fired window open for permitted late updates; events arriving after cleanup are emitted through the native `OutputTag` side output. A custom incremental `AggregateFunction` stores only counters and the maximum lateness, rather than buffering all events.
 
@@ -599,11 +647,15 @@ For each accepted window event, the accumulator increments `event_count`, `late_
 
 Code reference:
 
-- [realtime_stream_job.py (line 901)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L901): keys and classifies each event against the native watermark.
-- [realtime_stream_job.py (line 907)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L907): keys quality aggregation by Kafka topic.
-- [realtime_stream_job.py (line 908)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L908): defines the native tumbling event-time window.
-- [realtime_stream_job.py (line 909)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L909): retains fired windows for configured allowed lateness.
-- [realtime_stream_job.py (line 910)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L910): routes post-cleanup late records to native side output.
+- [event_time.py (line 9)](../../../apps/data-platform/src/features/flink/event_time.py#L9): registers the three custom Flink counters.
+- [event_time.py (line 21)](../../../apps/data-platform/src/features/flink/event_time.py#L21): enforces the accepted-versus-too-late counter partition.
+- [event_time.py (line 41)](../../../apps/data-platform/src/features/flink/event_time.py#L41): classifies lateness against the watermark and `window_end + allowed_lateness` cleanup boundary.
+- [realtime_stream_job.py (line 653)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L653): obtains the operator `MetricGroup` and records every event-time classification.
+- [realtime_stream_job.py (line 905)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L905): keys and classifies each event against the native watermark.
+- [realtime_stream_job.py (line 911)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L911): keys quality aggregation by Kafka topic.
+- [realtime_stream_job.py (line 912)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L912): defines the native tumbling event-time window.
+- [realtime_stream_job.py (line 913)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L913): retains fired windows for configured allowed lateness.
+- [realtime_stream_job.py (line 914)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L914): routes post-cleanup late records to native side output.
 - [quality_windows.py (line 93)](../../../apps/data-platform/src/features/flink/quality_windows.py#L93): initializes constant-size window counters.
 - [quality_windows.py (line 103)](../../../apps/data-platform/src/features/flink/quality_windows.py#L103): counts accepted late updates.
 - [quality_windows.py (line 104)](../../../apps/data-platform/src/features/flink/quality_windows.py#L104): counts duplicate markers.

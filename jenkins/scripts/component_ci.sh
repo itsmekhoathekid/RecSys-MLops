@@ -135,7 +135,7 @@ case "${component}" in
     run_kfp_compile
     ;;
   spark_batch)
-    tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
+    tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_spark_schema_merge.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir spark_batch
     cov_paths=(lakehouse.iceberg)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
@@ -195,13 +195,13 @@ case "${component}" in
     run_plain_pytest "drift-data-platform" "apps/data-platform/src:apps/data-platform/data-generator/src" tests/unit/data_platform/test_data_platform.py
     ;;
   stream_offline)
-    tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
+    tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_flink_event_time.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir stream_offline
     cov_paths=(features.flink.candidate_pool_job features.flink.item_features_job features.flink.user_aggregate_job features.flink.user_sequence_job features.flink.time_utils lakehouse.iceberg)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   stream_online)
-    tests=(tests/unit/data_platform/test_data_platform.py tests/unit/api_serving/test_serving.py tests/contract/test_docker_dataflow_contracts.py)
+    tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_flink_event_time.py tests/unit/api_serving/test_serving.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir stream_online
     cov_paths=(features.flink.candidate_pool_job features.flink.item_features_job features.flink.user_aggregate_job features.flink.user_sequence_job features.flink.time_utils feature_store.online_writer)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/src"

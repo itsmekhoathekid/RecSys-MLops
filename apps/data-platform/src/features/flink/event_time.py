@@ -6,6 +6,28 @@ from typing import Any
 from features.flink.time_utils import parse_event_time
 
 
+class LateArrivalMetricCounters:
+    """Flink counters for watermark-based late-arrival classification."""
+
+    def __init__(self, metric_group: Any):
+        self.late_arrivals_total = metric_group.counter("late_arrivals_total")
+        self.accepted_late_events_total = metric_group.counter("accepted_late_events_total")
+        self.too_late_events_total = metric_group.counter("too_late_events_total")
+
+    @classmethod
+    def from_runtime_context(cls, runtime_context: Any) -> "LateArrivalMetricCounters":
+        return cls(runtime_context.get_metrics_group())
+
+    def record(self, is_late: bool, is_too_late: bool) -> None:
+        if not is_late:
+            return
+        self.late_arrivals_total.inc()
+        if is_too_late:
+            self.too_late_events_total.inc()
+        else:
+            self.accepted_late_events_total.inc()
+
+
 def late_arrival_metrics(event: dict[str, Any], allowed_lateness_seconds: int) -> tuple[float, bool]:
     """Return native watermark markers, with a wall-clock fallback for non-Flink callers."""
     if "_late_by_seconds" in event or "_is_late" in event:
