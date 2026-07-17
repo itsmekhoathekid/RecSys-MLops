@@ -465,6 +465,41 @@ def test_feature_client_success_and_error_without_fallback(monkeypatch):
         raise AssertionError("expected item feature Redis failure")
 
 
+def test_feature_client_prefers_user_candidates_and_fills_from_global():
+    class RedisClient:
+        def __init__(self):
+            self.keys = []
+
+        def zrevrange(self, key, start, end):
+            self.keys.append(key)
+            if key == "candidate:user:7":
+                return [b"21", b"10"]
+            if key == "candidate:popular:global":
+                return [b"10", b"11", b"12"]
+            return []
+
+    client = object.__new__(FeatureClient)
+    client.allow_fallback = False
+    client.client = RedisClient()
+
+    assert client.candidates(7, 4) == [21, 10, 11, 12]
+    assert client.client.keys == ["candidate:user:7", "candidate:popular:global"]
+
+
+def test_feature_client_falls_back_to_global_candidates_for_new_user():
+    class RedisClient:
+        def zrevrange(self, key, start, end):
+            if key == "candidate:popular:global":
+                return [b"10", b"11"]
+            return []
+
+    client = object.__new__(FeatureClient)
+    client.allow_fallback = False
+    client.client = RedisClient()
+
+    assert client.candidates(99, 2) == [10, 11]
+
+
 def test_triton_ranker_scores_and_records_errors(monkeypatch):
     class InferInput:
         def __init__(self, name, shape, dtype):
