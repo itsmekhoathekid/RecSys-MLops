@@ -6,10 +6,10 @@ import pyarrow.parquet as pq
 import pytest
 
 from behavior import SessionState
-from challenges import ChallengePipeline
 from config import ChallengeConfig
-from pipeline import HistoricalDataPipeline
-from simulation import RecsysSimulation
+from offline.historical_pipeline import HistoricalDataPipeline
+from offline.problem_pipeline import ChallengePipeline
+from offline.simulation import RecsysSimulation
 from validation import InvariantValidator, validate_parquet_output
 
 

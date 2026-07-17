@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from config import load_config
-from pipeline import HistoricalDataPipeline
+from offline.historical_pipeline import HistoricalDataPipeline
 from sinks.postgres_sink import DEFAULT_TABLE_ORDER, load_run_to_postgres
 
 

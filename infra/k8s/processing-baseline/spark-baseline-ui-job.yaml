@@ -140,7 +140,6 @@ data:
                 lambda: build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source),
             )
             clean_events = silver["clean_behavior_events"]
-            rejected_events = silver["rejected_behavior_events"]
             clean_events.createOrReplaceTempView("clean_behavior_events_proof")
 
             clean_behavior_events = run_ui_action(
@@ -150,8 +149,8 @@ data:
             )
             duplicate_rows = run_ui_action(
                 spark,
-                "DP3 CHECK - count rejected duplicate event_id rows before offline-store write",
-                lambda: row_count(rejected_events),
+                "DP3 CHECK - count supported rows removed by dropDuplicates(event_id)",
+                lambda: raw_events.filter(F.col("schema_version") <= F.lit(2)).count() - row_count(clean_events),
             )
             schema_unknown_rows = run_ui_action(
                 spark,
@@ -251,7 +250,7 @@ data:
                 "lakehouse_source": f"{source}:{run_path}",
                 "offline_store": "PostgreSQL Feast offline store",
                 "clean_behavior_events": clean_behavior_events,
-                "duplicate_rows_rejected_before_offline_store": duplicate_rows,
+                "duplicate_rows_removed_by_drop_duplicates": duplicate_rows,
                 "schema_evolution_unknown_device_type_rows": schema_unknown_rows,
                 "breaking_schema_version_rows": breaking_schema_rows,
                 "heavy_spark_sql_proof": {
@@ -274,7 +273,7 @@ data:
                     "DP3 HEAVY SQL - high-cardinality product_event_key aggregation with 32 shuffle tasks",
                     "DP3 CHECK - count breaking schema_version rows before silver normalization",
                     "DP3 CHECK - count old lakehouse rows with missing or unknown device_type",
-                    "DP3 CHECK - count rejected duplicate event_id rows before offline-store write",
+                    "DP3 CHECK - count supported rows removed by dropDuplicates(event_id)",
                 ],
             }
             print("SPARK_LAKEHOUSE_TO_OFFLINE_STORE_BASELINE=" + json.dumps(summary, sort_keys=True), flush=True)

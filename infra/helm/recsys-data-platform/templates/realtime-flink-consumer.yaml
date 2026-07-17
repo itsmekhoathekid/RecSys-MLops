@@ -50,6 +50,7 @@ spec:
                 --runner pyflink \
                 --topic "$REALTIME_STREAM_TOPIC" \
                 --group-id "$REALTIME_STREAM_ONLINE_GROUP_ID" \
+                --starting-offsets {{ default "committed-offsets" $consumer.online.startingOffsets | quote }} \
                 --continuous \
                 --min-events "$REALTIME_STREAM_MIN_EVENTS" \
                 --max-events "$REALTIME_STREAM_MAX_EVENTS" \

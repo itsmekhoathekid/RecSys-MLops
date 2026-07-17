@@ -23,7 +23,6 @@ def _normalize_optional_column(frame: Any, column: str, default_expression: Any)
 
 
 def build_clean_behavior_events(events: Any) -> tuple[Any, Any]:
-    from pyspark.sql import Window
     from pyspark.sql import functions as F
 
     normalized = _normalize_optional_column(events, "device_type", F.lit("unknown"))
@@ -43,14 +42,8 @@ def build_clean_behavior_events(events: Any) -> tuple[Any, Any]:
         "rejection_reason", F.lit("unsupported_schema_version")
     )
     supported = normalized.filter(F.col("schema_version") <= F.lit(SUPPORTED_BEHAVIOR_SCHEMA_VERSION))
-    window = Window.partitionBy("event_id").orderBy(F.col("ingestion_ts").desc_nulls_last())
-    ranked = supported.withColumn("_dedup_rank", F.row_number().over(window))
-    clean = ranked.filter(F.col("_dedup_rank") == 1).drop("_dedup_rank")
-    duplicates = ranked.filter(F.col("_dedup_rank") > 1).drop("_dedup_rank").withColumn(
-        "rejection_reason", F.lit("duplicate_event_id")
-    )
-    rejected = duplicates.unionByName(unsupported, allowMissingColumns=True)
-    return clean.orderBy("event_timestamp", "event_id"), rejected
+    clean = supported.dropDuplicates(["event_id"])
+    return clean.orderBy("event_timestamp", "event_id"), unsupported
 
 
 def build_clean_impressions(impressions: Any) -> Any:

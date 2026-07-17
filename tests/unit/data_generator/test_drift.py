@@ -12,8 +12,8 @@ from drift.reporting import (
     calculate_psi,
     classify_drift,
 )
-from pipeline import HistoricalDataPipeline
-from simulation import RecsysSimulation
+from offline.historical_pipeline import HistoricalDataPipeline
+from offline.simulation import RecsysSimulation
 from validation import validate_drift_output
 
 

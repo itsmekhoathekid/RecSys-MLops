@@ -140,7 +140,7 @@ def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
         pod = resources[("Deployment", deployment_name)]["spec"]["template"]
         annotations = pod["metadata"]["annotations"]
         container = pod["spec"]["containers"][0]
-        env = {item["name"]: item["value"] for item in container["env"]}
+        env = {item["name"]: item.get("value") for item in container["env"]}
 
         assert annotations["prometheus.io/scrape"] == "true"
         assert annotations["prometheus.io/path"] == "/metrics"
@@ -151,6 +151,21 @@ def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
     dockerfile = Path("apps/data-platform/Dockerfile.flink").read_text(encoding="utf-8")
     assert "flink-metrics-prometheus-1.19.3.jar" in dockerfile
     assert "/opt/flink/plugins/prometheus" in dockerfile
+
+
+def test_flink_taskmanager_health_requires_jobmanager_registration():
+    docs = _render_data_platform()
+    deployment = _by_kind_name(docs)[("Deployment", "flink-taskmanager")]
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    env = {item["name"]: item for item in container["env"]}
+
+    assert env["POD_IP"]["valueFrom"]["fieldRef"]["fieldPath"] == "status.podIP"
+    for probe_name in ("readinessProbe", "livenessProbe"):
+        command = container[probe_name]["exec"]["command"]
+        assert "http://flink-jobmanager:8081/taskmanagers" in command[-1]
+        assert '${POD_IP}:6122-' in command[-1]
+
+    assert container["livenessProbe"]["failureThreshold"] == 6
 
 
 def test_data_pipeline_dashboard_uses_live_metrics_and_explicit_freshness():

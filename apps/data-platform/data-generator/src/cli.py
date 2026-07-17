@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from config import load_config
-from pipeline import HistoricalDataPipeline
+from offline.historical_pipeline import HistoricalDataPipeline
 from validation import validate_drift_output, validate_parquet_output
 
 

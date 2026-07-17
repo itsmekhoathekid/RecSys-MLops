@@ -62,6 +62,14 @@ data:
   SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD: {{ .Values.spark.executorMemoryOverhead | quote }}
   SPARK_K8S_EXECUTOR_CORES: {{ .Values.spark.executorCores | quote }}
   SPARK_K8S_EXECUTOR_REQUEST_CORES: {{ .Values.spark.executorRequestCores | quote }}
+  SPARK_DYNAMIC_ALLOCATION_ENABLED: {{ .Values.spark.dynamicAllocation.enabled | quote }}
+  SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED: {{ .Values.spark.dynamicAllocation.shuffleTrackingEnabled | quote }}
+  SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS: {{ .Values.spark.dynamicAllocation.minExecutors | quote }}
+  SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS: {{ .Values.spark.dynamicAllocation.initialExecutors | quote }}
+  SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS: {{ .Values.spark.dynamicAllocation.maxExecutors | quote }}
+  SPARK_DYNAMIC_ALLOCATION_EXECUTOR_IDLE_TIMEOUT: {{ .Values.spark.dynamicAllocation.executorIdleTimeout | quote }}
+  SPARK_DYNAMIC_ALLOCATION_SCHEDULER_BACKLOG_TIMEOUT: {{ .Values.spark.dynamicAllocation.schedulerBacklogTimeout | quote }}
+  SPARK_DYNAMIC_ALLOCATION_SUSTAINED_BACKLOG_TIMEOUT: {{ .Values.spark.dynamicAllocation.sustainedSchedulerBacklogTimeout | quote }}
   SPARK_K8S_CONNECTION_TIMEOUT: {{ .Values.spark.connectionTimeout | quote }}
   SPARK_K8S_REQUEST_TIMEOUT: {{ .Values.spark.requestTimeout | quote }}
   SPARK_SQL_SHUFFLE_PARTITIONS: {{ .Values.spark.sqlShufflePartitions | quote }}

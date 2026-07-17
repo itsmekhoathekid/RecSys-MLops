@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from config import load_config
-from pipeline import HistoricalDataPipeline
+from offline.historical_pipeline import HistoricalDataPipeline
 from sinks.minio_sink import copy_run_to_minio_layout, upload_run_to_minio
 
 

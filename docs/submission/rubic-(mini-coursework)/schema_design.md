@@ -8,8 +8,8 @@ The diagrams intentionally show keys, relationship columns, and important timest
 - [governance_schemas.py (line 21)](../../../apps/data-platform/src/metadata/governance_schemas.py#L21), [governance_schemas.py (line 307)](../../../apps/data-platform/src/metadata/governance_schemas.py#L307): Bronze audit columns, Silver/feature schemas, and PK metadata published to DataHub.
 - Batch feature transformations and output columns: [build_user_sequence_features.py (line 1)](../../../apps/data-platform/src/features/spark/build_user_sequence_features.py#L1), [build_user_sequence_features.py (line 63)](../../../apps/data-platform/src/features/spark/build_user_sequence_features.py#L63), [build_user_aggregate_features.py (line 1)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L1), [build_user_aggregate_features.py (line 41)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L41), and [build_item_features.py (line 1)](../../../apps/data-platform/src/features/spark/build_item_features.py#L1), [build_item_features.py (line 69)](../../../apps/data-platform/src/features/spark/build_item_features.py#L69).
 - [iceberg_feature_sink.py (line 10)](../../../apps/data-platform/src/features/flink/iceberg_feature_sink.py#L10), [iceberg_feature_sink.py (line 110)](../../../apps/data-platform/src/features/flink/iceberg_feature_sink.py#L110): 6 streaming Iceberg table DDLs and catalog setup.
-- [postgres_offline_store.py (line 21)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L21), [postgres_offline_store.py (line 211)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L211): PostgreSQL offline-store schemas and write helpers.
-- [features.py (line 18)](../../../apps/data-platform/feature-store/feature_repo/features.py#L18), [features.py (line 110)](../../../apps/data-platform/feature-store/feature_repo/features.py#L110): Feast entities, PostgreSQL sources, FeatureViews, timestamps, and services.
+- [postgres_offline_store.py (line 21)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L21), [postgres_offline_store.py (line 167)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L167), [postgres_offline_store.py (line 213)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L213): PostgreSQL offline-store schemas and write helpers.
+- [features.py (line 18)](../../../apps/data-platform/feature-store/feature_repo/features.py#L18), [features.py (line 22)](../../../apps/data-platform/feature-store/feature_repo/features.py#L22), [features.py (line 44)](../../../apps/data-platform/feature-store/feature_repo/features.py#L44), [features.py (line 112)](../../../apps/data-platform/feature-store/feature_repo/features.py#L112): Feast entities, PostgreSQL sources, FeatureViews, timestamps, and services.
 
 ## Complete Table Inventory
 
@@ -467,8 +467,8 @@ flowchart LR
 |---|---|---|
 | Every `cdc.<table>` | Matching Source PostgreSQL `<table>` | Debezium after-image of the same primary-keyed entity. |
 | Every `bronze_<table>` | Matching generated Source `<table>` | One-to-one raw schema plus `source_run_id` and `lakehouse_ingestion_ts`. |
-| `silver_clean_behavior_events` | `bronze_behavior_events` | Normalize timestamps, derive `event_type_id`, retain latest `event_id`. |
-| `silver_rejected_behavior_events` | `bronze_behavior_events` | Duplicate rows rejected by the same `event_id` window. |
+| `silver_clean_behavior_events` | `bronze_behavior_events` | Normalize timestamps, derive `event_type_id`, and apply `.dropDuplicates(["event_id"])`. |
+| `silver_rejected_behavior_events` | `bronze_behavior_events` | Quarantine rows with unsupported behavior-event schema versions. |
 | `silver_clean_impressions` | `bronze_impressions` | Timestamp normalization and `impression_id` deduplication. |
 | `silver_clean_recommendation_requests` | `bronze_recommendation_requests` | Timestamp normalization and `request_context` defaulting. |
 | `silver_order_facts` | `bronze_orders`, `bronze_order_items` | Fact join on `order_id`; derives `is_valid_purchase`. |

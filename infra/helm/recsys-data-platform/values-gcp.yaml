@@ -34,13 +34,23 @@ spark:
   executorMemoryOverhead: 1g
   executorCores: "1"
   executorRequestCores: 100m
+  dynamicAllocation:
+    enabled: true
+    shuffleTrackingEnabled: true
+    minExecutors: "1"
+    initialExecutors: "1"
+    maxExecutors: "4"
+    executorIdleTimeout: 60s
+    schedulerBacklogTimeout: 1s
+    sustainedSchedulerBacklogTimeout: 1s
   sqlShufflePartitions: "16"
 
 realtimeProducer:
   replicas: 1
 
 flinkTaskManager:
-  replicas: 2
+  # The online and offline jobs run at parallelism 1 and share one TM via two slots.
+  replicas: 1
   resources:
     requests:
       cpu: 500m
@@ -59,7 +69,7 @@ redis:
 realtimeFlinkConsumer:
   replicas: 1
   istioInject: "true"
-  parallelism: "2"
+  parallelism: "1"
   checkpointIntervalSeconds: "120"
   offlineStoreEnabled: true
 

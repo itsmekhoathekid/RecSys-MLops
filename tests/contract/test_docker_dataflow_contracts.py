@@ -327,6 +327,28 @@ def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
     assert "local:///opt/recsys/apps/data-platform/src/validate/offline_feature_drift.py" not in source
 
 
+def test_airflow_native_spark_submissions_configure_dynamic_allocation():
+    dag_paths = (
+        "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py",
+        "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py",
+    )
+    expected = (
+        "spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-false}",
+        "spark.dynamicAllocation.shuffleTracking.enabled=${SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED:-true}",
+        "spark.dynamicAllocation.minExecutors=${SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS:-1}",
+        "spark.dynamicAllocation.initialExecutors=${SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS:-1}",
+        "spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-4}",
+        "spark.dynamicAllocation.executorIdleTimeout=${SPARK_DYNAMIC_ALLOCATION_EXECUTOR_IDLE_TIMEOUT:-60s}",
+        "spark.dynamicAllocation.schedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SCHEDULER_BACKLOG_TIMEOUT:-1s}",
+        "spark.dynamicAllocation.sustainedSchedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SUSTAINED_BACKLOG_TIMEOUT:-1s}",
+    )
+
+    for dag_path in dag_paths:
+        source = (ROOT / dag_path).read_text()
+        for setting in expected:
+            assert setting in source
+
+
 def test_lakehouse_batch_ingestion_uses_python_not_spark_submit():
     k8s_dag = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py").read_text()
     local_dag = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/full_dataflow_local_dag.py").read_text()
@@ -412,6 +434,7 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
     assert values["e2e"]["realtimeEnabled"] == "true"
     assert values["e2e"]["datahubIngestEnabled"] == "false"
     assert values["realtimeFlinkConsumer"]["offlineStoreSink"] == "postgres"
+    assert values["realtimeFlinkConsumer"]["online"]["startingOffsets"] == "committed-offsets"
     assert values["featurePostgres"]["name"] == "feature-postgres"
     assert values["featurePostgres"]["schema"] == "feature_store"
     assert "LAKEHOUSE_WAREHOUSE" in rendered
@@ -422,6 +445,7 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
     assert "OFFLINE_STORE_ENABLED" in rendered
     assert "OFFLINE_STORE_SINK" in rendered
     assert '--offline-store-sink "$OFFLINE_STORE_SINK"' in rendered
+    assert '--starting-offsets {{ default "committed-offsets" $consumer.online.startingOffsets | quote }}' in rendered
     assert '--feast-postgres-host "$FEAST_POSTGRES_HOST"' in rendered
     assert '--feast-postgres-database "$FEAST_POSTGRES_DB"' in rendered
     assert '--feast-postgres-password "$FEAST_POSTGRES_PASSWORD"' in rendered
@@ -436,6 +460,11 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
     assert "--offline-store-enabled" in rendered
     assert "SPARK_K8S_MASTER" in rendered
     assert "SPARK_K8S_EXECUTOR_INSTANCES" in rendered
+    assert "SPARK_DYNAMIC_ALLOCATION_ENABLED" in rendered
+    assert "SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED" in rendered
+    assert "SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS" in rendered
+    assert "SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS" in rendered
+    assert "SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS" in rendered
     assert "SPARK_K8S_DRIVER_MEMORY_OVERHEAD" in rendered
     assert "SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD" in rendered
     assert "DATA_GENERATOR_CONFIG" in rendered
@@ -454,11 +483,13 @@ def test_e2e_1k_whole_run_data_setup_configs_are_wired_into_helm_values():
     values = yaml.safe_load((chart / "values.yaml").read_text())
     generator = yaml.safe_load((ROOT / values["dataSetup"]["generatorConfig"]).read_text())
     spark_batch = yaml.safe_load((ROOT / values["dataSetup"]["sparkBatchConfig"]).read_text())
-    assert generator["traffic"]["target_behavior_events"] == 50000
-    assert generator["output"]["run_id"] == values["dataSetup"]["generatorRunId"] == "test_1k_seed42"
+    offline_generator = generator["offline"]["generator"]
+    assert offline_generator["traffic"]["target_behavior_events"] == 50000
+    assert offline_generator["output"]["run_id"] == values["dataSetup"]["generatorRunId"] == "test_1k_seed42"
     assert spark_batch["input"]["source"] == "silver_lakehouse"
     assert spark_batch["processing"]["mode"] == "whole_run"
     assert values["spark"]["executorInstances"] == "1"
+    assert values["spark"]["dynamicAllocation"]["enabled"] is False
     assert values["spark"]["driverMemoryOverhead"] == "128m"
     assert values["spark"]["executorMemoryOverhead"] == "128m"
 
@@ -470,6 +501,19 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
     assert values["spark"]["executorInstances"] == "1"
     assert values["spark"]["executorMemory"] == "4g"
     assert values["spark"]["executorMemoryOverhead"] == "1g"
+    assert values["spark"]["dynamicAllocation"] == {
+        "enabled": True,
+        "shuffleTrackingEnabled": True,
+        "minExecutors": "1",
+        "initialExecutors": "1",
+        "maxExecutors": "4",
+        "executorIdleTimeout": "60s",
+        "schedulerBacklogTimeout": "1s",
+        "sustainedSchedulerBacklogTimeout": "1s",
+    }
+    assert values["flinkTaskManager"]["replicas"] == 1
+    assert values["flink"]["taskSlots"] == "2"
+    assert values["realtimeFlinkConsumer"]["parallelism"] == "1"
 
 
 def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_merge():
@@ -479,7 +523,24 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
     assert "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-768m}" in deploy_script
     assert "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-4g}" in deploy_script
     assert "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1g}" in deploy_script
+    assert "spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-true}" in deploy_script
+    assert "spark.dynamicAllocation.shuffleTrackingEnabled=${SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED:-true}" in deploy_script
+    assert "spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-4}" in deploy_script
+    assert "kafka.topicPartitions=${KAFKA_TOPIC_PARTITIONS:-4}" in deploy_script
+    assert "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-1}" in deploy_script
+    assert "flink.taskSlots=${FLINK_TASK_SLOTS:-2}" in deploy_script
+    assert "realtimeFlinkConsumer.parallelism=${FLINK_PARALLELISM:-1}" in deploy_script
     assert "--values infra/helm/recsys-data-platform/values-gcp.yaml" not in deploy_script
+
+
+def test_spark_silver_deduplicates_behavior_events_and_impressions_with_drop_duplicates():
+    source = (ROOT / "apps/data-platform/src/features/spark/build_silver_tables.py").read_text()
+
+    assert 'supported.dropDuplicates(["event_id"])' in source
+    assert '.dropDuplicates(["impression_id"])' in source
+    assert 'Window.partitionBy("event_id")' not in source
+    assert 'F.row_number().over(window)' not in source
+    assert '"rejection_reason", F.lit("unsupported_schema_version")' in source
 
 
 def test_security_chart_declares_vault_external_secrets_and_istio_policies():

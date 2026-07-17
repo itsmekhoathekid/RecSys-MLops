@@ -89,6 +89,15 @@ spark:
   executorMemoryOverhead: 128m
   executorCores: "1"
   executorRequestCores: 100m
+  dynamicAllocation:
+    enabled: false
+    shuffleTrackingEnabled: true
+    minExecutors: "1"
+    initialExecutors: "1"
+    maxExecutors: "4"
+    executorIdleTimeout: 60s
+    schedulerBacklogTimeout: 1s
+    sustainedSchedulerBacklogTimeout: 1s
   sqlShufflePartitions: "4"
   advisoryPartitionSizeBytes: "134217728"
   connectionTimeout: "60000"
@@ -152,6 +161,7 @@ realtimeFlinkConsumer:
     enabled: true
     name: realtime-flink-online-store
     groupIdSuffix: online
+    startingOffsets: committed-offsets
   offline:
     enabled: true
     name: realtime-flink-offline-store
