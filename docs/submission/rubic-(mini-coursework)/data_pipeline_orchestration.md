@@ -14,6 +14,8 @@ The repository intentionally exposes only three coursework DAGs, all defined in 
 
 All former composite, local, raw-ingestion, batch-feature, streaming-feature, and standalone lakehouse-maintenance DAG modules were removed. This eliminates duplicate orchestration paths and ensures the rubric file is the only source of truth loaded by Airflow.
 
+The Airflow runtime image copies only the data-platform source tree. Analytics DAG sources remain available as reference code but are deliberately excluded from the deployed scheduler image, so a rebuilt runtime cannot reintroduce non-rubric DAGs.
+
 ## Kubernetes execution model
 
 `pod_task()` creates a `KubernetesPodOperator` in the `recsys-dataflow` namespace. Each pod:

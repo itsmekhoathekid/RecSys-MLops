@@ -348,6 +348,13 @@ def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
     assert 'value: "900"' in chart
 
 
+def test_airflow_image_packages_only_the_authoritative_rubric_dag_directory():
+    dockerfile = (ROOT / "infra/docker/Dockerfile.airflow").read_text()
+
+    assert "COPY --chown=airflow:root apps/data-platform/src" in dockerfile
+    assert "apps/analytics/orchestration/airflow/dags" not in dockerfile
+
+
 def test_flink_runtime_uses_fixed_mesh_friendly_internal_ports():
     chart = ROOT / "infra/helm/recsys-data-platform"
     security_chart = ROOT / "infra/helm/recsys-security"
