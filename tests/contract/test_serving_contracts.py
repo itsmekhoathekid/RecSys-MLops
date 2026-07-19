@@ -178,6 +178,23 @@ def test_api_component_deploy_does_not_disable_kserve_autoscaling():
     assert 'verify_and_wait_workload "deployment" "recsys-api-serving"' in api_deploy.group("body")
 
 
+def test_component_deploy_background_tunnels_do_not_inherit_deployment_lock():
+    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    port_forwards = [
+        line.strip()
+        for line in deploy_script.splitlines()
+        if line.strip().startswith("kubectl port-forward")
+    ]
+
+    assert len(port_forwards) == 2
+    assert all('9>&- &' in command for command in port_forwards)
+    lock_body = re.search(
+        r"with_file_lock\(\) \{(?P<body>.*?)\n\}", deploy_script, re.DOTALL
+    )
+    assert lock_body is not None
+    assert "trap cleanup_port_forwards EXIT" in lock_body.group("body")
+
+
 def test_serving_chart_renders_candidate_for_ab_testing():
     if shutil.which("helm") is None:
         pytest.skip("helm is not installed")

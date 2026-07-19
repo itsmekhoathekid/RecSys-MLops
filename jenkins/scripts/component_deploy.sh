@@ -65,7 +65,10 @@ kfp_endpoint_for_upload() {
     return 0
   fi
 
-  kubectl port-forward -n "${namespace_kubeflow}" svc/ml-pipeline "${local_port}:8888" >"${log_path}" 2>&1 &
+  # Close the deployment lock descriptor in the background child. Otherwise a
+  # port-forward started from with_file_lock keeps flock held after this shell
+  # exits and deadlocks the next rollout stage.
+  kubectl port-forward -n "${namespace_kubeflow}" svc/ml-pipeline "${local_port}:8888" >"${log_path}" 2>&1 9>&- &
   kfp_port_forward_pids+=("$!")
   wait_for_local_port "${local_port}" "Kubeflow Pipelines upload endpoint" || {
     cat "${log_path}" >&2 || true
@@ -86,7 +89,7 @@ local_model_store_endpoint() {
     return 0
   fi
 
-  kubectl port-forward -n "${namespace_mlops}" svc/minio "${local_port}:9000" >"${log_path}" 2>&1 &
+  kubectl port-forward -n "${namespace_mlops}" svc/minio "${local_port}:9000" >"${log_path}" 2>&1 9>&- &
   kfp_port_forward_pids+=("$!")
   wait_for_local_port "${local_port}" "model store endpoint" || {
     cat "${log_path}" >&2 || true
@@ -175,6 +178,9 @@ with_file_lock() {
 
   if command -v flock >/dev/null 2>&1; then
     (
+      # with_file_lock runs the deployment in a subshell, so its background
+      # tunnel PIDs are not visible to the parent shell's EXIT trap.
+      trap cleanup_port_forwards EXIT
       flock 9
       "$@"
     ) 9>"${lock_file}"
