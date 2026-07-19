@@ -282,6 +282,9 @@ def test_model_cd_writes_shadow_and_explicit_rollback_values(tmp_path):
         "recsys-bst-triton-predictor."
     )
     assert shadow_values["kserve"]["inferenceService"]["candidateStorageUri"] == "/candidate"
+    assert shadow_values["api"]["rollout"]["maxUnavailable"] == 0
+    assert shadow_values["api"]["rollout"]["maxSurge"] == 1
+    assert shadow_values["autoscaling"]["prometheus"]["api"]["minReplicas"] == 2
 
     rollback_path = model_cd.write_values(
         control,
@@ -312,6 +315,28 @@ def test_model_cd_writes_shadow_and_explicit_rollback_values(tmp_path):
         rollback_resources = {(doc["kind"], doc["metadata"]["name"]) for doc in _documents(rollback_rendered)}
         assert ("InferenceService", "recsys-bst-triton-candidate") in shadow_resources
         assert ("InferenceService", "recsys-bst-triton-candidate") not in rollback_resources
+
+
+def test_model_cd_can_retain_candidate_while_switching_api_to_promoted_stable(tmp_path):
+    promoted = {"model_name": "bst", "model_version": "candidate-001", "triton_storage_uri": "/candidate"}
+    values_path = model_cd.write_values(
+        promoted,
+        tmp_path / "retained",
+        control_manifest=promoted,
+        candidate_manifest=promoted,
+        stage="deploy",
+        retain_candidate=True,
+    )
+    values = json.loads(values_path.read_text(encoding="utf-8"))
+
+    assert values["abTest"]["enabled"] is False
+    assert values["kserve"]["inferenceService"]["retainCandidate"] is True
+    rendered = subprocess.check_output(
+        ["helm", "template", "recsys-serving", "infra/helm/recsys-serving", "-f", str(values_path)],
+        text=True,
+    )
+    resources = {(doc["kind"], doc["metadata"]["name"]) for doc in _documents(rendered)}
+    assert ("InferenceService", "recsys-bst-triton-candidate") in resources
 
 
 def test_model_cd_evaluate_writes_decision_and_auto_renders_rollback(tmp_path, monkeypatch):
@@ -645,6 +670,33 @@ def test_model_cd_deploy_waits_for_shadow_candidate(monkeypatch, tmp_path):
     flattened = [" ".join(command) for command in commands]
     assert any("inferenceservice/recsys-bst-triton-candidate" in command for command in flattened)
     assert any("deployment/recsys-bst-triton-candidate-predictor" in command for command in flattened)
+
+
+def test_model_cd_deploy_waits_for_retained_candidate(monkeypatch, tmp_path):
+    commands = []
+    monkeypatch.setattr(model_cd, "run", lambda command: commands.append(command))
+    monkeypatch.setattr(model_cd, "crd_exists", lambda _: True)
+    values_path = tmp_path / "values.json"
+    values_path.write_text(
+        json.dumps(
+            {
+                "kserve": {
+                    "inferenceService": {
+                        "candidateStorageUri": "s3://store/candidate",
+                        "retainCandidate": True,
+                    }
+                },
+                "abTest": {"enabled": False},
+                "shadow": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    model_cd.deploy(values_path, timeout="90s")
+
+    flattened = [" ".join(command) for command in commands]
+    assert any("inferenceservice/recsys-bst-triton-candidate" in command for command in flattened)
 
 
 def test_model_cd_s3_helpers_copy_upload_and_read(monkeypatch):

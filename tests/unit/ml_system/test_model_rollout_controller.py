@@ -344,6 +344,11 @@ def test_locust_is_only_traffic_generator_for_autonomous_rollout():
     assert '"${locust_bin}" \\' in load
     assert "kill -KILL" in load
     assert 'status --version "${registry_version}"' in load
+    assert "ensure_port_forward()" in load
+    assert load.index('ensure_port_forward\n  status=') > load.index('while kill -0 "${locust_pid}"')
+    assert 'load_service="${RECSYS_LOAD_SERVICE:-recsys-demo-api}"' in load
+    assert 'default_recommendations_path="/api/recommendations"' in load
+    assert "API_RECOMMENDATIONS_PATH" in locustfile
     assert '--stage' not in load
     assert "ROLLOUT_STAGE" not in load
     assert "_next_user_id()" in locustfile

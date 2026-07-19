@@ -31,6 +31,17 @@ if [[ "${ROLLOUT_LOAD_PRINT_CONFIG:-0}" == "1" ]]; then
 fi
 registry_version="${REGISTRY_VERSION:-}"
 local_port="${RECSYS_LOCUST_PORT:-18088}"
+load_service="${RECSYS_LOAD_SERVICE:-recsys-demo-api}"
+load_base_url="http://127.0.0.1:${local_port}"
+if [[ "${load_service}" == "recsys-demo-api" ]]; then
+  default_user_id_start="900000"
+  default_user_id_range="1000"
+  default_recommendations_path="/api/recommendations"
+else
+  default_user_id_start="1"
+  default_user_id_range="1000000"
+  default_recommendations_path="/recommendations"
+fi
 reports_dir="${REPORTS_DIR:-reports}/autonomous-rollout"
 port_forward_log="${TMPDIR:-/tmp}/recsys-autonomous-rollout-port-forward.log"
 watcher_namespace="${ROLLOUT_WATCHER_NAMESPACE:-ci}"
@@ -38,12 +49,49 @@ watcher_deployment="${ROLLOUT_WATCHER_DEPLOYMENT:-recsys-model-rollout-watcher}"
 watcher_container="${ROLLOUT_WATCHER_CONTAINER:-watcher}"
 controller="/opt/recsys/apps/ml-system/src/cli/model_rollout_controller.py"
 locust_pid=""
+port_forward_pid=""
 
 mkdir -p "${reports_dir}"
 
-kubectl port-forward -n api-serving service/recsys-api-serving "${local_port}:80" \
-  >"${port_forward_log}" 2>&1 &
-port_forward_pid=$!
+start_port_forward() {
+  # The demo API is a stable proxy to recsys-api-serving. Model rollout stages
+  # replace the inference API pod, but they do not invalidate this tunnel.
+  kubectl port-forward -n api-serving "service/${load_service}" "${local_port}:80" \
+    >"${port_forward_log}" 2>&1 &
+  port_forward_pid=$!
+}
+
+stop_port_forward() {
+  [[ -n "${port_forward_pid}" ]] || return 0
+  kill "${port_forward_pid}" 2>/dev/null || true
+  wait "${port_forward_pid}" 2>/dev/null || true
+  port_forward_pid=""
+}
+
+wait_for_api() {
+  for _ in $(seq 1 60); do
+    if curl -fsS --max-time 2 "${load_base_url}/healthz" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Timed out waiting for the API port-forward on ${local_port}." >&2
+  return 1
+}
+
+ensure_port_forward() {
+  if [[ -n "${port_forward_pid}" ]] \
+    && kill -0 "${port_forward_pid}" 2>/dev/null \
+    && curl -fsS --max-time 2 "${load_base_url}/healthz" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "API load tunnel is unavailable; reconnecting service/${load_service}."
+  stop_port_forward
+  start_port_forward
+  wait_for_api
+}
+
+start_port_forward
 
 stop_locust() {
   [[ -n "${locust_pid}" ]] || return 0
@@ -63,21 +111,16 @@ stop_locust() {
 
 cleanup() {
   stop_locust
-  kill "${port_forward_pid}" 2>/dev/null || true
+  stop_port_forward
 }
 trap cleanup EXIT INT TERM
 
-for _ in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${local_port}/healthz" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-curl -fsS "http://127.0.0.1:${local_port}/healthz" >/dev/null
+wait_for_api
 
 export RECSYS_LOAD_TARGET=api
-export RECSYS_USER_ID_START="${RECSYS_USER_ID_START:-1}"
-export RECSYS_USER_ID_RANGE="${RECSYS_USER_ID_RANGE:-1000000}"
+export RECSYS_USER_ID_START="${RECSYS_USER_ID_START:-${default_user_id_start}}"
+export RECSYS_USER_ID_RANGE="${RECSYS_USER_ID_RANGE:-${default_user_id_range}}"
+export RECSYS_API_RECOMMENDATIONS_PATH="${RECSYS_API_RECOMMENDATIONS_PATH:-${default_recommendations_path}}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-${repo_root}/.uv-cache}"
 
 if [[ -z "${registry_version}" ]]; then
@@ -121,7 +164,7 @@ fi
 "${locust_bin}" \
   -f tests/load/locustfile_serving.py \
   --headless \
-  --host "http://127.0.0.1:${local_port}" \
+  --host "${load_base_url}" \
   --users "${users}" \
   --spawn-rate "${spawn_rate}" \
   --run-time "${max_duration}" \
@@ -132,6 +175,7 @@ locust_pid=$!
 
 terminal_status=""
 while kill -0 "${locust_pid}" 2>/dev/null; do
+  ensure_port_forward
   status="$(rollout_status || true)"
   [[ -n "${status}" ]] && echo "rollout_status=${status}"
   case "${status}" in

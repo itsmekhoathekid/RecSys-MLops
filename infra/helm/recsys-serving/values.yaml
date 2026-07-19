@@ -20,6 +20,7 @@ kserve:
     deploymentMode: RawDeployment
     storageUri: s3://recsys-model-store/triton/bst/latest
     candidateStorageUri: ""
+    retainCandidate: false
   grpcService:
     name: recsys-bst-triton-grpc
     candidateName: recsys-bst-triton-candidate-grpc
@@ -154,7 +155,7 @@ autoscaling:
       name: recsys-api-serving-http
       host: recsys-api-serving.local
       pathPrefix: /
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 3
       scaledownPeriod: 120
       requestRate:

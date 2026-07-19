@@ -240,6 +240,7 @@ def write_values(
     stage: str = "deploy",
     candidate_weight_percent: int = 0,
     experiment_id: str = "",
+    retain_candidate: bool = False,
 ) -> Path:
     control = control_manifest or manifest
     candidate = candidate_manifest
@@ -254,13 +255,23 @@ def write_values(
                 "name": "recsys-bst-triton",
                 "storageUri": control["triton_storage_uri"],
                 "candidateStorageUri": candidate["triton_storage_uri"] if candidate else "",
+                "retainCandidate": retain_candidate and candidate is not None,
             },
         },
         "api": {
             "namespace": {"name": "api-serving"},
+            "rollout": {
+                "maxSurge": 1,
+                "maxUnavailable": 0,
+                "minReadySeconds": 10,
+                "progressDeadlineSeconds": 300,
+            },
             "config": {
                 "modelVersion": control["model_version"],
             },
+        },
+        "autoscaling": {
+            "prometheus": {"api": {"minReplicas": 2}},
         },
         "abTest": {
             "enabled": ab_enabled,
@@ -315,6 +326,9 @@ def deploy(values_path: Path, timeout: str) -> None:
     candidate_requested = bool(candidate_uri) and (
         rendered_values.get("abTest", {}).get("enabled", False)
         or rendered_values.get("shadow", {}).get("enabled", False)
+        or rendered_values.get("kserve", {})
+        .get("inferenceService", {})
+        .get("retainCandidate", False)
     )
     run(["helm", "lint", "infra/helm/recsys-serving", "-f", str(values_path)])
     bootstrap_set_args = ["--set", "autoscaling.kserveResource.enabled=false"]
@@ -429,6 +443,8 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     experiment_id = args.experiment_id or f"bst-{int(time.time())}"
     skip_final_verify = False
+    retain_candidate = False
+    cleanup_candidate_after_deploy = False
     if args.stage == "evaluate":
         decision = evaluate_candidate_gates(
             args.prometheus_url,
@@ -473,7 +489,15 @@ def main() -> int:
         manifest["triton_storage_uri"] = serving_uri
         manifest["serving_storage_uri"] = serving_uri
         manifest["promotion_manifest_uri"] = args.manifest_uri
-        candidate_manifest = None
+        if args.apply:
+            # Keep the already-ready candidate serving while the stable
+            # InferenceService and API move to the promoted model. Removing it
+            # in the same Helm transaction creates a DNS/not-ready gap for old
+            # API pods that still carry the A/B configuration.
+            retain_candidate = True
+            cleanup_candidate_after_deploy = True
+        else:
+            candidate_manifest = None
         args.stage = "deploy"
         args.candidate_weight_percent = 0
         skip_final_verify = not args.apply
@@ -489,6 +513,7 @@ def main() -> int:
         stage=args.stage,
         candidate_weight_percent=max(0, min(100, args.candidate_weight_percent)),
         experiment_id=experiment_id,
+        retain_candidate=retain_candidate,
     )
     (output_dir / "deployed-model.json").write_text(
         json.dumps(
@@ -497,9 +522,17 @@ def main() -> int:
                 "model_version": manifest["model_version"],
                 "triton_storage_uri": manifest["triton_storage_uri"],
                 "stage": args.stage,
-                "candidate_model_version": candidate_manifest.get("model_version") if candidate_manifest else "",
-                "candidate_weight_percent": args.candidate_weight_percent if candidate_manifest else 0,
-                "experiment_id": experiment_id if candidate_manifest else "",
+                "candidate_model_version": (
+                    candidate_manifest.get("model_version")
+                    if candidate_manifest and not retain_candidate
+                    else ""
+                ),
+                "candidate_weight_percent": (
+                    args.candidate_weight_percent
+                    if candidate_manifest and not retain_candidate
+                    else 0
+                ),
+                "experiment_id": experiment_id if candidate_manifest and not retain_candidate else "",
             },
             indent=2,
             sort_keys=True,
@@ -508,6 +541,16 @@ def main() -> int:
     )
     if args.apply:
         deploy(values_path, args.timeout)
+        if cleanup_candidate_after_deploy:
+            cleanup_values_path = write_values(
+                manifest,
+                output_dir,
+                control_manifest=manifest,
+                stage="deploy",
+                candidate_weight_percent=0,
+                experiment_id=experiment_id,
+            )
+            deploy(cleanup_values_path, args.timeout)
     print(values_path)
     return 0
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 import sys
 
@@ -7,6 +8,7 @@ import pandas as pd
 import pytest
 
 from lineage.dataset_versioning import (
+    _hudi_options,
     _hudi_identifier_suffix,
     _spark_safe_records,
     sample_id_for,
@@ -96,6 +98,10 @@ def test_training_data_service_validates_canonical_schema():
 
     with pytest.raises(ValueError, match="missing columns"):
         service.validate_schema(pd.DataFrame([{"user_id": 1}]))
+
+
+def test_hudi_dataset_upsert_reconciles_ranking_group_schema():
+    assert _hudi_options("bst_training_samples")["hoodie.datasource.write.reconcile.schema"] == "true"
 
 
 def test_split_service_applies_temporal_boundaries_and_normalization():
@@ -289,6 +295,11 @@ def test_prepare_splits_records_feast_source(monkeypatch, tmp_path):
     assert metadata["hudi"]["enabled"] is False
     assert (tmp_path / "splits" / "dataset_version_meta.json").exists()
     assert (tmp_path / "splits" / "train.jsonl").exists()
+    first_train_row = json.loads(
+        (tmp_path / "splits" / "train.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert first_train_row["request_id"] == "req-0"
+    assert first_train_row["impression_id"] == "imp-0"
 
 
 def test_prepare_splits_reads_default_offline_feature_store(monkeypatch, tmp_path):

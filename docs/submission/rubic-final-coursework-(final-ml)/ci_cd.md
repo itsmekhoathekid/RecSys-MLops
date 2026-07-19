@@ -410,8 +410,8 @@ Kubeflow retraining run executes the same BST KFP pipeline. After
 `promote-bst-model` writes a promotion manifest, the next KFP step
 `Trigger KServe CD` checks the promotion score against
 `kserve_cd_score_threshold` and triggers Jenkins only when the score passes.
-The coursework proof threshold is `0.0`, so any promoted candidate with
-`test_ndcg_at_10 >= 0.0` can deploy.
+The coursework proof threshold is `0.05`, so only a candidate with
+`test_ndcg_at_10 >= 0.05` can deploy. A zero-quality candidate is rejected before Jenkins CD.
 
 **End-to-end flow:**
 

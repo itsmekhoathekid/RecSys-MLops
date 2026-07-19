@@ -371,6 +371,9 @@ def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeyp
     assert "/opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py" in compiled
     assert "Bootstrap Or Await Candidate" in compiled
     assert "kserve_cd_score_threshold" in compiled
+    assert "kserve_cd_score_threshold: float [Default: 0.05]" in compiled
+    assert "training_percent: float [Default: 1.0]" in compiled
+    assert "distributed_training_percent: float [Default: 1.0]" in compiled
     assert "RecSys-KServe-Model-CD" in compiled
     assert "pipelines.model_pipeline" not in compiled
     assert "recsys_model_pipeline" not in compiled

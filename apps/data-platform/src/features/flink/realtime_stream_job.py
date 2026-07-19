@@ -411,14 +411,18 @@ def item_payload_from_history(
 
 
 def kafka_offsets_initializer(name: str):
-    from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer
+    from pyflink.datastream.connectors.kafka import KafkaOffsetResetStrategy, KafkaOffsetsInitializer
 
     if name == "earliest":
         return KafkaOffsetsInitializer.earliest()
     if name == "latest":
         return KafkaOffsetsInitializer.latest()
     if name == "committed-offsets":
-        return KafkaOffsetsInitializer.committed_offsets()
+        # A new consumer group has no committed offsets yet. Keep committed
+        # offsets as the steady-state source of truth, but bootstrap every
+        # partition from earliest instead of failing with
+        # NoOffsetForPartitionException on the first deployment.
+        return KafkaOffsetsInitializer.committed_offsets(KafkaOffsetResetStrategy.EARLIEST)
     raise ValueError(f"Unsupported Kafka starting offsets: {name}")
 
 

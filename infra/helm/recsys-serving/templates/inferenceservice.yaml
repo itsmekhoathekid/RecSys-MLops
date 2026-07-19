@@ -40,7 +40,7 @@ spec:
           mountPath: /dev/shm
       resources:
 {{ toYaml .Values.kserve.resources | indent 8 }}
-{{- if and (or .Values.abTest.enabled .Values.shadow.enabled) .Values.kserve.inferenceService.candidateStorageUri }}
+{{- if and (or .Values.abTest.enabled .Values.shadow.enabled .Values.kserve.inferenceService.retainCandidate) .Values.kserve.inferenceService.candidateStorageUri }}
 ---
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService

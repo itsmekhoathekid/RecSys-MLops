@@ -21,6 +21,8 @@ DEFAULT_CATALOG_NAME = "recsys_features"
 DEFAULT_WAREHOUSE = "s3a://recsys-offline-feature-store/warehouse"
 
 MODEL_SAMPLE_COLUMNS = [
+    "impression_id",
+    "request_id",
     "user_id",
     "hist_item_id",
     "hist_event_type",
@@ -48,6 +50,8 @@ SEQUENCE_SAMPLE_COLUMNS = [
 VERSIONED_SAMPLE_COLUMNS = [
     "sample_id",
     "entity_id",
+    "impression_id",
+    "request_id",
     "user_id",
     "target_item_id",
     "event_timestamp",
@@ -270,6 +274,8 @@ def _sample_schema():
         [
             StructField("sample_id", StringType(), False),
             StructField("entity_id", StringType(), True),
+            StructField("impression_id", StringType(), True),
+            StructField("request_id", StringType(), True),
             StructField("user_id", LongType(), True),
             StructField("target_item_id", LongType(), True),
             StructField("event_timestamp", TimestampType(), True),
@@ -349,6 +355,7 @@ def _hudi_options(table_name: str) -> dict[str, str]:
         "hoodie.datasource.write.table.name": table_name,
         "hoodie.datasource.write.table.type": "COPY_ON_WRITE",
         "hoodie.datasource.write.operation": "upsert",
+        "hoodie.datasource.write.reconcile.schema": "true",
         "hoodie.datasource.write.recordkey.field": "sample_id",
         "hoodie.datasource.write.precombine.field": "updated_at",
         "hoodie.datasource.write.partitionpath.field": "split",

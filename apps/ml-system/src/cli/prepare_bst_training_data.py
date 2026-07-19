@@ -43,6 +43,8 @@ MODEL_COLUMNS = [
     "label",
 ]
 
+RANKING_GROUP_COLUMNS = ["impression_id", "request_id"]
+
 SEQUENCE_COLUMNS = [
     "hist_item_id",
     "hist_event_type",
@@ -488,7 +490,12 @@ def _write_jsonl(rows: list[dict[str, Any]], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:
         for row in rows:
-            payload = {column: row.get(column) for column in MODEL_COLUMNS}
+            # Preserve request lineage so ranking metrics can evaluate all
+            # candidates from one recommendation request as one impression set.
+            payload = {
+                column: row.get(column)
+                for column in [*MODEL_COLUMNS, *RANKING_GROUP_COLUMNS]
+            }
             file.write(json.dumps(payload, separators=(",", ":")) + "\n")
 
 

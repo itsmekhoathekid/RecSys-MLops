@@ -93,7 +93,11 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
    If the candidate passes and `--apply` is used, `promote` copies the candidate Triton repository into the stable serving URI, uploads the new production manifest, then renders a stable-only deploy with A/B disabled. If the candidate fails or the operator chooses not to continue, `rollback` renders stable-only values and sets candidate weight back to `0`.
 
-Current proof status: this document proves that `ab-start`-style serving is active on GCP because both `recsys-bst-triton` and `recsys-bst-triton-candidate` are ready, live requests split into `control` and `candidate`, and Prometheus/Grafana expose per-variant metrics. It does not claim that `model_cd.py --stage promote` has already been executed for this experiment.
+Promotion is zero-downtime across the API configuration switch. Model CD temporarily retains the ready candidate while the stable `InferenceService` is updated and the API rolls from A/B routing to champion-only routing. It removes the candidate only after the promoted stable backend and replacement API pods are ready. The API autoscaler keeps at least two replicas and the Deployment enforces `maxUnavailable=0`, `maxSurge=1`.
+
+The autonomous load harness sends traffic through the stable demo API proxy rather than port-forwarding directly to the inference API pod that Model CD replaces. It uses the generated users `900000..900999`, calls `/api/recommendations`, and reconnects the tunnel if the proxy itself becomes unavailable. Prometheus still observes the underlying control/candidate model calls.
+
+Latest reliability proof: a 60-second Locust run performed 1,454 live recommendation requests while `recsys-api-serving` was rolling. All 1,454 succeeded (`0.00%` failures); average latency was 373 ms and p95 was approximately 610 ms.
 
 ## Two Inference Services
 

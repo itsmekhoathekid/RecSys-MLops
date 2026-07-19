@@ -207,7 +207,8 @@ class ModelLifecycleService:
                 all_probs.extend(torch.sigmoid(logits).detach().cpu().tolist())
                 all_labels.extend(labels.detach().cpu().tolist())
                 all_group_keys.extend(
-                    zip(
+                    batch.get("ranking_group_id")
+                    or zip(
                         batch["user_id"].detach().cpu().tolist(),
                         batch["event_time"].detach().cpu().tolist(),
                     )
