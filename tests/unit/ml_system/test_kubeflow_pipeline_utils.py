@@ -368,6 +368,7 @@ def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeyp
     assert "distributed_num_workers: int [Default: 2.0]" in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py" in compiled
     assert "/opt/recsys/apps/ml-system/src/registry/model_promotion.py" in compiled
+    assert "--eval-metrics-path" in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py" in compiled
     assert "Bootstrap Or Await Candidate" in compiled
     assert "kserve_cd_score_threshold" in compiled

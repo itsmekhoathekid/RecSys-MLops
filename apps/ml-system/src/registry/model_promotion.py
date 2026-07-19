@@ -564,6 +564,7 @@ def promote_best_model(
     ray_result_path: str,
     config_path: str,
     output_dir: str,
+    eval_metrics_path: str | None = None,
     model_bucket: str = DEFAULT_MODEL_BUCKET,
     model_prefix: str = DEFAULT_MODEL_PREFIX,
     promotion_key: str = DEFAULT_PROMOTION_KEY,
@@ -575,6 +576,18 @@ def promote_best_model(
     promote_latest: bool = False,
 ) -> PromotionResult:
     best_payload = _read_json(ray_result_path)
+    if eval_metrics_path:
+        evaluation = _read_json(eval_metrics_path)
+        split = str(evaluation.get("split") or "test")
+        evaluated_metrics = evaluation.get("metrics") or {}
+        best_payload.setdefault("metrics", {}).update(
+            {
+                f"{split}/{name}": value
+                for name, value in evaluated_metrics.items()
+                if isinstance(value, (int, float))
+            }
+        )
+        best_payload["evaluation_metrics_path"] = eval_metrics_path
     config = load_config(best_payload.get("best_config_path") or config_path)
     version = model_version or os.getenv("MODEL_VERSION") or best_payload.get("best_trial_name")
     if not version:
@@ -655,6 +668,7 @@ def promote_best_model(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Export and promote the best BST model to Triton/MinIO")
     parser.add_argument("--ray-result-path", required=True)
+    parser.add_argument("--eval-metrics-path", default="")
     parser.add_argument("--config-path", default="configs/local/bst.yaml")
     parser.add_argument("--output-dir", default="/workspace/recsys/data_platform/output/ml/serving")
     parser.add_argument("--model-bucket", default=os.getenv("MODEL_STORE_BUCKET", DEFAULT_MODEL_BUCKET))
@@ -671,6 +685,7 @@ def main() -> int:
         ray_result_path=args.ray_result_path,
         config_path=args.config_path,
         output_dir=args.output_dir,
+        eval_metrics_path=args.eval_metrics_path or None,
         model_bucket=args.model_bucket,
         model_prefix=args.model_prefix,
         promotion_key=args.promotion_key,

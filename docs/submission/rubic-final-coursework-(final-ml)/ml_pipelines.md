@@ -136,7 +136,7 @@ instead of retrying forever. The operator can repair it deterministically with
 - Both RayJobs should end with `jobStatus: SUCCEEDED`.
 - `evaluate-bst` writes metrics to `/workspace/recsys/data_platform/output/ml/eval_metrics.json`.
 - Tune and DDP consume the complete coursework split by default. Prefix sampling is no longer used for the small dataset because it can exclude every positive example and produce a misleading zero NDCG.
-- `promote-bst-model` writes `/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json`, uploads the matching versioned manifest to MinIO, and stores its URI on the new MLflow registry version.
+- `promote-bst-model` reads the held-out `eval_metrics.json`, writes `/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json`, uploads the matching versioned manifest to MinIO, and stores its URI and the true test NDCG on the new MLflow registry version.
 - `Bootstrap Or Await Candidate` is the post-training decision step. When no stable manifest exists, it waits for a successful Jenkins deployment before publishing `latest.json` and assigning the MLflow `champion` alias. When a champion exists, it writes `rollout_status=awaiting_candidate_selection` and exits without calling Jenkins.
 - A later model remains only a deployable registry candidate until an operator sets `candidate=test`. The watcher owns shadow deployment and the complete Prometheus-sample-driven 10% → 25% → 50% → terminal lifecycle; Locust only supplies request traffic.
 

@@ -218,6 +218,7 @@ def evaluate_bst(config_path: str, ray_result_path: str, metrics_path: str, data
 def promote_bst_model(
     config_path: str,
     ray_result_path: str,
+    eval_metrics_path: str,
     output_dir: str,
     manifest_path: str,
     metric_name: str,
@@ -230,6 +231,8 @@ def promote_bst_model(
             config_path,
             "--ray-result-path",
             ray_result_path,
+            "--eval-metrics-path",
+            eval_metrics_path,
             "--output-dir",
             output_dir,
             "--manifest-path",
@@ -440,6 +443,7 @@ def recsys_bst_pipeline(
         promote_bst_model(
             config_path=bst_config_path,
             ray_result_path=ray_best_result_path,
+            eval_metrics_path=eval_metrics_path,
             output_dir=serving_output_dir,
             manifest_path=promotion_manifest_path,
             metric_name=promotion_metric_name,
