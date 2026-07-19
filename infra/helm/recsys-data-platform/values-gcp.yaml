@@ -49,8 +49,8 @@ realtimeProducer:
   replicas: 1
 
 flinkTaskManager:
-  # The online and offline jobs run at parallelism 1 and share one TM via two slots.
-  replicas: 1
+  # Isolate the online and offline streaming workloads across two TaskManagers.
+  replicas: 2
   resources:
     requests:
       cpu: 500m
@@ -61,7 +61,8 @@ flinkTaskManager:
 
 flink:
   istioInject: "true"
-  taskSlots: "2"
+  # One slot per TaskManager guarantees the online and offline jobs are isolated.
+  taskSlots: "1"
 
 redis:
   istioInject: "true"

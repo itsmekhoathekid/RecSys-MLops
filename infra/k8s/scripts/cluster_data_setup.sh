@@ -5,8 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 PROFILE="${MINIKUBE_PROFILE:-recsys-mlops}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-${PROFILE}}"
 NAMESPACE="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
-DAG_ID="${RECSYS_DATA_SETUP_DAG_ID:-k8s_data_platform_dag}"
-RUN_ID="${RECSYS_DATA_SETUP_RUN_ID:-data-setup-$(date -u +%Y%m%d%H%M%S)}"
+DAG_IDS_VALUE="${RECSYS_DATA_SETUP_DAG_IDS:-recsys_dp1_raw_to_bronze recsys_dp2_bronze_to_silver_gold recsys_dp3_offline_feature_table}"
+read -r -a DAG_IDS <<<"${DAG_IDS_VALUE}"
+RUN_ID_PREFIX="${RECSYS_DATA_SETUP_RUN_ID_PREFIX:-data-setup-$(date -u +%Y%m%d%H%M%S)}"
 WAIT_TIMEOUT_SECONDS="${RECSYS_DATA_SETUP_TIMEOUT_SECONDS:-3600}"
 POLL_SECONDS="${RECSYS_DATA_SETUP_POLL_SECONDS:-20}"
 SKIP_CLUSTER_UP="${RECSYS_DATA_SETUP_SKIP_CLUSTER_UP:-0}"
@@ -25,31 +26,33 @@ airflow() {
 }
 
 airflow_run_state() {
-  airflow dags list-runs -d "${DAG_ID}" --output json \
-    | python3 -c 'import json,sys; run_id=sys.argv[1]; runs=json.load(sys.stdin); print(next((run.get("state", "") for run in runs if run.get("run_id") == run_id), ""))' "${RUN_ID}"
+  local dag_id="$1" run_id="$2"
+  airflow dags list-runs -d "${dag_id}" --output json \
+    | python3 -c 'import json,sys; run_id=sys.argv[1]; runs=json.load(sys.stdin); print(next((run.get("state", "") for run in runs if run.get("run_id") == run_id), ""))' "${run_id}"
 }
 
 wait_for_airflow_run() {
+  local dag_id="$1" run_id="$2"
   local elapsed=0
   local state=""
   section "Wait Airflow DAG Run"
   while (( elapsed <= WAIT_TIMEOUT_SECONDS )); do
-    state="$(airflow_run_state || true)"
-    echo "${DAG_ID}/${RUN_ID}: ${state:-unknown}"
+    state="$(airflow_run_state "${dag_id}" "${run_id}" || true)"
+    echo "${dag_id}/${run_id}: ${state:-unknown}"
     case "${state}" in
       success)
         return 0
         ;;
       failed)
-        airflow dags list-runs -d "${DAG_ID}" || true
+        airflow dags list-runs -d "${dag_id}" || true
         return 1
         ;;
     esac
     sleep "${POLL_SECONDS}"
     elapsed=$((elapsed + POLL_SECONDS))
   done
-  echo "Timed out waiting for ${DAG_ID}/${RUN_ID} after ${WAIT_TIMEOUT_SECONDS}s"
-  airflow dags list-runs -d "${DAG_ID}" || true
+  echo "Timed out waiting for ${dag_id}/${run_id} after ${WAIT_TIMEOUT_SECONDS}s"
+  airflow dags list-runs -d "${dag_id}" || true
   return 1
 }
 
@@ -74,14 +77,17 @@ kubectl wait --for=condition=ready pod -l app=source-postgres -n "${NAMESPACE}" 
 kubectl wait --for=condition=ready pod -l app=redis -n "${NAMESPACE}" --timeout=180s
 kubectl wait --for=condition=ready pod -l app=airflow-webserver -n "${NAMESPACE}" --timeout=240s
 
-section "Trigger Data Setup DAG"
-airflow dags unpause "${DAG_ID}"
-if [[ -n "$(airflow_run_state || true)" ]]; then
-  echo "Airflow DAG run ${DAG_ID}/${RUN_ID} already exists; waiting for it."
-else
-  airflow dags trigger "${DAG_ID}" --run-id "${RUN_ID}"
-fi
-wait_for_airflow_run
+section "Trigger DP1 -> DP2 -> DP3 Data Setup DAGs"
+for dag_id in "${DAG_IDS[@]}"; do
+  run_id="${RUN_ID_PREFIX}-${dag_id}"
+  airflow dags unpause "${dag_id}"
+  if [[ -n "$(airflow_run_state "${dag_id}" "${run_id}" || true)" ]]; then
+    echo "Airflow DAG run ${dag_id}/${run_id} already exists; waiting for it."
+  else
+    airflow dags trigger "${dag_id}" --run-id "${run_id}"
+  fi
+  wait_for_airflow_run "${dag_id}" "${run_id}"
+done
 
 section "Verify Feature Store And Redis Online Store"
 run_make data-platform-verify-e2e

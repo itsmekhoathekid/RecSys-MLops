@@ -236,46 +236,17 @@ def test_node_rebalance_validation_covers_relocated_control_plane():
     assert "disable_sidecar_injection daemonset observability recsys-promtail" in rebalance
 
 
-def test_airflow_dags_run_native_lakehouse_tasks_only():
-    full_dag = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/full_dataflow_local_dag.py").read_text()
-    k8s_dag = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py").read_text()
-    for name, source in [("full", full_dag), ("k8s", k8s_dag)]:
-        assert "register_debezium_connector" in source
-        assert "ingest_historical_batch_to_lakehouse" in source
-        assert "python -m ingest.batch_lakehouse_ingestion" in source
-        assert "spark_batch_entrypoint.py" in source
-        assert "feast_materialize_incremental" in source
-        assert "feast materialize-incremental" in source
-        if name == "k8s":
-            assert 'dag_id="recsys_batch_feature_pipeline"' in source
-            assert 'schedule=env_schedule("BATCH_FEATURE_DAG_SCHEDULE", "0 1 * * *")' in source
-            assert "run_dp2_bronze_to_silver_gold" in source
-            assert "validate_dp2_silver_gold" in source
-            assert ">> run_spark_batch_to_offline_store" in source
-            assert ">> verify_postgres_offline_store_updated" in source
-            assert 'dag_id="recsys_feast_materialize"' in source
-            assert 'schedule=env_schedule("FEAST_MATERIALIZE_DAG_SCHEDULE", "20 */2 * * *")' in source
-            assert "apply_feast_feature_repo >> feast_materialize_incremental >> verify_redis_online_store_updated" in source
-            assert 'dag_id="recsys_feature_drift_monitoring"' in source
-            assert 'schedule=env_schedule("FEATURE_DRIFT_DAG_SCHEDULE", "30 3 * * *")' in source
-            assert "run_offline_feature_drift >> push_drift_metrics >> trigger_kubeflow_retrain_if_drift" in source
-            assert "feast_materialize_incremental >> offline_feature_drift >> trigger_kubeflow_retrain" not in source
-            assert "trigger_kubeflow_retrain_if_drift" in source
-            assert "python -m validate.offline_feature_drift" in source
-            assert '"run_offline_feature_drift",\n            DATAFLOW_IMAGE,' in source
-            assert "apply_feature_repo" in source
-            assert "python -m validate.governance_contracts dp3-postgres" in source
-            assert "python -m validate.governance_contracts streaming-redis" in source
-            assert "python -m metadata.ingest_datahub_governance --verify-only" in source
-            assert '"RUNTIME_LINEAGE_STRICT": "true"' in source
-            assert "pushed_drift_report_metrics" in source
-            assert "http://flink-jobmanager:8081/jobs/overview" in source
-            assert "No RUNNING Flink jobs found" in source
-        else:
-            assert "realtime_stream_job.py" in source
-            assert "--offline-store-enabled" in source
-            assert "flink run -m flink-jobmanager:8081" in source
-            assert "feature_repo" in source
+def test_airflow_keeps_only_rubric_dp1_dp2_dp3_dags():
+    dag_dir = ROOT / "apps/data-platform/src/orchestration/airflow/dags"
+    assert {path.name for path in dag_dir.glob("*.py")} == {"__init__.py", "rubric_data_pipeline_dags.py"}
+    source = (dag_dir / "rubric_data_pipeline_dags.py").read_text()
+    assert 'dag_id="recsys_dp1_raw_to_bronze"' in source
+    assert 'dag_id="recsys_dp2_bronze_to_silver_gold"' in source
+    assert 'dag_id="recsys_dp3_offline_feature_table"' in source
+    assert "recsys_lakehouse_maintenance" not in source
+    assert source.count("ingest_stage >> optimize_stage >> validate_stage") == 2
+    assert "--scope bronze" in source
+    assert "--scope silver" in source
 
 
 def test_retrain_trigger_uses_distinct_tune_and_ddp_results_for_default_drift_runs():
@@ -304,7 +275,7 @@ def test_retrain_trigger_uses_stable_safe_kfp_run_names():
 
 
 def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
-    source = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py").read_text()
+    source = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py").read_text()
     assert 'cmds=["bash", "-c"]' in source
     assert 'cmds=["bash", "-lc"]' not in source
     for expected in [
@@ -319,17 +290,12 @@ def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
         "spark.kubernetes.submission.connectionTimeout=${SPARK_K8S_CONNECTION_TIMEOUT:-60000}",
         "spark.kubernetes.submission.requestTimeout=${SPARK_K8S_REQUEST_TIMEOUT:-180000}",
         "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
-        "optional_command(",
-        "REALTIME_E2E_ENABLED",
-        "DATAHUB_INGEST_ENABLED",
     ]:
         assert expected in source
-    assert "local:///opt/recsys/apps/data-platform/src/validate/offline_feature_drift.py" not in source
 
 
 def test_airflow_native_spark_submissions_configure_dynamic_allocation():
     dag_paths = (
-        "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py",
         "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py",
     )
     expected = (
@@ -349,23 +315,21 @@ def test_airflow_native_spark_submissions_configure_dynamic_allocation():
             assert setting in source
 
 
-def test_lakehouse_batch_ingestion_uses_python_not_spark_submit():
-    k8s_dag = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py").read_text()
-    local_dag = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/full_dataflow_local_dag.py").read_text()
+def test_dp1_batch_ingestion_commits_bronze_iceberg_with_spark():
+    dag = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py").read_text()
     ingestion_source = (ROOT / "apps/data-platform/src/ingest/batch_lakehouse_ingestion.py").read_text()
-    assert "python -m ingest.batch_lakehouse_ingestion" in k8s_dag
-    assert "python -m ingest.batch_lakehouse_ingestion" in local_dag
-    assert '"ingest_historical_batch_to_lakehouse",\n            DATAFLOW_IMAGE,' in k8s_dag
-    assert "local:///opt/recsys/apps/data-platform/src/ingest/batch_lakehouse_ingestion.py" not in k8s_dag
-    assert "/opt/spark/bin/spark-submit " not in ingestion_source
-    assert "spark_session(" not in ingestion_source
-    assert "pyarrow.parquet" in ingestion_source
+    dp2_source = (ROOT / "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py").read_text()
+    assert "/opt/spark/bin/spark-submit" in dag
+    assert "batch_lakehouse_ingestion.py" in dag
+    assert "write_iceberg_table" in ingestion_source
+    assert "catalog.bronze_table" in ingestion_source or "bronze_" in ingestion_source
+    assert 'source="lakehouse"' in dp2_source
+    assert 'source="parquet"' not in dp2_source
 
 
 def test_k8s_airflow_task_pods_can_skip_istio_mesh_for_native_jobs():
-    source = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py").read_text()
+    source = (ROOT / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py").read_text()
     assert '"sidecar.istio.io/inject": "false"' in source
-    assert "mesh=False" in source
     assert "curl --max-time 5 -sf -X POST http://127.0.0.1:15020/quitquitquit" not in source
     assert "startup_timeout_seconds=600" in source
 
@@ -511,8 +475,8 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
         "schedulerBacklogTimeout": "1s",
         "sustainedSchedulerBacklogTimeout": "1s",
     }
-    assert values["flinkTaskManager"]["replicas"] == 1
-    assert values["flink"]["taskSlots"] == "2"
+    assert values["flinkTaskManager"]["replicas"] == 2
+    assert values["flink"]["taskSlots"] == "1"
     assert values["realtimeFlinkConsumer"]["parallelism"] == "1"
 
 
@@ -538,9 +502,18 @@ def test_spark_silver_deduplicates_behavior_events_and_impressions_with_drop_dup
 
     assert 'supported.dropDuplicates(["event_id"])' in source
     assert '.dropDuplicates(["impression_id"])' in source
+    assert '.orderBy("event_timestamp", "event_id")' not in source
     assert 'Window.partitionBy("event_id")' not in source
     assert 'F.row_number().over(window)' not in source
     assert '"rejection_reason", F.lit("unsupported_schema_version")' in source
+
+
+def test_spark_user_aggregate_uses_approximate_rolling_category_cardinality():
+    source = (ROOT / "apps/data-platform/src/features/spark/build_user_aggregate_features.py").read_text()
+
+    assert "CATEGORY_CARDINALITY_RSD = 0.05" in source
+    assert 'F.approx_count_distinct("category_id", CATEGORY_CARDINALITY_RSD)' in source
+    assert 'F.collect_list(F.col("category_id"))' not in source
 
 
 def test_security_chart_declares_vault_external_secrets_and_istio_policies():
@@ -641,6 +614,11 @@ def test_deleted_legacy_artifacts_are_absent():
             "apps/data-platform/great_expectations",
             "apps/data-platform/dbt",
             "apps/data-platform/src/features/spark/spark_realtime_bronze_entrypoint.py",
+            "apps/data-platform/src/orchestration/airflow/dags/batch_feature_pipeline_dag.py",
+            "apps/data-platform/src/orchestration/airflow/dags/full_dataflow_local_dag.py",
+            "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py",
+            "apps/data-platform/src/orchestration/airflow/dags/raw_ingestion_dag.py",
+            "apps/data-platform/src/orchestration/airflow/dags/streaming_feature_pipeline_dag.py",
         ]:
             assert not (ROOT / relative).exists()
     assert (ROOT / "apps/data-platform/feature-store/feature_repo/feature_store.yaml").exists()

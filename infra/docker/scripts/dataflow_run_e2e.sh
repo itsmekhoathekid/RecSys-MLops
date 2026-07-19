@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DAG_ID="${1:-full_dataflow_local_dag}"
+DAG_ID="${1:-recsys_dp1_raw_to_bronze}"
 
 "${SCRIPT_DIR}/dataflow_trigger_dag.sh" "${DAG_ID}"
 

@@ -1,9 +1,9 @@
 dags_path: apps/data-platform/src/orchestration/airflow/dags
 
 dags:
-  raw_ingestion: raw_ingestion_dag
-  batch_feature_pipeline: batch_feature_pipeline_dag
-  streaming_feature_pipeline: streaming_feature_pipeline_dag
+  dp1: recsys_dp1_raw_to_bronze
+  dp2: recsys_dp2_bronze_to_silver_gold
+  dp3: recsys_dp3_offline_feature_table
 
 scope:
   serving_api: false

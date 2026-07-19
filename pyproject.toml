@@ -3,36 +3,74 @@ name = "aide1-project"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
-    "ipykernel>=7.2.0",
+    # Orchestration and platform SDKs.
+    "apache-airflow==2.9.3",
+    "apache-airflow-providers-cncf-kubernetes>=8.0.0",
+    "apache-airflow-providers-docker>=3.0.0",
+    "apache-airflow-providers-http>=4.0.0",
+    "apache-airflow-providers-postgres>=5.0.0",
+    "boto3==1.35.36",
+    "botocore==1.35.36",
     "kfp>=2.16.1",
     "kfp-kubernetes>=1.4.0",
     "kubernetes>=30.1.0",
-    "numpy>=2.2.6",
+    "pendulum>=3.0.0,<4",
+    "redis>=5.0.0",
+    "requests>=2.32.0",
+
+    # Batch, lakehouse, feature-store, and analytics runtimes.
+    "dbt-trino==1.10.2",
+    "evidently>=0.7.0",
+    "feast[redis]==0.64.0",
+    "fsspec==2024.10.0",
     "pandas>=2.3.3",
+    "psycopg[binary]>=3.3.4",
+    "psycopg-pool>=3.3.1",
+    "psycopg2-binary>=2.9.10",
     "pyarrow>=18.0.0",
-    "pydantic>=2.10.0",
+    "pyspark==3.5.8",
     "pyyaml>=6.0.3",
-    "pytest>=8.3.0",
+    "s3fs==2024.10.0",
+    "trino>=0.338.0",
+
+    # API serving and observability.
+    "fastapi>=0.138.0",
+    "httpx>=0.28.1",
+    "opentelemetry-api>=1.30.0,<2",
+    "opentelemetry-exporter-otlp>=1.30.0,<2",
+    "opentelemetry-instrumentation-fastapi>=0.51b0,<1",
+    "opentelemetry-sdk>=1.30.0,<2",
+    "prometheus-client>=0.21.0,<1",
+    "pydantic>=2.10.0,<3",
+    "tritonclient[grpc]>=2.54.0",
+    "uvicorn>=0.30.6,<=0.34.0",
+
+    # ML, distributed training, and model packaging.
+    "mlflow>=3.0.0",
+    "numpy>=2.2.6",
+    "onnx>=1.17.0",
+    "onnxscript>=0.2.0",
+    "ray[default,train,tune]>=2.40.0",
     "scikit-learn>=1.7.2",
     "torch>=2.11.0",
     "torchaudio>=2.11.0",
     "torchvision>=0.26.0",
     "tqdm>=4.67.3",
-    "fastapi>=0.138.0",
-    "boto3>=1.43.36",
-    "pytest-cov>=7.1.0",
+
+    # Local development, notebooks, and verification.
     "hypothesis>=6.155.7",
-    "mutmut>=3.6.0",
+    "ipykernel>=7.2.0",
     "locust>=2.44.4",
-    "httpx>=0.28.1",
-    "uvicorn>=0.30.6,<=0.34.0",
-    "feast[redis]==0.64.0",
+    "mutmut>=3.6.0",
+    "mypy>=1.15.0",
     "nbformat>=5.10.4",
     "nbconvert>=7.17.1",
-    "psycopg[binary]>=3.3.4",
-    "psycopg-pool>=3.3.1",
+    "pip-audit>=2.9.0,<3",
+    "pytest>=8.3.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.11.0,<1",
 ]
 
 [tool.pytest.ini_options]

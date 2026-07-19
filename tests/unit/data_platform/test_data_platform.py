@@ -24,7 +24,7 @@ from local.run_batch_features import main as run_batch_features_main
 from local.run_batch_features import run_batch_features
 from ingest.debezium import extract_debezium_after
 from ingest.batch_lakehouse_ingestion import (
-    LakehouseParquetLayout,
+    LakehouseIcebergLayout,
     infer_run_id,
     load_generator_run_to_lakehouse,
 )
@@ -45,8 +45,7 @@ def test_debezium_after_extraction_skips_deletes():
     assert parse_message(b'{"payload":{"op":"c","after":{"event_id":"e3"}}}') == {"event_id": "e3"}
 
 
-def test_batch_ingestion_uri_helpers_and_column_replacement(monkeypatch):
-    import pyarrow as pa
+def test_batch_ingestion_uri_helpers(monkeypatch):
     import pyarrow.fs as pafs
     import ingest.batch_lakehouse_ingestion as ingestion
 
@@ -65,35 +64,42 @@ def test_batch_ingestion_uri_helpers_and_column_replacement(monkeypatch):
     with pytest.raises(ValueError, match="Unsupported lakehouse URI scheme"):
         ingestion._filesystem_and_path("gs://bucket/table")
 
-    table = pa.table({"source_run_id": ["old"], "value": [1]})
-    enriched = ingestion._enrich_table(table, source_run_id="run-2", ingestion_ts=ingestion.datetime.now(ingestion.timezone.utc))
-    assert enriched.column("source_run_id").to_pylist() == ["run-2"]
-    assert ingestion._part_name("behavior_events", "raw/run id!") == "part-raw-run-id-00000-behavior_events.parquet"
-
-    class MissingDirFilesystem:
-        def delete_dir(self, path):
-            raise FileNotFoundError(path)
-
-    ingestion._delete_dir_if_exists(MissingDirFilesystem(), "missing")
+    layout = LakehouseIcebergLayout("recsys", "lakehouse")
+    assert layout.table_name("behavior_events") == "recsys.lakehouse.bronze_behavior_events"
 
 
-def test_python_batch_ingestion_writes_parquet_lakehouse_layout(tmp_path):
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+def test_batch_ingestion_commits_every_generator_table_as_bronze_iceberg(monkeypatch):
+    import pyspark.sql.functions as functions
+    import ingest.batch_lakehouse_ingestion as ingestion
 
-    run_path = tmp_path / "raw" / "test_run"
-    for table_name in RAW_GENERATOR_TABLES:
-        table_path = run_path / table_name
-        table_path.mkdir(parents=True)
-        pq.write_table(pa.table({"id": [1], "value": [table_name]}), table_path / "part-00000.parquet")
+    class Expression:
+        def cast(self, _type):
+            return self
 
-    layout = LakehouseParquetLayout(warehouse_uri=str(tmp_path / "warehouse"), namespace="lakehouse")
-    counts = load_generator_run_to_lakehouse(run_path, layout=layout, mode="overwrite")
+    class Frame:
+        def withColumn(self, _name, _value):
+            return self
+
+    written = []
+    monkeypatch.setattr(functions, "lit", lambda _value: Expression())
+    monkeypatch.setattr(ingestion, "create_spark_namespace", lambda spark, catalog: None)
+    monkeypatch.setattr(ingestion, "read_parquet_table", lambda spark, run_path, table: Frame())
+    monkeypatch.setattr(ingestion, "row_count", lambda frame: 1)
+    monkeypatch.setattr(
+        ingestion,
+        "write_iceberg_table",
+        lambda frame, table_name, mode: written.append((table_name, mode)),
+    )
+
+    counts = load_generator_run_to_lakehouse(
+        "/raw/test_run",
+        spark=object(),
+        layout=LakehouseIcebergLayout("recsys", "lakehouse"),
+        mode="overwrite",
+    )
 
     assert counts == {table_name: 1 for table_name in RAW_GENERATOR_TABLES}
-    output = pq.read_table(tmp_path / "warehouse" / "lakehouse" / "behavior_events")
-    assert output.column("source_run_id").to_pylist() == ["test_run"]
-    assert "lakehouse_ingestion_ts" in output.column_names
+    assert written == [(f"recsys.lakehouse.bronze_{table}", "overwrite") for table in RAW_GENERATOR_TABLES]
 
 
 def test_python_batch_ingestion_cli_delegates_to_loader(monkeypatch, capsys):
@@ -101,9 +107,9 @@ def test_python_batch_ingestion_cli_delegates_to_loader(monkeypatch, capsys):
 
     captured = {}
 
-    def fake_load_generator_run_to_lakehouse(run_path, *, layout, mode, run_id):
+    def fake_load_generator_run_to_lakehouse(run_path, *, catalog, mode, run_id):
         captured["run_path"] = run_path
-        captured["layout"] = layout
+        captured["catalog"] = catalog
         captured["mode"] = mode
         captured["run_id"] = run_id
         return {"behavior_events": 2}
@@ -128,7 +134,8 @@ def test_python_batch_ingestion_cli_delegates_to_loader(monkeypatch, capsys):
 
     assert ingestion.main() == 0
     assert captured["run_path"] == "raw/run"
-    assert captured["layout"] == LakehouseParquetLayout("s3a://lake/warehouse", "bronze")
+    assert captured["catalog"].warehouse_uri == "s3a://lake/warehouse"
+    assert captured["catalog"].lakehouse_namespace == "bronze"
     assert captured["mode"] == "append"
     assert captured["run_id"] == "explicit-run"
     assert json.loads(capsys.readouterr().out) == {"behavior_events": 2}

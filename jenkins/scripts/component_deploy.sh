@@ -323,9 +323,6 @@ deploy_api_unlocked() {
     --create-namespace
     --reuse-values
     --timeout "${timeout}"
-    --wait
-    --set "kserve.enabled=false"
-    --set "autoscaling.kserveResource.enabled=false"
     --set "api.namespace.name=${namespace_api}"
     --set "api.image=$(image recsys-api-serving)"
     --set "api.imagePullPolicy=Always"

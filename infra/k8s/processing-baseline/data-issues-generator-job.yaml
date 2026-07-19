@@ -18,15 +18,16 @@ spec:
       restartPolicy: Never
       containers:
         - name: data-issues-generator
-          image: recsys-dataflow-cli:local
+          image: recsys-spark:local
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-lc"]
           args:
             - |
               set -euo pipefail
               export PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys
-              /opt/venv/bin/python apps/data-platform/data-generator/src/cli.py generate --config "${DATA_GENERATOR_CONFIG}"
-              /opt/venv/bin/python -m ingest.batch_lakehouse_ingestion \
+              python3 apps/data-platform/data-generator/src/cli.py generate --config "${DATA_GENERATOR_CONFIG}"
+              /opt/spark/bin/spark-submit --master local[*] \
+                /opt/recsys/apps/data-platform/src/ingest/batch_lakehouse_ingestion.py \
                 --run-path "apps/data-platform/data-generator/src/output/${DATA_GENERATOR_RUN_ID}" \
                 --run-id "${DATA_GENERATOR_RUN_ID}" \
                 --mode overwrite

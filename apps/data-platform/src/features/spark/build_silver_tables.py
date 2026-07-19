@@ -43,7 +43,7 @@ def build_clean_behavior_events(events: Any) -> tuple[Any, Any]:
     )
     supported = normalized.filter(F.col("schema_version") <= F.lit(SUPPORTED_BEHAVIOR_SCHEMA_VERSION))
     clean = supported.dropDuplicates(["event_id"])
-    return clean.orderBy("event_timestamp", "event_id"), unsupported
+    return clean, unsupported
 
 
 def build_clean_impressions(impressions: Any) -> Any:
@@ -89,7 +89,7 @@ def read_raw_parquet_tables(spark: Any, run_path: str) -> dict[str, Any]:
 
 
 def read_raw_lakehouse_tables(spark: Any, catalog: IcebergCatalogConfig) -> dict[str, Any]:
-    return {table: read_iceberg_table(spark, catalog.lakehouse_table(table)) for table in RAW_GENERATOR_TABLES}
+    return {table: read_iceberg_table(spark, catalog.bronze_table(table)) for table in RAW_GENERATOR_TABLES}
 
 
 def read_silver_lakehouse_tables(spark: Any, catalog: IcebergCatalogConfig) -> dict[str, Any]:

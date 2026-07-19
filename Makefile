@@ -1,11 +1,9 @@
 SHELL := /bin/bash
 
 DATAFLOW_SCRIPTS_DIR := infra/docker/scripts
-DATAFLOW_DAG ?= full_dataflow_local_dag
+DATAFLOW_DAG ?= recsys_dp1_raw_to_bronze
 DATAFLOW_SMOKE_PHASE ?= all
 DATAFLOW_LOG_SERVICE ?=
-DATAFLOW_INGEST_BUCKET ?= recsys-lakehouse
-DATAFLOW_INGEST_PREFIX ?= raw
 RETRAIN_SMOKE_WORKDIR ?= /tmp/recsys-retrain-smoke
 RETRAIN_SMOKE_KFP_ENDPOINT ?= http://127.0.0.1:8888
 RETRAIN_SMOKE_EXPERIMENT ?= recsys-observability-retrain
@@ -69,17 +67,17 @@ help:
 	@echo ""
 	@echo "Pipeline:"
 	@echo "  make dataflow-e2e             Trigger one full E2E DAG run"
-	@echo "  make dataflow-ingest-lake     Generate historical data into MinIO lake raw"
+	@echo "  make dataflow-ingest-lake     Generate historical data and commit Bronze Iceberg"
 	@echo "  make dataflow-realtime-up     Start continuous realtime producer + streaming consumer"
 	@echo "  make dataflow-realtime-down   Stop continuous realtime containers"
-	@echo "  make dataflow-trigger         Trigger full_dataflow_local_dag"
+	@echo "  make dataflow-trigger         Trigger recsys_dp1_raw_to_bronze"
 	@echo "  make dataflow-test            Run local unit tests"
 	@echo ""
 	@echo "K8s Data Platform:"
 	@echo "  make data-platform-images-minikube Build data platform images inside minikube"
 	@echo "  make data-platform-template        Render recsys-data-platform Helm chart"
 	@echo "  make data-platform-install         Install recsys-data-platform Helm chart"
-	@echo "  make data-platform-trigger         Trigger k8s_data_platform_dag"
+	@echo "  make data-platform-trigger         Trigger DP1, DP2, then DP3 rubric DAGs"
 	@echo "  make data-platform-e2e             Install, wait, trigger, and print run status"
 	@echo "  make data-platform-retrain-smoke   Generate smoke feature data, run drift, and trigger KFP retrain"
 	@echo "  make data-platform-run-status      Print Airflow DAG run status"
@@ -242,7 +240,7 @@ dataflow-e2e:
 
 .PHONY: dataflow-ingest-lake
 dataflow-ingest-lake:
-	@$(DATAFLOW_SCRIPTS_DIR)/dataflow_ingest_lake.sh $(DATAFLOW_INGEST_BUCKET) $(DATAFLOW_INGEST_PREFIX)
+	@$(DATAFLOW_SCRIPTS_DIR)/dataflow_ingest_lake.sh
 
 .PHONY: dataflow-realtime-up
 dataflow-realtime-up:
@@ -276,8 +274,10 @@ data-platform-install:
 
 .PHONY: data-platform-trigger
 data-platform-trigger:
-	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags unpause k8s_data_platform_dag
-	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags trigger k8s_data_platform_dag
+	@for dag in recsys_dp1_raw_to_bronze recsys_dp2_bronze_to_silver_gold recsys_dp3_offline_feature_table; do \
+		kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags unpause $$dag; \
+		kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags trigger $$dag; \
+	done
 
 .PHONY: data-platform-e2e
 data-platform-e2e: data-platform-install
@@ -291,7 +291,9 @@ data-platform-e2e: data-platform-install
 
 .PHONY: data-platform-run-status
 data-platform-run-status:
-	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags list-runs -d k8s_data_platform_dag
+	@for dag in recsys_dp1_raw_to_bronze recsys_dp2_bronze_to_silver_gold recsys_dp3_offline_feature_table; do \
+		kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags list-runs -d $$dag; \
+	done
 
 .PHONY: data-platform-verify-e2e
 data-platform-verify-e2e:
@@ -330,7 +332,7 @@ data-platform-stream-generator-status:
 .PHONY: data-platform-smoke
 data-platform-smoke:
 	@kubectl get pods -n recsys-dataflow
-	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags list | rg k8s_data_platform_dag
+	@kubectl exec -n recsys-dataflow deploy/airflow-webserver -- airflow dags list | rg 'recsys_dp[123]_'
 
 .PHONY: data-platform-port-forward
 data-platform-port-forward:

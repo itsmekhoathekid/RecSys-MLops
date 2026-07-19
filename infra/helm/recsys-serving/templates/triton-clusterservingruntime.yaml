@@ -44,6 +44,27 @@ spec:
         - --http-port=8080
         - --allow-grpc=true
         - --allow-http=true
+      startupProbe:
+        httpGet:
+          path: /v2/health/ready
+          port: h2c
+        periodSeconds: 5
+        timeoutSeconds: 2
+        failureThreshold: 60
+      readinessProbe:
+        httpGet:
+          path: /v2/health/ready
+          port: h2c
+        periodSeconds: 5
+        timeoutSeconds: 2
+        failureThreshold: 3
+      livenessProbe:
+        httpGet:
+          path: /v2/health/live
+          port: h2c
+        periodSeconds: 10
+        timeoutSeconds: 2
+        failureThreshold: 3
       volumeMounts:
         - name: dshm
           mountPath: /dev/shm

@@ -52,10 +52,19 @@ def test_serving_chart_renders_expected_namespaces():
     assert ("Namespace", "api-serving") in by_kind_name
     inference_service = by_kind_name[("InferenceService", "recsys-bst-triton")]
     assert inference_service["metadata"]["namespace"] == "kserve-triton-inference"
+    assert inference_service["metadata"]["annotations"]["serving.kserve.io/autoscalerClass"] == "external"
     predictor_model = inference_service["spec"]["predictor"]["model"]
+    assert inference_service["spec"]["predictor"]["annotations"]["recsys.ai/triton-health-probes"] == (
+        "v2-model-ready"
+    )
     assert predictor_model["modelFormat"]["name"] == "triton"
     assert predictor_model["protocolVersion"] == "v2"
     assert predictor_model["storageUri"].startswith("s3://")
+    triton_runtime = by_kind_name[("ClusterServingRuntime", "recsys-tritonserver")]
+    triton_container = triton_runtime["spec"]["containers"][0]
+    assert triton_container["startupProbe"]["httpGet"] == {"path": "/v2/health/ready", "port": "h2c"}
+    assert triton_container["readinessProbe"]["httpGet"] == {"path": "/v2/health/ready", "port": "h2c"}
+    assert triton_container["livenessProbe"]["httpGet"] == {"path": "/v2/health/live", "port": "h2c"}
     api_deployment = by_kind_name[("Deployment", "recsys-api-serving")]
     assert api_deployment["metadata"]["namespace"] == "api-serving"
     assert "replicas" not in api_deployment["spec"]
@@ -92,15 +101,19 @@ def test_serving_chart_renders_expected_namespaces():
     assert api_scaledobject["spec"]["maxReplicaCount"] == 3
     assert api_scaledobject["spec"]["advanced"]["horizontalPodAutoscalerConfig"]["name"] == "recsys-api-serving"
     assert [trigger["type"] for trigger in api_scaledobject["spec"]["triggers"]] == ["prometheus", "prometheus"]
-    assert "recsys_api_requests_total" in api_scaledobject["spec"]["triggers"][0]["metadata"]["query"]
+    api_request_query = api_scaledobject["spec"]["triggers"][0]["metadata"]["query"]
+    assert "recsys_api_requests_total" in api_request_query
+    assert f'service="{api_config["data"]["OTEL_SERVICE_NAME"]}"' in api_request_query
     assert "recsys_api_request_duration_seconds_sum" in api_scaledobject["spec"]["triggers"][1]["metadata"]["query"]
     feature_api_deployment = by_kind_name[("Deployment", "recsys-online-feature-api")]
     assert "replicas" not in feature_api_deployment["spec"]
     feature_api_scaledobject = by_kind_name[("ScaledObject", "recsys-online-feature-api-prometheus")]
+    feature_api_config = by_kind_name[("ConfigMap", "recsys-online-feature-api")]
     assert feature_api_scaledobject["metadata"]["namespace"] == "api-serving"
     assert feature_api_scaledobject["spec"]["scaleTargetRef"]["name"] == "recsys-online-feature-api"
     assert feature_api_scaledobject["spec"]["maxReplicaCount"] == 3
-    assert "recsys-online-feature-api" in feature_api_scaledobject["spec"]["triggers"][0]["metadata"]["query"]
+    feature_api_request_query = feature_api_scaledobject["spec"]["triggers"][0]["metadata"]["query"]
+    assert f'service="{feature_api_config["data"]["OTEL_SERVICE_NAME"]}"' in feature_api_request_query
     assert ("HTTPScaledObject", "recsys-bst-triton-http") not in by_kind_name
     assert ("Service", "recsys-bst-triton-http") not in by_kind_name
     kserve_resource_scaledobject = by_kind_name[("ScaledObject", "recsys-bst-triton-resource")]
@@ -152,6 +165,17 @@ def test_serving_chart_can_render_api_only_for_rollout_demo():
     assert ("ScaledObject", "recsys-bst-triton-resource") in by_kind_name
     assert ("InferenceService", "recsys-bst-triton") not in by_kind_name
     assert ("ClusterServingRuntime", "kserve-tritonserver") not in by_kind_name
+
+
+def test_api_component_deploy_does_not_disable_kserve_autoscaling():
+    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    api_deploy = re.search(r"deploy_api_unlocked\(\) \{(?P<body>.*?)\n\}", deploy_script, re.DOTALL)
+
+    assert api_deploy is not None
+    assert 'kserve.enabled=false' not in api_deploy.group("body")
+    assert 'autoscaling.kserveResource.enabled=false' not in api_deploy.group("body")
+    assert "--wait" not in api_deploy.group("body")
+    assert 'verify_and_wait_workload "deployment" "recsys-api-serving"' in api_deploy.group("body")
 
 
 def test_serving_chart_renders_candidate_for_ab_testing():

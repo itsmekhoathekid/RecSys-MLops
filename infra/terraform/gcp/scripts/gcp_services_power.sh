@@ -802,7 +802,7 @@ PY
   if kubectl get deploy -n recsys-dataflow airflow-webserver >/dev/null 2>&1; then
     echo "== Smoke: Airflow DAGs and UI health =="
     kubectl exec -n recsys-dataflow deploy/airflow-webserver -c airflow-webserver -- \
-      test -f /opt/recsys/apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py
+      test -f /opt/recsys/apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py
     start_port_forward recsys-dataflow svc/airflow-webserver "${SMOKE_AIRFLOW_PORT}" 8080
     wait_http "Airflow UI /health" "http://127.0.0.1:${SMOKE_AIRFLOW_PORT}/health"
   fi

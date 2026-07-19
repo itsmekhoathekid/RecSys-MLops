@@ -9,8 +9,13 @@ metadata:
   annotations:
     "helm.sh/resource-policy": keep
     serving.kserve.io/deploymentMode: {{ .Values.kserve.inferenceService.deploymentMode | quote }}
+{{- if .Values.autoscaling.kserveResource.enabled }}
+    serving.kserve.io/autoscalerClass: "external"
+{{- end }}
 spec:
   predictor:
+    annotations:
+      recsys.ai/triton-health-probes: "v2-model-ready"
     serviceAccountName: {{ .Values.kserve.serviceAccount.name }}
     {{- if .Values.kserve.nodeSelector }}
     nodeSelector:
@@ -48,8 +53,13 @@ metadata:
     recsys.ai/ab-variant: candidate
   annotations:
     serving.kserve.io/deploymentMode: {{ .Values.kserve.inferenceService.deploymentMode | quote }}
+{{- if .Values.autoscaling.kserveResource.enabled }}
+    serving.kserve.io/autoscalerClass: "external"
+{{- end }}
 spec:
   predictor:
+    annotations:
+      recsys.ai/triton-health-probes: "v2-model-ready"
     serviceAccountName: {{ .Values.kserve.serviceAccount.name }}
     {{- if .Values.kserve.nodeSelector }}
     nodeSelector:

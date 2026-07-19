@@ -164,18 +164,36 @@ VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = "python -m validate.governance_contracts
 
 
 DP1_INGEST_COMMAND = """
-PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
+PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys \
 python apps/data-platform/data-generator/src/cli.py generate \
   --config $DATA_GENERATOR_CONFIG
 
-python -m ingest.batch_lakehouse_ingestion \
+/opt/spark/bin/spark-submit \
+  --master local[*] \
+  --deploy-mode client \
+  --name recsys-dp1-generator-to-iceberg \
+  /opt/recsys/apps/data-platform/src/ingest/batch_lakehouse_ingestion.py \
   --run-path apps/data-platform/data-generator/src/output/$DATA_GENERATOR_RUN_ID \
   --run-id $DATA_GENERATOR_RUN_ID \
   --lakehouse-warehouse $LAKEHOUSE_WAREHOUSE \
   --mode overwrite
 """.strip()
 
-DP1_VALIDATE_COMMAND = "python -m validate.governance_contracts dp1"
+DP1_OPTIMIZE_COMMAND = spark_native_submit(
+    "dp1_optimize_bronze",
+    "local:///opt/recsys/apps/data-platform/src/lakehouse/optimize.py",
+    "--scope bronze "
+    "--pipeline DP1 "
+    "--strategy ${LAKEHOUSE_OPTIMIZATION_STRATEGY:-binpack} "
+    "--target-file-size-mb ${LAKEHOUSE_TARGET_FILE_SIZE_MB:-128} "
+    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2}",
+)
+
+DP1_VALIDATE_COMMAND = spark_native_submit(
+    "dp1_validate_iceberg",
+    "local:///opt/recsys/apps/data-platform/src/validate/governance_contracts.py",
+    "dp1",
+)
 
 DP2_INGEST_COMMAND = spark_native_submit(
     "dp2_ingest_bronze_to_silver_gold",
@@ -189,14 +207,14 @@ DP2_VALIDATE_COMMAND = spark_native_submit(
     "--action validate",
 )
 
-LAKEHOUSE_OPTIMIZE_COMMAND = spark_native_submit(
-    "lakehouse_optimize",
+DP2_OPTIMIZE_COMMAND = spark_native_submit(
+    "dp2_optimize_silver",
     "local:///opt/recsys/apps/data-platform/src/lakehouse/optimize.py",
-    "--scope all "
+    "--scope silver "
+    "--pipeline DP2 "
     "--strategy ${LAKEHOUSE_OPTIMIZATION_STRATEGY:-binpack} "
     "--target-file-size-mb ${LAKEHOUSE_TARGET_FILE_SIZE_MB:-128} "
-    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2} "
-    "--skip-missing",
+    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2}",
 )
 
 
@@ -211,16 +229,21 @@ if DAG is not None:
     ) as recsys_dp1_raw_to_bronze:
         ingest_stage = pod_task(
             "ingest_stage",
-            DATAFLOW_IMAGE,
+            SPARK_IMAGE,
             DP1_INGEST_COMMAND,
+        )
+        optimize_stage = pod_task(
+            "optimize_stage",
+            SPARK_IMAGE,
+            DP1_OPTIMIZE_COMMAND,
         )
         validate_stage = pod_task(
             "validate_stage",
-            DATAFLOW_IMAGE,
+            SPARK_IMAGE,
             DP1_VALIDATE_COMMAND,
         )
 
-        ingest_stage >> validate_stage
+        ingest_stage >> optimize_stage >> validate_stage
 
     with DAG(
         dag_id="recsys_dp2_bronze_to_silver_gold",
@@ -235,13 +258,18 @@ if DAG is not None:
             SPARK_IMAGE,
             DP2_INGEST_COMMAND,
         )
+        optimize_stage = pod_task(
+            "optimize_stage",
+            SPARK_IMAGE,
+            DP2_OPTIMIZE_COMMAND,
+        )
         validate_stage = pod_task(
             "validate_stage",
             SPARK_IMAGE,
             DP2_VALIDATE_COMMAND,
         )
 
-        ingest_stage >> validate_stage
+        ingest_stage >> optimize_stage >> validate_stage
 
     with DAG(
         dag_id="recsys_dp3_offline_feature_table",
@@ -263,17 +291,3 @@ if DAG is not None:
         )
 
         ingest_stage >> validate_stage
-
-    with DAG(
-        dag_id="recsys_lakehouse_maintenance",
-        start_date=datetime(2026, 1, 1),
-        schedule=env_schedule("LAKEHOUSE_MAINTENANCE_DAG_SCHEDULE", "manual"),
-        catchup=False,
-        max_active_runs=1,
-        tags=["recsys", "lakehouse", "iceberg", "optimization"],
-    ) as recsys_lakehouse_maintenance:
-        pod_task(
-            "optimize_iceberg_tables",
-            SPARK_IMAGE,
-            LAKEHOUSE_OPTIMIZE_COMMAND,
-        )

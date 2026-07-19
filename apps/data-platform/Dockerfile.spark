@@ -31,6 +31,7 @@ RUN apt-get update \
         psycopg[binary] \
         psycopg-pool \
         redis \
+        numpy \
         pyarrow \
         s3fs==2024.10.0 \
         fsspec==2024.10.0 \

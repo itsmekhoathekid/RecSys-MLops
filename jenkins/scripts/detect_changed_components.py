@@ -252,12 +252,8 @@ def classify_data_platform_source(flags: dict[str, bool], path: str) -> None:
 
 def classify_airflow_dag(flags: dict[str, bool], path: str) -> None:
     name = Path(path).name
-    if name == "raw_ingestion_dag.py":
-        mark(flags, "DP1")
-    elif name == "batch_feature_pipeline_dag.py":
-        mark(flags, "SPARK_BATCH", "DP2", "DP3")
-    elif name == "streaming_feature_pipeline_dag.py":
-        mark(flags, "STREAM_OFFLINE", "STREAM_ONLINE")
+    if name == "rubric_data_pipeline_dags.py":
+        mark(flags, "SPARK_BATCH", "DP1", "DP2", "DP3")
     else:
         mark_data_platform(flags)
 

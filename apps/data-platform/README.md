@@ -31,8 +31,8 @@ flowchart TD
 2. Debezium reads WAL through `pgoutput` and publishes JSON CDC events to Kafka.
 3. PyFlink consumes `cdc.behavior_events`, owns streaming state, writes Redis
    online keys, and writes PostgreSQL Feast offline feature rows.
-4. The historical data generator lands a batch run, then Spark ingestion loads
-   the run into raw Iceberg lakehouse tables under `recsys.lakehouse`.
+4. The historical data generator creates an ephemeral batch run, then Spark
+   commits it into `recsys.lakehouse.bronze_*` Iceberg tables.
 5. PySpark reads those lakehouse tables, writes clean silver lakehouse tables,
    writes lakehouse feature tables for audit/versioned storage, and exports the
    serving/training feature tables into PostgreSQL Feast offline store.
@@ -46,11 +46,11 @@ flowchart TD
 | Kafka Connect image | `infra/docker/Dockerfile.kafka-connect` |
 | CDC topic contracts | `apps/data-platform/src/ingest/postgres_cdc_contracts.py`, `apps/data-platform/src/ingest/kafka_raw_reader.py` |
 | Iceberg lakehouse config | `apps/data-platform/src/lakehouse/iceberg.py`, `configs/local/spark_batch.yaml` |
-| Batch generator ingestion | `apps/data-platform/src/ingest/batch_lakehouse_ingestion.py` |
+| Batch generator -> Bronze Iceberg ingestion | `apps/data-platform/src/ingest/batch_lakehouse_ingestion.py` |
 | PySpark offline processing | `apps/data-platform/src/features/spark/spark_batch_entrypoint.py` |
 | PyFlink realtime feature consumer | `apps/data-platform/src/features/flink/realtime_stream_job.py` |
 | Redis online writer | `apps/data-platform/src/feature_store/online_writer.py` |
-| Airflow orchestration | `apps/data-platform/src/orchestration/airflow/dags/` |
+| Airflow orchestration | `apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py` |
 | Governance lineage | `apps/data-platform/src/metadata/ingest_datahub_governance.py` |
 
 ## Runtime Notes

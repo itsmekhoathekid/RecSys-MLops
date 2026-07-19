@@ -6,13 +6,13 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-import pyarrow.parquet as pq
 from psycopg import sql
 
 from feature_store.postgres_offline_store import TABLE_SCHEMAS, PostgresOfflineStoreConfig
 from ingest.batch_lakehouse_ingestion import _filesystem_and_path
 from ingest.postgres_cdc_contracts import SOURCE_TABLE_CONTRACTS
-from lakehouse.iceberg import RAW_GENERATOR_TABLES
+from features.spark.session import read_iceberg_table, row_count, spark_session
+from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES
 from metadata.governance_catalog import BRONZE_URNS, POSTGRES_FEATURE_URNS, REDIS_FEATURE_URNS
 from metadata.runtime_lineage import RuntimeLineageRecorder
 
@@ -99,35 +99,49 @@ def write_report(
     return payload
 
 
-def validate_dp1_bronze(*, root: str | None = None) -> dict[str, Any]:
-    warehouse = os.getenv("LAKEHOUSE_WAREHOUSE", "s3a://recsys-lakehouse/warehouse").rstrip("/")
-    namespace = os.getenv("ICEBERG_LAKEHOUSE_NAMESPACE", "lakehouse")
+def validate_dp1_bronze(*, root: str | None = None, spark=None) -> dict[str, Any]:
+    from functools import reduce
+    from operator import or_
+
+    from pyspark.sql import functions as F
+
+    catalog = IcebergCatalogConfig()
+    owns_spark = spark is None
+    spark = spark or spark_session("recsys-dp1-validate-bronze-iceberg")
     primary_keys = {contract.table_name: contract.primary_key for contract in SOURCE_TABLE_CONTRACTS}
     with RuntimeLineageRecorder(
         "DP1",
         "validate_stage",
         inputs=set(BRONZE_URNS.values()),
-        upstream_jobs={"ingest_stage"},
+        upstream_jobs={"optimize_stage"},
     ) as lineage:
         datasets: dict[str, dict[str, Any]] = {}
         for table_name in RAW_GENERATOR_TABLES:
             try:
-                filesystem, path = _filesystem_and_path(f"{warehouse}/{namespace}/{table_name}")
-                table = pq.read_table(path, filesystem=filesystem)
+                table = read_iceberg_table(spark, catalog.bronze_table(table_name))
                 required = set(primary_keys[table_name]) | {"source_run_id", "lakehouse_ingestion_ts"}
-                missing = sorted(required.difference(table.column_names))
+                missing = sorted(required.difference(table.columns))
+                count = row_count(table)
+                null_count = (
+                    table.filter(reduce(or_, (F.col(name).isNull() for name in required))).count()
+                    if not missing
+                    else -1
+                )
                 checks = [
-                    check("row_count", "SUCCESS" if table.num_rows > 0 else "FAILURE", "> 0", table.num_rows),
+                    check("row_count", "SUCCESS" if count > 0 else "FAILURE", "> 0", count),
                     check("required_columns", "SUCCESS" if not missing else "FAILURE", sorted(required), {"missing": missing}),
+                    check("required_values_not_null", "SUCCESS" if null_count == 0 else "FAILURE", 0, null_count),
                 ]
             except Exception as exc:
-                checks = [check("table_read", "ERROR", "readable bronze parquet table", str(exc))]
+                checks = [check("table_read", "ERROR", "readable Bronze Iceberg table", str(exc))]
             datasets[BRONZE_URNS[table_name]] = dataset_result(checks)
         report = write_report("DP1", datasets, root=root)
         if report["status"] == "SUCCESS":
             lineage.complete()
         else:
             lineage.fail(f"DP1 data contract status: {report['status']}")
+        if owns_spark:
+            spark.stop()
         return report
 
 
