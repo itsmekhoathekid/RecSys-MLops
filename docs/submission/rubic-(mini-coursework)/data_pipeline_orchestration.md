@@ -1,8 +1,8 @@
 # Data Pipeline Orchestration
 
-## Authoritative Airflow surface
+## Airflow surface
 
-The repository intentionally exposes only three coursework DAGs, all defined in [rubric_data_pipeline_dags.py](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py):
+The three data-product DAGs remain authoritative for DP1/DP2/DP3 and are defined in [rubric_data_pipeline_dags.py](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py):
 
 | Data product | DAG ID | Schedule default | Ordered stages |
 |---|---|---|---|
@@ -10,11 +10,19 @@ The repository intentionally exposes only three coursework DAGs, all defined in 
 | DP2 | `recsys_dp2_bronze_to_silver_gold` | manual | `ingest_stage -> optimize_stage -> validate_stage` |
 | DP3 | `recsys_dp3_offline_feature_table` | manual | `ingest_stage -> validate_stage` |
 
-`env_schedule()` converts `manual`, `none`, and an empty value to Airflow `schedule=None`. Every DAG has `catchup=False` and `max_active_runs=1`, so a new run cannot overlap an earlier run of the same data product.
+The platform also deploys the operational DAGs required to run and visualize the complete system:
 
-All former composite, local, raw-ingestion, batch-feature, streaming-feature, and standalone lakehouse-maintenance DAG modules were removed. This eliminates duplicate orchestration paths and ensures the rubric file is the only source of truth loaded by Airflow.
+| DAG ID | Default schedule | Purpose |
+|---|---|---|
+| `k8s_data_platform_dag` | daily | Runs DP1 -> DP2 -> DP3 -> Feast -> analytics -> drift as a visible end-to-end graph. |
+| `recsys_batch_feature_pipeline` | `0 1 * * *` | Rebuilds optimized Silver Iceberg data and the offline feature store. |
+| `recsys_feast_materialize` | `20 */2 * * *` | Applies the Feast registry, materializes PostgreSQL offline features to Redis, and validates Redis. |
+| `recsys_feature_drift_monitoring` | `30 3 * * *` | Computes offline feature drift, pushes metrics, and conditionally triggers Kubeflow retraining. |
+| `recsys_analytics_daily` | `30 2 * * *` | Syncs Silver Iceberg data, builds dbt marts, and refreshes the data consumed by Apache Superset. |
 
-The Airflow runtime image copies only the data-platform source tree. Analytics DAG sources remain available as reference code but are deliberately excluded from the deployed scheduler image, so a rebuilt runtime cannot reintroduce non-rubric DAGs.
+`env_schedule()` converts `manual`, `none`, and an empty value to Airflow `schedule=None`. Every DAG has `catchup=False` and `max_active_runs=1`, so scheduled work cannot overlap an earlier run of the same product.
+
+The obsolete raw-ingestion, local-only, streaming-wrapper, and standalone lakehouse-maintenance DAGs remain removed. The Airflow runtime image packages both the data-platform DAG directory and [analytics_dag.py](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py); this keeps the operational DAGs visible without restoring duplicate legacy wrappers.
 
 ## Kubernetes execution model
 

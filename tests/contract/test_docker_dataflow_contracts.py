@@ -236,9 +236,13 @@ def test_node_rebalance_validation_covers_relocated_control_plane():
     assert "disable_sidecar_injection daemonset observability recsys-promtail" in rebalance
 
 
-def test_airflow_keeps_only_rubric_dp1_dp2_dp3_dags():
+def test_airflow_keeps_rubric_and_key_operational_dag_modules():
     dag_dir = ROOT / "apps/data-platform/src/orchestration/airflow/dags"
-    assert {path.name for path in dag_dir.glob("*.py")} == {"__init__.py", "rubric_data_pipeline_dags.py"}
+    assert {path.name for path in dag_dir.glob("*.py")} == {
+        "__init__.py",
+        "k8s_data_platform_dag.py",
+        "rubric_data_pipeline_dags.py",
+    }
     source = (dag_dir / "rubric_data_pipeline_dags.py").read_text()
     assert 'dag_id="recsys_dp1_raw_to_bronze"' in source
     assert 'dag_id="recsys_dp2_bronze_to_silver_gold"' in source
@@ -348,11 +352,11 @@ def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
     assert 'value: "900"' in chart
 
 
-def test_airflow_image_packages_only_the_authoritative_rubric_dag_directory():
+def test_airflow_image_packages_data_and_analytics_dags():
     dockerfile = (ROOT / "infra/docker/Dockerfile.airflow").read_text()
 
     assert "COPY --chown=airflow:root apps/data-platform/src" in dockerfile
-    assert "apps/analytics/orchestration/airflow/dags" not in dockerfile
+    assert "apps/analytics/orchestration/airflow/dags" in dockerfile
 
 
 def test_flink_runtime_uses_fixed_mesh_friendly_internal_ports():
@@ -625,9 +629,25 @@ def test_deleted_legacy_artifacts_are_absent():
             "apps/data-platform/src/features/spark/spark_realtime_bronze_entrypoint.py",
             "apps/data-platform/src/orchestration/airflow/dags/batch_feature_pipeline_dag.py",
             "apps/data-platform/src/orchestration/airflow/dags/full_dataflow_local_dag.py",
-            "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py",
             "apps/data-platform/src/orchestration/airflow/dags/raw_ingestion_dag.py",
             "apps/data-platform/src/orchestration/airflow/dags/streaming_feature_pipeline_dag.py",
         ]:
             assert not (ROOT / relative).exists()
     assert (ROOT / "apps/data-platform/feature-store/feature_repo/feature_store.yaml").exists()
+
+
+def test_key_operational_airflow_dags_are_restored_without_maintenance_dag():
+    source = (
+        ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
+    ).read_text()
+
+    for dag_id in [
+        "k8s_data_platform_dag",
+        "recsys_batch_feature_pipeline",
+        "recsys_feast_materialize",
+        "recsys_feature_drift_monitoring",
+    ]:
+        assert f'dag_id="{dag_id}"' in source
+    assert "trigger_kubeflow_retrain_if_drift" in source
+    assert "DP2_OPTIMIZE_COMMAND" in source
+    assert "recsys_lakehouse_maintenance" not in source

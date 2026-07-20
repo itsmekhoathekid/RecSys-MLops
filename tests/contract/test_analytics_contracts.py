@@ -90,4 +90,4 @@ def test_airflow_dag_orders_silver_sync_before_dbt_build():
 
     assert "sync_silver >> dbt_build" in dag
     assert "recsys_analytics_daily" in dag
-    assert "apps/analytics/orchestration/airflow/dags" not in airflow_image
+    assert "apps/analytics/orchestration/airflow/dags" in airflow_image

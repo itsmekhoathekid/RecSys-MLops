@@ -240,6 +240,7 @@ pushes drift telemetry, and then runs the retrain trigger only when the drift
 report indicates that monitored features have drifted. In the split DAG layout,
 this is represented by the sequence `run_offline_feature_drift` ->
 `push_drift_metrics` -> `trigger_kubeflow_retrain_if_drift`.
+The deployed definition is [k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py).
 
 Metrics pushed:
 
