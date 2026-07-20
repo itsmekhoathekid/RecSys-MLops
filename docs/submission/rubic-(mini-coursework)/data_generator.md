@@ -119,7 +119,7 @@ They do not define the four assessed offline problems.
 | `history_start_date` | First possible business date in the historical run. | [data_generator_test.yaml (line 5)](../../../configs/local/data_generator_test.yaml#L5), [simulation.py (line 507)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L507) |
 | `history_days` | Number of calendar days sampled from `history_start_date`; together they define the event-time window. | [data_generator_test.yaml (line 6)](../../../configs/local/data_generator_test.yaml#L6), [simulation.py (line 508)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L508) |
 | `traffic.target_behavior_events` | Desired final `behavior_events` volume, including injected exact duplicates. The simulation first estimates a smaller clean target. | [data_generator_test.yaml (line 8)](../../../configs/local/data_generator_test.yaml#L8), [simulation.py (line 60)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L60) |
-| `traffic.target_tolerance` | Permitted difference around the target event count when validating the generated run. | [data_generator_test.yaml (line 9)](../../../configs/local/data_generator_test.yaml#L9), [validation.py (line 167)](../../../apps/data-platform/data-generator/src/validation.py#L167) |
+| `traffic.target_tolerance` | Permitted difference around the target event count when validating the generated run. | [data_generator_test.yaml (line 9)](../../../configs/local/data_generator_test.yaml#L9), [validation.py (line 168)](../../../apps/data-platform/data-generator/src/validation.py#L168) |
 | `traffic.requests_per_session_min/max` | Inclusive range for the number of recommendation requests generated in each session. | [data_generator_test.yaml (line 10)](../../../configs/local/data_generator_test.yaml#L10), [simulation.py (line 259)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L259) |
 | `traffic.impressions_per_request_min/max` | Inclusive range for the number of candidate impressions attached to each request. | [data_generator_test.yaml (line 12)](../../../configs/local/data_generator_test.yaml#L12), [simulation.py (line 296)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L296) |
 | `traffic.session_gap_minutes_min/max` | Reserved session-gap bounds. They are type/range validated, but the current simulation does not consume them; changing them currently does not change generated rows. | [data_generator_test.yaml (line 14)](../../../configs/local/data_generator_test.yaml#L14), [config.py (line 27)](../../../apps/data-platform/data-generator/src/config.py#L27) |
@@ -346,7 +346,7 @@ The user generator selects cities using skewed weights at
 [simulation.py (line 111)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L111).
 It also assigns preferred categories and brands, then emits multiple weighted
 preferences per user at
-[simulation.py (line 151)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L151).
+[simulation.py (line 152)](../../../apps/data-platform/data-generator/src/offline/simulation.py#L152).
 
 Table relationship:
 
@@ -584,6 +584,13 @@ The column is labelled `approx_count_distinct` for rubric presentation, but the
 small local proof uses an exact Python set at
 [summarize_generation_quality.py (line 247)](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L247).
 
+Downstream, the production DP3 user-aggregate job avoids materializing every
+category ID in each seven-day window. It defines the `0.05` relative-standard-
+deviation contract at
+[build_user_aggregate_features.py (line 6)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L6)
+and applies `approx_count_distinct(category_id, 0.05)` at
+[build_user_aggregate_features.py (line 36)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L36).
+
 ### Problem 3: Schema evolution
 
 The historical config declares the cutover date at
@@ -633,6 +640,11 @@ Therefore an injected exact duplicate has:
 **How it applies:** the output reproduces an at-least-once historical ingestion
 issue. A downstream deduplication keyed by `event_id` can remove the additional
 rows deterministically.
+
+Production DP2 applies that native event-ID deduplication at
+[build_silver_tables.py (line 45)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L45)
+and returns the clean rows without a global post-deduplication sort at
+[build_silver_tables.py (line 46)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L46).
 
 The evidence script calculates duplicate rows before and after deduplication at
 [summarize_generation_quality.py (line 320)](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L320)
@@ -691,9 +703,9 @@ flowchart TD
 ```
 
 The producer entry point loads the unified scenario config at
-[producer.py (line 93)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L93).
+[producer.py (line 98)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L98).
 `run()` creates the problem pipeline and clean event factory at
-[producer.py (line 19)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L19).
+[producer.py (line 20)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L20).
 
 Each new clean bundle contains related session, request, impression, behavior
 event, and optional order rows. The factory constructs that bundle at
@@ -881,10 +893,10 @@ The sink selects partition columns for time-based fact tables at
 | streaming config contract | [config.py (line 44)](../../../apps/data-platform/data-generator/src/streaming/config.py#L44) |
 | clean streaming event bundle | [event_factory.py (line 9)](../../../apps/data-platform/data-generator/src/streaming/event_factory.py#L9) |
 | streaming problem order | [problem_pipeline.py (line 23)](../../../apps/data-platform/data-generator/src/streaming/problem_pipeline.py#L23) |
-| continuous producer | [producer.py (line 19)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L19) |
+| continuous producer | [producer.py (line 20)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L20) |
 | bursty traffic | [burst_traffic.py (line 1)](../../../apps/data-platform/data-generator/src/streaming/problems/burst_traffic.py#L1) |
 | late arrival | [late_arrival.py (line 7)](../../../apps/data-platform/data-generator/src/streaming/problems/late_arrival.py#L7) |
-| streaming duplicate replay | [duplicate_replay.py (line 9)](../../../apps/data-platform/data-generator/src/streaming/problems/duplicate_replay.py#L9) |
+| streaming duplicate replay | [duplicate_replay.py (line 10)](../../../apps/data-platform/data-generator/src/streaming/problems/duplicate_replay.py#L10) |
 | PostgreSQL stream sink | [postgres.py (line 30)](../../../apps/data-platform/data-generator/src/streaming/postgres.py#L30) |
 | validation | [validation.py (line 36)](../../../apps/data-platform/data-generator/src/validation.py#L36) |
 | problem evidence | [summarize_generation_quality.py (line 109)](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L109) |
