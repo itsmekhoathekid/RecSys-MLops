@@ -353,6 +353,13 @@ def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
     assert 'value: "900"' in chart
 
 
+def test_component_deploy_preserves_spark_byte_size_as_integer_string():
+    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+
+    assert '--set-string "spark.advisoryPartitionSizeBytes=' in deploy
+    assert '--set "spark.advisoryPartitionSizeBytes=' not in deploy
+
+
 def test_airflow_image_packages_data_and_analytics_dags():
     dockerfile = (ROOT / "infra/docker/Dockerfile.airflow").read_text()
 
