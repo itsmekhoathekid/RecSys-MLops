@@ -165,7 +165,7 @@ VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = "python -m validate.governance_contracts
 
 DP1_INGEST_COMMAND = """
 PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys \
-python apps/data-platform/data-generator/src/cli.py generate \
+python3 apps/data-platform/data-generator/src/cli.py generate \
   --config $DATA_GENERATOR_CONFIG
 
 /opt/spark/bin/spark-submit \

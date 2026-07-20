@@ -251,6 +251,7 @@ def test_airflow_keeps_rubric_and_key_operational_dag_modules():
     assert source.count("ingest_stage >> optimize_stage >> validate_stage") == 2
     assert "--scope bronze" in source
     assert "--scope silver" in source
+    assert "python3 apps/data-platform/data-generator/src/cli.py generate" in source
 
 
 def test_retrain_trigger_uses_distinct_tune_and_ddp_results_for_default_drift_runs():
