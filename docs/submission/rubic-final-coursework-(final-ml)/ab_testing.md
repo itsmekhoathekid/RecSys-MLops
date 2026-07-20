@@ -45,7 +45,7 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
 2. Render serving values for the desired stage.
 
-   [model_cd.py (line 406)](../../../jenkins/scripts/model_cd.py#L406), [model_cd.py (line 425)](../../../jenkins/scripts/model_cd.py#L425) accepts these stages:
+   [model_cd.py (line 420)](../../../jenkins/scripts/model_cd.py#L420), [model_cd.py (line 439)](../../../jenkins/scripts/model_cd.py#L439) accepts these stages:
 
    | Stage | Purpose | Resulting A/B state |
    |---|---|---|

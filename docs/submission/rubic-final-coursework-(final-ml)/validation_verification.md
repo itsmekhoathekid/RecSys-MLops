@@ -227,7 +227,7 @@ uv run pytest \
 Source references:
 
 - [pyproject.toml (line 28)](../../../pyproject.toml#L28), [pyproject.toml (line 30)](../../../pyproject.toml#L30): Locust and Uvicorn dependencies.
-- [locustfile_serving.py (line 1)](../../../tests/load/locustfile_serving.py#L1), [locustfile_serving.py (line 127)](../../../tests/load/locustfile_serving.py#L127): target selection, task dispatch, and both API payloads.
+- [locustfile_serving.py (line 1)](../../../tests/load/locustfile_serving.py#L1), [locustfile_serving.py (line 128)](../../../tests/load/locustfile_serving.py#L128): target selection, task dispatch, and both API payloads.
 - [validation_load_test.sh (line 1)](../../../jenkins/scripts/validation_load_test.sh#L1), [validation_load_test.sh (line 65)](../../../jenkins/scripts/validation_load_test.sh#L65): headless execution, HTML report, and SLA gate.
 
 ### 6.2 Commands used

@@ -218,7 +218,7 @@ Fields to capture:
 
 The prediction API does not have a standalone Helm release. It is deployed as a resource inside the `recsys-serving` Helm release. Therefore, auto fallback for `recsys-api-serving` is inherited from the release-level `helm upgrade --install --atomic` command used by CI/CD. If the recommendation API rollout fails, Helm rolls back the whole `recsys-serving` release, including `recsys-api-serving`, `recsys-online-feature-api`, and the related serving resources.
 
-Code reference: [model_cd.py (line 296)](../../../jenkins/scripts/model_cd.py#L296), [model_cd.py (line 390)](../../../jenkins/scripts/model_cd.py#L390) lints the chart and executes `helm upgrade --install --atomic` for the `recsys-serving` release.
+Code reference: [model_cd.py (line 307)](../../../jenkins/scripts/model_cd.py#L307), [model_cd.py (line 404)](../../../jenkins/scripts/model_cd.py#L404) lints the chart and executes `helm upgrade --install --atomic` for the `recsys-serving` release.
 
 Runtime command:
 

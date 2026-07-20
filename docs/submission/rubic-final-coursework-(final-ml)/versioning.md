@@ -7,7 +7,7 @@
 - [train.py (line 25)](../../../apps/ml-system/src/training/train.py#L25), [train.py (line 146)](../../../apps/ml-system/src/training/train.py#L146): MLflow parameters, metrics, checkpoint, config, and dataset lineage.
 - [ray_tune_train_bst.py (line 136)](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L136), [ray_tune_train_bst.py (line 271)](../../../apps/ml-system/src/training/ray_tune_train_bst.py#L271): best-trial checkpoint, metrics, hyperparameters, and MLflow identifiers.
 - [model_registry.py (line 8)](../../../apps/ml-system/src/registry/model_registry.py#L8), [model_registry.py (line 68)](../../../apps/ml-system/src/registry/model_registry.py#L68): PostgreSQL model metadata schema and writes.
-- [model_promotion.py (line 405)](../../../apps/ml-system/src/registry/model_promotion.py#L405), [model_promotion.py (line 653)](../../../apps/ml-system/src/registry/model_promotion.py#L653): versioned Triton export, MLflow model version, promotion manifest, and serving metadata.
+- [model_promotion.py (line 405)](../../../apps/ml-system/src/registry/model_promotion.py#L405), [model_promotion.py (line 666)](../../../apps/ml-system/src/registry/model_promotion.py#L666): versioned Triton export, MLflow model version, promotion manifest, and serving metadata.
 
 ### Image proof
 
@@ -27,8 +27,8 @@
 
 ### Code reference
 
-- [prepare_bst_training_data.py (line 647)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L647), [prepare_bst_training_data.py (line 726)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L726): builds version metadata and commits prepared splits when Hudi versioning is enabled.
-- [dataset_versioning.py (line 138)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L138), [dataset_versioning.py (line 212)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L212): stable sample identity and row hashing; [dataset_versioning.py (line 346)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L346), [dataset_versioning.py (line 468)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L468).
+- [prepare_bst_training_data.py (line 654)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L654), [prepare_bst_training_data.py (line 733)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L733): builds version metadata and commits prepared splits when Hudi versioning is enabled.
+- [dataset_versioning.py (line 142)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L142), [dataset_versioning.py (line 216)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L216): stable sample identity and row hashing; [dataset_versioning.py (line 352)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L352), [dataset_versioning.py (line 475)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L475).
 - [mlflow_dataset_lineage.py (line 8)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L8), [mlflow_dataset_lineage.py (line 48)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L48): logs dataset version fields and the full manifest to MLflow.
 - [hudi-cli-data-versioning-proof.yaml (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L130): reproducible Hudi CLI inspection pod.
 

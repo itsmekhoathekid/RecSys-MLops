@@ -216,7 +216,7 @@ Fields to capture:
 
 Auto fallback is handled at the Helm release level. The service is part of the `recsys-serving` release. When CI/CD deploys this release with `helm upgrade --install --atomic`, Helm automatically rolls the release back if the new rollout fails.
 
-Code reference: [model_cd.py (line 312)](../../../jenkins/scripts/model_cd.py#L312), [model_cd.py (line 319)](../../../jenkins/scripts/model_cd.py#L319), [model_cd.py (line 325)](../../../jenkins/scripts/model_cd.py#L325), [model_cd.py (line 341)](../../../jenkins/scripts/model_cd.py#L341), [model_cd.py (line 389)](../../../jenkins/scripts/model_cd.py#L389) lints the chart and executes both `recsys-serving` Helm upgrades with `--atomic` enabled by default.
+Code reference: [model_cd.py (line 323)](../../../jenkins/scripts/model_cd.py#L323), [model_cd.py (line 333)](../../../jenkins/scripts/model_cd.py#L333), [model_cd.py (line 339)](../../../jenkins/scripts/model_cd.py#L339), [model_cd.py (line 355)](../../../jenkins/scripts/model_cd.py#L355), [model_cd.py (line 403)](../../../jenkins/scripts/model_cd.py#L403) lints the chart and executes both `recsys-serving` Helm upgrades with `--atomic` enabled by default.
 
 Runtime command:
 

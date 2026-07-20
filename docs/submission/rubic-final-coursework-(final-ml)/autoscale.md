@@ -403,7 +403,7 @@ make serving-autoscale-load-test
 Reference code:
 
 - [serving_autoscale_load_test.sh (line 1)](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L1), [serving_autoscale_load_test.sh (line 48)](../../../infra/k8s/scripts/serving_autoscale_load_test.sh#L48): selects the target, port-forwards the Service, prints autoscale state, runs Locust, and prints the post-load state.
-- [locustfile_serving.py (line 21)](../../../tests/load/locustfile_serving.py#L21), [locustfile_serving.py (line 89)](../../../tests/load/locustfile_serving.py#L89): selects the load target and calls `/recommendations` or `/online-features`.
+- [locustfile_serving.py (line 21)](../../../tests/load/locustfile_serving.py#L21), [locustfile_serving.py (line 90)](../../../tests/load/locustfile_serving.py#L90): selects the load target and calls `/recommendations` or `/online-features`.
 - [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 119)](../../../apps/api-serving/src/inference_api.py#L119): recommendation serving calls the online-feature client and sends the feature payload through the Triton-backed ranking path.
 
 ### Baseline Before Load

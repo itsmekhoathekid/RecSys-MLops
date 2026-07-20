@@ -44,13 +44,13 @@ class TrainingDataService:
 
 | Responsibility | Code reference |
 |---|---|
-| Required BST model columns | [prepare_bst_training_data.py (line 43)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L43), [prepare_bst_training_data.py (line 68)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L68) |
-| Canonical entity dataframe | [prepare_bst_training_data.py (line 109)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L109), [prepare_bst_training_data.py (line 135)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L135) |
-| Convert Feast historical features to BST frame | [prepare_bst_training_data.py (line 242)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L242), [prepare_bst_training_data.py (line 295)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L295) |
-| Feast historical training table loader | [prepare_bst_training_data.py (line 297)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L297), [prepare_bst_training_data.py (line 350)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L350) |
-| Offline feature store training table loader | [prepare_bst_training_data.py (line 352)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L352), [prepare_bst_training_data.py (line 389)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L389) |
-| `TrainingDataService` implementation | [prepare_bst_training_data.py (line 391)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L391), [prepare_bst_training_data.py (line 454)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L454) |
-| Flow uses `TrainingDataService` | [prepare_bst_training_data.py (line 647)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L647), [prepare_bst_training_data.py (line 706)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L706) |
+| Required BST model columns | [prepare_bst_training_data.py (line 43)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L43), [prepare_bst_training_data.py (line 70)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L70) |
+| Canonical entity dataframe | [prepare_bst_training_data.py (line 111)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L111), [prepare_bst_training_data.py (line 137)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L137) |
+| Convert Feast historical features to BST frame | [prepare_bst_training_data.py (line 244)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L244), [prepare_bst_training_data.py (line 297)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L297) |
+| Feast historical training table loader | [prepare_bst_training_data.py (line 299)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L299), [prepare_bst_training_data.py (line 352)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L352) |
+| Offline feature store training table loader | [prepare_bst_training_data.py (line 354)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L354), [prepare_bst_training_data.py (line 391)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L391) |
+| `TrainingDataService` implementation | [prepare_bst_training_data.py (line 393)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L393), [prepare_bst_training_data.py (line 456)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L456) |
+| Flow uses `TrainingDataService` | [prepare_bst_training_data.py (line 654)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L654), [prepare_bst_training_data.py (line 713)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L713) |
 
 ### Design Notes
 
@@ -87,10 +87,10 @@ class SplitService:
 
 | Responsibility | Code reference |
 |---|---|
-| Normalize one dataframe row into model JSONL schema | [prepare_bst_training_data.py (line 456)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L456), [prepare_bst_training_data.py (line 485)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L485) |
-| Dataset metadata payload | [prepare_bst_training_data.py (line 513)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L513), [prepare_bst_training_data.py (line 572)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L572) |
-| `SplitService` implementation | [prepare_bst_training_data.py (line 574)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L574), [prepare_bst_training_data.py (line 645)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L645) |
-| Flow uses temporal sort and split service | [prepare_bst_training_data.py (line 647)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L647), [prepare_bst_training_data.py (line 751)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L751) |
+| Normalize one dataframe row into model JSONL schema | [prepare_bst_training_data.py (line 458)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L458), [prepare_bst_training_data.py (line 487)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L487) |
+| Dataset metadata payload | [prepare_bst_training_data.py (line 520)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L520), [prepare_bst_training_data.py (line 579)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L579) |
+| `SplitService` implementation | [prepare_bst_training_data.py (line 581)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L581), [prepare_bst_training_data.py (line 652)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L652) |
+| Flow uses temporal sort and split service | [prepare_bst_training_data.py (line 654)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L654), [prepare_bst_training_data.py (line 758)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L758) |
 
 ### Design Notes
 
@@ -127,12 +127,12 @@ class recommenderDataset(Dataset):
 
 | Responsibility | Code reference |
 |---|---|
-| Dataset class | [dataset.py (line 6)](../../../apps/ml-system/src/models/dataset.py#L6), [dataset.py (line 73)](../../../apps/ml-system/src/models/dataset.py#L73) |
-| Resolve split path | [dataset.py (line 12)](../../../apps/ml-system/src/models/dataset.py#L12), [dataset.py (line 20)](../../../apps/ml-system/src/models/dataset.py#L20) |
-| Load JSONL rows | [dataset.py (line 22)](../../../apps/ml-system/src/models/dataset.py#L22), [dataset.py (line 25)](../../../apps/ml-system/src/models/dataset.py#L25) |
-| Return one training example | [dataset.py (line 30)](../../../apps/ml-system/src/models/dataset.py#L30), [dataset.py (line 47)](../../../apps/ml-system/src/models/dataset.py#L47) |
-| Pad and trim sequence features | [dataset.py (line 49)](../../../apps/ml-system/src/models/dataset.py#L49), [dataset.py (line 52)](../../../apps/ml-system/src/models/dataset.py#L52) |
-| Collate batch tensors | [dataset.py (line 54)](../../../apps/ml-system/src/models/dataset.py#L54), [dataset.py (line 73)](../../../apps/ml-system/src/models/dataset.py#L73) |
+| Dataset class | [dataset.py (line 8)](../../../apps/ml-system/src/models/dataset.py#L8), [dataset.py (line 73)](../../../apps/ml-system/src/models/dataset.py#L73) |
+| Resolve split path | [dataset.py (line 14)](../../../apps/ml-system/src/models/dataset.py#L14), [dataset.py (line 22)](../../../apps/ml-system/src/models/dataset.py#L22) |
+| Load JSONL rows | [dataset.py (line 24)](../../../apps/ml-system/src/models/dataset.py#L24), [dataset.py (line 27)](../../../apps/ml-system/src/models/dataset.py#L27) |
+| Return one training example | [dataset.py (line 32)](../../../apps/ml-system/src/models/dataset.py#L32), [dataset.py (line 51)](../../../apps/ml-system/src/models/dataset.py#L51) |
+| Pad and trim sequence features | [dataset.py (line 53)](../../../apps/ml-system/src/models/dataset.py#L53), [dataset.py (line 56)](../../../apps/ml-system/src/models/dataset.py#L56) |
+| Collate batch tensors | [dataset.py (line 58)](../../../apps/ml-system/src/models/dataset.py#L58), [dataset.py (line 73)](../../../apps/ml-system/src/models/dataset.py#L73) |
 
 ### Design Notes
 
@@ -215,15 +215,15 @@ class ModelLifecycleService:
 
 | Responsibility | Code reference |
 |---|---|
-| `ModelLifecycleService` class | [ray_distributed_train_bst.py (line 104)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L104), [ray_distributed_train_bst.py (line 313)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L313) |
+| `ModelLifecycleService` class | [ray_distributed_train_bst.py (line 104)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L104), [ray_distributed_train_bst.py (line 314)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L314) |
 | Dataset and distributed loader creation | [ray_distributed_train_bst.py (line 111)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L111), [ray_distributed_train_bst.py (line 141)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L141) |
 | Shared batch move and BST forward pass | [ray_distributed_train_bst.py (line 143)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L143), [ray_distributed_train_bst.py (line 158)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L158) |
 | DDP training epoch and loss reduce | [ray_distributed_train_bst.py (line 160)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L160), [ray_distributed_train_bst.py (line 188)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L188) |
-| Rank-0 validation metrics | [ray_distributed_train_bst.py (line 190)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L190), [ray_distributed_train_bst.py (line 219)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L219) |
-| Checkpoint save and Ray checkpoint export | [ray_distributed_train_bst.py (line 221)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L221), [ray_distributed_train_bst.py (line 256)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L256) |
-| Broadcast and Ray Train report metrics | [ray_distributed_train_bst.py (line 258)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L258), [ray_distributed_train_bst.py (line 280)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L280) |
-| MLflow/best-result lifecycle output | [ray_distributed_train_bst.py (line 282)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L282), [ray_distributed_train_bst.py (line 313)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L313) |
-| `train_loop_per_worker()` uses the service | [ray_distributed_train_bst.py (line 315)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L315), [ray_distributed_train_bst.py (line 367)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L367) |
+| Rank-0 validation metrics | [ray_distributed_train_bst.py (line 190)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L190), [ray_distributed_train_bst.py (line 220)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L220) |
+| Checkpoint save and Ray checkpoint export | [ray_distributed_train_bst.py (line 222)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L222), [ray_distributed_train_bst.py (line 257)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L257) |
+| Broadcast and Ray Train report metrics | [ray_distributed_train_bst.py (line 259)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L259), [ray_distributed_train_bst.py (line 281)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L281) |
+| MLflow/best-result lifecycle output | [ray_distributed_train_bst.py (line 283)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L283), [ray_distributed_train_bst.py (line 314)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L314) |
+| `train_loop_per_worker()` uses the service | [ray_distributed_train_bst.py (line 316)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L316), [ray_distributed_train_bst.py (line 368)](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L368) |
 
 ### Design Notes
 
