@@ -188,6 +188,8 @@ realtimeCdcConnector:
 
 airflow:
   dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
+  executor: LocalExecutor
+  parallelism: 8
   schedule: "@daily"
   batchFeatureSchedule: "0 1 * * *"
   feastMaterializeSchedule: "20 */2 * * *"

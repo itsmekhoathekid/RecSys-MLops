@@ -42,6 +42,10 @@ spec:
               value: "postgresql+psycopg2://$(AIRFLOW_POSTGRES_USER):$(AIRFLOW_POSTGRES_PASSWORD)@{{ .Values.airflowPostgres.name }}:5432/{{ .Values.airflowPostgres.database }}"
             - name: AIRFLOW__CORE__LOAD_EXAMPLES
               value: "false"
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: {{ .Values.airflow.executor | quote }}
+            - name: AIRFLOW__CORE__PARALLELISM
+              value: {{ .Values.airflow.parallelism | quote }}
             - name: AIRFLOW__CORE__DAGS_FOLDER
               value: {{ .Values.airflow.dagsPath | quote }}
             - name: AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT
@@ -105,6 +109,10 @@ spec:
               value: "postgresql+psycopg2://$(AIRFLOW_POSTGRES_USER):$(AIRFLOW_POSTGRES_PASSWORD)@{{ .Values.airflowPostgres.name }}:5432/{{ .Values.airflowPostgres.database }}"
             - name: AIRFLOW__CORE__LOAD_EXAMPLES
               value: "false"
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: {{ .Values.airflow.executor | quote }}
+            - name: AIRFLOW__CORE__PARALLELISM
+              value: {{ .Values.airflow.parallelism | quote }}
             - name: AIRFLOW__CORE__DAGS_FOLDER
               value: {{ .Values.airflow.dagsPath | quote }}
             - name: AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT

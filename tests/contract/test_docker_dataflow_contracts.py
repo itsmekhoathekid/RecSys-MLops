@@ -651,3 +651,17 @@ def test_key_operational_airflow_dags_are_restored_without_maintenance_dag():
     assert "trigger_kubeflow_retrain_if_drift" in source
     assert "DP2_OPTIMIZE_COMMAND" in source
     assert "recsys_lakehouse_maintenance" not in source
+
+
+def test_airflow_uses_parallel_executor_for_cross_dag_full_cycle():
+    values = yaml.safe_load(
+        (ROOT / "infra/helm/recsys-data-platform/values.yaml").read_text()
+    )
+    airflow = (
+        ROOT / "infra/helm/recsys-data-platform/templates/airflow.yaml"
+    ).read_text()
+
+    assert values["airflow"]["executor"] == "LocalExecutor"
+    assert values["airflow"]["parallelism"] >= 6
+    assert airflow.count("AIRFLOW__CORE__EXECUTOR") == 2
+    assert airflow.count("AIRFLOW__CORE__PARALLELISM") == 2
