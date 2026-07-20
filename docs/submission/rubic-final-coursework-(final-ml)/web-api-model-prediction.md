@@ -14,60 +14,19 @@ This note captures the source-code and runtime evidence for the rubric item:
 
 ## 1. Runtime Design
 
-The deployed prediction service for this rubric item is `recsys-api-serving`. Its runtime is split into the following traceable parts.
+The deployed service for this rubric item is `recsys-api-serving`.
 
 ```text
 Client
-  -> [1] recsys-api-serving POST /recommendations
-  -> [2] recsys-online-feature-api POST /online-features
-  -> [3] Personalized candidate pool + global fallback
-  -> [4] Redis realtime features + Feast online features
-  -> [5] recsys-api-serving builds Triton tensors
-  -> [6] A/B route -> KServe/Triton gRPC inference
-  -> [7] Ranked RecommendationResponse
+  -> recsys-api-serving POST /recommendations
+  -> recsys-online-feature-api POST /online-features
+  -> Feast SDK + Redis online store
+  -> recsys-api-serving builds Triton tensors
+  -> KServe/Triton gRPC inference
+  -> RecommendationResponse
 ```
 
-### 1.1 Recommendation Request Entry Point
-
-FastAPI receives `POST /recommendations` as a validated `RecommendationRequest`. The handler uses `user_id` for route selection and forwards `user_id`, optional candidate IDs, and `top_k` to the online-feature boundary.
-
-Code reference: [api_schemas.py (line 8)](../../../apps/api-serving/src/api_schemas.py#L8), [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75).
-
-### 1.2 Online-Feature Service Boundary
-
-The prediction API does not read Redis directly in the split-serving path. It awaits `OnlineFeatureServiceClient.fetch()`, which sends the validated request to `recsys-online-feature-api` and validates the returned `OnlineFeaturesResponse`.
-
-Code reference: [inference_api.py (line 85)](../../../apps/api-serving/src/inference_api.py#L85), [feature_service_client.py (line 12)](../../../apps/api-serving/src/feature_service_client.py#L12), [feature_service_client.py (line 17)](../../../apps/api-serving/src/feature_service_client.py#L17).
-
-### 1.3 Personalized Candidate Retrieval
-
-When the request does not supply candidate IDs, `user_id` selects `candidate:user:{user_id}`. The service de-duplicates that result and fills any remaining slots from `candidate:popular:global`. The Flink realtime job refreshes the per-user sorted set from category-popular items, caps it at 100 products, and applies a seven-day TTL.
-
-Code reference: [online_features.py (line 238)](../../../apps/api-serving/src/online_features.py#L238), [online_features.py (line 279)](../../../apps/api-serving/src/online_features.py#L279), [candidate_pool_job.py (line 34)](../../../apps/data-platform/src/features/flink/candidate_pool_job.py#L34), [realtime_stream_job.py (line 152)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L152).
-
-### 1.4 User And Item Feature Resolution
-
-The online-feature API moves the synchronous feature lookup to a worker thread. User sequence data is read from realtime Redis keys first and falls back to Feast; item rows are fetched in a batch through the Feast SDK and its Redis online store.
-
-Code reference: [feature_api.py (line 55)](../../../apps/api-serving/src/feature_api.py#L55), [online_features.py (line 181)](../../../apps/api-serving/src/online_features.py#L181), [online_features.py (line 212)](../../../apps/api-serving/src/online_features.py#L212), [online_features.py (line 273)](../../../apps/api-serving/src/online_features.py#L273).
-
-### 1.5 Triton Tensor Construction
-
-The inference service normalizes user history and item attributes into embedding indices, then builds the `INT64` sequence and candidate tensors expected by Triton.
-
-Code reference: [ranking.py (line 53)](../../../apps/api-serving/src/ranking.py#L53), [ranking.py (line 70)](../../../apps/api-serving/src/ranking.py#L70), [ranking.py (line 80)](../../../apps/api-serving/src/ranking.py#L80), [ranking.py (line 198)](../../../apps/api-serving/src/ranking.py#L198).
-
-### 1.6 A/B Routing And KServe/Triton Inference
-
-The router deterministically assigns the user to a configured control or candidate model. The selected `TritonRanker` converts the tensors into gRPC inputs, invokes Triton, and reads item IDs and scores. Kubernetes renders the backing model as a KServe `InferenceService` using the Triton V2 protocol.
-
-Code reference: [ab_testing.py (line 91)](../../../apps/api-serving/src/ab_testing.py#L91), [ab_testing.py (line 121)](../../../apps/api-serving/src/ab_testing.py#L121), [triton.py (line 18)](../../../apps/api-serving/src/triton.py#L18), [triton.py (line 36)](../../../apps/api-serving/src/triton.py#L36), [inferenceservice.yaml (line 1)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L1).
-
-### 1.7 Ranked Response Formatting
-
-The service sorts candidate-score pairs in descending order, keeps `top_k`, and returns the selected model and experiment metadata in `RecommendationResponse`.
-
-Code reference: [ranking.py (line 99)](../../../apps/api-serving/src/ranking.py#L99), [ranking.py (line 204)](../../../apps/api-serving/src/ranking.py#L204), [api_schemas.py (line 14)](../../../apps/api-serving/src/api_schemas.py#L14).
+The prediction API does not read Redis directly in the split-serving path. It delegates online feature retrieval to `recsys-online-feature-api`, then converts the returned online features into Triton input tensors and formats the ranked response.
 
 ## 2. FastAPI Service
 
@@ -113,7 +72,7 @@ Code references: [inference_api.py (line 75)](../../../apps/api-serving/src/infe
 
 ## 7. KServe/Triton Inference Engine
 
-Code reference: [inferenceservice.yaml (line 1)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L1), [inferenceservice.yaml (line 75)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L75) renders stable and optional candidate KServe `InferenceService` resources with Triton V2 and model `storageUri`.
+Code reference: [inferenceservice.yaml (line 1)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L1), [inferenceservice.yaml (line 85)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L85) renders stable and optional candidate KServe `InferenceService` resources with Triton V2 and model `storageUri`.
 
 Runtime command:
 

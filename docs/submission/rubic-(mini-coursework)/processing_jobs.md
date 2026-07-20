@@ -253,14 +253,13 @@ Code reference:
 
 #### High Cardinality
 
-**Technique used:** the production DP3 user-aggregate job computes seven-day category cardinality with `approx_count_distinct(category_id, 0.05)` inside the per-user event-time window. This replaces `collect_list` plus `array_distinct`, so the aggregate uses bounded HyperLogLog++ sketch state instead of materializing every category ID in each rolling window. The output contract remains `distinct_categories_7d`, with approximate semantics and a maximum requested relative standard deviation of `0.05`. In DP2, supported events are returned immediately after native event-ID deduplication; the previous global `orderBy(event_timestamp, event_id)` was removed because downstream user/item windows define their own key-local ordering and a global sort would add a full shuffle over high-cardinality rows.
+**Technique used:** generate a large entity/id space through the data generator config, expose the baseline pressure with exact `distinct().count()`, then use Spark `approx_count_distinct(..., 0.05)` as the lightweight cardinality estimator proof. The batch job still converts raw behavior logs into compact user, item, and sequence feature tables before exporting to the Feast PostgreSQL offline store.
 
-**Technique reference:** [PySpark approx_count_distinct](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.approx_count_distinct.html). Spark provides `approx_count_distinct(col, rsd)` for approximate cardinality estimation with configurable relative standard deviation. Here it is part of the production feature transformation rather than only a separate proof query.
+**Technique reference:** [PySpark approx_count_distinct](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.approx_count_distinct.html). Spark provides `approx_count_distinct(col, rsd)` for approximate cardinality estimation with a configurable relative standard deviation. This is the right optimization when the pipeline needs a high-cardinality signal for monitoring or validation, but does not need to materialize every distinct `product_id` or `user_id`.
 
 Code reference:
 
-- [build_user_aggregate_features.py (line 6)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L6), [build_user_aggregate_features.py (line 36)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L36): defines the `0.05` RSD contract and applies the approximate distinct-category aggregate inside the seven-day per-user window.
-- [build_silver_tables.py (line 45)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L45), [build_silver_tables.py (line 46)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L46): deduplicates supported events and returns them without a global post-deduplication sort.
+- [spark-baseline-ui-job.yaml (line 196)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L196), [spark-baseline-ui-job.yaml (line 203)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L203), [spark-baseline-ui-job.yaml (line 204)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L204), [spark-baseline-ui-job.yaml (line 216)](../../../infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L216): runs exact and `approx_count_distinct(..., 0.05)` cardinality measures in the same proof query.
 
 #### Schema Evolution
 
@@ -291,11 +290,9 @@ Code reference:
 
 **Technique reference:** [PySpark `DataFrame.dropDuplicates`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.dropDuplicates.html). Both Spark cleaning paths use the native operation: behavior events deduplicate on `event_id`, while impressions deduplicate on `impression_id`. Because `dropDuplicates` does not define which duplicate survives, the code does not claim latest-`ingestion_ts` selection.
 
-**Measurement note:** `dropDuplicates` does not emit a removed-row counter by itself. The capture query measures `supported_rows_before_dedup - clean_rows_after_dedup`; its reduction percentage is `removed_rows / supported_rows_before_dedup * 100`. Unsupported V3 rows must be excluded from the input count because they follow the quarantine path rather than the deduplication path.
-
 Code reference:
 
-- [build_silver_tables.py (line 25)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L25), [build_silver_tables.py (line 45)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L45), [build_silver_tables.py (line 46)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L46): `build_clean_behavior_events` applies `.dropDuplicates(["event_id"])`, returns supported/unsupported paths separately, and does not globally sort the clean output.
+- [build_silver_tables.py (line 25)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L25), [build_silver_tables.py (line 45)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L45), [build_silver_tables.py (line 46)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L46): `build_clean_behavior_events` applies `.dropDuplicates(["event_id"])` and returns unsupported schemas separately.
 - [build_silver_tables.py (line 49)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L49), [build_silver_tables.py (line 54)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L54), [build_silver_tables.py (line 55)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L55): `build_clean_impressions` converts the timestamp, applies `.dropDuplicates(["impression_id"])`, and orders the cleaned rows.
 
 ### View Spark UI To Show Problems Have Been Minimized
@@ -313,7 +310,7 @@ kubectl -n recsys-dataflow logs job/spark-baseline-ui | \
 
 ![comparision run proof](../../pngs/spark_comparision_run.png)
 
-**Figure: Spark offline optimization comparison run.** The screenshot captures the comparison script running inside the Spark proof pod. The highlighted `SPARK_OFFLINE_OPTIMIZATION_COMPARISON={...}` line is the compact proof to pair with the Spark UI captures: it reports baseline and optimized values for skew, high cardinality, schema evolution, and duplicate events from the same local lakehouse input. For duplication, the captured run starts with `50,179` raw behavior-event rows, identifies `19,428` extra duplicate rows across `16,863` repeated event IDs (including `5,615` IDs with conflicting payloads), and produces `30,751` clean rows with `0` duplicate extras remaining, reported as a `100%` duplicate-extra-row reduction. The technique label embedded in this historical artifact refers to the earlier ordered-window implementation; the current production cleaner uses native Spark `.dropDuplicates(["event_id"])` and therefore guarantees one supported row per event ID but does not guarantee that the retained row has the latest `ingestion_ts`.
+**Figure: Spark offline optimization comparison run.** The screenshot captures the comparison script running inside the Spark proof pod. The highlighted `SPARK_OFFLINE_OPTIMIZATION_COMPARISON={...}` line is the compact proof to pair with the Spark UI captures: it reports baseline and optimized values for skew, high cardinality, schema evolution, and duplicate events from the same local lakehouse input.
 
 Current comparison report:
 
@@ -360,8 +357,6 @@ The streaming path uses PostgreSQL CDC to Kafka topic `cdc.behavior_events`, the
 - Offline-store Flink job writes processed streaming features to the Feast PostgreSQL offline feature store.
 - Online-store Flink job writes low-latency online features to Redis.
 
-The deployed proof environment keeps a fixed runtime layout for both baseline and optimized observations: two TaskManagers with one slot each. The online job occupies one route and ends at the Redis sink; the offline job occupies the other route and ends at the PostgreSQL sink. This is the default deployment topology, not an optimization variable, so the UI comparisons below do not attribute metric changes to the number of TaskManagers.
-
 Code reference:
 
 - [realtime-flink-consumer.yaml (line 52)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L52): gives the Redis job its own Kafka consumer group.
@@ -373,75 +368,85 @@ Code reference:
 
 ### View Flink UI To Show Baseline Problems
 
-These screenshots are the **before-optimization baseline**, captured on 18 July 2026 from the GCP deployment built from branch `feats/unoptimized-processing-metrics` (commit `6f25ad7`). The online job uses Kafka consumer group `recsys-flink-baseline-online-store`; the equivalent offline job uses `recsys-flink-baseline-offline-store`. Both baseline jobs retain the same three late-event counters as the optimized build so that the two runs can be compared with the same definitions.
-
-The baseline graph can be distinguished from the optimized graph by its manual `KEYED PROCESS, streaming-quality-window-metrics` operator. A clean-looking graph is not evidence of optimization: the runtime overlays and tabs below show that this graph reaches high backpressure and accumulates too-late events under the stress workload.
+> **Screenshot version note:** the checked-in screenshots below were captured from the previous manual keyed-process implementation, so labels such as `late-event-drop-policy` and `late-events-side-output` describe that baseline graph. After this native refactor, a new production capture should show `watermark-lateness-classifier`, `native-event-time-quality-windows`, `native-late-events-side-output`, and `watermark-late-event-policy`. The old images remain baseline evidence and must not be presented as the post-change graph.
 
 #### Bursty Traffic
 
-The stress producer emits `40` events on a normal one-second tick and multiplies every fifth tick by eight, producing a `320`-event burst. The following captures show how the unoptimized job reacts.
+**Flink UI navigation**
 
-![Unoptimized Flink baseline job overview under burst traffic](../../pngs/flink_baseline_job_overview.png)
+1. Open the Flink dashboard at `http://localhost:18083` and choose one of the continuous realtime jobs:
+   `recsys-native-pyflink-realtime-features-online-recsys-flink-realtime-online`
+   or `recsys-native-pyflink-realtime-features-online-recsys-flink-realtime-offline`.
+2. Open the job **Overview** page and capture the operator graph. The graph should show `Source: cdc-behavior-events-source`, `streaming-quality-window-metrics`, `late-event-drop-policy`, and the online/offline writer path.
+3. Click the `KEYED PROCESS -> (..., late-event-drop-policy, ...)` vertex.
+4. Open **Metrics** and add `0._stream_key_by_map_operator.numRecordsOutPerSecond`, `0.late-event-drop-policy___stream_key_by_map_operator.numRecordsInPerSecond`, `0.busyTimeMsPerSecond`, `0.accumulateBackPressuredTimeMs`, and `0.mailboxLatencyMs_p95`.
+5. Capture the metric graphs while the producer is running. In the current proof images, the useful signals are the rising records/second graph, `Busy (max): 99%`, the `accumulateBackPressuredTimeMs` step, and the `mailboxLatencyMs_p95` spike.
+6. Optionally click `Source: cdc-behavior-events-source -> Map, Filter -> ...` and add `0.numRecordsOutPerSecond` if the reviewer wants a source-side view of the incoming Kafka burst.
+7. Open the job-level **BackPressure** tab and capture the color/status for source, policy, metric, and writer operators.
+8. Open the job-level **Checkpoints** tab and capture checkpoint duration/alignment data during a burst.
 
-**Figure: Unoptimized Flink baseline overview under burst traffic.** The real CDC-to-Redis online job is `RUNNING`, but the graph overlay records severe pressure: the source reaches `Backpressured (max): 99%`, the `watermark-lateness-classifier` reaches `80%`, and the feature branch remains busy up to `77%`. The table also shows records continuing to move through every stage. This is evidence of a live but saturated baseline, not a stopped or failed job.
+![Flink realtime job graph for streaming problem proof](../../pngs/flink_bursty_traffic_runtime.png.png)
 
-![Unoptimized Flink baseline with HIGH backpressure](../../pngs/flink_baseline_high_backpressure.png)
+**Figure: Flink realtime job graph for streaming problem proof.** This image shows the continuous CDC job running from `Source: cdc-behavior-events-source` into `late-event-drop-policy`, then splitting into the `streaming-quality-window-metrics` branch and the Feast PostgreSQL offline writer branch. The table below the graph shows the job is `RUNNING` and has already processed hundreds of thousands of records, so the proof is taken from the real Kafka CDC to feature-store path rather than a standalone demo job.
 
-**Figure: Unoptimized Flink baseline reports `HIGH` backpressure.** On the selected `watermark-lateness-classifier` subtask, Flink reports `66%` backpressured, `20%` idle, and `14%` busy, with the overall status marked `HIGH`. The job is still `RUNNING`; therefore the red status is direct runtime evidence that the burst workload is propagating downstream pressure through the manual baseline graph.
+![Flink bursty traffic throughput proof](../../pngs/burst_ui_1.png)
 
-![Unoptimized Flink baseline burst throughput rates](../../pngs/flink_baseline_burst_throughput_rates.png)
+**Figure: Flink bursty-traffic throughput proof.** This image focuses on the `KEYED PROCESS -> (..., late-event-drop-policy, ...)` vertex. The selected vertex is `RUNNING`, has `Busy (max): 99%`, and the metric graph for `numRecordsOutPerSecond` rises from roughly `420` to `550` records/second. That upward rate movement is the UI symptom of the generator's burst windows: records arrive faster than the operator can smoothly process them, so the operator stays almost fully busy.
 
-**Figure: Unoptimized Flink baseline input and output rates during burst traffic.** The `watermark-lateness-classifier` input and output rates move together through repeated plateaus of approximately `60-69 records/s`, then drop to about `54 records/s` near the end of the capture. Flink displays rolling rates rather than the producer's instantaneous `320`-event burst tick, so the important signal is the repeated rate change while the selected operator simultaneously records `Backpressured (max): 85%`. Input and output remaining close also confirms that the job is still making progress rather than silently stalling.
+![Flink bursty traffic pressure proof](../../pngs/burst_ui_2.png)
 
-![Unoptimized Flink baseline backpressure and busy time](../../pngs/flink_baseline_burst_pressure_busy_time.png)
+**Figure: Flink bursty-traffic pressure proof.** This image keeps the same `late-event-drop-policy` vertex selected and adds pressure metrics. `accumulateBackPressuredTimeMs` steps upward, while `mailboxLatencyMs_p95` jumps from about `2080 ms` to about `2280 ms` during the burst interval. The important reader takeaway is that burst traffic is visible not only as higher throughput, but also as increased operator scheduling/mailbox latency and accumulated backpressure time.
 
-**Figure: Unoptimized Flink baseline backpressure time versus busy time.** `backPressuredTimeMsPerSecond` rises from roughly `817` to above `910 ms/s` and remains above `830 ms/s` across the visible interval. Meanwhile, `busyTimeMsPerSecond` falls from just over `100` to about `50-75 ms/s`. This inverse pattern shows that the subtask is spending most of each second blocked by downstream pressure rather than executing useful processing work; the graph overlay independently reports a maximum backpressure of `83%`.
+**Analysis:** every 5th realtime producer tick multiplies a normal `40` event tick into a `320` event burst. Flink UI does not label a spike as "burst" directly; it exposes the symptoms through source output-rate spikes, quality-metric input-rate spikes, backpressure, busy time, and checkpoint duration/alignment. The quality output also emits `is_bursty=true` when the window crosses the configured burst threshold.
 
-![Unoptimized Flink baseline mailbox latency and input queue](../../pngs/flink_baseline_burst_mailbox_queue.png)
 
-**Figure: Unoptimized Flink baseline mailbox latency and input-buffer queue.** The Netty input queue repeatedly expands from roughly `2` buffers to `15`, drains to about `6`, and then fills to `15` again. At the same time, mailbox p95 latency remains near `370 ms` for most of the interval before recovering to about `100 ms`. The recurring queue fill/drain cycle is direct evidence that burst input is being buffered and processed unevenly rather than flowing at a stable rate.
+![Flink bursty traffic pressure proof](../../pngs/backpressure_high.png)
 
-**Analysis:** `RUNNING` only proves liveness. Taken together, the screenshots show the complete baseline symptom chain: the rolling input/output rate changes, the input queue repeatedly fills, mailbox latency stays elevated, and the operator spends more than `800 ms` of many one-second intervals backpressured. The later optimized capture must replay the same `40 -> 320` workload and reduce backpressure, queue occupancy, and mailbox latency while preserving comparable throughput before claiming improvement.
+**Figure: Flink `HIGH` backpressure during a burst.** The selected keyed-process vertex is running at parallelism `1`, and Flink's BackPressure tab reports `54%` backpressured, `0%` idle, and `46%` busy for its only subtask. This is direct runtime evidence that the injected burst temporarily drives records into the operator faster than its downstream path can accept them; the job remains `RUNNING`, so the screenshot demonstrates controlled processing pressure rather than a task failure.
+
+> **Note:** This capture is the high-pressure proof point for the baseline burst window, not the expected steady-state profile. It should be read together with the throughput and accumulated-backpressure screenshots above; the optimized run should reduce the backpressured share while continuing to process the same burst workload.
 
 Code reference:
 
-- [data_generator_e2e_2k.yaml (line 60)](../../../configs/local/data_generator_e2e_2k.yaml#L60): configures 40 normal events per producer tick.
-- [data_generator_e2e_2k.yaml (line 66)](../../../configs/local/data_generator_e2e_2k.yaml#L66): triggers a burst every fifth tick.
-- [data_generator_e2e_2k.yaml (line 67)](../../../configs/local/data_generator_e2e_2k.yaml#L67): multiplies burst ticks by eight.
+- [data_generator_e2e_1k.yaml (line 64)](../../../configs/local/data_generator_e2e_1k.yaml#L64): configures 40 normal events per producer tick.
+- [data_generator_e2e_1k.yaml (line 70)](../../../configs/local/data_generator_e2e_1k.yaml#L70): triggers a burst every fifth tick.
+- [data_generator_e2e_1k.yaml (line 71)](../../../configs/local/data_generator_e2e_1k.yaml#L71): multiplies burst ticks by eight.
 - [burst_traffic.py (line 6)](../../../apps/data-platform/data-generator/src/streaming/problems/burst_traffic.py#L6): calculates the per-tick event count.
 - [producer.py (line 39)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L39): applies the result in the live loop.
-- [flink-baseline-ui-job.yaml (line 100)](../../../infra/k8s/processing-baseline/flink-baseline-ui-job.yaml#L100): identifies the baseline online consumer group used by these screenshots.
+- [quality_windows.py (line 124)](../../../apps/data-platform/src/features/flink/quality_windows.py#L124): emits the production `is_bursty` flag.
 
 #### Late Arrival Problems
 
-The same stress run marks `28%` of newly generated events as late and backdates their event timestamps by `45-180` minutes. The baseline classifier compares each event timestamp with the current Flink watermark and exposes three cumulative counters:
+**Flink UI navigation**
 
-- `late_arrivals_total`: every event for which `event_timestamp <= current_watermark`.
-- `accepted_late_events_total`: a late event still inside the configured allowed-lateness/cleanup boundary.
-- `too_late_events_total`: a late event beyond that boundary, which must not update the live feature window.
+1. Open the same continuous Flink job used for the burst proof.
+2. Click the `KEYED PROCESS -> (..., late-event-drop-policy, ...)` vertex.
+3. Open **Metrics** and add `0.late-event-drop-policy___stream_key_by_map_operator.numRecordsIn`, `0.late-event-drop-policy___stream_key_by_map_operator.numRecordsOut`, `0.late-event-drop-policy___stream_key_by_map_operator.numRecordsInPerSecond`, and `0.late-event-drop-policy___stream_key_by_map_operator.numRecordsOutPerSecond`.
+4. Add `0.late-event-drop-policy___stream_key_by_map_operator.currentInputWatermark` and `0.late-event-drop-policy___stream_key_by_map_operator.currentOutputWatermark` when you want to prove event-time progress from the Metrics tab.
+5. Pair the UI screenshot with TaskManager log lines from `streaming-quality-window-metrics` if the reviewer wants the exact late counters. The log output contains `late_event_count`, `max_late_by_seconds`, `late_events_dropped`, and `side_output_late_events`.
+6. Do not use the Flink **Watermarks** tab for this proof. In this local PyFlink job, the vertex-level Metrics tab is clearer because it can show both watermarks and the `numRecordsIn` versus `numRecordsOut` drop effect.
 
-For a single subtask sampled at the same instant, the expected invariant is `late_arrivals_total = accepted_late_events_total + too_late_events_total`.
+![Flink late arrival dropped-count proof](../../pngs/late_arrival_lag_1.png)
 
-![Unoptimized Flink baseline late and accepted-late counters](../../pngs/flink_baseline_late_accepted_metrics.png)
+**Figure: Flink late-arrival drop-count proof.** This image selects the same production `late-event-drop-policy` vertex and compares the scoped metrics `late-event-drop-policy.numRecordsIn` and `late-event-drop-policy.numRecordsOut`. `numRecordsIn` climbs beyond `600,000`, while `numRecordsOut` stays at `0`, which means the policy is receiving CDC records but dropping them before the feature update path because the current stress run generated too-late events and `dropLateEvents=true`.
 
-**Figure: Unoptimized Flink baseline late-arrival and accepted-late counters.** The Metrics tab on `watermark-lateness-classifier` shows both `late_arrivals_total` and `accepted_late_events_total` increasing in steps while records continue to enter the operator. Each step corresponds to another injected batch crossing the watermark; only the smaller accepted subset remains within allowed lateness. At the same time, the vertex overlay reaches `Backpressured (max): 82%`, linking the event-time problem proof to the pressured baseline run.
+![Flink late arrival dropped-rate proof](../../pngs/late_arrival_lag_2.png)
 
-![Unoptimized Flink baseline too-late and input counters](../../pngs/flink_baseline_too_late_input_metrics.png)
+**Figure: Flink late-arrival drop-rate proof.** This image shows the per-second version of the same policy check. `late-event-drop-policy.numRecordsInPerSecond` fluctuates around roughly `470-515` records/second, while `late-event-drop-policy.numRecordsOutPerSecond` remains `0`. This is the easiest Flink UI proof that late arrival is not just counted in logs; the operator is actively filtering the stream at runtime.
 
-**Figure: Unoptimized Flink baseline too-late events versus operator input.** The upper chart shows `too_late_events_total` rising past `9,000`; the lower `numRecordsIn` chart rises to approximately `45,000`. Thus a substantial share of processed input is arriving beyond the cleanup boundary rather than contributing safely to the live feature state. The classifier's maximum backpressure also reaches `86%` in this capture.
+![Flink late arrival watermark metric proof](../../pngs/late_arrival_lag_3.png)
 
-**Analysis:** these are cumulative counter charts, so their staircase shape is expected and their absolute values include all events since this job attempt started. The two screenshots were taken at different times; endpoint values across them must not be added together. To verify the invariant exactly, switch all three counter cards to **Numeric** and record them at the same instant. The baseline proves the problem exists; improvement is demonstrated only by replaying the same workload against the optimized job and comparing ratios such as `too_late_events_total / numRecordsIn`, together with backpressure and throughput.
+**Figure: Flink late-arrival watermark metric proof.** This image shows `currentInputWatermark` and `currentOutputWatermark` for the `late-event-drop-policy` vertex. Both watermark metrics move forward over time, proving the job is running with event-time/watermark awareness. Pair this with the previous `numRecordsIn` versus `numRecordsOut` screenshots: the watermark metrics show event-time progress, while the in/out metrics show the actual late-event drop effect.
 
-**How to reproduce the Flink UI proof:** open the baseline online job, select `watermark-lateness-classifier`, choose **BackPressure** for the pressure capture, then choose **Metrics** and add `late_arrivals_total`, `accepted_late_events_total`, `too_late_events_total`, and `numRecordsIn`. Use **Big** charts for the trend and **Numeric** for an exact before/after table.
+**Analysis:** the realtime producer intentionally emits late events with event timestamps `45-180` minutes behind processing time. The production Flink job classifies lateness against Flink's current event-time watermark, not wall-clock processing time. The UI watermarks show event-time progress; the native late-data side output and PostgreSQL DLQ show events that arrived after window cleanup.
 
 Code reference:
 
-- [data_generator_e2e_2k.yaml (line 72)](../../../configs/local/data_generator_e2e_2k.yaml#L72), [data_generator_e2e_2k.yaml (line 74)](../../../configs/local/data_generator_e2e_2k.yaml#L74): configures the 28% late-arrival rate and 45-180 minute delay range.
+- [data_generator_e2e_1k.yaml (line 75)](../../../configs/local/data_generator_e2e_1k.yaml#L75), [data_generator_e2e_1k.yaml (line 78)](../../../configs/local/data_generator_e2e_1k.yaml#L78): configures late-arrival rate and delay range.
 - [late_arrival.py (line 14)](../../../apps/data-platform/data-generator/src/streaming/problems/late_arrival.py#L14): samples and backdates a late event.
 - [problem_pipeline.py (line 38)](../../../apps/data-platform/data-generator/src/streaming/problem_pipeline.py#L38): applies the late-arrival class to new events.
-- [event_time.py (line 13)](../../../apps/data-platform/src/features/flink/event_time.py#L13): registers the three shared Flink counters through the operator `MetricGroup`.
-- [event_time.py (line 31)](../../../apps/data-platform/src/features/flink/event_time.py#L31): increments and partitions late arrivals into accepted and too-late outcomes.
-- [flink-baseline-ui-job.yaml (line 94)](../../../infra/k8s/processing-baseline/flink-baseline-ui-job.yaml#L94): submits the baseline online job used for the UI comparison.
+- [realtime_stream_job.py (line 655)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L655): reads the native current watermark used for classification.
+- [realtime_stream_job.py (line 922)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L922): exposes the native too-late side output.
 
 ### Develop Stream Processing Script To Handle Streaming Problems
 
@@ -451,7 +456,7 @@ Code reference:
 
 **Best-practice reference:** [Flink Windows](https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/operators/windows/). Flink describes windows as the core mechanism for splitting an infinite stream into finite buckets for computation. The streaming job applies that pattern by assigning CDC events into fixed event-time quality windows and marking a window as bursty when `event_count >= burst_threshold_event_count`.
 
-**How this minimizes burst pressure:** Kafka is created with four partitions so the deployment can scale source parallelism when load requires it. The fixed proof topology remains two parallelism-one jobs on two one-slot TaskManagers: one route ends at Redis and the other at PostgreSQL. Because this layout is held constant, the processing optimization is evaluated in the graph itself. The quality window uses `AggregateFunction` rather than buffering every event until the window closes. Unaligned checkpoints avoid waiting for all in-flight buffers during backpressure, and exponential-delay restart prevents tight crash loops.
+**How this minimizes burst pressure:** Kafka is created with four partitions. The current GCP cost profile runs the two continuous jobs at parallelism one on one TaskManager with two slots, so each job can occupy one slot without a second always-on TaskManager pod. This is a resource-right-sizing choice, not a throughput optimization; the topic retains four partitions so the deployment can scale out through overrides when load requires it. The quality window uses `AggregateFunction` rather than buffering every event until the window closes. Unaligned checkpoints avoid waiting for all in-flight buffers during backpressure, and exponential-delay restart prevents tight crash loops.
 
 Code reference:
 
@@ -461,9 +466,9 @@ Code reference:
 - [realtime_stream_job.py (line 908)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L908): creates the native `TumblingEventTimeWindows` operator.
 - [realtime_stream_job.py (line 911)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L911): attaches the incremental aggregate to that window.
 - [values.yaml (line 100)](../../../infra/helm/recsys-data-platform/values.yaml#L100): declares four Kafka partitions.
-- [values-gcp.yaml (line 53)](../../../infra/helm/recsys-data-platform/values-gcp.yaml#L53): declares the fixed two-TaskManager proof topology.
-- [values-gcp.yaml (line 65)](../../../infra/helm/recsys-data-platform/values-gcp.yaml#L65): gives each TaskManager one slot; with two parallelism-one jobs, one route serves Redis and the other serves PostgreSQL.
-- [values-gcp.yaml (line 73)](../../../infra/helm/recsys-data-platform/values-gcp.yaml#L73): runs each GCP realtime Flink job at parallelism one.
+- [values-gcp.yaml (line 44)](../../../infra/helm/recsys-data-platform/values-gcp.yaml#L44): overrides GCP to one Flink TaskManager.
+- [values-gcp.yaml (line 55)](../../../infra/helm/recsys-data-platform/values-gcp.yaml#L55): provides two task slots for the online and offline jobs.
+- [values-gcp.yaml (line 63)](../../../infra/helm/recsys-data-platform/values-gcp.yaml#L63): runs each GCP realtime Flink job at parallelism one.
 - [values.yaml (line 131)](../../../infra/helm/recsys-data-platform/values.yaml#L131): selects RocksDB for production state.
 - [values.yaml (line 132)](../../../infra/helm/recsys-data-platform/values.yaml#L132): enables incremental RocksDB checkpoints.
 - [values.yaml (line 212)](../../../infra/helm/recsys-data-platform/values.yaml#L212): enables unaligned checkpoints.
@@ -509,10 +514,6 @@ Code reference:
 
 **Techniques used:** Flink EXACTLY_ONCE checkpoint mode for Kafka offsets and operator state, retained externalized checkpoints, one in-flight checkpoint, checkpoint timeout/failure tolerance, optional unaligned checkpoints, and idempotent external writes.
 
-**Best-practice reference:** [Apache Flink 1.19 - Checkpointing](https://nightlies.apache.org/flink/flink-docs-release-1.19/docs/dev/datastream/fault-tolerance/checkpointing/). Flink checkpoints recover operator state and source positions with failure-free execution semantics. The production job follows the documented PyFlink pattern by enabling checkpointing, selecting `CheckpointingMode.EXACTLY_ONCE`, limiting concurrent checkpoints to one, retaining externalized checkpoints, and optionally enabling unaligned checkpoints for backpressured execution.
-
-**Delivery-guarantee reference:** [Apache Flink - Exactly Once End-to-end](https://nightlies.apache.org/flink/flink-docs-stable/docs/learn-flink/fault_tolerance/#exactly-once-end-to-end). Flink distinguishes exactly-once effects on managed state from exactly-once delivery to external systems. End-to-end exactly-once requires a replayable source and a transactional or idempotent sink. Kafka and Flink managed state satisfy the checkpointed processing boundary here; the synchronous Python Redis and PostgreSQL writers use idempotent writes rather than participating in a Flink two-phase-commit transaction.
-
 Flink's checkpoint mode does not make a synchronous Python PostgreSQL/Redis client a two-phase-commit sink. Therefore, this implementation states the boundary precisely: Kafka offsets and Flink keyed state recover exactly once; replayed external writes are made idempotent. PostgreSQL upserts by `source_event_id`, the DLQ ignores duplicate `(event_id, reason)`, and Redis uses an atomic Lua compare-and-set so an older replay cannot overwrite a newer feature payload.
 
 Code reference:
@@ -556,35 +557,43 @@ Code reference:
 
 #### Bursty Traffic
 
-The captures below select the optimized online job (`2e9bc3e8873892d9d314416267891ce4`) and its `watermark-lateness-classifier` under the same fixed two-TaskManager layout described above. The rate, pressure, mailbox, and queue charts can be compared as runtime observations. The cumulative-counter charts contain a metric-series reset inside the displayed time range; because Flink counters are monotonic within one execution attempt, the descending segment is a UI discontinuity and must not be interpreted as fewer late events.
+![Flink optimized streaming metrics](../../pngs/flink_optimized.png)
 
-![Optimized online Flink low-backpressure snapshot](../../pngs/flink_optimized_online_backpressure_low.png)
+> **Comparison with the baseline burst graphs above:** at the captured snapshot,
+> `accumulateBackPressuredTimeMs` is about `6.12k ms`, compared with about
+> `10.30k ms` in the baseline (`~4.18k ms`, or `~41%`, lower). The observed
+> `mailboxLatencyMs_p95` peak is about `2.10 s`, down from the baseline peak of
+> about `2.28 s` (`~180 ms`, or `~8%`, lower). Operator utilization remains high
+> (`Busy (max): 100%` versus `99%`), so the improvement is not lower workload;
+> it is that the same burst is handled with lower accumulated pressure and a
+> lower mailbox-latency peak while the job remains `RUNNING`. Because
+> `accumulateBackPressuredTimeMs` is cumulative and the screenshots come from
+> different runtime windows, the `41%` value is snapshot evidence rather than a
+> controlled benchmark. The stronger runtime result is confirmed by the next
+> image: Back Pressure is `OK` and the subtask reports `0%` backpressure.
 
-**Figure: optimized online classifier at a transient LOW-backpressure snapshot.** The selected subtask reports `37%` backpressure, `45%` idle, and `18%` busy while the job remains `RUNNING 6/6`. This is below the baseline screenshot's `66% HIGH` sample, but it is a point-in-time result rather than proof that pressure disappeared: the longer metric captures below still reach `85-88%` maximum pressure.
+**Figure: optimized Flink operator metrics under bursty traffic.** The selected
+`KEYED PROCESS -> (_stream_key_by_map_operator, late-events-side-output,
+late-event-drop-policy, _stream_key_by_map_operator)` vertex remains `RUNNING`
+while the Metrics tab tracks `accumulateBackPressuredTimeMs` and
+`mailboxLatencyMs_p95`. This proves the burst is no longer turning into job
+failure or restart; pressure still exists because the generator is pushing a
+heavy stream, but it is bounded inside a running operator.
 
-![Optimized online Flink throughput rates](../../pngs/flink_optimized_online_throughput_rates.png)
+![Flink backpressure OK](../../pngs/backpressure_ok.png)
 
-**Figure: optimized online input and output rates.** Classifier input varies from approximately `25` to `41 records/s`; output varies from roughly `41` to `68 records/s`. Output is higher because the classifier fans one logical event into the native quality-window and feature branches, so it is not a duplicate-event count. Both curves remain active and confirm end-to-end liveness, but input throughput is below the baseline capture's `54-69 records/s`; this image therefore supports continuity, not a throughput-improvement claim.
+**Figure: BackPressure tab after handling bursty traffic.** The same keyed
+operator reports `Back Pressure Status: OK`, with subtask backpressure at `0%`
+and the task still `RUNNING`. The operator is busy processing the burst, but it
+is not blocked by downstream backpressure.
 
-![Optimized online Flink backpressure and busy time](../../pngs/flink_optimized_online_pressure_busy_time.png)
+![Flink UI operator names](../../pngs/flink_ui_names.png)
 
-**Figure: optimized online backpressure time versus busy time.** `backPressuredTimeMsPerSecond` ranges from about `720` to `915 ms/s`, while useful busy time ranges from approximately `30` to `68 ms/s`. The lower part of the pressure curve is below many baseline samples above `830 ms/s`, but the ranges overlap and the graph overlay still reaches `88%`. This image does not prove that backpressure was eliminated; it shows that the Redis path remains constrained under the current `40 -> 320` burst workload.
-
-![Optimized online Flink mailbox latency and input queue](../../pngs/flink_optimized_online_mailbox_queue.png)
-
-**Figure: optimized online mailbox latency and input queue.** Mailbox p95 falls from roughly `230 ms` to about `25 ms`, with one short spike below `100 ms`; this is below the baseline capture's sustained approximately `370 ms`. Input queue occupancy is mainly around `1-12` buffers with a short spike to `13`, compared with repeated baseline saturation at `15`. This is the clearest observed improvement in the captured metrics: scheduling responsiveness and typical queue occupancy are better even though backpressure remains.
-
-**Analysis:** the optimized run proves a narrower result than a graph-only comparison would suggest. With the two-TaskManager deployment treated as fixed, the measurable improvement is lower mailbox latency and lower typical input-buffer occupancy in the optimized graph. The screenshots do not prove higher throughput or elimination of backpressure: optimized input rate is lower and pressure still peaks near the baseline range. The remaining constraint is downstream online-store work and accumulated Kafka backlog, not an unbounded window buffer.
-
-#### Late Arrival
-
-![Optimized online Flink late and accepted-late counters](../../pngs/flink_optimized_online_late_accepted_metrics.png)
-
-**Figure: optimized online late-arrival and accepted-late counters with a metric-series reset.** Both counters are cumulative and cannot decrement within one execution attempt, so the apparent decline is a UI interpolation across a reset in the displayed metric series, not a reduction in late events. At the right edge, both counters resume increasing as newly generated delayed events cross the watermark. This verifies that the metrics remain active, but the descending segment must not be used to calculate an optimization ratio.
-
-![Optimized online Flink too-late and input counters](../../pngs/flink_optimized_online_too_late_input_metrics.png)
-
-**Figure: optimized online too-late events versus classifier input with a metric-series reset.** `too_late_events_total` and `numRecordsIn` show the same reset discontinuity and then resume rising together. This confirms that post-cleanup events continue to be classified while records flow through the optimized graph. Exact validation must use Numeric values sampled simultaneously and enforce `late_arrivals_total = accepted_late_events_total + too_late_events_total`; the descending chart segments are not event-loss or optimization evidence.
+**Figure: operator-level proof that the optimized stream graph is active.** The
+job graph shows the source, `late-events-side-output`, `late-event-drop-policy`,
+`streaming-quality-window-metrics`, and online feature writer operators all in
+`RUNNING` state. This confirms the proof is captured from the real continuous
+Flink jobs, not from an isolated test operator.
 
 
 ### Window Processing
@@ -646,7 +655,7 @@ In the Flink UI, open the `watermark-lateness-classifier` vertex, select **Metri
 
 The counter invariant is `late_arrivals_total = accepted_late_events_total + too_late_events_total`. Use the same input, Kafka starting offsets, duration, watermark delay, allowed lateness, and parallelism for baseline and optimized captures. `late_arrivals_total` measures the input condition and should remain comparable; optimization evidence is a higher accepted-late ratio, a lower too-late ratio, and lower backpressure/mailbox latency at comparable throughput. If only state/window efficiency changes, the late-event ratios may remain stable and the improvement should instead be claimed from the runtime pressure metrics.
 
-The `streaming-quality-window-metrics` operator also writes structured runtime log records with `window_start`, `window_end`, `event_count`, `late_event_count`, `duplicate_event_count`, `max_late_by_seconds`, and `is_bursty`. In the PostgreSQL production-sink branch, quality windows are logged rather than persisted to a `streaming_quality_windows` table. Too-late records are additionally verified through `native-late-events-side-output` and `stream_late_events_dlq`.
+The `streaming-quality-window-metrics` operator also writes structured TaskManager log records with `window_start`, `window_end`, `event_count`, `late_event_count`, `duplicate_event_count`, `max_late_by_seconds`, and `is_bursty`. In the PostgreSQL production-sink branch, quality windows are logged rather than persisted to a `streaming_quality_windows` table. Too-late records are additionally verified through `native-late-events-side-output` and `stream_late_events_dlq`.
 
 **How the production window works:** the deduplicated event stream is marked against Flink's current watermark, keyed by topic, and passed into native `TumblingEventTimeWindows`. Flink owns window lifecycle and cleanup. `allowed_lateness` keeps a fired window open for permitted late updates; events arriving after cleanup are emitted through the native `OutputTag` side output. A custom incremental `AggregateFunction` stores only counters and the maximum lateness, rather than buffering all events.
 
@@ -689,7 +698,7 @@ The integration uses the following reference-backed execution path:
 | 4 | Kubernetes creates a separate Spark driver pod because submission uses cluster deploy mode. | [rubric_data_pipeline_dags.py (line 121)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L121) sets `--deploy-mode cluster`; [line 123](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L123) selects the driver namespace and [line 124](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L124) selects the Spark container image. |
 | 5 | The driver requests, monitors, and removes executor pods according to the Spark allocation policy. | [rubric_data_pipeline_dags.py (line 126)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L126) assigns the driver's Kubernetes service account; [rbac.yaml (line 7)](../../../infra/helm/recsys-data-platform/templates/rbac.yaml#L7) permits pod lifecycle operations; [rubric_data_pipeline_dags.py (line 139)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L139) through [line 146](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L146) define dynamic executor allocation. |
 | 6 | The submission pod waits until the driver application succeeds or fails. | [rubric_data_pipeline_dags.py (line 127)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L127) sets `spark.kubernetes.submission.waitAppCompletion=true`; [line 130](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L130) reports application state every five seconds. |
-| 7 | Airflow marks `ingest_stage` successful only after Spark completes, then releases `validate_stage`. | [rubric_data_pipeline_dags.py (line 244)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L244) enforces the DP2 dependency and [line 265](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L265) enforces the DP3 dependency. |
+| 7 | Airflow marks `ingest_stage` successful only after Spark completes, then releases `validate_stage`. | [rubric_data_pipeline_dags.py (line 293)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L293) enforces the DP2 dependency and [line 293](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L293) enforces the DP3 dependency. |
 
 The submission command therefore keeps the Airflow task attached to the real Spark application outcome instead of treating a successful submission request as job completion. The temporary submission pod, driver, and executors use the Spark image and run in namespace `recsys-dataflow`; driver and executor pods are placed on the `cpu-services` node pool by [rubric_data_pipeline_dags.py (line 133)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L133). ConfigMap values, object-store settings, PostgreSQL settings, and Kubernetes Secrets are propagated from the `KubernetesPodOperator` environment into both the driver and executors.
 
@@ -713,7 +722,7 @@ Terraform applies `values-gcp.yaml` when initially installing the data-platform 
 
 In DAG `recsys_dp2_bronze_to_silver_gold`, both Airflow stages submit Spark applications. The `ingest_stage` reads the Bronze lakehouse data produced by DP1, normalizes timestamps and compatible schema changes, rejects duplicate or invalid behavior events, builds order facts and product SCD data, and writes the curated datasets as `silver_*` lakehouse tables. The following `validate_stage` reads every expected curated table with Spark and fails the DAG when any table is empty.
 
-Implementation reference: [rubric_data_pipeline_dags.py (line 180)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L180) and [line 186](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L186) build the two Spark commands; [line 226](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L226) and [line 244](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L244) declare the DAG and enforce `ingest_stage >> validate_stage`; [dp2_silver_gold_entrypoint.py (line 20)](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L20) and [line 35](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L35) implement ingestion and validation.
+Implementation reference: [rubric_data_pipeline_dags.py (line 198)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L198) and [line 204](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L204) build the two Spark commands; [line 249](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L249) and [line 293](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L293) declare the DAG and enforce `ingest_stage >> validate_stage`; [dp2_silver_gold_entrypoint.py (line 15)](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L15) and [line 29](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L29) implement ingestion and validation.
 
 The `silver_gold` suffix remains in the historical DAG and Python identifiers, but DP2 physically writes only the `silver_*` Iceberg layer.
 
@@ -725,11 +734,11 @@ The `silver_gold` suffix remains in the historical DAG and Python identifiers, b
 
 In DAG `recsys_dp3_offline_feature_table`, the `ingest_stage` submits the production Spark batch feature job. Spark builds the clean input frames, computes `user_sequence_features`, `user_aggregate_features`, `item_features`, ranking labels, and the BST training dataset, writes the feature outputs to the feature lakehouse namespace, and exports the Feast-facing tables to PostgreSQL. PostgreSQL is the configured Feast offline store; Apache Iceberg remains the upstream lakehouse and feature-storage layer.
 
-Implementation reference: [rubric_data_pipeline_dags.py (line 157)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L157) builds the DP3 Spark command; [line 247](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L247) and [line 254](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L254) attach it to the DP3 `ingest_stage`; [spark_batch_entrypoint.py (line 179)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L179), [line 186](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L186), and [line 197](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L197) read Silver, compute/write feature outputs, and export PostgreSQL tables.
+Implementation reference: [rubric_data_pipeline_dags.py (line 157)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L157) builds the DP3 Spark command; [line 275](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L275) and [line 282](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L282) attach it to the DP3 `ingest_stage`; [spark_batch_entrypoint.py (line 179)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L179), [line 186](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L186), and [line 197](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L197) read Silver, compute/write feature outputs, and export PostgreSQL tables.
 
 The DP3 `validate_stage` does not perform feature engineering. It connects to PostgreSQL after Spark finishes and runs row-count checks against every expected offline-store table. Therefore, the count checks are completion validation only; the actual transformations and feature calculations happen in the preceding Spark `ingest_stage`.
 
-Implementation reference: [rubric_data_pipeline_dags.py (line 259)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L259) runs the non-Spark validation task after ingestion, [line 265](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L265) enforces the ordering, and [governance_contracts.py (line 134)](../../../apps/data-platform/src/validate/governance_contracts.py#L134) implements PostgreSQL offline-store validation.
+Implementation reference: [rubric_data_pipeline_dags.py (line 287)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L287) runs the non-Spark validation task after ingestion, [line 293](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L293) enforces the ordering, and [governance_contracts.py (line 148)](../../../apps/data-platform/src/validate/governance_contracts.py#L148) implements PostgreSQL offline-store validation.
 
 ![DP3 Airflow DAG proof](../../pngs/dp3_airflow_ui.png)
 
@@ -737,7 +746,7 @@ Implementation reference: [rubric_data_pipeline_dags.py (line 259)](../../../app
 
 #### Spark Scaling On GCP
 
-The GCP profile enables `spark.dynamicAllocation.enabled=true` with Kubernetes-compatible shuffle tracking. Spark 3.5 uses `spark.dynamicAllocation.shuffleTracking.enabled=true`, so executor removal does not require an external shuffle service. The GCP switch and bounds are defined in [values-gcp.yaml](../../../infra/helm/recsys-data-platform/values-gcp.yaml), rendered by [configmap.yaml](../../../infra/helm/recsys-data-platform/templates/configmap.yaml), and passed to every native Airflow Spark application by [rubric_data_pipeline_dags.py](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py). This follows the [Apache Spark 3.5 dynamic resource allocation requirements](https://spark.apache.org/docs/3.5.7/job-scheduling.html#dynamic-resource-allocation). The configured policy is:
+The GCP profile enables `spark.dynamicAllocation.enabled=true` with Kubernetes-compatible shuffle tracking. Spark 3.5 uses `spark.dynamicAllocation.shuffleTracking.enabled=true`, so executor removal does not require an external shuffle service. The GCP switch and bounds are defined in [values-gcp.yaml (line 37)](../../../infra/helm/recsys-data-platform/values-gcp.yaml#L37), rendered by [configmap.yaml (line 65)](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L65), and passed to every native Airflow Spark application by [rubric_data_pipeline_dags.py (line 139)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L139) and [k8s_data_platform_dag.py (line 181)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L181). This follows the [Apache Spark 3.5 dynamic resource allocation requirements](https://spark.apache.org/docs/3.5.7/job-scheduling.html#dynamic-resource-allocation). The configured policy is:
 
 | Setting | GCP value | Behavior |
 |---|---:|---|
@@ -752,4 +761,4 @@ Each GCP executor is configured with one Spark core, `4g` heap, and `1g` memory 
 
 Spark executor scaling and Kubernetes node scaling are separate control loops. Dynamic allocation changes the number of executor pods between one and four according to the Spark task backlog. If the `cpu-services` nodes cannot place those pods, the GKE Cluster Autoscaler can grow the CPU node pool from its configured minimum of two nodes to its maximum of five. When executors become idle, Spark releases them first; the GKE autoscaler can later remove unused nodes. The node autoscaler never decides how many Spark executors an application needs. The CPU node-pool autoscaler is implemented in [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97); its default minimum and maximum are defined in [variables.tf (line 79)](../../../infra/terraform/gcp/variables.tf#L79) and [line 85](../../../infra/terraform/gcp/variables.tf#L85).
 
-Each rubric DAG still uses `max_active_runs=1`, and DP2/DP3 stage dependencies remain sequential. Dynamic allocation therefore increases or decreases parallelism inside the active Spark application; it does not create overlapping Airflow runs or bypass validation ordering. DP2 declares the run limit and dependency at [rubric_data_pipeline_dags.py (line 230)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L230) and [line 244](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L244); DP3 does the same at [line 251](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L251) and [line 265](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L265).
+Each rubric DAG still uses `max_active_runs=1`, and DP2/DP3 stage dependencies remain sequential. Dynamic allocation therefore increases or decreases parallelism inside the active Spark application; it does not create overlapping Airflow runs or bypass validation ordering. DP2 declares the run limit and dependency at [rubric_data_pipeline_dags.py (line 253)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L253) and [line 293](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L293); DP3 does the same at [line 279](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L279) and [line 293](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L293).

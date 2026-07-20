@@ -42,9 +42,9 @@ for all component pipelines:
 | --- | --- |
 | `materialize` | `apps/data-platform/src/feature_store/`, `apps/data-platform/src/local/`, data-platform metadata/config paths, `Dockerfile.dataflow-cli` |
 | `training` | `apps/ml-system/`, `infra/kubeflow/`, `infra/helm/ray-cluster/`, `infra/helm/recsys-runtime/`, `infra/helm/mlflow-stack/`, `configs/local/bst*.yaml` |
-| `dp1` | `apps/data-platform/data-generator/`, `apps/data-platform/src/ingest/`, `rubric_data_pipeline_dags.py`, `postgres_source.yaml`, `kafka_topics.yaml`, Kafka Connect/Debezium Docker paths |
-| `dp2` | Spark feature code, lakehouse paths, `rubric_data_pipeline_dags.py`, `apps/data-platform/Dockerfile.spark`, `configs/local/spark_batch*.yaml` |
-| `dp3` | Offline feature table and BST prep paths, `rubric_data_pipeline_dags.py`, Spark/dataflow runtime paths |
+| `dp1` | `apps/data-platform/data-generator/`, `apps/data-platform/src/ingest/`, `raw_ingestion_dag.py`, `postgres_source.yaml`, `kafka_topics.yaml`, Kafka Connect/Debezium Docker paths |
+| `dp2` | Spark feature code, lakehouse paths, `batch_feature_pipeline_dag.py`, `apps/data-platform/Dockerfile.spark`, `configs/local/spark_batch*.yaml` |
+| `dp3` | Offline feature table and BST prep paths, `batch_feature_pipeline_dag.py`, Spark/dataflow runtime paths |
 | `api` | `apps/api-serving/`, serving chart paths, API unit tests, gateway/serving contract tests |
 | `kserve` | `infra/helm/recsys-serving/`, `jenkins/scripts/model_cd.py`, model promotion code/tests, serving contract tests |
 | `stream_offline` | Flink feature code, lakehouse/offline sink paths, `apps/data-platform/Dockerfile.flink`, `flink_streaming.yaml` |
@@ -70,10 +70,10 @@ from the promotion manifest instead of building a new serving image.
 | Responsibility | Code reference |
 | --- | --- |
 | Pipeline stages, parallel branches, and deploy gate | [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 336)](../../../Jenkinsfile#L336) |
-| Path-to-component mapping | [detect_changed_components.py (line 86)](../../../jenkins/scripts/detect_changed_components.py#L86), [detect_changed_components.py (line 520)](../../../jenkins/scripts/detect_changed_components.py#L520) |
+| Path-to-component mapping | [detect_changed_components.py (line 86)](../../../jenkins/scripts/detect_changed_components.py#L86), [detect_changed_components.py (line 518)](../../../jenkins/scripts/detect_changed_components.py#L518) |
 | Component tests and coverage | [component_ci.sh (line 1)](../../../jenkins/scripts/component_ci.sh#L1), [component_ci.sh (line 281)](../../../jenkins/scripts/component_ci.sh#L281) |
 | Image build, tag, push, and manifest | [component_build_publish.sh (line 1)](../../../jenkins/scripts/component_build_publish.sh#L1), [component_build_publish.sh (line 292)](../../../jenkins/scripts/component_build_publish.sh#L292) |
-| Helm/Kubernetes/Kubeflow deployment and readiness | [component_deploy.sh (line 1)](../../../jenkins/scripts/component_deploy.sh#L1), [component_deploy.sh (line 832)](../../../jenkins/scripts/component_deploy.sh#L832) |
+| Helm/Kubernetes/Kubeflow deployment and readiness | [component_deploy.sh (line 1)](../../../jenkins/scripts/component_deploy.sh#L1), [component_deploy.sh (line 829)](../../../jenkins/scripts/component_deploy.sh#L829) |
 | Promoted Triton model CD | [model_cd.py (line 129)](../../../jenkins/scripts/model_cd.py#L129), [model_cd.py (line 559)](../../../jenkins/scripts/model_cd.py#L559) |
 | Jenkins jobs, webhook, and views | [jenkins-init-configmap.yaml (line 330)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L330), [jenkins-init-configmap.yaml (line 495)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L495) |
 
@@ -228,7 +228,7 @@ new image references and updates the Ray runtime chart `recsys-ray-cpu`.
 **Strategy:** run this CI/CD branch when raw ingestion, synthetic data
 generation, source Postgres/CDC, Kafka topic, Debezium, Kafka Connect, or raw
 Airflow paths change, especially `apps/data-platform/data-generator/`,
-`apps/data-platform/src/ingest/`, `rubric_data_pipeline_dags.py`,
+`apps/data-platform/src/ingest/`, `raw_ingestion_dag.py`,
 `configs/local/data_generator*.yaml`, `configs/local/postgres_source.yaml`, and
 `configs/local/kafka_topics.yaml`.
 
@@ -271,7 +271,7 @@ source ingestion and CDC runtimes.
 **Strategy:** run this CI/CD branch when Spark silver/gold transforms, batch
 feature DAGs, Spark batch config, lakehouse code, or Spark runtime image paths
 change, especially `apps/data-platform/src/features/spark/`,
-`rubric_data_pipeline_dags.py`, `apps/data-platform/src/lakehouse/`,
+`batch_feature_pipeline_dag.py`, `apps/data-platform/src/lakehouse/`,
 `apps/data-platform/Dockerfile.spark`, and `configs/local/spark_batch*.yaml`.
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp2_cicd_ui.png)
@@ -316,7 +316,7 @@ offline feature table config changes, especially
 `apps/data-platform/src/feature_store/`, `apps/data-platform/src/features/spark/`,
 `apps/ml-system/src/cli/prepare_bst_training_data.py`,
 `tests/unit/ml_system/test_prepare_bst_training_data.py`, and
-`rubric_data_pipeline_dags.py`.
+`batch_feature_pipeline_dag.py`.
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp3_cicd_ui.png)
 
@@ -443,7 +443,7 @@ release.
 - [trigger_kserve_cd.py (line 299)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L299), [trigger_kserve_cd.py (line 382)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L382): loads the promotion manifest, checks the metric gate, and triggers Jenkins.
 - [trigger_kserve_cd.py (line 191)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L191), [trigger_kserve_cd.py (line 268)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L268): posts the Jenkins build parameters for `RecSys-KServe-Model-CD`.
 - [KServeModelCD.Jenkinsfile (line 1)](../../../jenkins/KServeModelCD.Jenkinsfile#L1), [KServeModelCD.Jenkinsfile (line 137)](../../../jenkins/KServeModelCD.Jenkinsfile#L137): defines the dedicated post-promotion Jenkins CD job.
-- [component_deploy.sh (line 516)](../../../jenkins/scripts/component_deploy.sh#L516), [component_deploy.sh (line 571)](../../../jenkins/scripts/component_deploy.sh#L571): runs the production KServe model CD path with `model_cd.py --apply`.
+- [component_deploy.sh (line 513)](../../../jenkins/scripts/component_deploy.sh#L513), [component_deploy.sh (line 568)](../../../jenkins/scripts/component_deploy.sh#L568): runs the production KServe model CD path with `model_cd.py --apply`.
 - [jenkins-init-configmap.yaml (line 373)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L373), [jenkins-init-configmap.yaml (line 495)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L495): seeds the Jenkins job and the `06A KServe Model CD` view.
 
 
@@ -525,7 +525,7 @@ rollout status for both FastAPI services.
 processing code, offline feature sink logic, Flink Dockerfile, or streaming DAG
 paths change, especially `apps/data-platform/src/features/flink/`,
 `apps/data-platform/src/lakehouse/`, `apps/data-platform/Dockerfile.flink`,
-`rubric_data_pipeline_dags.py`, and `configs/local/flink_streaming.yaml`.
+`streaming_feature_pipeline_dag.py`, and `configs/local/flink_streaming.yaml`.
 
 ![FastAPI Deploy Jenkins UI proof](../../pngs/job1_cicd_ui.png)
 
