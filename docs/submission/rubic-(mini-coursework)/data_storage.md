@@ -70,7 +70,7 @@ After this change:
 - DP1 and DP2 each fail their own run if optimization fails.
 - Validation only starts after compaction/table-property/manifest work completes.
 - Runtime lineage records `optimize_stage` between `ingest_stage` and `validate_stage`.
-- The standalone maintenance DAG remains absent. Operational orchestration is provided separately by the full-cycle, batch-feature, Feast materialization, drift/retrain, and analytics DAGs; DP1/DP2 optimization stays embedded in the authoritative rubric DAGs.
+- The standalone maintenance, composite, and duplicate batch-feature DAGs remain absent. Operational orchestration is provided separately by Feast materialization, drift/retrain, and analytics DAGs; DP1/DP2 optimization stays embedded in the authoritative rubric DAGs.
 
 ## Evidence and success criteria
 

@@ -636,32 +636,14 @@ def test_deleted_legacy_artifacts_are_absent():
     assert (ROOT / "apps/data-platform/feature-store/feature_repo/feature_store.yaml").exists()
 
 
-def test_key_operational_airflow_dags_are_restored_without_maintenance_dag():
+def test_required_operational_airflow_dags_are_restored_without_removed_dags():
     source = (
         ROOT / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
     ).read_text()
 
-    for dag_id in [
-        "k8s_data_platform_dag",
-        "recsys_batch_feature_pipeline",
-        "recsys_feast_materialize",
-        "recsys_feature_drift_monitoring",
-    ]:
+    for dag_id in ["recsys_feast_materialize", "recsys_feature_drift_monitoring"]:
         assert f'dag_id="{dag_id}"' in source
     assert "trigger_kubeflow_retrain_if_drift" in source
-    assert "DP2_OPTIMIZE_COMMAND" in source
     assert "recsys_lakehouse_maintenance" not in source
-
-
-def test_airflow_uses_parallel_executor_for_cross_dag_full_cycle():
-    values = yaml.safe_load(
-        (ROOT / "infra/helm/recsys-data-platform/values.yaml").read_text()
-    )
-    airflow = (
-        ROOT / "infra/helm/recsys-data-platform/templates/airflow.yaml"
-    ).read_text()
-
-    assert values["airflow"]["executor"] == "LocalExecutor"
-    assert values["airflow"]["parallelism"] >= 6
-    assert airflow.count("AIRFLOW__CORE__EXECUTOR") == 2
-    assert airflow.count("AIRFLOW__CORE__PARALLELISM") == 2
+    assert "k8s_data_platform_dag" not in source
+    assert "recsys_batch_feature_pipeline" not in source

@@ -14,15 +14,13 @@ The platform also deploys the operational DAGs required to run and visualize the
 
 | DAG ID | Default schedule | Purpose |
 |---|---|---|
-| `k8s_data_platform_dag` | daily | Runs DP1 -> DP2 -> DP3 -> Feast -> analytics -> drift as a visible end-to-end graph. |
-| `recsys_batch_feature_pipeline` | `0 1 * * *` | Rebuilds optimized Silver Iceberg data and the offline feature store. |
 | `recsys_feast_materialize` | `20 */2 * * *` | Applies the Feast registry, materializes PostgreSQL offline features to Redis, and validates Redis. |
 | `recsys_feature_drift_monitoring` | `30 3 * * *` | Computes offline feature drift, pushes metrics, and conditionally triggers Kubeflow retraining. |
 | `recsys_analytics_daily` | `30 2 * * *` | Syncs Silver Iceberg data, builds dbt marts, and refreshes the data consumed by Apache Superset. |
 
 `env_schedule()` converts `manual`, `none`, and an empty value to Airflow `schedule=None`. Every DAG has `catchup=False` and `max_active_runs=1`, so scheduled work cannot overlap an earlier run of the same product.
 
-The obsolete raw-ingestion, local-only, streaming-wrapper, and standalone lakehouse-maintenance DAGs remain removed. The Airflow runtime image packages both the data-platform DAG directory and [analytics_dag.py](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py); this keeps the operational DAGs visible without restoring duplicate legacy wrappers.
+The obsolete composite `k8s_data_platform_dag`, duplicate `recsys_batch_feature_pipeline`, raw-ingestion, local-only, streaming-wrapper, and standalone lakehouse-maintenance DAGs remain removed. The Airflow runtime image packages both the data-platform DAG directory and [analytics_dag.py](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py); this keeps Feast, drift/retrain, and analytics visible without restoring duplicate pipeline paths.
 
 ## Kubernetes execution model
 
