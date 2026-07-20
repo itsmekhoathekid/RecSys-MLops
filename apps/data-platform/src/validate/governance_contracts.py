@@ -233,15 +233,31 @@ def validate_streaming_redis(*, root: str | None = None) -> dict[str, Any]:
     for table_name, pattern in patterns.items():
         try:
             keys = list(client.scan_iter(match=pattern, count=1000))
-            sample = client.hgetall(keys[0]) if keys else {}
+            sample = read_redis_payload(client, keys[0]) if keys else None
             checks = [
                 check("key_count", "SUCCESS" if keys else "FAILURE", "> 0", len(keys)),
-                check("payload_non_empty", "SUCCESS" if sample else "FAILURE", "non-empty hash", sorted(sample)),
+                check(
+                    "payload_non_empty",
+                    "SUCCESS" if sample else "FAILURE",
+                    "non-empty string or hash",
+                    sample,
+                ),
             ]
         except Exception as exc:
             checks = [check("redis_read", "ERROR", f"readable keys matching {pattern}", str(exc))]
         datasets[REDIS_FEATURE_URNS[table_name]] = dataset_result(checks)
     return write_report("STREAMING_FEATURES", datasets, root=root)
+
+
+def read_redis_payload(client: Any, key: str) -> Any:
+    key_type = client.type(key)
+    if isinstance(key_type, bytes):
+        key_type = key_type.decode("utf-8")
+    if key_type == "string":
+        return client.get(key)
+    if key_type == "hash":
+        return client.hgetall(key)
+    raise ValueError(f"Unsupported Redis feature key type for {key}: {key_type}")
 
 
 def main() -> int:
