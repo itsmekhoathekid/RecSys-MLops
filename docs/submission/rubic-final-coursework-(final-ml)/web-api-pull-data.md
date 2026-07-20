@@ -12,57 +12,17 @@ This note captures the source-code and runtime evidence for the rubric item:
 
 ## 1. Runtime Design
 
-The deployed online-feature service for this rubric item is `recsys-online-feature-api`. Its pull-data runtime is split into the following traceable parts.
+The deployed service for this rubric item is `recsys-online-feature-api`.
 
 ```text
 Client or recsys-api-serving
-  -> [1] recsys-online-feature-api POST /online-features
-  -> [2] request candidates or candidate:user:{user_id}
-  -> [3] candidate:popular:global fallback
-  -> [4] Redis realtime user features + Feast fallback
-  -> [5] Feast batch item-feature lookup from Redis online store
-  -> [6] OnlineFeaturesResponse
+  -> recsys-online-feature-api POST /online-features
+  -> Feast SDK FeatureStore.get_online_features(...)
+  -> Redis online store in recsys-dataflow
+  -> OnlineFeaturesResponse
 ```
 
-### 1.1 Request Entry Point And Validation
-
-FastAPI exposes async POST and GET entry points. Pydantic validates `user_id`, optional `candidate_item_ids`, and `top_k`; the synchronous feature-store work is moved to a worker thread.
-
-Code reference: [feature_api.py (line 55)](../../../apps/api-serving/src/feature_api.py#L55), [feature_api.py (line 69)](../../../apps/api-serving/src/feature_api.py#L69), [api_schemas.py (line 27)](../../../apps/api-serving/src/api_schemas.py#L27), [api_schemas.py (line 34)](../../../apps/api-serving/src/api_schemas.py#L34).
-
-### 1.2 Personalized Candidate Resolution
-
-Explicit `candidate_item_ids` take precedence. Otherwise, the service reads `candidate:user:{user_id}`, de-duplicates the result, and fills unoccupied slots from `candidate:popular:global` up to `max(top_k * 5, top_k)`.
-
-Code reference: [online_features.py (line 238)](../../../apps/api-serving/src/online_features.py#L238), [online_features.py (line 273)](../../../apps/api-serving/src/online_features.py#L273).
-
-### 1.3 Candidate-Pool Production
-
-The Flink realtime job maintains global and category candidate sets. After a user interacts with a category, it merges that category's popular products into `candidate:user:{user_id}`, caps the pool at 100 products, and applies a seven-day TTL.
-
-Code reference: [candidate_pool_job.py (line 18)](../../../apps/data-platform/src/features/flink/candidate_pool_job.py#L18), [candidate_pool_job.py (line 34)](../../../apps/data-platform/src/features/flink/candidate_pool_job.py#L34), [realtime_stream_job.py (line 152)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L152).
-
-### 1.4 Realtime User-Feature Lookup
-
-The service first reads `fs:user_sequence:{user_id}` and `fs:user_aggregate:{user_id}` directly from Redis. If no realtime sequence exists, it uses Feast `FeatureStore.get_online_features(...)` with the same `user_id` entity.
-
-Code reference: [online_features.py (line 164)](../../../apps/api-serving/src/online_features.py#L164), [online_features.py (line 177)](../../../apps/api-serving/src/online_features.py#L177), [online_features.py (line 181)](../../../apps/api-serving/src/online_features.py#L181).
-
-### 1.5 Batch Item-Feature Lookup
-
-For the resolved product IDs, the service sends `product_id` entity rows to Feast in one batch. Feast resolves the configured item feature references from its Redis online store.
-
-Code reference: [online_features.py (line 35)](../../../apps/api-serving/src/online_features.py#L35), [online_features.py (line 212)](../../../apps/api-serving/src/online_features.py#L212).
-
-### 1.6 Online-Feature Response Assembly
-
-The service returns the resolved candidate IDs, user sequence and aggregate features, and product feature rows as a validated `OnlineFeaturesResponse`.
-
-Code reference: [online_features.py (line 273)](../../../apps/api-serving/src/online_features.py#L273), [api_schemas.py (line 27)](../../../apps/api-serving/src/api_schemas.py#L27).
-
-### 1.7 Downstream Inference Boundary
-
-The recommendation API is a separate service. It calls `recsys-online-feature-api`, receives the online-feature payload, builds the model tensors, and sends them to Triton Inference Server.
+The recommendation API is a separate service. It calls `recsys-online-feature-api`, receives the online feature payload, and then sends the model tensor payload to Triton Inference Server.
 
 ```text
 Client
@@ -72,8 +32,6 @@ Client
   -> Triton inference
   -> ranked recommendations
 ```
-
-Code reference: [feature_service_client.py (line 17)](../../../apps/api-serving/src/feature_service_client.py#L17), [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 85)](../../../apps/api-serving/src/inference_api.py#L85), [inference_api.py (line 92)](../../../apps/api-serving/src/inference_api.py#L92).
 
 ## 2. FastAPI Service
 
@@ -94,7 +52,7 @@ Code reference: [api_schemas.py (line 27)](../../../apps/api-serving/src/api_sch
 ## 4. Async API Functions
 
 - [feature_api.py (line 55)](../../../apps/api-serving/src/feature_api.py#L55), [feature_api.py (line 77)](../../../apps/api-serving/src/feature_api.py#L77): async endpoints and `asyncio.to_thread(...)` around synchronous Feast access.
-- [feature_service_client.py (line 17)](../../../apps/api-serving/src/feature_service_client.py#L17), [feature_service_client.py (line 29)](../../../apps/api-serving/src/feature_service_client.py#L29), [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 92)](../../../apps/api-serving/src/inference_api.py#L92): async `httpx` service call before recommendation inference.
+- [feature_service_client.py (line 12)](../../../apps/api-serving/src/feature_service_client.py#L12), [feature_service_client.py (line 34)](../../../apps/api-serving/src/feature_service_client.py#L34), [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 92)](../../../apps/api-serving/src/inference_api.py#L92): async `httpx` service call before recommendation inference.
 
 ### Key Evidence
 
@@ -102,7 +60,7 @@ Code reference: [api_schemas.py (line 27)](../../../apps/api-serving/src/api_sch
 
 ## 5. Pull Data From Online Feature Store
 
-Code reference: [online_features.py (line 124)](../../../apps/api-serving/src/online_features.py#L124), [online_features.py (line 164)](../../../apps/api-serving/src/online_features.py#L164), [online_features.py (line 238)](../../../apps/api-serving/src/online_features.py#L238), [online_features.py (line 273)](../../../apps/api-serving/src/online_features.py#L273) contains `FeatureClient` and `get_online_features()`: it configures Feast/Redis, loads user/item features, resolves personalized candidates with a global fallback, and returns `OnlineFeaturesResponse`.
+Code reference: [online_features.py (line 124)](../../../apps/api-serving/src/online_features.py#L124), [online_features.py (line 271)](../../../apps/api-serving/src/online_features.py#L271) contains `FeatureClient` and `get_online_features()`: it configures Feast/Redis, loads user/item features, resolves candidates, and returns `OnlineFeaturesResponse`.
 
 Feast store definition:
 
@@ -126,8 +84,8 @@ The rubric sentence says this Web API pulls data from the Online Feature Store a
 
 Code references:
 
-- [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 104)](../../../apps/api-serving/src/inference_api.py#L104): `recommendations()` fetches online features, selects a Triton route, and ranks candidates.
-- [feature_service_client.py (line 17)](../../../apps/api-serving/src/feature_service_client.py#L17), [feature_service_client.py (line 29)](../../../apps/api-serving/src/feature_service_client.py#L29): async POST to `/online-features` plus Pydantic response validation.
+- [inference_api.py (line 75)](../../../apps/api-serving/src/inference_api.py#L75), [inference_api.py (line 119)](../../../apps/api-serving/src/inference_api.py#L119): `recommendations()` fetches online features, selects a Triton route, and ranks candidates.
+- [feature_service_client.py (line 12)](../../../apps/api-serving/src/feature_service_client.py#L12), [feature_service_client.py (line 34)](../../../apps/api-serving/src/feature_service_client.py#L34): async POST to `/online-features` plus Pydantic response validation.
 
 ## 7. Runtime Verification Commands
 
@@ -216,7 +174,7 @@ Fields to capture:
 
 Auto fallback is handled at the Helm release level. The service is part of the `recsys-serving` release. When CI/CD deploys this release with `helm upgrade --install --atomic`, Helm automatically rolls the release back if the new rollout fails.
 
-Code reference: [model_cd.py (line 312)](../../../jenkins/scripts/model_cd.py#L312), [model_cd.py (line 319)](../../../jenkins/scripts/model_cd.py#L319), [model_cd.py (line 325)](../../../jenkins/scripts/model_cd.py#L325), [model_cd.py (line 341)](../../../jenkins/scripts/model_cd.py#L341), [model_cd.py (line 389)](../../../jenkins/scripts/model_cd.py#L389) lints the chart and executes both `recsys-serving` Helm upgrades with `--atomic` enabled by default.
+Code reference: [model_cd.py (line 296)](../../../jenkins/scripts/model_cd.py#L296), [model_cd.py (line 390)](../../../jenkins/scripts/model_cd.py#L390) lints the chart and executes `helm upgrade --install --atomic` for the `recsys-serving` release.
 
 Runtime command:
 

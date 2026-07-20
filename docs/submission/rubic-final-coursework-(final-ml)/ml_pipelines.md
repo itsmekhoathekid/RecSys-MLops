@@ -116,12 +116,12 @@ instead of retrying forever. The operator can repair it deterministically with
 | Ray output | `/workspace/recsys/data_platform/output/ml/ray` |
 | Ray tune output | `/workspace/recsys/data_platform/output/ml/ray/tune_result.json` |
 | Ray final DDP output | `/workspace/recsys/data_platform/output/ml/ray/best_result.json` |
-| Tune defaults | `training_percent=1.0`, `num_epochs=1`, `max_trials=2`, `parallel_trials=1` |
-| DDP defaults | `distributed_training_percent=1.0`, `distributed_num_epochs=1`, `distributed_num_workers=2` |
+| Tune defaults | `training_percent=0.01`, `num_epochs=1`, `max_trials=2`, `parallel_trials=1` |
+| DDP defaults | `distributed_training_percent=0.02`, `distributed_num_epochs=1`, `distributed_num_workers=2` |
 | Evaluation metrics | `/workspace/recsys/data_platform/output/ml/eval_metrics.json` |
 | Promotion manifest | `/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json` |
 | Promotion metric | `test_ndcg_at_10` |
-| KServe CD threshold | `0.05` |
+| KServe CD threshold | `0.0` |
 | Stable champion manifest | `s3://recsys-model-store/promotions/bst/latest.json` |
 | Versioned candidate manifest | `s3://recsys-model-store/promotions/bst/<model-version>.json` |
 | Cold-start Jenkins job | `RecSys-KServe-Model-CD`, `ROLLOUT_STAGE=deploy` |
@@ -129,14 +129,13 @@ instead of retrying forever. The operator can repair it deterministically with
 
 ### Description
 
-- `prepare-training-data` proves historical feature retrieval: it reads labels from PostgreSQL `feature_store.ml_ranking_labels`, calls Feast FeatureService `bst_ranking_v1`, then writes BST JSONL splits and dataset metadata. Each row retains `request_id` and `impression_id`, so all candidates from one recommendation request form one ranking-metric group.
+- `prepare-training-data` proves historical feature retrieval: it reads labels from PostgreSQL `feature_store.ml_ranking_labels`, calls Feast FeatureService `bst_ranking_v1`, then writes BST JSONL splits and dataset metadata.
 - `Hyperparameter tuning` is the Kubeflow UI display name for internal task `submit-rayjob` with `job_mode=tune`: it creates KubeRay `RayJob` `recsys-bst-ray-tune`, runs small Ray Tune trials, and writes `/workspace/recsys/data_platform/output/ml/ray/tune_result.json`.
 - `Distributed training` is the Kubeflow UI display name for internal task `submit-rayjob-2` with `job_mode=distributed-train`: it creates KubeRay `RayJob` `recsys-bst-ray-ddp-train`, consumes `tune_result.json`, and writes the final DDP result to `/workspace/recsys/data_platform/output/ml/ray/best_result.json`.
 - The DDP training step is the real distributed training proof: `TorchTrainer` creates multiple workers, PyTorch DDP syncs gradients during `loss.backward()`, `DistributedSampler` shards data by rank, rank 0 saves the checkpoint, and all workers call Ray Train report with synced metrics.
 - Both RayJobs should end with `jobStatus: SUCCEEDED`.
 - `evaluate-bst` writes metrics to `/workspace/recsys/data_platform/output/ml/eval_metrics.json`.
-- Tune and DDP consume the complete coursework split by default. Prefix sampling is no longer used for the small dataset because it can exclude every positive example and produce a misleading zero NDCG.
-- `promote-bst-model` reads the held-out `eval_metrics.json`, writes `/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json`, uploads the matching versioned manifest to MinIO, and stores its URI and the true test NDCG on the new MLflow registry version.
+- `promote-bst-model` writes `/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json`, uploads the matching versioned manifest to MinIO, and stores its URI on the new MLflow registry version.
 - `Bootstrap Or Await Candidate` is the post-training decision step. When no stable manifest exists, it waits for a successful Jenkins deployment before publishing `latest.json` and assigning the MLflow `champion` alias. When a champion exists, it writes `rollout_status=awaiting_candidate_selection` and exits without calling Jenkins.
 - A later model remains only a deployable registry candidate until an operator sets `candidate=test`. The watcher owns shadow deployment and the complete Prometheus-sample-driven 10% → 25% → 50% → terminal lifecycle; Locust only supplies request traffic.
 

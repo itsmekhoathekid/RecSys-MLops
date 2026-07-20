@@ -20,7 +20,7 @@ The evidence is organized around the rubric areas:
 | Prometheus, Grafana, PushGateway, Loki, Tempo, and Promtail | [prometheus.yaml (line 1)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L1), [prometheus.yaml (line 285)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L285), [grafana.yaml (line 1)](../../../infra/helm/recsys-observability/templates/grafana.yaml#L1), [grafana.yaml (line 134)](../../../infra/helm/recsys-observability/templates/grafana.yaml#L134), [loki-tempo-promtail.yaml (line 1)](../../../infra/helm/recsys-observability/templates/loki-tempo-promtail.yaml#L1), [loki-tempo-promtail.yaml (line 233)](../../../infra/helm/recsys-observability/templates/loki-tempo-promtail.yaml#L233), [pushgateway.yaml (line 1)](../../../infra/helm/recsys-observability/templates/pushgateway.yaml#L1), [pushgateway.yaml (line 34)](../../../infra/helm/recsys-observability/templates/pushgateway.yaml#L34) |
 | Version-controlled dashboards | [model-ab-testing.json (line 1)](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json#L1), [model-ab-testing.json (line 824)](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json#L824) |
 | Offline feature drift | [offline_feature_drift.py (line 270)](../../../apps/data-platform/src/validate/offline_feature_drift.py#L270), [offline_feature_drift.py (line 469)](../../../apps/data-platform/src/validate/offline_feature_drift.py#L469) |
-| Drift metrics and retrain orchestration | [pushgateway.py](../../../apps/data-platform/src/monitoring/pushgateway.py), [offline_feature_drift.py](../../../apps/data-platform/src/validate/offline_feature_drift.py), [trigger_kubeflow_retrain.py](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py) |
+| Drift metrics and retrain orchestration | [pushgateway.py (line 12)](../../../apps/data-platform/src/monitoring/pushgateway.py#L12), [pushgateway.py (line 55)](../../../apps/data-platform/src/monitoring/pushgateway.py#L55), [k8s_data_platform_dag.py (line 504)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L504), [k8s_data_platform_dag.py (line 520)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L520) |
 | Kubeflow retrain trigger | [trigger_kubeflow_retrain.py (line 117)](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L117), [trigger_kubeflow_retrain.py (line 164)](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L164) |
 
 ## 0. Observability Stack And Access
@@ -240,7 +240,6 @@ pushes drift telemetry, and then runs the retrain trigger only when the drift
 report indicates that monitored features have drifted. In the split DAG layout,
 this is represented by the sequence `run_offline_feature_drift` ->
 `push_drift_metrics` -> `trigger_kubeflow_retrain_if_drift`.
-The deployed definition is [k8s_data_platform_dag.py](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py).
 
 Metrics pushed:
 

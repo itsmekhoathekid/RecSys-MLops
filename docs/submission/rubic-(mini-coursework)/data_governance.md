@@ -4,8 +4,8 @@ DataHub governs the three rubric batch pipelines as `DP1`, `DP2`, and `DP3`. CDC
 
 The governed flows are:
 
-- `DP1`: Data Generator batch ingestion -> Bronze Iceberg lakehouse.
-- `DP2`: Bronze Iceberg -> PySpark -> curated Silver Iceberg.
+- `DP1`: Data Generator batch ingestion -> Bronze Parquet lakehouse.
+- `DP2`: Bronze Parquet -> PySpark -> curated Silver Iceberg.
 - `DP3`: Silver Iceberg -> PySpark features -> Iceberg feature tables -> PostgreSQL Feast offline store.
 - `CDC_INGESTION`: source PostgreSQL -> Debezium -> `cdc.*` Kafka topics.
 - `STREAMING_FEATURES`: `cdc.behavior_events` -> two continuously running Flink jobs -> PostgreSQL offline features and Redis online features.
@@ -54,8 +54,8 @@ The component definitions are assembled and published by [`emit_products`](../..
 Airflow starts the batch and real-time branches. The batch branch runs DP1, DP2, and DP3 in order; the real-time branch registers Debezium and verifies the continuously running Flink jobs.
 
 ```text
-DP1: Data Generator -> Bronze Iceberg -> optimization -> validation
-DP2: Bronze Iceberg -> Silver Iceberg -> optimization -> validation
+DP1: Data Generator -> Bronze Parquet
+DP2: Bronze Parquet -> Silver Iceberg
 DP3: Silver Iceberg -> Iceberg features -> PostgreSQL Feast
 
 CDC: source PostgreSQL -> Debezium -> Kafka
@@ -177,7 +177,7 @@ The orchestration loop is visible in [`emit_products`](../../../apps/data-platfo
 
 ## DP1 Linked With Related Tables
 
-`recsys_dp1_raw_to_bronze` runs the Data Generator inside the Spark task pod and commits its ephemeral output directly into ten named Bronze Iceberg tables. There is no separate persistent Parquet or raw-S3 dataset in the governed lineage. MinIO is only the S3-compatible object-storage backend beneath Iceberg. `optimize_stage` applies the shared physical-layout policy, then `validate_stage` checks Iceberg readability, `row_count > 0`, source keys, `source_run_id`, `lakehouse_ingestion_ts`, and null required values.
+`recsys_dp1_raw_to_bronze` runs the Data Generator inside the batch task and ingests its ephemeral output directly into Bronze Parquet lakehouse tables. There is no separate MinIO data-lake stage or raw-S3 dataset in the governed lineage. MinIO is only the S3-compatible object-storage backend underneath the lakehouse. `validate_stage` checks table readability, `row_count > 0`, source key columns, `source_run_id`, and `lakehouse_ingestion_ts`.
 
 ### DP1 Lineage Image Proof
 
@@ -193,13 +193,13 @@ The orchestration loop is visible in [`emit_products`](../../../apps/data-platfo
 
 ### Execution And Governance Steps
 
-1. **Data lineage:** [`load_generator_run_to_lakehouse`](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py) opens the `DP1.ingest_stage` runtime recorder and records ten Bronze Iceberg outputs. [`optimize.py`](../../../apps/data-platform/src/lakehouse/optimize.py) records the same tables as optimization inputs/outputs, and validation records `optimize_stage` as its upstream job.
+1. **Data lineage:** [`load_generator_run_to_lakehouse`](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L129-L149) opens the `DP1.ingest_stage` runtime recorder, runs the generator-to-lakehouse load, and records the ten Bronze Parquet datasets as the observed outputs. The later validation job records those Bronze datasets as inputs and `ingest_stage` as its upstream job.
 2. **Data contract:** [`dp1`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L640-L678) defines one contract-bearing dataset for each Bronze table. Each definition supplies the full Bronze schema, the source primary key prefixed by `source_run_id`, the DP1 validation pipeline, and the required ingestion-audit columns.
-3. **Data validation:** [`validate_dp1_bronze`](../../../apps/data-platform/src/validate/governance_contracts.py) opens every Bronze table through the Iceberg catalog, checks `row_count > 0`, and verifies the source primary-key columns plus `source_run_id` and `lakehouse_ingestion_ts` are present and non-null. It marks validation `COMPLETE` only when every dataset succeeds.
+3. **Data validation:** [`validate_dp1_bronze`](../../../apps/data-platform/src/validate/governance_contracts.py#L102-L132) opens every Bronze Parquet table, checks `row_count > 0`, and verifies the source primary-key columns plus `source_run_id` and `lakehouse_ingestion_ts`. It writes the DP1 report and marks the validation lineage event `COMPLETE` only when every dataset succeeds.
 
 ## DP2 Linked With Related Tables
 
-`recsys_dp2_bronze_to_silver_gold` reads the DP1 Bronze Iceberg tables and writes nine curated `silver_*` Iceberg tables. `clean_behavior_events` is normalized and deduplicated with `.dropDuplicates(["event_id"])`; `silver_rejected_behavior_events` contains unsupported-schema rows and may legitimately be empty. The Silver tables pass through `optimize_stage` before validation.
+`recsys_dp2_bronze_to_silver_gold` reads the DP1 Bronze Parquet tables and writes nine curated `silver_*` Iceberg tables. `clean_behavior_events` is normalized and deduplicated with `.dropDuplicates(["event_id"])`; `silver_rejected_behavior_events` contains unsupported-schema rows and may legitimately be empty.
 
 ### DP2 Lineage Image Proof
 

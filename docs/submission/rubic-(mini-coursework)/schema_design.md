@@ -17,7 +17,7 @@ The diagrams intentionally show keys, relationship columns, and important timest
 |---|---:|---|
 | Source PostgreSQL | 10 | `users`, `user_preferences`, `products`, `product_snapshots`, `sessions`, `recommendation_requests`, `impressions`, `behavior_events`, `orders`, `order_items` |
 | CDC Kafka | 10 | `cdc.users`, `cdc.user_preferences`, `cdc.products`, `cdc.product_snapshots`, `cdc.sessions`, `cdc.recommendation_requests`, `cdc.impressions`, `cdc.behavior_events`, `cdc.orders`, `cdc.order_items` |
-| Bronze Iceberg | 10 | `bronze_users`, `bronze_user_preferences`, `bronze_products`, `bronze_product_snapshots`, `bronze_sessions`, `bronze_recommendation_requests`, `bronze_impressions`, `bronze_behavior_events`, `bronze_orders`, `bronze_order_items` |
+| Bronze Parquet | 10 | `bronze_users`, `bronze_user_preferences`, `bronze_products`, `bronze_product_snapshots`, `bronze_sessions`, `bronze_recommendation_requests`, `bronze_impressions`, `bronze_behavior_events`, `bronze_orders`, `bronze_order_items` |
 | Silver Iceberg | 9 | `silver_clean_behavior_events`, `silver_rejected_behavior_events`, `silver_clean_impressions`, `silver_clean_recommendation_requests`, `silver_order_facts`, `silver_product_scd`, `silver_users`, `silver_products`, `silver_user_preferences` |
 | Gold batch Iceberg | 5 | `user_sequence_features`, `user_aggregate_features`, `item_features`, `ml_ranking_labels`, `ml_bst_training` |
 | Gold streaming Iceberg | 6 | `stream_behavior_events`, `stream_user_sequence_features`, `stream_user_aggregate_features`, `stream_item_features`, `streaming_quality_windows`, `stream_late_events_dlq` |
