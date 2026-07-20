@@ -17,48 +17,48 @@ accidentally configured as streaming problems, or vice versa.
 
 ```text
 apps/data-platform/data-generator/src/
-├── cli.py
-├── config.py
-├── domain.py
-├── schemas.py
-├── sink.py
-├── validation.py
-├── behavior.py
-├── randomness.py
+├── cli.py                              # Offline generate/validate CLI.
+├── config.py                           # Unified YAML models and validation.
+├── domain.py                           # Ten relational entity dataclasses.
+├── schemas.py                          # PyArrow table schemas and partitions.
+├── sink.py                             # Local partitioned Parquet read/write.
+├── validation.py                       # Relational, schema, and drift checks.
+├── behavior.py                         # View/cart/purchase probability model.
+├── randomness.py                       # Reproducible IDs and random helpers.
 ├── drift/
-│   ├── controller.py
-│   └── reporting.py
+│   ├── controller.py                    # Abrupt/gradual drift factor by date.
+│   └── reporting.py                     # Rolling features, PSI, and alerts.
 ├── offline/
-│   ├── historical_pipeline.py
-│   ├── simulation.py
-│   ├── problem_pipeline.py
-│   ├── payload_hash.py
-│   ├── stats.py
+│   ├── historical_pipeline.py           # Generate, inject, validate, and persist.
+│   ├── simulation.py                    # Clean historical relational simulation.
+│   ├── problem_pipeline.py              # Ordered offline-problem injection.
+│   ├── payload_hash.py                  # Canonical event SHA-256 hash.
+│   ├── stats.py                         # Offline problem counters.
 │   └── problems/
-│       ├── skew.py
-│       ├── high_cardinality.py
-│       ├── schema_evolution.py
-│       └── exact_duplicate.py
+│       ├── skew.py                      # Hot city/category and exposure skew.
+│       ├── high_cardinality.py          # Deterministic high-cardinality IDs.
+│       ├── schema_evolution.py          # Event-time V1/V2/V3 assignment.
+│       └── exact_duplicate.py           # Exact event replay injection.
 ├── streaming/
-│   ├── config.py
-│   ├── event_factory.py
-│   ├── problem_pipeline.py
-│   ├── producer.py
-│   ├── postgres.py
-│   ├── metrics.py
-│   ├── types.py
+│   ├── config.py                        # Continuous producer/problem settings.
+│   ├── event_factory.py                 # One clean relational event bundle.
+│   ├── problem_pipeline.py              # Streaming problem coordinator.
+│   ├── producer.py                      # Continuous tick-based source producer.
+│   ├── postgres.py                      # Source PostgreSQL bootstrap/upserts.
+│   ├── metrics.py                       # Producer metrics for Pushgateway.
+│   ├── types.py                         # Shared EventBundle type alias.
 │   └── problems/
-│       ├── burst_traffic.py
-│       ├── late_arrival.py
-│       └── duplicate_replay.py
+│       ├── burst_traffic.py             # Periodic event-rate multiplication.
+│       ├── late_arrival.py              # Backdated event timestamps.
+│       └── duplicate_replay.py          # Replay recent event bundles.
 ├── sinks/
-│   ├── minio_sink.py
-│   └── postgres_sink.py
+│   ├── minio_sink.py                    # Move local runs to Bronze MinIO/S3.
+│   └── postgres_sink.py                 # Seed source PostgreSQL from Parquet.
 └── scripts/
-    ├── generate_historical_to_minio.py
-    ├── load_realtime_to_postgres.py
-    ├── summarize_generation_quality.py
-    └── summarize_drift_label_merge.py
+    ├── generate_historical_to_minio.py  # Generate and publish a Bronze run.
+    ├── load_realtime_to_postgres.py     # Generate and seed a bounded DB sample.
+    ├── summarize_generation_quality.py  # Print problem/quality evidence.
+    └── summarize_drift_label_merge.py   # Print drift feature-label evidence.
 ```
 
 The files in the original short tree are the main orchestration and problem
@@ -584,6 +584,13 @@ The column is labelled `approx_count_distinct` for rubric presentation, but the
 small local proof uses an exact Python set at
 [summarize_generation_quality.py (line 247)](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L247).
 
+Downstream, the production DP3 user-aggregate job avoids materializing every
+category ID in each seven-day window. It defines the `0.05` relative-standard-
+deviation contract at
+[build_user_aggregate_features.py (line 6)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L6)
+and applies `approx_count_distinct(category_id, 0.05)` at
+[build_user_aggregate_features.py (line 36)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L36).
+
 ### Problem 3: Schema evolution
 
 The historical config declares the cutover date at
@@ -632,7 +639,10 @@ Therefore an injected exact duplicate has:
 
 **How it applies:** the output reproduces an at-least-once historical ingestion
 issue. A downstream deduplication keyed by `event_id` can remove the additional
-rows deterministically.
+rows deterministically. Production DP2 applies that native deduplication at
+[build_silver_tables.py (line 45)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L45)
+and returns the clean rows without a global post-deduplication sort at
+[build_silver_tables.py (line 46)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L46).
 
 The evidence script calculates duplicate rows before and after deduplication at
 [summarize_generation_quality.py (line 320)](../../../apps/data-platform/data-generator/src/scripts/summarize_generation_quality.py#L320)

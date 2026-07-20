@@ -42,9 +42,9 @@ for all component pipelines:
 | --- | --- |
 | `materialize` | `apps/data-platform/src/feature_store/`, `apps/data-platform/src/local/`, data-platform metadata/config paths, `Dockerfile.dataflow-cli` |
 | `training` | `apps/ml-system/`, `infra/kubeflow/`, `infra/helm/ray-cluster/`, `infra/helm/recsys-runtime/`, `infra/helm/mlflow-stack/`, `configs/local/bst*.yaml` |
-| `dp1` | `apps/data-platform/data-generator/`, `apps/data-platform/src/ingest/`, `raw_ingestion_dag.py`, `postgres_source.yaml`, `kafka_topics.yaml`, Kafka Connect/Debezium Docker paths |
-| `dp2` | Spark feature code, lakehouse paths, `batch_feature_pipeline_dag.py`, `apps/data-platform/Dockerfile.spark`, `configs/local/spark_batch*.yaml` |
-| `dp3` | Offline feature table and BST prep paths, `batch_feature_pipeline_dag.py`, Spark/dataflow runtime paths |
+| `dp1` | `apps/data-platform/data-generator/`, `apps/data-platform/src/ingest/`, `rubric_data_pipeline_dags.py`, `postgres_source.yaml`, `kafka_topics.yaml`, Kafka Connect/Debezium Docker paths |
+| `dp2` | Spark feature code, lakehouse paths, `rubric_data_pipeline_dags.py`, `apps/data-platform/Dockerfile.spark`, `configs/local/spark_batch*.yaml` |
+| `dp3` | Offline feature table and BST prep paths, `rubric_data_pipeline_dags.py`, Spark/dataflow runtime paths |
 | `api` | `apps/api-serving/`, serving chart paths, API unit tests, gateway/serving contract tests |
 | `kserve` | `infra/helm/recsys-serving/`, `jenkins/scripts/model_cd.py`, model promotion code/tests, serving contract tests |
 | `stream_offline` | Flink feature code, lakehouse/offline sink paths, `apps/data-platform/Dockerfile.flink`, `flink_streaming.yaml` |
@@ -228,7 +228,7 @@ new image references and updates the Ray runtime chart `recsys-ray-cpu`.
 **Strategy:** run this CI/CD branch when raw ingestion, synthetic data
 generation, source Postgres/CDC, Kafka topic, Debezium, Kafka Connect, or raw
 Airflow paths change, especially `apps/data-platform/data-generator/`,
-`apps/data-platform/src/ingest/`, `raw_ingestion_dag.py`,
+`apps/data-platform/src/ingest/`, `rubric_data_pipeline_dags.py`,
 `configs/local/data_generator*.yaml`, `configs/local/postgres_source.yaml`, and
 `configs/local/kafka_topics.yaml`.
 
@@ -271,7 +271,7 @@ source ingestion and CDC runtimes.
 **Strategy:** run this CI/CD branch when Spark silver/gold transforms, batch
 feature DAGs, Spark batch config, lakehouse code, or Spark runtime image paths
 change, especially `apps/data-platform/src/features/spark/`,
-`batch_feature_pipeline_dag.py`, `apps/data-platform/src/lakehouse/`,
+`rubric_data_pipeline_dags.py`, `apps/data-platform/src/lakehouse/`,
 `apps/data-platform/Dockerfile.spark`, and `configs/local/spark_batch*.yaml`.
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp2_cicd_ui.png)
@@ -316,7 +316,7 @@ offline feature table config changes, especially
 `apps/data-platform/src/feature_store/`, `apps/data-platform/src/features/spark/`,
 `apps/ml-system/src/cli/prepare_bst_training_data.py`,
 `tests/unit/ml_system/test_prepare_bst_training_data.py`, and
-`batch_feature_pipeline_dag.py`.
+`rubric_data_pipeline_dags.py`.
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp3_cicd_ui.png)
 
@@ -525,7 +525,7 @@ rollout status for both FastAPI services.
 processing code, offline feature sink logic, Flink Dockerfile, or streaming DAG
 paths change, especially `apps/data-platform/src/features/flink/`,
 `apps/data-platform/src/lakehouse/`, `apps/data-platform/Dockerfile.flink`,
-`streaming_feature_pipeline_dag.py`, and `configs/local/flink_streaming.yaml`.
+`rubric_data_pipeline_dags.py`, and `configs/local/flink_streaming.yaml`.
 
 ![FastAPI Deploy Jenkins UI proof](../../pngs/job1_cicd_ui.png)
 

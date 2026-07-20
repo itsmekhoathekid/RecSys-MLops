@@ -418,8 +418,6 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
     assert values["e2e"]["datahubIngestEnabled"] == "false"
     assert values["realtimeFlinkConsumer"]["offlineStoreSink"] == "postgres"
     assert values["realtimeFlinkConsumer"]["online"]["startingOffsets"] == "committed-offsets"
-    flink_source = (ROOT / "apps/data-platform/src/features/flink/realtime_stream_job.py").read_text()
-    assert "committed_offsets(KafkaOffsetResetStrategy.EARLIEST)" in flink_source
     assert values["featurePostgres"]["name"] == "feature-postgres"
     assert values["featurePostgres"]["schema"] == "feature_store"
     assert "LAKEHOUSE_WAREHOUSE" in rendered

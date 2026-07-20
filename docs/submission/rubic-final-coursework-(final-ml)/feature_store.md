@@ -19,7 +19,7 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 
 ### Code Reference
 
-- [k8s_data_platform_dag.py (line 432)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L432), [k8s_data_platform_dag.py (line 494)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L494): separate batch refresh and `recsys_feast_materialize` DAGs.
+- [rubric_data_pipeline_dags.py](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py): the authoritative DP3 offline feature-table DAG.
 - [spark_batch_entrypoint.py (line 47)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L47), [spark_batch_entrypoint.py (line 207)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L207), [postgres_offline_store.py (line 21)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L21), [postgres_offline_store.py (line 211)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L211): build and write Feast-compatible PostgreSQL tables.
 - [feature_store.yaml (line 1)](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L1), [feature_store.yaml (line 20)](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L20), [features.py (line 18)](../../../apps/data-platform/feature-store/feature_repo/features.py#L18), [features.py (line 117)](../../../apps/data-platform/feature-store/feature_repo/features.py#L117): PostgreSQL/Redis stores, FeatureViews, and `bst_ranking_v1`.
 - [values.yaml (line 186)](../../../infra/helm/recsys-data-platform/values.yaml#L186), [values.yaml (line 196)](../../../infra/helm/recsys-data-platform/values.yaml#L196), [configmap.yaml (line 41)](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L41), [configmap.yaml (line 77)](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L77): sink and materialization schedule wiring.
@@ -32,7 +32,7 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 (`20 */2 * * *`). The DAG focuses only on moving features from the PostgreSQL
 Feast offline store into the Redis online store: `apply_feast_feature_repo` ->
 `feast_materialize_incremental` -> `verify_redis_online_store_updated`. The
-upstream offline-store refresh is handled by `recsys_batch_feature_pipeline`,
+upstream offline-store refresh is handled by `recsys_dp3_offline_feature_table`,
 and drift/retrain checks are handled by the separate
 `recsys_feature_drift_monitoring` DAG.
 
