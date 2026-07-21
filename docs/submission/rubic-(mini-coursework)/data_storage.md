@@ -50,6 +50,8 @@ DP1: generate -> Bronze Iceberg commit -> optimize Bronze -> validate Bronze
 DP2: read Bronze Iceberg -> write Silver Iceberg -> optimize Silver -> validate Silver
 ```
 
+Successful Airflow Graph runs verify this governed stage order for [DP1](data_pipeline_orchestration.md#dp1-data-generator-to-bronze-iceberg) and [DP2](data_pipeline_orchestration.md#dp2-bronze-iceberg-to-silver-iceberg).
+
 The shared runner in [optimize.py (line 70)](../../../apps/data-platform/src/lakehouse/optimize.py#L70) executes the following steps for each selected table:
 
 1. Resolve the governed Bronze or Silver table inventory.

@@ -74,9 +74,9 @@ References: [rubric_data_pipeline_dags.py (line 192)](../../../apps/data-platfor
 
 The DAG creates all three tasks and enforces their order at [rubric_data_pipeline_dags.py (line 222)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L222) and [line 246](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L246).
 
-![DP1 Airflow DAG proof](../../pngs/dp1_airflow_ui.png)
+![DP1 successful Airflow DAG run](../../pngs/airflow_dp1_raw_to_bronze_success.png)
 
-**Figure: DP1 Airflow orchestration proof.** This historical capture shows the original `ingest_stage -> validate_stage` endpoints. The current source preserves both endpoints and inserts `optimize_stage` between them; the linked dependency line is authoritative for the current graph.
+**Figure: DP1 Airflow orchestration proof.** The successful Graph run shows the current `ingest_stage -> optimize_stage -> validate_stage` dependency for `recsys_dp1_raw_to_bronze`; all three tasks are green.
 
 ## DP2: Bronze Iceberg To Silver Iceberg
 
@@ -118,9 +118,9 @@ References: [rubric_data_pipeline_dags.py (line 204)](../../../apps/data-platfor
 
 The DAG creates all three tasks and enforces their order at [rubric_data_pipeline_dags.py (line 248)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L248) and [line 272](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L272).
 
-![DP2 Airflow DAG proof](../../pngs/dp2_airflow_ui.png)
+![DP2 successful Airflow DAG run](../../pngs/airflow_dp2_bronze_to_silver_success.png)
 
-**Figure: DP2 Airflow orchestration proof.** This historical capture shows the original ingest/validate endpoints. The current three-stage graph is `ingest_stage -> optimize_stage -> validate_stage`.
+**Figure: DP2 Airflow orchestration proof.** The successful Graph run shows `ingest_stage -> optimize_stage -> validate_stage` for `recsys_dp2_bronze_to_silver_gold`; all three tasks are green.
 
 ## DP3: Feature Tables And Feast Offline Store
 
@@ -154,9 +154,9 @@ References: [rubric_data_pipeline_dags.py (line 163)](../../../apps/data-platfor
 
 The DAG and dependency are defined at [rubric_data_pipeline_dags.py (line 274)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L274) and [line 293](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L293).
 
-![DP3 Airflow DAG proof](../../pngs/dp3_airflow_ui.png)
+![DP3 successful Airflow DAG run](../../pngs/airflow_dp3_offline_features_success.png)
 
-**Figure: DP3 Airflow orchestration proof.** The Graph tab shows `ingest_stage -> validate_stage`; both nodes are green and successful in the captured run.
+**Figure: DP3 Airflow orchestration proof.** The successful Graph run shows `ingest_stage -> validate_stage` for `recsys_dp3_offline_feature_table`; both tasks are green.
 
 ## End-To-End Ordering
 

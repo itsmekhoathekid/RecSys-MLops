@@ -149,8 +149,8 @@ def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
         assert "org.apache.flink.metrics.prometheus.PrometheusReporterFactory" in env["FLINK_PROPERTIES"]
 
     dockerfile = Path("apps/data-platform/Dockerfile.flink").read_text(encoding="utf-8")
-    assert "flink-metrics-prometheus-1.19.3.jar" in dockerfile
-    assert "/opt/flink/plugins/prometheus" in dockerfile
+    assert "flink-metrics-prometheus-2.2.0.jar" in dockerfile
+    assert "/opt/flink/plugins/metrics-prometheus" in dockerfile
 
 
 def test_flink_taskmanager_health_requires_jobmanager_registration():

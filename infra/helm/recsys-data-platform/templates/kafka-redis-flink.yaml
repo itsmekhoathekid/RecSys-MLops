@@ -265,6 +265,8 @@ spec:
               EOF
               sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
               export HADOOP_CONF_DIR=/tmp
+              printf '\njobmanager.scheduler: %s\ncluster.declarative-resource-management.enabled: true\n' \
+                {{ .Values.flink.scheduler | quote }} >> /opt/flink/conf/flink-conf.yaml
               /docker-entrypoint.sh jobmanager
           env:
             - name: FLINK_PROPERTIES
@@ -330,6 +332,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            - name: DISABLE_JEMALLOC
+              value: {{ .Values.flink.disableJemalloc | quote }}
+            # FLINK_PROPERTIES is converted to nested config.yaml by Flink 2.2
+            # and currently collapses spaces in env.java.opts.*. Passing the
+            # module opens directly to the launcher preserves each JVM option.
+            - name: JDK_JAVA_OPTIONS
+              value: {{ .Values.flink.javaOpens | quote }}
             - name: FLINK_PROPERTIES
               value: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: {{ .Values.flink.taskSlots }}\ntaskmanager.memory.process.size: {{ .Values.flink.taskManagerProcessMemory }}\ntaskmanager.memory.task.heap.size: {{ .Values.flink.taskManagerTaskHeapMemory }}\ntaskmanager.memory.managed.size: {{ .Values.flink.taskManagerManagedMemory }}\ntaskmanager.memory.jvm-overhead.max: {{ .Values.flink.taskManagerJvmOverheadMax }}\ntaskmanager.memory.managed.consumer-weights: {{ .Values.flink.managedConsumerWeights }}\npython.fn-execution.memory.managed: {{ .Values.flink.pythonManagedMemory }}\npython.fn-execution.bundle.size: {{ .Values.flink.pythonBundleSize }}\npython.fn-execution.bundle.time: {{ .Values.flink.pythonBundleTimeMs }}\nstate.backend.type: {{ .Values.flink.stateBackend }}\nstate.backend.incremental: {{ .Values.flink.stateBackendIncremental }}\nrestart-strategy.type: exponential-delay\nrestart-strategy.exponential-delay.initial-backoff: 2 s\nrestart-strategy.exponential-delay.max-backoff: 60 s\nrestart-strategy.exponential-delay.backoff-multiplier: 2.0\nmetrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory\nmetrics.reporter.prom.port: {{ .Values.flink.metricsPort }}\nmetrics.reporter.prom.scope.variables.excludes: job_id;task_id;task_attempt_id;task_attempt_num;operator_id\ntaskmanager.data.port: 6121\ntaskmanager.rpc.port: 6122\nquery.server.port: 6125\npekko.remote.startup-timeout: 60 s\nexecution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
           envFrom:

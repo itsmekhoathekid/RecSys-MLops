@@ -17,12 +17,58 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 
 ## Airflow Data Pipeline For Incremental Materialize Offline -> Online Store
 
-### Code Reference
+The referenced Airflow object is the dedicated `recsys_feast_materialize` DAG,
+not the removed `k8s_data_platform_dag` DAG ID. Its source module retains the
+historical filename, but the deployed DAG contains only the materialization
+stages shown below.
 
-- [k8s_data_platform_dag.py (line 153)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L153), [k8s_data_platform_dag.py (line 175)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L175): `recsys_feast_materialize` and its ordered apply, incremental-materialize, and Redis-validation tasks.
-- [spark_batch_entrypoint.py (line 47)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L47), [spark_batch_entrypoint.py (line 207)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L207), [postgres_offline_store.py (line 21)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L21), [postgres_offline_store.py (line 211)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L211): build and write Feast-compatible PostgreSQL tables.
-- [feature_store.yaml (line 1)](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L1), [feature_store.yaml (line 20)](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L20), [features.py (line 18)](../../../apps/data-platform/feature-store/feature_repo/features.py#L18), [features.py (line 117)](../../../apps/data-platform/feature-store/feature_repo/features.py#L117): PostgreSQL/Redis stores, FeatureViews, and `bst_ranking_v1`.
-- [values.yaml (line 186)](../../../infra/helm/recsys-data-platform/values.yaml#L186), [values.yaml (line 196)](../../../infra/helm/recsys-data-platform/values.yaml#L196), [configmap.yaml (line 41)](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L41), [configmap.yaml (line 77)](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L77): sink and materialization schedule wiring.
+```mermaid
+flowchart LR
+    P["PostgreSQL Feast offline store"] --> A["1. Apply Feast repository"]
+    A --> M["2. Materialize incrementally<br/>up to current UTC time"]
+    M --> R["Redis Feast online store"]
+    R --> V["3. Validate feature keys<br/>and non-empty payloads"]
+```
+
+### Materialize DAG Reference Code
+
+```python
+with DAG(
+    dag_id="recsys_feast_materialize",
+    start_date=datetime(2026, 1, 1),
+    schedule=env_schedule("FEAST_MATERIALIZE_DAG_SCHEDULE", "20 */2 * * *"),
+    catchup=False,
+    max_active_runs=1,
+    tags=["recsys", "feast", "materialize", "online-store"],
+) as recsys_feast_materialize:
+    apply_feature_repo = pod_task(
+        "apply_feast_feature_repo", DATAFLOW_IMAGE, APPLY_FEAST_FEATURE_REPO_COMMAND
+    )
+    materialize_incremental = pod_task(
+        "feast_materialize_incremental",
+        DATAFLOW_IMAGE,
+        FEAST_MATERIALIZE_INCREMENTAL_COMMAND,
+    )
+    validate_online_store = pod_task(
+        "verify_redis_online_store_updated",
+        DATAFLOW_IMAGE,
+        VERIFY_REDIS_ONLINE_STORE_COMMAND,
+    )
+
+    apply_feature_repo >> materialize_incremental >> validate_online_store
+```
+
+Source: [`recsys_feast_materialize` DAG definition](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L153) and [ordered dependencies](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L175).
+
+### DAG Stages
+
+| Stage | Task and command | Result | Code reference |
+| ---: | --- | --- | --- |
+| 1 | `apply_feast_feature_repo`: `apply_feature_repo(".")` | Loads the PostgreSQL sources, Redis online-store config, entities, FeatureViews, and `bst_ranking_v1` into the Feast registry before materialization. | [task definition](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L161), [task command](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L84), [registry apply implementation](../../../apps/data-platform/src/feature_store/feast_registry.py#L29), [store config](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L8), [FeatureViews](../../../apps/data-platform/feature-store/feature_repo/features.py#L44), [`bst_ranking_v1`](../../../apps/data-platform/feature-store/feature_repo/features.py#L112) |
+| 2 | `feast_materialize_incremental`: `feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)` | Reads feature rows newer than the previous materialization boundary from PostgreSQL and writes the latest values to Redis up to the current UTC time. | [task definition](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L164), [task command](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L90), [PostgreSQL source tables](../../../apps/data-platform/feature-store/feature_repo/features.py#L22), [Redis online store](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml#L18) |
+| 3 | `verify_redis_online_store_updated`: `python -m validate.governance_contracts streaming-redis` | Fails the DAG unless Redis contains non-empty user-sequence, user-aggregate, and item-feature keys. | [task definition](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L169), [task command](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L96), [Redis key and payload checks](../../../apps/data-platform/src/validate/governance_contracts.py#L219) |
+
+Every stage uses the shared [`KubernetesPodOperator` factory](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L55), imports the platform ConfigMap and Secret, streams logs, and deletes its temporary pod after completion. The DAG schedule is configured by [`feastMaterializeSchedule`](../../../infra/helm/recsys-data-platform/values.yaml#L224) and rendered as [`FEAST_MATERIALIZE_DAG_SCHEDULE`](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L43).
 
 ### Image Proof Of Feast Incremental Materialize On Airflow Graph
 
@@ -32,8 +78,10 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 (`20 */2 * * *`). The DAG focuses only on moving features from the PostgreSQL
 Feast offline store into the Redis online store: `apply_feast_feature_repo` ->
 `feast_materialize_incremental` -> `verify_redis_online_store_updated`. The
-upstream offline-store refresh is handled by `recsys_batch_feature_pipeline`,
-and drift/retrain checks are handled by the separate
+upstream batch refresh is handled by
+[`recsys_dp3_offline_feature_table`](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L274),
+while the Flink offline-store job writes continuous updates. Drift/retrain
+checks are handled by the separate
 `recsys_feature_drift_monitoring` DAG.
 
 ### Commands To Capture Proof
@@ -91,7 +139,9 @@ The jobs intentionally use separate consumer groups so both jobs receive the ful
 
 ### Image Proof Of Flink UI Job Running
 
-![Two Flink jobs running](../../pngs/2_flink_jobs.png)
+![Online-store and offline-store Flink jobs running](../../pngs/flink_online_offline_jobs_running.png)
+
+**Figure: both continuous feature-store jobs are healthy.** Flink reports the online and offline jobs as `RUNNING`, with all six tasks running in each job.
 
 ### Commands To Capture Proof
 
@@ -112,7 +162,7 @@ Expected proof: both submitter deployments are ready, Flink has two `RUNNING` jo
 ### Code Reference
 
 - [realtime-flink-consumer.yaml (line 88)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L88), [realtime-flink-consumer.yaml (line 176)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L176): offline-store Flink deployment and sink arguments.
-- [realtime_stream_job.py (line 347)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L347), [realtime_stream_job.py (line 417)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L417), [realtime_stream_job.py (line 687)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L687), [realtime_stream_job.py (line 727)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L727), [realtime_stream_job.py (line 1081)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1081), [realtime_stream_job.py (line 1086)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1086): `build_postgres_feast_rows()`, `PostgresFeastOfflineWriter`, and sink attachment.
+- [realtime_stream_job.py (line 223)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L223), [line 296](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L296), [line 1045](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1045), and [line 1102](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1102): typed user/item PostgreSQL rows, event-time feature windows, and async offline-store sink attachment.
 - [features.py (line 22)](../../../apps/data-platform/feature-store/feature_repo/features.py#L22), [features.py (line 110)](../../../apps/data-platform/feature-store/feature_repo/features.py#L110): `PostgreSQLSource` FeatureViews over the written tables.
 
 ### Commands To Capture Proof
@@ -138,9 +188,9 @@ Expected proof: logs show PostgreSQL offline writer activity and PostgreSQL row 
 
 ### Image Proof Of Streaming Features In Offline Store
 
-![Streaming features pushed to offline store](../../pngs/streaming_feats_to_offline.png)
+![Flink offline-store job graph with PostgreSQL writer](../../pngs/flink_offline_store_postgres_job_graph.png)
 
-![Streaming offline job tasks](../../pngs/stream_job_offline_tasks.png)
+**Figure: offline-store streaming path.** The running graph consumes `cdc.behavior_events`, performs event-time quality and feature processing, then reaches `postgres-feast-offline-feature-writer` to update Feast-compatible PostgreSQL tables.
 
 ## Flink Streaming Job To Online Store
 
@@ -166,9 +216,9 @@ Expected proof: each command prints at least one Redis online feature key create
 
 ### Image Proof Of Streaming Features In Online Store
 
-![Streaming features pushed to online store](../../pngs/streaming_feats_to_online.png)
+![Flink online-store job graph with Redis writer](../../pngs/flink_online_store_redis_job_graph.png)
 
-![Streaming online job tasks](../../pngs/stream_job_online_tasks.png)
+**Figure: online-store streaming path.** The running graph consumes `cdc.behavior_events`, performs event-time quality and feature processing, then reaches `redis-online-feature-writer` for low-latency Redis serving.
 
 ## TTL Definition & Reasons
 

@@ -368,6 +368,27 @@ def _read_hudi_table(spark, table_path: str):
     return spark.read.format("hudi").load(table_path)
 
 
+HUDI_CHANGE_IDENTITY_COLUMNS = ["sample_id", "row_hash", "split"]
+
+
+def _filter_unchanged_hudi_rows(spark, incoming, table_path: str):
+    """Return only new, content-changed, or split-moved records.
+
+    A missing table is the initial load, so every incoming record must be
+    written. Including ``split`` prevents an unchanged hash from hiding a
+    partition-routing change.
+    """
+    try:
+        existing = (
+            _read_hudi_table(spark, table_path)
+            .select(*HUDI_CHANGE_IDENTITY_COLUMNS)
+            .dropDuplicates(HUDI_CHANGE_IDENTITY_COLUMNS)
+        )
+    except Exception:
+        return incoming, False
+    return incoming.join(existing, on=HUDI_CHANGE_IDENTITY_COLUMNS, how="left_anti"), True
+
+
 def _latest_commit_time(spark, table_path: str) -> str | None:
     try:
         rows = _read_hudi_table(spark, table_path).selectExpr("max(_hoodie_commit_time) as commit_time").collect()
@@ -435,14 +456,29 @@ def commit_samples_to_hudi(
             subset = samples[samples["split"].isin(split_values)]
             table_path = config.table_path(table_ident)
             table_name = config.table_name(table_ident)
+            input_rows = len(subset)
+            changed_rows = input_rows
+            skipped_unchanged_rows = 0
+            write_performed = False
             if not subset.empty:
-                (
-                    spark.createDataFrame(_spark_safe_records(subset), schema=_sample_schema())
-                    .write.format("hudi")
-                    .options(**_hudi_options(table_name))
-                    .mode("append")
-                    .save(table_path)
-                )
+                incoming = spark.createDataFrame(_spark_safe_records(subset), schema=_sample_schema())
+                changes, compared_with_snapshot = _filter_unchanged_hudi_rows(spark, incoming, table_path)
+                if compared_with_snapshot:
+                    changes = changes.persist()
+                    changed_rows = changes.count()
+                    skipped_unchanged_rows = input_rows - changed_rows
+                try:
+                    if changed_rows > 0:
+                        (
+                            changes.write.format("hudi")
+                            .options(**_hudi_options(table_name))
+                            .mode("append")
+                            .save(table_path)
+                        )
+                        write_performed = True
+                finally:
+                    if compared_with_snapshot:
+                        changes.unpersist()
             commit_time = _latest_commit_time(spark, table_path)
             commit_latency_ms = round((time.perf_counter() - route_started) * 1000, 3)
             metadata["latency_ms"][f"{key}_commit"] = commit_latency_ms
@@ -453,6 +489,10 @@ def commit_samples_to_hudi(
                 "commit_time": commit_time,
                 "tag": tag_name,
                 "row_count": _table_row_count(spark, table_path, split_values),
+                "input_rows": input_rows,
+                "changed_rows": changed_rows,
+                "skipped_unchanged_rows": skipped_unchanged_rows,
+                "write_performed": write_performed,
                 "splits": list(split_values),
                 "latency_ms": commit_latency_ms,
             }

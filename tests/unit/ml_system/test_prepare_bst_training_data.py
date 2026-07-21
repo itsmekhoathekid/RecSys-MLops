@@ -8,9 +8,12 @@ import pandas as pd
 import pytest
 
 from lineage.dataset_versioning import (
+    HudiConfig,
+    _filter_unchanged_hudi_rows,
     _hudi_options,
     _hudi_identifier_suffix,
     _spark_safe_records,
+    commit_samples_to_hudi,
     sample_id_for,
     row_hash_for,
     to_versioned_samples,
@@ -102,6 +105,142 @@ def test_training_data_service_validates_canonical_schema():
 
 def test_hudi_dataset_upsert_reconciles_ranking_group_schema():
     assert _hudi_options("bst_training_samples")["hoodie.datasource.write.reconcile.schema"] == "true"
+
+
+@pytest.fixture(scope="module")
+def local_spark():
+    from pyspark.sql import SparkSession
+
+    spark = (
+        SparkSession.builder.master("local[1]")
+        .appName("recsys-hudi-change-detection-test")
+        .config("spark.ui.enabled", "false")
+        .config("spark.driver.host", "127.0.0.1")
+        .config("spark.driver.bindAddress", "127.0.0.1")
+        .config("spark.pyspark.python", sys.executable)
+        .config("spark.pyspark.driver.python", sys.executable)
+        .getOrCreate()
+    )
+    yield spark
+    spark.stop()
+
+
+def test_hudi_change_detection_skips_only_unchanged_rows(monkeypatch, local_spark):
+    existing = local_spark.createDataFrame(
+        [
+            ("same", "hash-1", "train"),
+            ("changed", "hash-old", "train"),
+            ("moved", "hash-3", "train"),
+        ],
+        ["sample_id", "row_hash", "split"],
+    )
+    incoming = local_spark.createDataFrame(
+        [
+            ("same", "hash-1", "train"),
+            ("changed", "hash-new", "train"),
+            ("new", "hash-2", "train"),
+            ("moved", "hash-3", "val"),
+        ],
+        ["sample_id", "row_hash", "split"],
+    )
+    monkeypatch.setattr("lineage.dataset_versioning._read_hudi_table", lambda spark, path: existing)
+
+    changes, compared_with_snapshot = _filter_unchanged_hudi_rows(local_spark, incoming, "ignored")
+
+    assert compared_with_snapshot is True
+    assert {(row.sample_id, row.row_hash, row.split) for row in changes.collect()} == {
+        ("changed", "hash-new", "train"),
+        ("new", "hash-2", "train"),
+        ("moved", "hash-3", "val"),
+    }
+
+
+def test_hudi_change_detection_writes_everything_on_initial_load(monkeypatch, local_spark):
+    incoming = local_spark.createDataFrame(
+        [("new", "hash-1", "train")],
+        ["sample_id", "row_hash", "split"],
+    )
+
+    def missing_table(*_args, **_kwargs):
+        raise RuntimeError("table does not exist")
+
+    monkeypatch.setattr("lineage.dataset_versioning._read_hudi_table", missing_table)
+
+    changes, compared_with_snapshot = _filter_unchanged_hudi_rows(local_spark, incoming, "missing")
+
+    assert compared_with_snapshot is False
+    assert changes.collect() == incoming.collect()
+
+
+def test_hudi_commit_skips_write_and_reports_unchanged_rows(monkeypatch, tmp_path):
+    class NoWriteChanges:
+        def persist(self):
+            return self
+
+        def count(self):
+            return 0
+
+        def unpersist(self):
+            return self
+
+        @property
+        def write(self):
+            raise AssertionError("unchanged rows must not reach the Hudi writer")
+
+    class FakeSpark:
+        def createDataFrame(self, records, schema):
+            assert records
+            assert schema is not None
+            return object()
+
+        def stop(self):
+            return None
+
+    row = {
+        "impression_id": "imp-1",
+        "request_id": "req-1",
+        "user_id": 7,
+        "target_item_id": 11,
+        "event_time": 1767226200,
+        "hist_item_id": [10],
+        "hist_event_type": [2],
+        "hist_category": [3],
+        "hist_brand": [4],
+        "hist_price_bucket": [5],
+        "hist_time": [1],
+        "target_category": 22,
+        "target_brand": 33,
+        "target_price_bucket": 44,
+        "label": 1,
+    }
+    samples = to_versioned_samples(
+        {"train": [row], "val": [], "test": [dict(row, request_id="req-2")]},
+        dataset_run_id="run-2",
+        feature_service_version="bst_ranking_v1",
+        processing_code="abc123",
+    )
+    monkeypatch.setattr("lineage.dataset_versioning.ensure_warehouse_bucket", lambda warehouse: None)
+    monkeypatch.setattr("lineage.dataset_versioning._spark_session", lambda config: FakeSpark())
+    monkeypatch.setattr(
+        "lineage.dataset_versioning._filter_unchanged_hudi_rows",
+        lambda spark, incoming, table_path: (NoWriteChanges(), True),
+    )
+    monkeypatch.setattr("lineage.dataset_versioning._latest_commit_time", lambda spark, path: "001")
+    monkeypatch.setattr("lineage.dataset_versioning._table_row_count", lambda spark, path, splits: 1)
+    monkeypatch.setattr("lineage.dataset_versioning._write_jsonl_from_hudi", lambda *args, **kwargs: 1)
+
+    metadata = commit_samples_to_hudi(samples, tmp_path, "run-2", HudiConfig())
+
+    for route in ("training", "evaluation"):
+        assert {
+            key: metadata["tables"][route][key]
+            for key in ("input_rows", "changed_rows", "skipped_unchanged_rows", "write_performed")
+        } == {
+            "input_rows": 1,
+            "changed_rows": 0,
+            "skipped_unchanged_rows": 1,
+            "write_performed": False,
+        }
 
 
 def test_split_service_applies_temporal_boundaries_and_normalization():

@@ -15,6 +15,24 @@ single NGINX LoadBalancer IP.
 | Log service | `log.recsys-mlops.site` | `recsys-loki.observability.svc.cluster.local:3100` |
 | Trace service | `traces.recsys-mlops.site` | `recsys-tempo.observability.svc.cluster.local:3200` |
 
+### Gateway Configuration Reference
+
+| Gateway layer | Clickable configuration reference | Purpose |
+| --- | --- | --- |
+| NGINX Ingress Controller | [dependencies.tf (line 129)](../../../infra/terraform/gcp/dependencies.tf#L129) | Installs the cluster-wide `ingress-nginx` controller that receives public traffic. |
+| Gateway Helm release | [recsys_services.tf (line 226)](../../../infra/terraform/gcp/recsys_services.tf#L226), [host/backend overrides (line 236)](../../../infra/terraform/gcp/recsys_services.tf#L236) | Deploys `recsys-gateway` and injects public hosts plus internal Kubernetes upstreams. |
+| Shared gateway policy | [values.yaml: ingress class and domain](../../../infra/helm/recsys-gateway/values.yaml#L1), [Basic Auth](../../../infra/helm/recsys-gateway/values.yaml#L5), [TLS/cert-manager](../../../infra/helm/recsys-gateway/values.yaml#L16) | Centralizes the NGINX class, authentication secret, TLS issuer, certificates, and per-route rate limits. |
+| Web API Pull Data route | [feature API values](../../../infra/helm/recsys-gateway/values.yaml#L46), [feature-api-ingress.yaml](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L1) | Routes the public API host to `recsys-online-feature-api` and applies Basic Auth, throttling, and TLS. |
+| Metric route | [Grafana values](../../../infra/helm/recsys-gateway/values.yaml#L60), [grafana-ingress.yaml](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L1) | Routes the metric domain to the internal Grafana service. |
+| Log route | [Loki values](../../../infra/helm/recsys-gateway/values.yaml#L76), [logs-ingress.yaml](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L1), [root redirect](../../../infra/helm/recsys-gateway/templates/logs-root-redirect-ingress.yaml#L1) | Routes Loki API paths and optionally redirects the root path to the Grafana logs dashboard. |
+| Trace route | [Tempo values](../../../infra/helm/recsys-gateway/values.yaml#L93), [traces-ingress.yaml](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L1) | Routes the trace domain to the internal Tempo service. |
+| Gateway credentials | [auth-secrets.yaml](../../../infra/helm/recsys-gateway/templates/auth-secrets.yaml#L1) | Replicates the Basic Auth secret into namespaces that own the Ingress resources. |
+| TLS issuer | [clusterissuer.yaml](../../../infra/helm/recsys-gateway/templates/clusterissuer.yaml#L1) | Optionally renders the cert-manager issuer used by HTTPS routes. |
+
+The chart also contains a separate recommendation-serving route at [api-ingress.yaml](../../../infra/helm/recsys-gateway/templates/api-ingress.yaml#L1). It targets `recsys-api-serving`; the Web API Pull Data proof in this document targets `recsys-online-feature-api` through `feature-api-ingress.yaml`.
+
+The public names shown here are deployment values. The checked-in chart defaults use `.recsys.local`, while Terraform derives hostnames from `gateway_domain`; production DNS names can therefore be supplied without changing the Ingress templates.
+
 ![Domain setup for gateway services](../../pngs/domain_setup.png)
 
 **Figure: Domain setup for all gateway services.** The DNS provider has four

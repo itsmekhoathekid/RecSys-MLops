@@ -131,8 +131,10 @@ flinkTaskManager:
 flink:
   checkpointStorageUri: s3a://recsys-lakehouse/flink-checkpoints
   istioInject: "false"
+  scheduler: adaptive
   metricsPort: 9249
-  taskSlots: "2"
+  # Keep the online/offline jobs on separate TaskManagers at parallelism 1.
+  taskSlots: "1"
   taskManagerProcessMemory: "6144m"
   taskManagerTaskHeapMemory: "2048m"
   taskManagerManagedMemory: "2048m"
@@ -143,6 +145,9 @@ flink:
   pythonManagedMemory: "true"
   pythonBundleSize: "1000"
   pythonBundleTimeMs: "200"
+  # PyFlink/Beam uses many native threads; glibc is more stable than the image's
+  # default jemalloc preload during concurrent task cancellation.
+  disableJemalloc: true
   javaOpens: "--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
 
 realtimeProducer:
@@ -162,23 +167,54 @@ realtimeFlinkConsumer:
     name: realtime-flink-online-store
     groupIdSuffix: online
     startingOffsets: committed-offsets
+    restorePath: ""
   offline:
     enabled: true
     name: realtime-flink-offline-store
     groupIdSuffix: offline
+    startingOffsets: latest
+    restorePath: ""
   topic: cdc.behavior_events
   groupId: recsys-flink-realtime
   minEvents: "0"
   maxEvents: "0"
-  parallelism: "2"
+  # Initial parallelism remains one; the Flink autoscaler may rescale sustained load.
+  parallelism: "1"
   maxHistoryLength: "50"
   progressLogEvents: "100"
   checkpointIntervalSeconds: "30"
   kafkaFetchMaxBytes: "1048576"
   kafkaMaxPartitionFetchBytes: "262144"
   kafkaMaxPollRecords: "100"
+  redisSinkMaxEventsPerSecond: "200"
+  postgresSinkMaxEventsPerSecond: "100"
+  sinkRateLimitBurstEvents: "25"
+  asyncIoCapacity: "64"
+  asyncIoTimeoutSeconds: "120"
+  postgresAsyncPoolSize: "16"
   offlineStoreEnabled: true
   offlineStoreSink: postgres
+
+flinkAutoscaler:
+  enabled: true
+  version: "1.15.0"
+  scalingEnabled: true
+  stabilizationInterval: 1m
+  metricsWindow: 3m
+  targetUtilization: "0.65"
+  utilizationMin: "0.50"
+  utilizationMax: "0.80"
+  catchUpDuration: 5m
+  restartTime: 2m
+  pipelineMaxParallelism: "120"
+  vertexMinParallelism: "1"
+  vertexMaxParallelism: "4"
+  taskManagerHpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCpuUtilization: 65
+    scaleDownStabilizationSeconds: 300
 
 realtimeCdcConnector:
   enabled: true
@@ -211,6 +247,8 @@ streaming:
   watermarkAlignmentMaxDriftSeconds: 60
   watermarkAlignmentUpdateIntervalSeconds: 5
   qualityWindowSeconds: 60
+  featureWindowSeconds: 60
+  featureEarlyFireSeconds: 5
   burstThresholdEventCount: 200
   dropLateEvents: "true"
   enableLateEventDlq: "true"

@@ -43,8 +43,13 @@ spec:
               sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
               export HADOOP_CONF_DIR=/tmp
               printf '\n%s\n' "$FLINK_PROPERTIES" >> /opt/flink/conf/flink-conf.yaml
+              restore_args=()
+              if [[ -n "$FLINK_RESTORE_PATH" ]]; then
+                restore_args=(-s "$FLINK_RESTORE_PATH")
+              fi
               PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
               flink run -m flink-jobmanager:8081 \
+                "${restore_args[@]}" \
                 -py apps/data-platform/src/features/flink/realtime_stream_job.py \
                 -- \
                 --runner pyflink \
@@ -55,6 +60,12 @@ spec:
                 --min-events "$REALTIME_STREAM_MIN_EVENTS" \
                 --max-events "$REALTIME_STREAM_MAX_EVENTS" \
                 --parallelism "$FLINK_PARALLELISM" \
+                --redis-sink-max-events-per-second "$REDIS_SINK_MAX_EVENTS_PER_SECOND" \
+                --postgres-sink-max-events-per-second "$POSTGRES_SINK_MAX_EVENTS_PER_SECOND" \
+                --sink-rate-limit-burst-events "$SINK_RATE_LIMIT_BURST_EVENTS" \
+                --async-io-capacity "$FLINK_ASYNC_IO_CAPACITY" \
+                --async-io-timeout-seconds "$FLINK_ASYNC_IO_TIMEOUT_SECONDS" \
+                --postgres-async-pool-size "$POSTGRES_ASYNC_POOL_SIZE" \
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
@@ -70,6 +81,8 @@ spec:
                 --watermark-alignment-max-drift-seconds "$STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS" \
                 --watermark-alignment-update-interval-seconds "$STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS" \
                 --quality-window-seconds "$STREAM_QUALITY_WINDOW_SECONDS" \
+                --feature-window-seconds "$STREAM_FEATURE_WINDOW_SECONDS" \
+                --feature-early-fire-seconds "$STREAM_FEATURE_EARLY_FIRE_SECONDS" \
                 --burst-threshold-event-count "$STREAM_BURST_THRESHOLD_EVENT_COUNT" \
                 $([ "$STREAM_DROP_LATE_EVENTS" = "true" ] && echo "--drop-late-events" || echo "--no-drop-late-events") \
                 $([ "$STREAM_ENABLE_LATE_EVENT_DLQ" = "true" ] && echo "--enable-late-event-dlq" || echo "--no-enable-late-event-dlq") \
@@ -84,8 +97,10 @@ spec:
               echo "Submitted realtime Flink online-store job; keeping submitter pod alive."
               sleep infinity
           env:
+            - name: FLINK_RESTORE_PATH
+              value: {{ default "" $consumer.online.restorePath | quote }}
             - name: FLINK_PROPERTIES
-              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\npipeline.max-parallelism: {{ .Values.flinkAutoscaler.pipelineMaxParallelism }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config
@@ -136,17 +151,29 @@ spec:
               sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
               export HADOOP_CONF_DIR=/tmp
               printf '\n%s\n' "$FLINK_PROPERTIES" >> /opt/flink/conf/flink-conf.yaml
+              restore_args=()
+              if [[ -n "$FLINK_RESTORE_PATH" ]]; then
+                restore_args=(-s "$FLINK_RESTORE_PATH")
+              fi
               PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
               flink run -m flink-jobmanager:8081 \
+                "${restore_args[@]}" \
                 -py apps/data-platform/src/features/flink/realtime_stream_job.py \
                 -- \
                 --runner pyflink \
                 --topic "$REALTIME_STREAM_TOPIC" \
                 --group-id "$REALTIME_STREAM_OFFLINE_GROUP_ID" \
+                --starting-offsets {{ default "latest" $consumer.offline.startingOffsets | quote }} \
                 --continuous \
                 --min-events "$REALTIME_STREAM_MIN_EVENTS" \
                 --max-events "$REALTIME_STREAM_MAX_EVENTS" \
                 --parallelism "$FLINK_PARALLELISM" \
+                --redis-sink-max-events-per-second "$REDIS_SINK_MAX_EVENTS_PER_SECOND" \
+                --postgres-sink-max-events-per-second "$POSTGRES_SINK_MAX_EVENTS_PER_SECOND" \
+                --sink-rate-limit-burst-events "$SINK_RATE_LIMIT_BURST_EVENTS" \
+                --async-io-capacity "$FLINK_ASYNC_IO_CAPACITY" \
+                --async-io-timeout-seconds "$FLINK_ASYNC_IO_TIMEOUT_SECONDS" \
+                --postgres-async-pool-size "$POSTGRES_ASYNC_POOL_SIZE" \
                 --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
                 --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
                 --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
@@ -162,6 +189,8 @@ spec:
                 --watermark-alignment-max-drift-seconds "$STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS" \
                 --watermark-alignment-update-interval-seconds "$STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS" \
                 --quality-window-seconds "$STREAM_QUALITY_WINDOW_SECONDS" \
+                --feature-window-seconds "$STREAM_FEATURE_WINDOW_SECONDS" \
+                --feature-early-fire-seconds "$STREAM_FEATURE_EARLY_FIRE_SECONDS" \
                 --burst-threshold-event-count "$STREAM_BURST_THRESHOLD_EVENT_COUNT" \
                 $([ "$STREAM_DROP_LATE_EVENTS" = "true" ] && echo "--drop-late-events" || echo "--no-drop-late-events") \
                 $([ "$STREAM_ENABLE_LATE_EVENT_DLQ" = "true" ] && echo "--enable-late-event-dlq" || echo "--no-enable-late-event-dlq") \
@@ -185,8 +214,10 @@ spec:
               echo "Submitted realtime Flink $OFFLINE_STORE_SINK offline-store job; keeping submitter pod alive."
               sleep infinity
           env:
+            - name: FLINK_RESTORE_PATH
+              value: {{ default "" $consumer.offline.restorePath | quote }}
             - name: FLINK_PROPERTIES
-              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\npipeline.max-parallelism: {{ .Values.flinkAutoscaler.pipelineMaxParallelism }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

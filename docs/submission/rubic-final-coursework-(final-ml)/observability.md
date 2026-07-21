@@ -19,9 +19,9 @@ The evidence is organized around the rubric areas:
 | API metrics and tracing hooks | [api_runtime.py (line 14)](../../../apps/api-serving/src/api_runtime.py#L14), [api_runtime.py (line 52)](../../../apps/api-serving/src/api_runtime.py#L52), [observability.py (line 129)](../../../apps/api-serving/src/observability.py#L129), [observability.py (line 254)](../../../apps/api-serving/src/observability.py#L254) |
 | Prometheus, Grafana, PushGateway, Loki, Tempo, and Promtail | [prometheus.yaml (line 1)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L1), [prometheus.yaml (line 285)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L285), [grafana.yaml (line 1)](../../../infra/helm/recsys-observability/templates/grafana.yaml#L1), [grafana.yaml (line 134)](../../../infra/helm/recsys-observability/templates/grafana.yaml#L134), [loki-tempo-promtail.yaml (line 1)](../../../infra/helm/recsys-observability/templates/loki-tempo-promtail.yaml#L1), [loki-tempo-promtail.yaml (line 233)](../../../infra/helm/recsys-observability/templates/loki-tempo-promtail.yaml#L233), [pushgateway.yaml (line 1)](../../../infra/helm/recsys-observability/templates/pushgateway.yaml#L1), [pushgateway.yaml (line 34)](../../../infra/helm/recsys-observability/templates/pushgateway.yaml#L34) |
 | Version-controlled dashboards | [model-ab-testing.json (line 1)](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json#L1), [model-ab-testing.json (line 824)](../../../infra/helm/recsys-observability/dashboards/model-ab-testing.json#L824) |
-| Offline feature drift | [offline_feature_drift.py (line 270)](../../../apps/data-platform/src/validate/offline_feature_drift.py#L270), [offline_feature_drift.py (line 469)](../../../apps/data-platform/src/validate/offline_feature_drift.py#L469) |
+| Offline feature drift | [offline_feature_drift.py (line 83)](../../../apps/data-platform/src/validate/offline_feature_drift.py#L83), [offline_feature_drift.py (line 377)](../../../apps/data-platform/src/validate/offline_feature_drift.py#L377), [offline_feature_drift.py (line 444)](../../../apps/data-platform/src/validate/offline_feature_drift.py#L444) |
 | Drift metrics and retrain orchestration | [pushgateway.py (line 12)](../../../apps/data-platform/src/monitoring/pushgateway.py#L12), [pushgateway.py (line 55)](../../../apps/data-platform/src/monitoring/pushgateway.py#L55), [k8s_data_platform_dag.py (line 177)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L177), [k8s_data_platform_dag.py (line 197)](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L197) |
-| Kubeflow retrain trigger | [trigger_kubeflow_retrain.py (line 117)](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L117), [trigger_kubeflow_retrain.py (line 164)](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L164) |
+| Kubeflow retrain trigger | [trigger_kubeflow_retrain.py (line 81)](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L81), [trigger_kubeflow_retrain.py (line 126)](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L126), [trigger_kubeflow_retrain.py (line 148)](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L148) |
 
 ## 0. Observability Stack And Access
 
@@ -160,21 +160,59 @@ through the tracing/log correlation view instead of only through raw logs.
 ## 5. ML-Related Telemetry Data: Airflow Drift Pipeline
 
 There is no production groundtruth label stream in this coursework demo, so the
-ML monitoring path focuses on feature drift. Airflow pulls current offline
-feature-store data, compares it with a reference baseline using PSI, writes a
-drift report with `groundtruth_available=false`, and pushes metrics to
-PushGateway. Prometheus scrapes PushGateway and Grafana visualizes the drift
-state.
+monitor detects **feature/data drift**, not concept drift. The decision signal is
+the custom per-feature PSI calculation; Evidently is retained as a diagnostic
+report and does not determine the retrain gate.
 
-Airflow drift flow:
+```mermaid
+flowchart LR
+    Airflow["Airflow daily 03:30"] --> Current["Current offline-feature Parquet"]
+    Current --> Window["Latest 7-day window<br/>sample at most 1,000 rows"]
+    Baseline["Reference baseline on MinIO"] --> Compare["Numeric feature comparison"]
+    Window --> Compare
+    Compare --> PSI["10-bucket PSI"]
+    PSI --> Gate{"Every PSI < 0.15<br/>and no read errors?"}
+    Gate -->|Yes| Pass["report passed=true"]
+    Gate -->|No| Fail["report passed=false"]
+    Pass --> Push["Report + PushGateway metrics"]
+    Fail --> Push
+    Push --> Prometheus --> Grafana
+```
 
-`run_spark_batch_to_offline_store` -> `feast_materialize_incremental` ->
-`offline_feature_drift` -> `trigger_kubeflow_retrain`
+Key logic:
 
-Telemetry flow:
+1. The Airflow DAG runs `run_offline_feature_drift -> push_drift_metrics -> trigger_kubeflow_retrain_if_drift` at `30 3 * * *`. See [DAG command](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L98) and [task dependencies](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L177).
+2. The monitor reads `user_aggregate_features`, `item_features`, and `ml_bst_training` from the offline feature root. It keeps the latest seven days relative to the table's maximum timestamp and samples at most 1,000 rows with seed 42. See [monitored tables](../../../apps/data-platform/src/validate/offline_feature_drift.py#L21), [current-window sampling](../../../apps/data-platform/src/validate/offline_feature_drift.py#L249), and [Helm defaults](../../../infra/helm/recsys-data-platform/values.yaml#L232).
+3. If a table has no reference baseline and bootstrap is enabled, its current sample is persisted as the initial baseline and that table passes the bootstrap run without a drift comparison. See [baseline bootstrap](../../../apps/data-platform/src/validate/offline_feature_drift.py#L416).
+4. Only numeric/bool columns shared by current and baseline are checked; identifiers such as `user_id`, `product_id`, and all `*_id` columns are excluded. See [numeric feature selection](../../../apps/data-platform/src/validate/offline_feature_drift.py#L223).
+5. Baseline quantiles define up to ten histogram buckets. For every feature, PSI is `sum((actual_pct - expected_pct) * log(actual_pct / expected_pct))`; `1e-4` prevents zero divisions. See [PSI implementation](../../../apps/data-platform/src/validate/offline_feature_drift.py#L83).
+6. A feature passes only when `PSI < threshold`; the default threshold is `0.15`, so `PSI == 0.15` fails. The whole run passes only when there are no table errors and every measured feature passes. See [feature gate](../../../apps/data-platform/src/validate/offline_feature_drift.py#L270), [run gate/report](../../../apps/data-platform/src/validate/offline_feature_drift.py#L444), and [threshold CLI/config](../../../apps/data-platform/src/validate/offline_feature_drift.py#L471).
 
-`Airflow offline_feature_drift task` -> `validate.offline_feature_drift` ->
-`PushGateway` -> `Prometheus` -> `Grafana ML Drift & Retrain dashboard`
+Reference code:
+
+```python
+current = sample_current_frame(
+    current_full,
+    current_days=current_days,
+    sample_rows=sample_rows,
+    random_state=random_state,
+)
+reference = _read_parquet_frame(reference_uri)
+results.extend(analyze_feature_table(reference, current, table_name, threshold))
+
+score = calculate_psi(
+    _numeric_values(reference, feature),
+    _numeric_values(current, feature),
+)
+passed = score < threshold
+```
+
+Source: [table analysis loop](../../../apps/data-platform/src/validate/offline_feature_drift.py#L404) and [per-feature PSI decision](../../../apps/data-platform/src/validate/offline_feature_drift.py#L270).
+
+The report stores `groundtruth_available=false`, per-feature PSI/pass state,
+baseline/current row counts, Evidently diagnostics, bootstrap state and read
+errors. It is written to MinIO and the short-lived Airflow task pushes the
+following metrics through PushGateway. See [report and metric publication](../../../apps/data-platform/src/validate/offline_feature_drift.py#L444).
 
 Metrics pushed:
 
@@ -220,26 +258,67 @@ available to receive drift/retrain metrics from Airflow and smoke jobs.
 
 ## 6. ML-Related Telemetry Data: Trigger Retrain By Kubeflow API
 
-When `offline_feature_drift` reports `passed=false`, the next Airflow task
-`trigger_kubeflow_retrain` calls Kubeflow Pipelines API. The retrain trigger
-also pushes trigger/failure counters to PushGateway.
+The retrain task does not call the Python `recsys_bst_pipeline()` function at
+runtime. CI/CD first compiles that DSL function into
+`bst_training_pipeline.yaml`; the trigger submits this package plus run-specific
+arguments to the Kubeflow Pipelines API.
 
-Retrain telemetry flow:
+```mermaid
+flowchart LR
+    Report["Drift report"] --> Decision{"passed=false<br/>and failed features exist<br/>and retrain enabled?"}
+    Decision -->|No| Skip["Record skipped reason"]
+    Decision -->|Yes| Args["Build isolated run paths<br/>and Ray job names"]
+    YAML["Compiled KFP YAML"] --> Submit["create_run_from_pipeline_package"]
+    Args --> Submit
+    Submit --> KFP["Kubeflow run"]
+    KFP --> Prepare["Prepare Hudi training data"]
+    Prepare --> Tune["Ray Tune"] --> DDP["Ray Train DDP"]
+    DDP --> Evaluate --> Promote --> CD["KServe CD handoff"]
+    Skip --> Metrics["PushGateway retrain metrics"]
+    Submit --> Metrics
+```
 
-`Airflow trigger_kubeflow_retrain task` -> `mlops.trigger_kubeflow_retrain` ->
-`Kubeflow Pipelines API` -> `Argo Workflow` -> `KubeRay RayJob` ->
-`PushGateway retrain metrics` -> `Prometheus` ->
-`Grafana ML Drift & Retrain dashboard`
+Key logic:
+
+1. `trigger_retrain()` reads the report and builds the failed-feature list. A passed report, or a report with no failed feature entries, returns `drift_passed`; `RETRAIN_ON_DRIFT=false` returns `retrain_disabled`. Read errors without a failed feature entry therefore do not trigger retraining. See [failed-feature extraction](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L42) and [retrain gate](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L126).
+2. For an eligible drift run, the trigger creates isolated output, Hudi-manifest, Ray Tune, Ray DDP, evaluation and promotion paths. Defaults use one tuning trial and two DDP workers. Explicit `--pipeline-arg key=value` values override these defaults. See [default arguments](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L81), [argument parsing](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L50), and [argument merge](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L146).
+3. The trigger creates/reuses the Kubeflow experiment and submits `bst_training_pipeline.yaml` with those arguments. Kubeflow executes the graph embedded in YAML; the Python DSL function was used earlier only by the compiler. See [KFP run submission](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L148), [DSL compilation](../../../apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py#L25), and [compiled root DAG](../../../infra/kubeflow/compiled/bst_training_pipeline.yaml#L469).
+4. Success records the KFP run ID; exceptions are captured in `RetrainResult.error`. Both outcomes publish trigger/failure counters for Prometheus and Grafana. See [result/error handling](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L159) and [retrain metrics](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L117).
+
+Reference code:
+
+```python
+failures = failed_features(report)
+if report.get("passed", False) or not failures:
+    result = RetrainResult(run_id, False, None, "drift_passed", failed_features=failures)
+    push_retrain_metric(result, pushgateway_url)
+    return result
+if not retrain_on_drift:
+    result = RetrainResult(run_id, False, None, "retrain_disabled", failed_features=failures)
+    push_retrain_metric(result, pushgateway_url)
+    return result
+
+arguments = default_pipeline_arguments(run_id)
+arguments.update(pipeline_arguments or {})
+
+client = kfp.Client(host=endpoint)
+experiment = client.create_experiment(name=experiment_name)
+run = client.create_run_from_pipeline_package(
+    pipeline_file=pipeline_package_path,
+    arguments=arguments,
+    experiment_id=experiment.experiment_id,
+    run_name=kfp_run_name(run_id),
+)
+```
+
+Source: [trigger_retrain()](../../../apps/data-platform/src/mlops/trigger_kubeflow_retrain.py#L126).
 
 ![Grafana ML drift dashboard proof](../../pngs/retrain_dag.png)
 
-**Note:** The platform also has a dedicated Airflow DAG for offline-store drift
-monitoring. The `recsys_feature_drift_monitoring` DAG runs daily at 03:30
-(`30 3 * * *`). This DAG triggers the offline feature-store drift check first,
-pushes drift telemetry, and then runs the retrain trigger only when the drift
-report indicates that monitored features have drifted. In the split DAG layout,
-this is represented by the sequence `run_offline_feature_drift` ->
-`push_drift_metrics` -> `trigger_kubeflow_retrain_if_drift`.
+**Figure: Scheduled drift-to-retrain DAG.** The
+`recsys_feature_drift_monitoring` DAG always executes the trigger task after the
+drift and metric tasks; the gate inside `trigger_retrain()` decides whether a
+Kubeflow run is submitted or recorded as skipped.
 
 Metrics pushed:
 
@@ -252,7 +331,8 @@ Metrics pushed:
 
 ![Grafana ML drift dashboard proof](../../pngs/grafana_ml_drift_retrain_dashboard.png)
 
-### Image Proof
+**Figure: Drift and retrain telemetry dashboard.** Grafana correlates per-feature
+PSI/pass state with retrain trigger and failure counters.
 
 ![Airflow retrain trigger proof](../../pngs/airflow_retrain_trigger_success.png)
 

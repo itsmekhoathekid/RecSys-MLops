@@ -21,7 +21,7 @@ def apply_state_ttl(descriptor: Any, ttl_seconds: int) -> Any:
 
 def configure_checkpointing(env: Any, args: Any) -> None:
     from pyflink.datastream import CheckpointingMode
-    from pyflink.datastream.checkpoint_config import ExternalizedCheckpointCleanup
+    from pyflink.datastream.checkpoint_config import ExternalizedCheckpointRetention
 
     env.enable_checkpointing(args.checkpoint_interval_seconds * 1000)
     checkpoint_config = env.get_checkpoint_config()
@@ -30,6 +30,8 @@ def configure_checkpointing(env: Any, args: Any) -> None:
     checkpoint_config.set_checkpoint_timeout(args.checkpoint_timeout_seconds * 1000)
     checkpoint_config.set_max_concurrent_checkpoints(1)
     checkpoint_config.set_tolerable_checkpoint_failure_number(args.tolerable_checkpoint_failures)
-    checkpoint_config.enable_externalized_checkpoints(ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION)
+    checkpoint_config.set_externalized_checkpoint_retention(
+        ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION
+    )
     if args.unaligned_checkpoints_enabled:
         checkpoint_config.enable_unaligned_checkpoints()

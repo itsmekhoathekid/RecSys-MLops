@@ -4,38 +4,32 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from collections import deque
 from typing import Any
 
-from features.flink.candidate_pool_job import (
-    candidate_updates,
-    refresh_user_candidate_pool,
-)
-from features.flink.item_features_job import (
-    ItemFeatureState,
-)
-from features.flink.user_aggregate_job import (
-    UserAggregateState,
-)
-from features.flink.user_sequence_job import (
-    UserSequenceState,
-)
+from features.flink.candidate_pool_job import candidate_updates
 from features.flink.time_utils import isoformat_utc, parse_event_time
 from features.flink.event_time import (
     LateArrivalMetricCounters,
     event_time_status,
     late_arrival_metrics,
 )
+from features.flink.feature_windows import (
+    early_and_event_time_trigger,
+    native_feature_pane_aggregate,
+    native_feature_pane_window_function,
+    native_item_rolling_feature_process,
+    native_user_rolling_feature_process,
+)
 from features.flink.quality_windows import native_quality_window_aggregate
+from features.flink.rate_limit import AsyncTokenBucketRateLimiter
 from features.flink.runtime_config import apply_state_ttl, configure_checkpointing
 from feature_store.online_writer import RedisOnlineWriter, dumps_feature_payload
 from feature_store.postgres_offline_store import (
     FEATURE_TABLES,
     PostgresOfflineStoreConfig,
     ensure_offline_store_tables,
-    insert_offline_rows,
+    insert_offline_rows_async,
 )
 from ingest.debezium import extract_debezium_after
 from metadata.governance_catalog import (
@@ -60,6 +54,13 @@ def stream_pipeline_role(args: argparse.Namespace) -> str:
     return "hybrid"
 
 
+def postgres_async_capacity(args: argparse.Namespace) -> int:
+    """Keep Postgres requests bounded by the connections available to the operator."""
+    requested_capacity = max(1, int(args.async_io_capacity))
+    pool_size = max(1, int(args.postgres_async_pool_size))
+    return min(requested_capacity, pool_size)
+
+
 def emit_progress(payload: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(payload, sort_keys=True) + "\n")
     sys.stdout.flush()
@@ -71,17 +72,6 @@ def flink_timestamp(value: Any) -> datetime:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     microsecond = (dt.microsecond // 1000) * 1000
     return dt.replace(microsecond=microsecond)
-
-
-@dataclass
-class StreamJobStats:
-    consumed: int = 0
-    skipped: int = 0
-    duplicate: int = 0
-    redis_writes: int = 0
-    offline_writes: int = 0
-    late_events: int = 0
-    bursty_windows: int = 0
 
 
 def safe_int(value: Any, default: int = 0) -> int:
@@ -126,7 +116,9 @@ def normalize_event(after: dict[str, Any]) -> dict[str, Any] | None:
 
     event = dict(after)
     event_type = str(event["event_type"])
-    event["event_type_id"] = safe_int(event.get("event_type_id"), EVENT_TYPE_IDS.get(event_type, 0))
+    event["event_type_id"] = safe_int(
+        event.get("event_type_id"), EVENT_TYPE_IDS.get(event_type, 0)
+    )
     event["category_id"] = safe_int(event.get("category_id"))
     event["brand_id"] = safe_int(event.get("brand_id"))
     event["price_bucket"] = safe_int(event.get("price_bucket"))
@@ -137,94 +129,40 @@ def normalize_event(after: dict[str, Any]) -> dict[str, Any] | None:
     return event
 
 
-def build_realtime_feature_payloads(
+def build_stream_behavior_row(
     event: dict[str, Any],
-    sequence_state: UserSequenceState,
-    aggregate_state: UserAggregateState,
-    item_state: ItemFeatureState,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    sequence_payload = sequence_state.update(event)
-    aggregate_payload = aggregate_state.update(event)
-    item_payload = item_state.update(event)
-    return sequence_payload, aggregate_payload, item_payload
-
-
-def write_payloads_to_redis(
-    event: dict[str, Any],
-    writer: RedisOnlineWriter,
-    redis_client: Any,
-    sequence_payload: dict[str, Any],
-    aggregate_payload: dict[str, Any],
-    item_payload: dict[str, Any],
-) -> int:
-    writer.write_user_sequence(event["user_id"], sequence_payload, ttl_seconds=90 * 24 * 60 * 60)
-    writer.write_user_aggregate(event["user_id"], aggregate_payload, ttl_seconds=24 * 60 * 60)
-    writer.write_item_features(event["product_id"], item_payload, ttl_seconds=7 * 24 * 60 * 60)
-    candidate_payloads = candidate_updates(item_payload)
-    for key, product_id, score in candidate_payloads:
-        redis_client.zadd(key, {str(product_id): float(score)})
-    personalized_candidates = refresh_user_candidate_pool(
-        redis_client,
-        user_id=event["user_id"],
-        category_id=item_payload["category_id"],
-    )
-    return 3 + len(candidate_payloads) + int(personalized_candidates > 0)
-
-
-def write_event_to_redis(
-    event: dict[str, Any],
-    writer: RedisOnlineWriter,
-    redis_client: Any,
-    sequence_state: UserSequenceState,
-    aggregate_state: UserAggregateState,
-    item_state: ItemFeatureState,
-) -> int:
-    sequence_payload, aggregate_payload, item_payload = build_realtime_feature_payloads(
-        event,
-        sequence_state,
-        aggregate_state,
-        item_state,
-    )
-    return write_payloads_to_redis(
-        event,
-        writer,
-        redis_client,
-        sequence_payload,
-        aggregate_payload,
-        item_payload,
-    )
-
-
-def build_offline_feature_rows(
-    event: dict[str, Any],
-    sequence_payload: dict[str, Any],
-    aggregate_payload: dict[str, Any],
-    item_payload: dict[str, Any],
     source_topic: str,
     allowed_lateness_seconds: int,
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, Any]:
     late_by_seconds, is_late = late_arrival_metrics(event, allowed_lateness_seconds)
     feature_ts = parse_event_time(event["event_timestamp"])
     return {
-        "stream_behavior_events": [
-            {
-                "event_id": str(event["event_id"]),
-                "event_timestamp": feature_ts,
-                "processed_timestamp": datetime.now(timezone.utc),
-                "user_id": int(event["user_id"]),
-                "product_id": int(event["product_id"]),
-                "event_type": str(event["event_type"]),
-                "event_type_id": int(event["event_type_id"]),
-                "category_id": int(event["category_id"]),
-                "brand_id": int(event["brand_id"]),
-                "price": float(event["price"]),
-                "price_bucket": int(event["price_bucket"]),
-                "payload_hash": str(event.get("payload_hash") or ""),
-                "source_topic": source_topic,
-                "late_by_seconds": late_by_seconds,
-                "is_late": is_late,
-            }
-        ],
+        "event_id": str(event["event_id"]),
+        "event_timestamp": feature_ts,
+        "processed_timestamp": datetime.now(timezone.utc),
+        "user_id": int(event["user_id"]),
+        "product_id": int(event["product_id"]),
+        "event_type": str(event["event_type"]),
+        "event_type_id": int(event["event_type_id"]),
+        "category_id": int(event["category_id"]),
+        "brand_id": int(event["brand_id"]),
+        "price": float(event["price"]),
+        "price_bucket": int(event["price_bucket"]),
+        "payload_hash": str(event.get("payload_hash") or ""),
+        "source_topic": source_topic,
+        "late_by_seconds": late_by_seconds,
+        "is_late": is_late,
+    }
+
+
+def build_offline_user_feature_rows(
+    update: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    event = update["event"]
+    feature_ts = parse_event_time(event["event_timestamp"])
+    sequence_payload = update["sequence_payload"]
+    aggregate_payload = update["aggregate_payload"]
+    return {
         "stream_user_sequence_features": [
             {
                 "source_event_id": str(event["event_id"]),
@@ -248,6 +186,16 @@ def build_offline_feature_rows(
                 "feature_version": aggregate_payload["feature_version"],
             }
         ],
+    }
+
+
+def build_offline_item_feature_rows(
+    update: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    event = update["event"]
+    feature_ts = parse_event_time(event["event_timestamp"])
+    item_payload = update["item_payload"]
+    return {
         "stream_item_features": [
             {
                 "source_event_id": str(event["event_id"]),
@@ -267,20 +215,17 @@ def build_offline_feature_rows(
     }
 
 
-build_warehouse_rows = build_offline_feature_rows
-
-
 def _event_time_pair(event: dict[str, Any]) -> tuple[datetime, str]:
     feature_ts = parse_event_time(event["event_timestamp"])
     return feature_ts, isoformat_utc(feature_ts)
 
 
-def build_postgres_feast_rows(
-    event: dict[str, Any],
-    sequence_payload: dict[str, Any],
-    aggregate_payload: dict[str, Any],
-    item_payload: dict[str, Any],
+def build_postgres_user_feature_rows(
+    update: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
+    event = update["event"]
+    sequence_payload = update["sequence_payload"]
+    aggregate_payload = update["aggregate_payload"]
     feature_ts, feature_ts_text = _event_time_pair(event)
     created_ts = datetime.now(timezone.utc)
     return {
@@ -292,13 +237,27 @@ def build_postgres_feast_rows(
                 "event_timestamp": feature_ts,
                 "created_timestamp": created_ts,
                 "hist_item_ids": [int(value) for value in sequence_payload["item_ids"]],
-                "hist_event_type_ids": [int(value) for value in sequence_payload["event_type_ids"]],
-                "hist_category_ids": [int(value) for value in sequence_payload["category_ids"]],
-                "hist_brand_ids": [int(value) for value in sequence_payload["brand_ids"]],
-                "hist_price_bucket_ids": [int(value) for value in sequence_payload["price_bucket_ids"]],
-                "hist_event_timestamps": [str(value) for value in sequence_payload["event_timestamps"]],
-                "hist_request_ids": [str(value) for value in sequence_payload["request_ids"]],
-                "hist_impression_ids": [str(value) for value in sequence_payload["impression_ids"]],
+                "hist_event_type_ids": [
+                    int(value) for value in sequence_payload["event_type_ids"]
+                ],
+                "hist_category_ids": [
+                    int(value) for value in sequence_payload["category_ids"]
+                ],
+                "hist_brand_ids": [
+                    int(value) for value in sequence_payload["brand_ids"]
+                ],
+                "hist_price_bucket_ids": [
+                    int(value) for value in sequence_payload["price_bucket_ids"]
+                ],
+                "hist_event_timestamps": [
+                    str(value) for value in sequence_payload["event_timestamps"]
+                ],
+                "hist_request_ids": [
+                    str(value) for value in sequence_payload["request_ids"]
+                ],
+                "hist_impression_ids": [
+                    str(value) for value in sequence_payload["impression_ids"]
+                ],
                 "hist_length": int(sequence_payload["sequence_length"]),
                 "max_history_length": int(sequence_payload["max_history_length"]),
                 "feature_version": str(sequence_payload["feature_version"]),
@@ -313,16 +272,35 @@ def build_postgres_feast_rows(
                 "views_30m": int(aggregate_payload["views_30m"]),
                 "carts_30m": int(aggregate_payload["carts_30m"]),
                 "purchases_24h": int(aggregate_payload["purchases_24h"]),
-                "distinct_categories_7d": int(aggregate_payload["distinct_categories_7d"]),
+                "distinct_categories_7d": int(
+                    aggregate_payload["distinct_categories_7d"]
+                ),
                 "avg_viewed_price_7d": float(aggregate_payload["avg_viewed_price_7d"]),
-                "cart_to_purchase_ratio_7d": float(aggregate_payload["cart_to_purchase_ratio_7d"]),
-                "last_event_age_seconds": int(aggregate_payload["last_event_age_seconds"]),
-                "aggregation_window_end_ts": aggregate_payload.get("updated_at", feature_ts_text),
+                "cart_to_purchase_ratio_7d": float(
+                    aggregate_payload["cart_to_purchase_ratio_7d"]
+                ),
+                "last_event_age_seconds": int(
+                    aggregate_payload["last_event_age_seconds"]
+                ),
+                "aggregation_window_end_ts": aggregate_payload.get(
+                    "updated_at", feature_ts_text
+                ),
                 "watermark_ts": feature_ts,
                 "created_timestamp": created_ts,
                 "feature_version": str(aggregate_payload["feature_version"]),
             }
         ],
+    }
+
+
+def build_postgres_item_feature_rows(
+    update: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    event = update["event"]
+    item_payload = update["item_payload"]
+    feature_ts, feature_ts_text = _event_time_pair(event)
+    created_ts = datetime.now(timezone.utc)
+    return {
         "item_features": [
             {
                 "source_event_id": str(event["event_id"]),
@@ -341,7 +319,9 @@ def build_postgres_feast_rows(
                 "purchases_7d": int(item_payload["purchases_7d"]),
                 "conversion_rate_7d": float(item_payload["conversion_rate_7d"]),
                 "popularity_score": float(item_payload["popularity_score"]),
-                "aggregation_window_end_ts": item_payload.get("updated_at", feature_ts_text),
+                "aggregation_window_end_ts": item_payload.get(
+                    "updated_at", feature_ts_text
+                ),
                 "watermark_ts": feature_ts,
                 "created_timestamp": created_ts,
                 "feature_version": str(item_payload["feature_version"]),
@@ -376,40 +356,6 @@ def build_late_event_dlq_row(
     }
 
 
-def user_sequence_payload_from_history(
-    event: dict[str, Any],
-    history: list[dict[str, Any]],
-    max_history_length: int,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    state = UserSequenceState(max_history_length=max_history_length)
-    user_id = int(event["user_id"])
-    state.events_by_user[user_id] = deque(history, maxlen=max_history_length)
-    payload = state.update(event)
-    return payload, list(state.events_by_user[user_id])
-
-
-def user_aggregate_payload_from_history(
-    event: dict[str, Any],
-    history: list[dict[str, Any]],
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    state = UserAggregateState()
-    user_id = int(event["user_id"])
-    state.events_by_user[user_id] = deque(history)
-    payload = state.update(event)
-    return payload, list(state.events_by_user[user_id])
-
-
-def item_payload_from_history(
-    event: dict[str, Any],
-    history: list[dict[str, Any]],
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    state = ItemFeatureState()
-    product_id = int(event["product_id"])
-    state.events_by_product[product_id] = deque(history)
-    payload = state.update(event)
-    return payload, list(state.events_by_product[product_id])
-
-
 def kafka_offsets_initializer(name: str):
     from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer
 
@@ -435,7 +381,9 @@ def build_kafka_source(args: argparse.Namespace):
         .set_value_only_deserializer(SimpleStringSchema())
         .set_client_id_prefix("recsys-native-pyflink")
         .set_property("fetch.max.bytes", str(args.kafka_fetch_max_bytes))
-        .set_property("max.partition.fetch.bytes", str(args.kafka_max_partition_fetch_bytes))
+        .set_property(
+            "max.partition.fetch.bytes", str(args.kafka_max_partition_fetch_bytes)
+        )
         .set_property("max.poll.records", str(args.kafka_max_poll_records))
     )
     if not args.continuous and args.max_events > 0:
@@ -445,10 +393,17 @@ def build_kafka_source(args: argparse.Namespace):
 
 def build_realtime_stream(env: Any, args: argparse.Namespace):
     from pyflink.common import Duration, Time, Types, WatermarkStrategy
-    from pyflink.datastream.functions import FilterFunction, KeyedProcessFunction, MapFunction
+    from pyflink.datastream import AsyncDataStream
+    from pyflink.datastream.functions import (
+        AsyncFunction,
+        FilterFunction,
+        KeyedProcessFunction,
+        MapFunction,
+    )
     from pyflink.datastream.output_tag import OutputTag
     from pyflink.datastream.state import ValueStateDescriptor
     from pyflink.datastream.window import TumblingEventTimeWindows
+
     try:
         from pyflink.common.watermark_strategy import TimestampAssigner
     except ImportError:
@@ -507,104 +462,127 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             marked["_is_duplicate"] = duplicate
             yield marked
 
-    class BuildUserFeatures(KeyedProcessFunction):
+    class AsyncRedisFeatureWriter(AsyncFunction):
         def open(self, runtime_context):
-            sequence_descriptor = apply_state_ttl(
-                ValueStateDescriptor("user_sequence_history", Types.PICKLED_BYTE_ARRAY()),
-                args.state_ttl_seconds,
-            )
-            aggregate_descriptor = apply_state_ttl(
-                ValueStateDescriptor("user_aggregate_history", Types.PICKLED_BYTE_ARRAY()),
-                args.state_ttl_seconds,
-            )
-            self.sequence_history = runtime_context.get_state(sequence_descriptor)
-            self.aggregate_history = runtime_context.get_state(aggregate_descriptor)
+            import redis.asyncio as redis
 
-        def process_element(self, event: dict[str, Any], ctx):
-            if event.get("_is_duplicate"):
-                yield {"event": event, "sequence_payload": None, "aggregate_payload": None}
-                return
-            sequence_payload, sequence_history = user_sequence_payload_from_history(
-                event,
-                self.sequence_history.value() or [],
-                args.max_history_length,
+            self.redis_client = redis.Redis(
+                host=args.redis_host, port=args.redis_port, decode_responses=True
             )
-            aggregate_payload, aggregate_history = user_aggregate_payload_from_history(
-                event,
-                self.aggregate_history.value() or [],
-            )
-            self.sequence_history.update(sequence_history)
-            self.aggregate_history.update(aggregate_history)
-            yield {
-                "event": event,
-                "sequence_payload": sequence_payload,
-                "aggregate_payload": aggregate_payload,
-            }
-
-    class BuildItemFeatures(KeyedProcessFunction):
-        def open(self, runtime_context):
-            descriptor = apply_state_ttl(
-                ValueStateDescriptor("item_feature_history", Types.PICKLED_BYTE_ARRAY()),
-                args.state_ttl_seconds,
-            )
-            self.item_history = runtime_context.get_state(descriptor)
-
-        def process_element(self, envelope: dict[str, Any], ctx):
-            event = envelope["event"]
-            if event.get("_is_duplicate"):
-                yield {**envelope, "item_payload": None}
-                return
-            item_payload, item_history = item_payload_from_history(
-                event,
-                self.item_history.value() or [],
-            )
-            self.item_history.update(item_history)
-            yield {**envelope, "item_payload": item_payload}
-
-    class RedisFeatureWriter(MapFunction):
-        def open(self, runtime_context):
-            import redis
-
-            self.redis_client = redis.Redis(host=args.redis_host, port=args.redis_port, decode_responses=True)
             self.writer = RedisOnlineWriter(self.redis_client)
+            self.rate_limiter = AsyncTokenBucketRateLimiter(
+                args.redis_sink_max_events_per_second,
+                args.sink_rate_limit_burst_events,
+            )
             self.writes = 0
+            self.rate_limit_wait_seconds = 0.0
             self.last_write_unixtime = 0
 
-        def map(self, envelope: dict[str, Any]) -> str:
-            event = envelope["event"]
-            if event.get("_is_duplicate"):
-                return json.dumps({"status": "duplicate_skipped", "event_id": event["event_id"]}, sort_keys=True)
-            sequence_payload = envelope["sequence_payload"]
-            aggregate_payload = envelope["aggregate_payload"]
-            item_payload = envelope["item_payload"]
-            writes = write_payloads_to_redis(
-                event,
-                self.writer,
-                self.redis_client,
-                sequence_payload,
-                aggregate_payload,
-                item_payload,
+        async def async_invoke(self, update: dict[str, Any]) -> list[dict[str, Any]]:
+            event = update["event"]
+            self.rate_limit_wait_seconds += await self.rate_limiter.acquire()
+            if update["kind"] == "user":
+                feature_writes = (
+                    (
+                        self.writer.keys.user_sequence.format(user_id=event["user_id"]),
+                        update["sequence_payload"],
+                        90 * 24 * 60 * 60,
+                    ),
+                    (
+                        self.writer.keys.user_aggregate.format(
+                            user_id=event["user_id"]
+                        ),
+                        update["aggregate_payload"],
+                        24 * 60 * 60,
+                    ),
+                )
+            else:
+                feature_writes = (
+                    (
+                        self.writer.keys.item_features.format(
+                            product_id=event["product_id"]
+                        ),
+                        update["item_payload"],
+                        7 * 24 * 60 * 60,
+                    ),
+                )
+            import asyncio
+
+            await asyncio.gather(
+                *(
+                    self.redis_client.eval(
+                        self.writer._WRITE_LATEST_SCRIPT,
+                        1,
+                        key,
+                        str(payload.get("updated_at") or ""),
+                        dumps_feature_payload(payload),
+                        ttl_seconds,
+                    )
+                    for key, payload, ttl_seconds in feature_writes
+                )
+            )
+            candidate_payloads = []
+            personalized_candidates = 0
+            if update["kind"] == "item":
+                item_payload = update["item_payload"]
+                candidate_payloads = candidate_updates(item_payload)
+                await asyncio.gather(
+                    *(
+                        self.redis_client.zadd(key, {str(product_id): float(score)})
+                        for key, product_id, score in candidate_payloads
+                    )
+                )
+                category_key = (
+                    f"candidate:popular:category:{int(item_payload['category_id'])}"
+                )
+                candidates = await self.redis_client.zrevrange(
+                    category_key, 0, 99, withscores=True
+                )
+                if candidates:
+                    scored_candidates = {
+                        str(product_id): float(score)
+                        for product_id, score in candidates
+                    }
+                    user_key = f"candidate:user:{int(event['user_id'])}"
+                    await asyncio.gather(
+                        self.redis_client.zadd(user_key, scored_candidates),
+                        self.redis_client.zremrangebyrank(user_key, 0, -101),
+                        self.redis_client.expire(user_key, 7 * 24 * 60 * 60),
+                    )
+                    personalized_candidates = len(scored_candidates)
+            writes = (
+                len(feature_writes)
+                + len(candidate_payloads)
+                + int(personalized_candidates > 0)
             )
             self.writes += writes
             if writes:
                 self.last_write_unixtime = int(datetime.now(timezone.utc).timestamp())
-            if args.progress_log_events > 0 and self.writes % args.progress_log_events == 0:
-                emit_progress({"status": "running", "topic": args.topic, "redis_writes": self.writes})
-            return json.dumps(
+            if (
+                args.progress_log_events > 0
+                and self.writes % args.progress_log_events == 0
+            ):
+                emit_progress(
+                    {
+                        "status": "running",
+                        "topic": args.topic,
+                        "redis_writes": self.writes,
+                    }
+                )
+            return [update]
+
+        def timeout(self, update: dict[str, Any]) -> list[dict[str, Any]]:
+            event = update.get("event") or {}
+            emit_progress(
                 {
-                    "status": "redis_written",
-                    "event_id": event["event_id"],
-                    "redis_writes": self.writes,
-                },
-                sort_keys=True,
+                    "status": "redis_async_timeout",
+                    "topic": args.topic,
+                    "event_id": event.get("event_id"),
+                }
             )
+            return [update]
 
-    class RedisFeaturePassthrough(RedisFeatureWriter):
-        def map(self, envelope: dict[str, Any]) -> dict[str, Any]:
-            super().map(envelope)
-            return envelope
-
-    class PostgresFeastOfflineWriter(MapFunction):
+    class AsyncPostgresFeastOfflineWriter(AsyncFunction):
         def open(self, runtime_context):
             self.config = PostgresOfflineStoreConfig(
                 host=args.feast_postgres_host,
@@ -615,26 +593,70 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 password=args.feast_postgres_password,
                 sslmode=args.feast_postgres_sslmode,
             )
-            self.conn = self.config.connect()
-            ensure_offline_store_tables(self.conn, self.config.schema, FEATURE_TABLES)
-            self.writes = 0
-
-        def map(self, envelope: dict[str, Any]) -> str:
-            event = envelope["event"]
-            if event.get("_is_duplicate"):
-                return json.dumps({"status": "duplicate_skipped", "event_id": event["event_id"]}, sort_keys=True)
-            rows_by_table = build_postgres_feast_rows(
-                event,
-                envelope["sequence_payload"],
-                envelope["aggregate_payload"],
-                envelope["item_payload"],
+            setup_conn = self.config.connect()
+            try:
+                ensure_offline_store_tables(
+                    setup_conn, self.config.schema, FEATURE_TABLES
+                )
+            finally:
+                setup_conn.close()
+            self.pool = None
+            self.pool_lock = None
+            self.rate_limiter = AsyncTokenBucketRateLimiter(
+                args.postgres_sink_max_events_per_second,
+                args.sink_rate_limit_burst_events,
             )
+            self.writes = 0
+            self.rate_limit_wait_seconds = 0.0
+
+        async def async_invoke(self, update: dict[str, Any]) -> list[str]:
+            event = update["event"]
+            rows_by_table = (
+                build_postgres_user_feature_rows(update)
+                if update["kind"] == "user"
+                else build_postgres_item_feature_rows(update)
+            )
+            self.rate_limit_wait_seconds += await self.rate_limiter.acquire()
+            if self.pool is None:
+                import asyncio
+                from psycopg.conninfo import make_conninfo
+                from psycopg_pool import AsyncConnectionPool
+
+                if self.pool_lock is None:
+                    self.pool_lock = asyncio.Lock()
+                async with self.pool_lock:
+                    if self.pool is None:
+                        conninfo = make_conninfo(
+                            host=self.config.host,
+                            port=self.config.port,
+                            dbname=self.config.database,
+                            user=self.config.user,
+                            password=self.config.password,
+                            sslmode=self.config.sslmode,
+                        )
+                        self.pool = AsyncConnectionPool(
+                            conninfo=conninfo,
+                            min_size=1,
+                            max_size=args.postgres_async_pool_size,
+                            open=False,
+                            timeout=float(args.async_io_timeout_seconds),
+                        )
+                        await self.pool.open(
+                            wait=True,
+                            timeout=float(args.async_io_timeout_seconds),
+                        )
             inserted = 0
-            for table_name, rows in rows_by_table.items():
-                inserted += insert_offline_rows(self.conn, self.config.schema, table_name, rows, commit=False)
-            self.conn.commit()
+            async with self.pool.connection() as conn:
+                for table_name, rows in rows_by_table.items():
+                    inserted += await insert_offline_rows_async(
+                        conn, self.config.schema, table_name, rows
+                    )
+                await conn.commit()
             self.writes += inserted
-            if args.progress_log_events > 0 and self.writes % args.progress_log_events == 0:
+            if (
+                args.progress_log_events > 0
+                and self.writes % args.progress_log_events == 0
+            ):
                 emit_progress(
                     {
                         "status": "running",
@@ -643,18 +665,30 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                         "postgres_rows": self.writes,
                     }
                 )
-            return json.dumps(
-                {
-                    "status": "postgres_feast_offline_written",
-                    "event_id": event["event_id"],
-                    "rows": inserted,
-                    "total_rows": self.writes,
-                },
-                sort_keys=True,
-            )
+            return [
+                json.dumps(
+                    {
+                        "status": "postgres_feast_offline_written",
+                        "event_id": event["event_id"],
+                        "rows": inserted,
+                        "total_rows": self.writes,
+                        "rate_limit_wait_seconds": round(
+                            self.rate_limit_wait_seconds, 3
+                        ),
+                    },
+                    sort_keys=True,
+                )
+            ]
 
-        def close(self):
-            self.conn.close()
+        def timeout(self, update: dict[str, Any]) -> list[str]:
+            event = update.get("event") or {}
+            status = {
+                "status": "postgres_feast_offline_timeout",
+                "topic": args.topic,
+                "event_id": event.get("event_id"),
+            }
+            emit_progress(status)
+            return [json.dumps(status, sort_keys=True)]
 
     class KeepRows(FilterFunction):
         def filter(self, value: Any | None) -> bool:
@@ -662,7 +696,9 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
 
     class MarkEventTimeStatus(KeyedProcessFunction):
         def open(self, runtime_context):
-            self.late_arrival_metrics = LateArrivalMetricCounters.from_runtime_context(runtime_context)
+            self.late_arrival_metrics = LateArrivalMetricCounters.from_runtime_context(
+                runtime_context
+            )
 
         def process_element(self, event: dict[str, Any], ctx):
             watermark_ms = int(ctx.timer_service().current_watermark())
@@ -670,7 +706,7 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 event,
                 watermark_ms,
                 args.allowed_lateness_seconds,
-                args.quality_window_seconds,
+                args.feature_window_seconds,
             )
             self.late_arrival_metrics.record(is_late, is_too_late)
             marked = dict(event)
@@ -681,11 +717,13 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
 
     class KeepFeatureEvents(FilterFunction):
         def filter(self, event: dict[str, Any]) -> bool:
+            if event.get("_is_duplicate"):
+                return False
             if not args.drop_late_events:
                 return True
             return not bool(event.get("_is_too_late"))
 
-    class PostgresLateEventDlqWriter(MapFunction):
+    class AsyncPostgresLateEventDlqWriter(AsyncFunction):
         def open(self, runtime_context):
             self.config = PostgresOfflineStoreConfig(
                 host=args.feast_postgres_host,
@@ -696,41 +734,85 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
                 password=args.feast_postgres_password,
                 sslmode=args.feast_postgres_sslmode,
             )
-            self.conn = self.config.connect()
-            ensure_offline_store_tables(self.conn, self.config.schema, ("stream_late_events_dlq",))
+            setup_conn = self.config.connect()
+            try:
+                ensure_offline_store_tables(
+                    setup_conn, self.config.schema, ("stream_late_events_dlq",)
+                )
+            finally:
+                setup_conn.close()
+            self.pool = None
+            self.pool_lock = None
             self.writes = 0
 
-        def map(self, event: dict[str, Any]) -> str:
-            row = build_late_event_dlq_row(event, args.topic, args.allowed_lateness_seconds)
-            self.writes += insert_offline_rows(self.conn, self.config.schema, "stream_late_events_dlq", [row])
-            return json.dumps(
-                {
-                    "status": "late_event_dlq_written",
-                    "event_id": event["event_id"],
-                    "late_by_seconds": float(row["late_by_seconds"]),
-                    "total_rows": self.writes,
-                },
-                sort_keys=True,
-            )
+        async def async_invoke(self, event: dict[str, Any]) -> list[str]:
+            if self.pool is None:
+                import asyncio
+                from psycopg.conninfo import make_conninfo
+                from psycopg_pool import AsyncConnectionPool
 
-        def close(self):
-            self.conn.close()
+                if self.pool_lock is None:
+                    self.pool_lock = asyncio.Lock()
+                async with self.pool_lock:
+                    if self.pool is None:
+                        conninfo = make_conninfo(
+                            host=self.config.host,
+                            port=self.config.port,
+                            dbname=self.config.database,
+                            user=self.config.user,
+                            password=self.config.password,
+                            sslmode=self.config.sslmode,
+                        )
+                        self.pool = AsyncConnectionPool(
+                            conninfo=conninfo,
+                            min_size=1,
+                            max_size=args.postgres_async_pool_size,
+                            open=False,
+                            timeout=float(args.async_io_timeout_seconds),
+                        )
+                        await self.pool.open(
+                            wait=True,
+                            timeout=float(args.async_io_timeout_seconds),
+                        )
+            row = build_late_event_dlq_row(
+                event, args.topic, args.allowed_lateness_seconds
+            )
+            async with self.pool.connection() as conn:
+                inserted = await insert_offline_rows_async(
+                    conn, self.config.schema, "stream_late_events_dlq", [row]
+                )
+                await conn.commit()
+            self.writes += inserted
+            return [
+                json.dumps(
+                    {
+                        "status": "late_event_dlq_written",
+                        "event_id": event["event_id"],
+                        "late_by_seconds": float(row["late_by_seconds"]),
+                        "total_rows": self.writes,
+                    },
+                    sort_keys=True,
+                )
+            ]
+
+        def timeout(self, event: dict[str, Any]) -> list[str]:
+            status = {
+                "status": "late_event_dlq_timeout",
+                "topic": args.topic,
+                "event_id": event.get("event_id"),
+            }
+            emit_progress(status)
+            return [json.dumps(status, sort_keys=True)]
 
     class StreamBehaviorEventRow(MapFunction):
-        def map(self, envelope: dict[str, Any]):
+        def map(self, event: dict[str, Any]):
             from pyflink.common import Row
 
-            event = envelope["event"]
-            if event.get("_is_duplicate"):
-                return None
-            row = build_offline_feature_rows(
+            row = build_stream_behavior_row(
                 event,
-                envelope["sequence_payload"],
-                envelope["aggregate_payload"],
-                envelope["item_payload"],
                 args.topic,
                 args.allowed_lateness_seconds,
-            )["stream_behavior_events"][0]
+            )
             return Row(
                 row["event_id"],
                 flink_timestamp(row["event_timestamp"]),
@@ -750,20 +832,12 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             )
 
     class UserSequenceFeatureRow(MapFunction):
-        def map(self, envelope: dict[str, Any]):
+        def map(self, update: dict[str, Any]):
             from pyflink.common import Row
 
-            event = envelope["event"]
-            if event.get("_is_duplicate"):
-                return None
-            row = build_offline_feature_rows(
-                event,
-                envelope["sequence_payload"],
-                envelope["aggregate_payload"],
-                envelope["item_payload"],
-                args.topic,
-                args.allowed_lateness_seconds,
-            )["stream_user_sequence_features"][0]
+            row = build_offline_user_feature_rows(update)[
+                "stream_user_sequence_features"
+            ][0]
             return Row(
                 row["user_id"],
                 flink_timestamp(row["feature_timestamp"]),
@@ -774,20 +848,12 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             )
 
     class UserAggregateFeatureRow(MapFunction):
-        def map(self, envelope: dict[str, Any]):
+        def map(self, update: dict[str, Any]):
             from pyflink.common import Row
 
-            event = envelope["event"]
-            if event.get("_is_duplicate"):
-                return None
-            row = build_offline_feature_rows(
-                event,
-                envelope["sequence_payload"],
-                envelope["aggregate_payload"],
-                envelope["item_payload"],
-                args.topic,
-                args.allowed_lateness_seconds,
-            )["stream_user_aggregate_features"][0]
+            row = build_offline_user_feature_rows(update)[
+                "stream_user_aggregate_features"
+            ][0]
             return Row(
                 row["user_id"],
                 flink_timestamp(row["feature_timestamp"]),
@@ -799,20 +865,10 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             )
 
     class ItemFeatureRow(MapFunction):
-        def map(self, envelope: dict[str, Any]):
+        def map(self, update: dict[str, Any]):
             from pyflink.common import Row
 
-            event = envelope["event"]
-            if event.get("_is_duplicate"):
-                return None
-            row = build_offline_feature_rows(
-                event,
-                envelope["sequence_payload"],
-                envelope["aggregate_payload"],
-                envelope["item_payload"],
-                args.topic,
-                args.allowed_lateness_seconds,
-            )["stream_item_features"][0]
+            row = build_offline_item_feature_rows(update)["stream_item_features"][0]
             return Row(
                 row["product_id"],
                 flink_timestamp(row["feature_timestamp"]),
@@ -849,7 +905,9 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         def map(self, event: dict[str, Any]):
             from pyflink.common import Row
 
-            row = build_late_event_dlq_row(event, args.topic, args.allowed_lateness_seconds)
+            row = build_late_event_dlq_row(
+                event, args.topic, args.allowed_lateness_seconds
+            )
             return Row(
                 row["event_id"],
                 row["user_id"],
@@ -891,7 +949,9 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         Duration.of_minutes(args.watermark_delay_minutes)
     ).with_timestamp_assigner(EventTimestampAssigner())
     if args.watermark_idleness_seconds > 0:
-        watermark = watermark.with_idleness(Duration.of_seconds(args.watermark_idleness_seconds))
+        watermark = watermark.with_idleness(
+            Duration.of_seconds(args.watermark_idleness_seconds)
+        )
     if args.watermark_alignment_enabled:
         watermark = watermark.with_watermark_alignment(
             args.watermark_alignment_group,
@@ -912,10 +972,14 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         MarkDuplicateEvents(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
     )
-    marked = deduped.key_by(lambda event: str(event["event_id"])).process(
-        MarkEventTimeStatus(),
-        output_type=Types.PICKLED_BYTE_ARRAY(),
-    ).name("watermark-lateness-classifier")
+    marked = (
+        deduped.key_by(lambda event: str(event["event_id"]))
+        .process(
+            MarkEventTimeStatus(),
+            output_type=Types.PICKLED_BYTE_ARRAY(),
+        )
+        .name("watermark-lateness-classifier")
+    )
     late_event_tag = OutputTag("late-events", Types.PICKLED_BYTE_ARRAY())
     quality_rows = (
         marked.key_by(lambda event: args.topic)
@@ -933,34 +997,113 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         QualityWindowMetricLog(),
         output_type=Types.STRING(),
     ).name("streaming-quality-window-metrics").print()
-    late_events = quality_rows.get_side_output(late_event_tag).name("native-late-events-side-output")
-    if args.offline_store_enabled and args.offline_store_sink == "postgres" and args.enable_late_event_dlq:
-        late_events.map(
-            PostgresLateEventDlqWriter(),
+    late_events = quality_rows.get_side_output(late_event_tag).name(
+        "native-late-events-side-output"
+    )
+    if (
+        args.offline_store_enabled
+        and args.offline_store_sink == "postgres"
+        and args.enable_late_event_dlq
+    ):
+        AsyncDataStream.unordered_wait(
+            data_stream=late_events,
+            async_function=AsyncPostgresLateEventDlqWriter(),
+            timeout=Time.seconds(args.async_io_timeout_seconds),
+            capacity=postgres_async_capacity(args),
             output_type=Types.STRING(),
         ).name("postgres-late-events-dlq").print()
-    feature_events = marked.filter(KeepFeatureEvents()).name("watermark-late-event-policy")
-    user_features = feature_events.key_by(lambda event: int(event["user_id"])).process(
-        BuildUserFeatures(),
-        output_type=Types.PICKLED_BYTE_ARRAY(),
+    feature_events = marked.filter(KeepFeatureEvents()).name(
+        "watermark-late-event-policy"
     )
-    enriched = user_features.key_by(lambda envelope: int(envelope["event"]["product_id"])).process(
-        BuildItemFeatures(),
-        output_type=Types.PICKLED_BYTE_ARRAY(),
+    user_feature_late_tag = OutputTag(
+        "user-feature-window-late-events",
+        Types.PICKLED_BYTE_ARRAY(),
     )
+    item_feature_late_tag = OutputTag(
+        "item-feature-window-late-events",
+        Types.PICKLED_BYTE_ARRAY(),
+    )
+    user_panes = (
+        feature_events.key_by(lambda event: int(event["user_id"]))
+        .window(TumblingEventTimeWindows.of(Time.seconds(args.feature_window_seconds)))
+        .allowed_lateness(args.allowed_lateness_seconds * 1000)
+        .side_output_late_data(user_feature_late_tag)
+        .trigger(
+            early_and_event_time_trigger(
+                args.feature_early_fire_seconds,
+                "user-feature-early-fire-timer",
+            )
+        )
+        .aggregate(
+            native_feature_pane_aggregate(),
+            native_feature_pane_window_function("user"),
+            accumulator_type=Types.PICKLED_BYTE_ARRAY(),
+            output_type=Types.PICKLED_BYTE_ARRAY(),
+        )
+        .name("user-feature-event-time-panes")
+    )
+    user_updates = (
+        user_panes.key_by(lambda pane: int(pane["entity_id"]))
+        .process(
+            native_user_rolling_feature_process(args),
+            output_type=Types.PICKLED_BYTE_ARRAY(),
+        )
+        .name("user-feature-rolling-horizons")
+    )
+    item_panes = (
+        feature_events.key_by(lambda event: int(event["product_id"]))
+        .window(TumblingEventTimeWindows.of(Time.seconds(args.feature_window_seconds)))
+        .allowed_lateness(args.allowed_lateness_seconds * 1000)
+        .side_output_late_data(item_feature_late_tag)
+        .trigger(
+            early_and_event_time_trigger(
+                args.feature_early_fire_seconds,
+                "item-feature-early-fire-timer",
+            )
+        )
+        .aggregate(
+            native_feature_pane_aggregate(),
+            native_feature_pane_window_function("item"),
+            accumulator_type=Types.PICKLED_BYTE_ARRAY(),
+            output_type=Types.PICKLED_BYTE_ARRAY(),
+        )
+        .name("item-feature-event-time-panes")
+    )
+    item_updates = (
+        item_panes.key_by(lambda pane: int(pane["entity_id"]))
+        .process(
+            native_item_rolling_feature_process(args),
+            output_type=Types.PICKLED_BYTE_ARRAY(),
+        )
+        .name("item-feature-rolling-horizons")
+    )
+    feature_updates = user_updates.union(item_updates)
     if not args.disable_online_store:
-        enriched = enriched.map(
-            RedisFeaturePassthrough(),
+        sink_updates = AsyncDataStream.unordered_wait(
+            data_stream=feature_updates,
+            async_function=AsyncRedisFeatureWriter(),
+            timeout=Time.seconds(args.async_io_timeout_seconds),
+            capacity=args.async_io_capacity,
             output_type=Types.PICKLED_BYTE_ARRAY(),
         ).name("redis-online-feature-writer")
     else:
-        emit_progress({"status": "online_store_disabled", "topic": args.topic, "group_id": args.group_id})
+        emit_progress(
+            {
+                "status": "online_store_disabled",
+                "topic": args.topic,
+                "group_id": args.group_id,
+            }
+        )
+        sink_updates = feature_updates
     if not args.offline_store_enabled:
         return None
 
     if args.offline_store_sink == "postgres":
-        enriched.map(
-            PostgresFeastOfflineWriter(),
+        AsyncDataStream.unordered_wait(
+            data_stream=sink_updates,
+            async_function=AsyncPostgresFeastOfflineWriter(),
+            timeout=Time.seconds(args.async_io_timeout_seconds),
+            capacity=postgres_async_capacity(args),
             output_type=Types.STRING(),
         ).name("postgres-feast-offline-feature-writer").print()
         return None
@@ -984,54 +1127,126 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
         table = table_env.from_data_stream(stream)
         statement_set.add_insert(catalog.feature_table(name), table)
 
-    behavior_stream = enriched.map(
+    behavior_stream = feature_events.map(
         StreamBehaviorEventRow(),
         output_type=Types.ROW_NAMED(
             [
-                "event_id", "event_timestamp", "processed_timestamp", "user_id", "product_id",
-                "event_type", "event_type_id", "category_id", "brand_id", "price", "price_bucket",
-                "payload_hash", "source_topic", "late_by_seconds", "is_late",
+                "event_id",
+                "event_timestamp",
+                "processed_timestamp",
+                "user_id",
+                "product_id",
+                "event_type",
+                "event_type_id",
+                "category_id",
+                "brand_id",
+                "price",
+                "price_bucket",
+                "payload_hash",
+                "source_topic",
+                "late_by_seconds",
+                "is_late",
             ],
             [
-                Types.STRING(), Types.SQL_TIMESTAMP(), Types.SQL_TIMESTAMP(), Types.LONG(), Types.LONG(),
-                Types.STRING(), Types.INT(), Types.INT(), Types.INT(), Types.DOUBLE(), Types.INT(),
-                Types.STRING(), Types.STRING(), Types.DOUBLE(), Types.BOOLEAN(),
+                Types.STRING(),
+                Types.SQL_TIMESTAMP(),
+                Types.SQL_TIMESTAMP(),
+                Types.LONG(),
+                Types.LONG(),
+                Types.STRING(),
+                Types.INT(),
+                Types.INT(),
+                Types.INT(),
+                Types.DOUBLE(),
+                Types.INT(),
+                Types.STRING(),
+                Types.STRING(),
+                Types.DOUBLE(),
+                Types.BOOLEAN(),
             ],
         ),
     ).filter(KeepRows())
     add_insert("stream_behavior_events", behavior_stream)
     add_insert(
         "stream_user_sequence_features",
-        enriched.map(
+        user_updates.map(
             UserSequenceFeatureRow(),
             output_type=Types.ROW_NAMED(
-                ["user_id", "feature_timestamp", "sequence_length", "max_history_length", "feature_payload", "feature_version"],
-                [Types.LONG(), Types.SQL_TIMESTAMP(), Types.INT(), Types.INT(), Types.STRING(), Types.STRING()],
+                [
+                    "user_id",
+                    "feature_timestamp",
+                    "sequence_length",
+                    "max_history_length",
+                    "feature_payload",
+                    "feature_version",
+                ],
+                [
+                    Types.LONG(),
+                    Types.SQL_TIMESTAMP(),
+                    Types.INT(),
+                    Types.INT(),
+                    Types.STRING(),
+                    Types.STRING(),
+                ],
             ),
         ).filter(KeepRows()),
     )
     add_insert(
         "stream_user_aggregate_features",
-        enriched.map(
+        user_updates.map(
             UserAggregateFeatureRow(),
             output_type=Types.ROW_NAMED(
-                ["user_id", "feature_timestamp", "views_30m", "carts_30m", "purchases_24h", "feature_payload", "feature_version"],
-                [Types.LONG(), Types.SQL_TIMESTAMP(), Types.INT(), Types.INT(), Types.INT(), Types.STRING(), Types.STRING()],
+                [
+                    "user_id",
+                    "feature_timestamp",
+                    "views_30m",
+                    "carts_30m",
+                    "purchases_24h",
+                    "feature_payload",
+                    "feature_version",
+                ],
+                [
+                    Types.LONG(),
+                    Types.SQL_TIMESTAMP(),
+                    Types.INT(),
+                    Types.INT(),
+                    Types.INT(),
+                    Types.STRING(),
+                    Types.STRING(),
+                ],
             ),
         ).filter(KeepRows()),
     )
     add_insert(
         "stream_item_features",
-        enriched.map(
+        item_updates.map(
             ItemFeatureRow(),
             output_type=Types.ROW_NAMED(
                 [
-                    "product_id", "feature_timestamp", "category_id", "brand_id", "price_bucket",
-                    "views_1h", "views_24h", "purchases_24h", "popularity_score", "feature_payload", "feature_version",
+                    "product_id",
+                    "feature_timestamp",
+                    "category_id",
+                    "brand_id",
+                    "price_bucket",
+                    "views_1h",
+                    "views_24h",
+                    "purchases_24h",
+                    "popularity_score",
+                    "feature_payload",
+                    "feature_version",
                 ],
                 [
-                    Types.LONG(), Types.SQL_TIMESTAMP(), Types.INT(), Types.INT(), Types.INT(),
-                    Types.INT(), Types.INT(), Types.INT(), Types.DOUBLE(), Types.STRING(), Types.STRING(),
+                    Types.LONG(),
+                    Types.SQL_TIMESTAMP(),
+                    Types.INT(),
+                    Types.INT(),
+                    Types.INT(),
+                    Types.INT(),
+                    Types.INT(),
+                    Types.INT(),
+                    Types.DOUBLE(),
+                    Types.STRING(),
+                    Types.STRING(),
                 ],
             ),
         ).filter(KeepRows()),
@@ -1042,13 +1257,30 @@ def build_realtime_stream(env: Any, args: argparse.Namespace):
             QualityWindowRow(),
             output_type=Types.ROW_NAMED(
                 [
-                    "window_start", "window_end", "topic", "event_count", "late_event_count",
-                    "late_events_dropped", "side_output_late_events", "duplicate_event_count",
-                    "max_late_by_seconds", "is_bursty", "created_timestamp",
+                    "window_start",
+                    "window_end",
+                    "topic",
+                    "event_count",
+                    "late_event_count",
+                    "late_events_dropped",
+                    "side_output_late_events",
+                    "duplicate_event_count",
+                    "max_late_by_seconds",
+                    "is_bursty",
+                    "created_timestamp",
                 ],
                 [
-                    Types.SQL_TIMESTAMP(), Types.SQL_TIMESTAMP(), Types.STRING(), Types.LONG(), Types.LONG(),
-                    Types.LONG(), Types.LONG(), Types.LONG(), Types.DOUBLE(), Types.BOOLEAN(), Types.SQL_TIMESTAMP(),
+                    Types.SQL_TIMESTAMP(),
+                    Types.SQL_TIMESTAMP(),
+                    Types.STRING(),
+                    Types.LONG(),
+                    Types.LONG(),
+                    Types.LONG(),
+                    Types.LONG(),
+                    Types.LONG(),
+                    Types.DOUBLE(),
+                    Types.BOOLEAN(),
+                    Types.SQL_TIMESTAMP(),
                 ],
             ),
         ),
@@ -1108,51 +1340,170 @@ def run_pyflink_stream(args: argparse.Namespace) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Native PyFlink Kafka realtime feature job.")
-    parser.add_argument("--runner", choices=["pyflink"], default=os.getenv("STREAM_RUNNER", "pyflink"))
+    parser = argparse.ArgumentParser(
+        description="Native PyFlink Kafka realtime feature job."
+    )
+    parser.add_argument(
+        "--runner", choices=["pyflink"], default=os.getenv("STREAM_RUNNER", "pyflink")
+    )
     parser.add_argument("--topic", default="cdc.behavior_events")
-    parser.add_argument("--bootstrap-servers", default=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"))
+    parser.add_argument(
+        "--bootstrap-servers",
+        default=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"),
+    )
     parser.add_argument("--redis-host", default=os.getenv("REDIS_HOST", "redis"))
     parser.add_argument("--redis-port", type=int, default=env_int("REDIS_PORT", 6379))
     parser.add_argument("--group-id", default="recsys-flink-realtime-local")
-    parser.add_argument("--starting-offsets", choices=["earliest", "latest", "committed-offsets"], default="earliest")
-    parser.add_argument("--kafka-fetch-max-bytes", type=int, default=env_int("KAFKA_FETCH_MAX_BYTES", 1048576))
+    parser.add_argument(
+        "--starting-offsets",
+        choices=["earliest", "latest", "committed-offsets"],
+        default="earliest",
+    )
+    parser.add_argument(
+        "--kafka-fetch-max-bytes",
+        type=int,
+        default=env_int("KAFKA_FETCH_MAX_BYTES", 1048576),
+    )
     parser.add_argument(
         "--kafka-max-partition-fetch-bytes",
         type=int,
         default=env_int("KAFKA_MAX_PARTITION_FETCH_BYTES", 262144),
     )
-    parser.add_argument("--kafka-max-poll-records", type=int, default=env_int("KAFKA_MAX_POLL_RECORDS", 100))
+    parser.add_argument(
+        "--kafka-max-poll-records",
+        type=int,
+        default=env_int("KAFKA_MAX_POLL_RECORDS", 100),
+    )
+    parser.add_argument(
+        "--redis-sink-max-events-per-second",
+        type=float,
+        default=float(os.getenv("REDIS_SINK_MAX_EVENTS_PER_SECOND", "200")),
+    )
+    parser.add_argument(
+        "--postgres-sink-max-events-per-second",
+        type=float,
+        default=float(os.getenv("POSTGRES_SINK_MAX_EVENTS_PER_SECOND", "100")),
+    )
+    parser.add_argument(
+        "--sink-rate-limit-burst-events",
+        type=int,
+        default=env_int("SINK_RATE_LIMIT_BURST_EVENTS", 25),
+    )
+    parser.add_argument(
+        "--async-io-capacity", type=int, default=env_int("FLINK_ASYNC_IO_CAPACITY", 64)
+    )
+    parser.add_argument(
+        "--async-io-timeout-seconds",
+        type=int,
+        default=env_int("FLINK_ASYNC_IO_TIMEOUT_SECONDS", 30),
+    )
+    parser.add_argument(
+        "--postgres-async-pool-size",
+        type=int,
+        default=env_int("POSTGRES_ASYNC_POOL_SIZE", 16),
+    )
     parser.add_argument("--max-events", type=int, default=200)
     parser.add_argument("--min-events", type=int, default=1)
     parser.add_argument("--continuous", action="store_true")
-    parser.add_argument("--parallelism", type=int, default=env_int("FLINK_PARALLELISM", 1))
+    parser.add_argument(
+        "--parallelism", type=int, default=env_int("FLINK_PARALLELISM", 1)
+    )
     parser.add_argument("--max-history-length", type=int, default=50)
-    parser.add_argument("--offline-store-enabled", action="store_true", default=os.getenv("OFFLINE_STORE_ENABLED", "true").lower() in {"1", "true", "yes"})
-    parser.add_argument("--disable-offline-store", action="store_true", default=os.getenv("DISABLE_OFFLINE_STORE", "false").lower() in {"1", "true", "yes"})
-    parser.add_argument("--disable-online-store", action="store_true", default=os.getenv("DISABLE_ONLINE_STORE", "false").lower() in {"1", "true", "yes"})
-    parser.add_argument("--lakehouse-warehouse", default=os.getenv("LAKEHOUSE_WAREHOUSE", "s3a://recsys-lakehouse/warehouse"))
-    parser.add_argument("--iceberg-catalog", default=os.getenv("ICEBERG_CATALOG", "recsys"))
-    parser.add_argument("--offline-feature-catalog", default=os.getenv("OFFLINE_FEATURE_CATALOG", "recsys_features"))
-    parser.add_argument("--offline-feature-store-warehouse", default=os.getenv("OFFLINE_FEATURE_STORE_WAREHOUSE", "s3a://recsys-offline-feature-store/warehouse"))
-    parser.add_argument("--iceberg-feature-namespace", default=os.getenv("ICEBERG_FEATURE_NAMESPACE", "feature_store"))
-    parser.add_argument("--offline-store-sink", choices=["postgres", "iceberg"], default=os.getenv("OFFLINE_STORE_SINK", "postgres"))
-    parser.add_argument("--feast-postgres-host", default=os.getenv("FEAST_POSTGRES_HOST", "feature-postgres"))
-    parser.add_argument("--feast-postgres-port", type=int, default=env_int("FEAST_POSTGRES_PORT", 5432))
-    parser.add_argument("--feast-postgres-database", default=os.getenv("FEAST_POSTGRES_DB", "feature_store"))
-    parser.add_argument("--feast-postgres-schema", default=os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store"))
-    parser.add_argument("--feast-postgres-user", default=os.getenv("FEAST_POSTGRES_USER", "feast"))
-    parser.add_argument("--feast-postgres-password", default=os.getenv("FEAST_POSTGRES_PASSWORD", "feast"))
-    parser.add_argument("--feast-postgres-sslmode", default=os.getenv("FEAST_POSTGRES_SSLMODE", "disable"))
-    parser.add_argument("--watermark-delay-minutes", type=int, default=env_int("STREAM_WATERMARK_DELAY_MINUTES", 60))
-    parser.add_argument("--allowed-lateness-seconds", type=int, default=env_int("STREAM_ALLOWED_LATENESS_SECONDS", 300))
-    parser.add_argument("--watermark-idleness-seconds", type=int, default=env_int("STREAM_WATERMARK_IDLENESS_SECONDS", 120))
+    parser.add_argument(
+        "--offline-store-enabled",
+        action="store_true",
+        default=os.getenv("OFFLINE_STORE_ENABLED", "true").lower()
+        in {"1", "true", "yes"},
+    )
+    parser.add_argument(
+        "--disable-offline-store",
+        action="store_true",
+        default=os.getenv("DISABLE_OFFLINE_STORE", "false").lower()
+        in {"1", "true", "yes"},
+    )
+    parser.add_argument(
+        "--disable-online-store",
+        action="store_true",
+        default=os.getenv("DISABLE_ONLINE_STORE", "false").lower()
+        in {"1", "true", "yes"},
+    )
+    parser.add_argument(
+        "--lakehouse-warehouse",
+        default=os.getenv("LAKEHOUSE_WAREHOUSE", "s3a://recsys-lakehouse/warehouse"),
+    )
+    parser.add_argument(
+        "--iceberg-catalog", default=os.getenv("ICEBERG_CATALOG", "recsys")
+    )
+    parser.add_argument(
+        "--offline-feature-catalog",
+        default=os.getenv("OFFLINE_FEATURE_CATALOG", "recsys_features"),
+    )
+    parser.add_argument(
+        "--offline-feature-store-warehouse",
+        default=os.getenv(
+            "OFFLINE_FEATURE_STORE_WAREHOUSE",
+            "s3a://recsys-offline-feature-store/warehouse",
+        ),
+    )
+    parser.add_argument(
+        "--iceberg-feature-namespace",
+        default=os.getenv("ICEBERG_FEATURE_NAMESPACE", "feature_store"),
+    )
+    parser.add_argument(
+        "--offline-store-sink",
+        choices=["postgres", "iceberg"],
+        default=os.getenv("OFFLINE_STORE_SINK", "postgres"),
+    )
+    parser.add_argument(
+        "--feast-postgres-host",
+        default=os.getenv("FEAST_POSTGRES_HOST", "feature-postgres"),
+    )
+    parser.add_argument(
+        "--feast-postgres-port", type=int, default=env_int("FEAST_POSTGRES_PORT", 5432)
+    )
+    parser.add_argument(
+        "--feast-postgres-database",
+        default=os.getenv("FEAST_POSTGRES_DB", "feature_store"),
+    )
+    parser.add_argument(
+        "--feast-postgres-schema",
+        default=os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store"),
+    )
+    parser.add_argument(
+        "--feast-postgres-user", default=os.getenv("FEAST_POSTGRES_USER", "feast")
+    )
+    parser.add_argument(
+        "--feast-postgres-password",
+        default=os.getenv("FEAST_POSTGRES_PASSWORD", "feast"),
+    )
+    parser.add_argument(
+        "--feast-postgres-sslmode",
+        default=os.getenv("FEAST_POSTGRES_SSLMODE", "disable"),
+    )
+    parser.add_argument(
+        "--watermark-delay-minutes",
+        type=int,
+        default=env_int("STREAM_WATERMARK_DELAY_MINUTES", 60),
+    )
+    parser.add_argument(
+        "--allowed-lateness-seconds",
+        type=int,
+        default=env_int("STREAM_ALLOWED_LATENESS_SECONDS", 300),
+    )
+    parser.add_argument(
+        "--watermark-idleness-seconds",
+        type=int,
+        default=env_int("STREAM_WATERMARK_IDLENESS_SECONDS", 120),
+    )
     parser.add_argument(
         "--watermark-alignment-enabled",
         action=argparse.BooleanOptionalAction,
         default=env_bool("STREAM_WATERMARK_ALIGNMENT_ENABLED", False),
     )
-    parser.add_argument("--watermark-alignment-group", default=os.getenv("STREAM_WATERMARK_ALIGNMENT_GROUP", "recsys-cdc"))
+    parser.add_argument(
+        "--watermark-alignment-group",
+        default=os.getenv("STREAM_WATERMARK_ALIGNMENT_GROUP", "recsys-cdc"),
+    )
     parser.add_argument(
         "--watermark-alignment-max-drift-seconds",
         type=int,
@@ -1163,8 +1514,26 @@ def main() -> int:
         type=int,
         default=env_int("STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS", 5),
     )
-    parser.add_argument("--quality-window-seconds", type=int, default=env_int("STREAM_QUALITY_WINDOW_SECONDS", 60))
-    parser.add_argument("--burst-threshold-event-count", type=int, default=env_int("STREAM_BURST_THRESHOLD_EVENT_COUNT", 500))
+    parser.add_argument(
+        "--quality-window-seconds",
+        type=int,
+        default=env_int("STREAM_QUALITY_WINDOW_SECONDS", 60),
+    )
+    parser.add_argument(
+        "--feature-window-seconds",
+        type=int,
+        default=env_int("STREAM_FEATURE_WINDOW_SECONDS", 60),
+    )
+    parser.add_argument(
+        "--feature-early-fire-seconds",
+        type=int,
+        default=env_int("STREAM_FEATURE_EARLY_FIRE_SECONDS", 5),
+    )
+    parser.add_argument(
+        "--burst-threshold-event-count",
+        type=int,
+        default=env_int("STREAM_BURST_THRESHOLD_EVENT_COUNT", 500),
+    )
     parser.add_argument(
         "--drop-late-events",
         action=argparse.BooleanOptionalAction,
@@ -1175,13 +1544,41 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=env_bool("STREAM_ENABLE_LATE_EVENT_DLQ", True),
     )
-    parser.add_argument("--state-ttl-seconds", type=int, default=env_int("STREAM_STATE_TTL_SECONDS", 7 * 24 * 60 * 60))
-    parser.add_argument("--dedup-state-ttl-seconds", type=int, default=env_int("STREAM_DEDUP_STATE_TTL_SECONDS", 24 * 60 * 60))
-    parser.add_argument("--progress-log-events", type=int, default=env_int("STREAM_PROGRESS_LOG_EVENTS", 100))
-    parser.add_argument("--checkpoint-interval-seconds", type=int, default=env_int("STREAM_CHECKPOINT_INTERVAL_SECONDS", 30))
-    parser.add_argument("--checkpoint-min-pause-seconds", type=int, default=env_int("STREAM_CHECKPOINT_MIN_PAUSE_SECONDS", 10))
-    parser.add_argument("--checkpoint-timeout-seconds", type=int, default=env_int("STREAM_CHECKPOINT_TIMEOUT_SECONDS", 300))
-    parser.add_argument("--tolerable-checkpoint-failures", type=int, default=env_int("STREAM_TOLERABLE_CHECKPOINT_FAILURES", 2))
+    parser.add_argument(
+        "--state-ttl-seconds",
+        type=int,
+        default=env_int("STREAM_STATE_TTL_SECONDS", 7 * 24 * 60 * 60),
+    )
+    parser.add_argument(
+        "--dedup-state-ttl-seconds",
+        type=int,
+        default=env_int("STREAM_DEDUP_STATE_TTL_SECONDS", 24 * 60 * 60),
+    )
+    parser.add_argument(
+        "--progress-log-events",
+        type=int,
+        default=env_int("STREAM_PROGRESS_LOG_EVENTS", 100),
+    )
+    parser.add_argument(
+        "--checkpoint-interval-seconds",
+        type=int,
+        default=env_int("STREAM_CHECKPOINT_INTERVAL_SECONDS", 30),
+    )
+    parser.add_argument(
+        "--checkpoint-min-pause-seconds",
+        type=int,
+        default=env_int("STREAM_CHECKPOINT_MIN_PAUSE_SECONDS", 10),
+    )
+    parser.add_argument(
+        "--checkpoint-timeout-seconds",
+        type=int,
+        default=env_int("STREAM_CHECKPOINT_TIMEOUT_SECONDS", 300),
+    )
+    parser.add_argument(
+        "--tolerable-checkpoint-failures",
+        type=int,
+        default=env_int("STREAM_TOLERABLE_CHECKPOINT_FAILURES", 2),
+    )
     parser.add_argument(
         "--unaligned-checkpoints-enabled",
         action=argparse.BooleanOptionalAction,
@@ -1193,8 +1590,14 @@ def main() -> int:
 
     offline_outputs: set[str] = set()
     if args.offline_store_enabled:
-        configured_outputs = POSTGRES_FEATURE_URNS if args.offline_store_sink == "postgres" else ICEBERG_FEATURE_URNS
-        offline_outputs.update(configured_outputs[table] for table in REDIS_FEATURE_URNS)
+        configured_outputs = (
+            POSTGRES_FEATURE_URNS
+            if args.offline_store_sink == "postgres"
+            else ICEBERG_FEATURE_URNS
+        )
+        offline_outputs.update(
+            configured_outputs[table] for table in REDIS_FEATURE_URNS
+        )
     runtime_run_id = lineage_run_id()
     recorders: list[RuntimeLineageRecorder] = []
     if args.offline_store_enabled:

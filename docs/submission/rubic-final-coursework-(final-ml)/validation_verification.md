@@ -27,21 +27,6 @@ uv run pytest tests/unit/api_serving \
   --cov-report=term-missing
 ```
 
-Terminal summary:
-
-```text
-collected 33 items
-tests/unit/api_serving/test_serving.py ...............                   [ 45%]
-tests/unit/api_serving/test_split_services.py ..                         [ 51%]
-tests/unit/api_serving/test_validation_verification.py ................  [100%]
-
-apps/api-serving/src/feature_api.py                 38      0   100%
-apps/api-serving/src/feature_service_client.py      21      0   100%
-apps/api-serving/src/inference_api.py               53      0   100%
-TOTAL                                              669     63    91%
-33 passed, 3 warnings in 1.01s
-```
-
 ### 1.3 Screenshot proof
 
 ![Unit test coverage > 90%](../../pngs/unit_test_90.png)
@@ -58,20 +43,45 @@ TOTAL                                              669     63    91%
 
 Source references:
 
-- [test_validation_verification.py (line 18)](../../../tests/unit/api_serving/test_validation_verification.py#L18), [test_validation_verification.py (line 73)](../../../tests/unit/api_serving/test_validation_verification.py#L73): deterministic feature/ranker mocks plus `monkeypatch` API fixtures.
+- [`Mock` and `AsyncMock` import at test_validation_verification.py line 4](../../../tests/unit/api_serving/test_validation_verification.py#L4), [mock construction at lines 63-68](../../../tests/unit/api_serving/test_validation_verification.py#L63), and [mock injection at lines 69-81](../../../tests/unit/api_serving/test_validation_verification.py#L69): standard-library mocks plus pytest fixtures for both APIs.
+- [Valid-path interaction assertions at lines 111-112](../../../tests/unit/api_serving/test_validation_verification.py#L111) and [validation short-circuit assertions at lines 138-140](../../../tests/unit/api_serving/test_validation_verification.py#L138): prove when mocked dependencies must and must not be called.
 - [test_split_services.py (line 15)](../../../tests/unit/api_serving/test_split_services.py#L15), [test_split_services.py (line 139)](../../../tests/unit/api_serving/test_split_services.py#L139): route-level tests for both split services.
 
-### 2.2 Test design
+### 2.2 How `unittest.mock` is used
+
+The fixtures use standard-library `Mock` objects rather than only naming hand-written classes as mocks. `spec` restricts each mock to the dependency interface, `wraps`/`side_effect` preserves deterministic output, and `AsyncMock` models the awaitable feature-service call correctly:
+
+```python
+feature_service_impl = DeterministicFeatureService()
+feature_service = Mock(spec=DeterministicFeatureService)
+feature_service.fetch = AsyncMock(side_effect=feature_service_impl.fetch)
+
+ranker_impl = DeterministicRanker()
+ranker = Mock(spec=DeterministicRanker, wraps=ranker_impl)
+ranker.model_version = ranker_impl.model_version
+
+monkeypatch.setattr(
+    inference_api,
+    "feature_service_client",
+    Mock(return_value=feature_service),
+)
+monkeypatch.setattr(inference_api, "ranker", lambda: ranker)
+```
+
+This replaces the production feature-service HTTP client and Triton ranker before `TestClient` calls the API. The online-feature fixture separately uses [`Mock(spec=DeterministicFeatureClient, wraps=...)`](../../../tests/unit/api_serving/test_validation_verification.py#L80) to replace the Redis/Feast client. Valid recommendation requests assert `fetch.assert_awaited_once()` and `score.assert_called_once()`; invalid Pydantic boundaries assert `assert_not_awaited()` and `assert_not_called()`, proving validation returns HTTP 422 before external dependencies execute.
+
+### 2.3 Test design
 
 | Test area | Fixture/mock used | Expected behavior | Evidence |
 | --- | --- | --- | --- |
-| `POST /recommendations` | `deterministic_api` fixture mocks feature-service client and ranker | HTTP 200 with deterministic ranked items | [test_validation_verification.py (line 60)](../../../tests/unit/api_serving/test_validation_verification.py#L60), [test_validation_verification.py (line 102)](../../../tests/unit/api_serving/test_validation_verification.py#L102) |
-| `POST /online-features` and `GET /online-features/{user_id}` | `deterministic_feature_api` fixture mocks Feast/Redis feature client | HTTP 200 with deterministic online feature payload | [test_validation_verification.py (line 129)](../../../tests/unit/api_serving/test_validation_verification.py#L129), [test_validation_verification.py (line 168)](../../../tests/unit/api_serving/test_validation_verification.py#L168) |
-| Feature API warmup | `WarmupFeatureClient` mock | startup warmup runs when enabled and skips when disabled | [test_validation_verification.py (line 267)](../../../tests/unit/api_serving/test_validation_verification.py#L267), [test_validation_verification.py (line 283)](../../../tests/unit/api_serving/test_validation_verification.py#L283) |
-| API error handling | broken feature client, broken feature-service client, broken ranker | both services return HTTP 502 on dependency failure | [test_validation_verification.py (line 186)](../../../tests/unit/api_serving/test_validation_verification.py#L186), [test_validation_verification.py (line 226)](../../../tests/unit/api_serving/test_validation_verification.py#L226) |
-| Singleton helpers | fake client/router classes | lazy singletons are created once | [test_validation_verification.py (line 228)](../../../tests/unit/api_serving/test_validation_verification.py#L228), [test_validation_verification.py (line 265)](../../../tests/unit/api_serving/test_validation_verification.py#L265) |
+| `POST /recommendations` | `deterministic_api` injects `Mock` feature service and ranker; async/sync call assertions verify collaboration | HTTP 200 with deterministic ranked items | [fixture at line 61](../../../tests/unit/api_serving/test_validation_verification.py#L61), [request and assertions at lines 100-112](../../../tests/unit/api_serving/test_validation_verification.py#L100) |
+| `GET /online-features/{user_id}` | `deterministic_feature_api` injects a wrapped `Mock` for the Feast/Redis feature client | HTTP 200 with deterministic online feature payload | [fixture at line 78](../../../tests/unit/api_serving/test_validation_verification.py#L78), [API assertions at lines 143-181](../../../tests/unit/api_serving/test_validation_verification.py#L143) |
+| Validation short circuit | The same mocks are retained on `app.state` so the test can assert neither feature retrieval nor ranking occurs for rejected input | HTTP 422 and zero dependency calls | [invalid-case assertions at lines 132-140](../../../tests/unit/api_serving/test_validation_verification.py#L132) |
+| Feature API warmup | `WarmupFeatureClient` test double | startup warmup runs when enabled and skips when disabled | [warmup test at lines 281-296](../../../tests/unit/api_serving/test_validation_verification.py#L281) |
+| API error handling | broken feature client, broken feature-service client, broken ranker | both services return HTTP 502 on dependency failure | [error-path test at lines 200-239](../../../tests/unit/api_serving/test_validation_verification.py#L200) |
+| Singleton helpers | fake client/router classes injected with `monkeypatch` | lazy singletons are created once | [singleton test at lines 242-278](../../../tests/unit/api_serving/test_validation_verification.py#L242) |
 
-### 2.3 Commands used
+### 2.4 Commands used
 
 ```bash
 UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src \
@@ -84,11 +94,11 @@ uv run pytest tests/unit/api_serving -q
 Terminal summaries:
 
 ```text
-15 passed, 3 warnings in 0.55s
-32 passed, 3 warnings in 0.58s
+16 passed, 5 warnings in 2.14s
+41 passed, 5 warnings in 5.36s
 ```
 
-### 2.4 Screenshot proof
+### 2.5 Screenshot proof
 
 ![Web API fixtures and mocks](../../pngs/feature_and_mock_test.png)
 
@@ -103,24 +113,31 @@ Terminal summaries:
   - `1 <= top_k <= 100`
   - optional `candidate_item_ids` length `1..500`
 
-Source references:
+### 3.2 Technique-to-code mapping
 
-- [api_schemas.py (line 8)](../../../apps/api-serving/src/api_schemas.py#L8), [api_schemas.py (line 37)](../../../apps/api-serving/src/api_schemas.py#L37): validated recommendation and online-feature request models.
-- [test_validation_verification.py (line 75)](../../../tests/unit/api_serving/test_validation_verification.py#L75), [test_validation_verification.py (line 127)](../../../tests/unit/api_serving/test_validation_verification.py#L127): parametrized valid partitions and invalid boundary cases.
+| Technique | How it is applied | Concrete code reference |
+| --- | --- | --- |
+| Input-partition definition | Pydantic defines the valid domain: `user_id >= 1`, optional candidate-list length `1..500`, and `top_k` in `1..100`. The same domain is applied to both recommendation and online-feature requests. | [`RecommendationRequest` fields at api_schemas.py lines 8-11](../../../apps/api-serving/src/api_schemas.py#L8) and [`OnlineFeaturesRequest` fields at lines 34-37](../../../apps/api-serving/src/api_schemas.py#L34). |
+| Equivalence partitioning | One representative supplies a valid explicit candidate list; another omits the optional list and exercises the valid fallback-candidate path. Named IDs make both partitions visible in verbose pytest output. | [Representative payloads at lines 88-89](../../../tests/unit/api_serving/test_validation_verification.py#L88) and [partition IDs at lines 93-95](../../../tests/unit/api_serving/test_validation_verification.py#L93). |
+| Valid boundary values | The valid test matrix exercises the inclusive lower boundaries (`user_id=1`, one candidate, `top_k=1`) and inclusive upper boundaries (500 candidates and `top_k=100`). | [Minimum and maximum payloads at lines 90-91](../../../tests/unit/api_serving/test_validation_verification.py#L90) and [their boundary IDs at lines 96-97](../../../tests/unit/api_serving/test_validation_verification.py#L96). |
+| Invalid boundary values | A second parametrized matrix tests values immediately outside each accepted domain: `user_id=0`, `top_k=0`, `top_k=101`, zero candidates, and 501 candidates. | [Invalid payload matrix at lines 115-122](../../../tests/unit/api_serving/test_validation_verification.py#L115) and [descriptive IDs at lines 124-129](../../../tests/unit/api_serving/test_validation_verification.py#L124). |
+| Result oracle | Valid representatives must return HTTP 200, the deterministic model version, and the expected recommendation count; invalid boundaries must return HTTP 422. Mock interaction evidence is documented in [Section 2.2](#22-how-unittestmock-is-used). | [Valid result assertions at lines 105-110](../../../tests/unit/api_serving/test_validation_verification.py#L105) and [invalid result assertion at lines 132-138](../../../tests/unit/api_serving/test_validation_verification.py#L132). |
 
-### 3.2 Cases
+### 3.3 Cases
 
-| Partition or boundary | Example input | Expected result | Test ID | Status |
-| --- | --- | --- | --- | --- |
-| Valid explicit candidate list | `user_id=42`, `candidate_item_ids=[101,102,103]`, `top_k=2` | HTTP 200 | `equivalence-valid-explicit-candidates` | PASS |
-| Valid fallback candidates | `user_id=42`, no explicit candidates, `top_k=3` | HTTP 200 | `equivalence-valid-fallback-candidates` | PASS |
-| Minimum `user_id`, `top_k`, and candidate length | `user_id=1`, `candidate_item_ids=[1]`, `top_k=1` | HTTP 200 | `boundary-min-user-top-k-and-one-candidate` | PASS |
-| Maximum `top_k` and candidate length | `candidate_item_ids=500 items`, `top_k=100` | HTTP 200 | `boundary-max-top-k-and-max-candidates` | PASS |
-| Invalid `user_id` below min | `user_id=0` | HTTP 422 | `boundary-invalid-user-id-zero` | PASS |
-| Invalid `top_k` below/above bound | `top_k=0` or `top_k=101` | HTTP 422 | `boundary-invalid-top-k-*` | PASS |
-| Invalid candidate list length | `0` or `501` candidates | HTTP 422 | `boundary-invalid-candidates-*` | PASS |
+| Partition or boundary | Example input | Expected result | Test ID | Code reference | Status |
+| --- | --- | --- | --- | --- | --- |
+| Valid explicit candidate list | `user_id=42`, `candidate_item_ids=[101,102,103]`, `top_k=2` | HTTP 200 and 2 items | `equivalence-valid-explicit-candidates` | [payload at line 88](../../../tests/unit/api_serving/test_validation_verification.py#L88) | PASS |
+| Valid fallback candidates | `user_id=42`, no explicit candidates, `top_k=3` | HTTP 200 and 3 fallback items | `equivalence-valid-fallback-candidates` | [payload at line 89](../../../tests/unit/api_serving/test_validation_verification.py#L89) | PASS |
+| Minimum `user_id`, `top_k`, and candidate length | `user_id=1`, `candidate_item_ids=[1]`, `top_k=1` | HTTP 200 and 1 item | `boundary-min-user-top-k-and-one-candidate` | [payload at line 90](../../../tests/unit/api_serving/test_validation_verification.py#L90) | PASS |
+| Maximum `top_k` and candidate length | `candidate_item_ids=500 items`, `top_k=100` | HTTP 200 and 100 items | `boundary-max-top-k-and-max-candidates` | [payload at line 91](../../../tests/unit/api_serving/test_validation_verification.py#L91) | PASS |
+| Invalid `user_id` immediately below minimum | `user_id=0` | HTTP 422 | `boundary-invalid-user-id-zero` | [payload at line 118](../../../tests/unit/api_serving/test_validation_verification.py#L118) | PASS |
+| Invalid `top_k` immediately outside bounds | `top_k=0` or `top_k=101` | HTTP 422 | `boundary-invalid-top-k-*` | [payloads at lines 119-120](../../../tests/unit/api_serving/test_validation_verification.py#L119) | PASS |
+| Invalid candidate-list length immediately outside bounds | `0` or `501` candidates | HTTP 422 | `boundary-invalid-candidates-*` | [payloads at lines 121-122](../../../tests/unit/api_serving/test_validation_verification.py#L121) | PASS |
 
-### 3.3 Command used
+Equivalence partitioning avoids testing every possible valid user ID or candidate list: the two `equivalence-*` cases represent the two materially different valid request paths. Boundary value analysis then concentrates on the exact inclusive limits and the first invalid value on either side. The shared deterministic fixture ensures that a failure is attributable to request partitioning, routing, or validation rather than an unavailable external dependency.
+
+### 3.4 Command used
 
 ```bash
 UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src \
@@ -129,7 +146,7 @@ uv run pytest tests/unit/api_serving/test_validation_verification.py -q -vv
 
 The verbose output shows all `equivalence-*` and `boundary-*` test IDs as `PASSED`.
 
-### 3.4 Screenshot proof
+### 3.5 Screenshot proof
 
 ![Equivalence partitioning and boundary value analysis](../../pngs/boundary_analysis.png)
 
@@ -146,12 +163,26 @@ The verbose output shows all `equivalence-*` and `boundary-*` test IDs as `PASSE
 
 Source references:
 
-- [pyproject.toml (line 27)](../../../pyproject.toml#L27): `mutmut` dependency.
-- [validation_mutation.sh (line 1)](../../../jenkins/scripts/validation_mutation.sh#L1), [validation_mutation.sh (line 205)](../../../jenkins/scripts/validation_mutation.sh#L205): safe command construction, covered-line filtering, and selected targets.
+- [pyproject.toml (line 66)](../../../pyproject.toml#L66): `mutmut` dependency.
 - [validation-verification/mutation-summary.md](validation-verification/mutation-summary.md): mutation score.
 - [validation-verification/mutation-results.txt](validation-verification/mutation-results.txt): full mutant list.
 
-### 4.2 Command used
+### 4.2 Technique-to-code mapping
+
+| Mutation-testing technique | Where it is used | Concrete code reference |
+| --- | --- | --- |
+| Focused production targets | The proof mutates `format_top_k`, which sorts scores descending, truncates to `top_k`, and builds the recommendation response; and `get_online_features`, which chooses explicit or fallback candidates and loads user/item features. Both functions are on the production recommendation path. | [`format_top_k` at ranking.py lines 99-119](../../../apps/api-serving/src/ranking.py#L99), [`get_online_features` at online_features.py lines 273-289](../../../apps/api-serving/src/online_features.py#L273), and their production call sites at [ranking.py lines 164-176](../../../apps/api-serving/src/ranking.py#L164) and [lines 204-217](../../../apps/api-serving/src/ranking.py#L204). |
+| Target and mutant filtering | `MUTATION_TARGETS` limits source files; `MUTATION_MUTANT_NAMES` narrows execution to `ranking.x_format_top_k*` and `online_features.x_get_online_features*`. The script also validates that targets belong to an approved source root. | [Target parsing and allowlist at validation_mutation.sh lines 19-49](../../../jenkins/scripts/validation_mutation.sh#L19) and [source-root validation at lines 63-99](../../../jenkins/scripts/validation_mutation.sh#L63). |
+| Isolated mutation workspace | The script creates a temporary source workspace, links required repo directories, and generates a dedicated `mutmut` configuration so mutants do not rewrite the working tree. | [Temporary workspace at lines 101-112](../../../jenkins/scripts/validation_mutation.sh#L101) and [generated `tool.mutmut` configuration at lines 114-142](../../../jenkins/scripts/validation_mutation.sh#L114). |
+| Covered-line mutation | `mutate_only_covered_lines = true` restricts mutation generation to statements exercised by the selected tests. `only_mutate` limits mutation to the requested source files. | [Generated configuration at lines 124-140](../../../jenkins/scripts/validation_mutation.sh#L124). |
+| Test selection | The run selects focused unit tests for the two functions plus the property-based idempotency test, which traverses `recommend()` and therefore exercises feature retrieval, ranking, and top-k formatting together. | [`test_format_top_k_sorts_scores_descending` at test_serving.py lines 140-150](../../../tests/unit/api_serving/test_serving.py#L140), [`test_get_online_features_reads_candidates_sequence_and_items` at lines 373-393](../../../tests/unit/api_serving/test_serving.py#L373), and [the property test at test_validation_verification.py lines 359-392](../../../tests/unit/api_serving/test_validation_verification.py#L359). |
+| Mutant execution and evidence export | `mutmut run` executes each selected mutation; the script exports CI statistics and the complete mutant-status list. | [Execution and export at validation_mutation.sh lines 147-157](../../../jenkins/scripts/validation_mutation.sh#L147). |
+| Score and quality gate | Detected mutants are `killed + timeout + caught_by_type_check`; live mutants are `survived + suspicious + no_tests`. The script computes the score and fails unless it is strictly greater than the configured threshold. | [Score calculation, summary, and gate at lines 169-202](../../../jenkins/scripts/validation_mutation.sh#L169). |
+| Per-target result | All 30 `format_top_k` mutants were killed. For `get_online_features`, 22 mutants were killed and 8 survived, yielding 52 killed out of 60 selected mutants overall. | [`get_online_features` results at mutation-results.txt lines 257-286](validation-verification/mutation-results.txt#L257) and [`format_top_k` results at lines 482-511](validation-verification/mutation-results.txt#L482). |
+
+The selected test suite determines whether each mutant is killed; the report does not attribute an individual kill to one specific test case. The focused test references above show which tests cover each target, while `mutation-results.txt` is the authoritative per-mutant outcome.
+
+### 4.3 Command used
 
 ```bash
 MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' \
@@ -161,7 +192,7 @@ UV_CACHE_DIR=.uv-cache \
 bash jenkins/scripts/validation_mutation.sh
 ```
 
-### 4.3 Result
+### 4.4 Result
 
 | Metric | Result |
 | --- | ---: |
@@ -173,7 +204,7 @@ bash jenkins/scripts/validation_mutation.sh
 | Suspicious mutants | `0` |
 | No-test mutants | `0` |
 
-### 4.4 Screenshot proof
+### 4.5 Screenshot proof
 
 ![Mutation testing](../../pngs/mutation_testing.png)
 
@@ -184,14 +215,28 @@ bash jenkins/scripts/validation_mutation.sh
 - Requirement: use property-based testing to verify idempotency.
 - Property: repeated deterministic recommendations for the same request return the same item order, scores, model version, and metadata.
 - Generated inputs: `user_id`, `top_k`, and `candidate_item_ids`.
-- Deterministic dependencies: mocked feature client and ranker.
+- Deterministic dependencies: hand-written feature-client and ranker test doubles.
 
 Source references:
 
-- [pyproject.toml (line 26)](../../../pyproject.toml#L26): `hypothesis` dependency.
-- [test_validation_verification.py (line 341)](../../../tests/unit/api_serving/test_validation_verification.py#L341), [test_validation_verification.py (line 378)](../../../tests/unit/api_serving/test_validation_verification.py#L378): Hypothesis strategies, 60 generated examples, repeated predictions, and idempotency assertion.
+- [pyproject.toml (line 63)](../../../pyproject.toml#L63): `hypothesis` dependency.
+- [test_validation_verification.py (line 359)](../../../tests/unit/api_serving/test_validation_verification.py#L359), [test_validation_verification.py (line 392)](../../../tests/unit/api_serving/test_validation_verification.py#L392): Hypothesis strategies, 60 generated examples, repeated predictions, and idempotency assertion.
 
-### 5.2 Command used
+### 5.2 Technique-to-code mapping
+
+| Property-based technique | How it is applied | Concrete code reference |
+| --- | --- | --- |
+| Generated valid domain | `@given` generates `user_id` values from `1..20,000`, `top_k` from `1..100`, and non-empty candidate lists containing IDs from `1..20,000`. These ranges stay inside the Pydantic request contract. | [Hypothesis strategies at test_validation_verification.py lines 359-367](../../../tests/unit/api_serving/test_validation_verification.py#L359). |
+| Reproducible test budget | `@settings(max_examples=60, deadline=None)` runs 60 generated examples and disables timing-based failure so slower CI workers do not change the functional result. | [Hypothesis settings at line 368](../../../tests/unit/api_serving/test_validation_verification.py#L368). |
+| Production request construction | Each generated tuple is converted into the real `RecommendationRequest`, so Pydantic validation and the same request model used by the API remain in scope. | [Request construction at lines 369-378](../../../tests/unit/api_serving/test_validation_verification.py#L369) and [the production schema at api_schemas.py lines 8-11](../../../apps/api-serving/src/api_schemas.py#L8). |
+| Deterministic dependency control | The test uses deterministic feature and ranking implementations so repeated output can differ only because of recommendation logic, not Redis, HTTP, Triton, or randomness in dependencies. | [Deterministic feature client and ranker at lines 19-46](../../../tests/unit/api_serving/test_validation_verification.py#L19) and [their construction in the property test at lines 379-380](../../../tests/unit/api_serving/test_validation_verification.py#L379). |
+| Repeat-the-operation oracle | For every generated request, the test invokes the production `recommend()` function three times and serializes each complete response with `model_dump()`. | [Three repeated calls at lines 382-390](../../../tests/unit/api_serving/test_validation_verification.py#L382) and [`recommend()` production flow at ranking.py lines 122-176](../../../apps/api-serving/src/ranking.py#L122). |
+| Idempotency assertion | Equality of the three complete dictionaries verifies stable user ID, item order, scores, model version, A/B metadata, and response shape for identical input and deterministic dependencies. | [Idempotency assertion at line 392](../../../tests/unit/api_serving/test_validation_verification.py#L392) and [response fields at api_schemas.py lines 19-24](../../../apps/api-serving/src/api_schemas.py#L19). |
+| Downstream logic exercised | `recommend()` retrieves online features, builds the Triton payload, obtains deterministic scores, and calls `format_top_k`; therefore the property covers the integrated deterministic recommendation path rather than only a helper function. | [Feature retrieval at ranking.py lines 158-176](../../../apps/api-serving/src/ranking.py#L158) and [scoring/top-k formatting at lines 179-219](../../../apps/api-serving/src/ranking.py#L179). |
+
+The property is deterministic idempotency, not persistence idempotency: it proves that repeating the same pure recommendation request produces the same response. It does not claim that Redis/PostgreSQL write retries are covered by this particular Hypothesis test.
+
+### 5.3 Command used
 
 ```bash
 UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/api-serving/src \
@@ -200,7 +245,7 @@ uv run pytest \
   -q -vv
 ```
 
-### 5.3 Result
+### 5.4 Result
 
 | Field | Value |
 | --- | --- |
@@ -208,7 +253,7 @@ uv run pytest \
 | Number of examples | `60` |
 | Result | PASS |
 
-### 5.4 Screenshot proof
+### 5.5 Screenshot proof
 
 ![Property-based idempotency testing](../../pngs/idempotency_testing.png)
 

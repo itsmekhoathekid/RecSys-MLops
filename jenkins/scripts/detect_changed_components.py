@@ -415,7 +415,10 @@ def apply_path_rules(flags: dict[str, bool], normalized: str) -> None:
             mark(flags, "DRIFT")
     elif normalized == "apps/data-platform/Dockerfile.spark":
         mark(flags, "SPARK_BATCH", "DP2", "DP3")
-    elif normalized == "apps/data-platform/Dockerfile.flink":
+    elif normalized in {
+        "apps/data-platform/Dockerfile.flink",
+        "apps/data-platform/flink-runtime-pom.xml",
+    }:
         mark(flags, "STREAM_OFFLINE", "STREAM_ONLINE")
     elif normalized == "apps/data-platform/Dockerfile.dataflow-cli":
         mark(flags, "MATERIALIZE", "DP1", "DP3", "DRIFT", "STREAM_ONLINE")

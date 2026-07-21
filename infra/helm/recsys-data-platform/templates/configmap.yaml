@@ -116,6 +116,12 @@ data:
   KAFKA_FETCH_MAX_BYTES: {{ .Values.realtimeFlinkConsumer.kafkaFetchMaxBytes | quote }}
   KAFKA_MAX_PARTITION_FETCH_BYTES: {{ .Values.realtimeFlinkConsumer.kafkaMaxPartitionFetchBytes | quote }}
   KAFKA_MAX_POLL_RECORDS: {{ .Values.realtimeFlinkConsumer.kafkaMaxPollRecords | quote }}
+  REDIS_SINK_MAX_EVENTS_PER_SECOND: {{ .Values.realtimeFlinkConsumer.redisSinkMaxEventsPerSecond | quote }}
+  POSTGRES_SINK_MAX_EVENTS_PER_SECOND: {{ .Values.realtimeFlinkConsumer.postgresSinkMaxEventsPerSecond | quote }}
+  SINK_RATE_LIMIT_BURST_EVENTS: {{ .Values.realtimeFlinkConsumer.sinkRateLimitBurstEvents | quote }}
+  FLINK_ASYNC_IO_CAPACITY: {{ .Values.realtimeFlinkConsumer.asyncIoCapacity | quote }}
+  FLINK_ASYNC_IO_TIMEOUT_SECONDS: {{ .Values.realtimeFlinkConsumer.asyncIoTimeoutSeconds | quote }}
+  POSTGRES_ASYNC_POOL_SIZE: {{ .Values.realtimeFlinkConsumer.postgresAsyncPoolSize | quote }}
   FLINK_CHECKPOINT_STORAGE_URI: {{ .Values.flink.checkpointStorageUri | quote }}
   STREAM_WATERMARK_DELAY_MINUTES: {{ .Values.streaming.watermarkDelayMinutes | quote }}
   STREAM_ALLOWED_LATENESS_SECONDS: {{ .Values.streaming.allowedLatenessSeconds | quote }}
@@ -125,6 +131,8 @@ data:
   STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS: {{ .Values.streaming.watermarkAlignmentMaxDriftSeconds | quote }}
   STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS: {{ .Values.streaming.watermarkAlignmentUpdateIntervalSeconds | quote }}
   STREAM_QUALITY_WINDOW_SECONDS: {{ .Values.streaming.qualityWindowSeconds | quote }}
+  STREAM_FEATURE_WINDOW_SECONDS: {{ .Values.streaming.featureWindowSeconds | quote }}
+  STREAM_FEATURE_EARLY_FIRE_SECONDS: {{ .Values.streaming.featureEarlyFireSeconds | quote }}
   STREAM_BURST_THRESHOLD_EVENT_COUNT: {{ .Values.streaming.burstThresholdEventCount | quote }}
   STREAM_DROP_LATE_EVENTS: {{ .Values.streaming.dropLateEvents | quote }}
   STREAM_ENABLE_LATE_EVENT_DLQ: {{ .Values.streaming.enableLateEventDlq | quote }}

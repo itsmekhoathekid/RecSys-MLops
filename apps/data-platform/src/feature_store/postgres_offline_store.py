@@ -259,6 +259,43 @@ def insert_offline_rows(
     return len(rows)
 
 
+async def insert_offline_rows_async(
+    conn: Any,
+    schema: str,
+    table_name: str,
+    rows: list[dict[str, Any]],
+) -> int:
+    """Async equivalent used by Flink 2.2 AsyncDataStream sinks."""
+    if not rows:
+        return 0
+    known_columns = [name for name, _ in _column_defs(table_name)]
+    columns = [column for column in known_columns if column in rows[0]]
+    placeholders = sql.SQL(", ").join(sql.Placeholder() for _ in columns)
+    statement = sql.SQL("INSERT INTO {}.{} ({}) VALUES ({})").format(
+        sql.Identifier(schema),
+        sql.Identifier(table_name),
+        sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+        placeholders,
+    )
+    if "source_event_id" in columns:
+        update_columns = [column for column in columns if column != "source_event_id"]
+        assignments = sql.SQL(", ").join(
+            sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(column), sql.Identifier(column))
+            for column in update_columns
+        )
+        statement += sql.SQL(
+            " ON CONFLICT (source_event_id) WHERE source_event_id IS NOT NULL DO UPDATE SET "
+        )
+        statement += assignments
+    elif table_name == "stream_late_events_dlq" and {"event_id", "reason"}.issubset(columns):
+        statement += sql.SQL(" ON CONFLICT (event_id, reason) DO NOTHING")
+
+    values = [[_coerce_value(row.get(column)) for column in columns] for row in rows]
+    async with conn.cursor() as cur:
+        await cur.executemany(statement, values)
+    return len(rows)
+
+
 def _coerce_value(value: Any) -> Any:
     if value is None:
         return None
