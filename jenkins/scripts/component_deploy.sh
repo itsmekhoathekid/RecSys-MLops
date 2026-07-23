@@ -255,6 +255,13 @@ verify_rayjob_image() {
 }
 
 deploy_data_platform_unlocked() {
+  # This bootstrap Job is idempotent, but Kubernetes Job pod templates are
+  # immutable. Recreate it before Helm changes image or pull-policy fields.
+  kubectl delete job init-data-platform-minio \
+    --namespace "${namespace_data}" \
+    --ignore-not-found \
+    --wait=true
+
   helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform \
     --namespace "${namespace_data}" \
     --create-namespace \
