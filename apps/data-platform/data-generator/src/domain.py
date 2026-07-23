@@ -35,7 +35,7 @@ class User(RecordMixin):
 class UserPreference(RecordMixin):
     user_id: int
     category_id: int
-    brand_id: int | None
+    brand_id: int
     preference_weight: float
     source: str
     created_ts: datetime

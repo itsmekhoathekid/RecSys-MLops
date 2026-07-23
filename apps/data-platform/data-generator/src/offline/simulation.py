@@ -162,7 +162,12 @@ class RecsysSimulation:
                     UserPreference(
                         user_id=user_id,
                         category_id=preference_category,
-                        brand_id=brand if index == 0 else None,
+                        # PostgreSQL and the governed Bronze contract use
+                        # (user_id, category_id, brand_id) as the composite key.
+                        # Keep category-only preferences explicit with the same
+                        # zero sentinel used by the PostgreSQL sink instead of
+                        # emitting a nullable primary-key component.
+                        brand_id=brand if index == 0 else 0,
                         preference_weight=round(float(raw_weights[index]), 6),
                         source="generated",
                         created_ts=signup_ts,

@@ -59,6 +59,8 @@ def test_state_machine_transitions_are_valid(small_config):
 
 def test_clean_data_invariants(small_config):
     clean = RecsysSimulation(small_config).generate()
+    assert all(preference.brand_id is not None for preference in clean.user_preferences)
+    assert any(preference.brand_id == 0 for preference in clean.user_preferences)
     emitted, _ = ChallengePipeline(
         RecsysSimulation(small_config).rng,
         small_config.challenges,
