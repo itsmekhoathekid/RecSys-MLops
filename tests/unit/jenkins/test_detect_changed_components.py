@@ -366,6 +366,8 @@ def test_rollout_job_reconciliation_uses_valid_python_crumb_parser():
 
     assert 'print("{}: {}".format(p["crumbRequestField"], p["crumb"]))' in deploy
     assert 'p[\\"crumbRequestField\\"]' not in deploy
+    assert 'curl -fsS -c "${cookie_file}"' in deploy
+    assert '-b "${cookie_file}"' in deploy
 
 
 def test_jenkins_ci_temp_data_uses_persistent_storage_not_node_ephemeral_disk():

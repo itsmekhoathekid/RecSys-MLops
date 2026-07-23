@@ -622,7 +622,7 @@ reconcile_rollout_jenkins_jobs() {
   local admin_secret="${JENKINS_ADMIN_SECRET_NAME:-recsys-jenkins-admin}"
   local seed_dir="${JENKINS_HOME:-/tmp}/ci-tmp"
   local seed_script="${seed_dir}/recsys-rollout-seed.groovy"
-  local username password crumb_json crumb_header
+  local username password crumb_json crumb_header cookie_file
   jenkins_url="${jenkins_url%/}"
 
   if [[ "${RECONCILE_JENKINS_ROLLOUT_JOBS:-1}" == "0" ]]; then
@@ -645,14 +645,19 @@ reconcile_rollout_jenkins_jobs() {
     -o 'jsonpath={.data.zz-seed-cicd-views\.groovy}' >"${seed_script}"
   username="$(kubectl get secret "${admin_secret}" -n "${namespace_ci}" -o 'jsonpath={.data.username}' | base64 -d)"
   password="$(kubectl get secret "${admin_secret}" -n "${namespace_ci}" -o 'jsonpath={.data.password}' | base64 -d)"
-  crumb_json="$(curl -fsS -u "${username}:${password}" "${jenkins_url}/crumbIssuer/api/json")"
+  cookie_file="${seed_script}.cookie"
+  crumb_json="$(curl -fsS -c "${cookie_file}" -u "${username}:${password}" "${jenkins_url}/crumbIssuer/api/json")"
   crumb_header="$(python3 -c 'import json,sys; p=json.load(sys.stdin); print("{}: {}".format(p["crumbRequestField"], p["crumb"]))' <<<"${crumb_json}")"
-  curl -fsS \
+  if ! curl -fsS \
     -u "${username}:${password}" \
+    -b "${cookie_file}" \
     -H "${crumb_header}" \
     --data-urlencode "script@${seed_script}" \
-    "${jenkins_url}/scriptText" >/dev/null
-  rm -f "${seed_script}"
+    "${jenkins_url}/scriptText" >/dev/null; then
+    rm -f "${cookie_file}" "${seed_script}"
+    return 1
+  fi
+  rm -f "${cookie_file}" "${seed_script}"
   echo "Reconciled RecSys-Progressive-Rollout-CICD and SCM-backed RecSys-KServe-Model-CD without restarting Jenkins."
 }
 
