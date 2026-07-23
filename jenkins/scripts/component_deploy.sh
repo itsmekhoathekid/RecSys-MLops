@@ -803,9 +803,11 @@ case "${component}" in
         ;;
       dp1)
         deploy_data_platform \
+          --set "images.spark=$(image recsys-spark)" \
           --set "images.dataflowCli=$(image recsys-dataflow-cli)" \
           --set "images.airflow=$(image recsys-airflow)" \
           --set "images.kafkaConnect=$(image recsys-kafka-connect)"
+        verify_data_platform_config_image "SPARK_IMAGE" "$(image recsys-spark)"
         verify_data_platform_config_image "DATAFLOW_IMAGE" "$(image recsys-dataflow-cli)"
         verify_and_wait_workload "deployment" "realtime-event-producer" "${namespace_data}" "$(image recsys-dataflow-cli)"
         verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "$(image recsys-airflow)"

@@ -221,6 +221,9 @@ case "${component}" in
     build_airflow
     ;;
   dp1)
+    # DP1 executes the generator and Bronze ingestion inside SPARK_IMAGE, so a
+    # generator change must publish the Spark runtime consumed by the DAG.
+    ensure_spark_base
     build_data_generator
     build_dataflow_cli
     build_airflow
