@@ -22,14 +22,6 @@ SPARK_PACKAGES = os.getenv(
     "com.amazonaws:aws-java-sdk-bundle:1.12.262",
 )
 
-KSERVE_CD_SECRET_KEY_TO_ENV = {
-    **SECRET_KEY_TO_ENV,
-    "JENKINS_URL": "JENKINS_URL",
-    "JENKINS_USER": "JENKINS_USER",
-    "JENKINS_TOKEN": "JENKINS_TOKEN",
-}
-
-
 @dsl.container_component
 def feature_engineering(config_path: str, output_base: str, run_path: str, summary_path: str):
     return dsl.ContainerSpec(
@@ -464,7 +456,7 @@ def recsys_bst_pipeline(
         pvc_name=DEFAULT_PVC_NAME,
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
-        secret_key_to_env=KSERVE_CD_SECRET_KEY_TO_ENV,
+        secret_key_to_env=SECRET_KEY_TO_ENV,
     )
     handoff.set_display_name("Bootstrap Or Await Candidate")
     handoff.after(promote)

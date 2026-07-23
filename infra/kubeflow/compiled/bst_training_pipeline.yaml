@@ -1324,12 +1324,6 @@ platforms:
               secretKey: HUDI_CATALOG_NAME
             - envVar: HUDI_WAREHOUSE
               secretKey: HUDI_WAREHOUSE
-            - envVar: JENKINS_URL
-              secretKey: JENKINS_URL
-            - envVar: JENKINS_USER
-              secretKey: JENKINS_USER
-            - envVar: JENKINS_TOKEN
-              secretKey: JENKINS_TOKEN
             optional: false
             secretName: recsys-mlops-runtime
             secretNameParameter:

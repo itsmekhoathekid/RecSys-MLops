@@ -142,6 +142,36 @@ def set_registry_rollout_state(
     return name, version
 
 
+def queue_registry_candidate(manifest: dict[str, Any]) -> dict[str, str]:
+    """Idempotently hand a promoted version to the cluster rollout watcher."""
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "").strip()
+    if not tracking_uri:
+        raise RuntimeError("MLFLOW_TRACKING_URI is required for the model rollout handoff")
+    from mlflow.tracking import MlflowClient
+
+    name, version = registry_coordinates(manifest)
+    client = MlflowClient(tracking_uri=tracking_uri)
+    try:
+        champion = client.get_model_version_by_alias(name, "champion")
+    except Exception:
+        champion = None
+    if champion is not None and str(champion.version) == version:
+        return {"name": name, "version": version, "state": "already_champion"}
+
+    model_version = client.get_model_version(name, version)
+    candidate_state = str((model_version.tags or {}).get("candidate", ""))
+    if candidate_state in {"test", "testing", "tested", "promoted"}:
+        return {
+            "name": name,
+            "version": version,
+            "state": f"already_{candidate_state}",
+        }
+
+    client.set_model_version_tag(name, version, "candidate", "test")
+    client.set_model_version_tag(name, version, "rollout_status", "pending")
+    return {"name": name, "version": version, "state": "queued"}
+
+
 def basic_auth_header(user: str, token: str) -> dict[str, str]:
     if not user or not token:
         return {}
@@ -276,8 +306,8 @@ def write_status(path: str, payload: dict[str, Any]) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Bootstrap the first promoted BST model, or leave later versions in MLflow "
-            "until an operator sets candidate=test."
+            "Bootstrap the first promoted BST model, or queue later versions for the "
+            "cluster rollout watcher."
         )
     )
     parser.add_argument("--manifest-path", required=True)
@@ -321,18 +351,16 @@ def main() -> int:
 
     registered_model_name, registry_version = registry_coordinates(manifest)
     if manifest_exists(args.stable_manifest_uri):
-        set_registry_rollout_state(
-            manifest,
-            rollout_status="awaiting_candidate_selection",
-        )
+        handoff = queue_registry_candidate(manifest)
         status = {
             **base_status,
             "triggered": False,
-            "reason": "champion_exists_waiting_for_candidate_tag",
+            "reason": "champion_exists_candidate_handed_to_rollout_watcher",
             "stable_manifest_uri": args.stable_manifest_uri,
             "mlflow_registered_model_name": registered_model_name,
             "mlflow_registered_model_version": registry_version,
-            "next_action": f"set candidate=test on MLflow registry version {registry_version}",
+            "candidate_handoff_state": handoff["state"],
+            "next_action": "rollout watcher owns shadow, progressive A/B gates, and champion promotion",
         }
         write_status(args.status_path, status)
         print(json.dumps(status, sort_keys=True))

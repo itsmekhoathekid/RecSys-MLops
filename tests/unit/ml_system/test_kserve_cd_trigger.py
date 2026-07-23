@@ -55,7 +55,7 @@ def test_trigger_kserve_cd_skips_when_score_is_below_threshold(tmp_path, monkeyp
     assert status["metric_value"] == -0.1
 
 
-def test_existing_champion_waits_for_candidate_tag_without_calling_jenkins(tmp_path, monkeypatch):
+def test_existing_champion_queues_candidate_without_calling_jenkins(tmp_path, monkeypatch):
     manifest = _manifest(tmp_path / "promotion.json")
     status_path = tmp_path / "status.json"
     registry_calls = []
@@ -63,13 +63,14 @@ def test_existing_champion_waits_for_candidate_tag_without_calling_jenkins(tmp_p
     monkeypatch.setattr(trigger_kserve_cd, "manifest_exists", lambda _uri: True)
     monkeypatch.setattr(
         trigger_kserve_cd,
-        "set_registry_rollout_state",
-        lambda payload, **kwargs: registry_calls.append((payload, kwargs)) or ("recsys_bst_ranker", "17"),
+        "queue_registry_candidate",
+        lambda payload: registry_calls.append(payload)
+        or {"name": "recsys_bst_ranker", "version": "17", "state": "queued"},
     )
     monkeypatch.setattr(
         trigger_kserve_cd,
         "trigger_jenkins_cd",
-        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("Jenkins must wait for candidate=test")),
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("The rollout watcher owns Jenkins")),
     )
     monkeypatch.setattr(
         sys,
@@ -89,9 +90,10 @@ def test_existing_champion_waits_for_candidate_tag_without_calling_jenkins(tmp_p
     status = json.loads(status_path.read_text(encoding="utf-8"))
 
     assert status["triggered"] is False
-    assert status["reason"] == "champion_exists_waiting_for_candidate_tag"
-    assert status["next_action"] == "set candidate=test on MLflow registry version 17"
-    assert registry_calls[0][1] == {"rollout_status": "awaiting_candidate_selection"}
+    assert status["reason"] == "champion_exists_candidate_handed_to_rollout_watcher"
+    assert status["candidate_handoff_state"] == "queued"
+    assert status["next_action"].startswith("rollout watcher owns")
+    assert len(registry_calls) == 1
 
 
 def test_cold_start_bootstraps_jenkins_then_publishes_champion(tmp_path, monkeypatch):
