@@ -159,7 +159,13 @@ resource "helm_release" "ingress_nginx" {
     value = "429"
   }
 
-  depends_on = [google_container_node_pool.cpu]
+  # The controller pod requests sidecar injection when the service mesh is
+  # enabled. Wait for the injector webhook; otherwise Helm can create the pod
+  # before istiod exists and leave NGINX unable to reach STRICT-mTLS upstreams.
+  depends_on = [
+    google_container_node_pool.cpu,
+    helm_release.istiod,
+  ]
 }
 
 resource "null_resource" "kubeflow_pipelines" {

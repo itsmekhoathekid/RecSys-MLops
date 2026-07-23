@@ -34,6 +34,13 @@ deploy_ray_job = true
 deploy_gateway = false
 deploy_service_mesh = true
 
+# Public gateway example. Create the A records first and point them at the
+# ingress-nginx LoadBalancer IP before enabling production certificates.
+# deploy_gateway             = true
+# gateway_domain             = "recsys-mlops.site"
+# gateway_tls_enabled        = true
+# gateway_tls_cluster_issuer = "letsencrypt-prod"
+
 # Recommended if you use the public GKE API endpoint:
 # master_authorized_cidr_blocks = [
 #   { cidr_block = "203.0.113.10/32", display_name = "office" }

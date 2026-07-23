@@ -256,6 +256,18 @@ variable "gateway_domain" {
   default     = "recsys.local"
 }
 
+variable "gateway_tls_enabled" {
+  description = "Enable HTTPS and cert-manager certificates for public gateway routes."
+  type        = bool
+  default     = false
+}
+
+variable "gateway_tls_cluster_issuer" {
+  description = "Existing cert-manager ClusterIssuer used by public gateway routes."
+  type        = string
+  default     = "letsencrypt-prod"
+}
+
 variable "gateway_htpasswd" {
   description = "Rotated htpasswd line for gateway basic auth, for example user:hash. Set via TF_VAR_gateway_htpasswd from the ignored .env file."
   type        = string

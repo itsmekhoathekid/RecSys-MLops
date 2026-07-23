@@ -12,7 +12,7 @@ single NGINX LoadBalancer IP.
 | --- | --- | --- |
 | Web API Pull Data service | `api.recsys-mlops.site` | `recsys-online-feature-api.api-serving.svc.cluster.local:80` |
 | Metric service | `metrics.recsys-mlops.site` | `recsys-grafana.observability.svc.cluster.local:3000` |
-| Log service | `log.recsys-mlops.site` | `recsys-loki.observability.svc.cluster.local:3100` |
+| Log service | `logs.recsys-mlops.site` | `recsys-loki.observability.svc.cluster.local:3100` |
 | Trace service | `traces.recsys-mlops.site` | `recsys-tempo.observability.svc.cluster.local:3200` |
 
 ### Gateway Configuration Reference
@@ -31,14 +31,14 @@ single NGINX LoadBalancer IP.
 
 The chart also contains a separate recommendation-serving route at [api-ingress.yaml](../../../infra/helm/recsys-gateway/templates/api-ingress.yaml#L1). It targets `recsys-api-serving`; the Web API Pull Data proof in this document targets `recsys-online-feature-api` through `feature-api-ingress.yaml`.
 
-The public names shown here are deployment values. The checked-in chart defaults use `.recsys.local`, while Terraform derives hostnames from `gateway_domain`; production DNS names can therefore be supplied without changing the Ingress templates.
+The public names shown here are deployment values. The checked-in chart defaults use `.recsys.local`; [values-gcp.yaml](../../../infra/helm/recsys-gateway/values-gcp.yaml) contains the production host/TLS overlay, while Terraform derives the same hostnames from `gateway_domain`.
 
 ![Domain setup for gateway services](../../pngs/domain_setup.png)
 
 **Figure: Domain setup for all gateway services.** The DNS provider has four
 public `A` records: `api.recsys-mlops.site`, `metrics.recsys-mlops.site`,
-`log.recsys-mlops.site`, and `traces.recsys-mlops.site`. All records point to
-the NGINX Ingress Controller LoadBalancer IP `34.21.171.234`, proving that the
+`logs.recsys-mlops.site`, and `traces.recsys-mlops.site`. All records point to
+the NGINX Ingress Controller LoadBalancer IP `136.110.21.224`, proving that the
 public domains enter the platform through the same gateway.
 
 
@@ -47,7 +47,7 @@ public domains enter the platform through the same gateway.
 **Figure: NGINX gateway, domain, and HTTPS setup for all 4 services.** The
 proof shows the four public routes are configured on NGINX Ingress with their
 production domains: `api.recsys-mlops.site`, `metrics.recsys-mlops.site`,
-`log.recsys-mlops.site`, and `traces.recsys-mlops.site`. Each route is mapped
+`logs.recsys-mlops.site`, and `traces.recsys-mlops.site`. Each route is mapped
 to its internal Kubernetes service and has HTTPS/TLS enabled, proving that the
 gateway is the single secured entrypoint for the Web API, metrics, logs, and
 traces services.
@@ -124,7 +124,7 @@ gateway route.
 ## Log Service
 
 The log service is Loki behind the NGINX gateway. The production host is
-`https://log.recsys-mlops.site`.
+`https://logs.recsys-mlops.site`.
 
 ### Code Reference
 
@@ -136,7 +136,7 @@ The log service is Loki behind the NGINX gateway. The production host is
 ![Basic auth challenge proof](../../pngs/logs_auth_proof.png)
 
 **Figure: Basic auth proof for log service.** Accessing
-`https://log.recsys-mlops.site` without valid gateway credentials returns a
+`https://logs.recsys-mlops.site` without valid gateway credentials returns a
 Basic Auth challenge or `401 Unauthorized`, proving Loki is not publicly exposed
 without gateway authentication.
 
@@ -144,7 +144,7 @@ without gateway authentication.
 
 **Figure: Rate limit proof for log service.** The CLI proof shows the Loki
 ingress rate-limit annotations and/or burst-test result for
-`https://log.recsys-mlops.site`; excess requests are throttled by NGINX with
+`https://logs.recsys-mlops.site`; excess requests are throttled by NGINX with
 HTTP `429`.
 
 ### Image Proof Enable HTTPS
@@ -152,7 +152,7 @@ HTTP `429`.
 ![Log service HTTPS proof](../../pngs/logs_https_proof.png)
 
 **Figure: Log service HTTPS proof.** The log endpoint is reached through
-`https://log.recsys-mlops.site`, proving HTTPS is enabled on the public log
+`https://logs.recsys-mlops.site`, proving HTTPS is enabled on the public log
 gateway route.
 
 

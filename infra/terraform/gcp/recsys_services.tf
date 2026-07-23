@@ -239,18 +239,23 @@ resource "helm_release" "recsys_gateway" {
   }
 
   set {
-    name  = "api.host"
-    value = "api.${var.gateway_domain}"
-  }
-
-  set {
-    name  = "api.upstreamHost"
-    value = "recsys-api-serving.api-serving.svc.cluster.local"
+    name  = "api.enabled"
+    value = "false"
   }
 
   set {
     name  = "featureApi.host"
-    value = "features.${var.gateway_domain}"
+    value = "api.${var.gateway_domain}"
+  }
+
+  set {
+    name  = "featureApi.rootRedirect.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "featureApi.rootRedirect.path"
+    value = "/docs"
   }
 
   set {
@@ -260,7 +265,7 @@ resource "helm_release" "recsys_gateway" {
 
   set {
     name  = "grafana.host"
-    value = "grafana.${var.gateway_domain}"
+    value = "metrics.${var.gateway_domain}"
   }
 
   set {
@@ -285,6 +290,16 @@ resource "helm_release" "recsys_gateway" {
 
   set {
     name  = "tls.enabled"
+    value = tostring(var.gateway_tls_enabled)
+  }
+
+  set {
+    name  = "tls.clusterIssuerName"
+    value = var.gateway_tls_cluster_issuer
+  }
+
+  set {
+    name  = "tls.issuer.create"
     value = "false"
   }
 

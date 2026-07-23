@@ -1,0 +1,33 @@
+{{- if and .Values.featureApi.enabled ((.Values.featureApi.rootRedirect | default dict).enabled | default false) }}
+{{- $featureApiRootRedirect := .Values.featureApi.rootRedirect | default dict }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recsys-online-feature-api-root-redirect
+  namespace: {{ .Values.featureApi.namespace }}
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/permanent-redirect: {{ printf "%s://%s%s" (ternary "https" "http" .Values.tls.enabled) .Values.featureApi.host ($featureApiRootRedirect.path | default "/docs") | quote }}
+    {{- if .Values.tls.enabled }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.gateway.ingressClassName }}
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.featureApi.host }}
+      secretName: {{ .Values.tls.secretNames.featureApi }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.featureApi.host }}
+      http:
+        paths:
+          - path: /$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ .Values.featureApi.service.name }}
+                port:
+                  number: {{ .Values.featureApi.service.port }}
+{{- end }}

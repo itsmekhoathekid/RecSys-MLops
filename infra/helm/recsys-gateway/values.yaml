@@ -47,6 +47,9 @@ featureApi:
   enabled: true
   namespace: api-serving
   host: features.recsys.local
+  rootRedirect:
+    enabled: false
+    path: /docs
   service:
     name: recsys-online-feature-api
     port: 80
