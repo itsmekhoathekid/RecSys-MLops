@@ -286,11 +286,11 @@ deploy_data_platform_unlocked() {
     --set "spark.sqlShufflePartitions=${SPARK_SQL_SHUFFLE_PARTITIONS:-16}" \
     --set-string "spark.advisoryPartitionSizeBytes=${SPARK_ADVISORY_PARTITION_SIZE_BYTES:-134217728}" \
     --set "kafka.topicPartitions=${KAFKA_TOPIC_PARTITIONS:-4}" \
-    --set "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-1}" \
+    --set "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-2}" \
     --set "flinkTaskManager.resources.requests.cpu=${FLINK_TASKMANAGER_REQUEST_CPU:-500m}" \
-    --set "flinkTaskManager.resources.requests.memory=${FLINK_TASKMANAGER_REQUEST_MEMORY:-4Gi}" \
+    --set "flinkTaskManager.resources.requests.memory=${FLINK_TASKMANAGER_REQUEST_MEMORY:-6Gi}" \
     --set "flinkTaskManager.resources.limits.cpu=${FLINK_TASKMANAGER_LIMIT_CPU:-2}" \
-    --set "flinkTaskManager.resources.limits.memory=${FLINK_TASKMANAGER_LIMIT_MEMORY:-8Gi}" \
+    --set "flinkTaskManager.resources.limits.memory=${FLINK_TASKMANAGER_LIMIT_MEMORY:-10Gi}" \
     --set "flink.taskSlots=${FLINK_TASK_SLOTS:-1}" \
     --set "flink.scheduler=${FLINK_SCHEDULER:-adaptive}" \
     --set "flink.disableJemalloc=${FLINK_DISABLE_JEMALLOC:-true}" \
@@ -321,7 +321,7 @@ deploy_data_platform_unlocked() {
     --set "flinkAutoscaler.vertexMaxParallelism=${FLINK_AUTOSCALER_VERTEX_MAX_PARALLELISM:-4}" \
     --set "flinkAutoscaler.taskManagerHpa.enabled=${FLINK_TASKMANAGER_HPA_ENABLED:-true}" \
     --set "flinkAutoscaler.taskManagerHpa.minReplicas=${FLINK_TASKMANAGER_HPA_MIN_REPLICAS:-2}" \
-    --set "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-4}" \
+    --set "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-2}" \
     --set "flinkAutoscaler.taskManagerHpa.targetCpuUtilization=${FLINK_TASKMANAGER_HPA_TARGET_CPU:-65}" \
     --set "flinkAutoscaler.taskManagerHpa.scaleDownStabilizationSeconds=${FLINK_TASKMANAGER_HPA_SCALE_DOWN_STABILIZATION_SECONDS:-300}" \
     --set "streaming.watermarkDelayMinutes=${STREAM_WATERMARK_DELAY_MINUTES:-5}" \
