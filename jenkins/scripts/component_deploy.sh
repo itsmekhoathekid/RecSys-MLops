@@ -270,16 +270,16 @@ deploy_data_platform_unlocked() {
     --wait \
     --wait-for-jobs \
     --set "images.pullPolicy=Always" \
-    --set "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" \
-    --set "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-768m}" \
-    --set "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-4g}" \
-    --set "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1g}" \
+    --set "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-1g}" \
+    --set "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-512m}" \
+    --set "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1536m}" \
+    --set "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1536m}" \
     --set "spark.executorInstances=${SPARK_K8S_EXECUTOR_INSTANCES:-1}" \
-    --set "spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-true}" \
+    --set "spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-false}" \
     --set "spark.dynamicAllocation.shuffleTrackingEnabled=${SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED:-true}" \
     --set "spark.dynamicAllocation.minExecutors=${SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS:-1}" \
     --set "spark.dynamicAllocation.initialExecutors=${SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS:-1}" \
-    --set "spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-4}" \
+    --set "spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-1}" \
     --set "spark.dynamicAllocation.executorIdleTimeout=${SPARK_DYNAMIC_ALLOCATION_EXECUTOR_IDLE_TIMEOUT:-60s}" \
     --set "spark.dynamicAllocation.schedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SCHEDULER_BACKLOG_TIMEOUT:-1s}" \
     --set "spark.dynamicAllocation.sustainedSchedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SUSTAINED_BACKLOG_TIMEOUT:-1s}" \

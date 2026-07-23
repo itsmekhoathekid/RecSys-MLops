@@ -363,9 +363,12 @@ def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
         "spark.kubernetes.submission.waitAppCompletion=true",
         "spark.kubernetes.submission.connectionTimeout=${SPARK_K8S_CONNECTION_TIMEOUT:-60000}",
         "spark.kubernetes.submission.requestTimeout=${SPARK_K8S_REQUEST_TIMEOUT:-180000}",
+        "spark.sql.iceberg.vectorization.enabled=${SPARK_ICEBERG_VECTORIZATION_ENABLED:-false}",
         "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
     ]:
         assert expected in source
+    assert 'SPARK_SUBMIT_LOG="$(mktemp)"' in source
+    assert 'grep -q "phase: Succeeded" "$SPARK_SUBMIT_LOG"' in source
 
 
 def test_airflow_native_spark_submissions_configure_dynamic_allocation():
@@ -606,6 +609,7 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
     assert "SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS" in rendered
     assert "SPARK_K8S_DRIVER_MEMORY_OVERHEAD" in rendered
     assert "SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD" in rendered
+    assert "SPARK_ICEBERG_VECTORIZATION_ENABLED" in rendered
     assert "DATA_GENERATOR_CONFIG" in rendered
     assert "SPARK_BATCH_CONFIG" in rendered
     assert "REALTIME_E2E_ENABLED" in rendered
@@ -645,17 +649,17 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
     values = yaml.safe_load(
         (ROOT / "infra/helm/recsys-data-platform/values-gcp.yaml").read_text()
     )
-    assert values["spark"]["driverMemory"] == "2g"
-    assert values["spark"]["driverMemoryOverhead"] == "768m"
+    assert values["spark"]["driverMemory"] == "1g"
+    assert values["spark"]["driverMemoryOverhead"] == "512m"
     assert values["spark"]["executorInstances"] == "1"
-    assert values["spark"]["executorMemory"] == "4g"
-    assert values["spark"]["executorMemoryOverhead"] == "1g"
+    assert values["spark"]["executorMemory"] == "1536m"
+    assert values["spark"]["executorMemoryOverhead"] == "1536m"
     assert values["spark"]["dynamicAllocation"] == {
-        "enabled": True,
+        "enabled": False,
         "shuffleTrackingEnabled": True,
         "minExecutors": "1",
         "initialExecutors": "1",
-        "maxExecutors": "4",
+        "maxExecutors": "1",
         "executorIdleTimeout": "60s",
         "schedulerBacklogTimeout": "1s",
         "sustainedSchedulerBacklogTimeout": "1s",
@@ -668,18 +672,18 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
 def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_merge():
     deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
     assert "--reuse-values" in deploy_script
-    assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" in deploy_script
+    assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-1g}" in deploy_script
     assert (
-        "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-768m}"
+        "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-512m}"
         in deploy_script
     )
-    assert "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-4g}" in deploy_script
+    assert "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1536m}" in deploy_script
     assert (
-        "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1g}"
+        "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1536m}"
         in deploy_script
     )
     assert (
-        "spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-true}"
+        "spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-false}"
         in deploy_script
     )
     assert (
@@ -687,7 +691,7 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
         in deploy_script
     )
     assert (
-        "spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-4}"
+        "spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-1}"
         in deploy_script
     )
     assert "kafka.topicPartitions=${KAFKA_TOPIC_PARTITIONS:-4}" in deploy_script

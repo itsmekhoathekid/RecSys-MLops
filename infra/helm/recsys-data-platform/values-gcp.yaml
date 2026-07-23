@@ -25,28 +25,28 @@ dataSetup:
   realtimeLimitPerTable: "1000"
 
 spark:
-  driverMemory: 2g
-  driverMemoryOverhead: 768m
+  driverMemory: 1g
+  driverMemoryOverhead: 512m
   driverCores: "1"
   driverRequestCores: 100m
   executorInstances: "1"
-  executorMemory: 4g
-  executorMemoryOverhead: 1g
+  executorMemory: 1536m
+  executorMemoryOverhead: 1536m
   executorCores: "1"
   executorRequestCores: 100m
   dynamicAllocation:
-    enabled: true
+    enabled: false
     shuffleTrackingEnabled: true
     minExecutors: "1"
     initialExecutors: "1"
-    maxExecutors: "4"
+    maxExecutors: "1"
     executorIdleTimeout: 60s
     schedulerBacklogTimeout: 1s
     sustainedSchedulerBacklogTimeout: 1s
   sqlShufflePartitions: "16"
 
 realtimeProducer:
-  replicas: 1
+  replicas: 0
 
 flinkTaskManager:
   # Isolate the online and offline streaming workloads across two TaskManagers.
@@ -64,6 +64,11 @@ flink:
   # One slot per TaskManager guarantees the online and offline jobs are isolated.
   taskSlots: "1"
 
+flinkAutoscaler:
+  taskManagerHpa:
+    # The coursework GCP profile pins the CPU node pool to one node.
+    maxReplicas: 2
+
 redis:
   istioInject: "true"
 
@@ -73,6 +78,10 @@ realtimeFlinkConsumer:
   parallelism: "1"
   checkpointIntervalSeconds: "120"
   offlineStoreEnabled: true
+  online:
+    # A fresh GCP cluster has no committed consumer offsets yet. Starting from
+    # earliest also avoids the PyFlink committed-offset enum bridge issue.
+    startingOffsets: earliest
 
 streaming:
   # The proof workload backdates events by 45-180 minutes; one hour yields

@@ -89,6 +89,7 @@ spark:
   executorMemoryOverhead: 128m
   executorCores: "1"
   executorRequestCores: 100m
+  icebergVectorizationEnabled: false
   dynamicAllocation:
     enabled: false
     shuffleTrackingEnabled: true

@@ -116,6 +116,7 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
     )
     return (
         'SPARK_APP_SUFFIX="$(date +%s)-${RANDOM}"; '
+        'SPARK_SUBMIT_LOG="$(mktemp)"; '
         "/opt/spark/bin/spark-submit "
         "--master ${SPARK_K8S_MASTER:-k8s://https://kubernetes.default.svc} "
         "--deploy-mode cluster "
@@ -128,6 +129,7 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         "--conf spark.kubernetes.submission.connectionTimeout=${SPARK_K8S_CONNECTION_TIMEOUT:-60000} "
         "--conf spark.kubernetes.submission.requestTimeout=${SPARK_K8S_REQUEST_TIMEOUT:-180000} "
         "--conf spark.kubernetes.report.interval=5s "
+        "--conf spark.sql.iceberg.vectorization.enabled=${SPARK_ICEBERG_VECTORIZATION_ENABLED:-false} "
         "--conf spark.kubernetes.driver.annotation.sidecar.istio.io/inject=false "
         "--conf spark.kubernetes.executor.annotation.sidecar.istio.io/inject=false "
         "--conf spark.kubernetes.node.selector.recsys.ai/pool=${SPARK_K8S_NODE_POOL:-cpu-services} "
@@ -150,7 +152,9 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         "--conf spark.kubernetes.executor.request.cores=${SPARK_K8S_EXECUTOR_REQUEST_CORES:-500m} "
         f"{env_conf} "
         f"{secret_conf} "
-        f"{application} {application_args}".strip()
+        f"{application} {application_args} "
+        '2>&1 | tee "$SPARK_SUBMIT_LOG"; '
+        'grep -q "phase: Succeeded" "$SPARK_SUBMIT_LOG"'
     )
 
 
