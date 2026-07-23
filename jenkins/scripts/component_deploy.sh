@@ -270,8 +270,8 @@ deploy_data_platform_unlocked() {
     --wait \
     --wait-for-jobs \
     --set "images.pullPolicy=Always" \
-    --set "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-1g}" \
-    --set "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-512m}" \
+    --set "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" \
+    --set "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-1g}" \
     --set "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1536m}" \
     --set "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1536m}" \
     --set "spark.executorInstances=${SPARK_K8S_EXECUTOR_INSTANCES:-1}" \

@@ -31,6 +31,13 @@ from metadata.runtime_lineage import RuntimeLineageRecorder
 from validate.governance_contracts import check, dataset_result, write_report
 
 
+DRIFT_SNAPSHOT_TABLES = (
+    "user_aggregate_features",
+    "item_features",
+    "ml_bst_training",
+)
+
+
 def load_config(config_path: str | Path) -> dict:
     with Path(config_path).open("r", encoding="utf-8") as file:
         return yaml.safe_load(file)
@@ -193,6 +200,13 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
                     write_parquet(
                         outputs[catalog.feature_table(table_name)],
                         f"{feast_offline_root.rstrip('/')}/{table_name}",
+                    )
+            drift_snapshot_root = os.getenv("OFFLINE_FEATURE_DRIFT_CURRENT_ROOT", "").strip()
+            if drift_snapshot_root:
+                for table_name in DRIFT_SNAPSHOT_TABLES:
+                    write_parquet(
+                        outputs[catalog.feature_table(table_name)],
+                        f"{drift_snapshot_root.rstrip('/')}/{table_name}",
                     )
             lineage.add_outputs(*_write_postgres_tables(outputs, catalog=catalog, output=output))
             report = _write_dp3_iceberg_validation_report(outputs, catalog=catalog)

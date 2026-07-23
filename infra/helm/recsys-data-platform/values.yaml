@@ -232,7 +232,7 @@ airflow:
   lakehouseMaintenanceSchedule: "0 4 * * 0"
 
 drift:
-  currentRoot: "s3a://recsys-offline-feature-store/warehouse/feature_store"
+  currentRoot: "s3a://recsys-offline-feature-store/monitoring/offline_feature_drift/current_snapshot"
   baselinePath: "s3://recsys-offline-feature-store/monitoring/offline_feature_drift/reference_baseline"
   currentDays: "7"
   sampleRows: "1000"

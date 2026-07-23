@@ -649,8 +649,8 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
     values = yaml.safe_load(
         (ROOT / "infra/helm/recsys-data-platform/values-gcp.yaml").read_text()
     )
-    assert values["spark"]["driverMemory"] == "1g"
-    assert values["spark"]["driverMemoryOverhead"] == "512m"
+    assert values["spark"]["driverMemory"] == "2g"
+    assert values["spark"]["driverMemoryOverhead"] == "1g"
     assert values["spark"]["executorInstances"] == "1"
     assert values["spark"]["executorMemory"] == "1536m"
     assert values["spark"]["executorMemoryOverhead"] == "1536m"
@@ -672,9 +672,9 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
 def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_merge():
     deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
     assert "--reuse-values" in deploy_script
-    assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-1g}" in deploy_script
+    assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" in deploy_script
     assert (
-        "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-512m}"
+        "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-1g}"
         in deploy_script
     )
     assert "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1536m}" in deploy_script
@@ -838,6 +838,22 @@ def test_spark_batch_entrypoint_processes_the_whole_run_in_one_commit():
     assert "batch_chunk_commits" not in source
     assert "batch_commit_id" not in source
     assert 'write_iceberg_table(frame, table_name, mode="overwrite")' in source
+    assert 'os.getenv("OFFLINE_FEATURE_DRIFT_CURRENT_ROOT", "")' in source
+    assert '"ml_bst_training",' in source
+
+
+def test_drift_monitor_reads_a_current_snapshot_not_the_iceberg_data_directory():
+    values = yaml.safe_load(
+        (ROOT / "infra/helm/recsys-data-platform/values.yaml").read_text()
+    )
+    assert values["drift"]["currentRoot"].endswith(
+        "/monitoring/offline_feature_drift/current_snapshot"
+    )
+    dag = (
+        ROOT
+        / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
+    ).read_text()
+    assert '"OFFLINE_FEATURE_DRIFT_CURRENT_ROOT",' in dag
 
 
 def test_deleted_legacy_artifacts_are_absent():

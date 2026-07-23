@@ -25,8 +25,8 @@ dataSetup:
   realtimeLimitPerTable: "1000"
 
 spark:
-  driverMemory: 1g
-  driverMemoryOverhead: 512m
+  driverMemory: 2g
+  driverMemoryOverhead: 1g
   driverCores: "1"
   driverRequestCores: 100m
   executorInstances: "1"
