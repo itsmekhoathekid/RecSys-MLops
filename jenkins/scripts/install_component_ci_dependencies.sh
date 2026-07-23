@@ -7,7 +7,8 @@ python_bin="${UV_PROJECT_ENVIRONMENT:?UV_PROJECT_ENVIRONMENT is required}/bin/py
 # Spark-backed component tests import the real PySpark expression API. Keep it
 # out of unrelated CI branches, but install the same pinned version as the
 # production Spark image whenever a Spark data-path component is selected.
-if [[ "${components}" == *,materialize,* \
+if [[ "${components}" == *,training,* \
+  || "${components}" == *,materialize,* \
   || "${components}" == *,spark_batch,* \
   || "${components}" == *,dp1,* \
   || "${components}" == *,dp2,* \

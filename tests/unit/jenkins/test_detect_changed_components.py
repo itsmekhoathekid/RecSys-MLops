@@ -344,6 +344,9 @@ def test_component_ci_installs_required_clean_environment_dependencies():
     assert "hypothesis" in jenkinsfile
     assert "jenkins/scripts/install_component_ci_dependencies.sh" in jenkinsfile
     assert "training" in installer
+    spark_install_block = installer.split("# The shared Jenkins environment", 1)[0]
+    assert '"${components}" == *,training,*' in spark_install_block
+    assert '"pyspark==3.5.8"' in spark_install_block
     assert "kserve" in installer
     assert "rollout" in installer
     assert "https://download.pytorch.org/whl/cpu" in installer
