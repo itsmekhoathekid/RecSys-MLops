@@ -1,16 +1,28 @@
 frontend:
-  image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-demo-web:gcp
+  image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-demo-web:gcp
   imagePullPolicy: Always
   replicas: 2
   nodeSelector:
-    recsys.ai/pool: cpu-services
+    recsys.ai/pool: ml-system
+    recsys.ai/workload: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
 
 backend:
-  image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-demo-api:gcp
+  image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-demo-api:gcp
   imagePullPolicy: Always
   replicas: 2
   nodeSelector:
-    recsys.ai/pool: cpu-services
+    recsys.ai/pool: ml-system
+    recsys.ai/workload: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
 
 podDisruptionBudget:
   enabled: true
