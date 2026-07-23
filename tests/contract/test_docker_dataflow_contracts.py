@@ -34,6 +34,8 @@ def _runtime_text() -> str:
             chunks.append(root.read_text(encoding="utf-8"))
             continue
         for path in root.rglob("*"):
+            if ".venv" in path.parts:
+                continue
             if path.is_file() and path.suffix in {
                 ".py",
                 ".yaml",
@@ -112,11 +114,11 @@ def test_kubeflow_training_package_uses_pullable_images():
     assert "recsys-mlops-training:local" not in package
     assert "recsys-mlops-spark:local" not in package
     assert (
-        "asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:"
+        "asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:"
         in package
     )
     assert (
-        "asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:"
+        "asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-spark:"
         in package
     )
 
@@ -689,7 +691,7 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
         in deploy_script
     )
     assert "kafka.topicPartitions=${KAFKA_TOPIC_PARTITIONS:-4}" in deploy_script
-    assert "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-1}" in deploy_script
+    assert "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-2}" in deploy_script
     assert "flink.taskSlots=${FLINK_TASK_SLOTS:-1}" in deploy_script
     assert "flink.disableJemalloc=${FLINK_DISABLE_JEMALLOC:-true}" in deploy_script
     assert "flink.scheduler=${FLINK_SCHEDULER:-adaptive}" in deploy_script
@@ -700,7 +702,7 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
         in deploy_script
     )
     assert (
-        "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-4}"
+        "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-2}"
         in deploy_script
     )
     assert (

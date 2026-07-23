@@ -40,7 +40,7 @@
 #    pvc_mount_path: str [Default: '/workspace']
 #    pvc_name: str [Default: 'recsys-mlops-pvc']
 #    ray_best_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/best_result.json']
-#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cycle-fix-20260720-r2']
+#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp']
 #    ray_job_name: str [Default: 'recsys-bst-ray-tune']
 #    ray_namespace: str [Default: 'kubeflow']
 #    ray_node_selector: str [Default: 'recsys.ai/pool=ml-system']
@@ -268,7 +268,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cycle-fix-20260720-r2
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
     exec-prepare-training-data:
       container:
         args:
@@ -304,7 +304,7 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - /opt/venv/bin/python
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-spark:full-cycle-fix-20260720-r1
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-spark:gcp
     exec-promote-bst-model:
       container:
         args:
@@ -323,7 +323,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/registry/model_promotion.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cycle-fix-20260720-r2
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
     exec-submit-rayjob:
       container:
         args:
@@ -384,7 +384,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cycle-fix-20260720-r2
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
     exec-submit-rayjob-2:
       container:
         args:
@@ -445,7 +445,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cycle-fix-20260720-r2
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
     exec-trigger-kserve-model-cd:
       container:
         args:
@@ -465,7 +465,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py
-        image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cycle-fix-20260720-r2
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.
@@ -856,7 +856,7 @@ root:
         isOptional: true
         parameterType: STRING
       ray_image:
-        defaultValue: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:full-cycle-fix-20260720-r2
+        defaultValue: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
         isOptional: true
         parameterType: STRING
       ray_job_name:
