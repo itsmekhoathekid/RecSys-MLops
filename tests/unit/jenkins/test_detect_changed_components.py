@@ -354,6 +354,13 @@ def test_component_ci_installs_required_clean_environment_dependencies():
     assert "mlflow" in installer
 
 
+def test_data_platform_deploy_preserves_isolated_drift_snapshot_root():
+    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+
+    assert "drift.currentRoot=${OFFLINE_FEATURE_DRIFT_CURRENT_ROOT:-" in deploy
+    assert "monitoring/offline_feature_drift/current_snapshot" in deploy
+
+
 def test_jenkins_ci_temp_data_uses_persistent_storage_not_node_ephemeral_disk():
     jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
 

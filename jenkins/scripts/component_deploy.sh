@@ -285,6 +285,7 @@ deploy_data_platform_unlocked() {
     --set "spark.dynamicAllocation.sustainedSchedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SUSTAINED_BACKLOG_TIMEOUT:-1s}" \
     --set "spark.sqlShufflePartitions=${SPARK_SQL_SHUFFLE_PARTITIONS:-16}" \
     --set-string "spark.advisoryPartitionSizeBytes=${SPARK_ADVISORY_PARTITION_SIZE_BYTES:-134217728}" \
+    --set "drift.currentRoot=${OFFLINE_FEATURE_DRIFT_CURRENT_ROOT:-s3a://recsys-offline-feature-store/monitoring/offline_feature_drift/current_snapshot}" \
     --set "kafka.topicPartitions=${KAFKA_TOPIC_PARTITIONS:-4}" \
     --set "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-2}" \
     --set "flinkTaskManager.resources.requests.cpu=${FLINK_TASKMANAGER_REQUEST_CPU:-500m}" \
