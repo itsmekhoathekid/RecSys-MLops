@@ -11,9 +11,11 @@ registry:
     storageClassName: standard-rwo
 
 jenkins:
-  imagePushRegistry: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
-  imagePullRegistry: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  imagePushRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
+  imagePullRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
   requireGcpArtifactRegistry: true
+  runtimeCredentialsSecret:
+    enabled: true
   dind:
     useJenkinsHomePvc: true
   runtimeTools:
@@ -27,7 +29,7 @@ jenkins:
 
 modelRolloutWatcher:
   enabled: true
-  image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:latest
+  image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
   imagePullPolicy: Always
   autoProgressiveEnabled: true
   progressiveWeights: "10,25,50"

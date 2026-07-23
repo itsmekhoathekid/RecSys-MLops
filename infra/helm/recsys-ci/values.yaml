@@ -45,6 +45,11 @@ jenkins:
   replicas: 1
   adminUser: admin
   adminSecretName: recsys-jenkins-admin
+  runtimeCredentialsSecret:
+    enabled: false
+    namespace: external-secrets
+    name: jenkins-runtime
+    url: http://recsys-jenkins.ci.svc.cluster.local:8080
   github:
     projectUrl: https://github.com/itsmekhoathekid/RecSys-MLops/
     repositoryUrl: https://github.com/itsmekhoathekid/RecSys-MLops.git
