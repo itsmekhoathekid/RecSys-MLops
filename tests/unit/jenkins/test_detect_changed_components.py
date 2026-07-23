@@ -361,6 +361,13 @@ def test_data_platform_deploy_preserves_isolated_drift_snapshot_root():
     assert "monitoring/offline_feature_drift/current_snapshot" in deploy
 
 
+def test_rollout_job_reconciliation_uses_valid_python_crumb_parser():
+    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+
+    assert 'print("{}: {}".format(p["crumbRequestField"], p["crumb"]))' in deploy
+    assert 'p[\\"crumbRequestField\\"]' not in deploy
+
+
 def test_jenkins_ci_temp_data_uses_persistent_storage_not_node_ephemeral_disk():
     jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
 

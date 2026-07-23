@@ -646,7 +646,7 @@ reconcile_rollout_jenkins_jobs() {
   username="$(kubectl get secret "${admin_secret}" -n "${namespace_ci}" -o 'jsonpath={.data.username}' | base64 -d)"
   password="$(kubectl get secret "${admin_secret}" -n "${namespace_ci}" -o 'jsonpath={.data.password}' | base64 -d)"
   crumb_json="$(curl -fsS -u "${username}:${password}" "${jenkins_url}/crumbIssuer/api/json")"
-  crumb_header="$(python3 -c 'import json,sys; p=json.load(sys.stdin); print(f"{p[\"crumbRequestField\"]}: {p[\"crumb\"]}")' <<<"${crumb_json}")"
+  crumb_header="$(python3 -c 'import json,sys; p=json.load(sys.stdin); print("{}: {}".format(p["crumbRequestField"], p["crumb"]))' <<<"${crumb_json}")"
   curl -fsS \
     -u "${username}:${password}" \
     -H "${crumb_header}" \
