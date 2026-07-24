@@ -59,8 +59,6 @@ spec:
         app.kubernetes.io/part-of: recsys-ci
     spec:
       serviceAccountName: {{ .Values.rbac.serviceAccountName }}
-      securityContext:
-        fsGroup: 1000
       initContainers:
         - name: fix-jenkins-home-permissions
           image: {{ .Values.jenkins.image }}
@@ -68,7 +66,7 @@ spec:
           command:
             - sh
             - -c
-            - {{- if and .Values.jenkins.dind.enabled .Values.jenkins.dind.useJenkinsHomePvc }} mkdir -p /var/jenkins_home/docker-graph && chown -R 1000:1000 /var/jenkins_home{{- else }} chown -R 1000:1000 /var/jenkins_home{{- end }}
+            - {{- if and .Values.jenkins.dind.enabled .Values.jenkins.dind.useJenkinsHomePvc }} mkdir -p /var/jenkins_home/docker-graph && chown 1000:1000 /var/jenkins_home /var/jenkins_home/docker-graph{{- else }} chown 1000:1000 /var/jenkins_home{{- end }}
           securityContext:
             runAsUser: 0
           volumeMounts:
