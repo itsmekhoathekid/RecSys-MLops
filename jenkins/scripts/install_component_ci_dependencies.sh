@@ -12,7 +12,9 @@ if [[ "${components}" == *,training,* \
   || "${components}" == *,spark_batch,* \
   || "${components}" == *,dp1,* \
   || "${components}" == *,dp2,* \
-  || "${components}" == *,dp3,* ]]; then
+  || "${components}" == *,dp3,* \
+  || "${components}" == *,stream_offline,* \
+  || "${components}" == *,stream_online,* ]]; then
   uv pip install --python "${python_bin}" "pyspark==3.5.8"
 fi
 
