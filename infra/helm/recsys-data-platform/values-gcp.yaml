@@ -66,8 +66,8 @@ flink:
 
 flinkAutoscaler:
   taskManagerHpa:
-    # The coursework GCP profile pins the CPU node pool to one node.
-    maxReplicas: 2
+    # Keep two warm workers and allow burst traffic to scale out to four.
+    maxReplicas: 4
 
 redis:
   istioInject: "true"

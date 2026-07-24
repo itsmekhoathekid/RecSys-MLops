@@ -322,7 +322,7 @@ deploy_data_platform_unlocked() {
     --set "flinkAutoscaler.vertexMaxParallelism=${FLINK_AUTOSCALER_VERTEX_MAX_PARALLELISM:-4}" \
     --set "flinkAutoscaler.taskManagerHpa.enabled=${FLINK_TASKMANAGER_HPA_ENABLED:-true}" \
     --set "flinkAutoscaler.taskManagerHpa.minReplicas=${FLINK_TASKMANAGER_HPA_MIN_REPLICAS:-2}" \
-    --set "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-2}" \
+    --set "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-4}" \
     --set "flinkAutoscaler.taskManagerHpa.targetCpuUtilization=${FLINK_TASKMANAGER_HPA_TARGET_CPU:-65}" \
     --set "flinkAutoscaler.taskManagerHpa.scaleDownStabilizationSeconds=${FLINK_TASKMANAGER_HPA_SCALE_DOWN_STABILIZATION_SECONDS:-300}" \
     --set "streaming.watermarkDelayMinutes=${STREAM_WATERMARK_DELAY_MINUTES:-5}" \
