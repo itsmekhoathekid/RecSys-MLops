@@ -124,7 +124,9 @@ case "${component}" in
   materialize)
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir materialize
-    cov_paths=(feature_store.online_writer features.spark.spark_batch_entrypoint)
+    # Materialize publishes the dataflow CLI. The Spark batch entrypoint is
+    # owned and gated by the spark_batch/DP3 components, not this image.
+    cov_paths=(feature_store.online_writer)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   training)
