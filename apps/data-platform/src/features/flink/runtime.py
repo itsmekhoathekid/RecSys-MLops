@@ -26,10 +26,14 @@ def configure_checkpointing(env: Any, args: Any) -> None:
     env.enable_checkpointing(args.checkpoint_interval_seconds * 1000)
     checkpoint_config = env.get_checkpoint_config()
     checkpoint_config.set_checkpointing_mode(CheckpointingMode.EXACTLY_ONCE)
-    checkpoint_config.set_min_pause_between_checkpoints(args.checkpoint_min_pause_seconds * 1000)
+    checkpoint_config.set_min_pause_between_checkpoints(
+        args.checkpoint_min_pause_seconds * 1000
+    )
     checkpoint_config.set_checkpoint_timeout(args.checkpoint_timeout_seconds * 1000)
     checkpoint_config.set_max_concurrent_checkpoints(1)
-    checkpoint_config.set_tolerable_checkpoint_failure_number(args.tolerable_checkpoint_failures)
+    checkpoint_config.set_tolerable_checkpoint_failure_number(
+        args.tolerable_checkpoint_failures
+    )
     checkpoint_config.set_externalized_checkpoint_retention(
         ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION
     )

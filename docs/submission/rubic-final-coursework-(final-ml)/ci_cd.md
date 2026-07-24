@@ -40,7 +40,7 @@ for all component pipelines:
 
 | Component | Triggered by changed paths |
 | --- | --- |
-| `materialize` | `apps/data-platform/src/feature_store/`, `apps/data-platform/src/local/`, data-platform metadata/config paths, `Dockerfile.dataflow-cli` |
+| `materialize` | `apps/data-platform/src/feature_store/`, Spark batch entrypoint, data-platform metadata/config paths, `Dockerfile.dataflow-cli` |
 | `training` | `apps/ml-system/`, `infra/kubeflow/`, `infra/helm/ray-cluster/`, `infra/helm/recsys-runtime/`, `infra/helm/mlflow-stack/`, `configs/local/bst*.yaml` |
 | `dp1` | `apps/data-platform/data-generator/`, `apps/data-platform/src/ingest/`, `raw_ingestion_dag.py`, `postgres_source.yaml`, `kafka_topics.yaml`, Kafka Connect/Debezium Docker paths |
 | `dp2` | Spark feature code, lakehouse paths, `batch_feature_pipeline_dag.py`, `apps/data-platform/Dockerfile.spark`, `configs/local/spark_batch*.yaml` |
@@ -147,12 +147,14 @@ successful rollout/readiness check.
 
 **Strategy:** run this CI/CD branch when materialization or Feast feature-store
 paths change, especially `apps/data-platform/src/feature_store/`,
-`apps/data-platform/src/local/`, feature-store repo/config files, data-platform
-metadata code, or shared dataflow CLI Docker/runtime files.
+`apps/data-platform/src/features/spark/spark_batch_entrypoint.py`, feature-store
+repo/config files, data-platform metadata code, or shared dataflow CLI
+Docker/runtime files.
 
 **Test:** `component_ci.sh materialize` runs data-platform unit tests,
 dataflow Docker contract tests, any matching integration suite that exists, and
-coverage for `feature_store.online_writer` and `local.run_batch_features`.
+coverage for `feature_store.online_writer` and
+`features.spark.spark_batch_entrypoint`.
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/cicd_materialize_test.png)
 

@@ -124,7 +124,7 @@ case "${component}" in
   materialize)
     tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir materialize
-    cov_paths=(feature_store.online_writer local.run_batch_features)
+    cov_paths=(feature_store.online_writer features.spark.spark_batch_entrypoint)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   training)
@@ -197,13 +197,13 @@ case "${component}" in
   stream_offline)
     tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_flink_event_time.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir stream_offline
-    cov_paths=(features.flink.candidate_pool_job features.flink.item_features_job features.flink.user_aggregate_job features.flink.user_sequence_job features.flink.time_utils lakehouse.iceberg)
+    cov_paths=(features.flink.features.candidate_pool features.flink.features.item features.flink.features.user_aggregate features.flink.features.user_sequence features.flink.time_utils lakehouse.iceberg)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
     ;;
   stream_online)
     tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_flink_event_time.py tests/unit/api_serving/test_serving.py tests/contract/test_docker_dataflow_contracts.py)
     append_integration_dir stream_online
-    cov_paths=(features.flink.candidate_pool_job features.flink.item_features_job features.flink.user_aggregate_job features.flink.user_sequence_job features.flink.time_utils feature_store.online_writer)
+    cov_paths=(features.flink.features.candidate_pool features.flink.features.item features.flink.features.user_aggregate features.flink.features.user_sequence features.flink.time_utils feature_store.online_writer)
     component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/src"
     ;;
   analytics)

@@ -327,10 +327,10 @@ Code reference:
 
 - [realtime-flink-consumer.yaml (line 52)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L52): gives the Redis job its own Kafka consumer group.
 - [realtime-flink-consumer.yaml (line 144)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L144): gives the PostgreSQL job a different Kafka consumer group.
-- [realtime_stream_job.py (line 371)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L371): builds the native `KafkaSource`.
-- [realtime_stream_job.py (line 947)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L947): connects that source to the production event-time graph.
-- [realtime_stream_job.py (line 1082)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1082): applies the async Redis writer.
-- [realtime_stream_job.py (line 1102)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1102): applies the async PostgreSQL writer.
+- [source.py (line 138)](../../../apps/data-platform/src/features/flink/source.py#L138): builds the native `KafkaSource`.
+- [realtime_stream_job.py (line 112)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L112): connects reusable operators into the production event-time graph.
+- [realtime_stream_job.py (line 82)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L82): attaches the async Redis writer.
+- [realtime_stream_job.py (line 93)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L93): attaches the async PostgreSQL writer.
 
 ### View Flink UI To Show Baseline Problems
 
@@ -431,20 +431,20 @@ flowchart LR
 
 Step-by-step code reference:
 
-1. [Kafka source and watermark construction](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L947) establish continuous event-time input.
-2. [Parse, deduplicate, and lateness classification](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L962) run once before the graph fans out.
-3. [The incremental quality window](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L984) detects burst/late behavior without retaining the full window.
-4. [The feature policy and parallel user/item panes](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1015) produce rolling `30m/1h/24h/7d` features and the last-50 user sequence.
-5. [Bounded `AsyncDataStream.unordered_wait` sinks](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1080) perform non-blocking Redis/PostgreSQL I/O; the [async token bucket](../../../apps/data-platform/src/features/flink/rate_limit.py#L58) caps each sink subtask.
+1. [Kafka source, CDC parsing, and watermark construction](../../../apps/data-platform/src/features/flink/source.py#L59) establish continuous event-time input.
+2. [Deduplication](../../../apps/data-platform/src/features/flink/operators/dedup.py#L8) and [lateness policy](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L8) run before the graph fans out.
+3. [The incremental quality window](../../../apps/data-platform/src/features/flink/operators/quality.py) detects burst/late behavior without retaining the full window.
+4. [Parallel user/item event-time panes](../../../apps/data-platform/src/features/flink/feature_windows.py#L366) produce rolling `30m/1h/24h/7d` features and the last-50 user sequence.
+5. [Bounded `AsyncDataStream.unordered_wait` sinks](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L82) perform non-blocking Redis/PostgreSQL I/O; the [async token bucket](../../../apps/data-platform/src/features/flink/sinks/rate_limit.py) caps each sink subtask.
 6. [Standalone autoscaler and TaskManager HPA](../../../infra/helm/recsys-data-platform/templates/flink-autoscaler.yaml#L1) scale sustained load from the [initial parallelism of one](../../../infra/helm/recsys-data-platform/values.yaml#L180).
 
 #### Bursty Traffic
 
 The quality window detects the problem; async capacity, Kafka buffering, and autoscaling handle it:
 
-1. [`native_quality_window_aggregate()`](../../../apps/data-platform/src/features/flink/quality_windows.py#L9) increments constant-size counters and marks `is_bursty`; it does not buffer the full window or throttle traffic.
-2. [`AsyncRedisFeatureWriter.async_invoke()`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L481) and [`AsyncPostgresFeastOfflineWriter.async_invoke()`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L612) await real async clients, so one slow request does not block all records in the subtask.
-3. Both writers use [`AsyncDataStream.unordered_wait`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1082) with `capacity=64` and a 120-second timeout. Full capacity backpressures Kafka; the Redis and PostgreSQL [`timeout()` fallbacks](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L574) log the affected `event_id` instead of restarting the TaskManager. Reference: [Flink 2.2 Async I/O](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/asyncio/).
+1. [`native_quality_window_aggregate()`](../../../apps/data-platform/src/features/flink/operators/quality.py) increments constant-size counters and marks `is_bursty`; it does not buffer the full window or throttle traffic.
+2. [`async_redis_feature_writer()`](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L12) and [`async_postgres_feature_writer()`](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py#L63) await real async clients, so one slow request does not block all records in the subtask.
+3. Both writers use [`AsyncDataStream.unordered_wait`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L82) with `capacity=64` and a 120-second timeout. Full capacity backpressures Kafka; the [`timeout()` fallbacks](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L125) log the affected `event_id` instead of restarting the TaskManager. Reference: [Flink 2.2 Async I/O](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/asyncio/).
 4. Jobs start at [`parallelism: 1`](../../../infra/helm/recsys-data-platform/values.yaml#L181), and [`taskSlots: 1`](../../../infra/helm/recsys-data-platform/values.yaml#L136) isolates online/offline jobs on separate TaskManagers. Flink Autoscaler 1.15 and the max-four TaskManager HPA are configured in [`flink-autoscaler.yaml`](../../../infra/helm/recsys-data-platform/templates/flink-autoscaler.yaml#L1). Reference: [Flink Autoscaler 1.15](https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-release-1.15/docs/custom-resource/autoscaler/).
 
 The two scaling layers solve different parts of the burst: HPA creates TaskManager capacity, while Adaptive Scheduler plus the standalone autoscaler changes vertex parallelism. Extra TaskManagers alone do not reduce pressure when a rolling operator remains at parallelism one.
@@ -506,10 +506,10 @@ flowchart LR
 
 Step-by-step code reference:
 
-1. [`EventTimestampAssigner`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L417) reads `event_timestamp`; [the watermark setup](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L947) bounds out-of-order delay and handles idle partitions.
-2. [`event_time_status()`](../../../apps/data-platform/src/features/flink/event_time.py#L48) compares the event with the current watermark and the aligned feature-pane cleanup boundary; [`MarkEventTimeStatus`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L697) records accepted-late and too-late counters.
-3. [The quality window](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L984) applies `allowed_lateness` and routes records arriving after state cleanup to the native side output and PostgreSQL DLQ. Reference: [Flink 2.2 late data](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/windows/#getting-late-data-as-a-side-output).
-4. [`KeepFeatureEvents`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L718) admits on-time and accepted-late records to [the feature windows](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1026), while [`AsyncPostgresLateEventDlqWriter`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L726) stores post-cleanup records for backfill without blocking the Python worker.
+1. [`event_timestamp_assigner()`](../../../apps/data-platform/src/features/flink/source.py#L70) reads `event_timestamp`; [the watermark builder](../../../apps/data-platform/src/features/flink/source.py#L161) bounds out-of-order delay and handles idle partitions.
+2. [`event_time_status()`](../../../apps/data-platform/src/features/flink/event_time.py#L48) compares the event with the current watermark and the aligned feature-pane cleanup boundary; [`mark_event_time_status_operator()`](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L8) records accepted-late and too-late counters.
+3. [The quality window](../../../apps/data-platform/src/features/flink/operators/quality.py) applies `allowed_lateness` and routes records arriving after state cleanup to the native side output and PostgreSQL DLQ. Reference: [Flink 2.2 late data](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/windows/#getting-late-data-as-a-side-output).
+4. [`keep_feature_events_operator()`](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L48) admits on-time and accepted-late records to [the feature windows](../../../apps/data-platform/src/features/flink/feature_windows.py#L366), while [`async_postgres_late_event_dlq_writer()`](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py#L206) stores post-cleanup records for backfill without blocking the Python worker.
 
 #### Failure Recovery And Sink Replay
 
@@ -523,17 +523,10 @@ PostgreSQL upserts by `source_event_id`, the DLQ ignores duplicate `(event_id, r
 
 Code reference:
 
-- [runtime_config.py (line 28)](../../../apps/data-platform/src/features/flink/runtime_config.py#L28): selects Flink `CheckpointingMode.EXACTLY_ONCE`.
-- [runtime_config.py (line 29)](../../../apps/data-platform/src/features/flink/runtime_config.py#L29): enforces a minimum pause between checkpoints.
-- [runtime_config.py (line 30)](../../../apps/data-platform/src/features/flink/runtime_config.py#L30): bounds checkpoint duration.
-- [runtime_config.py (line 31)](../../../apps/data-platform/src/features/flink/runtime_config.py#L31): limits concurrent checkpoints to one.
-- [runtime_config.py (line 32)](../../../apps/data-platform/src/features/flink/runtime_config.py#L32): configures tolerated checkpoint failures.
-- [runtime_config.py (line 33)](../../../apps/data-platform/src/features/flink/runtime_config.py#L33): retains externalized checkpoints on cancellation.
-- [runtime_config.py (line 35)](../../../apps/data-platform/src/features/flink/runtime_config.py#L35): enables unaligned checkpoints for backpressured streams.
-- [realtime_stream_job.py (line 1231)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1231): applies checkpoint configuration before building/executing the job.
-- [realtime_stream_job.py (line 290)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L290): carries the source event id into user-sequence rows.
-- [realtime_stream_job.py (line 310)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L310): carries the source event id into user-aggregate rows.
-- [realtime_stream_job.py (line 329)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L329): carries the source event id into item-feature rows.
+- [runtime.py](../../../apps/data-platform/src/features/flink/runtime.py): configures `EXACTLY_ONCE`, checkpoint pause/timeout/concurrency/failure tolerance, retained externalized checkpoints, and optional unaligned checkpoints.
+- [realtime_stream_job.py (line 161)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L161): applies checkpoint configuration before building/executing the job.
+- [row_mappers.py (line 110)](../../../apps/data-platform/src/features/flink/operators/row_mappers.py#L110): carries the source event id into user feature rows.
+- [row_mappers.py (line 183)](../../../apps/data-platform/src/features/flink/operators/row_mappers.py#L183): carries the source event id into item feature rows.
 - [postgres_offline_store.py (line 194)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L194): creates the partial unique index on `source_event_id`.
 - [postgres_offline_store.py (line 204)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L204): creates the DLQ uniqueness constraint.
 - [postgres_offline_store.py (line 250)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L250): upserts replayed feature events.
@@ -614,7 +607,7 @@ flowchart LR
     X --> P["Offline deployment → async PostgreSQL"]
 ```
 
-1. [`KeepFeatureEvents`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L718) removes duplicates and, when `dropLateEvents=true`, events past `window_end + allowed_lateness`.
+1. [`keep_feature_events_operator()`](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L48) removes duplicates and, when `dropLateEvents=true`, events past `window_end + allowed_lateness`.
 2. User and item branches independently key by entity and use 60-second `TumblingEventTimeWindows`. After a new element marks the pane dirty, the trigger emits once after five seconds; it does not reschedule itself for an unchanged pane. Watermark close emits the final pane, and an accepted-late element emits a correction immediately.
 3. Each emission carries `window_start`, `window_end`, and `is_final`. Rolling `MapState` replaces revisions by `window_start`, ignores an identical revision, deduplicates by `event_id`, and prunes state beyond seven days; early/final/late emissions therefore do not double-count or flood the sinks.
 4. The two deployments run the same feature graph: the online job enables async Redis only, while the offline job enables async PostgreSQL only.
@@ -653,13 +646,13 @@ user_updates = (
 
 Code reference:
 
-- [User/item feature-window graph and sink routing](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1015)
+- [User/item feature-window graph](../../../apps/data-platform/src/features/flink/feature_windows.py#L366) and [sink routing](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L58)
 - [Incremental pane accumulator and window metadata](../../../apps/data-platform/src/features/flink/feature_windows.py#L17)
 - [Pane revision overwrite, event deduplication, and seven-day pruning](../../../apps/data-platform/src/features/flink/feature_windows.py#L70)
 - [Identical revision guard](../../../apps/data-platform/src/features/flink/feature_windows.py#L104)
 - [Dirty-gated early, final, and accepted-late trigger](../../../apps/data-platform/src/features/flink/feature_windows.py#L205)
-- [Rolling keyed `MapState` processors](../../../apps/data-platform/src/features/flink/feature_windows.py#L274)
-- [User 30m/24h/7d aggregates](../../../apps/data-platform/src/features/flink/user_aggregate_job.py#L15), [last-50 sequence](../../../apps/data-platform/src/features/flink/user_sequence_job.py#L15), and [item 1h/24h/7d aggregates](../../../apps/data-platform/src/features/flink/item_features_job.py#L15)
+- [Rolling keyed `MapState` processors](../../../apps/data-platform/src/features/flink/feature_windows.py#L299)
+- [User 30m/24h/7d aggregates](../../../apps/data-platform/src/features/flink/features/user_aggregate.py), [last-50 sequence](../../../apps/data-platform/src/features/flink/features/user_sequence.py), and [item 1h/24h/7d aggregates](../../../apps/data-platform/src/features/flink/features/item.py)
 - [Window/trigger Helm defaults](../../../infra/helm/recsys-data-platform/values.yaml#L236) and [CLI wiring for both deployments](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L84)
 
 ## Production Integration Proof

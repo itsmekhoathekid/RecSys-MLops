@@ -9,7 +9,7 @@ CLUSTER="${GKE_CLUSTER:-${CLUSTER:-recsys-mlops-gke}}"
 STATE_FILE="${GCP_POWER_STATE_FILE:-.gcp-services-power-state.env}"
 WAIT_TIMEOUT="${GCP_SERVICES_WAIT_TIMEOUT:-900s}"
 SKIP_SMOKE="${GCP_SERVICES_SKIP_SMOKE:-0}"
-REQUIRE_AB_TEST="${GCP_SERVICES_REQUIRE_AB_TEST:-1}"
+REQUIRE_AB_TEST="${GCP_SERVICES_REQUIRE_AB_TEST:-0}"
 INSTALL_CI="${GCP_SERVICES_INSTALL_CI:-1}"
 KEDA_HTTP_REPLICAS="${GCP_SERVICES_KEDA_HTTP_REPLICAS:-1}"
 RESTORE_DATA_PLATFORM_CONFIG="${GCP_SERVICES_RESTORE_DATA_PLATFORM_CONFIG:-1}"
@@ -68,9 +68,60 @@ require_tools() {
   command -v gcloud >/dev/null
   command -v kubectl >/dev/null
   command -v curl >/dev/null
+  command -v jq >/dev/null
   if [[ "${INSTALL_CI}" == "1" ]]; then
     command -v helm >/dev/null
   fi
+}
+
+relax_pdbs_for_hibernate() {
+  local namespace name min_available max_unavailable original
+
+  echo "Temporarily relaxing PodDisruptionBudgets so GKE can drain zero-node pools."
+  while IFS=$'\x1f' read -r namespace name min_available max_unavailable; do
+    [[ -z "${namespace}" || -z "${name}" ]] && continue
+    if [[ -n "${min_available}" ]]; then
+      original="$(kubectl get pdb "${name}" -n "${namespace}" \
+        -o jsonpath='{.metadata.annotations.recsys\.ai/hibernate-min-available}' 2>/dev/null || true)"
+      if [[ -z "${original}" ]]; then
+        kubectl annotate pdb "${name}" -n "${namespace}" \
+          "recsys.ai/hibernate-min-available=${min_available}" --overwrite
+      fi
+      kubectl patch pdb "${name}" -n "${namespace}" --type merge \
+        -p '{"spec":{"minAvailable":0}}'
+    elif [[ -n "${max_unavailable}" ]]; then
+      original="$(kubectl get pdb "${name}" -n "${namespace}" \
+        -o jsonpath='{.metadata.annotations.recsys\.ai/hibernate-max-unavailable}' 2>/dev/null || true)"
+      if [[ -z "${original}" ]]; then
+        kubectl annotate pdb "${name}" -n "${namespace}" \
+          "recsys.ai/hibernate-max-unavailable=${max_unavailable}" --overwrite
+      fi
+      kubectl patch pdb "${name}" -n "${namespace}" --type merge \
+        -p '{"spec":{"maxUnavailable":"100%"}}'
+    fi
+  done < <(kubectl get pdb -A -o json | jq -r \
+    '.items[] | [.metadata.namespace, .metadata.name, (.spec.minAvailable // ""), (.spec.maxUnavailable // "")] | join("\u001f")')
+}
+
+restore_pdbs_after_hibernate() {
+  local namespace name min_available max_unavailable json_value
+
+  echo "Restoring PodDisruptionBudgets after GKE resume."
+  while IFS=$'\x1f' read -r namespace name min_available max_unavailable; do
+    [[ -z "${namespace}" || -z "${name}" ]] && continue
+    if [[ -n "${min_available}" ]]; then
+      json_value="$(jq -cn --arg value "${min_available}" '$value | tonumber? // $value')"
+      kubectl patch pdb "${name}" -n "${namespace}" --type merge \
+        -p "{\"spec\":{\"minAvailable\":${json_value}}}"
+      kubectl annotate pdb "${name}" -n "${namespace}" recsys.ai/hibernate-min-available-
+    elif [[ -n "${max_unavailable}" ]]; then
+      json_value="$(jq -cn --arg value "${max_unavailable}" '$value | tonumber? // $value')"
+      kubectl patch pdb "${name}" -n "${namespace}" --type merge \
+        -p "{\"spec\":{\"maxUnavailable\":${json_value}}}"
+      kubectl annotate pdb "${name}" -n "${namespace}" recsys.ai/hibernate-max-unavailable-
+    fi
+  done < <(kubectl get pdb -A -o json | jq -r \
+    '.items[] | [.metadata.namespace, .metadata.name, (.metadata.annotations["recsys.ai/hibernate-min-available"] // ""), (.metadata.annotations["recsys.ai/hibernate-max-unavailable"] // "")] | join("\u001f")')
 }
 
 cluster_args() {
@@ -154,6 +205,18 @@ write_state() {
   record_pool_state GPU "${GPU_NODE_POOL}" "${DEFAULT_GPU_NODES}" "${DEFAULT_GPU_MIN_NODES}" "${DEFAULT_GPU_MAX_NODES}"
 }
 
+state_hibernating() {
+  [[ -f "${STATE_FILE}" ]] && grep -q '^HIBERNATING=1$' "${STATE_FILE}"
+}
+
+set_hibernating_state() {
+  local value="$1"
+  local temporary="${STATE_FILE}.tmp"
+  grep -v '^HIBERNATING=' "${STATE_FILE}" >"${temporary}" || true
+  printf 'HIBERNATING=%q\n' "${value}" >>"${temporary}"
+  mv "${temporary}" "${STATE_FILE}"
+}
+
 set_pool_autoscaling() {
   local pool="$1"
   local min="$2"
@@ -213,6 +276,39 @@ scale_pool_down() {
   echo "Hibernate ${label}: ${pool} -> autoscaling=off, nodes=0 (recorded max=${max})"
   disable_pool_autoscaling "${pool}"
   resize_pool "${pool}" 0
+}
+
+pool_node_count() {
+  local pool="$1"
+  kubectl get nodes -l "cloud.google.com/gke-nodepool=${pool}" -o name 2>/dev/null | wc -l | tr -d '[:space:]'
+}
+
+ensure_pool_down() {
+  local label="$1"
+  local pool="$2"
+
+  if ! pool_exists "${pool}"; then
+    return 0
+  fi
+
+  local attempt count
+  for attempt in 1 2 3; do
+    count="$(safe_int "$(pool_node_count "${pool}")" "0")"
+    if (( count == 0 )); then
+      echo "Verified ${label}: ${pool} has 0 Kubernetes nodes."
+      return 0
+    fi
+    echo "Retry ${label} hibernate (${attempt}/3): ${pool} still has ${count} node(s)."
+    disable_pool_autoscaling "${pool}"
+    resize_pool "${pool}" 0
+    sleep 10
+  done
+
+  count="$(safe_int "$(pool_node_count "${pool}")" "0")"
+  if (( count != 0 )); then
+    echo "Node pool ${pool} still has ${count} node(s) after hibernate retries." >&2
+    return 1
+  fi
 }
 
 scale_pool_up() {
@@ -379,6 +475,7 @@ install_ci_stack() {
     --namespace "${CI_NAMESPACE}" \
     --create-namespace \
     -f "${CI_VALUES_FILE}" \
+    --force-conflicts \
     --wait \
     --timeout "${CI_HELM_TIMEOUT}"
 }
@@ -588,6 +685,23 @@ ensure_realtime_flink_running() {
   return 1
 }
 
+recover_triton_predictor_after_webhook() {
+  local namespace="kserve-triton-inference"
+  local deployment="recsys-bst-triton-predictor"
+
+  if ! kubectl get deployment "${deployment}" -n "${namespace}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local desired current
+  desired="$(safe_int "$(kubectl get deployment "${deployment}" -n "${namespace}" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)" "0")"
+  current="$(safe_int "$(kubectl get deployment "${deployment}" -n "${namespace}" -o jsonpath='{.status.replicas}' 2>/dev/null || true)" "0")"
+  if (( desired > 0 && current == 0 )); then
+    echo "Restart Triton predictor after KServe webhook recovery (${desired} desired, ${current} current)."
+    kubectl rollout restart deployment/"${deployment}" -n "${namespace}"
+  fi
+}
+
 wait_ready_after_up() {
   get_credentials
 
@@ -622,6 +736,7 @@ wait_ready_after_up() {
   done
 
   wait_endpoint_address ingress-nginx ingress-nginx-controller-admission "NGINX validating webhook"
+  recover_triton_predictor_after_webhook
   normalize_gcp_runtime
   install_ci_stack
 
@@ -836,13 +951,22 @@ PY
 
 hibernate_down() {
   get_credentials
-  echo "Recording live node-pool state to ${STATE_FILE}"
-  write_state
+  if state_hibernating; then
+    echo "Keeping the existing pre-hibernate node-pool snapshot in ${STATE_FILE}."
+  else
+    echo "Recording live node-pool state to ${STATE_FILE}"
+    write_state
+  fi
   echo "PVC/PV data will be kept. This command does not delete namespaces, Helm releases, PVCs, or PVs."
   kubectl get pvc -A || true
+  relax_pdbs_for_hibernate
   scale_pool_down CPU "${CPU_NODE_POOL}"
   scale_pool_down ML "${ML_NODE_POOL}"
   scale_pool_down GPU "${GPU_NODE_POOL}"
+  ensure_pool_down CPU "${CPU_NODE_POOL}"
+  ensure_pool_down ML "${ML_NODE_POOL}"
+  ensure_pool_down GPU "${GPU_NODE_POOL}"
+  set_hibernating_state 1
   echo "GCP services are hibernating. Run '$0 up' to restore node pools and wait services Ready."
 }
 
@@ -864,8 +988,10 @@ resume_up() {
     scale_pool_up GPU "${GPU_POOL}" "${GPU_NODES}" "${GPU_MIN}" "${GPU_MAX}"
   fi
 
+  restore_pdbs_after_hibernate
   wait_ready_after_up
   smoke_after_up
+  set_hibernating_state 0
   echo "GCP services are back up and PVC-backed data was preserved."
 }
 

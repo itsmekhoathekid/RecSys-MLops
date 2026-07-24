@@ -7,6 +7,7 @@ spec:
   template:
     metadata:
       annotations:
+        # This non-hook bootstrap Job is immutable after installation.
         sidecar.istio.io/inject: "false"
     spec:
       enableServiceLinks: false
@@ -43,7 +44,7 @@ spec:
   template:
     metadata:
       annotations:
-        sidecar.istio.io/inject: "false"
+        sidecar.istio.io/inject: {{ .Values.flink.istioInject | quote }}
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
@@ -85,7 +86,7 @@ spec:
   template:
     metadata:
       annotations:
-        sidecar.istio.io/inject: "false"
+        sidecar.istio.io/inject: {{ .Values.flink.istioInject | quote }}
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure

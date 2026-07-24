@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,5 +39,7 @@ class UserSequenceState:
         }
 
 
-def build_user_sequence_payload(event: dict[str, Any], state: UserSequenceState) -> dict[str, Any]:
+def build_user_sequence_payload(
+    event: dict[str, Any], state: UserSequenceState
+) -> dict[str, Any]:
     return state.update(event)

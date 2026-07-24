@@ -31,7 +31,7 @@ Code moi da them:
 
 Target flow:
 
-1. `feature_engineering`: chay `apps/data-platform/src/local/run_batch_features.py` de tao silver tables, Feast offline features, labels va `ml_bst_training`.
+1. `feature_engineering`: chay `apps/data-platform/src/features/spark/spark_batch_entrypoint.py` de tao silver tables, Feast offline features, labels va `ml_bst_training`.
 2. `prepare_training_data`: convert `ml_bst_training` parquet sang JSONL split cho `apps/ml-system/src/models/dataset.py`.
 3. `submit_rayjob`: submit KubeRay `RayJob`; Ray Tune chay HPO va Ray workers train BST trials.
 4. `evaluate_bst`: evaluate best Ray checkpoint tren test split, log test metrics vao MLflow run.

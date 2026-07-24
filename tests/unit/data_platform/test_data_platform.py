@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from features.flink.candidate_pool_job import (
+from features.flink.features.candidate_pool import (
     candidate_updates,
     refresh_user_candidate_pool,
 )
@@ -22,18 +22,24 @@ from features.flink.feature_windows import (
     early_and_event_time_trigger,
     feature_pane_result,
 )
-from features.flink.realtime_stream_job import (
+from features.flink.operators.row_mappers import (
     build_offline_item_feature_rows,
     build_offline_user_feature_rows,
     build_postgres_item_feature_rows,
     build_postgres_user_feature_rows,
     build_stream_behavior_row,
+)
+from features.flink.sinks.postgres_async import postgres_async_capacity
+from features.flink.source import (
     normalize_event,
     parse_message,
-    postgres_async_capacity,
+)
+from features.flink.stream_config import (
+    StreamConfig,
+    parse_stream_args,
     stream_pipeline_role,
 )
-from features.flink.rate_limit import (
+from features.flink.sinks.rate_limit import (
     AsyncTokenBucketRateLimiter,
     TokenBucketRateLimiter,
 )
@@ -244,6 +250,16 @@ def test_stream_pipeline_role_separates_duplicate_consumers(
     assert stream_pipeline_role(args) == expected
 
 
+def test_stream_parser_returns_typed_config_and_applies_store_policy():
+    config = parse_stream_args(
+        ["--group-id", "typed-config-test", "--disable-offline-store"]
+    )
+
+    assert isinstance(config, StreamConfig)
+    assert config.group_id == "typed-config-test"
+    assert config.offline_store_enabled is False
+
+
 def _pane_snapshot(events, *, kind, entity_id, start_ms, end_ms, watermark_ms=-1):
     accumulator = create_feature_pane_accumulator()
     for event in events:
@@ -338,9 +354,7 @@ def test_feature_window_trigger_fires_early_final_and_accepted_late(monkeypatch)
     assert context.states["test-early-timer"].value() == 6_000
     assert trigger.on_processing_time(6_000, window, context) == FakeResult.FIRE
     assert context.states["test-early-timer"].value() is None
-    assert (
-        trigger.on_processing_time(11_000, window, context) == FakeResult.CONTINUE
-    )
+    assert trigger.on_processing_time(11_000, window, context) == FakeResult.CONTINUE
 
     context.processing_time = 7_000
     assert trigger.on_element({}, 7_000, window, context) == FakeResult.CONTINUE
@@ -648,7 +662,7 @@ def test_async_sink_rate_limiter_waits_without_blocking_worker(monkeypatch):
         sleeps.append(seconds)
         now[0] += seconds
 
-    monkeypatch.setattr("features.flink.rate_limit.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("features.flink.sinks.rate_limit.asyncio.sleep", fake_sleep)
     limiter = AsyncTokenBucketRateLimiter(2, burst_events=1, clock=lambda: now[0])
 
     async def consume():
@@ -819,32 +833,28 @@ def test_spark_batch_postgres_export_config_supports_explicit_config_and_env(
 def test_flink_feature_path_is_native_kafka_state_and_iceberg():
     flink_dir = Path("apps/data-platform/src/features/flink")
     sources = "\n".join(
-        path.read_text(encoding="utf-8") for path in flink_dir.glob("*.py")
+        path.read_text(encoding="utf-8") for path in flink_dir.rglob("*.py")
     )
     stream_source = (flink_dir / "realtime_stream_job.py").read_text(encoding="utf-8")
+    kafka_source = (flink_dir / "source.py").read_text(encoding="utf-8")
+    config_source = (flink_dir / "stream_config.py").read_text(encoding="utf-8")
+    iceberg_source = (flink_dir / "sinks" / "iceberg.py").read_text(encoding="utf-8")
     feature_window_source = (flink_dir / "feature_windows.py").read_text(
         encoding="utf-8"
     )
     assert "import pandas" not in sources
     assert "pd." not in sources
-    assert "KafkaSource.builder()" in stream_source
-    assert "KafkaConsumer" not in stream_source
-    assert "from_collection([0]" not in stream_source
-    assert "--offline-store-enabled" in stream_source
-    assert "StreamTableEnvironment" in stream_source
-    assert "GlobalWindows" not in stream_source
-    assert (
-        stream_source.count(
-            "TumblingEventTimeWindows.of(Time.seconds(args.feature_window_seconds))"
-        )
-        == 2
-    )
-    assert "user-feature-event-time-panes" in stream_source
-    assert "item-feature-event-time-panes" in stream_source
-    assert "user-feature-rolling-horizons" in stream_source
-    assert "item-feature-rolling-horizons" in stream_source
-    assert "--feature-window-seconds" in stream_source
-    assert "--feature-early-fire-seconds" in stream_source
+    assert "KafkaSource.builder()" in kafka_source
+    assert "KafkaConsumer" not in sources
+    assert "from_collection([0]" not in sources
+    assert "--offline-store-enabled" in config_source
+    assert "StreamTableEnvironment" in iceberg_source
+    assert "GlobalWindows" not in sources
+    assert "TumblingEventTimeWindows.of" in feature_window_source
+    assert 'name(f"{kind}-feature-event-time-panes")' in feature_window_source
+    assert 'name(f"{kind}-feature-rolling-horizons")' in feature_window_source
+    assert "--feature-window-seconds" in config_source
+    assert "--feature-early-fire-seconds" in config_source
     assert "BuildUserFeatures" not in stream_source
     assert "BuildItemFeatures" not in stream_source
     assert "TriggerResult.FIRE" in feature_window_source

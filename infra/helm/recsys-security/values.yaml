@@ -39,6 +39,7 @@ externalSecrets:
     namespace: kubeflow
     secretName: recsys-mlops-runtime
     vaultPath: runtime
+    additionalVaultPaths: []
   kserve:
     namespace: kserve-triton-inference
     secretName: recsys-kserve-minio

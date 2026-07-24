@@ -191,7 +191,7 @@ def ensure_offline_store_tables(conn: psycopg.Connection, schema: str, tables: I
             if table_name in FEATURE_TABLES:
                 cur.execute(
                     sql.SQL(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {}.{} (source_event_id) "
+                          "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {}.{} (source_event_id) "
                         "WHERE source_event_id IS NOT NULL"
                     ).format(
                         sql.Identifier(f"ux_{table_name}_source_event_id"),

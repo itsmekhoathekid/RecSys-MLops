@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from local.run_batch_features import run_batch_features
+from features.spark.spark_batch_entrypoint import run_pyspark_batch
 
 
 def build_runtime_config(
@@ -47,7 +47,7 @@ def main() -> int:
         run_path=args.run_path or None,
         runtime_config_path=args.runtime_config,
     )
-    summary = run_batch_features(runtime_config)
+    summary = run_pyspark_batch(runtime_config)
     if args.summary_path:
         Path(args.summary_path).parent.mkdir(parents=True, exist_ok=True)
         Path(args.summary_path).write_text(
@@ -60,4 +60,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

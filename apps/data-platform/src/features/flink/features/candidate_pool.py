@@ -22,7 +22,11 @@ def candidate_updates(item_payload: dict[str, Any]) -> list[tuple[str, int, floa
     return [
         ("candidate:trending:1h", product_id, score),
         (f"candidate:trending:category:{category_id}", product_id, score),
-        ("candidate:popular:global", product_id, float(item_payload.get("popularity_score", score))),
+        (
+            "candidate:popular:global",
+            product_id,
+            float(item_payload.get("popularity_score", score)),
+        ),
         (
             f"candidate:popular:category:{category_id}",
             product_id,
@@ -48,7 +52,9 @@ def refresh_user_candidate_pool(
         return 0
 
     scored_candidates = {
-        str(product_id.decode("utf-8") if isinstance(product_id, bytes) else product_id): float(score)
+        str(
+            product_id.decode("utf-8") if isinstance(product_id, bytes) else product_id
+        ): float(score)
         for product_id, score in candidates
     }
     user_key = f"candidate:user:{int(user_id)}"

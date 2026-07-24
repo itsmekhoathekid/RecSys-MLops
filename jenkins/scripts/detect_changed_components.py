@@ -222,8 +222,6 @@ def classify_feature_store_source(flags: dict[str, bool], path: str) -> None:
 def classify_data_platform_source(flags: dict[str, bool], path: str) -> None:
     if path.startswith("apps/data-platform/src/feature_store/"):
         classify_feature_store_source(flags, path)
-    elif path.startswith("apps/data-platform/src/local/"):
-        mark(flags, "SPARK_BATCH", "DP3")
     elif path.startswith("apps/data-platform/src/ingest/"):
         mark(flags, "DP1")
     elif path.startswith("apps/data-platform/src/features/spark/"):

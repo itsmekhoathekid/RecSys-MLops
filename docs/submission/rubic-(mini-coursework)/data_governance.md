@@ -276,7 +276,7 @@ The event reports the PostgreSQL offline outputs for the offline-store job and t
 
 ### Execution And Governance Steps
 
-1. **Data lineage:** the [Flink entrypoint](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1188-L1224) creates two runtime recorders with the same `cdc.behavior_events` input. The offline job records the three PostgreSQL Feast feature tables as outputs, while the online job records the three Redis feature datasets. A continuously running job remains at `START`; termination records `COMPLETE` or `FAIL`.
+1. **Data lineage:** the [Flink entrypoint](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L174) creates two runtime recorders with the same `cdc.behavior_events` input. The offline job records the three PostgreSQL Feast feature tables as outputs, while the online job records the three Redis feature datasets. A continuously running job remains at `START`; termination records `COMPLETE` or `FAIL`.
 2. **Data contract:** [`streaming_features`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L829-L866) owns contracts only for the three Redis datasets because the PostgreSQL offline tables remain owned by DP3. Each Redis contract declares the entity key, feature schema, and intended TTL semantics.
 3. **Data validation:** [`validate_streaming_redis`](../../../apps/data-platform/src/validate/governance_contracts.py#L219-L249) scans `fs:user_sequence:*`, `fs:user_aggregate:*`, and `fs:item:*`. Each contract passes only when at least one matching key exists and a sampled Redis hash has a non-empty payload. The current validator does not yet verify TTL, and PostgreSQL outputs are validated under DP3 rather than duplicated under Streaming.
 

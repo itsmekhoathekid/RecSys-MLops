@@ -6,6 +6,32 @@ build-backend = "setuptools.build_meta"
 name = "recsys-ml-system"
 version = "0.1.0"
 requires-python = ">=3.10"
+dependencies = [
+    "boto3==1.35.36",
+    "botocore==1.35.36",
+    "feast[redis]==0.64.0",
+    "fsspec==2024.10.0",
+    "kfp>=2.16.1",
+    "kfp-kubernetes>=1.4.0",
+    "kubernetes>=30.1.0",
+    "mlflow>=3.0.0",
+    "numpy>=2.2.6",
+    "onnx>=1.17.0",
+    "onnxscript>=0.2.0",
+    "pandas>=2.3.3",
+    "psycopg[binary]>=3.3.4",
+    "pyarrow>=18.0.0",
+    "pyspark==3.5.8",
+    "pyyaml>=6.0.3",
+    "ray[default,train,tune]>=2.40.0",
+    "recsys-data-platform",
+    "s3fs==2024.10.0",
+    "torch>=2.11.0",
+    "tqdm>=4.67.3",
+]
+
+[tool.uv.sources]
+recsys-data-platform = { path = "../data-platform", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -221,7 +221,7 @@ kubectl run recsys-fe-smoke \
   --restart=Never \
   --image=recsys-mlops-training:local \
   --image-pull-policy=Never \
-  --overrides='{"spec":{"containers":[{"name":"recsys-fe-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","envFrom":[{"secretRef":{"name":"recsys-mlops-runtime"}}],"command":["python","-m","recsys_model_pipeline.run_feature_engineering","--input-dir","/workspace/recsys/apps/data-platform/data-generator/src/output/test_10k_seed42","--output-dir","/workspace/recsys/data_platform/output","--summary-path","/workspace/recsys/data_platform/output/feature_summary.json"],"volumeMounts":[{"name":"recsys-shared","mountPath":"/workspace"}],"resources":{"requests":{"cpu":"100m","memory":"512Mi"},"limits":{"cpu":"1","memory":"2Gi"}}}],"volumes":[{"name":"recsys-shared","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}]}}'
+  --overrides='{"spec":{"containers":[{"name":"recsys-fe-smoke","image":"recsys-mlops-training:local","imagePullPolicy":"Never","envFrom":[{"secretRef":{"name":"recsys-mlops-runtime"}}],"command":["python","-m","cli.run_feature_engineering","--run-path","/workspace/recsys/apps/data-platform/data-generator/src/output/test_10k_seed42","--output-base","/workspace/recsys/data_platform/output","--summary-path","/workspace/recsys/data_platform/output/feature_summary.json"],"volumeMounts":[{"name":"recsys-shared","mountPath":"/workspace"}],"resources":{"requests":{"cpu":"100m","memory":"512Mi"},"limits":{"cpu":"1","memory":"2Gi"}}}],"volumes":[{"name":"recsys-shared","persistentVolumeClaim":{"claimName":"recsys-mlops-pvc"}}]}}'
 ```
 
 Watch:

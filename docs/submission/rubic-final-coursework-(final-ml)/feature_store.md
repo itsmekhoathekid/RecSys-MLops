@@ -139,9 +139,9 @@ The jobs intentionally use separate consumer groups so both jobs receive the ful
 
 ### Image Proof Of Flink UI Job Running
 
-![Online-store and offline-store Flink jobs running](../../pngs/flink_online_offline_jobs_running.png)
+![Event-time online-store and offline-store Flink jobs running](../../pngs/flink_event_time_online_offline_jobs_running.png)
 
-**Figure: both continuous feature-store jobs are healthy.** Flink reports the online and offline jobs as `RUNNING`, with all six tasks running in each job.
+**Figure: both continuous feature-store jobs are healthy.** Flink reports the online and offline jobs as `RUNNING`, with all nine tasks running in each job.
 
 ### Commands To Capture Proof
 
@@ -162,7 +162,7 @@ Expected proof: both submitter deployments are ready, Flink has two `RUNNING` jo
 ### Code Reference
 
 - [realtime-flink-consumer.yaml (line 88)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L88), [realtime-flink-consumer.yaml (line 176)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L176): offline-store Flink deployment and sink arguments.
-- [realtime_stream_job.py (line 223)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L223), [line 296](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L296), [line 1045](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1045), and [line 1102](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1102): typed user/item PostgreSQL rows, event-time feature windows, and async offline-store sink attachment.
+- [row_mappers.py (line 110)](../../../apps/data-platform/src/features/flink/operators/row_mappers.py#L110), [row_mappers.py (line 183)](../../../apps/data-platform/src/features/flink/operators/row_mappers.py#L183), [feature_windows.py (line 346)](../../../apps/data-platform/src/features/flink/feature_windows.py#L346), and [postgres_async.py (line 63)](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py#L63): typed user/item PostgreSQL rows, event-time feature windows, and the async offline-store writer.
 - [features.py (line 22)](../../../apps/data-platform/feature-store/feature_repo/features.py#L22), [features.py (line 110)](../../../apps/data-platform/feature-store/feature_repo/features.py#L110): `PostgreSQLSource` FeatureViews over the written tables.
 
 ### Commands To Capture Proof
@@ -188,16 +188,16 @@ Expected proof: logs show PostgreSQL offline writer activity and PostgreSQL row 
 
 ### Image Proof Of Streaming Features In Offline Store
 
-![Flink offline-store job graph with PostgreSQL writer](../../pngs/flink_offline_store_postgres_job_graph.png)
+![Flink event-time offline-store graph with PostgreSQL writer](../../pngs/flink_event_time_offline_postgres_job_graph.png)
 
-**Figure: offline-store streaming path.** The running graph consumes `cdc.behavior_events`, performs event-time quality and feature processing, then reaches `postgres-feast-offline-feature-writer` to update Feast-compatible PostgreSQL tables.
+**Figure: offline-store streaming path.** The graph shows separate user/item event-time panes, rolling-horizon operators, and `postgres-feast-offline-feature-writer` updating Feast-compatible PostgreSQL tables.
 
 ## Flink Streaming Job To Online Store
 
 ### Code Reference
 
 - [realtime-flink-consumer.yaml (line 1)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L1), [realtime-flink-consumer.yaml (line 84)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L84): online-store Flink deployment.
-- [online_writer.py (line 16)](../../../apps/data-platform/src/feature_store/online_writer.py#L16), [online_writer.py (line 48)](../../../apps/data-platform/src/feature_store/online_writer.py#L48), [realtime_stream_job.py (line 644)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L644), [realtime_stream_job.py (line 684)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L684), [realtime_stream_job.py (line 1071)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1071), [realtime_stream_job.py (line 1075)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L1075): Redis serialization, keys, TTLs, and the online writer operator.
+- [online_writer.py (line 16)](../../../apps/data-platform/src/feature_store/online_writer.py#L16), [online_writer.py (line 48)](../../../apps/data-platform/src/feature_store/online_writer.py#L48), [redis_async.py (line 12)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L12), and [realtime_stream_job.py (line 82)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L82): Redis serialization, keys, TTLs, writer implementation, and graph attachment.
 
 ### Commands To Capture Proof
 
@@ -216,18 +216,18 @@ Expected proof: each command prints at least one Redis online feature key create
 
 ### Image Proof Of Streaming Features In Online Store
 
-![Flink online-store job graph with Redis writer](../../pngs/flink_online_store_redis_job_graph.png)
+![Flink event-time online-store graph with Redis writer](../../pngs/flink_event_time_online_redis_job_graph.png)
 
-**Figure: online-store streaming path.** The running graph consumes `cdc.behavior_events`, performs event-time quality and feature processing, then reaches `redis-online-feature-writer` for low-latency Redis serving.
+**Figure: online-store streaming path.** The graph shows separate user/item event-time panes, rolling-horizon operators, and `redis-online-feature-writer` publishing low-latency Redis features.
 
 ## TTL Definition & Reasons
 
 ### Code Reference
 
 - [features.py (line 44)](../../../apps/data-platform/feature-store/feature_repo/features.py#L44), [features.py (line 106)](../../../apps/data-platform/feature-store/feature_repo/features.py#L106): Feast FeatureView TTLs.
-- [realtime_stream_job.py (line 155)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L155), [realtime_stream_job.py (line 156)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L156), [realtime_stream_job.py (line 157)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L157): Redis TTLs for sequence, aggregate, and item features.
-- [realtime_stream_job.py (line 472)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L472), [realtime_stream_job.py (line 486)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L486), [realtime_stream_job.py (line 502)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L502), [realtime_stream_job.py (line 506)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L506), [realtime_stream_job.py (line 536)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L536): applies TTL to bounded-limit, deduplication, user-sequence, user-aggregate, and item keyed state.
-- [runtime_config.py (line 13)](../../../apps/data-platform/src/features/flink/runtime_config.py#L13), [runtime_config.py (line 18)](../../../apps/data-platform/src/features/flink/runtime_config.py#L18): builds and enables native Flink `StateTtlConfig`.
+- [redis_async.py (line 39)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L39), [redis_async.py (line 46)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L46), [redis_async.py (line 56)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L56): Redis TTLs for sequence, aggregate, and item features.
+- [source.py (line 104)](../../../apps/data-platform/src/features/flink/source.py#L104), [dedup.py (line 8)](../../../apps/data-platform/src/features/flink/operators/dedup.py#L8), and [feature_windows.py (line 285)](../../../apps/data-platform/src/features/flink/feature_windows.py#L285): applies TTL to bounded-limit, deduplication, and rolling user/item keyed state.
+- [runtime.py](../../../apps/data-platform/src/features/flink/runtime.py): builds and enables native Flink `StateTtlConfig`.
 - [redis_online_store.yaml (line 14)](../../../configs/local/redis_online_store.yaml#L14): configurable Redis TTL values.
 - [values.yaml (line 211)](../../../infra/helm/recsys-data-platform/values.yaml#L211), [values.yaml (line 222)](../../../infra/helm/recsys-data-platform/values.yaml#L222): deployed watermark and state-TTL values.
 

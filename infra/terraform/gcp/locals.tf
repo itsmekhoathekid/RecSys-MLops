@@ -15,7 +15,7 @@ locals {
   }
 
   data_platform_sets = {
-    "chartRevision"        = sha1(join("", [for path in ["configmap.yaml", "airflow.yaml", "realtime-flink-consumer.yaml", "kafka-topic-init.yaml"] : filemd5("${local.helm_dir}/recsys-data-platform/templates/${path}")]))
+    "chartRevision"        = sha1(join("", [for path in ["configmap.yaml", "airflow.yaml", "realtime-flink-consumer.yaml", "kafka-topic-init.yaml", "jobs.yaml"] : filemd5("${local.helm_dir}/recsys-data-platform/templates/${path}")]))
     "namespace.create"     = "false"
     "images.dataflowCli"   = local.images.dataflow_cli
     "images.spark"         = local.images.spark
@@ -95,6 +95,7 @@ locals {
 
   service_mesh_sets = merge(
     {
+      "chartRevision"                                        = sha1(join("", [for path in ["externalsecrets.yaml", "secretstore.yaml"] : filemd5("${local.helm_dir}/recsys-security/templates/${path}")]))
       "secretStore.enabled"                                  = "true"
       "secretStore.provider"                                 = "kubernetes"
       "secretStore.name"                                     = "recsys-central-secrets"
@@ -103,6 +104,7 @@ locals {
       "secretStore.kubernetes.auth.serviceAccount.namespace" = "external-secrets"
       "externalSecrets.enabled"                              = "true"
       "externalSecrets.creationPolicy"                       = "Owner"
+      "externalSecrets.runtime.additionalVaultPaths[0]"      = "jenkins-runtime"
       "istio.enabled"                                        = "true"
     },
     {

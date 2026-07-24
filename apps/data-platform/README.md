@@ -48,7 +48,11 @@ flowchart TD
 | Iceberg lakehouse config | `apps/data-platform/src/lakehouse/iceberg.py`, `configs/local/spark_batch.yaml` |
 | Batch generator -> Bronze Iceberg ingestion | `apps/data-platform/src/ingest/batch_lakehouse_ingestion.py` |
 | PySpark offline processing | `apps/data-platform/src/features/spark/spark_batch_entrypoint.py` |
-| PyFlink realtime feature consumer | `apps/data-platform/src/features/flink/realtime_stream_job.py` |
+| PyFlink graph orchestration | `apps/data-platform/src/features/flink/realtime_stream_job.py` |
+| PyFlink source, CLI, and checkpoint runtime | `apps/data-platform/src/features/flink/source.py`, `apps/data-platform/src/features/flink/stream_config.py`, `apps/data-platform/src/features/flink/runtime.py` |
+| PyFlink dedup, lateness, quality, and row mapping | `apps/data-platform/src/features/flink/operators/` |
+| PyFlink rolling user/item/candidate calculators | `apps/data-platform/src/features/flink/features/`, `apps/data-platform/src/features/flink/feature_windows.py` |
+| PyFlink Redis, PostgreSQL, and Iceberg sinks | `apps/data-platform/src/features/flink/sinks/` |
 | Redis online writer | `apps/data-platform/src/feature_store/online_writer.py` |
 | Airflow orchestration | `apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py` |
 | Governance lineage | `apps/data-platform/src/metadata/ingest_datahub_governance.py` |

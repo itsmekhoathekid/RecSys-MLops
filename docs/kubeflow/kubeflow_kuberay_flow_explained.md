@@ -187,29 +187,29 @@ apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py
 Command chay trong pod:
 
 ```bash
-python -m recsys_model_pipeline.run_feature_engineering
+python -m cli.run_feature_engineering
 ```
 
 Entrypoint:
 
 ```text
-apps/ml-system/src/run_feature_engineering.py
+apps/ml-system/src/cli/run_feature_engineering.py
 ```
 
 File nay dam bao:
 
 - Load source config tu `configs/local/spark_batch.yaml`.
 - Rewrite runtime output path sang PVC path.
-- Goi local batch feature flow.
+- Goi truc tiep PySpark batch feature flow.
 - Ghi summary JSON neu duoc yeu cau.
 
 Nó gọi:
 
 ```text
-apps/data-platform/src/local/run_batch_features.py
+apps/data-platform/src/features/spark/spark_batch_entrypoint.py
 ```
 
-`run_batch_features.py` dam bao:
+`spark_batch_entrypoint.py` dam bao:
 
 - Doc raw/generated run path.
 - Build silver tables.

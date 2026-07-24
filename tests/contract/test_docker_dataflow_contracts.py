@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import ast
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -537,16 +540,20 @@ def test_flink_starts_at_parallelism_one_and_autoscales_sustained_backlog():
     stream_job = (
         ROOT / "apps/data-platform/src/features/flink/realtime_stream_job.py"
     ).read_text()
+    sink_dir = ROOT / "apps/data-platform/src/features/flink/sinks"
+    stream_sinks = (sink_dir / "redis_async.py").read_text() + (
+        sink_dir / "postgres_async.py"
+    ).read_text()
     checkpoint_config = (
-        ROOT / "apps/data-platform/src/features/flink/runtime_config.py"
+        ROOT / "apps/data-platform/src/features/flink/runtime.py"
     ).read_text()
     assert "AsyncDataStream.unordered_wait" in stream_job
     assert "capacity=postgres_async_capacity(args)" in stream_job
-    assert "timeout=float(args.async_io_timeout_seconds)" in stream_job
+    assert "timeout=float(args.async_io_timeout_seconds)" in stream_sinks
     assert 'restore_args=(-s "$FLINK_RESTORE_PATH")' in rendered
     assert '"${restore_args[@]}"' in rendered
-    assert stream_job.count("def timeout(") >= 3
-    assert "postgres_feast_offline_timeout" in stream_job
+    assert stream_sinks.count("def timeout(") >= 3
+    assert "postgres_feast_offline_timeout" in stream_sinks
     assert "ExternalizedCheckpointRetention" in checkpoint_config
     assert "set_externalized_checkpoint_retention" in checkpoint_config
     assert "--async-io-capacity" in rendered
@@ -554,6 +561,58 @@ def test_flink_starts_at_parallelism_one_and_autoscales_sustained_backlog():
     assert "--feature-early-fire-seconds" in rendered
     assert "--redis-sink-max-events-per-second" in rendered
     assert "--postgres-sink-max-events-per-second" in rendered
+
+
+def test_flink_modules_do_not_define_classes_inside_functions():
+    flink_root = ROOT / "apps/data-platform/src/features/flink"
+    violations = []
+    for path in flink_root.rglob("*.py"):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for function in (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ):
+            for child in ast.walk(function):
+                if isinstance(child, ast.ClassDef):
+                    violations.append(
+                        f"{path.relative_to(ROOT)}:{child.lineno} {child.name}"
+                    )
+    assert violations == []
+
+
+def test_flink_module_boundaries_match_runtime_responsibilities():
+    flink_root = ROOT / "apps/data-platform/src/features/flink"
+    expected = {
+        "runtime.py",
+        "source.py",
+        "operators/dedup.py",
+        "operators/late_policy.py",
+        "operators/quality.py",
+        "operators/row_mappers.py",
+        "features/user_sequence.py",
+        "features/user_aggregate.py",
+        "features/item.py",
+        "features/candidate_pool.py",
+        "sinks/redis_async.py",
+        "sinks/postgres_async.py",
+        "sinks/rate_limit.py",
+        "sinks/iceberg.py",
+    }
+    assert all((flink_root / relative_path).is_file() for relative_path in expected)
+    assert not (flink_root / "runtime_config.py").exists()
+    assert not (flink_root / "quality_windows.py").exists()
+    assert not (flink_root / "iceberg_feature_sink.py").exists()
+
+    entrypoint = flink_root / "realtime_stream_job.py"
+    result = subprocess.run(
+        [sys.executable, str(entrypoint), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--feature-window-seconds" in result.stdout
 
 
 def test_helm_exposes_iceberg_lakehouse_runtime_config():

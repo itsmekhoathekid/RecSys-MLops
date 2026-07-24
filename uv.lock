@@ -45,6 +45,8 @@ dependencies = [
     { name = "httpx" },
     { name = "hypothesis" },
     { name = "ipykernel" },
+    { name = "joblib" },
+    { name = "kagglehub" },
     { name = "kfp" },
     { name = "kfp-kubernetes" },
     { name = "kubernetes" },
@@ -108,6 +110,8 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "hypothesis", specifier = ">=6.155.7" },
     { name = "ipykernel", specifier = ">=7.2.0" },
+    { name = "joblib", specifier = ">=1.4.2" },
+    { name = "kagglehub", specifier = ">=0.3.13" },
     { name = "kfp", specifier = ">=2.16.1" },
     { name = "kfp-kubernetes", specifier = ">=1.4.0" },
     { name = "kubernetes", specifier = ">=30.1.0" },
@@ -1856,7 +1860,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -3038,6 +3042,56 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/90/51/9187be60d989df97f5f0aba133fa54e7300f17616e065d1ada7d7646b6d6/jupyterlab_pygments-0.3.0.tar.gz", hash = "sha256:721aca4d9029252b11cfa9d185e5b5af4d54772bb8072f9b7036f4170054d35d", size = 512900, upload-time = "2023-11-23T09:26:37.44Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b1/dd/ead9d8ea85bf202d90cc513b533f9c363121c7792674f78e0d8a854b63b4/jupyterlab_pygments-0.3.0-py3-none-any.whl", hash = "sha256:841a89020971da1d8693f1a99997aefc5dc424bb1b251fd6322462a1b8842780", size = 15884, upload-time = "2023-11-23T09:26:34.325Z" },
+]
+
+[[package]]
+name = "kagglehub"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "kagglesdk", version = "0.1.28", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "kagglesdk", version = "0.1.35", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b5/b9/e1bdafdcdb98e8e5354b30959ed48f4a08ca2c2dc72c968c5b38c4baa1b5/kagglehub-1.0.2.tar.gz", hash = "sha256:08abae0c1e249904003ce6f23c189166e3032220478426a552c77c2edb08b93a", size = 117457, upload-time = "2026-06-09T17:14:05.313Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/1a/6b1293d0b091905e367f86771a7122e5f7f2729ab9f0f36a1617f7ad6c05/kagglehub-1.0.2-py3-none-any.whl", hash = "sha256:ffad2d79cfda9b06848e98cb0a4a48e286285cfba4aeadadc0b8dbd9bcadd372", size = 70645, upload-time = "2026-06-09T17:14:04.04Z" },
+]
+
+[[package]]
+name = "kagglesdk"
+version = "0.1.28"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
+dependencies = [
+    { name = "protobuf", marker = "python_full_version < '3.11'" },
+    { name = "requests", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c9/4d/b8d5373ecc00daa1e2a75d34577fdb7fbad22212623f543ea3c958991bc5/kagglesdk-0.1.28.tar.gz", hash = "sha256:5bd4f9912d83583dbc3aa1be769d14887a0d59c35331b3bc68031ec4cd4549a0", size = 179870, upload-time = "2026-06-03T16:39:39.426Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/02/aa672c446bd0efac6937e4b8d6466102008fac5716f77e3ec1b8ff538ebc/kagglesdk-0.1.28-py3-none-any.whl", hash = "sha256:1b038ec43f1b508ceaeff506118c33f4cb5e8e28e229951aadef0e493a160f5f", size = 230021, upload-time = "2026-06-03T16:39:38.223Z" },
+]
+
+[[package]]
+name = "kagglesdk"
+version = "0.1.35"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12'",
+    "python_full_version == '3.11.*'",
+]
+dependencies = [
+    { name = "protobuf", marker = "python_full_version >= '3.11'" },
+    { name = "requests", marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/47/3f/2b7b46e8c17046261b138f22c5b7421bbbb85cf6a8f69f4aa43fe983eb1a/kagglesdk-0.1.35.tar.gz", hash = "sha256:7373c46e7546dc983e1cd87fb7555906f799869b6f02a747a3121c89edc420b8", size = 198490, upload-time = "2026-07-22T21:54:32.319Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/96/37de4e0442378ac96e324123418b81cf5be0e9c7f7236fddae6641b20db2/kagglesdk-0.1.35-py3-none-any.whl", hash = "sha256:af662aedfad00aa5d5e3dd946c1a82b5117cf4964f6f9e96cea6e83b77419e17", size = 248627, upload-time = "2026-07-22T21:54:30.737Z" },
 ]
 
 [[package]]

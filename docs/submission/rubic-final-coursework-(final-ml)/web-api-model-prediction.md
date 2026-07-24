@@ -43,7 +43,7 @@ Code reference: [inference_api.py (line 85)](../../../apps/api-serving/src/infer
 
 When the request does not supply candidate IDs, `user_id` selects `candidate:user:{user_id}`. The service de-duplicates that result and fills any remaining slots from `candidate:popular:global`. The Flink realtime job refreshes the per-user sorted set from category-popular items, caps it at 100 products, and applies a seven-day TTL.
 
-Code reference: [online_features.py (line 238)](../../../apps/api-serving/src/online_features.py#L238), [online_features.py (line 279)](../../../apps/api-serving/src/online_features.py#L279), [candidate_pool_job.py (line 34)](../../../apps/data-platform/src/features/flink/candidate_pool_job.py#L34), [realtime_stream_job.py (line 152)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L152).
+Code reference: [online_features.py (line 238)](../../../apps/api-serving/src/online_features.py#L238), [online_features.py (line 279)](../../../apps/api-serving/src/online_features.py#L279), [candidate_pool.py](../../../apps/data-platform/src/features/flink/features/candidate_pool.py), [redis_async.py](../../../apps/data-platform/src/features/flink/sinks/redis_async.py).
 
 ### 1.4 User And Item Feature Resolution
 

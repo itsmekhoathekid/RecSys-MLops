@@ -40,7 +40,7 @@ Code reference: [online_features.py (line 238)](../../../apps/api-serving/src/on
 
 The Flink realtime job maintains global and category candidate sets. After a user interacts with a category, it merges that category's popular products into `candidate:user:{user_id}`, caps the pool at 100 products, and applies a seven-day TTL.
 
-Code reference: [candidate_pool_job.py (line 18)](../../../apps/data-platform/src/features/flink/candidate_pool_job.py#L18), [candidate_pool_job.py (line 34)](../../../apps/data-platform/src/features/flink/candidate_pool_job.py#L34), [realtime_stream_job.py (line 152)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L152).
+Code reference: [candidate_pool.py](../../../apps/data-platform/src/features/flink/features/candidate_pool.py), [redis_async.py](../../../apps/data-platform/src/features/flink/sinks/redis_async.py).
 
 ### 1.4 Realtime User-Feature Lookup
 

@@ -10,20 +10,28 @@ from features.flink.time_utils import isoformat_utc, parse_event_time
 
 @dataclass
 class ItemFeatureState:
-    events_by_product: dict[int, deque[dict[str, Any]]] = field(default_factory=lambda: defaultdict(deque))
+    events_by_product: dict[int, deque[dict[str, Any]]] = field(
+        default_factory=lambda: defaultdict(deque)
+    )
 
     def update(self, event: dict[str, Any]) -> dict[str, Any]:
         product_id = int(event["product_id"])
         ts = parse_event_time(event["event_timestamp"])
         history = self.events_by_product[product_id]
         history.append(event)
-        while history and parse_event_time(history[0]["event_timestamp"]) < ts - timedelta(days=7):
+        while history and parse_event_time(
+            history[0]["event_timestamp"]
+        ) < ts - timedelta(days=7):
             history.popleft()
         rows = list(history)
         h1_start = ts - timedelta(hours=1)
         h24_start = ts - timedelta(hours=24)
-        h1 = [row for row in rows if parse_event_time(row["event_timestamp"]) > h1_start]
-        h24 = [row for row in rows if parse_event_time(row["event_timestamp"]) > h24_start]
+        h1 = [
+            row for row in rows if parse_event_time(row["event_timestamp"]) > h1_start
+        ]
+        h24 = [
+            row for row in rows if parse_event_time(row["event_timestamp"]) > h24_start
+        ]
         views_7d = sum(1 for row in rows if row["event_type"] == "view")
         purchases_7d = sum(1 for row in rows if row["event_type"] == "purchase")
         popularity = (
