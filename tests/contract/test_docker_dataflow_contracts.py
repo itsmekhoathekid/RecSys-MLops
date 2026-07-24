@@ -765,7 +765,7 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
         in deploy_script
     )
     assert (
-        "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-2}"
+        "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-4}"
         in deploy_script
     )
     assert (
