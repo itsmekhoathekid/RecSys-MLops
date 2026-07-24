@@ -27,7 +27,3 @@ class MarkDuplicateEvents(KeyedProcessFunction):
         marked = dict(event)
         marked["_is_duplicate"] = duplicate
         yield marked
-
-
-def mark_duplicate_events_operator(args: Any) -> MarkDuplicateEvents:
-    return MarkDuplicateEvents(args)

@@ -272,20 +272,6 @@ class EarlyAndEventTimeTrigger(Trigger):
         ctx.get_partitioned_state(self.dirty).clear()
 
 
-def native_feature_pane_aggregate() -> FeaturePaneAggregate:
-    return FeaturePaneAggregate()
-
-
-def native_feature_pane_window_function(kind: str) -> FeaturePaneWindowFunction:
-    return FeaturePaneWindowFunction(kind)
-
-
-def early_and_event_time_trigger(
-    interval_seconds: int, state_name: str
-) -> EarlyAndEventTimeTrigger:
-    return EarlyAndEventTimeTrigger(interval_seconds, state_name)
-
-
 def _read_panes(map_state: Any) -> dict[int, dict[str, Any]]:
     return {int(key): value for key, value in map_state.items()}
 
@@ -355,14 +341,6 @@ class ItemRollingFeatureProcess(KeyedProcessFunction):
             yield update
 
 
-def native_user_rolling_feature_process(args: Any) -> UserRollingFeatureProcess:
-    return UserRollingFeatureProcess(args)
-
-
-def native_item_rolling_feature_process(args: Any) -> ItemRollingFeatureProcess:
-    return ItemRollingFeatureProcess(args)
-
-
 def build_feature_update_streams(feature_events: Any, args: Any) -> tuple[Any, Any]:
     """Build parallel user/item event-time panes and rolling feature streams."""
     from pyflink.common import Time, Types
@@ -382,14 +360,14 @@ def build_feature_update_streams(feature_events: Any, args: Any) -> tuple[Any, A
             .allowed_lateness(args.allowed_lateness_seconds * 1000)
             .side_output_late_data(late_tag)
             .trigger(
-                early_and_event_time_trigger(
+                EarlyAndEventTimeTrigger(
                     args.feature_early_fire_seconds,
                     f"{kind}-feature-early-fire-timer",
                 )
             )
             .aggregate(
-                native_feature_pane_aggregate(),
-                native_feature_pane_window_function(kind),
+                FeaturePaneAggregate(),
+                FeaturePaneWindowFunction(kind),
                 accumulator_type=Types.PICKLED_BYTE_ARRAY(),
                 output_type=Types.PICKLED_BYTE_ARRAY(),
             )
@@ -405,6 +383,6 @@ def build_feature_update_streams(feature_events: Any, args: Any) -> tuple[Any, A
         )
 
     return (
-        build_branch("user", "user_id", native_user_rolling_feature_process(args)),
-        build_branch("item", "product_id", native_item_rolling_feature_process(args)),
+        build_branch("user", "user_id", UserRollingFeatureProcess(args)),
+        build_branch("item", "product_id", ItemRollingFeatureProcess(args)),
     )

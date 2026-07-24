@@ -108,22 +108,6 @@ class LimitEvents(KeyedProcessFunction):
             yield event
 
 
-def parse_normalize_event_operator() -> ParseNormalizeEvent:
-    return ParseNormalizeEvent()
-
-
-def event_timestamp_assigner() -> EventTimestampAssigner:
-    return EventTimestampAssigner()
-
-
-def keep_valid_events_operator() -> KeepValidEvents:
-    return KeepValidEvents()
-
-
-def limit_events_operator(args: Any) -> LimitEvents:
-    return LimitEvents(args)
-
-
 def kafka_offsets_initializer(name: str):
     from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer
 

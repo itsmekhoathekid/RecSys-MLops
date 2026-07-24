@@ -132,7 +132,3 @@ class AsyncRedisFeatureWriter(AsyncFunction):
             }
         )
         return [update]
-
-
-def async_redis_feature_writer(args: Any) -> AsyncRedisFeatureWriter:
-    return AsyncRedisFeatureWriter(args)

@@ -266,7 +266,3 @@ class QualityWindowMetricLog(MapFunction):
             },
             sort_keys=True,
         )
-
-
-def quality_window_metric_log_operator(args: Any) -> QualityWindowMetricLog:
-    return QualityWindowMetricLog(args)

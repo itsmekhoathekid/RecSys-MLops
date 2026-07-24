@@ -39,11 +39,3 @@ class KeepFeatureEvents(FilterFunction):
         if event.get("_is_duplicate"):
             return False
         return not (self.args.drop_late_events and event.get("_is_too_late"))
-
-
-def mark_event_time_status_operator(args: Any) -> MarkEventTimeStatus:
-    return MarkEventTimeStatus(args)
-
-
-def keep_feature_events_operator(args: Any) -> KeepFeatureEvents:
-    return KeepFeatureEvents(args)

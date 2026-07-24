@@ -10,28 +10,28 @@ if __package__ in {None, ""}:
     sys.path = [source_root, *(path for path in sys.path if path != script_dir)]
 
 from features.flink.feature_windows import build_feature_update_streams
-from features.flink.operators.dedup import mark_duplicate_events_operator
+from features.flink.operators.dedup import MarkDuplicateEvents
 from features.flink.operators.late_policy import (
-    keep_feature_events_operator,
-    mark_event_time_status_operator,
+    KeepFeatureEvents,
+    MarkEventTimeStatus,
 )
 from features.flink.operators.quality import build_quality_window_streams
 from features.flink.runtime import configure_checkpointing
 from features.flink.sinks import emit_progress
 from features.flink.sinks.iceberg import build_iceberg_statement_set
 from features.flink.sinks.postgres_async import (
-    async_postgres_feature_writer,
-    async_postgres_late_event_dlq_writer,
+    AsyncPostgresFeastOfflineWriter,
+    AsyncPostgresLateEventDlqWriter,
     postgres_async_capacity,
 )
-from features.flink.sinks.redis_async import async_redis_feature_writer
+from features.flink.sinks.redis_async import AsyncRedisFeatureWriter
 from features.flink.source import (
+    EventTimestampAssigner,
+    KeepValidEvents,
+    LimitEvents,
+    ParseNormalizeEvent,
     build_kafka_source,
     build_watermark_strategy,
-    event_timestamp_assigner,
-    keep_valid_events_operator,
-    limit_events_operator,
-    parse_normalize_event_operator,
 )
 from features.flink.stream_config import StreamConfig, parse_stream_args
 from metadata.governance_catalog import (
@@ -55,7 +55,7 @@ def _attach_postgres_dlq(late_events: Any, args: StreamConfig) -> None:
 
     AsyncDataStream.unordered_wait(
         data_stream=late_events,
-        async_function=async_postgres_late_event_dlq_writer(args),
+        async_function=AsyncPostgresLateEventDlqWriter(args),
         timeout=Time.seconds(args.async_io_timeout_seconds),
         capacity=postgres_async_capacity(args),
         output_type=Types.STRING(),
@@ -88,7 +88,7 @@ def _attach_feature_sinks(
     else:
         sink_updates = AsyncDataStream.unordered_wait(
             data_stream=feature_updates,
-            async_function=async_redis_feature_writer(args),
+            async_function=AsyncRedisFeatureWriter(args),
             timeout=Time.seconds(args.async_io_timeout_seconds),
             capacity=args.async_io_capacity,
             output_type=Types.PICKLED_BYTE_ARRAY(),
@@ -99,7 +99,7 @@ def _attach_feature_sinks(
     if args.offline_store_sink == "postgres":
         AsyncDataStream.unordered_wait(
             data_stream=sink_updates,
-            async_function=async_postgres_feature_writer(args),
+            async_function=AsyncPostgresFeastOfflineWriter(args),
             timeout=Time.seconds(args.async_io_timeout_seconds),
             capacity=postgres_async_capacity(args),
             output_type=Types.STRING(),
@@ -122,27 +122,27 @@ def build_realtime_stream(env: Any, args: StreamConfig):
 
     raw_stream = env.from_source(
         build_kafka_source(args),
-        build_watermark_strategy(args, event_timestamp_assigner()),
+        build_watermark_strategy(args, EventTimestampAssigner()),
         "cdc-behavior-events-source",
     )
     parsed = raw_stream.map(
-        parse_normalize_event_operator(),
+        ParseNormalizeEvent(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
-    ).filter(keep_valid_events_operator())
+    ).filter(KeepValidEvents())
     if not args.continuous and args.max_events > 0:
         parsed = parsed.key_by(lambda event: "native-bounded-limit").process(
-            limit_events_operator(args),
+            LimitEvents(args),
             output_type=Types.PICKLED_BYTE_ARRAY(),
         )
 
     deduped = parsed.key_by(lambda event: str(event["event_id"])).process(
-        mark_duplicate_events_operator(args),
+        MarkDuplicateEvents(args),
         output_type=Types.PICKLED_BYTE_ARRAY(),
     )
     marked = (
         deduped.key_by(lambda event: str(event["event_id"]))
         .process(
-            mark_event_time_status_operator(args),
+            MarkEventTimeStatus(args),
             output_type=Types.PICKLED_BYTE_ARRAY(),
         )
         .name("watermark-lateness-classifier")
@@ -150,7 +150,7 @@ def build_realtime_stream(env: Any, args: StreamConfig):
     quality_rows, late_events = build_quality_window_streams(marked, args)
     _attach_postgres_dlq(late_events, args)
 
-    feature_events = marked.filter(keep_feature_events_operator(args)).name(
+    feature_events = marked.filter(KeepFeatureEvents(args)).name(
         "watermark-late-event-policy"
     )
     user_updates, item_updates = build_feature_update_streams(feature_events, args)

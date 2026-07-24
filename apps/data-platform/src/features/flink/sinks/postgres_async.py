@@ -142,10 +142,6 @@ class AsyncPostgresFeastOfflineWriter(AsyncFunction):
         return [json.dumps(status, sort_keys=True)]
 
 
-def async_postgres_feature_writer(args: Any) -> AsyncPostgresFeastOfflineWriter:
-    return AsyncPostgresFeastOfflineWriter(args)
-
-
 class AsyncPostgresLateEventDlqWriter(AsyncFunction):
     def __init__(self, args: Any) -> None:
         self.args = args
@@ -201,9 +197,3 @@ class AsyncPostgresLateEventDlqWriter(AsyncFunction):
         }
         emit_progress(status)
         return [json.dumps(status, sort_keys=True)]
-
-
-def async_postgres_late_event_dlq_writer(
-    args: Any,
-) -> AsyncPostgresLateEventDlqWriter:
-    return AsyncPostgresLateEventDlqWriter(args)

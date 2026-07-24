@@ -14,12 +14,12 @@ from features.flink.features.candidate_pool import (
     refresh_user_candidate_pool,
 )
 from features.flink.feature_windows import (
+    EarlyAndEventTimeTrigger,
     add_event_to_feature_pane,
     attach_pane_metadata,
     build_item_feature_update,
     build_user_feature_update,
     create_feature_pane_accumulator,
-    early_and_event_time_trigger,
     feature_pane_result,
 )
 from features.flink.operators.row_mappers import (
@@ -347,7 +347,7 @@ def test_feature_window_trigger_fires_early_final_and_accepted_late(monkeypatch)
                 self.processing_timers.remove(timestamp)
 
     window = SimpleNamespace(max_timestamp=lambda: 59_999)
-    trigger = early_and_event_time_trigger(5, "test-early-timer")
+    trigger = EarlyAndEventTimeTrigger(5, "test-early-timer")
     context = Context()
     assert trigger.on_element({}, 1_000, window, context) == FakeResult.CONTINUE
     assert context.event_timers == [59_999]

@@ -442,8 +442,8 @@ Step-by-step code reference:
 
 The quality window detects the problem; async capacity, Kafka buffering, and autoscaling handle it:
 
-1. [`native_quality_window_aggregate()`](../../../apps/data-platform/src/features/flink/operators/quality.py) increments constant-size counters and marks `is_bursty`; it does not buffer the full window or throttle traffic.
-2. [`async_redis_feature_writer()`](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L12) and [`async_postgres_feature_writer()`](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py#L63) await real async clients, so one slow request does not block all records in the subtask.
+1. [`NativeQualityWindowAggregate`](../../../apps/data-platform/src/features/flink/operators/quality.py) increments constant-size counters and marks `is_bursty`; it does not buffer the full window or throttle traffic.
+2. [`AsyncRedisFeatureWriter`](../../../apps/data-platform/src/features/flink/sinks/redis_async.py) and [`AsyncPostgresFeastOfflineWriter`](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py) await real async clients, so one slow request does not block all records in the subtask.
 3. Both writers use [`AsyncDataStream.unordered_wait`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L82) with `capacity=64` and a 120-second timeout. Full capacity backpressures Kafka; the [`timeout()` fallbacks](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L125) log the affected `event_id` instead of restarting the TaskManager. Reference: [Flink 2.2 Async I/O](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/asyncio/).
 4. Jobs start at [`parallelism: 1`](../../../infra/helm/recsys-data-platform/values.yaml#L181), and [`taskSlots: 1`](../../../infra/helm/recsys-data-platform/values.yaml#L136) isolates online/offline jobs on separate TaskManagers. Flink Autoscaler 1.15 and the max-four TaskManager HPA are configured in [`flink-autoscaler.yaml`](../../../infra/helm/recsys-data-platform/templates/flink-autoscaler.yaml#L1). Reference: [Flink Autoscaler 1.15](https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-release-1.15/docs/custom-resource/autoscaler/).
 
@@ -506,10 +506,10 @@ flowchart LR
 
 Step-by-step code reference:
 
-1. [`event_timestamp_assigner()`](../../../apps/data-platform/src/features/flink/source.py#L70) reads `event_timestamp`; [the watermark builder](../../../apps/data-platform/src/features/flink/source.py#L161) bounds out-of-order delay and handles idle partitions.
-2. [`event_time_status()`](../../../apps/data-platform/src/features/flink/event_time.py#L48) compares the event with the current watermark and the aligned feature-pane cleanup boundary; [`mark_event_time_status_operator()`](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L8) records accepted-late and too-late counters.
+1. [`EventTimestampAssigner`](../../../apps/data-platform/src/features/flink/source.py) reads `event_timestamp`; [the watermark builder](../../../apps/data-platform/src/features/flink/source.py) bounds out-of-order delay and handles idle partitions.
+2. [`event_time_status()`](../../../apps/data-platform/src/features/flink/event_time.py#L48) compares the event with the current watermark and the aligned feature-pane cleanup boundary; [`MarkEventTimeStatus`](../../../apps/data-platform/src/features/flink/operators/late_policy.py) records accepted-late and too-late counters.
 3. [The quality window](../../../apps/data-platform/src/features/flink/operators/quality.py) applies `allowed_lateness` and routes records arriving after state cleanup to the native side output and PostgreSQL DLQ. Reference: [Flink 2.2 late data](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/operators/windows/#getting-late-data-as-a-side-output).
-4. [`keep_feature_events_operator()`](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L48) admits on-time and accepted-late records to [the feature windows](../../../apps/data-platform/src/features/flink/feature_windows.py#L366), while [`async_postgres_late_event_dlq_writer()`](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py#L206) stores post-cleanup records for backfill without blocking the Python worker.
+4. [`KeepFeatureEvents`](../../../apps/data-platform/src/features/flink/operators/late_policy.py) admits on-time and accepted-late records to [the feature windows](../../../apps/data-platform/src/features/flink/feature_windows.py), while [`AsyncPostgresLateEventDlqWriter`](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py) stores post-cleanup records for backfill without blocking the Python worker.
 
 #### Failure Recovery And Sink Replay
 
@@ -607,27 +607,27 @@ flowchart LR
     X --> P["Offline deployment → async PostgreSQL"]
 ```
 
-1. [`keep_feature_events_operator()`](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L48) removes duplicates and, when `dropLateEvents=true`, events past `window_end + allowed_lateness`.
+1. [`KeepFeatureEvents`](../../../apps/data-platform/src/features/flink/operators/late_policy.py) removes duplicates and, when `dropLateEvents=true`, events past `window_end + allowed_lateness`.
 2. User and item branches independently key by entity and use 60-second `TumblingEventTimeWindows`. After a new element marks the pane dirty, the trigger emits once after five seconds; it does not reschedule itself for an unchanged pane. Watermark close emits the final pane, and an accepted-late element emits a correction immediately.
 3. Each emission carries `window_start`, `window_end`, and `is_final`. Rolling `MapState` replaces revisions by `window_start`, ignores an identical revision, deduplicates by `event_id`, and prunes state beyond seven days; early/final/late emissions therefore do not double-count or flood the sinks.
 4. The two deployments run the same feature graph: the online job enables async Redis only, while the offline job enables async PostgreSQL only.
 
 ```python
-feature_events = marked.filter(KeepFeatureEvents())
+feature_events = marked.filter(KeepFeatureEvents(args))
 user_panes = (
     feature_events.key_by(lambda event: int(event["user_id"]))
     .window(TumblingEventTimeWindows.of(Time.seconds(args.feature_window_seconds)))
     .allowed_lateness(args.allowed_lateness_seconds * 1000)
     .side_output_late_data(user_feature_late_tag)
     .trigger(
-        early_and_event_time_trigger(
+        EarlyAndEventTimeTrigger(
             args.feature_early_fire_seconds,
             "user-feature-early-fire-timer",
         )
     )
     .aggregate(
-        native_feature_pane_aggregate(),
-        native_feature_pane_window_function("user"),
+        FeaturePaneAggregate(),
+        FeaturePaneWindowFunction("user"),
         accumulator_type=Types.PICKLED_BYTE_ARRAY(),
         output_type=Types.PICKLED_BYTE_ARRAY(),
     )
@@ -636,12 +636,12 @@ user_panes = (
 user_updates = (
     user_panes.key_by(lambda pane: int(pane["entity_id"]))
     .process(
-        native_user_rolling_feature_process(args),
+        UserRollingFeatureProcess(args),
         output_type=Types.PICKLED_BYTE_ARRAY(),
     )
     .name("user-feature-rolling-horizons")
 )
-# The parallel item branch uses product_id and native_item_rolling_feature_process().
+# The parallel item branch uses product_id and ItemRollingFeatureProcess(args).
 ```
 
 Code reference:

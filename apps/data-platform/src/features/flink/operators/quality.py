@@ -70,20 +70,13 @@ class NativeQualityWindowAggregate(AggregateFunction):
         }
 
 
-def native_quality_window_aggregate(args: Any) -> NativeQualityWindowAggregate:
-    """Build the incremental event-time quality aggregate."""
-    return NativeQualityWindowAggregate(args)
-
-
 def build_quality_window_streams(marked_events: Any, args: Any) -> tuple[Any, Any]:
     """Attach the quality window, metrics output, and too-late side output."""
     from pyflink.common import Time, Types
     from pyflink.datastream.output_tag import OutputTag
     from pyflink.datastream.window import TumblingEventTimeWindows
 
-    from features.flink.operators.row_mappers import (
-        quality_window_metric_log_operator,
-    )
+    from features.flink.operators.row_mappers import QualityWindowMetricLog
 
     late_tag = OutputTag("late-events", Types.PICKLED_BYTE_ARRAY())
     quality_rows = (
@@ -92,14 +85,14 @@ def build_quality_window_streams(marked_events: Any, args: Any) -> tuple[Any, An
         .allowed_lateness(args.allowed_lateness_seconds * 1000)
         .side_output_late_data(late_tag)
         .aggregate(
-            native_quality_window_aggregate(args),
+            NativeQualityWindowAggregate(args),
             accumulator_type=Types.PICKLED_BYTE_ARRAY(),
             output_type=Types.PICKLED_BYTE_ARRAY(),
         )
         .name("native-event-time-quality-windows")
     )
     quality_rows.map(
-        quality_window_metric_log_operator(args),
+        QualityWindowMetricLog(args),
         output_type=Types.STRING(),
     ).name("streaming-quality-window-metrics").print()
     return quality_rows, quality_rows.get_side_output(late_tag).name(
