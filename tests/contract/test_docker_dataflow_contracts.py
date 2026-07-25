@@ -618,6 +618,7 @@ def test_flink_module_boundaries_match_runtime_responsibilities():
 def test_helm_exposes_iceberg_lakehouse_runtime_config():
     chart = ROOT / "infra/helm/recsys-data-platform"
     values = yaml.safe_load((chart / "values.yaml").read_text())
+    gcp_values = yaml.safe_load((chart / "values-gcp.yaml").read_text())
     rendered = (chart / "values.yaml").read_text() + "\n".join(
         path.read_text() for path in (chart / "templates").glob("*.yaml")
     )
@@ -631,6 +632,10 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
     assert values["realtimeFlinkConsumer"]["offlineStoreSink"] == "postgres"
     assert (
         values["realtimeFlinkConsumer"]["online"]["startingOffsets"]
+        == "committed-offsets"
+    )
+    assert (
+        gcp_values["realtimeFlinkConsumer"]["online"]["startingOffsets"]
         == "committed-offsets"
     )
     assert values["featurePostgres"]["name"] == "feature-postgres"

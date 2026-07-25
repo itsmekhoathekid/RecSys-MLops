@@ -109,14 +109,19 @@ class LimitEvents(KeyedProcessFunction):
 
 
 def kafka_offsets_initializer(name: str):
-    from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer
+    from pyflink.datastream.connectors.kafka import (
+        KafkaOffsetResetStrategy,
+        KafkaOffsetsInitializer,
+    )
 
     if name == "earliest":
         return KafkaOffsetsInitializer.earliest()
     if name == "latest":
         return KafkaOffsetsInitializer.latest()
     if name == "committed-offsets":
-        return KafkaOffsetsInitializer.committed_offsets()
+        return KafkaOffsetsInitializer.committed_offsets(
+            KafkaOffsetResetStrategy.EARLIEST
+        )
     raise ValueError(f"Unsupported Kafka starting offsets: {name}")
 
 

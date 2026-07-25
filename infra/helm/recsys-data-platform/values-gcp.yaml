@@ -79,9 +79,9 @@ realtimeFlinkConsumer:
   checkpointIntervalSeconds: "120"
   offlineStoreEnabled: true
   online:
-    # A fresh GCP cluster has no committed consumer offsets yet. Starting from
-    # earliest also avoids the PyFlink committed-offset enum bridge issue.
-    startingOffsets: earliest
+    # Resume normal rollouts without replaying the full CDC topic. The source
+    # falls back to EARLIEST only when a fresh group has no committed offset.
+    startingOffsets: committed-offsets
 
 streaming:
   # The proof workload backdates events by 45-180 minutes; one hour yields

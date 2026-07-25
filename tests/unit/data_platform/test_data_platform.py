@@ -31,6 +31,7 @@ from features.flink.operators.row_mappers import (
 )
 from features.flink.sinks.postgres_async import postgres_async_capacity
 from features.flink.source import (
+    kafka_offsets_initializer,
     normalize_event,
     parse_message,
 )
@@ -93,6 +94,27 @@ def test_debezium_after_extraction_skips_deletes():
     assert parse_message(b'{"payload":{"op":"c","after":{"event_id":"e3"}}}') == {
         "event_id": "e3"
     }
+
+
+def test_committed_kafka_offsets_fall_back_to_earliest_for_fresh_groups(monkeypatch):
+    calls: list[object] = []
+
+    class FakeResetStrategy:
+        EARLIEST = object()
+
+    class FakeOffsetsInitializer:
+        @staticmethod
+        def committed_offsets(strategy):
+            calls.append(strategy)
+            return "committed-with-fallback"
+
+    kafka_module = ModuleType("pyflink.datastream.connectors.kafka")
+    kafka_module.KafkaOffsetResetStrategy = FakeResetStrategy
+    kafka_module.KafkaOffsetsInitializer = FakeOffsetsInitializer
+    monkeypatch.setitem(sys.modules, "pyflink.datastream.connectors.kafka", kafka_module)
+
+    assert kafka_offsets_initializer("committed-offsets") == "committed-with-fallback"
+    assert calls == [FakeResetStrategy.EARLIEST]
 
 
 def test_batch_ingestion_uri_helpers(monkeypatch):
