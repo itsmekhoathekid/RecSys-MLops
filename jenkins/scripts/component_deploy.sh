@@ -301,6 +301,7 @@ deploy_data_platform_unlocked() {
     --set "flink.taskManagerManagedMemory=${FLINK_TASKMANAGER_MANAGED_MEMORY:-512m}" \
     --set "flink.taskManagerJvmOverheadMax=${FLINK_TASKMANAGER_JVM_OVERHEAD_MAX:-2048m}" \
     --set "realtimeFlinkConsumer.parallelism=${FLINK_PARALLELISM:-1}" \
+    --set "realtimeFlinkConsumer.online.startingOffsets=${FLINK_ONLINE_STARTING_OFFSETS:-committed-offsets}" \
     --set "realtimeFlinkConsumer.redisSinkMaxEventsPerSecond=${REDIS_SINK_MAX_EVENTS_PER_SECOND:-200}" \
     --set "realtimeFlinkConsumer.postgresSinkMaxEventsPerSecond=${POSTGRES_SINK_MAX_EVENTS_PER_SECOND:-100}" \
     --set "realtimeFlinkConsumer.sinkRateLimitBurstEvents=${SINK_RATE_LIMIT_BURST_EVENTS:-25}" \

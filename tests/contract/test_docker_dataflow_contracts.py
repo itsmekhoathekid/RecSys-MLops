@@ -736,6 +736,10 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
 def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_merge():
     deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
     assert "--reuse-values" in deploy_script
+    assert (
+        "realtimeFlinkConsumer.online.startingOffsets="
+        "${FLINK_ONLINE_STARTING_OFFSETS:-committed-offsets}"
+    ) in deploy_script
     assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" in deploy_script
     assert (
         "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-1g}"
