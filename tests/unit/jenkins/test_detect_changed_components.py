@@ -245,6 +245,23 @@ def test_jenkinsfile_uses_previous_built_commit_and_has_ci_config_stage():
     assert "env.RUN_CI_CONFIG == 'true'" in source
 
 
+def test_full_deploy_runs_demo_smoke_after_upstream_components():
+    source = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    deploy_helper = source.split(
+        "def runComponentDeployBranches(String scriptPath, String extraEnv) {", 1
+    )[1].split("def applyForcedComponents", 1)[0]
+
+    parallel_index = deploy_helper.index("parallel upstreamBranches")
+    demo_index = deploy_helper.index("${scriptPath} demo_web")
+
+    assert "component.name != 'demo_web'" in deploy_helper
+    assert "env.RUN_DEMO_WEB == 'true'" in deploy_helper
+    assert parallel_index < demo_index
+    assert source.count(
+        "runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)"
+    ) == 4
+
+
 def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
     seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(encoding="utf-8")
     model_cd_pipeline = (ROOT / "jenkins/KServeModelCD.Jenkinsfile").read_text(encoding="utf-8")

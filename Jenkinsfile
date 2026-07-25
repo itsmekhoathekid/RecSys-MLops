@@ -62,6 +62,30 @@ def runComponentBranches(String scriptPath, String extraEnv) {
   }
 }
 
+def runComponentDeployBranches(String scriptPath, String extraEnv) {
+  def upstreamBranches = [:]
+  componentDefinitions().each { component ->
+    if (env.getProperty(component.flag) == 'true' && component.name != 'demo_web') {
+      def componentName = component.name
+      def componentLabel = component.label
+      upstreamBranches.put(componentLabel, {
+        sh "${extraEnv} ${scriptPath} ${componentName}"
+      })
+    }
+  }
+
+  if (upstreamBranches) {
+    parallel upstreamBranches
+  }
+
+  // The demo smoke publishes a CDC event and waits for the online feature
+  // store. Run it only after selected API and stream deployments are healthy;
+  // otherwise a full parallel rollout can test against a restarting Flink job.
+  if (env.RUN_DEMO_WEB == 'true') {
+    sh "${extraEnv} ${scriptPath} demo_web"
+  }
+}
+
 def applyForcedComponents(String forcedComponents) {
   def requested = forcedComponents
     ?.split(',')
@@ -303,18 +327,18 @@ pipeline {
             withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
               if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
                 withCredentials([usernamePassword(credentialsId: params.GATEWAY_SMOKE_CREDENTIALS_ID, usernameVariable: 'GATEWAY_SMOKE_USER', passwordVariable: 'GATEWAY_SMOKE_PASSWORD')]) {
-                  runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+                  runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)
                 }
               } else {
-                runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+                runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)
               }
             }
           } else if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
             withCredentials([usernamePassword(credentialsId: params.GATEWAY_SMOKE_CREDENTIALS_ID, usernameVariable: 'GATEWAY_SMOKE_USER', passwordVariable: 'GATEWAY_SMOKE_PASSWORD')]) {
-              runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+              runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)
             }
           } else {
-            runComponentBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+            runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)
           }
         }
       }
