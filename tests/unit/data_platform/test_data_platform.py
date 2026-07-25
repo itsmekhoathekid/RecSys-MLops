@@ -98,22 +98,53 @@ def test_debezium_after_extraction_skips_deletes():
 
 def test_committed_kafka_offsets_fall_back_to_earliest_for_fresh_groups(monkeypatch):
     calls: list[object] = []
+    java_initializer = object()
 
     class FakeResetStrategy:
         EARLIEST = object()
 
-    class FakeOffsetsInitializer:
+    class FakeJavaOffsetsInitializer:
         @staticmethod
-        def committed_offsets(strategy):
+        def committedOffsets(strategy):
             calls.append(strategy)
-            return "committed-with-fallback"
+            return java_initializer
+
+    class FakeOffsetsInitializer:
+        def __init__(self, initializer):
+            self.initializer = initializer
 
     kafka_module = ModuleType("pyflink.datastream.connectors.kafka")
-    kafka_module.KafkaOffsetResetStrategy = FakeResetStrategy
     kafka_module.KafkaOffsetsInitializer = FakeOffsetsInitializer
-    monkeypatch.setitem(sys.modules, "pyflink.datastream.connectors.kafka", kafka_module)
+    monkeypatch.setitem(
+        sys.modules, "pyflink.datastream.connectors.kafka", kafka_module
+    )
 
-    assert kafka_offsets_initializer("committed-offsets") == "committed-with-fallback"
+    jvm = SimpleNamespace(org=SimpleNamespace(apache=SimpleNamespace()))
+    jvm.org.apache.flink = SimpleNamespace(
+        connector=SimpleNamespace(
+            kafka=SimpleNamespace(
+                source=SimpleNamespace(
+                    enumerator=SimpleNamespace(
+                        initializer=SimpleNamespace(
+                            OffsetsInitializer=FakeJavaOffsetsInitializer
+                        )
+                    )
+                )
+            )
+        )
+    )
+    jvm.org.apache.kafka = SimpleNamespace(
+        clients=SimpleNamespace(
+            consumer=SimpleNamespace(OffsetResetStrategy=FakeResetStrategy)
+        )
+    )
+    gateway_module = ModuleType("pyflink.java_gateway")
+    gateway_module.get_gateway = lambda: SimpleNamespace(jvm=jvm)
+    monkeypatch.setitem(sys.modules, "pyflink.java_gateway", gateway_module)
+
+    result = kafka_offsets_initializer("committed-offsets")
+
+    assert result.initializer is java_initializer
     assert calls == [FakeResetStrategy.EARLIEST]
 
 

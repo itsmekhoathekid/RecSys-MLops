@@ -109,19 +109,23 @@ class LimitEvents(KeyedProcessFunction):
 
 
 def kafka_offsets_initializer(name: str):
-    from pyflink.datastream.connectors.kafka import (
-        KafkaOffsetResetStrategy,
-        KafkaOffsetsInitializer,
-    )
+    from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer
 
     if name == "earliest":
         return KafkaOffsetsInitializer.earliest()
     if name == "latest":
         return KafkaOffsetsInitializer.latest()
     if name == "committed-offsets":
-        return KafkaOffsetsInitializer.committed_offsets(
-            KafkaOffsetResetStrategy.EARLIEST
+        # PyFlink 2.2 resolves its shaded Kafka OffsetResetStrategy from a class
+        # path that is absent from the bundled connector. Build the same Java
+        # initializer with the connector's unshaded Kafka enum instead.
+        from pyflink.java_gateway import get_gateway
+
+        jvm = get_gateway().jvm
+        java_initializer = jvm.org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer.committedOffsets(
+            jvm.org.apache.kafka.clients.consumer.OffsetResetStrategy.EARLIEST
         )
+        return KafkaOffsetsInitializer(java_initializer)
     raise ValueError(f"Unsupported Kafka starting offsets: {name}")
 
 
