@@ -47,6 +47,15 @@ spec:
               if [[ -n "$FLINK_RESTORE_PATH" ]]; then
                 restore_args=(-s "$FLINK_RESTORE_PATH")
               fi
+              while IFS= read -r existing_job_id; do
+                [[ -z "$existing_job_id" ]] && continue
+                echo "Cancelling previous online-store Flink job $existing_job_id before rollout."
+                flink cancel -m flink-jobmanager:8081 "$existing_job_id"
+              done < <(
+                flink list -m flink-jobmanager:8081 -r \
+                  | awk -F ' : ' -v group="$REALTIME_STREAM_ONLINE_GROUP_ID" \
+                      'index($3, group) > 0 { print $2 }'
+              )
               PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
               flink run -m flink-jobmanager:8081 \
                 "${restore_args[@]}" \
@@ -155,6 +164,15 @@ spec:
               if [[ -n "$FLINK_RESTORE_PATH" ]]; then
                 restore_args=(-s "$FLINK_RESTORE_PATH")
               fi
+              while IFS= read -r existing_job_id; do
+                [[ -z "$existing_job_id" ]] && continue
+                echo "Cancelling previous offline-store Flink job $existing_job_id before rollout."
+                flink cancel -m flink-jobmanager:8081 "$existing_job_id"
+              done < <(
+                flink list -m flink-jobmanager:8081 -r \
+                  | awk -F ' : ' -v group="$REALTIME_STREAM_OFFLINE_GROUP_ID" \
+                      'index($3, group) > 0 { print $2 }'
+              )
               PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
               flink run -m flink-jobmanager:8081 \
                 "${restore_args[@]}" \

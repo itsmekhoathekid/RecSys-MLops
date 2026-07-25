@@ -652,6 +652,10 @@ def test_helm_exposes_iceberg_lakehouse_runtime_config():
         '--starting-offsets {{ default "committed-offsets" $consumer.online.startingOffsets | quote }}'
         in rendered
     )
+    assert rendered.count("flink list -m flink-jobmanager:8081 -r") == 2
+    assert rendered.count("flink cancel -m flink-jobmanager:8081") == 2
+    assert 'group="$REALTIME_STREAM_ONLINE_GROUP_ID"' in rendered
+    assert 'group="$REALTIME_STREAM_OFFLINE_GROUP_ID"' in rendered
     assert '--feast-postgres-host "$FEAST_POSTGRES_HOST"' in rendered
     assert '--feast-postgres-database "$FEAST_POSTGRES_DB"' in rendered
     assert '--feast-postgres-password "$FEAST_POSTGRES_PASSWORD"' in rendered
