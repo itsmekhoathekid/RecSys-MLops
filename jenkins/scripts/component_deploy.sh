@@ -301,7 +301,6 @@ deploy_data_platform_unlocked() {
     --set "flink.taskManagerManagedMemory=${FLINK_TASKMANAGER_MANAGED_MEMORY:-512m}" \
     --set "flink.taskManagerJvmOverheadMax=${FLINK_TASKMANAGER_JVM_OVERHEAD_MAX:-2048m}" \
     --set "realtimeFlinkConsumer.parallelism=${FLINK_PARALLELISM:-1}" \
-    --set "realtimeFlinkConsumer.online.startingOffsets=${FLINK_ONLINE_STARTING_OFFSETS:-committed-offsets}" \
     --set "realtimeFlinkConsumer.redisSinkMaxEventsPerSecond=${REDIS_SINK_MAX_EVENTS_PER_SECOND:-200}" \
     --set "realtimeFlinkConsumer.postgresSinkMaxEventsPerSecond=${POSTGRES_SINK_MAX_EVENTS_PER_SECOND:-100}" \
     --set "realtimeFlinkConsumer.sinkRateLimitBurstEvents=${SINK_RATE_LIMIT_BURST_EVENTS:-25}" \
@@ -769,6 +768,7 @@ deploy_all() {
     --set "images.airflow=${airflow_image}" \
     --set "images.kafkaConnect=${kafka_connect_image}" \
     --set "images.flink=${flink_image}" \
+    --set "realtimeFlinkConsumer.online.startingOffsets=${FLINK_ONLINE_STARTING_OFFSETS:-committed-offsets}" \
     --set "observability.retrainPsiThreshold=${RETRAIN_PSI_THRESHOLD:-0.15}"
 
   verify_data_platform_config_image "DATAFLOW_IMAGE" "${dataflow_image}"
@@ -839,7 +839,10 @@ case "${component}" in
         verify_and_wait_workload "deployment" "realtime-flink-offline-store" "${namespace_data}" "$(image recsys-flink)"
         ;;
       stream_online)
-        deploy_data_platform --set "images.flink=$(image recsys-flink)" --set "images.dataflowCli=$(image recsys-dataflow-cli)"
+        deploy_data_platform \
+          --set "images.flink=$(image recsys-flink)" \
+          --set "images.dataflowCli=$(image recsys-dataflow-cli)" \
+          --set "realtimeFlinkConsumer.online.startingOffsets=${FLINK_ONLINE_STARTING_OFFSETS:-committed-offsets}"
         verify_data_platform_config_image "FLINK_IMAGE" "$(image recsys-flink)"
         verify_data_platform_config_image "DATAFLOW_IMAGE" "$(image recsys-dataflow-cli)"
         verify_and_wait_workload "deployment" "flink-jobmanager" "${namespace_data}" "$(image recsys-flink)"
