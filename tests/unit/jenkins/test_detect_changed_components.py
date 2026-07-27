@@ -419,6 +419,20 @@ def test_shell_deploy_gate_accepts_an_exact_origin_main_checkout():
     assert '[[ "${checked_out_main}" != "1" ]]' in deploy
 
 
+def test_container_scans_are_serialized_and_share_the_trivy_database_cache():
+    engine = (ROOT / "jenkins/scripts/build/engine.sh").read_text(encoding="utf-8")
+
+    assert 'lock_path="${lock_root}/trivy-scan.lock"' in engine
+    assert 'flock -w "${TRIVY_SCAN_LOCK_TIMEOUT_SECONDS:-3600}" 8' in engine
+    assert 'scan_cache_volume="${TRIVY_CACHE_VOLUME:-recsys-trivy-cache}"' in engine
+    assert (
+        '--mount "type=volume,source=${scan_cache_volume},target=/root/.cache"'
+        in engine
+    )
+    assert 'docker rm -f "${scan_container}"' in engine
+    assert 'rm -f "${archive}"' in engine
+
+
 def test_data_platform_deploy_preserves_isolated_drift_snapshot_root():
     deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
 

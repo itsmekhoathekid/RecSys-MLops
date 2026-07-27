@@ -50,7 +50,7 @@ build_publish_shared_manifest() {
   mv -f "${temporary_manifest}" "${shared_manifest}"
 }
 
-build_scan_image() {
+build_scan_image_unlocked() {
   local image="$1"
   local image_name="$2"
   local scan_report="${BUILD_SCAN_REPORT_DIR}/${image_name}.json"
@@ -70,17 +70,33 @@ build_scan_image() {
 
   local archive="${BUILD_MANIFEST_DIR}/${image_name}-${BUILD_IMAGE_TAG}-${BUILD_COMPONENT}-$$.tar"
   local scan_container="trivy-${image_name}-${BUILD_NUMBER:-manual}-${BUILD_COMPONENT}-$$"
-  scan_container="${scan_container//[^a-zA-Z0-9_.-]/-}"
-  docker save --output "${archive}" "${image}"
-  docker rm -f "${scan_container}" >/dev/null 2>&1 || true
-  docker create --name "${scan_container}" aquasec/trivy:0.58.2 \
-    image --exit-code 0 --ignore-unfixed --scanners vuln --format json \
-    --output /scan.json --input /image.tar >/dev/null
-  docker cp "${archive}" "${scan_container}:/image.tar"
+  local scan_cache_volume="${TRIVY_CACHE_VOLUME:-recsys-trivy-cache}"
   local scan_status=0
-  docker start -a "${scan_container}" || scan_status=$?
+  scan_container="${scan_container//[^a-zA-Z0-9_.-]/-}"
+
+  docker volume create "${scan_cache_volume}" >/dev/null || scan_status=$?
+  docker rm -f "${scan_container}" >/dev/null 2>&1 || true
   if [[ "${scan_status}" -eq 0 ]]; then
-    docker cp "${scan_container}:/scan.json" "${scan_report}"
+    docker save --output "${archive}" "${image}" || scan_status=$?
+  fi
+  if [[ "${scan_status}" -eq 0 ]]; then
+    docker create \
+      --name "${scan_container}" \
+      --mount "type=volume,source=${scan_cache_volume},target=/root/.cache" \
+      aquasec/trivy:0.58.2 \
+      image --exit-code 0 --ignore-unfixed --scanners vuln --format json \
+      --output /scan.json --input /image.tar >/dev/null || scan_status=$?
+  fi
+  if [[ "${scan_status}" -eq 0 ]]; then
+    docker cp "${archive}" "${scan_container}:/image.tar" || scan_status=$?
+  fi
+  if [[ "${scan_status}" -eq 0 ]]; then
+    docker start -a "${scan_container}" || scan_status=$?
+  fi
+  if [[ "${scan_status}" -eq 0 ]]; then
+    docker cp "${scan_container}:/scan.json" "${scan_report}" || scan_status=$?
+  fi
+  if [[ "${scan_status}" -eq 0 ]]; then
     python3 jenkins/python/container_scan_policy.py \
       --image-name "${image_name}" \
       --report "${scan_report}" || scan_status=$?
@@ -88,6 +104,25 @@ build_scan_image() {
   docker rm -f "${scan_container}" >/dev/null 2>&1 || true
   rm -f "${archive}"
   return "${scan_status}"
+}
+
+build_scan_image() {
+  if ! recsys_is_true "${BUILD_SCAN_ENABLED}"; then
+    build_scan_image_unlocked "$@"
+    return
+  fi
+
+  local lock_root="${BUILD_LOCK_ROOT:-${JENKINS_HOME:-.ci-build-locks}/ci-build-locks}"
+  local lock_path="${lock_root}/trivy-scan.lock"
+  mkdir -p "${lock_root}"
+  if command -v flock >/dev/null 2>&1; then
+    (
+      flock -w "${TRIVY_SCAN_LOCK_TIMEOUT_SECONDS:-3600}" 8
+      build_scan_image_unlocked "$@"
+    ) 8>"${lock_path}"
+    return
+  fi
+  build_scan_image_unlocked "$@"
 }
 
 build_refresh_registry_login() {
