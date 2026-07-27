@@ -86,7 +86,7 @@ def test_debezium_is_the_only_kafka_connect_runtime_connector():
         connector["config"]["connector.class"]
         == "io.debezium.connector.postgresql.PostgresConnector"
     )
-    assert "debezium/debezium-connector-postgresql" in kafka_connect_dockerfile
+    assert "io/debezium/debezium-connector-postgres" in kafka_connect_dockerfile
     assert "kafka-connect-s3" not in kafka_connect_dockerfile
 
 
@@ -182,16 +182,20 @@ def test_remaining_runtime_dockerfiles_use_multistage_and_parallel_tools():
     mlflow = (ROOT / "infra/docker/Dockerfile.mlflow").read_text()
     mlops_spark = (ROOT / "apps/ml-system/Dockerfile.spark").read_text()
 
-    assert "FROM confluentinc/cp-kafka-connect:7.5.0 AS plugins" in kafka_connect
-    assert "FROM confluentinc/cp-kafka-connect:7.5.0 AS runtime" in kafka_connect
-    assert "CONNECTOR_INSTALL_JOBS" in kafka_connect
-    assert "job_count=0" in kafka_connect
+    assert "ARG CONFLUENT_PLATFORM_VERSION=8.2.2-1-ubi9" in kafka_connect
+    assert "ARG DEBEZIUM_POSTGRES_VERSION=3.4.3.Final" in kafka_connect
+    assert "ARG DEBEZIUM_POSTGRES_SHA256=" in kafka_connect
+    assert "FROM alpine:3.23 AS plugins" in kafka_connect
     assert (
-        'confluent-hub install --no-prompt --component-dir /tmp/confluent-hub-components "${connector}" &'
+        "FROM confluentinc/cp-kafka-connect:${CONFLUENT_PLATFORM_VERSION} AS runtime"
         in kafka_connect
     )
+    assert "apk upgrade --no-cache" in kafka_connect
+    assert "microdnf upgrade -y" in kafka_connect
+    assert "sha256sum -c -" in kafka_connect
+    assert "repo1.maven.org/maven2/io/debezium/debezium-connector-postgres" in kafka_connect
     assert "COPY --from=plugins /tmp/confluent-hub-components" in kafka_connect
-    assert "debezium/debezium-connector-postgresql" in kafka_connect
+    assert "debezium-connector-postgres-${DEBEZIUM_POSTGRES_VERSION}" in kafka_connect
     assert "kafka-connect-s3" not in kafka_connect
 
     assert "FROM python:3.11-slim AS deps" in mlflow

@@ -186,3 +186,34 @@ def test_training_ray_jar_baseline_is_bounded():
             policy(),
             today=dt.date(2026, 7, 28),
         )
+
+
+def test_kafka_connect_vendor_exception_is_exact():
+    scan_report = {
+        "Results": [
+            {
+                "Target": "Java",
+                "Type": "jar",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2026-33117",
+                        "PkgName": "com.azure:azure-security-keyvault-keys",
+                        "Severity": "CRITICAL",
+                    },
+                    {
+                        "VulnerabilityID": "CVE-unrelated",
+                        "PkgName": "unapproved-library",
+                        "Severity": "HIGH",
+                    },
+                ],
+            }
+        ]
+    }
+    rejected, accepted = evaluate(
+        "recsys-kafka-connect",
+        scan_report,
+        policy(),
+        today=dt.date(2026, 7, 28),
+    )
+    assert [item["package"] for item in rejected] == ["unapproved-library"]
+    assert accepted == {"HIGH": 0, "CRITICAL": 1}

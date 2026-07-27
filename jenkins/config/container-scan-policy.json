@@ -54,6 +54,111 @@
       "owner": "data-platform",
       "reason": "Apache Flink/Hadoop vendor bundles plus httplib2 0.31.2 and cryptography 47.0.0 constrained by Apache Beam 2.75; upgrade and re-baseline before expiry."
     },
+    "recsys-kafka-connect": {
+      "types": [],
+      "acceptedVulnerabilities": [
+        {
+          "id": "CVE-2026-33117",
+          "package": "com.azure:azure-security-keyvault-keys",
+          "type": "jar"
+        },
+        {
+          "id": "GHSA-r7wm-3cxj-wff9",
+          "package": "com.fasterxml.jackson.core:jackson-core",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-54512",
+          "package": "com.fasterxml.jackson.core:jackson-databind",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-54513",
+          "package": "com.fasterxml.jackson.core:jackson-databind",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-59901",
+          "package": "io.netty:netty-codec",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-55831",
+          "package": "io.netty:netty-codec-http",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-55833",
+          "package": "io.netty:netty-codec-http",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-56745",
+          "package": "io.netty:netty-codec-http",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-44249",
+          "package": "io.netty:netty-handler",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-45416",
+          "package": "io.netty:netty-handler",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-50010",
+          "package": "io.netty:netty-handler",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-45674",
+          "package": "io.netty:netty-resolver-dns",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-47691",
+          "package": "io.netty:netty-resolver-dns",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-10050",
+          "package": "org.eclipse.jetty:jetty-security",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-56740",
+          "package": "org.jline:jline-remote-telnet",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-56741",
+          "package": "org.jline:jline-remote-telnet",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-42198",
+          "package": "org.postgresql:postgresql",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-54291",
+          "package": "org.postgresql:postgresql",
+          "type": "jar"
+        },
+        {
+          "id": "CVE-2026-39822",
+          "package": "stdlib",
+          "type": "gobinary"
+        }
+      ],
+      "maxHigh": 26,
+      "maxCritical": 1,
+      "expiresOn": "2026-08-31",
+      "owner": "data-platform",
+      "reason": "Latest supported Confluent 8.2.2 worker and Debezium 3.4.3 still bundle these exact findings; upgrade to patched vendor artifacts before expiry."
+    },
     "recsys-analytics-superset": {
       "types": [],
       "acceptedVulnerabilities": [
