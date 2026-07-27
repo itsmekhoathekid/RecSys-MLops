@@ -399,6 +399,8 @@ def classify_tests(flags: dict[str, bool], path: str) -> None:
         mark(flags, "API", "ROLLOUT")
     elif path.startswith("tests/unit/feature_store/"):
         mark(flags, "MATERIALIZE", "DP3")
+    elif path == "tests/integration/test_hudi_native_upsert_versioning.py":
+        mark(flags, "SPARK_BATCH", "DP1", "DP2", "DP3")
     elif path.startswith("tests/integration/"):
         parts = Path(path).parts
         if len(parts) >= 3:

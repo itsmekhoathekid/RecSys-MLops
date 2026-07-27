@@ -52,6 +52,7 @@ def test_component_catalog_is_valid_and_preserves_stage_view_labels():
 def test_root_jenkins_stage_view_contract_is_unchanged():
     source = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     assert re.findall(r"^\s*stage\('([^']+)'\)", source, flags=re.MULTILINE) == EXPECTED_STAGES
+    assert "skipDefaultCheckout(true)" in source
 
 
 def test_gcp_production_target_is_strict_and_self_consistent():

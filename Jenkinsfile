@@ -4,7 +4,7 @@ pipeline {
   agent any
 
   options {
-    skipDefaultCheckout(false)
+    skipDefaultCheckout(true)
   }
 
   parameters {

@@ -249,6 +249,17 @@ def test_every_tracked_repo_path_is_explicitly_classified_or_ignored():
     assert result.unmapped_paths == ()
 
 
+def test_hudi_native_upsert_integration_routes_to_batch_data_components():
+    result = classify_paths(
+        ["tests/integration/test_hudi_native_upsert_versioning.py"]
+    )
+
+    assert result.flags["RUN_SPARK_BATCH"]
+    assert result.flags["RUN_DP1"]
+    assert result.flags["RUN_DP2"]
+    assert result.flags["RUN_DP3"]
+
+
 def test_jenkinsfile_uses_previous_built_commit_and_has_ci_config_stage():
     source = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     helper = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text(
