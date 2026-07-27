@@ -31,7 +31,9 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     "ray[default,train,tune]" \
     s3fs \
     scikit-learn \
-    tqdm
+    tqdm \
+    wheel==0.46.2 \
+    jaraco.context==6.1.0
 
 # Ray 2.55 auto-starts the Ray Client server whenever grpcio is installed.
 # KubeRay RayJob uses the dashboard Jobs API instead; disabling the unused

@@ -79,3 +79,34 @@ def test_unlisted_images_cannot_use_vendor_exception():
     )
     assert len(rejected) == 1
     assert accepted == {"HIGH": 0, "CRITICAL": 0}
+
+
+def test_exact_package_cve_exception_does_not_allow_other_python_findings():
+    scan_report = {
+        "Results": [
+            {
+                "Target": "Python",
+                "Type": "python-pkg",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2026-59939",
+                        "PkgName": "httplib2",
+                        "Severity": "HIGH",
+                    },
+                    {
+                        "VulnerabilityID": "CVE-2026-25087",
+                        "PkgName": "pyarrow",
+                        "Severity": "HIGH",
+                    },
+                ],
+            }
+        ]
+    }
+    rejected, accepted = evaluate(
+        "recsys-flink",
+        scan_report,
+        policy(),
+        today=dt.date(2026, 7, 28),
+    )
+    assert [item["package"] for item in rejected] == ["pyarrow"]
+    assert accepted == {"HIGH": 1, "CRITICAL": 0}

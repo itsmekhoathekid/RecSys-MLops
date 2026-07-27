@@ -21,7 +21,9 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     psycopg-pool \
     s3fs==2024.10.0 \
     fsspec==2024.10.0 \
-    "feast[redis]"
+    "feast[redis]" \
+    wheel==0.46.2 \
+    jaraco.context==6.1.0
 
 FROM ${RECSYS_SPARK_BASE_IMAGE} AS runtime
 

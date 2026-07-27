@@ -56,10 +56,11 @@ RUN mkdir -p "${TMPDIR}" "${PIP_CACHE_DIR}" \
     && python3 -m pip install --no-cache-dir pycodestyle
 
 RUN python3 -m pip install --no-cache-dir \
-        apache-beam==2.61.0 \
+        apache-beam==2.75.0 \
         avro==1.12.0 \
         cloudpickle==2.2.1 \
-        pyarrow \
+        httplib2==0.31.2 \
+        pyarrow==23.0.1 \
         py4j==0.10.9.7 \
         pyyaml \
         ruamel.yaml \

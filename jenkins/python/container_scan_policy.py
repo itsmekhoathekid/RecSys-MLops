@@ -29,6 +29,7 @@ def evaluate(
     blocking = {str(value).upper() for value in policy["blockingSeverities"]}
     exception = policy.get("exceptions", {}).get(image_name)
     accepted_types: set[str] = set()
+    accepted_vulnerabilities: set[tuple[str, str, str]] = set()
     if exception:
         expires_on = dt.date.fromisoformat(exception["expiresOn"])
         if (today or dt.date.today()) > expires_on:
@@ -40,6 +41,14 @@ def evaluate(
         ).strip():
             raise ValueError(f"{image_name} exception requires owner and reason")
         accepted_types = {str(value) for value in exception.get("types", [])}
+        accepted_vulnerabilities = {
+            (
+                str(value["id"]),
+                str(value["package"]),
+                str(value["type"]),
+            )
+            for value in exception.get("acceptedVulnerabilities", [])
+        }
 
     rejected: list[dict[str, str]] = []
     accepted_counts = {"HIGH": 0, "CRITICAL": 0}
@@ -57,7 +66,11 @@ def evaluate(
                 "target": target,
                 "type": result_type,
             }
-            if exception and result_type in accepted_types:
+            exact_key = (record["id"], record["package"], result_type)
+            if exception and (
+                result_type in accepted_types
+                or exact_key in accepted_vulnerabilities
+            ):
                 accepted_counts[severity] += 1
             else:
                 rejected.append(record)

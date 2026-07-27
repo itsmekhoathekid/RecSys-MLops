@@ -28,7 +28,7 @@ spec:
             - >-
               airflow db migrate;
               airflow users create --username admin --password admin --firstname RecSys --lastname Admin --role Admin --email admin@example.com || true;
-              airflow webserver
+              airflow api-server
           env:
             - name: AIRFLOW_POSTGRES_USER
               valueFrom:

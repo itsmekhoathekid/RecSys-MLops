@@ -20,19 +20,26 @@
     },
     "recsys-analytics-spark": {
       "types": ["jar"],
-      "maxHigh": 145,
+      "maxHigh": 147,
       "maxCritical": 24,
       "expiresOn": "2026-08-31",
       "owner": "analytics",
-      "reason": "Inherits the approved recsys-spark vendor bundle while the Spark/Hudi upgrade is validated."
+      "reason": "Inherits the approved recsys-spark vendor bundle plus two JDBC driver findings while the Spark/Hudi/JDBC upgrade is validated."
     },
     "recsys-flink": {
       "types": ["jar"],
-      "maxHigh": 43,
+      "acceptedVulnerabilities": [
+        {
+          "id": "CVE-2026-59939",
+          "package": "httplib2",
+          "type": "python-pkg"
+        }
+      ],
+      "maxHigh": 42,
       "maxCritical": 1,
       "expiresOn": "2026-08-31",
       "owner": "data-platform",
-      "reason": "Apache Flink/Hadoop vendor bundles; upgrade and re-baseline before expiry."
+      "reason": "Apache Flink/Hadoop vendor bundles plus httplib2 0.31.2 constrained by Apache Beam 2.75; upgrade and re-baseline before expiry."
     }
   }
 }

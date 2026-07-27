@@ -14,6 +14,9 @@ RUN apt-get update \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir \
+        uv \
+        wheel==0.46.2 \
+        jaraco.context==6.1.0
 
 WORKDIR /opt/recsys

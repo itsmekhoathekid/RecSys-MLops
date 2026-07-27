@@ -21,6 +21,9 @@ RUN python -m venv /opt/venv \
         redis \
         requests \
         s3fs==2024.10.0
+RUN uv pip install --python /opt/venv/bin/python --no-cache \
+        wheel==0.46.2 \
+        jaraco.context==6.1.0
 
 FROM python:3.11-slim AS runtime
 

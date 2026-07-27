@@ -6,6 +6,7 @@ dependencies = [
   "fastapi>=0.138,<1",
   "feast[redis]==0.64.0",
   "httpx>=0.28.1,<1",
+  "jaraco.context==6.1.0",
   "numpy>=2.2.6,<3",
   "opentelemetry-api>=1.30,<2",
   "opentelemetry-exporter-otlp>=1.30,<2",
@@ -18,6 +19,7 @@ dependencies = [
   "redis>=5,<8",
   "tritonclient[grpc]>=2.54,<3",
   "uvicorn>=0.34,<1",
+  "wheel==0.46.2",
 ]
 
 [dependency-groups]

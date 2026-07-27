@@ -11,8 +11,10 @@ RUN pip install --no-cache-dir uv \
 
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
     boto3 \
+    jaraco.context==6.1.0 \
     mlflow \
-    psycopg2-binary
+    psycopg2-binary \
+    wheel==0.46.2
 
 FROM python:3.11-slim AS runtime
 

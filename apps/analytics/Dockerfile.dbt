@@ -5,11 +5,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     DBT_PROFILES_DIR=/opt/recsys/apps/analytics/profiles
 
-RUN pip install "dbt-trino==${DBT_TRINO_VERSION}"
+RUN pip install \
+    "dbt-trino==${DBT_TRINO_VERSION}" \
+    "wheel==0.46.2" \
+    "jaraco.context==6.1.0"
 WORKDIR /opt/recsys/apps/analytics
 COPY apps/analytics /opt/recsys/apps/analytics
 RUN dbt deps
 
 ENTRYPOINT ["dbt"]
 CMD ["build"]
-

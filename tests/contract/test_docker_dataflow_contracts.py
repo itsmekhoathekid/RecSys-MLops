@@ -103,7 +103,8 @@ def test_spark_and_flink_images_include_runtime_dependencies_without_pandas():
     assert "flink-connector-kafka" in flink_runtime_pom
     assert "flink-statebackend-rocksdb" in flink_runtime_pom
     assert "flink-autoscaler-standalone" in flink_dockerfile
-    assert "apache-beam==2.61.0" in flink_dockerfile
+    assert "apache-beam==2.75.0" in flink_dockerfile
+    assert "pyarrow==23.0.1" in flink_dockerfile
     assert "avro==1.12.0" in flink_dockerfile
     assert "avro-python3" not in flink_dockerfile
     assert "psycopg[binary]" in flink_dockerfile
