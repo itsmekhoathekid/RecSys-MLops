@@ -151,7 +151,7 @@ pipeline {
     stage('Docker Login') {
       when { expression { env.RUN_COMPONENT_BUILD == 'true' && params.PUBLISH_IMAGES } }
       steps {
-        sh '''
+        sh '''#!/usr/bin/env bash
           set +x
           set -euo pipefail
           . jenkins/scripts/lib/common.sh
