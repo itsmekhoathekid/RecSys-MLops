@@ -353,6 +353,9 @@ tx_rollback_external_record() {
     database-migration)
       database_rollback_migration "${state_path}"
       ;;
+    airflow-database-migration)
+      database_rollback_airflow_migration "${state_path}"
+      ;;
     *)
       recsys_error "unknown external compensation kind: ${kind}"
       return 2
@@ -375,11 +378,19 @@ tx_rollback_helm_record() {
   workload_snapshot_path="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("workloadSnapshotPath", ""))' "${record}")"
 
   if [[ "${existed}" == "1" ]]; then
-    helm rollback "${release}" "${revision}" \
+    if ! helm rollback "${release}" "${revision}" \
       -n "${namespace}" \
       --wait \
       --cleanup-on-fail \
-      --timeout "${COMPONENT_DEPLOY_TIMEOUT:-600s}"
+      --timeout "${COMPONENT_DEPLOY_TIMEOUT:-600s}"; then
+      recsys_log "retrying legacy Helm rollback without hooks for ${release} revision ${revision}"
+      helm rollback "${release}" "${revision}" \
+        -n "${namespace}" \
+        --wait \
+        --cleanup-on-fail \
+        --no-hooks \
+        --timeout "${COMPONENT_DEPLOY_TIMEOUT:-600s}"
+    fi
     helm status "${release}" -n "${namespace}" -o json \
       | python3 -c '
 import json, sys

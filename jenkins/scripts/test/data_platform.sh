@@ -4,6 +4,9 @@ test_data_platform_base() {
   local namespace="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
   component_test_wait_deployment "${namespace}" airflow-webserver
   component_test_wait_deployment "${namespace}" airflow-scheduler
+  if kubectl get deployment/airflow-dag-processor -n "${namespace}" >/dev/null 2>&1; then
+    component_test_wait_deployment "${namespace}" airflow-dag-processor
+  fi
   kubectl exec -n "${namespace}" deploy/airflow-webserver -c airflow-webserver -- \
     airflow db check
 }

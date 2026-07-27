@@ -493,6 +493,20 @@ def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
     )
     assert "airflow db migrate &&" not in chart
     assert 'value: "900"' in chart
+    assert "name: airflow-dag-processor" in chart
+    assert "airflow dag-processor" in chart
+
+
+def test_airflow_major_version_migration_has_typed_rollback_compensation():
+    database = (ROOT / "jenkins/scripts/deploy/database.sh").read_text()
+    transaction = (ROOT / "jenkins/scripts/deploy/transaction.sh").read_text()
+    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+
+    assert "database_snapshot_airflow_migration" in deploy
+    assert "airflow-database-migration" in database
+    assert "airflow db downgrade --to-version" in database
+    assert "database_rollback_airflow_migration" in transaction
+    assert "retrying legacy Helm rollback without hooks" in transaction
 
 
 def test_component_deploy_preserves_spark_byte_size_as_integer_string():

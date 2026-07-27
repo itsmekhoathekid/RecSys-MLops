@@ -12,6 +12,22 @@ component_test_airflow_dag() {
   local run_id="ci-${TX_ID:-${BUILD_NUMBER:-manual}}"
   local state=""
   local deadline=$((SECONDS + ${COMPONENT_TEST_TIMEOUT_SECONDS:-600}))
+  local dag_registered=0
+
+  while ((SECONDS < deadline)); do
+    if kubectl exec -n "${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}" \
+      deploy/airflow-webserver -c airflow-webserver -- \
+      airflow dags list --output plain 2>/dev/null \
+      | grep -Fq "${dag_id}"; then
+      dag_registered=1
+      break
+    fi
+    sleep 5
+  done
+  if [[ "${dag_registered}" != "1" ]]; then
+    recsys_error "Airflow DAG was not registered before smoke timeout: ${dag_id}"
+    return 1
+  fi
 
   kubectl exec -n "${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}" \
     deploy/airflow-webserver -c airflow-webserver -- \

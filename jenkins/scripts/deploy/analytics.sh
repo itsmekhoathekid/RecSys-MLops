@@ -15,6 +15,7 @@ deploy_analytics() {
     --set "images.analyticsSpark=$(image recsys-analytics-spark)" \
     --set "images.analyticsDbt=$(image recsys-analytics-dbt)"
   verify_and_wait_workload deployment airflow-scheduler "${namespace_data}" "$(image recsys-airflow)"
+  verify_and_wait_workload deployment airflow-dag-processor "${namespace_data}" "$(image recsys-airflow)"
   helm_atomic_upgrade recsys-analytics infra/helm/recsys-analytics \
     "${namespace_analytics}" "${timeout}" \
     --reuse-values \

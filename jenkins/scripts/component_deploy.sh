@@ -137,6 +137,10 @@ deploy_data_platform_unlocked() {
   analytics_spark_image="$(data_platform_image_ref recsys-analytics-spark analyticsSpark)" || return
   analytics_dbt_image="$(data_platform_image_ref recsys-analytics-dbt analyticsDbt)" || return
 
+  if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" ]]; then
+    database_snapshot_airflow_migration "${namespace_data}" "${airflow_image}"
+  fi
+
   helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform \
     --namespace "${namespace_data}" \
     --create-namespace \
@@ -292,6 +296,7 @@ deploy_all() {
   verify_data_platform_config_image "FLINK_IMAGE" "${flink_image}"
   verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "${airflow_image}"
   verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "${airflow_image}"
+  verify_and_wait_workload "deployment" "airflow-dag-processor" "${namespace_data}" "${airflow_image}"
   verify_and_wait_workload "deployment" "kafka-connect" "${namespace_data}" "${kafka_connect_image}"
   verify_and_wait_workload "deployment" "realtime-event-producer" "${namespace_data}" "${data_ingestion_image}"
   verify_and_wait_workload "deployment" "flink-jobmanager" "${namespace_data}" "${flink_image}"
@@ -365,6 +370,7 @@ deploy_component_dispatch() {
         verify_data_platform_config_image "SPARK_IMAGE" "$(image recsys-spark)"
         verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "$(image recsys-airflow)"
         verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "$(image recsys-airflow)"
+        verify_and_wait_workload "deployment" "airflow-dag-processor" "${namespace_data}" "$(image recsys-airflow)"
         ;;
       dp1)
         deploy_data_platform \
@@ -377,6 +383,7 @@ deploy_component_dispatch() {
         verify_and_wait_workload "deployment" "realtime-event-producer" "${namespace_data}" "$(image recsys-data-ingestion)"
         verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "$(image recsys-airflow)"
         verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "$(image recsys-airflow)"
+        verify_and_wait_workload "deployment" "airflow-dag-processor" "${namespace_data}" "$(image recsys-airflow)"
         verify_and_wait_workload "deployment" "kafka-connect" "${namespace_data}" "$(image recsys-kafka-connect)"
         ;;
       dp3)
@@ -388,6 +395,7 @@ deploy_component_dispatch() {
         verify_data_platform_config_image "FEATURE_STORE_IMAGE" "$(image recsys-feature-store)"
         verify_and_wait_workload "deployment" "airflow-webserver" "${namespace_data}" "$(image recsys-airflow)"
         verify_and_wait_workload "deployment" "airflow-scheduler" "${namespace_data}" "$(image recsys-airflow)"
+        verify_and_wait_workload "deployment" "airflow-dag-processor" "${namespace_data}" "$(image recsys-airflow)"
         ;;
       stream_offline)
         deploy_data_platform --set "images.flink=$(image recsys-flink)"
