@@ -24,6 +24,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /opt/recsys
 
+RUN /usr/local/bin/pip uninstall -y wheel setuptools jaraco.context \
+    && /usr/local/bin/pip uninstall -y pip
 COPY --from=deps /opt/venv /opt/venv
 COPY apps/api-serving/pyproject.toml apps/api-serving/uv.lock /opt/recsys/apps/api-serving/
 COPY apps/api-serving/src /opt/recsys/apps/api-serving/src

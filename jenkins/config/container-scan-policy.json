@@ -33,13 +33,33 @@
           "id": "CVE-2026-59939",
           "package": "httplib2",
           "type": "python-pkg"
+        },
+        {
+          "id": "GHSA-537c-gmf6-5ccf",
+          "package": "cryptography",
+          "type": "python-pkg"
         }
       ],
-      "maxHigh": 42,
+      "maxHigh": 43,
       "maxCritical": 1,
       "expiresOn": "2026-08-31",
       "owner": "data-platform",
-      "reason": "Apache Flink/Hadoop vendor bundles plus httplib2 0.31.2 constrained by Apache Beam 2.75; upgrade and re-baseline before expiry."
+      "reason": "Apache Flink/Hadoop vendor bundles plus httplib2 0.31.2 and cryptography 47.0.0 constrained by Apache Beam 2.75; upgrade and re-baseline before expiry."
+    },
+    "recsys-analytics-superset": {
+      "types": [],
+      "acceptedVulnerabilities": [
+        {
+          "id": "GHSA-537c-gmf6-5ccf",
+          "package": "cryptography",
+          "type": "python-pkg"
+        }
+      ],
+      "maxHigh": 1,
+      "maxCritical": 0,
+      "expiresOn": "2026-08-31",
+      "owner": "analytics",
+      "reason": "pyOpenSSL 26 requires cryptography below 47; move to its next compatible release before expiry."
     }
   }
 }

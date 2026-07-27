@@ -110,3 +110,60 @@ def test_exact_package_cve_exception_does_not_allow_other_python_findings():
     )
     assert [item["package"] for item in rejected] == ["pyarrow"]
     assert accepted == {"HIGH": 1, "CRITICAL": 0}
+
+
+def test_beam_constrained_cryptography_exception_is_exact():
+    scan_report = {
+        "Results": [
+            {
+                "Target": "Python",
+                "Type": "python-pkg",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "GHSA-537c-gmf6-5ccf",
+                        "PkgName": "cryptography",
+                        "Severity": "HIGH",
+                    }
+                ],
+            }
+        ]
+    }
+    rejected, accepted = evaluate(
+        "recsys-flink",
+        scan_report,
+        policy(),
+        today=dt.date(2026, 7, 28),
+    )
+    assert rejected == []
+    assert accepted == {"HIGH": 1, "CRITICAL": 0}
+
+
+def test_superset_cryptography_exception_does_not_allow_other_packages():
+    scan_report = {
+        "Results": [
+            {
+                "Target": "Python",
+                "Type": "python-pkg",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "GHSA-537c-gmf6-5ccf",
+                        "PkgName": "cryptography",
+                        "Severity": "HIGH",
+                    },
+                    {
+                        "VulnerabilityID": "CVE-other",
+                        "PkgName": "pyOpenSSL",
+                        "Severity": "HIGH",
+                    },
+                ],
+            }
+        ]
+    }
+    rejected, accepted = evaluate(
+        "recsys-analytics-superset",
+        scan_report,
+        policy(),
+        today=dt.date(2026, 7, 28),
+    )
+    assert [item["package"] for item in rejected] == ["pyOpenSSL"]
+    assert accepted == {"HIGH": 1, "CRITICAL": 0}

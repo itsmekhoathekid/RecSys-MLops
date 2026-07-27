@@ -34,7 +34,10 @@ USER root
 WORKDIR /opt/recsys
 RUN apt-get update \
     && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /home/airflow/.local \
+    && rm -rf /usr/python/lib/python3.11/site-packages/setuptools \
+        /usr/python/lib/python3.11/site-packages/setuptools-*.dist-info
 COPY --from=deps --chown=airflow:root /home/airflow/.local /home/airflow/.local
 COPY --chown=airflow:root configs /opt/recsys/configs
 COPY --chown=airflow:root infra/docker/scripts /opt/recsys/infra/docker/scripts

@@ -5413,7 +5413,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=18.0.0" },
     { name = "pyspark", specifier = "==3.5.8" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "ray", extras = ["default", "train", "tune"], specifier = ">=2.40.0" },
+    { name = "ray", extras = ["default", "train", "tune"], specifier = "==2.56.1" },
     { name = "recsys-data-platform", editable = "../data-platform" },
     { name = "s3fs", specifier = "==2024.10.0" },
     { name = "setuptools", specifier = "==83.0.0" },

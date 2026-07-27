@@ -28,7 +28,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     psycopg-pool \
     pyarrow \
     pyyaml \
-    "ray[default,train,tune]" \
+    "ray[default,train,tune]==2.56.1" \
     s3fs \
     scikit-learn \
     tqdm \
@@ -50,7 +50,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates wget \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && /usr/local/bin/pip uninstall -y wheel setuptools jaraco.context \
+    && /usr/local/bin/pip uninstall -y pip
 
 WORKDIR /opt/recsys
 COPY --from=deps /opt/venv /opt/venv
