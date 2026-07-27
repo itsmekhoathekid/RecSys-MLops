@@ -851,6 +851,47 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
     )
 
 
+def test_shared_data_release_always_resolves_every_split_image_by_digest():
+    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    shared_deploy = deploy_script.split("deploy_data_platform_unlocked()", 1)[1].split(
+        "deploy_data_platform()", 1
+    )[0]
+
+    for values_key in (
+        "dataIngestion",
+        "featureStore",
+        "driftRetrain",
+        "spark",
+        "flink",
+        "airflow",
+        "kafkaConnect",
+        "analyticsSpark",
+        "analyticsDbt",
+    ):
+        assert f'--set "images.{values_key}=' in shared_deploy
+
+    assert "existing images.${values_key} is not digest-pinned" in deploy_script
+    assert "no immutable candidate or existing digest" in deploy_script
+
+
+def test_helm_hooks_survive_success_until_the_next_atomic_release():
+    hook_templates = (
+        ROOT / "infra/helm/recsys-data-platform/templates/jobs.yaml",
+        ROOT / "infra/helm/recsys-data-platform/templates/kafka-topic-init.yaml",
+        ROOT / "infra/helm/mlflow-stack/templates/minio-init-job.yaml",
+        ROOT / "infra/helm/recsys-analytics/templates/superset-dashboard-bootstrap.yaml",
+    )
+
+    for template in hook_templates:
+        source = template.read_text()
+        assert "hook-delete-policy" in source
+        assert "before-hook-creation" in source
+        assert "hook-succeeded" not in source
+
+    mlflow_init = hook_templates[2].read_text()
+    assert 'mc version enable "local/{{ .Values.minio.modelStoreBucket }}"' in mlflow_init
+
+
 def test_spark_silver_deduplicates_behavior_events_and_impressions_with_drop_duplicates():
     source = (
         ROOT / "apps/data-platform/src/features/spark/build_silver_tables.py"

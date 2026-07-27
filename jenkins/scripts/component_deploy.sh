@@ -78,7 +78,65 @@ verify_data_platform_config_image() {
   fi
 }
 
+data_platform_image_ref() {
+  local image_name="$1"
+  local values_key="$2"
+  local candidate_ref
+  local current_ref=""
+
+  candidate_ref="$(image_manifest_lookup "${image_name}")"
+  if [[ -n "${candidate_ref}" ]]; then
+    printf '%s' "${candidate_ref}"
+    return 0
+  fi
+
+  current_ref="$(
+    helm get values recsys-data-platform -n "${namespace_data}" -o json 2>/dev/null \
+      | python3 -c '
+import json
+import sys
+
+document = json.load(sys.stdin)
+print(document.get("images", {}).get(sys.argv[1], ""))
+' "${values_key}" 2>/dev/null || true
+  )"
+  if [[ -n "${current_ref}" ]]; then
+    if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" && "${current_ref}" != *@sha256:* ]]; then
+      recsys_error "existing images.${values_key} is not digest-pinned: ${current_ref}"
+      return 2
+    fi
+    printf '%s' "${current_ref}"
+    return 0
+  fi
+
+  if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" ]]; then
+    recsys_error "no immutable candidate or existing digest for images.${values_key}"
+    return 2
+  fi
+  image "${image_name}"
+}
+
 deploy_data_platform_unlocked() {
+  local data_ingestion_image
+  local feature_store_image
+  local drift_retrain_image
+  local spark_image
+  local flink_image
+  local airflow_image
+  local kafka_connect_image
+  local analytics_spark_image
+  local analytics_dbt_image
+
+  data_ingestion_image="$(data_platform_image_ref recsys-data-ingestion dataIngestion)" || return
+  feature_store_image="$(data_platform_image_ref recsys-feature-store featureStore)" || return
+  drift_retrain_image="$(data_platform_image_ref recsys-drift-retrain driftRetrain)" || return
+  spark_image="$(data_platform_image_ref recsys-spark spark)" || return
+  flink_image="$(data_platform_image_ref recsys-flink flink)" || return
+  airflow_image="$(data_platform_image_ref recsys-airflow airflow)" || return
+  kafka_connect_image="$(data_platform_image_ref recsys-kafka-connect kafkaConnect)" || return
+  analytics_spark_image="$(data_platform_image_ref recsys-analytics-spark analyticsSpark)" || return
+  analytics_dbt_image="$(data_platform_image_ref recsys-analytics-dbt analyticsDbt)" || return
+
   helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform \
     --namespace "${namespace_data}" \
     --create-namespace \
@@ -90,6 +148,15 @@ deploy_data_platform_unlocked() {
     --wait \
     --wait-for-jobs \
     --set "images.pullPolicy=Always" \
+    --set "images.dataIngestion=${data_ingestion_image}" \
+    --set "images.featureStore=${feature_store_image}" \
+    --set "images.driftRetrain=${drift_retrain_image}" \
+    --set "images.spark=${spark_image}" \
+    --set "images.flink=${flink_image}" \
+    --set "images.airflow=${airflow_image}" \
+    --set "images.kafkaConnect=${kafka_connect_image}" \
+    --set "images.analyticsSpark=${analytics_spark_image}" \
+    --set "images.analyticsDbt=${analytics_dbt_image}" \
     --set "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" \
     --set "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-1g}" \
     --set "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1536m}" \

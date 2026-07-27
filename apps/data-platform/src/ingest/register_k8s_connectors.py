@@ -47,6 +47,8 @@ def debezium_config() -> dict[str, Any]:
     }
     snapshot_mode = os.getenv("DEBEZIUM_SNAPSHOT_MODE")
     if snapshot_mode:
+        if snapshot_mode == "never":
+            snapshot_mode = "no_data"
         config["snapshot.mode"] = snapshot_mode
     return config
 

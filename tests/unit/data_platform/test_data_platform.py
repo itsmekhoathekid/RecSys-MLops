@@ -52,6 +52,7 @@ from feature_store.online_writer import (
 from local.run_batch_features import main as run_batch_features_main
 from local.run_batch_features import run_batch_features
 from ingest.debezium import extract_debezium_after
+from ingest.register_k8s_connectors import debezium_config
 from ingest.batch_lakehouse_ingestion import (
     LakehouseIcebergLayout,
     infer_run_id,
@@ -94,6 +95,11 @@ def test_debezium_after_extraction_skips_deletes():
     assert parse_message(b'{"payload":{"op":"c","after":{"event_id":"e3"}}}') == {
         "event_id": "e3"
     }
+
+
+def test_debezium_legacy_never_snapshot_mode_maps_to_supported_no_data(monkeypatch):
+    monkeypatch.setenv("DEBEZIUM_SNAPSHOT_MODE", "never")
+    assert debezium_config()["snapshot.mode"] == "no_data"
 
 
 def test_committed_kafka_offsets_fall_back_to_earliest_for_fresh_groups(monkeypatch):

@@ -5,7 +5,7 @@ metadata:
   namespace: {{ .Values.namespace.name }}
   annotations:
     helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   backoffLimit: 6
   template:
