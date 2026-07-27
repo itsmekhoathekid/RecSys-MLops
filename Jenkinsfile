@@ -25,7 +25,7 @@ pipeline {
     stage('Checkout') {
       steps {
         checkout scm
-        sh 'git fetch --no-tags origin +refs/heads/*:refs/remotes/origin/* || true'
+        sh 'timeout 30s git fetch --no-tags origin +refs/heads/*:refs/remotes/origin/* || true'
         script {
           env.GIT_COMMIT = sh(
             returnStdout: true,

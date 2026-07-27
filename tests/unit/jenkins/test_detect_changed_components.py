@@ -268,6 +268,7 @@ def test_jenkinsfile_uses_previous_built_commit_and_has_ci_config_stage():
 
     assert "env.GIT_PREVIOUS_COMMIT" in helper
     assert "componentPipeline.resolveChangedBaseRef()" in source
+    assert "timeout 30s git fetch --no-tags origin" in source
     assert "stage('CI Configuration Validation')" in source
     assert "env.RUN_CI_CONFIG == 'true'" in source
 
