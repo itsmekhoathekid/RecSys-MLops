@@ -85,7 +85,7 @@ with psycopg.connect(conninfo()) as connection:
     offline_count="$(
       kubectl exec -n "${namespace}" deploy/airflow-webserver \
         -c airflow-webserver -- \
-        env CI_STREAM_EVENT_ID="${event_id}" /opt/venv/bin/python -c '
+        env CI_STREAM_EVENT_ID="${event_id}" python -c '
 import os
 import psycopg
 
@@ -126,7 +126,7 @@ with psycopg.connect(
 
   kubectl exec -n "${namespace}" deploy/airflow-webserver \
     -c airflow-webserver -- \
-    env CI_STREAM_EVENT_ID="${event_id}" /opt/venv/bin/python -c '
+    env CI_STREAM_EVENT_ID="${event_id}" python -c '
 import os
 import psycopg
 
@@ -185,7 +185,7 @@ test_drift() {
       report=/tmp/${synthetic_id}.json
       python -c 'import json; json.dump({\"run_id\":\"${synthetic_id}\",\"passed\":False,\"features\":[{\"feature_view\":\"ci\",\"feature\":\"synthetic\",\"passed\":False}]}, open(\"'\${report}'\", \"w\"))'
       PYTHONPATH=/opt/recsys/apps/data-platform/src \
-        /opt/venv/bin/python -m mlops.trigger_kubeflow_retrain \
+        python -m mlops.trigger_kubeflow_retrain \
           --drift-report-path \"\${report}\" \
           --disable-retrain \
         | tee /tmp/${synthetic_id}-result.json

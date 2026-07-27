@@ -783,6 +783,7 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
     }
     assert values["flinkTaskManager"]["replicas"] == 2
     assert values["flink"]["taskSlots"] == "1"
+    assert values["flinkAutoscaler"]["taskManagerHpa"]["maxReplicas"] == 2
     assert values["realtimeFlinkConsumer"]["parallelism"] == "1"
 
 
@@ -839,7 +840,7 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
         in deploy_script
     )
     assert (
-        "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-4}"
+        "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-2}"
         in deploy_script
     )
     assert (
@@ -872,6 +873,13 @@ def test_shared_data_release_always_resolves_every_split_image_by_digest():
 
     assert "existing images.${values_key} is not digest-pinned" in deploy_script
     assert "no immutable candidate or existing digest" in deploy_script
+
+
+def test_data_platform_smoke_uses_each_runtime_image_python():
+    source = (ROOT / "jenkins/scripts/test/data_platform.sh").read_text()
+    assert source.count("/opt/venv/bin/python") == 2
+    assert 'env CI_STREAM_EVENT_ID="${event_id}" python -c' in source
+    assert "python -m mlops.trigger_kubeflow_retrain" in source
 
 
 def test_helm_hooks_survive_success_until_the_next_atomic_release():

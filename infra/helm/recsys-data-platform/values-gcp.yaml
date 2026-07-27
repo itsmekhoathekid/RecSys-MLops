@@ -66,8 +66,8 @@ flink:
 
 flinkAutoscaler:
   taskManagerHpa:
-    # Keep two warm workers and allow burst traffic to scale out to four.
-    maxReplicas: 4
+    # The fixed production CPU pool has capacity for two 6 GiB TaskManagers.
+    maxReplicas: 2
 
 redis:
   istioInject: "true"
