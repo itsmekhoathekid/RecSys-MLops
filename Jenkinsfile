@@ -27,6 +27,10 @@ pipeline {
         checkout scm
         sh 'git fetch --no-tags origin +refs/heads/*:refs/remotes/origin/* || true'
         script {
+          env.GIT_COMMIT = sh(
+            returnStdout: true,
+            script: 'git rev-parse HEAD'
+          ).trim()
           componentPipeline = load 'jenkins/pipeline/component_pipeline.groovy'
         }
       }

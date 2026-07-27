@@ -53,6 +53,7 @@ def test_root_jenkins_stage_view_contract_is_unchanged():
     source = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     assert re.findall(r"^\s*stage\('([^']+)'\)", source, flags=re.MULTILINE) == EXPECTED_STAGES
     assert "skipDefaultCheckout(true)" in source
+    assert "script: 'git rev-parse HEAD'" in source
     assert "values_args=(" not in source
     assert "source jenkins/scripts/" not in source
     assert "sh '''#!/usr/bin/env bash" in source
