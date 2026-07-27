@@ -16,6 +16,8 @@ ci_python="${ci_environment}/bin/python"
   exit 2
 }
 export UV_PROJECT_ENVIRONMENT="${ci_environment}"
+export PYSPARK_PYTHON="${ci_python}"
+export PYSPARK_DRIVER_PYTHON="${ci_python}"
 
 has_tests() {
   local path="$1"

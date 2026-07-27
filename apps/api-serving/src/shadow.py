@@ -61,12 +61,18 @@ class ShadowRunner:
         status = "error"
         try:
             async with self._semaphore:
+                inference_start = time.perf_counter()
                 _, scores = await asyncio.wait_for(
                     asyncio.to_thread(route.ranker.score, payload),
                     timeout=self.timeout_seconds,
                 )
-            status = "success"
-            if scores:
+                inference_duration = time.perf_counter() - inference_start
+            status = (
+                "timeout"
+                if inference_duration >= self.timeout_seconds
+                else "success"
+            )
+            if status == "success" and scores:
                 METRICS.observe("recsys_api_shadow_score_mean", float(np.mean(scores)), labels=labels)
                 METRICS.set_gauge("recsys_api_shadow_score_max", float(np.max(scores)), labels=labels)
         except asyncio.TimeoutError:

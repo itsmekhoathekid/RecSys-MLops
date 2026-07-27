@@ -406,6 +406,8 @@ def test_component_ci_syncs_only_locked_profile_dependencies():
     assert "--group dev" in installer
     assert "envs/${profile}" in installer
     assert '"${ci_python}" -m pytest' in component_ci
+    assert 'PYSPARK_PYTHON="${ci_python}"' in component_ci
+    assert 'PYSPARK_DRIVER_PYTHON="${ci_python}"' in component_ci
     assert "uv run --no-sync pytest" not in component_ci
 
 
