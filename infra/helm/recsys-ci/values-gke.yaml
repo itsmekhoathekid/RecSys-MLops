@@ -40,7 +40,7 @@ jenkins:
     enabled: true
   pvc:
     volumeName: ""
-    storage: 150Gi
+    storage: 200Gi
     storageClassName: standard-rwo
 
 modelRolloutWatcher:
