@@ -82,7 +82,7 @@
       "name": "kserve",
       "flag": "RUN_KSERVE",
       "label": "KServe Inference Engine",
-      "ciProfile": "serving",
+      "ciProfile": "ml",
       "buildProfile": "none",
       "deployProfile": "kserve",
       "testProfile": "kserve",

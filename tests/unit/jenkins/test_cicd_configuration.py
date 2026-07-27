@@ -73,7 +73,12 @@ def test_gcp_production_target_is_strict_and_self_consistent():
 
 def test_component_ci_profiles_use_repo_locks():
     profiles = configuration.load_ci_environments()
+    components = {
+        component["name"]: component for component in configuration.load_components()
+    }
     assert set(profiles) == {"data", "ml", "serving", "demo", "analytics"}
+    assert components["api"]["ciProfile"] == "serving"
+    assert components["kserve"]["ciProfile"] == "ml"
     for profile in profiles.values():
         assert profile["lockFile"].endswith("/uv.lock")
         assert (ROOT / profile["lockFile"]).is_file()
@@ -120,6 +125,7 @@ def test_modular_docker_builder_owns_exactly_the_seventeen_images():
     assert "BUILD_COMPONENT}-$$" in engine
     assert "already failed in this build" in engine
     assert "BUILD_SCAN_REPORT_DIR" in engine
+    assert "container_scan_policy.py" in engine
 
 
 def test_prometheus_operator_is_pinned_and_operator_only():

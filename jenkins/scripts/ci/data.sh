@@ -39,7 +39,7 @@ ci_dp3() {
 ci_drift() {
   tests=(tests/unit/data_generator/test_drift_reporting_unit.py)
   append_integration_dir drift
-  cov_paths=(drift.controller drift.reporting)
+  cov_paths=(drift)
   component_pytest "${component}" "apps/data-platform/data-generator/src:apps/data-platform/src"
   run_plain_pytest "drift-data-platform" "apps/data-platform/src:apps/data-platform/data-generator/src" tests/unit/data_platform/test_data_platform.py
 }

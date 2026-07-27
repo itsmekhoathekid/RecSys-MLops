@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import datetime as dt
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from jenkins.python.container_scan_policy import evaluate
+
+
+def policy() -> dict:
+    return json.loads(
+        (ROOT / "jenkins/config/container-scan-policy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+
+def report(result_type: str, *severities: str) -> dict:
+    return {
+        "Results": [
+            {
+                "Target": "image",
+                "Type": result_type,
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": f"CVE-test-{index}",
+                        "PkgName": "dependency",
+                        "Severity": severity,
+                    }
+                    for index, severity in enumerate(severities)
+                ],
+            }
+        ]
+    }
+
+
+def test_python_and_os_vulnerabilities_remain_blocking():
+    rejected, accepted = evaluate(
+        "recsys-spark",
+        report("python-pkg", "HIGH", "CRITICAL"),
+        policy(),
+        today=dt.date(2026, 7, 27),
+    )
+    assert len(rejected) == 2
+    assert accepted == {"HIGH": 0, "CRITICAL": 0}
+
+
+def test_vendor_java_baseline_is_bounded_and_expiring():
+    rejected, accepted = evaluate(
+        "recsys-flink",
+        report("jar", "HIGH", "CRITICAL"),
+        policy(),
+        today=dt.date(2026, 7, 27),
+    )
+    assert rejected == []
+    assert accepted == {"HIGH": 1, "CRITICAL": 1}
+
+    with pytest.raises(ValueError, match="expired"):
+        evaluate(
+            "recsys-flink",
+            report("jar", "HIGH"),
+            policy(),
+            today=dt.date(2026, 9, 1),
+        )
+
+
+def test_unlisted_images_cannot_use_vendor_exception():
+    rejected, accepted = evaluate(
+        "recsys-api-serving",
+        report("jar", "CRITICAL"),
+        policy(),
+        today=dt.date(2026, 7, 27),
+    )
+    assert len(rejected) == 1
+    assert accepted == {"HIGH": 0, "CRITICAL": 0}

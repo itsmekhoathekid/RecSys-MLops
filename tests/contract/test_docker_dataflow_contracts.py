@@ -99,7 +99,7 @@ def test_spark_and_flink_images_include_runtime_dependencies_without_pandas():
     drift_retrain = (ROOT / "apps/data-platform/Dockerfile.drift-retrain").read_text()
     assert "iceberg-spark-runtime-3.5_2.12" in spark_dockerfile
     assert "hudi-spark3.5-bundle_2.12" in spark_dockerfile
-    assert "flink:2.2.0-java17" in flink_dockerfile
+    assert "flink:2.2.1-java17" in flink_dockerfile
     assert "flink-connector-kafka" in flink_runtime_pom
     assert "flink-statebackend-rocksdb" in flink_runtime_pom
     assert "flink-autoscaler-standalone" in flink_dockerfile

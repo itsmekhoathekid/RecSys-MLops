@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "blockingSeverities": ["HIGH", "CRITICAL"],
+  "exceptions": {
+    "recsys-spark": {
+      "types": ["jar"],
+      "maxHigh": 145,
+      "maxCritical": 24,
+      "expiresOn": "2026-08-31",
+      "owner": "data-platform",
+      "reason": "Apache Spark 3.5/Hudi vendor bundles; migrate to the remediated Spark/Hudi line before expiry."
+    },
+    "recsys-mlops-spark": {
+      "types": ["jar"],
+      "maxHigh": 145,
+      "maxCritical": 24,
+      "expiresOn": "2026-08-31",
+      "owner": "ml-platform",
+      "reason": "Inherits the approved recsys-spark vendor bundle while the Spark/Hudi upgrade is validated."
+    },
+    "recsys-analytics-spark": {
+      "types": ["jar"],
+      "maxHigh": 145,
+      "maxCritical": 24,
+      "expiresOn": "2026-08-31",
+      "owner": "analytics",
+      "reason": "Inherits the approved recsys-spark vendor bundle while the Spark/Hudi upgrade is validated."
+    },
+    "recsys-flink": {
+      "types": ["jar"],
+      "maxHigh": 43,
+      "maxCritical": 1,
+      "expiresOn": "2026-08-31",
+      "owner": "data-platform",
+      "reason": "Apache Flink/Hadoop vendor bundles; upgrade and re-baseline before expiry."
+    }
+  }
+}

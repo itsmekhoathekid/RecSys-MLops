@@ -1,4 +1,4 @@
-FROM flink:2.2.0-java17 AS jar-downloader
+FROM flink:2.2.1-java17 AS jar-downloader
 
 USER root
 ARG DOWNLOAD_JOBS=4
@@ -29,7 +29,7 @@ RUN curl -fsSL \
     "https://repo1.maven.org/maven2/org/apache/flink/flink-autoscaler-standalone/${FLINK_AUTOSCALER_VERSION}/flink-autoscaler-standalone-${FLINK_AUTOSCALER_VERSION}.jar" \
     -o "/tmp/recsys-tools/flink-autoscaler-standalone-${FLINK_AUTOSCALER_VERSION}.jar"
 
-FROM flink:2.2.0-java17 AS runtime
+FROM flink:2.2.1-java17 AS runtime
 
 USER root
 WORKDIR /opt/recsys
@@ -73,7 +73,7 @@ COPY --from=jar-downloader /tmp/recsys-tools /opt/flink/autoscaler
 
 RUN mkdir -p /opt/flink/plugins/s3-fs-hadoop \
     && cp /opt/flink/opt/flink-s3-fs-hadoop-*.jar /opt/flink/plugins/s3-fs-hadoop/ \
-    && test -f /opt/flink/plugins/metrics-prometheus/flink-metrics-prometheus-2.2.0.jar
+    && test -f /opt/flink/plugins/metrics-prometheus/flink-metrics-prometheus-*.jar
 
 RUN python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python \
     && chmod +x /opt/flink/opt/python/pyflink/bin/*.sh

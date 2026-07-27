@@ -53,16 +53,19 @@ build_publish_shared_manifest() {
 build_scan_image() {
   local image="$1"
   local image_name="$2"
-  local scan_report="${BUILD_SCAN_REPORT_DIR}/${image_name}.log"
+  local scan_report="${BUILD_SCAN_REPORT_DIR}/${image_name}.json"
   if ! recsys_is_true "${BUILD_SCAN_ENABLED}"; then
     recsys_log "skip vulnerability scan for ${image}; CONTAINER_SCAN_ENABLED=${BUILD_SCAN_ENABLED}"
     return 0
   fi
 
-  local args=(image --exit-code 1 --ignore-unfixed --scanners vuln --severity HIGH,CRITICAL "${image}")
+  local args=(image --exit-code 0 --ignore-unfixed --scanners vuln --format json "${image}")
   if command -v trivy >/dev/null 2>&1; then
-    trivy "${args[@]}" 2>&1 | tee "${scan_report}"
-    return "${PIPESTATUS[0]}"
+    trivy "${args[@]}" >"${scan_report}"
+    python3 jenkins/python/container_scan_policy.py \
+      --image-name "${image_name}" \
+      --report "${scan_report}"
+    return
   fi
 
   local archive="${BUILD_MANIFEST_DIR}/${image_name}-${BUILD_IMAGE_TAG}-${BUILD_COMPONENT}-$$.tar"
@@ -71,12 +74,17 @@ build_scan_image() {
   docker save --output "${archive}" "${image}"
   docker rm -f "${scan_container}" >/dev/null 2>&1 || true
   docker create --name "${scan_container}" aquasec/trivy:0.58.2 \
-    image --exit-code 1 --ignore-unfixed --scanners vuln --severity HIGH,CRITICAL \
-    --input /image.tar >/dev/null
+    image --exit-code 0 --ignore-unfixed --scanners vuln --format json \
+    --output /scan.json --input /image.tar >/dev/null
   docker cp "${archive}" "${scan_container}:/image.tar"
   local scan_status=0
-  docker start -a "${scan_container}" 2>&1 | tee "${scan_report}"
-  scan_status="${PIPESTATUS[0]}"
+  docker start -a "${scan_container}" || scan_status=$?
+  if [[ "${scan_status}" -eq 0 ]]; then
+    docker cp "${scan_container}:/scan.json" "${scan_report}"
+    python3 jenkins/python/container_scan_policy.py \
+      --image-name "${image_name}" \
+      --report "${scan_report}" || scan_status=$?
+  fi
   docker rm -f "${scan_container}" >/dev/null 2>&1 || true
   rm -f "${archive}"
   return "${scan_status}"
