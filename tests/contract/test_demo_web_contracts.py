@@ -143,3 +143,10 @@ def test_jenkins_seeds_demo_view_cicd_and_rollback_jobs() -> None:
     assert ".demo-web/**/*" in (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     assert 'build_image "recsys-demo-api"' in build
     assert 'build_image "recsys-demo-web"' in build
+
+
+def test_demo_frontend_container_cleanup_is_scope_safe() -> None:
+    source = (ROOT / "jenkins/scripts/ci/demo.sh").read_text(encoding="utf-8")
+
+    assert '${frontend_container:-}' in source
+    assert "cleanup_demo_frontend\n    trap - EXIT" in source

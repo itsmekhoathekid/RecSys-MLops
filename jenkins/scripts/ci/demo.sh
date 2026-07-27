@@ -35,7 +35,9 @@ ci_demo_web() {
     docker cp apps/demo-web/frontend/. "${frontend_container}:/workspace/apps/demo-web/frontend"
     docker cp apps/demo-web/backend/openapi.json "${frontend_container}:/workspace/apps/demo-web/backend/openapi.json"
     cleanup_demo_frontend() {
-      docker rm -f "${frontend_container}" >/dev/null 2>&1 || true
+      if [[ -n "${frontend_container:-}" ]]; then
+        docker rm -f "${frontend_container}" >/dev/null 2>&1 || true
+      fi
     }
     trap cleanup_demo_frontend EXIT
     run_demo_frontend() {
@@ -55,6 +57,10 @@ ci_demo_web() {
   run_demo_frontend npm run build
   mkdir -p "${reports_dir}/coverage/demo_web_frontend"
   copy_demo_frontend_coverage
+  if declare -F cleanup_demo_frontend >/dev/null 2>&1; then
+    cleanup_demo_frontend
+    trap - EXIT
+  fi
   helm lint infra/helm/recsys-demo-web -f infra/helm/recsys-demo-web/values-gcp.yaml
   helm template recsys-demo-web infra/helm/recsys-demo-web \
     -f infra/helm/recsys-demo-web/values-gcp.yaml --namespace api-serving >/dev/null
