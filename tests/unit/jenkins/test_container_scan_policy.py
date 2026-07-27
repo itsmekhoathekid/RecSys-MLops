@@ -167,3 +167,22 @@ def test_superset_cryptography_exception_does_not_allow_other_packages():
     )
     assert [item["package"] for item in rejected] == ["pyOpenSSL"]
     assert accepted == {"HIGH": 1, "CRITICAL": 0}
+
+
+def test_training_ray_jar_baseline_is_bounded():
+    rejected, accepted = evaluate(
+        "recsys-mlops-training",
+        report("jar", "HIGH", "HIGH", "HIGH"),
+        policy(),
+        today=dt.date(2026, 7, 28),
+    )
+    assert rejected == []
+    assert accepted == {"HIGH": 3, "CRITICAL": 0}
+
+    with pytest.raises(ValueError, match="baseline exceeded"):
+        evaluate(
+            "recsys-mlops-training",
+            report("jar", "HIGH", "HIGH", "HIGH", "HIGH"),
+            policy(),
+            today=dt.date(2026, 7, 28),
+        )

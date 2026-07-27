@@ -20,5 +20,7 @@ RUN uv pip install --python /app/.venv/bin/python \
     "psycopg2-binary==2.9.12" \
     "urllib3==2.7.0" \
     "wheel==0.46.2"
+RUN /usr/local/bin/pip uninstall -y wheel setuptools jaraco.context \
+    && /usr/local/bin/pip uninstall -y pip
 COPY apps/analytics/superset/bootstrap_dashboards.py /app/pythonpath/bootstrap_dashboards.py
 USER superset

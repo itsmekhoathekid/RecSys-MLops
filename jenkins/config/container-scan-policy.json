@@ -18,6 +18,14 @@
       "owner": "ml-platform",
       "reason": "Inherits the approved recsys-spark vendor bundle while the Spark/Hudi upgrade is validated."
     },
+    "recsys-mlops-training": {
+      "types": ["jar"],
+      "maxHigh": 3,
+      "maxCritical": 0,
+      "expiresOn": "2026-08-31",
+      "owner": "ml-platform",
+      "reason": "Ray 2.56.1 vendor ray_dist.jar still embeds Jackson 2.18.6; upgrade when the upstream Ray bundle is remediated."
+    },
     "recsys-analytics-spark": {
       "types": ["jar"],
       "maxHigh": 147,
