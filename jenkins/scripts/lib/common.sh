@@ -27,6 +27,29 @@ recsys_require_command() {
   }
 }
 
+recsys_retry() {
+  local max_attempts="$1"
+  local delay_seconds="$2"
+  shift 2
+  local attempt=1
+  local status=0
+
+  while true; do
+    if "$@"; then
+      return 0
+    else
+      status=$?
+    fi
+    if ((attempt >= max_attempts)); then
+      recsys_error "command failed after ${attempt} attempts: $*"
+      return "${status}"
+    fi
+    recsys_log "command failed on attempt ${attempt}/${max_attempts}; retrying in ${delay_seconds}s: $*"
+    sleep "${delay_seconds}"
+    attempt=$((attempt + 1))
+  done
+}
+
 recsys_repo_root() {
   git rev-parse --show-toplevel
 }

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+source jenkins/scripts/lib/common.sh
+
 component="${1:?component is required}"
 coverage_min="${COVERAGE_MIN:-90}"
 reports_dir="${REPORTS_DIR:-reports}"

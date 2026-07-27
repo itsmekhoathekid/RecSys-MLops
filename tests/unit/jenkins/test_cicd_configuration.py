@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -83,6 +84,29 @@ def test_component_ci_profiles_use_repo_locks():
         assert profile["lockFile"].endswith("/uv.lock")
         assert (ROOT / profile["lockFile"]).is_file()
         assert (ROOT / profile["projectPath"] / "pyproject.toml").is_file()
+
+
+def test_external_ci_audits_use_bounded_retry():
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "source jenkins/scripts/lib/common.sh; "
+                "attempts=0; "
+                "flaky() { attempts=$((attempts + 1)); [[ $attempts -ge 3 ]]; }; "
+                "recsys_retry 3 0 flaky; "
+                'printf "%s" "$attempts"'
+            ),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.stdout.endswith("3")
+    demo_ci = (ROOT / "jenkins/scripts/ci/demo.sh").read_text(encoding="utf-8")
+    assert demo_ci.count("CI_AUDIT_MAX_ATTEMPTS") == 3
 
 
 def test_catalog_contains_only_supported_migration_policies():

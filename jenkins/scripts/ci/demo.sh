@@ -6,7 +6,10 @@ ci_demo_web() {
     apps/demo-web/backend/app apps/demo-web/backend/tests
   PYTHONPATH=apps/demo-web/backend "${ci_python}" -m ruff format --check \
     apps/demo-web/backend/app apps/demo-web/backend/tests
-  "${ci_python}" -m pip_audit
+  recsys_retry \
+    "${CI_AUDIT_MAX_ATTEMPTS:-3}" \
+    "${CI_AUDIT_RETRY_DELAY_SECONDS:-5}" \
+    "${ci_python}" -m pip_audit
   PYTHONPATH=apps/demo-web/backend "${ci_python}" -m pytest \
     apps/demo-web/backend/tests tests/contract/test_demo_web_contracts.py -q \
     --cov=apps/demo-web/backend/app \
@@ -46,8 +49,14 @@ ci_demo_web() {
         "${reports_dir}/coverage/demo_web_frontend/"
     }
   fi
-  run_demo_frontend npm ci
-  run_demo_frontend npm audit --audit-level=high
+  recsys_retry \
+    "${CI_AUDIT_MAX_ATTEMPTS:-3}" \
+    "${CI_AUDIT_RETRY_DELAY_SECONDS:-5}" \
+    run_demo_frontend npm ci
+  recsys_retry \
+    "${CI_AUDIT_MAX_ATTEMPTS:-3}" \
+    "${CI_AUDIT_RETRY_DELAY_SECONDS:-5}" \
+    run_demo_frontend npm audit --audit-level=high
   run_demo_frontend npm run lint
   run_demo_frontend npm run format:check
   run_demo_frontend npm run typecheck
