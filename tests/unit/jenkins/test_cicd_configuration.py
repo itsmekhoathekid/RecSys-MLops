@@ -105,6 +105,10 @@ def test_modular_docker_builder_owns_exactly_the_seventeen_images():
         "recsys-analytics-dbt",
         "recsys-analytics-superset",
     }
+    engine = (ROOT / "jenkins/scripts/build/engine.sh").read_text(encoding="utf-8")
+    assert "flock -w" in engine
+    assert "build_reuse_shared_image" in engine
+    assert "BUILD_COMPONENT}-$$" in engine
 
 
 def test_prometheus_operator_is_pinned_and_operator_only():

@@ -4,6 +4,52 @@ build_record_image() {
   image_manifest_record "${BUILD_MANIFEST_PATH}" "$1" "$2"
 }
 
+build_reuse_shared_image() {
+  local name="$1"
+  local image_key="$2"
+  local local_image="$3"
+  local shared_manifest="$4"
+  local remote_image=""
+  local digest=""
+
+  [[ -s "${shared_manifest}" ]] || return 1
+  remote_image="$(
+    awk -F= -v key="${image_key}_IMAGE" \
+      '$1 == key {sub(/^[^=]*=/, "", $0); print; exit}' "${shared_manifest}"
+  )"
+  digest="$(
+    awk -F= -v key="${image_key}_DIGEST" \
+      '$1 == key {sub(/^[^=]*=/, "", $0); print; exit}' "${shared_manifest}"
+  )"
+  [[ -n "${remote_image}" ]] || return 1
+  if recsys_is_true "${BUILD_PUBLISH_IMAGES}"; then
+    [[ "${digest}" == "${BUILD_IMAGE_REGISTRY}/${name}@"sha256:* ]] || return 1
+  fi
+
+  if ! docker image inspect "${local_image}" >/dev/null 2>&1; then
+    [[ -n "${digest}" ]] || return 1
+    docker pull "${digest}" >/dev/null
+    docker tag "${digest}" "${local_image}"
+  fi
+  build_record_image "${image_key}_IMAGE" "${remote_image}"
+  if [[ -n "${digest}" ]]; then
+    build_record_image "${image_key}_DIGEST" "${digest}"
+  fi
+  recsys_log "reused build result for ${name}:${BUILD_IMAGE_TAG}"
+}
+
+build_publish_shared_manifest() {
+  local image_key="$1"
+  local shared_manifest="$2"
+  local temporary_manifest="${shared_manifest}.tmp.${BUILD_COMPONENT}.$$"
+
+  awk -F= -v image_key="${image_key}_IMAGE" -v digest_key="${image_key}_DIGEST" \
+    '$1 == image_key || $1 == digest_key' \
+    "${BUILD_MANIFEST_PATH}" >"${temporary_manifest}"
+  [[ -s "${temporary_manifest}" ]]
+  mv -f "${temporary_manifest}" "${shared_manifest}"
+}
+
 build_scan_image() {
   local image="$1"
   local image_name="$2"
@@ -18,8 +64,8 @@ build_scan_image() {
     return
   fi
 
-  local archive="${BUILD_MANIFEST_DIR}/${image_name}-${BUILD_IMAGE_TAG}.tar"
-  local scan_container="trivy-${image_name}-${BUILD_NUMBER:-$$}"
+  local archive="${BUILD_MANIFEST_DIR}/${image_name}-${BUILD_IMAGE_TAG}-${BUILD_COMPONENT}-$$.tar"
+  local scan_container="trivy-${image_name}-${BUILD_NUMBER:-manual}-${BUILD_COMPONENT}-$$"
   scan_container="${scan_container//[^a-zA-Z0-9_.-]/-}"
   docker save --output "${archive}" "${image}"
   docker rm -f "${scan_container}" >/dev/null 2>&1 || true
@@ -42,29 +88,36 @@ build_refresh_registry_login() {
   recsys_log "refreshed Docker login for ${BUILD_REGISTRY_HOST}"
 }
 
-build_image() {
+build_image_locked() {
   local name="$1"
   local dockerfile="$2"
   shift 2
   local local_image="${name}:${BUILD_IMAGE_TAG}"
   local remote_image="${BUILD_IMAGE_REGISTRY}/${name}:${BUILD_IMAGE_TAG}"
   local image_key
+  local shared_manifest
   local digest=""
   local digest_hash=""
   local push_log=""
+
+  image_key="$(image_manifest_key "${name}")"
+  shared_manifest="${BUILD_SHARED_MANIFEST_DIR}/${name}.env"
+  if build_reuse_shared_image \
+    "${name}" "${image_key}" "${local_image}" "${shared_manifest}"; then
+    return 0
+  fi
 
   docker build --platform "${BUILD_DOCKER_PLATFORM}" "$@" \
     -f "${dockerfile}" \
     -t "${local_image}" .
   docker tag "${local_image}" "${remote_image}"
-  image_key="$(image_manifest_key "${name}")"
   build_record_image "${image_key}_IMAGE" "${remote_image}"
 
   build_scan_image "${local_image}" "${name}"
 
   if recsys_is_true "${BUILD_PUBLISH_IMAGES}"; then
     build_refresh_registry_login
-    push_log="${BUILD_MANIFEST_DIR}/push-${name}-${BUILD_IMAGE_TAG}.log"
+    push_log="${BUILD_MANIFEST_DIR}/push-${name}-${BUILD_IMAGE_TAG}-${BUILD_COMPONENT}-$$.log"
     docker push "${remote_image}" | tee "${push_log}"
     digest_hash="$(awk '/digest: sha256:/ {print $2}' "${push_log}" | tail -n 1)"
     digest="$(
@@ -86,6 +139,28 @@ build_image() {
   else
     recsys_log "skip docker push for ${remote_image}; PUBLISH_IMAGES=${BUILD_PUBLISH_IMAGES}"
   fi
+  build_publish_shared_manifest "${image_key}" "${shared_manifest}"
+}
+
+build_image() {
+  local name="$1"
+  local lock_root="${BUILD_LOCK_ROOT:-${JENKINS_HOME:-.ci-build-locks}/ci-build-locks}"
+  local lock_path
+
+  mkdir -p "${lock_root}" "${BUILD_SHARED_MANIFEST_DIR}"
+  lock_path="${lock_root}/$(recsys_slug "${name}-${BUILD_IMAGE_TAG}").lock"
+  if command -v flock >/dev/null 2>&1; then
+    (
+      flock -w "${BUILD_LOCK_TIMEOUT_SECONDS:-3600}" 9
+      build_image_locked "$@"
+    ) 9>"${lock_path}"
+    return
+  fi
+  if recsys_is_true "${BUILD_REQUIRE_GCP}"; then
+    recsys_error "flock is required for production image build deduplication"
+    return 2
+  fi
+  build_image_locked "$@"
 }
 
 build_ensure_base_python() {
