@@ -25,13 +25,13 @@ dataSetup:
   realtimeLimitPerTable: "1000"
 
 spark:
-  driverMemory: 2g
-  driverMemoryOverhead: 1g
+  driverMemory: 1g
+  driverMemoryOverhead: 512m
   driverCores: "1"
   driverRequestCores: 100m
   executorInstances: "1"
-  executorMemory: 1536m
-  executorMemoryOverhead: 1536m
+  executorMemory: 1g
+  executorMemoryOverhead: 512m
   executorCores: "1"
   executorRequestCores: 100m
   dynamicAllocation:
@@ -54,19 +54,23 @@ flinkTaskManager:
   resources:
     requests:
       cpu: 500m
-      memory: 6Gi
+      memory: 4Gi
     limits:
       cpu: "2"
-      memory: 10Gi
+      memory: 8Gi
 
 flink:
   istioInject: "true"
   # One slot per TaskManager guarantees the online and offline jobs are isolated.
   taskSlots: "1"
+  taskManagerProcessMemory: 4096m
+  taskManagerTaskHeapMemory: 2048m
+  taskManagerManagedMemory: 512m
+  taskManagerJvmOverheadMax: 1024m
 
 flinkAutoscaler:
   taskManagerHpa:
-    # The fixed production CPU pool has capacity for two 6 GiB TaskManagers.
+    # Reserve enough CPU-pool memory for one concurrent Spark driver/executor pair.
     maxReplicas: 2
 
 redis:

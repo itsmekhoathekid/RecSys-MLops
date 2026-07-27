@@ -168,7 +168,7 @@ database_rollback_airflow_migration() {
     return 2
   }
 
-  pod_name="$(recsys_slug "airflow-db-rollback-${TX_ID}")"
+  pod_name="$(recsys_slug "airflow-db-rollback-${TX_ID}" | tr '[:upper:]' '[:lower:]')"
   pod_name="${pod_name:0:63}"
   pod_name="${pod_name%-}"
   kubectl delete pod "${pod_name}" -n "${namespace}" --ignore-not-found --wait=true

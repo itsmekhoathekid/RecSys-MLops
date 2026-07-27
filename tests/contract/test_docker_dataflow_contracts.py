@@ -505,8 +505,10 @@ def test_airflow_major_version_migration_has_typed_rollback_compensation():
     assert "database_snapshot_airflow_migration" in deploy
     assert "airflow-database-migration" in database
     assert "airflow db downgrade --to-version" in database
+    assert "| tr '[:upper:]' '[:lower:]'" in database
     assert "database_rollback_airflow_migration" in transaction
     assert "retrying legacy Helm rollback without hooks" in transaction
+    assert "tx_components_sharing_locks" in transaction
 
 
 def test_component_deploy_preserves_spark_byte_size_as_integer_string():
@@ -780,11 +782,11 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
     values = yaml.safe_load(
         (ROOT / "infra/helm/recsys-data-platform/values-gcp.yaml").read_text()
     )
-    assert values["spark"]["driverMemory"] == "2g"
-    assert values["spark"]["driverMemoryOverhead"] == "1g"
+    assert values["spark"]["driverMemory"] == "1g"
+    assert values["spark"]["driverMemoryOverhead"] == "512m"
     assert values["spark"]["executorInstances"] == "1"
-    assert values["spark"]["executorMemory"] == "1536m"
-    assert values["spark"]["executorMemoryOverhead"] == "1536m"
+    assert values["spark"]["executorMemory"] == "1g"
+    assert values["spark"]["executorMemoryOverhead"] == "512m"
     assert values["spark"]["dynamicAllocation"] == {
         "enabled": False,
         "shuffleTrackingEnabled": True,
@@ -796,7 +798,13 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
         "sustainedSchedulerBacklogTimeout": "1s",
     }
     assert values["flinkTaskManager"]["replicas"] == 2
+    assert values["flinkTaskManager"]["resources"]["requests"]["memory"] == "4Gi"
+    assert values["flinkTaskManager"]["resources"]["limits"]["memory"] == "8Gi"
     assert values["flink"]["taskSlots"] == "1"
+    assert values["flink"]["taskManagerProcessMemory"] == "4096m"
+    assert values["flink"]["taskManagerTaskHeapMemory"] == "2048m"
+    assert values["flink"]["taskManagerManagedMemory"] == "512m"
+    assert values["flink"]["taskManagerJvmOverheadMax"] == "1024m"
     assert values["flinkAutoscaler"]["taskManagerHpa"]["maxReplicas"] == 2
     assert values["realtimeFlinkConsumer"]["parallelism"] == "1"
 
@@ -820,14 +828,14 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
     assert offset_override not in shared_deploy
     assert offset_override in online_deploy
     assert offset_override in all_deploy
-    assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-2g}" in deploy_script
+    assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-1g}" in deploy_script
     assert (
-        "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-1g}"
+        "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-512m}"
         in deploy_script
     )
-    assert "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1536m}" in deploy_script
+    assert "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1g}" in deploy_script
     assert (
-        "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-1536m}"
+        "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-512m}"
         in deploy_script
     )
     assert (
@@ -844,6 +852,14 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
     )
     assert "kafka.topicPartitions=${KAFKA_TOPIC_PARTITIONS:-4}" in deploy_script
     assert "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-2}" in deploy_script
+    assert (
+        "flinkTaskManager.resources.requests.memory="
+        "${FLINK_TASKMANAGER_REQUEST_MEMORY:-4Gi}"
+    ) in deploy_script
+    assert (
+        "flink.taskManagerProcessMemory="
+        "${FLINK_TASKMANAGER_PROCESS_MEMORY:-4096m}"
+    ) in deploy_script
     assert "flink.taskSlots=${FLINK_TASK_SLOTS:-1}" in deploy_script
     assert "flink.disableJemalloc=${FLINK_DISABLE_JEMALLOC:-true}" in deploy_script
     assert "flink.scheduler=${FLINK_SCHEDULER:-adaptive}" in deploy_script

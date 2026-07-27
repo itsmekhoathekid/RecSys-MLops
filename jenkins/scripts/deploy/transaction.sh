@@ -66,6 +66,28 @@ tx_component_lock_names() {
   esac | LC_ALL=C sort -u
 }
 
+tx_known_components() {
+  printf '%s\n' \
+    analytics api demo_web dp1 dp2 dp3 drift kserve kserve_model_cd \
+    materialize mlflow rollout spark_batch stream_offline stream_online training
+}
+
+tx_components_sharing_locks() {
+  local component="$1"
+  local candidate
+  local target_locks
+  target_locks="$(tx_component_lock_names "${component}")"
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" ]] || continue
+    if comm -12 \
+      <(printf '%s\n' "${target_locks}" | LC_ALL=C sort -u) \
+      <(tx_component_lock_names "${candidate}") \
+      | grep -q .; then
+      printf '%s\n' "${candidate}"
+    fi
+  done < <(tx_known_components)
+}
+
 tx_acquire_component_locks() {
   local component="$1"
   local lock_root="${DEPLOY_LOCK_ROOT:-${JENKINS_HOME:-.ci-locks}/ci-locks}"
@@ -151,11 +173,16 @@ tx_begin() {
   local git_sha="${IMAGE_TAG:-${GIT_COMMIT:-unknown}}"
   local job_slug
   local build_slug
+  local shared_component
   TX_COMPONENT="${component}"
   TX_STATE_ROOT="$(tx_state_root)"
   mkdir -p "${TX_STATE_ROOT}"
   tx_acquire_component_locks "${component}"
-  tx_recover_component "${component}" "${TX_STATE_ROOT}"
+  while IFS= read -r shared_component; do
+    [[ -n "${shared_component}" ]] || continue
+    tx_recover_component "${shared_component}" "${TX_STATE_ROOT}"
+  done < <(tx_components_sharing_locks "${component}")
+  TX_COMPONENT="${component}"
   job_slug="$(recsys_slug "${JOB_NAME:-local}")"
   build_slug="$(recsys_slug "${BUILD_NUMBER:-manual}")"
   TX_ID="${job_slug}-${build_slug}-$(recsys_slug "${component}")-$(recsys_slug "${git_sha}")"
