@@ -54,6 +54,7 @@ def test_root_jenkins_stage_view_contract_is_unchanged():
     assert re.findall(r"^\s*stage\('([^']+)'\)", source, flags=re.MULTILINE) == EXPECTED_STAGES
     assert "skipDefaultCheckout(true)" in source
     assert "values_args=(" not in source
+    assert "source jenkins/scripts/" not in source
 
 
 def test_gcp_production_target_is_strict_and_self_consistent():

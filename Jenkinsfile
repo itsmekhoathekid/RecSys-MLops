@@ -154,9 +154,9 @@ pipeline {
         sh '''
           set +x
           set -euo pipefail
-          source jenkins/scripts/lib/common.sh
-          source jenkins/scripts/lib/gcp.sh
-          source jenkins/scripts/lib/registry.sh
+          . jenkins/scripts/lib/common.sh
+          . jenkins/scripts/lib/gcp.sh
+          . jenkins/scripts/lib/registry.sh
           python3 jenkins/python/configuration.py validate
           gcp_verify_production_target
           gcp_verify_workload_identity
