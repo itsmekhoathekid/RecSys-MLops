@@ -85,14 +85,18 @@ pipeline {
           python3 jenkins/python/configuration.py validate
           for chart_file in infra/helm/*/Chart.yaml; do
             chart_dir="$(dirname "${chart_file}")"
-            values_args=()
             if [ -f "${chart_dir}/values-gcp.yaml" ]; then
-              values_args=(-f "${chart_dir}/values-gcp.yaml")
+              helm lint "${chart_dir}" -f "${chart_dir}/values-gcp.yaml"
+              helm template validation "${chart_dir}" \
+                -f "${chart_dir}/values-gcp.yaml" >/dev/null
             elif [ "${chart_dir}" = "infra/helm/recsys-ci" ]; then
-              values_args=(-f "${chart_dir}/values-gke.yaml")
+              helm lint "${chart_dir}" -f "${chart_dir}/values-gke.yaml"
+              helm template validation "${chart_dir}" \
+                -f "${chart_dir}/values-gke.yaml" >/dev/null
+            else
+              helm lint "${chart_dir}"
+              helm template validation "${chart_dir}" >/dev/null
             fi
-            helm lint "${chart_dir}" "${values_args[@]}"
-            helm template validation "${chart_dir}" "${values_args[@]}" >/dev/null
           done
         '''
       }
