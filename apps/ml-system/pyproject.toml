@@ -27,6 +27,7 @@ dependencies = [
     "ray[default,train,tune]>=2.40.0",
     "recsys-data-platform",
     "s3fs==2024.10.0",
+    "setuptools==83.0.0",
     "torch>=2.11.0",
     "tqdm>=4.67.3",
     "wheel==0.46.2",

@@ -1,8 +1,24 @@
 FROM apache/superset:6.0.0
 
 USER root
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
 RUN uv pip install --python /app/.venv/bin/python \
+    "Brotli==1.2.0" \
+    "Mako==1.3.12" \
+    "PyJWT==2.13.0" \
+    "cryptography==48.0.1" \
+    "jaraco.context==6.1.0" \
+    "msgpack==1.2.1" \
+    "pillow==12.3.0" \
+    "pyOpenSSL==26.0.0" \
+    "pyarrow==23.0.1" \
+    "pyasn1==0.6.4" \
+    "setuptools==83.0.0" \
     "trino==0.338.0" \
-    "psycopg2-binary==2.9.12"
+    "psycopg2-binary==2.9.12" \
+    "urllib3==2.7.0" \
+    "wheel==0.46.2"
 COPY apps/analytics/superset/bootstrap_dashboards.py /app/pythonpath/bootstrap_dashboards.py
 USER superset

@@ -7,6 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN pip install \
     "dbt-trino==${DBT_TRINO_VERSION}" \
+    "setuptools==83.0.0" \
     "wheel==0.46.2" \
     "jaraco.context==6.1.0"
 WORKDIR /opt/recsys/apps/analytics

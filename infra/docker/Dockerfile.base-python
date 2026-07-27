@@ -16,6 +16,7 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir \
         uv \
+        setuptools==83.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0
 

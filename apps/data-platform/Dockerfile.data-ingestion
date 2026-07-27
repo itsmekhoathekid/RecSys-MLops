@@ -20,6 +20,7 @@ RUN python -m venv /opt/venv \
         requests \
         s3fs==2024.10.0 \
         tqdm \
+        setuptools==83.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0
 

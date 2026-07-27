@@ -17,6 +17,7 @@ dependencies = [
   "psycopg-pool>=3.3.1,<4",
   "pydantic>=2.10,<3",
   "redis>=5,<8",
+  "setuptools==83.0.0",
   "tritonclient[grpc]>=2.54,<3",
   "uvicorn>=0.34,<1",
   "wheel==0.46.2",

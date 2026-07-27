@@ -5290,6 +5290,7 @@ version = "0.1.0"
 source = { editable = "../data-platform" }
 dependencies = [
     { name = "boto3" },
+    { name = "cryptography" },
     { name = "evidently" },
     { name = "feast", extra = ["redis"] },
     { name = "fsspec" },
@@ -5309,12 +5310,14 @@ dependencies = [
     { name = "requests", version = "2.33.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' and python_full_version < '3.14'" },
     { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or python_full_version >= '3.14'" },
     { name = "s3fs" },
+    { name = "setuptools" },
     { name = "wheel" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = "==1.35.36" },
+    { name = "cryptography", specifier = "==48.0.1" },
     { name = "evidently", specifier = ">=0.7.0" },
     { name = "feast", extras = ["redis"], specifier = "==0.64.0" },
     { name = "fsspec", specifier = "==2024.10.0" },
@@ -5332,6 +5335,7 @@ requires-dist = [
     { name = "redis", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "s3fs", specifier = "==2024.10.0" },
+    { name = "setuptools", specifier = "==83.0.0" },
     { name = "wheel", specifier = "==0.46.2" },
 ]
 
@@ -5377,6 +5381,7 @@ dependencies = [
     { name = "ray", extra = ["default", "train", "tune"] },
     { name = "recsys-data-platform" },
     { name = "s3fs" },
+    { name = "setuptools" },
     { name = "torch" },
     { name = "tqdm" },
     { name = "wheel" },
@@ -5411,6 +5416,7 @@ requires-dist = [
     { name = "ray", extras = ["default", "train", "tune"], specifier = ">=2.40.0" },
     { name = "recsys-data-platform", editable = "../data-platform" },
     { name = "s3fs", specifier = "==2024.10.0" },
+    { name = "setuptools", specifier = "==83.0.0" },
     { name = "torch", specifier = ">=2.11.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "wheel", specifier = "==0.46.2" },

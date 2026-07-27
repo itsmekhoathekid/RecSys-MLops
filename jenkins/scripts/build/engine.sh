@@ -177,7 +177,7 @@ build_image() {
       set -e
       if [[ "${build_status}" -ne 0 ]]; then
         printf 'component=%s status=%s report=%s\n' \
-          "${BUILD_COMPONENT}" "${build_status}" "${BUILD_SCAN_REPORT_DIR}/${name}.log" \
+          "${BUILD_COMPONENT}" "${build_status}" "${BUILD_SCAN_REPORT_DIR}/${name}.json" \
           >"${failure_path}"
         exit "${build_status}"
       fi
