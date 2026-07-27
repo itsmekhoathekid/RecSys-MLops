@@ -43,18 +43,18 @@ kubectl port-forward -n ci svc/recsys-jenkins 18090:8080
 | Component | Trigger paths | Published artifacts |
 | --- | --- | --- |
 | `ci_config` | `Jenkinsfile`, `.github/`, `jenkins/`, `infra/helm/recsys-ci/`, generic IaC/control files | None. Runs detector contracts, Python compile checks, and Jenkins Helm lint only. |
-| `materialize` | `feature_store/`, `local/`, materialize DAG/config | `recsys-dataflow-cli` |
-| `training` | `apps/ml-system/`, `infra/kubeflow/`, `configs/local/bst.yaml` | `recsys-mlops-training`, `recsys-mlops-spark`, `recsys-dataflow-cli`, compiled/uploaded KFP YAML |
+| `materialize` | `feature_store/`, `local/`, materialize DAG/config | `recsys-feature-store` |
+| `training` | `apps/ml-system/`, `infra/kubeflow/`, `configs/local/bst.yaml` | `recsys-mlops-training`, `recsys-mlops-spark`, `recsys-drift-retrain`, compiled/uploaded KFP YAML |
 | `spark_batch` | `features/spark/`, `Dockerfile.spark`, `spark_batch*.yaml` | `recsys-spark`, `recsys-airflow` |
-| `dp1` | raw ingestion, data generator, source CDC config | `recsys-data-generator`, `recsys-dataflow-cli`, `recsys-airflow`, `recsys-kafka-connect` |
+| `dp1` | raw ingestion, data generator, source CDC config | `recsys-data-ingestion`, `recsys-spark`, `recsys-airflow`, `recsys-kafka-connect` |
 | `dp2` | silver/gold Spark transforms and DAG/config | `recsys-spark`, `recsys-airflow` |
-| `dp3` | offline feature builders and feature store config | `recsys-spark`, `recsys-dataflow-cli`, `recsys-airflow` |
+| `dp3` | offline feature builders and feature store config | `recsys-spark`, `recsys-feature-store`, `recsys-airflow` |
 | `api` | `apps/api-serving/`, API tests, serving chart | `recsys-api-serving` |
 | `kserve` | `infra/helm/recsys-serving/`, `model_cd.py`, model promotion serving code | production model manifest update |
 | `rollout` | rollout controller, Model-CD pipeline/script, watcher Helm resource, rollout load test, serving/observability contracts | immutable `recsys-mlops-training` watcher image and updated watcher Deployment |
-| `drift` | `validate/`, `mlops/`, future Knative/KServe drift manifests | `recsys-dataflow-cli` |
+| `drift` | `validate/`, `mlops/`, future Knative/KServe drift manifests | `recsys-drift-retrain` |
 | `stream_offline` | Flink stream jobs and Iceberg sink code | `recsys-flink` |
-| `stream_online` | Flink stream jobs, Redis/online writer code | `recsys-flink`, `recsys-dataflow-cli` |
+| `stream_online` | Flink stream jobs, Redis/online writer code | `recsys-flink` |
 | `analytics` | `apps/analytics/`, analytics tests, Airflow analytics DAG, and `infra/helm/recsys-analytics/` | `recsys-analytics-spark`, `recsys-analytics-dbt`, `recsys-analytics-superset`, `recsys-airflow` |
 
 `jenkins/scripts/detect_changed_components.py` is the source of truth for path
@@ -104,33 +104,35 @@ Each changed component follows the same sequence:
 1. Component unit tests with `pytest-cov` and `COVERAGE_MIN`, default `90`.
 2. Component integration tests from `tests/integration/<component>/` when present.
 3. Existing contract tests relevant to the component.
-4. Docker build and immutable image tag with `GIT_COMMIT`.
-5. Optional push to `IMAGE_PUSH_REGISTRY`, default `localhost:5001/recsys`.
-6. Deploy/update only on `main` unless `FORCE_DEPLOY=true`.
+4. Docker build and vulnerability scan with the full `GIT_COMMIT` tag.
+5. Push to the production Artifact Registry and resolve an immutable digest.
+6. Deploy the digest to GKE only on `main`, unless `FORCE_DEPLOY=true`.
+7. Run the component production test before committing its transaction.
 
-Services should pull the pushed registry image in CI/CD. The pipeline does not
-deploy `*:local` tags.
+`jenkins/config/gcp-production.json` is the only production identity source.
+The Jenkins job has no project, registry, cluster, or kubeconfig override.
+Services pull `@sha256:` references; the pipeline does not deploy mutable tags.
 
 The `training` component has an extra Kubeflow package gate: CI/CD builds and
-pushes `recsys-mlops-training`, builds and pushes `recsys-mlops-spark`,
+pushes `recsys-mlops-training`, `recsys-mlops-spark`, and `recsys-mlflow`,
 compiles `infra/kubeflow/compiled/bst_training_pipeline.yaml` with those real
 image refs, validates the package contains no `:local` token, uploads or
-versions the package in Kubeflow, and rolls the `recsys-dataflow-cli` trigger
+versions the package in Kubeflow, and rolls the `recsys-drift-retrain` trigger
 runtime so drift retrain pods submit the same package.
 
-For the in-cluster Jenkins setup in `infra/helm/recsys-ci`, Jenkins pushes to
-`recsys-registry.ci.svc.cluster.local:5000/recsys`, while workloads pull from
-`localhost:5001/recsys` through the registry node proxy. The registry itself is
-backed by a PVC inside the cluster.
+Each component deploy is a durable Saga stored below
+`$JENKINS_HOME/ci-transactions`. It snapshots Helm revisions, effective values,
+workload digests, KFP versions, model-store VersionIds, Jenkins job XML and
+migration state. A failed deploy or production test compensates external state,
+rolls Helm back, verifies old digests/readiness, and finishes as `ROLLED_BACK`.
+`ROLLBACK_FAILED` blocks the component until an operator repairs it.
 
 ## Secrets
 
-Keep secrets in Jenkins credentials or injected environment variables:
-
-- `REGISTRY_CREDENTIALS_ID`: optional username/password for `docker login`.
-- `KUBECONFIG_CREDENTIALS_ID`: optional kubeconfig file credential for deploy.
-- MinIO/S3, MLflow, and model registry credentials for KServe/model CD should be
-  injected by Jenkins as environment variables consumed by `model_cd.py`.
+Jenkins runs as `ci/recsys-jenkins` and obtains Artifact Registry credentials
+through Workload Identity Federation for GKE. Do not configure a static GCP
+service-account JSON key. MinIO/S3, MLflow and model registry credentials are
+loaded from Kubernetes Secrets only when model CD needs them.
 
 Do not commit secret values into Jenkinsfile, Helm values, or scripts.
 
@@ -153,8 +155,7 @@ store, drift/metrics, and observability smoke checks.
 To force every RecSys service through CI, image publish, deploy, and E2E gates:
 
 ```bash
-IMAGE_REGISTRY=asia-southeast1-docker.pkg.dev/fsds-coursework/recsys \
-IMAGE_TAG=full-cicd-YYYYMMDD-rN \
+IMAGE_TAG="$(git rev-parse HEAD)" \
 FULL_CICD_BUILD_BACKEND=cloudbuild \
 jenkins/scripts/full_services_cicd.sh
 ```

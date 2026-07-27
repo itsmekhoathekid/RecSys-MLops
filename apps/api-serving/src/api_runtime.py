@@ -70,6 +70,7 @@ def version_payload(service: str, **extra: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "service": service,
         "model_version": os.getenv("MODEL_VERSION", "latest"),
+        "image_reference": os.getenv("IMAGE_REFERENCE", ""),
     }
     payload.update(extra)
     return payload

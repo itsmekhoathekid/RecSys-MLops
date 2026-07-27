@@ -12,6 +12,8 @@ spec:
       app: airflow-webserver
   template:
     metadata:
+      annotations:
+        checksum/runtime-images: {{ printf "%s|%s|%s|%s|%s|%s" .Values.images.dataIngestion .Values.images.featureStore .Values.images.driftRetrain .Values.images.spark .Values.images.analyticsSpark .Values.images.analyticsDbt | sha256sum }}
       labels:
         app: airflow-webserver
     spec:
@@ -76,6 +78,8 @@ spec:
       app: airflow-scheduler
   template:
     metadata:
+      annotations:
+        checksum/runtime-images: {{ printf "%s|%s|%s|%s|%s|%s" .Values.images.dataIngestion .Values.images.featureStore .Values.images.driftRetrain .Values.images.spark .Values.images.analyticsSpark .Values.images.analyticsDbt | sha256sum }}
       labels:
         app: airflow-scheduler
     spec:

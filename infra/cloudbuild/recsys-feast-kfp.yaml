@@ -1,5 +1,5 @@
 substitutions:
-  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
   _TAG: gcp
   _KFP_ENDPOINT: http://ml-pipeline.kubeflow.svc.cluster.local:8888
   _KFP_PIPELINE_NAME: recsys-bst-feature-train-evaluate
@@ -79,25 +79,25 @@ steps:
       - bash
       - jenkins/scripts/kubeflow_pipeline_cicd.sh
 
-  - id: dataflow-cli
+  - id: drift-retrain
     name: gcr.io/cloud-builders/docker
     args:
       - build
       - --build-arg
       - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
       - -f
-      - apps/data-platform/Dockerfile.dataflow-cli
+      - apps/data-platform/Dockerfile.drift-retrain
       - -t
-      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+      - ${_IMAGE_REPO}/recsys-drift-retrain:${_TAG}
       - .
 
-  - id: validate-dataflow-kfp-package
+  - id: validate-drift-retrain-kfp-package
     name: gcr.io/cloud-builders/docker
     entrypoint: bash
     args:
       - -lc
       - >-
-        docker run --rm ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+        docker run --rm ${_IMAGE_REPO}/recsys-drift-retrain:${_TAG}
         bash -lc "test -f /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
         && ! grep -F ':local' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
         && grep -F '${_IMAGE_REPO}/recsys-mlops-training:${_TAG}' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
@@ -125,7 +125,7 @@ steps:
 
 images:
   - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
-  - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+  - ${_IMAGE_REPO}/recsys-drift-retrain:${_TAG}
   - ${_IMAGE_REPO}/recsys-spark:${_TAG}
   - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
   - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}

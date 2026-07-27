@@ -42,6 +42,7 @@ def feature_engineering(config_path: str, output_base: str, run_path: str, summa
 
 @dsl.container_component
 def prepare_training_data(
+    dataset_run_id: str,
     feature_source: str,
     offline_feature_table: str,
     entity_input_path: str,
@@ -55,6 +56,7 @@ def prepare_training_data(
     iceberg_warehouse: str,
     hudi_catalog_name: str,
     hudi_warehouse: str,
+    hudi_table: str,
 ):
     return dsl.ContainerSpec(
         image=SPARK_IMAGE,
@@ -63,6 +65,8 @@ def prepare_training_data(
             "/opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py",
             "--feature-source",
             feature_source,
+            "--dataset-run-id",
+            dataset_run_id,
             "--entity-input-path",
             entity_input_path,
             "--feast-repo-path",
@@ -84,10 +88,25 @@ def prepare_training_data(
             hudi_catalog_name,
             "--hudi-warehouse",
             hudi_warehouse,
+            "--hudi-table",
+            hudi_table,
             "--iceberg-catalog-name",
             iceberg_catalog_name,
             "--iceberg-warehouse",
             iceberg_warehouse,
+            "--dataset-metadata-path",
+            dataset_metadata_path,
+        ],
+    )
+
+
+@dsl.container_component
+def create_hudi_savepoint(dataset_metadata_path: str):
+    return dsl.ContainerSpec(
+        image=SPARK_IMAGE,
+        command=["/opt/venv/bin/python"],
+        args=[
+            "/opt/recsys/apps/ml-system/src/cli/create_hudi_savepoint.py",
             "--dataset-metadata-path",
             dataset_metadata_path,
         ],
@@ -309,6 +328,7 @@ def recsys_bst_pipeline(
     iceberg_warehouse: str = "s3a://recsys-offline-feature-store/warehouse",
     hudi_catalog_name: str = "recsys_features",
     hudi_warehouse: str = "s3a://recsys-offline-feature-store/warehouse",
+    hudi_table: str = "ml.bst_samples_native_v2",
     max_history_len: int = 50,
     training_percent: float = 1.0,
     num_epochs: int = 1,
@@ -330,6 +350,7 @@ def recsys_bst_pipeline(
 ):
     prepare = wire_runtime(
         prepare_training_data(
+            dataset_run_id=pipeline_run_id,
             feature_source=feature_source,
             offline_feature_table=offline_feature_table,
             entity_input_path=entity_input_path,
@@ -343,10 +364,18 @@ def recsys_bst_pipeline(
             iceberg_warehouse=iceberg_warehouse,
             hudi_catalog_name=hudi_catalog_name,
             hudi_warehouse=hudi_warehouse,
+            hudi_table=hudi_table,
         ),
         pvc_name=DEFAULT_PVC_NAME,
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
+    )
+    prepare.set_display_name("Prepare versioned Hudi dataset")
+    prepare.set_retry(
+        num_retries=3,
+        backoff_duration="30s",
+        backoff_factor=2.0,
+        backoff_max_duration="5m",
     )
     tune_train = wire_runtime(
         submit_rayjob(
@@ -431,6 +460,13 @@ def recsys_bst_pipeline(
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
     ).after(distributed_train)
+    savepoint = wire_runtime(
+        create_hudi_savepoint(dataset_metadata_path=dataset_metadata_path),
+        pvc_name=DEFAULT_PVC_NAME,
+        mount_path=DEFAULT_PVC_MOUNT_PATH,
+        secret_name=DEFAULT_RUNTIME_SECRET_NAME,
+    ).after(evaluate)
+    savepoint.set_display_name("Protect Hudi dataset version")
     promote = wire_runtime(
         promote_bst_model(
             config_path=bst_config_path,
@@ -443,7 +479,7 @@ def recsys_bst_pipeline(
         pvc_name=DEFAULT_PVC_NAME,
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
-    ).after(evaluate)
+    ).after(savepoint)
     handoff = wire_runtime(
         trigger_kserve_model_cd(
             manifest_path=promotion_manifest_path,

@@ -1,5 +1,5 @@
 substitutions:
-  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
   _TAG: gcp
   _BASE_TAG: gcp
 
@@ -10,16 +10,16 @@ options:
 timeout: 4200s
 
 steps:
-  - id: dataflow-cli
+  - id: feature-store
     name: gcr.io/cloud-builders/docker
     args:
       - build
       - --build-arg
       - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_BASE_TAG}
       - -f
-      - apps/data-platform/Dockerfile.dataflow-cli
+      - apps/data-platform/Dockerfile.feature-store
       - -t
-      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+      - ${_IMAGE_REPO}/recsys-feature-store:${_TAG}
       - .
 
   - id: airflow
@@ -55,7 +55,7 @@ steps:
       - .
 
 images:
-  - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+  - ${_IMAGE_REPO}/recsys-feature-store:${_TAG}
   - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
   - ${_IMAGE_REPO}/recsys-spark:${_TAG}
   - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}

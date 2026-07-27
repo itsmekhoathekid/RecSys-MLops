@@ -4,7 +4,9 @@ locals {
   image_repo    = "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_registry_repository}"
 
   images = {
-    dataflow_cli        = lookup(var.image_overrides, "dataflow_cli", "") != "" ? lookup(var.image_overrides, "dataflow_cli", "") : "${local.image_repo}/recsys-dataflow-cli:${var.image_tag}"
+    data_ingestion      = lookup(var.image_overrides, "data_ingestion", "") != "" ? lookup(var.image_overrides, "data_ingestion", "") : "${local.image_repo}/recsys-data-ingestion:${var.image_tag}"
+    feature_store       = lookup(var.image_overrides, "feature_store", "") != "" ? lookup(var.image_overrides, "feature_store", "") : "${local.image_repo}/recsys-feature-store:${var.image_tag}"
+    drift_retrain       = lookup(var.image_overrides, "drift_retrain", "") != "" ? lookup(var.image_overrides, "drift_retrain", "") : "${local.image_repo}/recsys-drift-retrain:${var.image_tag}"
     spark               = lookup(var.image_overrides, "spark", "") != "" ? lookup(var.image_overrides, "spark", "") : "${local.image_repo}/recsys-spark:${var.image_tag}"
     flink               = lookup(var.image_overrides, "flink", "") != "" ? lookup(var.image_overrides, "flink", "") : "${local.image_repo}/recsys-flink:${var.image_tag}"
     kafka_connect       = lookup(var.image_overrides, "kafka_connect", "") != "" ? lookup(var.image_overrides, "kafka_connect", "") : "${local.image_repo}/recsys-kafka-connect:${var.image_tag}"
@@ -17,7 +19,9 @@ locals {
   data_platform_sets = {
     "chartRevision"        = sha1(join("", [for path in ["configmap.yaml", "airflow.yaml", "realtime-flink-consumer.yaml", "kafka-topic-init.yaml", "jobs.yaml"] : filemd5("${local.helm_dir}/recsys-data-platform/templates/${path}")]))
     "namespace.create"     = "false"
-    "images.dataflowCli"   = local.images.dataflow_cli
+    "images.dataIngestion" = local.images.data_ingestion
+    "images.featureStore"  = local.images.feature_store
+    "images.driftRetrain"  = local.images.drift_retrain
     "images.spark"         = local.images.spark
     "images.flink"         = local.images.flink
     "images.kafkaConnect"  = local.images.kafka_connect

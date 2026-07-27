@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-image_registry="${IMAGE_REGISTRY:-${IMAGE_PUSH_REGISTRY:-asia-southeast1-docker.pkg.dev/fsds-coursework/recsys}}"
+image_registry="$(python3 jenkins/python/configuration.py gcp imageRegistry)"
 image_registry="${image_registry%/}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-}}"
 components_csv="${FULL_CICD_COMPONENTS:-materialize,training,spark_batch,dp1,dp2,dp3,api,kserve,rollout,drift,stream_offline,stream_online,analytics}"
-kube_context="${KUBE_CONTEXT:-gke_fsds-coursework_asia-southeast1-b_recsys-mlops-gke}"
+kube_context="$(python3 jenkins/python/configuration.py gcp context)"
 run_component_ci="${RUN_COMPONENT_CI:-1}"
 run_build="${RUN_COMPONENT_BUILD:-1}"
 run_deploy="${RUN_COMPONENT_DEPLOY:-1}"
@@ -15,6 +15,17 @@ run_post_deploy_e2e="${RUN_POST_DEPLOY_E2E:-1}"
 run_node_rebalance="${RUN_NODE_REBALANCE:-1}"
 validate_node_rebalance="${VALIDATE_NODE_REBALANCE:-1}"
 build_backend="${FULL_CICD_BUILD_BACKEND:-docker}"
+
+for supplied_registry in "${IMAGE_REGISTRY:-}" "${IMAGE_PUSH_REGISTRY:-}" "${IMAGE_PULL_REGISTRY:-}"; do
+  [[ -z "${supplied_registry}" || "${supplied_registry%/}" == "${image_registry}" ]] || {
+    echo "Production registry is fixed by jenkins/config/gcp-production.json: ${image_registry}" >&2
+    exit 2
+  }
+done
+[[ -z "${KUBE_CONTEXT:-}" || "${KUBE_CONTEXT}" == "${kube_context}" ]] || {
+  echo "Production context is fixed by jenkins/config/gcp-production.json: ${kube_context}" >&2
+  exit 2
+}
 
 export UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}"
 
@@ -70,7 +81,7 @@ build_all_images() {
 
 deploy_all_services() {
   section "Deploy All Services"
-  IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY:-${image_registry}}" \
+  IMAGE_PULL_REGISTRY="${image_registry}" \
     IMAGE_TAG="${image_tag}" \
     RUN_NODE_REBALANCE="${run_node_rebalance}" \
     VALIDATE_NODE_REBALANCE="${validate_node_rebalance}" \

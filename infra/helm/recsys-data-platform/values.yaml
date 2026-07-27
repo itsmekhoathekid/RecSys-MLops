@@ -3,7 +3,9 @@ namespace:
   name: recsys-dataflow
 
 images:
-  dataflowCli: recsys-dataflow-cli:local
+  dataIngestion: recsys-data-ingestion:local
+  featureStore: recsys-feature-store:local
+  driftRetrain: recsys-drift-retrain:local
   spark: recsys-spark:local
   flink: recsys-flink:local
   minio: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z

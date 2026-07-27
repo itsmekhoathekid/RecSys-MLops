@@ -2,6 +2,15 @@ namespace:
   create: true
   name: ci
 
+productionTarget:
+  enabled: false
+  projectId: ""
+  region: ""
+  zone: ""
+  cluster: ""
+  context: ""
+  imageRegistry: ""
+
 serviceMesh:
   jenkinsPodAnnotations:
     sidecar.istio.io/inject: "false"

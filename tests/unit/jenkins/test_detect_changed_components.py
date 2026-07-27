@@ -32,7 +32,7 @@ def product_components(paths: list[str]) -> set[str]:
         ("Jenkinsfile", set(), True),
         ("infra/helm/recsys-ci/values.yaml", {"ROLLOUT"}, True),
         ("jenkins/jobs/recsys-cicd-proof-config.xml", set(), True),
-        ("jenkins/scripts/component_ci.sh", set(), True),
+        ("jenkins/scripts/component_ci.sh", set(COMPONENTS), True),
         ("apps/api-serving/src/main.py", {"API"}, False),
         ("apps/ml-system/src/training/train.py", {"TRAINING"}, False),
         ("apps/ml-system/src/cli/model_rollout_controller.py", {"ROLLOUT"}, False),
@@ -72,6 +72,13 @@ def product_components(paths: list[str]) -> set[str]:
             False,
         ),
         ("apps/data-platform/src/validate/offline_feature_drift.py", {"DRIFT"}, False),
+        ("apps/data-platform/Dockerfile.data-ingestion", {"DP1"}, False),
+        (
+            "apps/data-platform/Dockerfile.feature-store",
+            {"MATERIALIZE", "DP3"},
+            False,
+        ),
+        ("apps/data-platform/Dockerfile.drift-retrain", {"DRIFT"}, False),
         (
             "apps/data-platform/data-generator/src/drift/reporting.py",
             {"DP1", "DRIFT"},
@@ -203,7 +210,7 @@ def test_changed_paths_preserves_a_valid_empty_diff(monkeypatch):
         calls.append(tuple(args))
         return []
 
-    monkeypatch.setattr(detect_changed_components, "git_lines", fake_git_lines)
+    monkeypatch.setattr(detect_changed_components.detector, "git_lines", fake_git_lines)
 
     assert changed_paths("same-commit") == []
     assert calls == [("diff", "--name-only", "same-commit...HEAD")]
@@ -220,7 +227,7 @@ def test_changed_paths_falls_back_to_current_commit_when_git_history_is_unavaila
             return ["docs/submission/rubic-final-coursework-(final-ml)/routing_gateway.md"]
         return []
 
-    monkeypatch.setattr(detect_changed_components, "git_lines", fake_git_lines)
+    monkeypatch.setattr(detect_changed_components.detector, "git_lines", fake_git_lines)
 
     assert changed_paths("missing-base") == ["docs/submission/rubic-final-coursework-(final-ml)/routing_gateway.md"]
     assert calls[:2] == [
@@ -230,7 +237,13 @@ def test_changed_paths_falls_back_to_current_commit_when_git_history_is_unavaila
 
 
 def test_every_tracked_repo_path_is_explicitly_classified_or_ignored():
-    paths = subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).splitlines()
+    paths = [
+        path
+        for path in subprocess.check_output(
+            ["git", "ls-files"], cwd=ROOT, text=True
+        ).splitlines()
+        if (ROOT / path).exists()
+    ]
     result = classify_paths(paths)
 
     assert result.unmapped_paths == ()
@@ -238,16 +251,22 @@ def test_every_tracked_repo_path_is_explicitly_classified_or_ignored():
 
 def test_jenkinsfile_uses_previous_built_commit_and_has_ci_config_stage():
     source = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    helper = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text(
+        encoding="utf-8"
+    )
 
-    assert "env.GIT_PREVIOUS_COMMIT" in source
-    assert "resolveChangedBaseRef()" in source
+    assert "env.GIT_PREVIOUS_COMMIT" in helper
+    assert "componentPipeline.resolveChangedBaseRef()" in source
     assert "stage('CI Configuration Validation')" in source
     assert "env.RUN_CI_CONFIG == 'true'" in source
 
 
 def test_full_deploy_runs_demo_smoke_after_upstream_components():
     source = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    deploy_helper = source.split(
+    helper = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text(
+        encoding="utf-8"
+    )
+    deploy_helper = helper.split(
         "def runComponentDeployBranches(String scriptPath, String extraEnv) {", 1
     )[1].split("def applyForcedComponents", 1)[0]
 
@@ -259,7 +278,7 @@ def test_full_deploy_runs_demo_smoke_after_upstream_components():
     assert parallel_index < demo_index
     assert source.count(
         "runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)"
-    ) == 4
+    ) == 2
 
 
 def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
@@ -281,9 +300,11 @@ def test_jenkins_seed_creates_post_promotion_kserve_cd_view():
 
 def test_progressive_rollout_cicd_is_wired_into_main_flow():
     jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    component_ci = (ROOT / "jenkins/scripts/component_ci.sh").read_text(encoding="utf-8")
-    component_build = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text(encoding="utf-8")
+    components = (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
+    component_ci = (ROOT / "jenkins/scripts/ci/dispatch.sh").read_text(encoding="utf-8")
+    component_build = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text(encoding="utf-8")
     component_deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    rollout_deploy = (ROOT / "jenkins/scripts/deploy/rollout.sh").read_text(encoding="utf-8")
     seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(
         encoding="utf-8"
     )
@@ -295,14 +316,15 @@ def test_progressive_rollout_cicd_is_wired_into_main_flow():
     assert result.flags["RUN_COMPONENT_CI"] is True
     assert result.flags["RUN_COMPONENT_BUILD"] is True
     assert result.flags["RUN_COMPONENT_DEPLOY"] is True
-    assert "[flag: 'RUN_ROLLOUT', name: 'rollout', label: 'Progressive Model Rollout']" in jenkinsfile
+    assert '"label": "Progressive Model Rollout"' in components
+    assert "jenkins/pipeline/component_pipeline.groovy" in jenkinsfile
     assert "rollout)" in component_ci
     assert "rollout)" in component_build
     assert "rollout)" in component_deploy
     assert "deploy_rollout_watcher" in component_deploy
-    assert "reconcile_rollout_jenkins_jobs" in component_deploy
-    assert 'data.zz-seed-cicd-views\\.groovy' in component_deploy
-    assert '"${jenkins_url}/scriptText"' in component_deploy
+    assert "reconcile_rollout_jenkins_jobs" in rollout_deploy
+    assert 'data.zz-seed-cicd-views\\.groovy' in rollout_deploy
+    assert '"${jenkins_url}/scriptText"' in rollout_deploy
     assert 'view: "06B Progressive Model Rollout"' in seed
     assert 'job: "RecSys-Progressive-Rollout-CICD"' in seed
     assert 'component: "rollout"' in seed
@@ -310,9 +332,12 @@ def test_progressive_rollout_cicd_is_wired_into_main_flow():
 
 def test_analytics_cicd_is_wired_from_main_detector_to_dedicated_view():
     jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    detector = (ROOT / "jenkins/scripts/detect_changed_components.py").read_text(encoding="utf-8")
-    component_ci = (ROOT / "jenkins/scripts/component_ci.sh").read_text(encoding="utf-8")
-    component_build = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text(encoding="utf-8")
+    components = (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
+    detector = (
+        ROOT / "jenkins/python/change_detection/detector.py"
+    ).read_text(encoding="utf-8")
+    component_ci = (ROOT / "jenkins/scripts/ci/dispatch.sh").read_text(encoding="utf-8")
+    component_build = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text(encoding="utf-8")
     component_deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
     seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(
         encoding="utf-8"
@@ -330,7 +355,8 @@ def test_analytics_cicd_is_wired_from_main_detector_to_dedicated_view():
     assert result.flags["RUN_COMPONENT_CI"] is True
     assert result.flags["RUN_COMPONENT_BUILD"] is True
     assert result.flags["RUN_COMPONENT_DEPLOY"] is True
-    assert "[flag: 'RUN_ANALYTICS', name: 'analytics', label: 'Analytics And BI']" in jenkinsfile
+    assert '"label": "Analytics And BI"' in components
+    assert "jenkins/pipeline/component_pipeline.groovy" in jenkinsfile
     assert 'normalized.startswith("apps/analytics/")' in detector
     assert 'path.startswith("infra/helm/recsys-analytics/")' in detector
     assert "analytics)" in component_ci
@@ -379,7 +405,7 @@ def test_data_platform_deploy_preserves_isolated_drift_snapshot_root():
 
 
 def test_rollout_job_reconciliation_uses_valid_python_crumb_parser():
-    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    deploy = (ROOT / "jenkins/scripts/deploy/rollout.sh").read_text(encoding="utf-8")
 
     assert 'print("{}: {}".format(p["crumbRequestField"], p["crumb"]))' in deploy
     assert 'p[\\"crumbRequestField\\"]' not in deploy

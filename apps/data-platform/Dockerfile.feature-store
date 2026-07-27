@@ -1,0 +1,42 @@
+ARG RECSYS_BASE_IMAGE=recsys-base-python:local
+FROM ${RECSYS_BASE_IMAGE} AS deps
+
+WORKDIR /opt/recsys
+ENV UV_LINK_MODE=copy \
+    UV_CONCURRENT_DOWNLOADS=8 \
+    UV_CONCURRENT_BUILDS=8
+
+RUN python -m venv /opt/venv \
+    && uv pip install --python /opt/venv/bin/python --no-cache \
+        boto3==1.35.36 \
+        botocore==1.35.36 \
+        "feast[redis]==0.64.0" \
+        fsspec==2024.10.0 \
+        numpy \
+        pyarrow \
+        pydantic \
+        psycopg[binary] \
+        psycopg-pool \
+        pyyaml \
+        redis \
+        requests \
+        s3fs==2024.10.0
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/venv/bin:${PATH} \
+    PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl jq \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/recsys
+COPY --from=deps /opt/venv /opt/venv
+COPY configs /opt/recsys/configs
+COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
+
+CMD ["feast", "--help"]

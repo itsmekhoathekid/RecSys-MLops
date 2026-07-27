@@ -4,12 +4,12 @@ This document records the final Infrastructure as Code setup deployed to Google 
 
 ## Target Project
 
-- GCP project: `fsds-coursework`
+- GCP project: `rec-sys-503309`
 - Project number: `455131526306`
 - Region: `asia-southeast1`
 - Zone: `asia-southeast1-b`
 - GKE cluster: `recsys-mlops-gke`
-- Artifact Registry: `asia-southeast1-docker.pkg.dev/fsds-coursework/recsys`
+- Artifact Registry: `asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys`
 
 ## IaC Layout
 
@@ -73,7 +73,7 @@ Images were built on GCP Cloud Build, not local Docker.
 ```bash
 gcloud builds submit \
   --config infra/cloudbuild/recsys-images.yaml \
-  --project fsds-coursework
+  --project rec-sys-503309
 ```
 
 Observed build:
@@ -107,7 +107,7 @@ recsys-flink:gcp            sha256:ca89c5f434828c619a37c79366943a0a49be98b38d8d3
 
 ## Terraform Proof
 
-Terraform was applied from `infra/terraform/gcp` against project `fsds-coursework`.
+Terraform was applied from `infra/terraform/gcp` against project `rec-sys-503309`.
 
 Validation:
 

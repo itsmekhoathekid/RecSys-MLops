@@ -6,17 +6,17 @@ PRODUCER_NAME="${DATAFLOW_REALTIME_PRODUCER_NAME:-recsys-dataflow-realtime-produ
 FLINK_NAME="${DATAFLOW_REALTIME_FLINK_NAME:-recsys-dataflow-realtime-flink}"
 STREAM_CONFIG="${DATAFLOW_STREAM_CONFIG:-configs/local/data_generator_test.yaml}"
 
-"${SCRIPT_DIR}/dataflow_compose.sh" run --rm dataflow-cli \
-  bash -lc "PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys python infra/docker/scripts/init_postgres_schema.py"
+"${SCRIPT_DIR}/dataflow_compose.sh" run --rm data-ingestion \
+  bash -lc "PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys /opt/venv/bin/python infra/docker/scripts/init_postgres_schema.py"
 
-"${SCRIPT_DIR}/dataflow_compose.sh" run --rm dataflow-cli \
+"${SCRIPT_DIR}/dataflow_compose.sh" run --rm data-ingestion \
   bash infra/docker/scripts/register_debezium_connector.sh
 
 docker stop "${PRODUCER_NAME}" "${FLINK_NAME}" >/dev/null 2>&1 || true
 docker rm -f "${PRODUCER_NAME}" "${FLINK_NAME}" >/dev/null 2>&1 || true
 
-"${SCRIPT_DIR}/dataflow_compose.sh" run -d --name "${PRODUCER_NAME}" dataflow-cli \
-  bash -lc "PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys python -m streaming.producer \
+"${SCRIPT_DIR}/dataflow_compose.sh" run -d --name "${PRODUCER_NAME}" data-ingestion \
+  bash -lc "PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys /opt/venv/bin/python -m streaming.producer \
     --config '${STREAM_CONFIG}'"
 
 "${SCRIPT_DIR}/dataflow_compose.sh" run -d --name "${FLINK_NAME}" flink-taskmanager \

@@ -94,7 +94,9 @@ def test_spark_and_flink_images_include_runtime_dependencies_without_pandas():
     spark_dockerfile = (ROOT / "apps/data-platform/Dockerfile.spark").read_text()
     flink_dockerfile = (ROOT / "apps/data-platform/Dockerfile.flink").read_text()
     flink_runtime_pom = (ROOT / "apps/data-platform/flink-runtime-pom.xml").read_text()
-    dataflow_cli = (ROOT / "apps/data-platform/Dockerfile.dataflow-cli").read_text()
+    data_ingestion = (ROOT / "apps/data-platform/Dockerfile.data-ingestion").read_text()
+    feature_store = (ROOT / "apps/data-platform/Dockerfile.feature-store").read_text()
+    drift_retrain = (ROOT / "apps/data-platform/Dockerfile.drift-retrain").read_text()
     assert "iceberg-spark-runtime-3.5_2.12" in spark_dockerfile
     assert "hudi-spark3.5-bundle_2.12" in spark_dockerfile
     assert "flink:2.2.0-java17" in flink_dockerfile
@@ -106,10 +108,14 @@ def test_spark_and_flink_images_include_runtime_dependencies_without_pandas():
     assert "avro-python3" not in flink_dockerfile
     assert "psycopg[binary]" in flink_dockerfile
     assert "google-cloud-bigquery" not in flink_dockerfile
-    assert "great_expectations" not in dataflow_cli
-    assert "dbt-core" not in dataflow_cli
+    assert "great_expectations" not in data_ingestion + feature_store + drift_retrain
+    assert "dbt-core" not in data_ingestion + feature_store + drift_retrain
     assert " pandas" not in spark_dockerfile
-    assert "COPY infra/kubeflow /opt/recsys/infra/kubeflow" in dataflow_cli
+    assert "COPY infra/kubeflow /opt/recsys/infra/kubeflow" in drift_retrain
+    assert "COPY apps/data-platform/data-generator" in data_ingestion
+    assert "COPY apps/data-platform/feature-store" in feature_store
+    assert "COPY apps/data-platform/data-generator" not in feature_store
+    assert "COPY apps/data-platform/data-generator" not in drift_retrain
 
 
 def test_kubeflow_training_package_uses_pullable_images():
@@ -133,38 +139,41 @@ def test_kubeflow_cloudbuild_builds_compiles_uploads_and_validates_package():
     assert "${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}" in cloudbuild
     assert "id: compile-kfp-package" in cloudbuild
     assert "jenkins/scripts/kubeflow_pipeline_cicd.sh" in cloudbuild
-    assert "id: dataflow-cli" in cloudbuild
-    assert "id: validate-dataflow-kfp-package" in cloudbuild
+    assert "id: drift-retrain" in cloudbuild
+    assert "id: validate-drift-retrain-kfp-package" in cloudbuild
     assert "id: upload-kfp-package" in cloudbuild
     assert "_UPLOAD_KFP_PACKAGE" in cloudbuild
-    assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index(
-        "id: dataflow-cli"
-    )
+    assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index("id: drift-retrain")
 
 
 def test_full_image_cloudbuild_builds_all_runtime_images_after_kfp_compile():
     cloudbuild = (ROOT / "infra/cloudbuild/recsys-images.yaml").read_text()
 
     for image in [
-        "recsys-dataflow-cli",
-        "recsys-data-generator",
-        "recsys-mlops-training",
-        "recsys-mlops-spark",
-        "recsys-api-serving",
-        "recsys-kafka-connect",
-        "recsys-mlflow",
-        "recsys-airflow",
+        "recsys-base-python",
+        "recsys-data-ingestion",
+        "recsys-feature-store",
+        "recsys-drift-retrain",
         "recsys-spark",
         "recsys-flink",
+        "recsys-airflow",
+        "recsys-kafka-connect",
+        "recsys-mlops-training",
+        "recsys-mlops-spark",
+        "recsys-mlflow",
+        "recsys-api-serving",
+        "recsys-demo-api",
+        "recsys-demo-web",
+        "recsys-analytics-spark",
+        "recsys-analytics-dbt",
+        "recsys-analytics-superset",
     ]:
         assert f"${{_IMAGE_REPO}}/{image}:${{_TAG}}" in cloudbuild
 
     assert "id: compile-kfp-package" in cloudbuild
-    assert "id: validate-dataflow-kfp-package" in cloudbuild
+    assert "id: validate-drift-retrain-kfp-package" in cloudbuild
     assert "! grep -F ':local'" in cloudbuild
-    assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index(
-        "id: dataflow-cli"
-    )
+    assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index("id: drift-retrain")
 
 
 def test_remaining_runtime_dockerfiles_use_multistage_and_parallel_tools():
@@ -207,36 +216,34 @@ def test_remaining_runtime_dockerfiles_use_multistage_and_parallel_tools():
 
 
 def test_jenkins_training_component_builds_runtime_images_and_package_trigger_image():
-    build_script = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text()
+    build_script = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text()
     training_case = build_script.split("training)", 1)[1].split(";;", 1)[0]
 
     assert "build_training" in training_case
     assert "build_mlops_spark" in training_case
-    assert "compile_kfp_package_for_image_refs" in training_case
-    assert "build_dataflow_cli" in training_case
+    assert "build_compile_kfp_package" in training_case
+    assert "build_drift_retrain" in training_case
     assert training_case.index(
-        "compile_kfp_package_for_image_refs"
-    ) < training_case.index("build_dataflow_cli")
+        "build_compile_kfp_package"
+    ) < training_case.index("build_drift_retrain")
 
 
 def test_jenkins_training_deploy_uploads_package_and_rolls_trigger_runtime():
-    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    deploy_script = (ROOT / "jenkins/scripts/deploy/ml_platform.sh").read_text()
     assert "jenkins/scripts/kubeflow_pipeline_cicd.sh" in deploy_script
-    assert '--set "images.dataflowCli=${dataflow_image}"' in deploy_script
+    assert '--set "images.driftRetrain=${drift_retrain_image}"' in deploy_script
     assert (
-        'verify_data_platform_config_image "DATAFLOW_IMAGE" "${dataflow_image}"'
-        in deploy_script
-    )
-    assert (
-        'verify_and_wait_workload "deployment" "realtime-event-producer"'
+        'verify_data_platform_config_image "DRIFT_RETRAIN_IMAGE" "${drift_retrain_image}"'
         in deploy_script
     )
 
 
 def test_full_services_cicd_runs_all_stages_and_post_deploy_e2e():
     script = (ROOT / "jenkins/scripts/full_services_cicd.sh").read_text()
-    build_script = (ROOT / "jenkins/scripts/component_build_publish.sh").read_text()
+    build_script = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text()
     deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    deploy_runtime = (ROOT / "jenkins/scripts/deploy/runtime.sh").read_text()
+    ml_deploy = (ROOT / "jenkins/scripts/deploy/ml_platform.sh").read_text()
 
     assert "component_ci.sh" in script
     assert "component_build_publish.sh all" in script
@@ -252,13 +259,13 @@ def test_full_services_cicd_runs_all_stages_and_post_deploy_e2e():
     assert "build_mlflow" in build_script
     assert "deploy_all()" in deploy_script
     assert "run_node_rebalance_if_enabled" in deploy_script
-    assert "infra/k8s/scripts/rebalance_ml_node_pool.sh" in deploy_script
-    assert "jenkins/scripts/validate_node_rebalance.sh" in deploy_script
+    assert "infra/k8s/scripts/rebalance_ml_node_pool.sh" in deploy_runtime
+    assert "jenkins/scripts/validate_node_rebalance.sh" in deploy_runtime
     assert "deploy_mlflow" in deploy_script
-    assert '--set "nodeSelector.recsys\\\\.ai/pool=ml-system"' in deploy_script
-    assert '--set "minio.resources.requests.memory=512Mi"' in deploy_script
-    assert "kfp_endpoint_for_upload()" in deploy_script
-    assert "kubectl port-forward" in deploy_script
+    assert '--set "nodeSelector.recsys\\\\.ai/pool=ml-system"' in ml_deploy
+    assert '--set "minio.resources.requests.memory=512Mi"' in ml_deploy
+    assert "kfp_endpoint_for_upload()" in deploy_runtime
+    assert "kubectl port-forward" in deploy_runtime
     assert (
         "observability.retrainPsiThreshold=${RETRAIN_PSI_THRESHOLD:-0.15}"
         in deploy_script
@@ -317,6 +324,43 @@ def test_airflow_keeps_rubric_and_key_operational_dag_modules():
     assert "--scope bronze" in source
     assert "--scope silver" in source
     assert "python3 apps/data-platform/data-generator/src/cli.py generate" in source
+
+
+def test_split_data_images_are_wired_to_their_runtime_consumers():
+    values = yaml.safe_load(
+        (ROOT / "infra/helm/recsys-data-platform/values.yaml").read_text()
+    )
+    assert values["images"]["dataIngestion"] == "recsys-data-ingestion:local"
+    assert values["images"]["featureStore"] == "recsys-feature-store:local"
+    assert values["images"]["driftRetrain"] == "recsys-drift-retrain:local"
+    assert "dataflowCli" not in values["images"]
+
+    jobs = (ROOT / "infra/helm/recsys-data-platform/templates/jobs.yaml").read_text()
+    producer = (
+        ROOT
+        / "infra/helm/recsys-data-platform/templates/realtime-producer.yaml"
+    ).read_text()
+    configmap = (
+        ROOT / "infra/helm/recsys-data-platform/templates/configmap.yaml"
+    ).read_text()
+    operational_dags = (
+        ROOT
+        / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
+    ).read_text()
+    rubric_dags = (
+        ROOT
+        / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
+    ).read_text()
+
+    assert jobs.count(".Values.images.dataIngestion") == 2
+    assert ".Values.images.dataIngestion" in producer
+    assert "DATA_INGESTION_IMAGE" in configmap
+    assert "FEATURE_STORE_IMAGE" in configmap
+    assert "DRIFT_RETRAIN_IMAGE" in configmap
+    assert operational_dags.count("FEATURE_STORE_IMAGE") >= 4
+    assert operational_dags.count("DRIFT_RETRAIN_IMAGE") >= 4
+    assert "FEATURE_STORE_IMAGE" in rubric_dags
+    assert "DATAFLOW_IMAGE" not in operational_dags + rubric_dags
 
 
 def test_retrain_trigger_uses_distinct_tune_and_ddp_results_for_default_drift_runs():

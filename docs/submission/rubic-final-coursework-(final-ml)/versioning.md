@@ -114,109 +114,181 @@ register_model_config(
 ```mermaid
 flowchart LR
     Feast["Feast/PostgreSQL offline features"] --> Split["Temporal train/val/test split"]
-    Split --> Identity["sample_id + row_hash<br/>dataset_run_id + Git SHA"]
-    Identity --> ChangeFilter["Left-anti join latest snapshot<br/>skip unchanged rows"]
-    ChangeFilter --> TrainTable["Hudi COW training table<br/>split=train,val"]
-    ChangeFilter --> EvalTable["Hudi COW evaluation table<br/>split=test"]
-    TrainTable --> TrainCommit["Training-table commit instant"]
-    EvalTable --> EvalCommit["Evaluation-table commit instant"]
-    TrainCommit --> Snapshot["Latest committed snapshots"]
-    EvalCommit --> Snapshot
-    Snapshot --> JSONL["Deterministic JSONL export"]
-    TrainCommit --> Metadata["dataset_version_meta.json"]
-    EvalCommit --> Metadata
+    Split --> Validate["Validate composite key<br/>(impression_id, target_item_id)"]
+    Validate --> Diff["Left-anti key diff against latest snapshot<br/>create tombstones for missing keys"]
+    Diff --> Upsert["One COW upsert<br/>train, val, test partitioned by split"]
+    Upsert --> Commit["One COMPLETED Hudi commit instant"]
+    Commit --> Snapshot["Time-travel read with as.of.instant"]
+    Snapshot --> JSONL["Export train/val/test JSONL from the same instant"]
+    Commit --> Metadata["dataset_version_meta.json<br/>table path + hudi_instant"]
     JSONL --> Ray["Ray training/evaluation"]
     Metadata --> Ray
     Ray --> MLflow["MLflow dataset lineage"]
+    Ray --> Evaluate["Successful evaluation"]
+    Evaluate --> Savepoint["Create idempotent Hudi savepoint"]
+    Savepoint --> Promote["Promote model"]
 ```
 
 1. The preparation job reads point-in-time features and creates temporal `train`, `val` and `test` splits. See [offline read and temporal split](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L687).
-2. Every logical sample receives a deterministic `sample_id`; its feature contents receive a `row_hash`. The row also carries `dataset_run_id`, feature-service version and processing Git SHA. See [stable sample identity](../../../apps/ml-system/src/lineage/dataset_versioning.py#L150), [row hashing](../../../apps/ml-system/src/lineage/dataset_versioning.py#L164) and [versioned sample construction](../../../apps/ml-system/src/lineage/dataset_versioning.py#L174).
-3. Before writing, Spark left-anti joins incoming rows against the latest Hudi snapshot on `sample_id`, `row_hash` and `split`. Exact matches are skipped; new samples, changed hashes and split moves continue to the writer. A missing table is treated as the initial load. See [unchanged-row filtering](../../../apps/ml-system/src/lineage/dataset_versioning.py#L371).
-4. Spark writes only changed `train/val` rows to `bst_training_samples` and changed `test` rows to `bst_evaluation_samples` using Hudi Copy-on-Write `upsert`. `sample_id` is the record key, `updated_at` chooses the newest duplicate and `split` is the partition path. See [Hudi write options](../../../apps/ml-system/src/lineage/dataset_versioning.py#L352) and [filtered table upsert](../../../apps/ml-system/src/lineage/dataset_versioning.py#L431).
-5. Each non-empty changed set creates a commit instant in that Hudi table's timeline. A no-op set creates no commit and keeps the previous commit. Metadata records `input_rows`, `changed_rows`, `skipped_unchanged_rows` and `write_performed`, alongside the latest `commit_time`/`snapshot_id`. See [latest commit lookup](../../../apps/ml-system/src/lineage/dataset_versioning.py#L392) and [commit/change metadata](../../../apps/ml-system/src/lineage/dataset_versioning.py#L482).
-6. The committed Hudi snapshot is read back and exported deterministically to `train.jsonl`, `val.jsonl` and `test.jsonl`. `dataset_version_meta.json` binds those files to table paths, commit instants, row counts, schema hash and processing version. See [Hudi-to-JSONL export](../../../apps/ml-system/src/lineage/dataset_versioning.py#L411), [split export calls](../../../apps/ml-system/src/lineage/dataset_versioning.py#L500) and [manifest creation](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L717).
-7. Ray consumes the JSONL files and logs the manifest plus the exact Hudi commits to MLflow. This makes a model run reproducible against a specific committed dataset state. See [Ray DDP dataset paths](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L85), [DDP result lineage](../../../apps/ml-system/src/training/ray_distributed_train_bst.py#L283) and [MLflow dataset parameters/artifact](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L34).
+2. The full snapshot is validated with the native composite record key `(impression_id, target_item_id)`. Null or duplicate keys fail before any write. `dataset_run_id`, feature-service version and Git SHA are commit/manifest metadata instead of repeated row fields.
+3. On an existing table, Spark left-anti joins the latest Hudi keys against the incoming keys. Missing keys become tombstones with `_hoodie_is_deleted=true`; all current rows go through the upsert. A key that moves between `train`, `val` and `test` is not deleted by this diff.
+4. Spark writes the full current snapshot plus tombstones once to `recsys_features.ml.bst_samples_native_v2`. The table is Copy-on-Write, partitioned by `split`, and uses `GLOBAL_BLOOM` with partition-path updates so a moved key is removed from its old partition.
+5. OCC uses the shared ZooKeeper lock and lazy failed-write cleaning. The prepare component retries three times with exponential backoff; each retry re-reads the latest snapshot and recomputes tombstones.
+6. After `.save()`, the job scans the completed Hudi Timeline for commit metadata whose `recsys_dataset_run_id` matches the current run. That completed instant—not `max(_hoodie_commit_time)` from rows—is the dataset version.
+7. The job reads `as.of.instant=<hudi_instant>` and exports all three JSONL files from that exact snapshot. Metadata and MLflow use one table path and one `hudi_instant`, while readers retain fallback support for legacy `commit_time` and `snapshot_id`.
+8. After evaluation succeeds, the pipeline creates an idempotent savepoint for that instant. Promotion depends on this component, so savepoint failure prevents an unreproducible production model.
 
-In this implementation, `snapshot_id` means the Hudi commit instant. The `tag` field such as `bst_training_<run_id>` is a lineage label stored in the manifest; the code does not create a Hudi timeline tag. The current reader loads the latest committed snapshot—historical time-travel or rollback would require an explicit Hudi `as.of.instant` read, which is not part of this flow yet.
+`hudi_instant` is now the canonical dataset-version field. Hudi Cleaner retains ordinary history for 90 days; savepoints protect the dataset versions attached to promoted models beyond normal cleaning.
+
+### End-to-end execution proof — 27 July 2026
+
+The production-like proof run started from the Airflow drift DAG and completed the complete chain:
+
+```text
+Airflow drift detection
+  -> Kubeflow data preparation
+  -> Apache Hudi native upsert and COMPLETED commit
+  -> time-travel JSONL export
+  -> Ray Tune
+  -> two-worker Ray DDP training
+  -> MLflow logging and evaluation
+  -> Hudi savepoint
+  -> MLflow model registration and KServe candidate handoff
+```
+
+| Stage | Captured proof |
+|---|---|
+| Airflow trigger | DAG `recsys_feature_drift_monitoring`, run `proof-hudi-native-v2-20260727-1630`; all three tasks succeeded. Evidently report `20260727092724` failed the drift gate because 8 of 26 numeric features exceeded the `0.15` threshold, so retraining was triggered. |
+| Kubeflow | Workflow `recsys-bst-feature-train-evaluate-nb72z`, KFP run `ac9134bf-98ef-4810-9f7a-9631be648766`; status `Succeeded`, progress `15/15`, from `09:28:21Z` to `09:47:20Z`. |
+| Hudi dataset version | Table `recsys_features.ml.bst_samples_native_v2`; operation `upsert`; completed instant `20260727093340615`; 96,225 input/upsert/snapshot records. The snapshot contains 76,980 train, 9,622 validation and 9,623 test records. |
+| Hudi physical layout | Hudi CLI `1.0.2` reports `COPY_ON_WRITE`, key type `COMPLEX`, record key `impression_id,target_item_id`, precombine field `source_updated_at`, three files added, three partitions written, zero write errors and one Parquet base-file slice per split. |
+| Ray Tune | RayJob `recsys-bst-ray-tune-retrain-2026072709-321a58e9` succeeded. MLflow tuning run `5a19ee644d3c4268a328ac55f01ac242` selected validation NDCG@10 `0.4723676566261042`. |
+| Ray DDP | RayJob `recsys-bst-ray-ddp-retrain-20260727092-321a58e9` succeeded with `world_size=2`, two workers, `DistributedDataParallel`, synchronized gradients and distributed sampling. |
+| Evaluation and MLflow | Training run `69145abaa79a44268483afeeee96f638` finished with validation NDCG@10 `0.32361081810694475` and test NDCG@10 `0.2669791210693565`. Its training, validation, testing and evaluation dataset parameters all reference Hudi instant `20260727093340615`; the full manifest is stored at `datasets/dataset_version_meta.json`. |
+| Savepoint and promotion | Savepoint `20260727093340615` was created before promotion. MLflow registered `recsys_bst_ranker` version `5`, logical version `20260727094618`, from the same training run. KServe CD accepted the candidate handoff for the rollout watcher. |
+
+The exact **data-versioning step** is the transition produced by the Hudi write:
+
+```text
+delta.write.format("hudi").operation("upsert").save(table_path)
+                                      |
+                                      v
+20260727093340615.commit.requested
+  -> 20260727093340615.inflight
+  -> 20260727093340615_20260727093416466.commit  [COMPLETED]
+                                      |
+                                      v
+dataset version = hudi_instant 20260727093340615
+```
+
+The dataset does not become a valid version merely when Spark starts writing. It becomes a valid version only when Hudi atomically marks the Timeline commit `COMPLETED`. All downstream stages then read `as.of.instant=20260727093340615`; therefore Ray and MLflow cannot silently move to a newer table snapshot during the same pipeline run.
+
+The Hudi CLI output for this run is:
+
+```text
+hoodie.table.type              COPY_ON_WRITE
+hoodie.table.keygenerator.type COMPLEX
+hoodie.table.recordkey.fields  impression_id,target_item_id
+hoodie.table.precombine.field  source_updated_at
+
+CommitTime        Files Added  Files Updated  Partitions  Records  Errors
+20260727093340615 3            0              3           96225    0
+
+split=val    Base-Instant=20260727093340615  Base-File=2.0 MB
+split=test   Base-Instant=20260727093340615  Base-File=2.1 MB
+split=train  Base-Instant=20260727093340615  Base-File=11.1 MB
+```
+
+This was the initial commit to the new `native_v2` path, so `Files Added=3` and `Files Updated=0` are expected. Later runs use the same `upsert` operation: existing keys update their file groups, new keys insert, missing keys receive tombstones and keys that change split are moved by the global index.
+
+Use these commands to recapture the live evidence:
+
+```bash
+kubectl exec -n recsys-dataflow deploy/airflow-scheduler -- \
+  airflow tasks states-for-dag-run \
+  recsys_feature_drift_monitoring proof-hudi-native-v2-20260727-1630
+
+kubectl get workflow -n kubeflow \
+  recsys-bst-feature-train-evaluate-nb72z
+
+kubectl get rayjob -n kubeflow | grep 'retrain-2026072709'
+
+kubectl logs -n recsys-dataflow \
+  hudi-cli-data-versioning-proof | less -S
+```
+
+For MLflow screenshots, open run `69145abaa79a44268483afeeee96f638`, filter Parameters by `dataset`, and open artifact `datasets/dataset_version_meta.json`. For the model proof, open registered model `recsys_bst_ranker`, version `5`.
 
 ### Reference code
 
-Stable identity and content hashing make repeated runs upsert the same logical samples ([source](../../../apps/ml-system/src/lineage/dataset_versioning.py#L174)):
+The native composite key and row-level delete marker define the Hudi records:
 
 ```python
 record = {
-    "sample_id": sample_id_for(normalized),
-    "row_hash": row_hash_for(normalized),
-    "dataset_run_id": dataset_run_id,
-    "feature_service_version": feature_service_version,
-    "processing_code_version": processing_code,
-    "updated_at": now,
+    "impression_id": normalized["impression_id"],
+    "target_item_id": normalized["target_item_id"],
+    "split": split,
+    "source_updated_at": prediction_timestamp,
+    "_hoodie_is_deleted": False,
 }
 ```
 
-The latest snapshot removes unchanged rows before the Hudi writer ([source](../../../apps/ml-system/src/lineage/dataset_versioning.py#L371)):
+The latest snapshot is compared by key only to create tombstones for records that disappeared:
 
 ```python
-HUDI_CHANGE_IDENTITY_COLUMNS = ["sample_id", "row_hash", "split"]
-
-existing = (
-    _read_hudi_table(spark, table_path)
-    .select(*HUDI_CHANGE_IDENTITY_COLUMNS)
-    .dropDuplicates(HUDI_CHANGE_IDENTITY_COLUMNS)
+current_keys = incoming.select("impression_id", "target_item_id").dropDuplicates()
+deletes = (
+    existing.join(
+        current_keys,
+        on=["impression_id", "target_item_id"],
+        how="left_anti",
+    )
+    .withColumn("_hoodie_is_deleted", lit(True))
 )
-changes = incoming.join(
-    existing,
-    on=HUDI_CHANGE_IDENTITY_COLUMNS,
-    how="left_anti",
-)
+delta = incoming.unionByName(deletes)
 ```
 
-The Hudi write defines the versioning semantics and receives only `changes` ([options](../../../apps/ml-system/src/lineage/dataset_versioning.py#L352), [write](../../../apps/ml-system/src/lineage/dataset_versioning.py#L431)):
+The single native upsert defines the versioning semantics:
 
 ```python
-def _hudi_options(table_name):
-    return {
-        "hoodie.datasource.write.table.type": "COPY_ON_WRITE",
-        "hoodie.datasource.write.operation": "upsert",
-        "hoodie.datasource.write.recordkey.field": "sample_id",
-        "hoodie.datasource.write.precombine.field": "updated_at",
-        "hoodie.datasource.write.partitionpath.field": "split",
-    }
-
 (
-    changes.write.format("hudi")
-    .options(**_hudi_options(table_name))
+    delta.write.format("hudi")
+    .options(
+        **{
+            "hoodie.datasource.write.table.type": "COPY_ON_WRITE",
+            "hoodie.datasource.write.operation": "upsert",
+            "hoodie.datasource.write.recordkey.field": "impression_id,target_item_id",
+            "hoodie.datasource.write.keygenerator.class":
+                "org.apache.hudi.keygen.ComplexKeyGenerator",
+            "hoodie.datasource.write.precombine.field": "source_updated_at",
+            "hoodie.datasource.write.partitionpath.field": "split",
+            "hoodie.index.type": "GLOBAL_BLOOM",
+            "hoodie.bloom.index.update.partition.path": "true",
+        }
+    )
     .mode("append")
     .save(table_path)
 )
 ```
 
-After the commit, the pipeline captures the exact instant and change counters used by training ([source](../../../apps/ml-system/src/lineage/dataset_versioning.py#L482)):
+After the commit, the pipeline resolves the current run from commit metadata and time-travels to that instant:
 
 ```python
-commit_time = _latest_commit_time(spark, table_path)
-
-metadata["tables"][key] = {
-    "name": table_ident,
-    "path": table_path,
-    "snapshot_id": commit_time,
-    "commit_time": commit_time,
-    "tag": tag_name,
-    "row_count": _table_row_count(spark, table_path, split_values),
-    "input_rows": input_rows,
-    "changed_rows": changed_rows,
-    "skipped_unchanged_rows": skipped_unchanged_rows,
-    "write_performed": write_performed,
-}
+hudi_instant = _completed_commit_for_run(spark, table_path, dataset_run_id)
+snapshot = (
+    spark.read.format("hudi")
+    .option("as.of.instant", hudi_instant)
+    .load(table_path)
+)
 ```
 
-MLflow then attaches that version to the model run ([source](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L34)):
+MLflow attaches the same table and instant to training, validation and testing:
 
 ```python
 params = {
     f"dataset.{context}.hudi_table": payload.get("table", ""),
-    f"dataset.{context}.hudi_commit_time": payload.get("commit_time") or payload.get("snapshot_id"),
+    f"dataset.{context}.hudi_table_path": payload.get("table_path", ""),
+    f"dataset.{context}.hudi_instant": payload.get("hudi_instant"),
     f"dataset.{context}.row_count": payload.get("row_count", 0),
 }
 for key, value in params.items():
@@ -228,13 +300,14 @@ mlflow.log_dict(metadata, "datasets/dataset_version_meta.json")
 ### Code reference
 
 - [prepare_bst_training_data.py (line 654)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L654), [prepare_bst_training_data.py (line 733)](../../../apps/ml-system/src/cli/prepare_bst_training_data.py#L733): builds version metadata and commits prepared splits when Hudi versioning is enabled.
-- [dataset_versioning.py (line 142)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L142), [dataset_versioning.py (line 216)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L216): stable sample identity and row hashing; [dataset_versioning.py (line 352)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L352), [dataset_versioning.py (line 371)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L371), [dataset_versioning.py (line 431)](../../../apps/ml-system/src/lineage/dataset_versioning.py#L431): Hudi configuration, unchanged-row filtering and commit flow.
+- [dataset_versioning.py](../../../apps/ml-system/src/lineage/dataset_versioning.py): validates composite keys, computes delete tombstones, configures native upsert/OCC, resolves the completed Timeline instant and performs time-travel export.
 - [mlflow_dataset_lineage.py (line 8)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L8), [mlflow_dataset_lineage.py (line 48)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L48): logs dataset version fields and the full manifest to MLflow.
+- [create_hudi_savepoint.py](../../../apps/ml-system/src/cli/create_hudi_savepoint.py): creates and verifies the idempotent promotion savepoint.
 - [hudi-cli-data-versioning-proof.yaml (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L130): reproducible Hudi CLI inspection pod.
 
 Hudi proof is captured with Hudi CLI by connecting directly to the table path and showing the active commit timeline. `desc` verifies the Copy-on-Write table and key fields; `commits show` and `show fsview all` expose the commit instants and versioned Parquet file slices produced by the upserts.
 
-**Proof pod note:** the Hudi CLI proof is now reproducible from the reusable Kubernetes manifest [hudi-cli-data-versioning-proof.yaml (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L130). The manifest creates the fixed pod name `hudi-cli-data-versioning-proof` in namespace `recsys-dataflow`, mounts `recsys-data-platform-config` and `recsys-data-platform-secret`, connects to `s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_training_samples`, and prints `desc`, `commits show`, and `show fsview all` to pod logs. The pod is intentionally a one-shot `Pod` instead of a `Job`, so the screenshot command stays stable. To refresh and capture the proof again, run:
+**Proof pod note:** the Hudi CLI proof is reproducible from the reusable Kubernetes manifest [hudi-cli-data-versioning-proof.yaml (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L130). Point the proof pod at `s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_samples_native_v2`; it prints `desc`, `commits show`, and `show fsview all` to pod logs.
 
 ```bash
 kubectl delete pod -n recsys-dataflow hudi-cli-data-versioning-proof --ignore-not-found
@@ -248,24 +321,24 @@ In Hudi, a **file slice** is the concrete data-file version for a Hudi file grou
 
 ![MLflow data version parameters](../../pngs/data_versioning_ui.png)
 
-**Figure 4 - MLflow dataset version parameters.** Caption: the MLflow run page is filtered by `dataset` parameters and shows `dataset_run_id`, Hudi table names, Hudi commit times, split tags, row counts, JSONL paths, and versioning latency. This proves that the training run is tied to an exact Apache Hudi dataset snapshot.
+**Figure 4 - MLflow dataset version parameters.** Caption: the MLflow run page is filtered by `dataset` parameters. For the current proof, training, validation, testing and evaluation must all show table `recsys_features.ml.bst_samples_native_v2` and `hudi_instant=20260727093340615`, with row counts `76980`, `9622`, `9623` and `9623`. This proves that every context is tied to the same completed Apache Hudi snapshot.
 
 ![MLflow dataset version manifest artifact](../../pngs/dvc_artifacts.png)
 
-**Figure 5 - MLflow dataset version manifest artifact.** Caption: the MLflow Artifacts tab opens `datasets/dataset_version_meta.json`, which persists the complete Apache Hudi lineage manifest: `storage=hudi`, catalog, warehouse path, train/validation/test row counts, Hudi table paths, commit times, snapshot IDs, and tags. This is the durable proof object that connects a model run to the exact incremental data version used for training and evaluation.
+**Figure 5 - MLflow dataset version manifest artifact.** Caption: the MLflow Artifacts tab opens `datasets/dataset_version_meta.json`, which persists the complete Apache Hudi lineage manifest: `storage=hudi`, one table and table path, canonical `hudi_instant`, operation, input/upsert/delete/snapshot counts, split counts, dataset run ID, code version, schema hash and latency. Legacy `snapshot_id` is no longer manufactured for the native-v2 format. This durable object connects the model run to the exact dataset version used for training and evaluation.
 
 ![Apache Hudi CLI data versioning proof 1](../../pngs/hudi_cli_1.png)
 
-**Figure 6 - Hudi CLI table metadata and storage layout.** Caption: the Hudi CLI starts inside the proof pod, loads metadata for `bst_training_samples`, and prints the table `desc` output. The important fields are `basePath`, which points to the versioned training sample table in `s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_training_samples`; `metaPath`, which points to the `.hoodie` metadata directory; `fileSystem=s3a`, proving the table is stored in the MinIO/S3-compatible offline feature store; `hoodie.table.type=COPY_ON_WRITE`, proving Hudi stores committed parquet versions; and `hoodie.table.precombine.field=updated_at`, proving Hudi resolves repeated upserts for the same sample by the latest update timestamp.
+**Figure 6 - Historical Hudi CLI proof.** This screenshot predates the `bst_samples_native_v2` migration. Re-running the updated proof manifest now targets the consolidated table and should show `source_updated_at` as its precombine field.
 
 ![Apache Hudi CLI data versioning proof 2](../../pngs/hudi_cli_2.png)
 
-**Figure 7 - Hudi active timeline.** Caption: the Hudi CLI timeline lists completed `commit` instants from `20260630150403897` through `20260701190855003`. Each `COMPLETED` row is one successful dataset version written to the active Hudi timeline, with requested, inflight, and completed timestamps proving that each version finished cleanly.
+**Figure 7 - Historical Hudi active timeline.** This screenshot shows the earlier table before native-v2 migration. The current proof instant is `20260727093340615`; its requested, inflight and completed Timeline files are listed in the end-to-end proof above.
 
 ![Apache Hudi CLI data versioning proof 3](../../pngs/hudi_cli_3.png)
 
-**Figure 8 - Hudi commit write stats and file slices.** Caption: the upper table is `commits show`: each `CommitTime` records one dataset version, `Total Bytes Written` is about `1.5 MB`, `Total Partitions Written=2` proves both `split=train` and `split=val` were written, and `Total Records Written=3503` proves the exact training/validation sample count in each version. The first commit adds two files, while later commits update two files and write `3503` update records, showing incremental upsert behavior. The lower `show fsview all` table maps partitions and `FileId`s to `Base-Instant` values and parquet `Data-File` paths.
+**Figure 8 - Historical Hudi commit stats and file slices.** This screenshot documents the earlier two-split table. The current native-v2 proof has three splits, three base files and 96,225 records at instant `20260727093340615`; use the proof pod command above to capture the current CLI view.
 
-**Where incremental versioning is shown in Figure 8:** incremental versioning is shown in two places. First, in the `commits show` table, the initial commit `20260630150403897` has `Total Files Added=2` and `Total Files Updated=0`, while later commits have `Total Files Added=0`, `Total Files Updated=2`, and `Total Update Records Written=3503`. This means later dataset versions update existing Hudi file groups instead of creating a full new table copy. Second, in the `show fsview all` table, the same `FileId` appears multiple times with different `Base-Instant` values and different parquet `Data-File` paths. That is the storage-level proof that Hudi keeps incremental versions over time.
+**Where incremental versioning is shown in the historical Figure 8:** the initial commit has added files and no updated files, while later commits update the existing file groups. The repeated `FileId` values with newer `Base-Instant` values show the Copy-on-Write versions at storage level. The same behavior applies to native-v2 after its initial commit; however, the current proof does not mislabel its first commit as an update.
 
 **File slice explanation for Figure 8:** a Hudi file slice is one physical data-file version inside a Hudi file group at one commit instant. In this proof, the same `FileId` appears repeatedly for `split=val` and `split=train`, but each row has a different `Base-Instant`. That means Hudi kept multiple incremental versions of the same logical file group instead of replacing the whole table. The `Data-File` path also embeds the commit instant, so each parquet file can be traced back to the exact dataset version that produced it.

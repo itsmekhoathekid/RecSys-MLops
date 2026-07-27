@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "components": [
+    {
+      "name": "materialize",
+      "flag": "RUN_MATERIALIZE",
+      "label": "Materialize Pipeline",
+      "ciProfile": "data",
+      "buildProfile": "feature-store",
+      "deployProfile": "materialize",
+      "testProfile": "materialize",
+      "deployOrder": 10,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "training",
+      "flag": "RUN_TRAINING",
+      "label": "Training Pipeline",
+      "ciProfile": "ml",
+      "buildProfile": "training",
+      "deployProfile": "training",
+      "testProfile": "training",
+      "deployOrder": 20,
+      "migrationPolicy": "expand-only"
+    },
+    {
+      "name": "spark_batch",
+      "flag": "RUN_SPARK_BATCH",
+      "label": "Spark Batch Processing",
+      "ciProfile": "data",
+      "buildProfile": "spark-batch",
+      "deployProfile": "spark-batch",
+      "testProfile": "spark-batch",
+      "deployOrder": 30,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "dp1",
+      "flag": "RUN_DP1",
+      "label": "DP1 Raw To Bronze",
+      "ciProfile": "data",
+      "buildProfile": "dp1",
+      "deployProfile": "dp1",
+      "testProfile": "dp1",
+      "deployOrder": 40,
+      "migrationPolicy": "expand-only"
+    },
+    {
+      "name": "dp2",
+      "flag": "RUN_DP2",
+      "label": "DP2 Bronze To Silver Gold",
+      "ciProfile": "data",
+      "buildProfile": "dp2",
+      "deployProfile": "dp2",
+      "testProfile": "dp2",
+      "deployOrder": 50,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "dp3",
+      "flag": "RUN_DP3",
+      "label": "DP3 Offline Feature Table",
+      "ciProfile": "data",
+      "buildProfile": "dp3",
+      "deployProfile": "dp3",
+      "testProfile": "dp3",
+      "deployOrder": 60,
+      "migrationPolicy": "expand-only"
+    },
+    {
+      "name": "api",
+      "flag": "RUN_API",
+      "label": "FastAPI Web API",
+      "ciProfile": "serving",
+      "buildProfile": "api",
+      "deployProfile": "api",
+      "testProfile": "api",
+      "deployOrder": 70,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "kserve",
+      "flag": "RUN_KSERVE",
+      "label": "KServe Inference Engine",
+      "ciProfile": "serving",
+      "buildProfile": "none",
+      "deployProfile": "kserve",
+      "testProfile": "kserve",
+      "deployOrder": 80,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "rollout",
+      "flag": "RUN_ROLLOUT",
+      "label": "Progressive Model Rollout",
+      "ciProfile": "ml",
+      "buildProfile": "rollout",
+      "deployProfile": "rollout",
+      "testProfile": "rollout",
+      "deployOrder": 90,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "drift",
+      "flag": "RUN_DRIFT",
+      "label": "Realtime Drift Detection",
+      "ciProfile": "data",
+      "buildProfile": "drift",
+      "deployProfile": "drift",
+      "testProfile": "drift",
+      "deployOrder": 100,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "stream_offline",
+      "flag": "RUN_STREAM_OFFLINE",
+      "label": "Stream Features To Offline Store",
+      "ciProfile": "data",
+      "buildProfile": "flink",
+      "deployProfile": "stream-offline",
+      "testProfile": "stream-offline",
+      "deployOrder": 110,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "stream_online",
+      "flag": "RUN_STREAM_ONLINE",
+      "label": "Stream Features To Online Store",
+      "ciProfile": "data",
+      "buildProfile": "flink",
+      "deployProfile": "stream-online",
+      "testProfile": "stream-online",
+      "deployOrder": 120,
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "analytics",
+      "flag": "RUN_ANALYTICS",
+      "label": "Analytics And BI",
+      "ciProfile": "analytics",
+      "buildProfile": "analytics",
+      "deployProfile": "analytics",
+      "testProfile": "analytics",
+      "deployOrder": 130,
+      "migrationPolicy": "expand-only"
+    },
+    {
+      "name": "demo_web",
+      "flag": "RUN_DEMO_WEB",
+      "label": "Recommendation Demo Web",
+      "ciProfile": "demo",
+      "buildProfile": "demo",
+      "deployProfile": "demo",
+      "testProfile": "demo",
+      "deployOrder": 1000,
+      "migrationPolicy": "expand-only"
+    }
+  ]
+}

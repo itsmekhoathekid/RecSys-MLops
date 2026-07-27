@@ -1,5 +1,5 @@
 substitutions:
-  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
+  _IMAGE_REPO: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
   _TAG: gcp
 
 options:
@@ -116,40 +116,72 @@ steps:
       - bash
       - jenkins/scripts/kubeflow_pipeline_cicd.sh
 
-  - id: dataflow-cli
+  - id: data-ingestion
     name: gcr.io/cloud-builders/docker
     args:
       - build
       - --build-arg
       - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
       - -f
-      - apps/data-platform/Dockerfile.dataflow-cli
+      - apps/data-platform/Dockerfile.data-ingestion
       - -t
-      - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+      - ${_IMAGE_REPO}/recsys-data-ingestion:${_TAG}
       - .
 
-  - id: validate-dataflow-kfp-package
+  - id: feature-store
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - -f
+      - apps/data-platform/Dockerfile.feature-store
+      - -t
+      - ${_IMAGE_REPO}/recsys-feature-store:${_TAG}
+      - .
+
+  - id: drift-retrain
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
+      - -f
+      - apps/data-platform/Dockerfile.drift-retrain
+      - -t
+      - ${_IMAGE_REPO}/recsys-drift-retrain:${_TAG}
+      - .
+
+  - id: validate-drift-retrain-kfp-package
     name: gcr.io/cloud-builders/docker
     entrypoint: bash
     args:
       - -lc
       - >-
-        docker run --rm ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
+        docker run --rm ${_IMAGE_REPO}/recsys-drift-retrain:${_TAG}
         bash -c "test -f /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
         && ! grep -F ':local' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
         && grep -F '${_IMAGE_REPO}/recsys-mlops-training:${_TAG}' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml
         && grep -F '${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}' /opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml"
 
-  - id: data-generator
+  - id: demo-api
     name: gcr.io/cloud-builders/docker
     args:
       - build
-      - --build-arg
-      - RECSYS_BASE_IMAGE=${_IMAGE_REPO}/recsys-base-python:${_TAG}
       - -f
-      - apps/data-platform/data-generator/Dockerfile
+      - apps/demo-web/backend/Dockerfile
       - -t
-      - ${_IMAGE_REPO}/recsys-data-generator:${_TAG}
+      - ${_IMAGE_REPO}/recsys-demo-api:${_TAG}
+      - .
+
+  - id: demo-web
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/demo-web/frontend/Dockerfile
+      - -t
+      - ${_IMAGE_REPO}/recsys-demo-web:${_TAG}
       - .
 
   - id: flink
@@ -162,15 +194,53 @@ steps:
       - ${_IMAGE_REPO}/recsys-flink:${_TAG}
       - .
 
+  - id: analytics-spark
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - RECSYS_SPARK_BASE_IMAGE=${_IMAGE_REPO}/recsys-spark:${_TAG}
+      - -f
+      - apps/analytics/Dockerfile.spark
+      - -t
+      - ${_IMAGE_REPO}/recsys-analytics-spark:${_TAG}
+      - .
+
+  - id: analytics-dbt
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/analytics/Dockerfile.dbt
+      - -t
+      - ${_IMAGE_REPO}/recsys-analytics-dbt:${_TAG}
+      - .
+
+  - id: analytics-superset
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/analytics/Dockerfile.superset
+      - -t
+      - ${_IMAGE_REPO}/recsys-analytics-superset:${_TAG}
+      - .
+
 images:
   - ${_IMAGE_REPO}/recsys-base-python:${_TAG}
-  - ${_IMAGE_REPO}/recsys-dataflow-cli:${_TAG}
-  - ${_IMAGE_REPO}/recsys-data-generator:${_TAG}
+  - ${_IMAGE_REPO}/recsys-data-ingestion:${_TAG}
+  - ${_IMAGE_REPO}/recsys-feature-store:${_TAG}
+  - ${_IMAGE_REPO}/recsys-drift-retrain:${_TAG}
   - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
   - ${_IMAGE_REPO}/recsys-api-serving:${_TAG}
+  - ${_IMAGE_REPO}/recsys-demo-api:${_TAG}
+  - ${_IMAGE_REPO}/recsys-demo-web:${_TAG}
   - ${_IMAGE_REPO}/recsys-kafka-connect:${_TAG}
   - ${_IMAGE_REPO}/recsys-mlflow:${_TAG}
   - ${_IMAGE_REPO}/recsys-airflow:${_TAG}
   - ${_IMAGE_REPO}/recsys-spark:${_TAG}
   - ${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
   - ${_IMAGE_REPO}/recsys-flink:${_TAG}
+  - ${_IMAGE_REPO}/recsys-analytics-spark:${_TAG}
+  - ${_IMAGE_REPO}/recsys-analytics-dbt:${_TAG}
+  - ${_IMAGE_REPO}/recsys-analytics-superset:${_TAG}

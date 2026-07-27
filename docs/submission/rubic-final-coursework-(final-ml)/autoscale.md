@@ -4,19 +4,49 @@
 
 ### End-To-End Autoscaling Flow
 
-```text
-Locust / client
-  -> POST /recommendations
-  -> Recommendation API records request count and latency
-  -> GET /metrics exposes the in-memory metric snapshot
-  -> Prometheus scrapes annotated API pods
-  -> KEDA evaluates PromQL request-rate and latency triggers
-  -> Kubernetes HPA changes the Recommendation API replica count
-  -> Recommendation API calls Online Feature API and Triton
-  -> Online Feature API follows the same Prometheus/KEDA/HPA path
-  -> Triton follows a separate KEDA CPU/HPA path
-  -> GKE adds nodes only when newly requested pods cannot be scheduled
-```
+
+> **Detailed runtime note:**
+>
+> 1. Metrics are process-local first. Each Recommendation API pod records its own request counter and
+>    latency histogram in memory, and its `/metrics` endpoint exposes only that pod's current snapshot.
+>    The Online Feature API does the same with a different `service` label.
+> 2. Prometheus is the collector and time-series store. It discovers the annotated pods, calls
+>    `GET /metrics` every **15 seconds**, and stores the returned samples. Prometheus does not decide
+>    how many replicas the application needs.
+> 3. The **KEDA operator** runs the PromQL scaler queries. Every **10 seconds** it sends the
+>    request-rate and latency expressions from the `ScaledObject` to the Prometheus HTTP API. KEDA
+>    does not scrape application pods directly; it evaluates the data already collected by Prometheus.
+> 4. Both API PromQL expressions use a **one-minute range window**. Request rate uses
+>    `rate(recsys_api_requests_total[1m])`; average latency divides the one-minute rate of the latency
+>    sum by the one-minute rate of its count. Because scraping is every 15 seconds, consecutive
+>    10-second KEDA polls can legitimately observe the same newest Prometheus sample.
+> 5. KEDA publishes each query result through the Kubernetes external-metrics API. The generated HPA
+>    compares the observed value with its threshold and uses the largest replica recommendation from
+>    the request-rate and latency triggers, bounded by `minReplicas=1` and `maxReplicas=3`.
+> 6. A recommendation request exercises the complete serving chain: Recommendation API → Online
+>    Feature API → Triton. The first two Deployments own separate Prometheus/KEDA/HPA loops, so one
+>    service can scale without forcing the other to the same replica count.
+> 7. Triton is intentionally different. Its KEDA `ScaledObject` uses Kubernetes CPU utilization rather
+>    than PromQL. In the proof overlay the target is `15%` of a `100m` CPU request, with the same
+>    `1–3` replica bounds. KServe is configured with `autoscalerClass=external`, leaving replica
+>    ownership to the KEDA-generated HPA.
+> 8. GKE Cluster Autoscaler is the final infrastructure loop. It does not inspect HTTP metrics or
+>    PromQL. It adds a node only when HPA/KEDA has already requested more pods and Kubernetes cannot
+>    schedule them on the existing node pool; it can later remove underused nodes within Terraform's
+>    configured bounds.
+> 9. Scaling is therefore not instantaneous. A scale-up must pass through metric emission, the next
+>    Prometheus scrape, a KEDA poll, HPA reconciliation, pod scheduling, and readiness. The chart also
+>    configures KEDA cooldowns of `120s` for the APIs and `240s` for Triton, but these must not be read
+>    as guaranteed `3 → 1` delays: with `minReplicaCount=1`, non-zero downscaling is governed by the
+>    generated HPA's behavior and reconciliation loop, while KEDA cooldown primarily governs the
+>    inactive-trigger/scale-to-zero path.
+
+Runtime/configuration reference:
+
+- [API metric middleware and `/metrics`](../../../apps/api-serving/src/api_runtime.py#L18), [Prometheus 15-second scrape](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L40), and [annotated-pod discovery](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L94).
+- [KEDA 10-second polling and shared cooldown](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L6), [Recommendation API PromQL triggers](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L25), and [Online Feature API triggers](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L64).
+- [Triton CPU proof values](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L46), [resource `ScaledObject`](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L13), and [KServe external-autoscaler handoff](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L12).
+- [GKE CPU node-pool autoscaling](../../../infra/terraform/gcp/gke.tf#L97) and [node bounds](../../../infra/terraform/gcp/variables.tf#L79).
 
 Reference code:
 
@@ -27,6 +57,32 @@ Reference code:
 - [fastapi-prometheus-scaledobjects.yaml (line 1)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L1): API and feature-API KEDA Prometheus scalers.
 - [kserve-resource-scaledobject.yaml (line 1)](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L1): Triton KEDA CPU scaler.
 - [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97): independent GKE node-pool autoscaling.
+
+### How Values Become Runtime Autoscalers
+
+Helm first loads the chart defaults from `values.yaml`, applies the coursework proof override, and
+then renders the corresponding template. The proof configuration can be inspected without changing
+the cluster:
+
+```bash
+helm template recsys-serving infra/helm/recsys-serving \
+  -f infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml
+```
+
+The same override must be supplied explicitly with `-f` during `helm upgrade` for the lower proof
+thresholds to become active; otherwise the base `values.yaml` thresholds remain in effect.
+
+| Autoscaling part | Base and proof values | Helm template / scale target | Note |
+| --- | --- | --- | --- |
+| Shared Prometheus/KEDA settings | [Base `values.yaml` (line 184)](../../../infra/helm/recsys-serving/values.yaml#L184), [proof override (line 6)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L6) | [`fastapi-prometheus-scaledobjects.yaml`](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml), with the alternative HTTP scaler guarded by [`api-http-scaledobject.yaml` (line 1)](../../../infra/helm/recsys-serving/templates/api-http-scaledobject.yaml#L1) | The merged values select one API scaler path and provide the Prometheus address, polling interval, and cooldown. |
+| Recommendation API | [Base API thresholds (line 190)](../../../infra/helm/recsys-serving/values.yaml#L190), [proof API thresholds (line 12)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L12) | [API `ScaledObject` template (line 2)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L2) targets the [API Deployment (line 9)](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L9) | Values define thresholds and replica bounds; the template converts them to KEDA triggers and an HPA target. |
+| Online Feature API | [Base feature-API thresholds (line 207)](../../../infra/helm/recsys-serving/values.yaml#L207), [proof feature-API thresholds (line 29)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L29) | [Feature-API `ScaledObject` template (line 40)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L40) targets the [feature Deployment (line 11)](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L11) | The Deployment omits a fixed `replicas` field while Prometheus autoscaling is enabled, avoiding ownership conflict with HPA. |
+| Triton/KServe | [Base resource scaler (line 224)](../../../infra/helm/recsys-serving/values.yaml#L224), [proof CPU override (line 46)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L46) | [`kserve-resource-scaledobject.yaml` (line 1)](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L1) targets the predictor Deployment created from [`inferenceservice.yaml` (line 12)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L12) | KServe delegates replica ownership to the external KEDA/HPA controller. CPU utilization is measured against the configured CPU request. |
+| GKE node pool | [Node bounds in `variables.tf` (line 79)](../../../infra/terraform/gcp/variables.tf#L79) | [`gke.tf` node-pool autoscaling (line 97)](../../../infra/terraform/gcp/gke.tf#L97) | This layer is Terraform-managed rather than Helm-managed; it adds nodes only after application autoscalers create unschedulable pods. |
+
+> **Evidence note:** `values.yaml` and Helm templates prove the intended and rendered configuration.
+> They do not prove that scaling occurred. Runtime evidence must additionally show the live
+> `ScaledObject`, generated HPA, replica transition, and workload pods during the same load window.
 
 ### Shared API Metric Emission
 
@@ -122,6 +178,12 @@ Reference code: [values-gcp-autoscale-proof.yaml (line 1)](../../../infra/helm/r
 
 `http.api.enabled=false` disables the KEDA HTTP add-on scaler for the API. `prometheus.enabled=true` selects the KEDA Prometheus scaler, so only one autoscaler controls each API Deployment.
 
+> **Values/template note:** [base values](../../../infra/helm/recsys-serving/values.yaml#L149)
+> contain both HTTP and Prometheus options. The [proof values](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L1)
+> disable the API HTTP path, while the guard in
+> [`api-http-scaledobject.yaml`](../../../infra/helm/recsys-serving/templates/api-http-scaledobject.yaml#L1)
+> prevents that resource from rendering when the Prometheus API scaler owns the target.
+
 ### Recommendation API Autoscaling
 
 #### Desired Configuration
@@ -207,6 +269,14 @@ Reference code: [fastapi-prometheus-scaledobjects.yaml (line 3)](../../../infra/
 #### Scaling Behavior
 
 `recsys-api-serving` scales from 1 to 3 pods. KEDA supplies two external metrics to the HPA; the HPA uses the larger replica recommendation. The proof targets are 4 requests per second and 0.15-second average latency over a 1-minute window.
+
+> **Values/template note:** production defaults are `5` requests/s and `0.20s` latency in
+> [`values.yaml`](../../../infra/helm/recsys-serving/values.yaml#L190). The coursework override lowers
+> them to `4` and `0.15s` in
+> [`values-gcp-autoscale-proof.yaml`](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L12).
+> [`fastapi-prometheus-scaledobjects.yaml`](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L2)
+> renders both PromQL triggers and targets the Deployment named by
+> [`api.name`](../../../infra/helm/recsys-serving/values.yaml#L55).
 
 ### Online Feature API Autoscaling
 
@@ -294,6 +364,16 @@ Reference code: [fastapi-prometheus-scaledobjects.yaml (line 42)](../../../infra
 
 `recsys-online-feature-api` scales from 1 to 3 pods when either request rate exceeds 4 requests per second or average latency exceeds 0.08 seconds over the 1-minute query window. Recommendation traffic drives this scaler because every recommendation fetches online features before inference.
 
+> **Values/template note:** production defaults are `5` requests/s and `0.12s` latency in
+> [`values.yaml`](../../../infra/helm/recsys-serving/values.yaml#L207); the proof overlay changes them
+> to `4` and `0.08s` in
+> [`values-gcp-autoscale-proof.yaml`](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L29).
+> The feature branch of
+> [`fastapi-prometheus-scaledobjects.yaml`](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L40)
+> renders the two triggers, while
+> [`feature-api-deployment.yaml`](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L11)
+> leaves replica ownership to the generated HPA.
+
 ### Triton Inference Autoscaling
 
 #### KServe External-Autoscaler Handoff
@@ -362,6 +442,15 @@ Reference code: [kserve-resource-scaledobject.yaml (line 1)](../../../infra/helm
 
 `recsys-bst-triton-predictor` scales from 1 to 3 pods using Kubernetes CPU utilization rather than Prometheus request metrics. The proof CPU target is 15%, and the request is reduced to `100m` so the coursework-sized inference workload can demonstrate scale-up.
 
+> **Values/template note:** the base chart uses a `50%` CPU target and `180s` cooldown in
+> [`values.yaml`](../../../infra/helm/recsys-serving/values.yaml#L224). The proof overlay changes these
+> to `15%` and `240s`, and reduces the predictor CPU request to `100m`, in
+> [`values-gcp-autoscale-proof.yaml`](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L46).
+> [`kserve-resource-scaledobject.yaml`](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L13)
+> converts the merged values into the predictor Deployment target and CPU trigger. Because the metric
+> type is `Utilization`, lowering the CPU request also lowers the absolute CPU usage needed to cross
+> the proof threshold.
+
 ### GKE Node-Pool Autoscaling
 
 Application autoscaling creates pods; it does not create nodes. If new pods remain Pending because the CPU pool has insufficient capacity, the GKE Cluster Autoscaler can add nodes within its configured bounds.
@@ -378,6 +467,10 @@ resource "google_container_node_pool" "cpu" {
 ```
 
 Reference code: [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97), [gke.tf (line 105)](../../../infra/terraform/gcp/gke.tf#L105), [variables.tf (line 79)](../../../infra/terraform/gcp/variables.tf#L79), [variables.tf (line 85)](../../../infra/terraform/gcp/variables.tf#L85).
+
+> **Infrastructure note:** this part has no `values.yaml` or Helm template. Application-level Helm
+> autoscalers decide how many pods are needed; Terraform's GKE node-pool bounds decide whether the
+> cluster may add nodes when those pods cannot be scheduled.
 
 ## Load Test Evidence
 

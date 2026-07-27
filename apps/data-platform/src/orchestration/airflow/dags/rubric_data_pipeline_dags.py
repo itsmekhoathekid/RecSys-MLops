@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = "recsys-dataflow"
-DATAFLOW_IMAGE = os.getenv("DATAFLOW_IMAGE", "recsys-dataflow-cli:local")
+FEATURE_STORE_IMAGE = os.getenv("FEATURE_STORE_IMAGE", "recsys-feature-store:local")
 SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "recsys-spark:local"))
 DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
 COMMON_ENV = {
@@ -291,7 +291,7 @@ if DAG is not None:
         )
         validate_stage = pod_task(
             "validate_stage",
-            DATAFLOW_IMAGE,
+            FEATURE_STORE_IMAGE,
             VERIFY_POSTGRES_OFFLINE_STORE_COMMAND,
         )
 

@@ -21,6 +21,7 @@
 #    gpus_per_trial: float [Default: 0.0]
 #    head_ray_num_cpus: str [Default: '0']
 #    hudi_catalog_name: str [Default: 'recsys_features']
+#    hudi_table: str [Default: 'ml.bst_samples_native_v2']
 #    hudi_warehouse: str [Default: 's3a://recsys-offline-feature-store/warehouse']
 #    iceberg_catalog_name: str [Default: 'recsys_features']
 #    iceberg_warehouse: str [Default: 's3a://recsys-offline-feature-store/warehouse']
@@ -40,7 +41,7 @@
 #    pvc_mount_path: str [Default: '/workspace']
 #    pvc_name: str [Default: 'recsys-mlops-pvc']
 #    ray_best_result_path: str [Default: '/workspace/recsys/data_platform/output/ml/ray/best_result.json']
-#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp']
+#    ray_image: str [Default: 'asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:hudi-native-v2-proof-20260727']
 #    ray_job_name: str [Default: 'recsys-bst-ray-tune']
 #    ray_namespace: str [Default: 'kubeflow']
 #    ray_node_selector: str [Default: 'recsys.ai/pool=ml-system']
@@ -60,6 +61,12 @@
 #    worker_replicas: int [Default: 1.0]
 #    workspace_root: str [Default: '/workspace/recsys']
 components:
+  comp-create-hudi-savepoint:
+    executorLabel: exec-create-hudi-savepoint
+    inputDefinitions:
+      parameters:
+        dataset_metadata_path:
+          parameterType: STRING
   comp-evaluate-bst:
     executorLabel: exec-evaluate-bst
     inputDefinitions:
@@ -78,6 +85,8 @@ components:
       parameters:
         dataset_metadata_path:
           parameterType: STRING
+        dataset_run_id:
+          parameterType: STRING
         entity_input_path:
           parameterType: STRING
         feast_offline_root:
@@ -89,6 +98,8 @@ components:
         feature_source:
           parameterType: STRING
         hudi_catalog_name:
+          parameterType: STRING
+        hudi_table:
           parameterType: STRING
         hudi_warehouse:
           parameterType: STRING
@@ -252,6 +263,15 @@ components:
           parameterType: STRING
 deploymentSpec:
   executors:
+    exec-create-hudi-savepoint:
+      container:
+        args:
+        - /opt/recsys/apps/ml-system/src/cli/create_hudi_savepoint.py
+        - --dataset-metadata-path
+        - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
+        command:
+        - /opt/venv/bin/python
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-spark:hudi-native-v2-proof-20260727
     exec-evaluate-bst:
       container:
         args:
@@ -268,13 +288,15 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py
-        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:hudi-native-v2-proof-20260727
     exec-prepare-training-data:
       container:
         args:
         - /opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py
         - --feature-source
         - '{{$.inputs.parameters[''feature_source'']}}'
+        - --dataset-run-id
+        - '{{$.inputs.parameters[''dataset_run_id'']}}'
         - --entity-input-path
         - '{{$.inputs.parameters[''entity_input_path'']}}'
         - --feast-repo-path
@@ -296,6 +318,8 @@ deploymentSpec:
         - '{{$.inputs.parameters[''hudi_catalog_name'']}}'
         - --hudi-warehouse
         - '{{$.inputs.parameters[''hudi_warehouse'']}}'
+        - --hudi-table
+        - '{{$.inputs.parameters[''hudi_table'']}}'
         - --iceberg-catalog-name
         - '{{$.inputs.parameters[''iceberg_catalog_name'']}}'
         - --iceberg-warehouse
@@ -304,7 +328,7 @@ deploymentSpec:
         - '{{$.inputs.parameters[''dataset_metadata_path'']}}'
         command:
         - /opt/venv/bin/python
-        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-spark:gcp
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-spark:hudi-native-v2-proof-20260727
     exec-promote-bst-model:
       container:
         args:
@@ -323,7 +347,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/registry/model_promotion.py
-        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:hudi-native-v2-proof-20260727
     exec-submit-rayjob:
       container:
         args:
@@ -384,7 +408,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:hudi-native-v2-proof-20260727
     exec-submit-rayjob-2:
       container:
         args:
@@ -445,7 +469,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/submit_ray_job.py
-        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:hudi-native-v2-proof-20260727
     exec-trigger-kserve-model-cd:
       container:
         args:
@@ -465,7 +489,7 @@ deploymentSpec:
         command:
         - python
         - /opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py
-        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
+        image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:hudi-native-v2-proof-20260727
 pipelineInfo:
   description: Feature engineering, BST training, evaluation, MLflow tracking, MinIO
     artifacts, and Postgres model config.
@@ -473,6 +497,18 @@ pipelineInfo:
 root:
   dag:
     tasks:
+      create-hudi-savepoint:
+        cachingOptions: {}
+        componentRef:
+          name: comp-create-hudi-savepoint
+        dependentTasks:
+        - evaluate-bst
+        inputs:
+          parameters:
+            dataset_metadata_path:
+              componentInputParameter: dataset_metadata_path
+        taskInfo:
+          name: Protect Hudi dataset version
       evaluate-bst:
         cachingOptions: {}
         componentRef:
@@ -499,6 +535,8 @@ root:
           parameters:
             dataset_metadata_path:
               componentInputParameter: dataset_metadata_path
+            dataset_run_id:
+              componentInputParameter: pipeline_run_id
             entity_input_path:
               componentInputParameter: entity_input_path
             feast_offline_root:
@@ -511,6 +549,8 @@ root:
               componentInputParameter: feature_source
             hudi_catalog_name:
               componentInputParameter: hudi_catalog_name
+            hudi_table:
+              componentInputParameter: hudi_table
             hudi_warehouse:
               componentInputParameter: hudi_warehouse
             iceberg_catalog_name:
@@ -523,14 +563,19 @@ root:
               componentInputParameter: offline_feature_table
             output_dir:
               componentInputParameter: split_output_dir
+        retryPolicy:
+          backoffDuration: 30s
+          backoffFactor: 2.0
+          backoffMaxDuration: 300s
+          maxRetryCount: 3
         taskInfo:
-          name: prepare-training-data
+          name: Prepare versioned Hudi dataset
       promote-bst-model:
         cachingOptions: {}
         componentRef:
           name: comp-promote-bst-model
         dependentTasks:
-        - evaluate-bst
+        - create-hudi-savepoint
         inputs:
           parameters:
             config_path:
@@ -779,6 +824,10 @@ root:
         defaultValue: recsys_features
         isOptional: true
         parameterType: STRING
+      hudi_table:
+        defaultValue: ml.bst_samples_native_v2
+        isOptional: true
+        parameterType: STRING
       hudi_warehouse:
         defaultValue: s3a://recsys-offline-feature-store/warehouse
         isOptional: true
@@ -856,7 +905,7 @@ root:
         isOptional: true
         parameterType: STRING
       ray_image:
-        defaultValue: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
+        defaultValue: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:hudi-native-v2-proof-20260727
         isOptional: true
         parameterType: STRING
       ray_job_name:
@@ -938,6 +987,84 @@ platforms:
   kubernetes:
     deploymentSpec:
       executors:
+        exec-create-hudi-savepoint:
+          imagePullPolicy: Always
+          nodeSelector:
+            labels:
+              recsys.ai/pool: ml-system
+          podMetadata:
+            annotations:
+              sidecar.istio.io/inject: 'false'
+          pvcMount:
+          - constant: recsys-mlops-pvc
+            mountPath: /workspace
+            pvcNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-pvc
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MINIO_ENDPOINT
+              secretKey: MINIO_ENDPOINT
+            - envVar: MINIO_ROOT_USER
+              secretKey: MINIO_ROOT_USER
+            - envVar: MINIO_ROOT_PASSWORD
+              secretKey: MINIO_ROOT_PASSWORD
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: MODEL_STORE_ENDPOINT
+              secretKey: MODEL_STORE_ENDPOINT
+            - envVar: MODEL_REGISTRY_POSTGRES_URI
+              secretKey: MODEL_REGISTRY_POSTGRES_URI
+            - envVar: MODEL_STORE_BUCKET
+              secretKey: MODEL_STORE_BUCKET
+            - envVar: MODEL_STORE_PREFIX
+              secretKey: MODEL_STORE_PREFIX
+            - envVar: PROMOTION_MANIFEST_KEY
+              secretKey: PROMOTION_MANIFEST_KEY
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            - envVar: ICEBERG_ENABLED
+              secretKey: ICEBERG_ENABLED
+            - envVar: ICEBERG_CATALOG_NAME
+              secretKey: ICEBERG_CATALOG_NAME
+            - envVar: ICEBERG_WAREHOUSE
+              secretKey: ICEBERG_WAREHOUSE
+            - envVar: HUDI_ENABLED
+              secretKey: HUDI_ENABLED
+            - envVar: HUDI_CATALOG_NAME
+              secretKey: HUDI_CATALOG_NAME
+            - envVar: HUDI_WAREHOUSE
+              secretKey: HUDI_WAREHOUSE
+            - envVar: HUDI_DATASET_TABLE
+              secretKey: HUDI_DATASET_TABLE
+            - envVar: HUDI_CLEAN_HOURS_RETAINED
+              secretKey: HUDI_CLEAN_HOURS_RETAINED
+            - envVar: HUDI_ZK_URL
+              secretKey: HUDI_ZK_URL
+            - envVar: HUDI_ZK_PORT
+              secretKey: HUDI_ZK_PORT
+            - envVar: HUDI_ZK_BASE_PATH
+              secretKey: HUDI_ZK_BASE_PATH
+            - envVar: HUDI_ZK_LOCK_KEY
+              secretKey: HUDI_ZK_LOCK_KEY
+            optional: false
+            secretName: recsys-mlops-runtime
+            secretNameParameter:
+              runtimeValue:
+                constant: recsys-mlops-runtime
+          tolerations:
+          - effect: NoSchedule
+            key: recsys.ai/workload
+            operator: Equal
+            value: ml-system
         exec-evaluate-bst:
           imagePullPolicy: Always
           nodeSelector:
@@ -994,6 +1121,18 @@ platforms:
               secretKey: HUDI_CATALOG_NAME
             - envVar: HUDI_WAREHOUSE
               secretKey: HUDI_WAREHOUSE
+            - envVar: HUDI_DATASET_TABLE
+              secretKey: HUDI_DATASET_TABLE
+            - envVar: HUDI_CLEAN_HOURS_RETAINED
+              secretKey: HUDI_CLEAN_HOURS_RETAINED
+            - envVar: HUDI_ZK_URL
+              secretKey: HUDI_ZK_URL
+            - envVar: HUDI_ZK_PORT
+              secretKey: HUDI_ZK_PORT
+            - envVar: HUDI_ZK_BASE_PATH
+              secretKey: HUDI_ZK_BASE_PATH
+            - envVar: HUDI_ZK_LOCK_KEY
+              secretKey: HUDI_ZK_LOCK_KEY
             optional: false
             secretName: recsys-mlops-runtime
             secretNameParameter:
@@ -1060,6 +1199,18 @@ platforms:
               secretKey: HUDI_CATALOG_NAME
             - envVar: HUDI_WAREHOUSE
               secretKey: HUDI_WAREHOUSE
+            - envVar: HUDI_DATASET_TABLE
+              secretKey: HUDI_DATASET_TABLE
+            - envVar: HUDI_CLEAN_HOURS_RETAINED
+              secretKey: HUDI_CLEAN_HOURS_RETAINED
+            - envVar: HUDI_ZK_URL
+              secretKey: HUDI_ZK_URL
+            - envVar: HUDI_ZK_PORT
+              secretKey: HUDI_ZK_PORT
+            - envVar: HUDI_ZK_BASE_PATH
+              secretKey: HUDI_ZK_BASE_PATH
+            - envVar: HUDI_ZK_LOCK_KEY
+              secretKey: HUDI_ZK_LOCK_KEY
             optional: false
             secretName: recsys-mlops-runtime
             secretNameParameter:
@@ -1126,6 +1277,18 @@ platforms:
               secretKey: HUDI_CATALOG_NAME
             - envVar: HUDI_WAREHOUSE
               secretKey: HUDI_WAREHOUSE
+            - envVar: HUDI_DATASET_TABLE
+              secretKey: HUDI_DATASET_TABLE
+            - envVar: HUDI_CLEAN_HOURS_RETAINED
+              secretKey: HUDI_CLEAN_HOURS_RETAINED
+            - envVar: HUDI_ZK_URL
+              secretKey: HUDI_ZK_URL
+            - envVar: HUDI_ZK_PORT
+              secretKey: HUDI_ZK_PORT
+            - envVar: HUDI_ZK_BASE_PATH
+              secretKey: HUDI_ZK_BASE_PATH
+            - envVar: HUDI_ZK_LOCK_KEY
+              secretKey: HUDI_ZK_LOCK_KEY
             optional: false
             secretName: recsys-mlops-runtime
             secretNameParameter:
@@ -1192,6 +1355,18 @@ platforms:
               secretKey: HUDI_CATALOG_NAME
             - envVar: HUDI_WAREHOUSE
               secretKey: HUDI_WAREHOUSE
+            - envVar: HUDI_DATASET_TABLE
+              secretKey: HUDI_DATASET_TABLE
+            - envVar: HUDI_CLEAN_HOURS_RETAINED
+              secretKey: HUDI_CLEAN_HOURS_RETAINED
+            - envVar: HUDI_ZK_URL
+              secretKey: HUDI_ZK_URL
+            - envVar: HUDI_ZK_PORT
+              secretKey: HUDI_ZK_PORT
+            - envVar: HUDI_ZK_BASE_PATH
+              secretKey: HUDI_ZK_BASE_PATH
+            - envVar: HUDI_ZK_LOCK_KEY
+              secretKey: HUDI_ZK_LOCK_KEY
             optional: false
             secretName: recsys-mlops-runtime
             secretNameParameter:
@@ -1258,6 +1433,18 @@ platforms:
               secretKey: HUDI_CATALOG_NAME
             - envVar: HUDI_WAREHOUSE
               secretKey: HUDI_WAREHOUSE
+            - envVar: HUDI_DATASET_TABLE
+              secretKey: HUDI_DATASET_TABLE
+            - envVar: HUDI_CLEAN_HOURS_RETAINED
+              secretKey: HUDI_CLEAN_HOURS_RETAINED
+            - envVar: HUDI_ZK_URL
+              secretKey: HUDI_ZK_URL
+            - envVar: HUDI_ZK_PORT
+              secretKey: HUDI_ZK_PORT
+            - envVar: HUDI_ZK_BASE_PATH
+              secretKey: HUDI_ZK_BASE_PATH
+            - envVar: HUDI_ZK_LOCK_KEY
+              secretKey: HUDI_ZK_LOCK_KEY
             optional: false
             secretName: recsys-mlops-runtime
             secretNameParameter:
@@ -1324,6 +1511,18 @@ platforms:
               secretKey: HUDI_CATALOG_NAME
             - envVar: HUDI_WAREHOUSE
               secretKey: HUDI_WAREHOUSE
+            - envVar: HUDI_DATASET_TABLE
+              secretKey: HUDI_DATASET_TABLE
+            - envVar: HUDI_CLEAN_HOURS_RETAINED
+              secretKey: HUDI_CLEAN_HOURS_RETAINED
+            - envVar: HUDI_ZK_URL
+              secretKey: HUDI_ZK_URL
+            - envVar: HUDI_ZK_PORT
+              secretKey: HUDI_ZK_PORT
+            - envVar: HUDI_ZK_BASE_PATH
+              secretKey: HUDI_ZK_BASE_PATH
+            - envVar: HUDI_ZK_LOCK_KEY
+              secretKey: HUDI_ZK_LOCK_KEY
             optional: false
             secretName: recsys-mlops-runtime
             secretNameParameter:

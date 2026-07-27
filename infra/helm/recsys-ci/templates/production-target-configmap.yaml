@@ -1,0 +1,17 @@
+{{- if .Values.productionTarget.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-production-target
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-production-target
+    app.kubernetes.io/part-of: recsys-ci
+data:
+  projectId: {{ required "productionTarget.projectId is required" .Values.productionTarget.projectId | quote }}
+  region: {{ required "productionTarget.region is required" .Values.productionTarget.region | quote }}
+  zone: {{ required "productionTarget.zone is required" .Values.productionTarget.zone | quote }}
+  cluster: {{ required "productionTarget.cluster is required" .Values.productionTarget.cluster | quote }}
+  context: {{ required "productionTarget.context is required" .Values.productionTarget.context | quote }}
+  imageRegistry: {{ required "productionTarget.imageRegistry is required" .Values.productionTarget.imageRegistry | quote }}
+{{- end }}

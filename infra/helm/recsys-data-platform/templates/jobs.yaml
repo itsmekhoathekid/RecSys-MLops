@@ -3,11 +3,14 @@ kind: Job
 metadata:
   name: init-data-platform-minio
   namespace: {{ .Values.namespace.name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-30"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   template:
     metadata:
       annotations:
-        # This non-hook bootstrap Job is immutable after installation.
         sidecar.istio.io/inject: "false"
     spec:
       enableServiceLinks: false
@@ -50,7 +53,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: init-source-schema
-          image: {{ .Values.images.dataflowCli }}
+          image: {{ .Values.images.dataIngestion }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["bash", "-lc"]
           args:
@@ -92,7 +95,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: register-debezium
-          image: {{ .Values.images.dataflowCli }}
+          image: {{ .Values.images.dataIngestion }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["bash", "-lc"]
           args:

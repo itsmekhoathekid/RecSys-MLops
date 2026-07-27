@@ -185,7 +185,7 @@ variable "image_tag" {
 }
 
 variable "image_overrides" {
-  description = "Optional full image overrides. Keys: dataflow_cli, spark, flink, kafka_connect, airflow, mlflow, api, training_repository."
+  description = "Optional full image overrides. Keys: data_ingestion, feature_store, drift_retrain, spark, flink, kafka_connect, airflow, mlflow, api, training_repository."
   type        = map(string)
   default     = {}
 }

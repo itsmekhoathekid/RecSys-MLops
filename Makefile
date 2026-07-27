@@ -258,7 +258,9 @@ dataflow-test:
 .PHONY: data-platform-images-minikube
 data-platform-images-minikube:
 	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f infra/docker/Dockerfile.base-python -t recsys-base-python:local .
-	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f apps/data-platform/Dockerfile.dataflow-cli -t recsys-dataflow-cli:local .
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f apps/data-platform/Dockerfile.data-ingestion -t recsys-data-ingestion:local .
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f apps/data-platform/Dockerfile.feature-store -t recsys-feature-store:local .
+	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f apps/data-platform/Dockerfile.drift-retrain -t recsys-drift-retrain:local .
 	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f apps/data-platform/Dockerfile.spark -t recsys-spark:local .
 	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f apps/data-platform/Dockerfile.flink -t recsys-flink:local .
 	@eval "$$(minikube -p $(MINIKUBE_PROFILE) docker-env)" && docker build -f infra/docker/Dockerfile.kafka-connect -t recsys-kafka-connect:local .

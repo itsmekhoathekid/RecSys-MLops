@@ -31,7 +31,7 @@ The chart seeds Jenkins jobs and views at startup:
 - `99 All Component CI/CD`: all manual component proof jobs in one overview.
 
 On GKE, `values-gke.yaml` points Jenkins image push/pull parameters at
-`asia-southeast1-docker.pkg.dev/fsds-coursework/recsys` and enables
+`asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys` and enables
 `REQUIRE_GCP_ARTIFACT_REGISTRY`. Proof builds fail fast if image publishing is
 disabled or the push registry is not GCP Artifact Registry.
 

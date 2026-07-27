@@ -19,6 +19,10 @@ x-airflow-env: &airflow-env
   AIRFLOW__CORE__DAGS_FOLDER: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
   PYTHONPATH: /opt/recsys/apps/data-platform/src:/opt/recsys
+  DATA_INGESTION_IMAGE: recsys-data-ingestion:local
+  FEATURE_STORE_IMAGE: recsys-feature-store:local
+  DRIFT_RETRAIN_IMAGE: recsys-drift-retrain:local
+  SPARK_IMAGE: recsys-spark:local
 
 x-minio-env: &minio-env
   MINIO_ENDPOINT: http://minio:9000
@@ -340,11 +344,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     networks: [recsys-dataflow]
 
-  dataflow-cli:
-    image: recsys-dataflow-cli:local
+  data-ingestion:
+    image: recsys-data-ingestion:local
     build:
       context: ../..
-      dockerfile: apps/data-platform/Dockerfile.dataflow-cli
+      dockerfile: apps/data-platform/Dockerfile.data-ingestion
+      args:
+        RECSYS_BASE_IMAGE: recsys-base-python:local
     depends_on:
       base-python:
         condition: service_completed_successfully
@@ -367,5 +373,51 @@ services:
       KAFKA_CONNECT_URL: http://kafka-connect:8083
       REDIS_HOST: redis
       REDIS_PORT: 6379
+    command: ["sleep", "infinity"]
+    networks: [recsys-dataflow]
+
+  feature-store:
+    image: recsys-feature-store:local
+    build:
+      context: ../..
+      dockerfile: apps/data-platform/Dockerfile.feature-store
+      args:
+        RECSYS_BASE_IMAGE: recsys-base-python:local
+    depends_on:
+      base-python:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *minio-env
+      FEAST_POSTGRES_HOST: postgres
+      FEAST_POSTGRES_PORT: 5432
+      FEAST_POSTGRES_DB: ${FEAST_POSTGRES_DB:-feature_store}
+      FEAST_POSTGRES_SCHEMA: ${FEAST_POSTGRES_SCHEMA:-feature_store}
+      FEAST_POSTGRES_USER: ${FEAST_POSTGRES_USER:-feast}
+      FEAST_POSTGRES_PASSWORD: ${FEAST_POSTGRES_PASSWORD:-feast}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    command: ["sleep", "infinity"]
+    networks: [recsys-dataflow]
+
+  drift-retrain:
+    image: recsys-drift-retrain:local
+    build:
+      context: ../..
+      dockerfile: apps/data-platform/Dockerfile.drift-retrain
+      args:
+        RECSYS_BASE_IMAGE: recsys-base-python:local
+    depends_on:
+      base-python:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *minio-env
     command: ["sleep", "infinity"]
     networks: [recsys-dataflow]

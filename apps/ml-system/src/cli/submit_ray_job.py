@@ -381,9 +381,23 @@ def _dataset_versions_match(best_result: dict[str, Any], dataset_metadata: dict[
         actual_version = actual.get(split)
         if not actual_version:
             return False
-        for key in ("table", "snapshot_id", "commit_time", "tag", "row_count"):
+        for key in ("table", "table_path", "row_count"):
             if actual_version.get(key) != expected_version.get(key):
                 return False
+        expected_instant = (
+            expected_version.get("hudi_instant")
+            or expected_version.get("commit_time")
+            or expected_version.get("snapshot_id")
+        )
+        actual_instant = (
+            actual_version.get("hudi_instant")
+            or actual_version.get("commit_time")
+            or actual_version.get("snapshot_id")
+        )
+        if actual_instant != expected_instant:
+            return False
+        if expected_version.get("tag") and actual_version.get("tag") != expected_version.get("tag"):
+            return False
     return True
 
 

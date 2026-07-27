@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from lineage.dataset_versioning import (
+    DATASET_TABLE,
     DEFAULT_CATALOG_NAME,
     DEFAULT_WAREHOUSE,
     HudiConfig,
@@ -532,8 +533,8 @@ def _dataset_metadata(
     feature_source: str,
     offline_feature_table: str,
 ) -> dict[str, Any]:
-    training_table = hudi["tables"]["training"]
-    evaluation_table = hudi["tables"]["evaluation"]
+    dataset_table = hudi["table"]
+    hudi_instant = dataset_table.get("hudi_instant")
     return {
         "dataset_run_id": dataset_run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -553,26 +554,23 @@ def _dataset_metadata(
             "train": {
                 "row_count": split_counts.get("train", 0),
                 "jsonl_path": str(output_dir / "train.jsonl"),
-                "table": training_table["name"],
-                "snapshot_id": training_table["snapshot_id"],
-                "commit_time": training_table.get("commit_time"),
-                "tag": training_table["tag"],
+                "table": dataset_table["name"],
+                "table_path": dataset_table.get("path", ""),
+                "hudi_instant": hudi_instant,
             },
             "val": {
                 "row_count": split_counts.get("val", 0),
                 "jsonl_path": str(output_dir / "val.jsonl"),
-                "table": training_table["name"],
-                "snapshot_id": training_table["snapshot_id"],
-                "commit_time": training_table.get("commit_time"),
-                "tag": training_table["tag"],
+                "table": dataset_table["name"],
+                "table_path": dataset_table.get("path", ""),
+                "hudi_instant": hudi_instant,
             },
             "test": {
                 "row_count": split_counts.get("test", 0),
                 "jsonl_path": str(output_dir / "test.jsonl"),
-                "table": evaluation_table["name"],
-                "snapshot_id": evaluation_table["snapshot_id"],
-                "commit_time": evaluation_table.get("commit_time"),
-                "tag": evaluation_table["tag"],
+                "table": dataset_table["name"],
+                "table_path": dataset_table.get("path", ""),
+                "hudi_instant": hudi_instant,
             },
         },
     }
@@ -666,6 +664,7 @@ def prepare_bst_jsonl_splits(
     hudi_enabled: bool = False,
     hudi_warehouse: str = DEFAULT_WAREHOUSE,
     hudi_catalog_name: str = DEFAULT_CATALOG_NAME,
+    hudi_table: str | None = None,
     iceberg_enabled: bool | None = None,
     iceberg_catalog_name: str = DEFAULT_CATALOG_NAME,
     iceberg_warehouse: str = DEFAULT_WAREHOUSE,
@@ -698,17 +697,18 @@ def prepare_bst_jsonl_splits(
     processing_code = processing_code_version or resolve_processing_code_version()
     versioning_enabled = hudi_enabled if iceberg_enabled is None else hudi_enabled or iceberg_enabled
     if versioning_enabled:
-        samples = to_versioned_samples(
-            splits,
-            dataset_run_id=run_id,
-            feature_service_version=feature_service_name,
-            processing_code=processing_code,
-        )
+        samples = to_versioned_samples(splits)
         hudi_metadata = commit_samples_to_hudi(
             samples=samples,
             output_dir=output,
             dataset_run_id=run_id,
-            config=HudiConfig(catalog_name=hudi_catalog_name, warehouse=hudi_warehouse),
+            config=HudiConfig.from_env(
+                catalog_name=hudi_catalog_name,
+                warehouse=hudi_warehouse,
+                dataset_table=hudi_table,
+            ),
+            processing_code=processing_code,
+            feature_service_version=feature_service_name,
         )
     else:
         split_service.write_jsonl_splits(splits, output)
@@ -781,6 +781,7 @@ def main() -> int:
     parser.add_argument("--hudi-enabled", default=os.getenv("HUDI_ENABLED", os.getenv("ICEBERG_ENABLED", "false")))
     parser.add_argument("--hudi-warehouse", default=os.getenv("HUDI_WAREHOUSE", DEFAULT_WAREHOUSE))
     parser.add_argument("--hudi-catalog-name", default=os.getenv("HUDI_CATALOG_NAME", DEFAULT_CATALOG_NAME))
+    parser.add_argument("--hudi-table", default=os.getenv("HUDI_DATASET_TABLE", DATASET_TABLE))
     parser.add_argument("--iceberg-enabled", default=None)
     parser.add_argument("--iceberg-catalog-name", default=os.getenv("ICEBERG_CATALOG_NAME", DEFAULT_CATALOG_NAME))
     parser.add_argument("--iceberg-warehouse", default=os.getenv("ICEBERG_WAREHOUSE", DEFAULT_WAREHOUSE))
@@ -804,6 +805,7 @@ def main() -> int:
         hudi_enabled=_bool_flag(args.hudi_enabled, default=False),
         hudi_warehouse=args.hudi_warehouse,
         hudi_catalog_name=args.hudi_catalog_name,
+        hudi_table=args.hudi_table,
         iceberg_enabled=_bool_flag(args.iceberg_enabled, default=False) if args.iceberg_enabled is not None else None,
         iceberg_catalog_name=args.iceberg_catalog_name,
         iceberg_warehouse=args.iceberg_warehouse,

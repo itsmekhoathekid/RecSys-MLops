@@ -12,7 +12,8 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = "recsys-dataflow"
-DATAFLOW_IMAGE = os.getenv("DATAFLOW_IMAGE", "recsys-dataflow-cli:local")
+FEATURE_STORE_IMAGE = os.getenv("FEATURE_STORE_IMAGE", "recsys-feature-store:local")
+DRIFT_RETRAIN_IMAGE = os.getenv("DRIFT_RETRAIN_IMAGE", "recsys-drift-retrain:local")
 DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
@@ -159,16 +160,16 @@ if DAG is not None:
         tags=["recsys", "feast", "materialize", "online-store"],
     ) as recsys_feast_materialize:
         apply_feature_repo = pod_task(
-            "apply_feast_feature_repo", DATAFLOW_IMAGE, APPLY_FEAST_FEATURE_REPO_COMMAND
-        )
+            "apply_feast_feature_repo", FEATURE_STORE_IMAGE, APPLY_FEAST_FEATURE_REPO_COMMAND
+        )  # register/update metdata trong registry
         materialize_incremental = pod_task(
             "feast_materialize_incremental",
-            DATAFLOW_IMAGE,
+            FEATURE_STORE_IMAGE,
             FEAST_MATERIALIZE_INCREMENTAL_COMMAND,
-        )
+        )  # incremental materialize
         validate_online_store = pod_task(
             "verify_redis_online_store_updated",
-            DATAFLOW_IMAGE,
+            FEATURE_STORE_IMAGE,
             VERIFY_REDIS_ONLINE_STORE_COMMAND,
         )
 
@@ -183,14 +184,14 @@ if DAG is not None:
         tags=["recsys", "drift", "monitoring", "retrain"],
     ) as recsys_feature_drift_monitoring:
         run_drift = pod_task(
-            "run_offline_feature_drift", DATAFLOW_IMAGE, RUN_OFFLINE_FEATURE_DRIFT_COMMAND
+            "run_offline_feature_drift", DRIFT_RETRAIN_IMAGE, RUN_OFFLINE_FEATURE_DRIFT_COMMAND
         )
         push_metrics = pod_task(
-            "push_drift_metrics", DATAFLOW_IMAGE, PUSH_DRIFT_METRICS_COMMAND
+            "push_drift_metrics", DRIFT_RETRAIN_IMAGE, PUSH_DRIFT_METRICS_COMMAND
         )
         trigger_retrain = pod_task(
             "trigger_kubeflow_retrain_if_drift",
-            DATAFLOW_IMAGE,
+            DRIFT_RETRAIN_IMAGE,
             TRIGGER_KUBEFLOW_RETRAIN_COMMAND,
         )
 

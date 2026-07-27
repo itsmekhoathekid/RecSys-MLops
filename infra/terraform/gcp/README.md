@@ -41,7 +41,9 @@ TAG=gcp
 gcloud auth configure-docker "${REGION}-docker.pkg.dev"
 
 docker build -f ../../../infra/docker/Dockerfile.base-python -t recsys-base-python:local ../../..
-docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f ../../../apps/data-platform/Dockerfile.dataflow-cli -t "${REPO}/recsys-dataflow-cli:${TAG}" ../../..
+docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f ../../../apps/data-platform/Dockerfile.data-ingestion -t "${REPO}/recsys-data-ingestion:${TAG}" ../../..
+docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f ../../../apps/data-platform/Dockerfile.feature-store -t "${REPO}/recsys-feature-store:${TAG}" ../../..
+docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f ../../../apps/data-platform/Dockerfile.drift-retrain -t "${REPO}/recsys-drift-retrain:${TAG}" ../../..
 docker build -f ../../../apps/data-platform/Dockerfile.spark -t "${REPO}/recsys-spark:${TAG}" ../../..
 docker build -f ../../../apps/data-platform/Dockerfile.flink -t "${REPO}/recsys-flink:${TAG}" ../../..
 docker build -f ../../../infra/docker/Dockerfile.kafka-connect -t "${REPO}/recsys-kafka-connect:${TAG}" ../../..
@@ -50,7 +52,9 @@ docker build -f ../../../infra/docker/Dockerfile.mlflow -t "${REPO}/recsys-mlflo
 docker build -f ../../../apps/api-serving/Dockerfile -t "${REPO}/recsys-api-serving:${TAG}" ../../..
 docker build -f ../../../apps/ml-system/Dockerfile.training -t "${REPO}/recsys-mlops-training:${TAG}" ../../..
 
-docker push "${REPO}/recsys-dataflow-cli:${TAG}"
+docker push "${REPO}/recsys-data-ingestion:${TAG}"
+docker push "${REPO}/recsys-feature-store:${TAG}"
+docker push "${REPO}/recsys-drift-retrain:${TAG}"
 docker push "${REPO}/recsys-spark:${TAG}"
 docker push "${REPO}/recsys-flink:${TAG}"
 docker push "${REPO}/recsys-kafka-connect:${TAG}"
@@ -91,7 +95,7 @@ make gcp-services-status
 The down command records the live node-pool sizes in `.gcp-services-power-state.env` and the up command restores from that file. Override the defaults only if the cluster was created with different names:
 
 ```bash
-GCP_PROJECT_ID=fsds-coursework \
+GCP_PROJECT_ID=rec-sys-503309 \
 GKE_ZONE=asia-southeast1-b \
 GKE_CLUSTER=recsys-mlops-gke \
 make gcp-services-up
@@ -99,7 +103,7 @@ make gcp-services-up
 
 For the coursework-sized GKE cluster, `make gcp-services-up` also normalizes runtime settings so the full data and ML platform comes back in the same proof-ready shape:
 
-- KEDA HTTP add-on `external-scaler` and `interceptor` default to `1` replica each. The services stay enabled, but this leaves enough CPU request headroom for KFP component pods and the Ray retrain launcher.
+- KEDA HTTP add-on `external-scaler` and `interceptor` default to `1` replica each. Its three control-plane deployments use the coursework request profile (`25m` CPU and `20Mi` memory each). The services stay enabled, but this leaves enough schedulable headroom for Airflow, KFP component pods and the Ray retrain launcher on the fixed two-node cluster.
 - Airflow data-platform config is restored to `REALTIME_E2E_ENABLED=true` and `RETRAIN_PSI_THRESHOLD=0.15`, so a forced-drift proof run does not leave the cluster in forced mode.
 - The smoke phase checks the recommendation API, Flink streaming job, Jenkins UI, Airflow UI, DataHub UI/GMS, Prometheus, Grafana, and a temporary `500m` CPU Ray-launcher scheduling pod. A/B split is checked when A/B is enabled; set `GCP_SERVICES_REQUIRE_AB_TEST=1` to require an active candidate deployment.
 - Smoke port-forwards use non-default local ports to avoid clashing with proof UIs already open locally: Jenkins `28090`, Airflow `28080`, DataHub GMS `28088`, DataHub frontend `29002`, Prometheus `29090`, and Grafana `23000`.

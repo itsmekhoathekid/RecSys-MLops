@@ -57,6 +57,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ .Values.featureApi.name }}
+          env:
+            - name: IMAGE_REFERENCE
+              value: {{ .Values.featureApi.image | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.featureApi.service.targetPort }}

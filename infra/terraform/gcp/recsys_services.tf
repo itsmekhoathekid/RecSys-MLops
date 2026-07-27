@@ -38,6 +38,7 @@ resource "helm_release" "recsys_observability" {
   depends_on = [
     google_container_node_pool.cpu,
     kubernetes_namespace.observability,
+    helm_release.prometheus_operator,
   ]
 }
 

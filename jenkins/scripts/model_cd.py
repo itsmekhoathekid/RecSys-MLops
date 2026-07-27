@@ -4,12 +4,19 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import time
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlparse
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from jenkins.python.model_cd import storage as transactional_storage
 
 
 REQUIRED_MODEL_FILES = [
@@ -77,33 +84,20 @@ def latest_storage_uri(control_manifest: dict | None, candidate_manifest: dict) 
 
 
 def copy_s3_prefix(source_uri: str, target_uri: str) -> None:
-    source_bucket, source_prefix = parse_s3_uri(source_uri)
-    target_bucket, target_prefix = parse_s3_uri(target_uri)
-    client = s3_client()
-    paginator = client.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=source_bucket, Prefix=source_prefix.rstrip("/") + "/"):
-        for item in page.get("Contents", []):
-            source_key = item["Key"]
-            relative = source_key[len(source_prefix.rstrip("/") + "/") :]
-            if not relative:
-                continue
-            target_key = f"{target_prefix.rstrip('/')}/{relative}"
-            if source_bucket == target_bucket and source_key == target_key:
-                continue
-            client.copy_object(
-                Bucket=target_bucket,
-                Key=target_key,
-                CopySource={"Bucket": source_bucket, "Key": source_key},
-            )
+    transactional_storage.copy_prefix(
+        source_uri,
+        target_uri,
+        os.getenv("MODEL_CD_TRANSACTION_STATE", ""),
+        client=s3_client(),
+    )
 
 
 def upload_manifest(manifest: dict, uri: str) -> None:
-    bucket, key = parse_s3_uri(uri)
-    s3_client().put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8"),
-        ContentType="application/json",
+    transactional_storage.put_manifest(
+        manifest,
+        uri,
+        os.getenv("MODEL_CD_TRANSACTION_STATE", ""),
+        client=s3_client(),
     )
 
 
@@ -347,13 +341,18 @@ def deploy(values_path: Path, timeout: str) -> None:
         "kserve-triton-inference",
         "--create-namespace",
         "--reuse-values",
+        "--cleanup-on-fail",
+        "--wait",
+        "--wait-for-jobs",
+        "--history-max",
+        os.getenv("HELM_HISTORY_MAX", "20"),
         "--timeout",
         timeout,
         "-f",
         str(values_path),
     ]
     if atomic_enabled:
-        base_command.insert(8, "--atomic")
+        base_command.append("--atomic")
     run(base_command + bootstrap_set_args)
     run(
         [

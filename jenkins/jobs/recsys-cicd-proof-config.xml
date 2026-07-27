@@ -63,14 +63,14 @@ pipeline {
     }
     stage('Component Build And Publish') {
       parallel {
-        stage('Materialize Pipeline') { steps { sh 'echo "Component Build And Publish > Materialize Pipeline"; echo "recsys-dataflow-cli:${BUILD_TAG}"' } }
+        stage('Materialize Pipeline') { steps { sh 'echo "Component Build And Publish > Materialize Pipeline"; echo "recsys-feature-store:${BUILD_TAG}"' } }
         stage('Training Pipeline') { steps { sh 'echo "Component Build And Publish > Training Pipeline"; echo "recsys-mlops-training:${BUILD_TAG}"' } }
-        stage('DP1 Raw To Bronze') { steps { sh 'echo "Component Build And Publish > DP1 Raw To Bronze"; echo "recsys-data-generator:${BUILD_TAG}"' } }
+        stage('DP1 Raw To Bronze') { steps { sh 'echo "Component Build And Publish > DP1 Raw To Bronze"; echo "recsys-data-ingestion:${BUILD_TAG}"' } }
         stage('DP2 Bronze To Silver Gold') { steps { sh 'echo "Component Build And Publish > DP2 Bronze To Silver Gold"; echo "recsys-spark:${BUILD_TAG}"' } }
-        stage('DP3 Offline Feature Table') { steps { sh 'echo "Component Build And Publish > DP3 Offline Feature Table"; echo "recsys-dataflow-cli:${BUILD_TAG}"' } }
+        stage('DP3 Offline Feature Table') { steps { sh 'echo "Component Build And Publish > DP3 Offline Feature Table"; echo "recsys-feature-store:${BUILD_TAG}"' } }
         stage('FastAPI Web API') { steps { sh 'echo "Component Build And Publish > FastAPI Web API"; echo "recsys-api-serving:${BUILD_TAG}"' } }
         stage('KServe Inference Engine') { steps { sh 'echo "Component Build And Publish > KServe Inference Engine"; echo "model artifact consumed"' } }
-        stage('Realtime Drift Detection') { steps { sh 'echo "Component Build And Publish > Realtime Drift Detection"; echo "recsys-dataflow-cli:${BUILD_TAG}"' } }
+        stage('Realtime Drift Detection') { steps { sh 'echo "Component Build And Publish > Realtime Drift Detection"; echo "recsys-drift-retrain:${BUILD_TAG}"' } }
         stage('Stream Features To Offline Store') { steps { sh 'echo "Component Build And Publish > Stream Features To Offline Store"; echo "recsys-flink:${BUILD_TAG}"' } }
         stage('Stream Features To Online Store') { steps { sh 'echo "Component Build And Publish > Stream Features To Online Store"; echo "recsys-flink:${BUILD_TAG}"' } }
         stage('Spark Batch Processing') { steps { sh 'echo "Component Build And Publish > Spark Batch Processing"; echo "recsys-spark:${BUILD_TAG}"' } }

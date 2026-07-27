@@ -1,6 +1,6 @@
 # Security Proof
 
-This proof covers the final-coursework rubric item **Security** on GCP/GKE project `fsds-coursework`.
+This proof covers the final-coursework rubric item **Security** on GCP/GKE project `rec-sys-503309`.
 
 ## Scope
 

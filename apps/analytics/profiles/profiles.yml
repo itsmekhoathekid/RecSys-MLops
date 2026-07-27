@@ -13,4 +13,3 @@ recsys_analytics:
       http_scheme: http
       session_properties:
         query_max_run_time: 30m
-

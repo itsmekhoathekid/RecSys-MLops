@@ -3,9 +3,21 @@ set -euo pipefail
 
 ACTION="${1:-}"
 
-PROJECT_ID="${GCP_PROJECT_ID:-${PROJECT_ID:-fsds-coursework}}"
-ZONE="${GKE_ZONE:-${ZONE:-asia-southeast1-b}}"
-CLUSTER="${GKE_CLUSTER:-${CLUSTER:-recsys-mlops-gke}}"
+PROJECT_ID="$(python3 jenkins/python/configuration.py gcp projectId)"
+ZONE="$(python3 jenkins/python/configuration.py gcp zone)"
+CLUSTER="$(python3 jenkins/python/configuration.py gcp cluster)"
+[[ -z "${GCP_PROJECT_ID:-}" || "${GCP_PROJECT_ID}" == "${PROJECT_ID}" ]] || {
+  echo "GCP_PROJECT_ID cannot override production target ${PROJECT_ID}" >&2
+  exit 2
+}
+[[ -z "${GKE_ZONE:-}" || "${GKE_ZONE}" == "${ZONE}" ]] || {
+  echo "GKE_ZONE cannot override production target ${ZONE}" >&2
+  exit 2
+}
+[[ -z "${GKE_CLUSTER:-}" || "${GKE_CLUSTER}" == "${CLUSTER}" ]] || {
+  echo "GKE_CLUSTER cannot override production target ${CLUSTER}" >&2
+  exit 2
+}
 STATE_FILE="${GCP_POWER_STATE_FILE:-.gcp-services-power-state.env}"
 WAIT_TIMEOUT="${GCP_SERVICES_WAIT_TIMEOUT:-900s}"
 SKIP_SMOKE="${GCP_SERVICES_SKIP_SMOKE:-0}"
@@ -504,6 +516,25 @@ normalize_keda_http_addon() {
     echo "GCP_SERVICES_KEDA_HTTP_REPLICAS must be an integer, got: ${KEDA_HTTP_REPLICAS}" >&2
     return 2
   fi
+
+  # The chart defaults reserve 250m CPU for each HTTP add-on pod even though the
+  # coursework workload normally uses single-digit millicores. Keep the services
+  # enabled, but use the proof-cluster profile also applied by
+  # infra/k8s/scripts/rebalance_ml_node_pool.sh.
+  local keda_http_deployments=(
+    keda-add-ons-http-controller-manager
+    keda-add-ons-http-external-scaler
+    keda-add-ons-http-interceptor
+  )
+  local deployment
+  for deployment in "${keda_http_deployments[@]}"; do
+    if kubectl get deploy -n keda "${deployment}" >/dev/null 2>&1; then
+      echo "Normalize keda/${deployment}: requests cpu=25m,memory=20Mi"
+      kubectl set resources deployment/"${deployment}" -n keda \
+        --requests=cpu=25m,memory=20Mi \
+        --limits=cpu=500m,memory=64Mi
+    fi
+  done
 
   # One replica keeps the KEDA HTTP add-on fully available for coursework proof while
   # preserving enough schedulable CPU for KFP component pods and the RayJob launcher.

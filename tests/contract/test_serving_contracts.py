@@ -168,26 +168,33 @@ def test_serving_chart_can_render_api_only_for_rollout_demo():
 
 
 def test_api_component_deploy_does_not_disable_kserve_autoscaling():
-    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    deploy_script = (ROOT / "jenkins/scripts/deploy/serving.sh").read_text(encoding="utf-8")
     api_deploy = re.search(r"deploy_api_unlocked\(\) \{(?P<body>.*?)\n\}", deploy_script, re.DOTALL)
 
     assert api_deploy is not None
     assert 'kserve.enabled=false' not in api_deploy.group("body")
     assert 'autoscaling.kserveResource.enabled=false' not in api_deploy.group("body")
-    assert "--wait" not in api_deploy.group("body")
-    assert 'verify_and_wait_workload "deployment" "recsys-api-serving"' in api_deploy.group("body")
+    assert "--wait" in api_deploy.group("body")
+    assert "verify_and_wait_workload deployment recsys-api-serving" in api_deploy.group("body")
 
 
 def test_component_deploy_background_tunnels_do_not_inherit_deployment_lock():
-    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    deploy_script = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            ROOT / "jenkins/scripts/component_deploy.sh",
+            ROOT / "jenkins/scripts/deploy/runtime.sh",
+        )
+    )
     port_forwards = [
         line.strip()
         for line in deploy_script.splitlines()
-        if line.strip().startswith("kubectl port-forward")
+        if line.strip().startswith("exec kubectl port-forward")
     ]
 
     assert len(port_forwards) == 2
-    assert all('9>&- &' in command for command in port_forwards)
+    assert all("exec kubectl port-forward" in command for command in port_forwards)
+    assert 'eval "exec ${lock_fd}>&-"' in deploy_script
     lock_body = re.search(
         r"with_file_lock\(\) \{(?P<body>.*?)\n\}", deploy_script, re.DOTALL
     )
@@ -922,7 +929,8 @@ def test_model_cd_query_prometheus_and_crd_exists(monkeypatch):
 
 
 def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
-    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    deploy_script = (ROOT / "jenkins/scripts/deploy/serving.sh").read_text(encoding="utf-8")
+    dispatch = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
     cicd_block = re.search(
         r"deploy_kserve_unlocked\(\) \{(?P<body>.*?)\n\}",
         deploy_script,
@@ -940,4 +948,4 @@ def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
     assert "--apply" not in cicd_block.group("body")
     assert "model_cd.py" in cd_block.group("body")
     assert "--apply" in cd_block.group("body")
-    assert "kserve_model_cd)" in deploy_script
+    assert "kserve_model_cd)" in dispatch

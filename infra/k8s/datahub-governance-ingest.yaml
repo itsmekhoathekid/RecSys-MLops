@@ -14,7 +14,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: governance-ingest
-          image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-dataflow-cli:governance-20260711-v4
+          image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-feature-store:governance-20260711-v4
           imagePullPolicy: Always
           envFrom:
             - configMapRef:

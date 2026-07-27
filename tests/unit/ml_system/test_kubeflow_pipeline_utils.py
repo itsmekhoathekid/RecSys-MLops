@@ -36,6 +36,12 @@ def test_secret_env_mapping_is_stable():
         "HUDI_ENABLED": "HUDI_ENABLED",
         "HUDI_CATALOG_NAME": "HUDI_CATALOG_NAME",
         "HUDI_WAREHOUSE": "HUDI_WAREHOUSE",
+        "HUDI_DATASET_TABLE": "HUDI_DATASET_TABLE",
+        "HUDI_CLEAN_HOURS_RETAINED": "HUDI_CLEAN_HOURS_RETAINED",
+        "HUDI_ZK_URL": "HUDI_ZK_URL",
+        "HUDI_ZK_PORT": "HUDI_ZK_PORT",
+        "HUDI_ZK_BASE_PATH": "HUDI_ZK_BASE_PATH",
+        "HUDI_ZK_LOCK_KEY": "HUDI_ZK_LOCK_KEY",
     }
 
 
@@ -356,6 +362,9 @@ def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeyp
     assert "--feature-source" in compiled
     assert "--offline-feature-table" in compiled
     assert "--hudi-enabled" in compiled
+    assert "--hudi-table" in compiled
+    assert "--dataset-run-id" in compiled
+    assert "ml.bst_samples_native_v2" in compiled
     assert "--dataset-metadata-path" in compiled
     assert "offline_feature_table" in compiled
     assert "recsys_features.feature_store.ml_bst_training" in compiled
@@ -367,6 +376,9 @@ def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeyp
     assert "distributed_worker_replicas: int [Default: 2.0]" in compiled
     assert "distributed_num_workers: int [Default: 2.0]" in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/evaluate_ray_best_bst.py" in compiled
+    assert "/opt/recsys/apps/ml-system/src/cli/create_hudi_savepoint.py" in compiled
+    assert "Protect Hudi dataset version" in compiled
+    assert "backoffFactor: 2.0" in compiled
     assert "/opt/recsys/apps/ml-system/src/registry/model_promotion.py" in compiled
     assert "--eval-metrics-path" in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/trigger_kserve_cd.py" in compiled

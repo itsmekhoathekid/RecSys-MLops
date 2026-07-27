@@ -27,7 +27,7 @@ for all component pipelines:
 - `Docker Login`: authenticates to GCP Artifact Registry with Jenkins
   credentials or the GKE node metadata token.
 - `Component Build And Publish`: builds component images, tags them with the Git
-  commit, pushes them to `asia-southeast1-docker.pkg.dev/fsds-coursework/recsys`,
+  commit, pushes them to `asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys`,
   and writes `.ci-image-manifest/<component>.env`.
 - `Component Deploy Or Update`: runs only for `main` or manual proof jobs with
   `FORCE_DEPLOY=true`; it applies Helm/Kubeflow/KServe updates, updates image

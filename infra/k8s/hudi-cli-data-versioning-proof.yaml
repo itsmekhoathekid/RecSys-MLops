@@ -24,7 +24,7 @@ spec:
   serviceAccountName: default
   containers:
     - name: hudi-cli
-      image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-spark:postgres-offline-20260703-1700
+      image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-spark:hudi-native-v2-proof-20260727
       imagePullPolicy: IfNotPresent
       envFrom:
         - configMapRef:
@@ -33,14 +33,14 @@ spec:
             name: recsys-data-platform-secret
       env:
         - name: HUDI_TABLE_PATH
-          value: s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_training_samples
+          value: s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_samples_native_v2
         - name: HUDI_CLI_VERSION
           value: "1.0.2"
         - name: HUDI_CLI_SCALA_BINARY_VERSION
           value: "2.12"
       resources:
         requests:
-          cpu: 250m
+          cpu: 10m
           memory: 768Mi
         limits:
           cpu: "1"

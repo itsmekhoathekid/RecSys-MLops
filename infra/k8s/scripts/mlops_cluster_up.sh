@@ -90,7 +90,9 @@ build_local_images_if_needed() {
   local image_list mlops_missing=0 data_platform_missing=0 image
   local mlops_images=(recsys-api-serving:local recsys-mlflow:local)
   local data_platform_images=(
-    recsys-dataflow-cli:local
+    recsys-data-ingestion:local
+    recsys-feature-store:local
+    recsys-drift-retrain:local
     recsys-spark:local
     recsys-flink:local
     recsys-kafka-connect:local

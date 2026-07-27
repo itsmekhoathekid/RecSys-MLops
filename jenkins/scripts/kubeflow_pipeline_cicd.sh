@@ -54,5 +54,8 @@ upload_args=(
 if [[ -n "${pipeline_version_name}" ]]; then
   upload_args+=(--pipeline-version-name "${pipeline_version_name}")
 fi
+if [[ -n "${KFP_UPLOAD_RESULT_PATH:-}" ]]; then
+  upload_args+=(--output-json "${KFP_UPLOAD_RESULT_PATH}")
+fi
 
 "${python_cmd[@]}" apps/ml-system/src/kubeflow/upload_pipeline_package.py "${upload_args[@]}"
