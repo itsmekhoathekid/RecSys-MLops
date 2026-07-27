@@ -394,9 +394,15 @@ fi
 
 if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" ]]; then
   branch_name="${BRANCH_NAME:-${GIT_BRANCH:-}}"
+  checked_out_main=0
+  if git rev-parse --verify origin/main >/dev/null 2>&1 \
+    && [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]]; then
+    checked_out_main=1
+  fi
   if [[ "${branch_name}" != "main" && "${branch_name}" != "origin/main" ]] \
+    && [[ "${checked_out_main}" != "1" ]] \
     && ! recsys_is_true "${FORCE_DEPLOY:-0}"; then
-    recsys_error "GCP production deploy requires main or FORCE_DEPLOY=true; got ${branch_name:-<empty>}"
+    recsys_error "GCP production deploy requires main, an origin/main checkout, or FORCE_DEPLOY=true; got ${branch_name:-<empty>}"
     exit 2
   fi
   recsys_is_true "${PUBLISH_IMAGES:-0}" || {

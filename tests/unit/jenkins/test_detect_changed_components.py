@@ -411,6 +411,14 @@ def test_component_ci_syncs_only_locked_profile_dependencies():
     assert "uv run --no-sync pytest" not in component_ci
 
 
+def test_shell_deploy_gate_accepts_an_exact_origin_main_checkout():
+    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+
+    assert "git rev-parse --verify origin/main" in deploy
+    assert '"$(git rev-parse HEAD)" == "$(git rev-parse origin/main)"' in deploy
+    assert '[[ "${checked_out_main}" != "1" ]]' in deploy
+
+
 def test_data_platform_deploy_preserves_isolated_drift_snapshot_root():
     deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
 
