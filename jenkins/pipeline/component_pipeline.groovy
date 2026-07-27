@@ -122,11 +122,23 @@ def applyForcedComponents(String forcedComponents) {
 }
 
 def shouldDeployChangedComponents() {
+  def branchEnvironmentIsMain = [
+    env.BRANCH_NAME,
+    env.GIT_BRANCH
+  ].findAll { it?.trim() }.any { branch ->
+    branch == 'main' ||
+      branch == 'origin/main' ||
+      branch == 'refs/heads/main' ||
+      branch == 'refs/remotes/origin/main'
+  }
+  def checkedOutCommitIsMain = gitRefExists('origin/main') && sh(
+    returnStatus: true,
+    script: 'test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"'
+  ) == 0
   return env.RUN_COMPONENT_DEPLOY == 'true' && (
     params.FORCE_DEPLOY ||
-    env.BRANCH_NAME == 'main' ||
-    env.GIT_BRANCH == 'main' ||
-    env.GIT_BRANCH == 'origin/main'
+    branchEnvironmentIsMain ||
+    checkedOutCommitIsMain
   )
 }
 
