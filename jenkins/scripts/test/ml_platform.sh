@@ -21,7 +21,7 @@ assert payload.get("pipeline_version_id") or payload.get("action") == "uploaded_
   fi
   kfp_endpoint="$(kfp_endpoint_for_upload)"
   PYTHONPATH=apps/ml-system/src:apps/data-platform/src \
-    uv run --no-sync python apps/ml-system/src/kubeflow/submit_pipeline_run.py \
+    tx_runtime_python apps/ml-system/src/kubeflow/submit_pipeline_run.py \
     --host "${kfp_endpoint}" \
     --package-path infra/kubeflow/compiled/bst_training_pipeline.yaml \
     --experiment-name recsys-ci-smoke \

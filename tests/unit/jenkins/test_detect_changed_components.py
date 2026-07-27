@@ -389,23 +389,24 @@ def test_jenkins_admin_secret_is_reconciled_with_persisted_home():
     assert "realm.getUser(username) == null" not in security_script
 
 
-def test_component_ci_installs_required_clean_environment_dependencies():
+def test_component_ci_syncs_only_locked_profile_dependencies():
     jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    installer = (ROOT / "jenkins/scripts/install_component_ci_dependencies.sh").read_text(
+    installer = (ROOT / "jenkins/scripts/prepare_component_ci_envs.sh").read_text(
         encoding="utf-8"
     )
+    component_ci = (ROOT / "jenkins/scripts/component_ci.sh").read_text(encoding="utf-8")
+    python_env_stage = jenkinsfile.split("stage('Python Env')", 1)[1].split(
+        "stage('Component CI')", 1
+    )[0]
 
-    assert "hypothesis" in jenkinsfile
-    assert "jenkins/scripts/install_component_ci_dependencies.sh" in jenkinsfile
-    assert "training" in installer
-    spark_install_block = installer.split("# The shared Jenkins environment", 1)[0]
-    assert '"${components}" == *,training,*' in spark_install_block
-    assert '"pyspark==3.5.8"' in spark_install_block
-    assert "kserve" in installer
-    assert "rollout" in installer
-    assert "https://download.pytorch.org/whl/cpu" in installer
-    assert '"ray[default,train,tune]"' in installer
-    assert "mlflow" in installer
+    assert "jenkins/scripts/prepare_component_ci_envs.sh" in jenkinsfile
+    assert "uv pip install" not in python_env_stage
+    assert "configuration.py ci-profiles" in installer
+    assert "--frozen" in installer
+    assert "--group dev" in installer
+    assert "envs/${profile}" in installer
+    assert '"${ci_python}" -m pytest' in component_ci
+    assert "uv run --no-sync pytest" not in component_ci
 
 
 def test_data_platform_deploy_preserves_isolated_drift_snapshot_root():

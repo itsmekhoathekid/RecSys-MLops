@@ -26,9 +26,11 @@ def _documents(rendered: str) -> list[dict]:
 
 def test_api_serving_image_includes_feast_postgres_driver():
     dockerfile = (ROOT / "apps/api-serving/Dockerfile").read_text(encoding="utf-8")
-    assert "feast[redis]" in dockerfile
-    assert "psycopg[binary]" in dockerfile
-    assert "psycopg-pool" in dockerfile
+    project = (ROOT / "apps/api-serving/pyproject.toml").read_text(encoding="utf-8")
+    assert "uv sync --frozen" in dockerfile
+    assert "feast[redis]" in project
+    assert "psycopg[binary]" in project
+    assert "psycopg-pool" in project
 
 
 def test_serving_chart_renders_expected_namespaces():

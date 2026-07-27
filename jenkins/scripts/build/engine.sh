@@ -53,15 +53,16 @@ build_publish_shared_manifest() {
 build_scan_image() {
   local image="$1"
   local image_name="$2"
+  local scan_report="${BUILD_SCAN_REPORT_DIR}/${image_name}.log"
   if ! recsys_is_true "${BUILD_SCAN_ENABLED}"; then
     recsys_log "skip vulnerability scan for ${image}; CONTAINER_SCAN_ENABLED=${BUILD_SCAN_ENABLED}"
     return 0
   fi
 
-  local args=(image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL "${image}")
+  local args=(image --exit-code 1 --ignore-unfixed --scanners vuln --severity HIGH,CRITICAL "${image}")
   if command -v trivy >/dev/null 2>&1; then
-    trivy "${args[@]}"
-    return
+    trivy "${args[@]}" 2>&1 | tee "${scan_report}"
+    return "${PIPESTATUS[0]}"
   fi
 
   local archive="${BUILD_MANIFEST_DIR}/${image_name}-${BUILD_IMAGE_TAG}-${BUILD_COMPONENT}-$$.tar"
@@ -70,11 +71,12 @@ build_scan_image() {
   docker save --output "${archive}" "${image}"
   docker rm -f "${scan_container}" >/dev/null 2>&1 || true
   docker create --name "${scan_container}" aquasec/trivy:0.58.2 \
-    image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL \
+    image --exit-code 1 --ignore-unfixed --scanners vuln --severity HIGH,CRITICAL \
     --input /image.tar >/dev/null
   docker cp "${archive}" "${scan_container}:/image.tar"
   local scan_status=0
-  docker start -a "${scan_container}" || scan_status=$?
+  docker start -a "${scan_container}" 2>&1 | tee "${scan_report}"
+  scan_status="${PIPESTATUS[0]}"
   docker rm -f "${scan_container}" >/dev/null 2>&1 || true
   rm -f "${archive}"
   return "${scan_status}"
@@ -146,13 +148,32 @@ build_image() {
   local name="$1"
   local lock_root="${BUILD_LOCK_ROOT:-${JENKINS_HOME:-.ci-build-locks}/ci-build-locks}"
   local lock_path
+  local failure_path="${BUILD_SHARED_MANIFEST_DIR}/${name}.failed"
 
-  mkdir -p "${lock_root}" "${BUILD_SHARED_MANIFEST_DIR}"
+  mkdir -p "${lock_root}" "${BUILD_SHARED_MANIFEST_DIR}" "${BUILD_SCAN_REPORT_DIR}"
   lock_path="${lock_root}/$(recsys_slug "${name}-${BUILD_IMAGE_TAG}").lock"
   if command -v flock >/dev/null 2>&1; then
     (
       flock -w "${BUILD_LOCK_TIMEOUT_SECONDS:-3600}" 9
-      build_image_locked "$@"
+      if [[ -s "${failure_path}" ]]; then
+        recsys_error "shared image ${name}:${BUILD_IMAGE_TAG} already failed in this build"
+        cat "${failure_path}" >&2
+        exit 1
+      fi
+      set +e
+      (
+        set -e
+        build_image_locked "$@"
+      )
+      build_status=$?
+      set -e
+      if [[ "${build_status}" -ne 0 ]]; then
+        printf 'component=%s status=%s report=%s\n' \
+          "${BUILD_COMPONENT}" "${build_status}" "${BUILD_SCAN_REPORT_DIR}/${name}.log" \
+          >"${failure_path}"
+        exit "${build_status}"
+      fi
+      rm -f "${failure_path}"
     ) 9>"${lock_path}"
     return
   fi

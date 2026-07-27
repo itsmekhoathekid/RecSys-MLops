@@ -33,5 +33,12 @@ dependencies = [
 [tool.uv.sources]
 recsys-data-platform = { path = "../data-platform", editable = true }
 
+[dependency-groups]
+dev = [
+    "hypothesis>=6.155.7,<7",
+    "pytest>=9,<10",
+    "pytest-cov>=7,<8",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]

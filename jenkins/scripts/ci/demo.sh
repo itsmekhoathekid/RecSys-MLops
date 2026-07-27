@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 
 ci_demo_web() {
-  local demo_backend_env="${PWD}/apps/demo-web/backend/.venv"
   local frontend_container=""
-  PYTHONPATH=apps/demo-web/backend UV_PROJECT_ENVIRONMENT="${demo_backend_env}" \
-    uv run --project apps/demo-web/backend ruff check apps/demo-web/backend/app apps/demo-web/backend/tests
-  PYTHONPATH=apps/demo-web/backend UV_PROJECT_ENVIRONMENT="${demo_backend_env}" \
-    uv run --project apps/demo-web/backend ruff format --check apps/demo-web/backend/app apps/demo-web/backend/tests
-  UV_PROJECT_ENVIRONMENT="${demo_backend_env}" uv run --project apps/demo-web/backend pip-audit
-  PYTHONPATH=apps/demo-web/backend UV_PROJECT_ENVIRONMENT="${demo_backend_env}" \
-    uv run --project apps/demo-web/backend pytest \
+  PYTHONPATH=apps/demo-web/backend "${ci_python}" -m ruff check \
+    apps/demo-web/backend/app apps/demo-web/backend/tests
+  PYTHONPATH=apps/demo-web/backend "${ci_python}" -m ruff format --check \
+    apps/demo-web/backend/app apps/demo-web/backend/tests
+  "${ci_python}" -m pip_audit
+  PYTHONPATH=apps/demo-web/backend "${ci_python}" -m pytest \
     apps/demo-web/backend/tests tests/contract/test_demo_web_contracts.py -q \
     --cov=apps/demo-web/backend/app \
     --cov-report="xml:${reports_dir}/coverage/demo_web_backend.xml" \

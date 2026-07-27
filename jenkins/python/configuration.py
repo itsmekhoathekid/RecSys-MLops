@@ -27,6 +27,7 @@ REQUIRED_GCP_FIELDS = {
     "context",
     "imageRegistry",
 }
+REQUIRED_CI_PROFILE_FIELDS = {"projectPath", "lockFile", "pythonVersion"}
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -86,11 +87,55 @@ def load_gcp_production(path: Path = CONFIG_DIR / "gcp-production.json") -> dict
     return result
 
 
+def load_ci_environments(
+    path: Path = CONFIG_DIR / "ci-environments.json",
+) -> dict[str, dict[str, str]]:
+    payload = read_json(path)
+    if payload.get("version") != 1:
+        raise ValueError("ci-environments.json version must be 1")
+    profiles = payload.get("profiles")
+    if not isinstance(profiles, dict) or not profiles:
+        raise ValueError("ci-environments.json must contain profiles")
+
+    result: dict[str, dict[str, str]] = {}
+    for name, profile in profiles.items():
+        if not isinstance(name, str) or not name or not isinstance(profile, dict):
+            raise ValueError("each CI environment profile must be a named object")
+        missing = REQUIRED_CI_PROFILE_FIELDS - profile.keys()
+        if missing:
+            raise ValueError(f"CI profile {name} is missing fields: {sorted(missing)}")
+        normalized = {
+            field: str(profile[field]).strip() for field in REQUIRED_CI_PROFILE_FIELDS
+        }
+        if any(not value for value in normalized.values()):
+            raise ValueError(f"CI profile {name} fields must not be empty")
+        project_path = ROOT / normalized["projectPath"]
+        lock_file = ROOT / normalized["lockFile"]
+        if not (project_path / "pyproject.toml").is_file():
+            raise ValueError(f"CI profile {name} project is missing pyproject.toml")
+        if not lock_file.is_file():
+            raise ValueError(f"CI profile {name} lock file does not exist")
+        result[name] = normalized
+
+    unknown_profiles = {
+        component["ciProfile"] for component in load_components()
+    } - result.keys()
+    if unknown_profiles:
+        raise ValueError(
+            f"components reference unknown CI profiles: {sorted(unknown_profiles)}"
+        )
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate or query Jenkins CI/CD configuration.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate")
     subparsers.add_parser("components-tsv")
+    profiles_parser = subparsers.add_parser("ci-profiles")
+    profiles_parser.add_argument("--components", required=True)
+    profile_parser = subparsers.add_parser("ci-profile")
+    profile_parser.add_argument("name")
     component_parser = subparsers.add_parser("component")
     component_parser.add_argument("name")
     gcp_parser = subparsers.add_parser("gcp")
@@ -100,6 +145,7 @@ def main() -> int:
     if args.command == "validate":
         load_components()
         load_gcp_production()
+        load_ci_environments()
         return 0
     if args.command == "components-tsv":
         for component in load_components():
@@ -112,6 +158,29 @@ def main() -> int:
                     )
                 )
             )
+        return 0
+    if args.command == "ci-profiles":
+        components = {item["name"]: item for item in load_components()}
+        requested = [
+            token.strip()
+            for token in args.components.split(",")
+            if token.strip() and token.strip() != "ci_config"
+        ]
+        unknown = sorted(set(requested) - components.keys())
+        if unknown:
+            raise SystemExit(f"unknown component(s): {', '.join(unknown)}")
+        profiles = {
+            components[component]["ciProfile"] for component in requested
+        }
+        for profile in load_ci_environments():
+            if profile in profiles:
+                print(profile)
+        return 0
+    if args.command == "ci-profile":
+        profiles = load_ci_environments()
+        if args.name not in profiles:
+            raise SystemExit(f"unknown CI profile: {args.name}")
+        print(json.dumps(profiles[args.name], sort_keys=True))
         return 0
     if args.command == "component":
         components = {item["name"]: item for item in load_components()}

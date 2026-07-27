@@ -7,27 +7,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_CONCURRENT_DOWNLOADS=8 \
     UV_CONCURRENT_BUILDS=8
 
-WORKDIR /opt/recsys
+WORKDIR /opt/recsys/apps/api-serving
+
+COPY apps/api-serving/pyproject.toml apps/api-serving/uv.lock ./
 
 RUN pip install --no-cache-dir uv \
-    && python -m venv /opt/venv
-
-RUN uv pip install --python /opt/venv/bin/python --no-cache \
-    fastapi \
-    "feast[redis]" \
-    httpx \
-    numpy \
-    opentelemetry-api \
-    opentelemetry-exporter-otlp \
-    opentelemetry-instrumentation-fastapi \
-    opentelemetry-sdk \
-    pydantic \
-    prometheus-client \
-    "psycopg[binary]" \
-    psycopg-pool \
-    redis \
-    tritonclient[grpc] \
-    uvicorn
+    && UV_PROJECT_ENVIRONMENT=/opt/venv \
+        uv sync --frozen --no-dev --no-install-project --no-cache
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
 
@@ -39,6 +25,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /opt/recsys
 
 COPY --from=deps /opt/venv /opt/venv
+COPY apps/api-serving/pyproject.toml apps/api-serving/uv.lock /opt/recsys/apps/api-serving/
 COPY apps/api-serving/src /opt/recsys/apps/api-serving/src
 COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
 COPY apps/data-platform/src/feature_store /opt/recsys/apps/data-platform/src/feature_store

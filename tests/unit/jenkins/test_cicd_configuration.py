@@ -71,6 +71,15 @@ def test_gcp_production_target_is_strict_and_self_consistent():
     }
 
 
+def test_component_ci_profiles_use_repo_locks():
+    profiles = configuration.load_ci_environments()
+    assert set(profiles) == {"data", "ml", "serving", "demo", "analytics"}
+    for profile in profiles.values():
+        assert profile["lockFile"].endswith("/uv.lock")
+        assert (ROOT / profile["lockFile"]).is_file()
+        assert (ROOT / profile["projectPath"] / "pyproject.toml").is_file()
+
+
 def test_catalog_contains_only_supported_migration_policies():
     payload = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
@@ -109,6 +118,8 @@ def test_modular_docker_builder_owns_exactly_the_seventeen_images():
     assert "flock -w" in engine
     assert "build_reuse_shared_image" in engine
     assert "BUILD_COMPONENT}-$$" in engine
+    assert "already failed in this build" in engine
+    assert "BUILD_SCAN_REPORT_DIR" in engine
 
 
 def test_prometheus_operator_is_pinned_and_operator_only():

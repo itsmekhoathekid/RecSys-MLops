@@ -63,7 +63,6 @@ pipeline {
           // eviction threshold. Keep disposable CI data on the existing
           // Jenkins PVC; the post action removes this build-scoped directory.
           env.CI_TMP_ROOT = "/var/jenkins_home/ci-tmp/recsys-ci-${env.JOB_BASE_NAME}-${env.BUILD_NUMBER}"
-          env.UV_PROJECT_ENVIRONMENT = "${env.CI_TMP_ROOT}/venv"
           env.UV_CACHE_DIR = "${env.CI_TMP_ROOT}/uv-cache"
           echo "Using CI temp root: ${env.CI_TMP_ROOT}"
         }
@@ -112,30 +111,7 @@ pipeline {
         sh '''
           set -euo pipefail
           mkdir -p "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"
-          uv venv "${UV_PROJECT_ENVIRONMENT}"
-          uv pip install --python "${UV_PROJECT_ENVIRONMENT}/bin/python" \
-            pytest \
-            pytest-cov \
-            hypothesis \
-            pyyaml \
-            pydantic \
-            numpy \
-            pandas \
-            pyarrow \
-            "psycopg[binary]" \
-            boto3 \
-            requests \
-            redis \
-            fastapi \
-            httpx \
-            opentelemetry-api \
-            opentelemetry-sdk \
-            opentelemetry-exporter-otlp-proto-grpc \
-            opentelemetry-instrumentation-fastapi \
-            kfp \
-            kubernetes \
-            scikit-learn
-          jenkins/scripts/install_component_ci_dependencies.sh
+          jenkins/scripts/prepare_component_ci_envs.sh
         '''
       }
     }

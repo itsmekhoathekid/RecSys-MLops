@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+component="${1:?component is required}"
+if [[ -n "${CI_TMP_ROOT:-}" ]]; then
+  ci_profile="$(
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["ciProfile"])' \
+      <<<"$(python3 jenkins/python/configuration.py component "${component}")"
+  )"
+  component_environment="${CI_TMP_ROOT}/envs/${ci_profile}"
+  if [[ -x "${component_environment}/bin/python" ]]; then
+    export UV_PROJECT_ENVIRONMENT="${component_environment}"
+  fi
+fi
+
 source jenkins/scripts/lib/common.sh
 source jenkins/scripts/lib/gcp.sh
 source jenkins/scripts/lib/helm.sh
@@ -24,7 +36,6 @@ source jenkins/scripts/test/demo.sh
 source jenkins/scripts/test/analytics.sh
 source jenkins/scripts/test/dispatch.sh
 
-component="${1:?component is required}"
 image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_REGISTRY:-localhost:5001/recsys}}"
 image_registry="${image_registry%/}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-}}"
