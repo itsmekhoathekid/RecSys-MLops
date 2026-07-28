@@ -327,18 +327,11 @@ In Hudi, a **file slice** is the concrete data-file version for a Hudi file grou
 
 **Figure 5 - MLflow dataset version manifest artifact.** Caption: the MLflow Artifacts tab opens `datasets/dataset_version_meta.json`, which persists the complete Apache Hudi lineage manifest: `storage=hudi`, one table and table path, canonical `hudi_instant`, operation, input/upsert/delete/snapshot counts, split counts, dataset run ID, code version, schema hash and latency. Legacy `snapshot_id` is no longer manufactured for the native-v2 format. This durable object connects the model run to the exact dataset version used for training and evaluation.
 
-![Apache Hudi CLI data versioning proof 1](../../pngs/hudi_cli_1.png)
+![Apache Hudi native-v2 table configuration](../../pngs/hudi_native_v2_table_config.png)
 
-**Figure 6 - Historical Hudi CLI proof.** This screenshot predates the `bst_samples_native_v2` migration. Re-running the updated proof manifest now targets the consolidated table and should show `source_updated_at` as its precombine field.
+**Figure 6 - Native-v2 Hudi table configuration.** The Hudi CLI is connected to `s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_samples_native_v2`, while `metaPath` points to the table's `.hoodie` metadata directory. `hoodie.table.type=COPY_ON_WRITE` means every completed write produces new Parquet base-file versions. `hoodie.table.keygenerator.type=COMPLEX` confirms that records use the composite key `(impression_id, target_item_id)`, rather than a custom hashed `sample_id`. `source_updated_at` is the precombine field, so when multiple records for the same key compete in an upsert, event-time ordering keeps the newest one. The `split` partition field stores train, validation and test in one table. `hoodie.table.version=8` is Hudi's internal table-format version; it is not the dataset version. The dataset version is the completed commit instant shown in Figure 7.
 
-![Apache Hudi CLI data versioning proof 2](../../pngs/hudi_cli_2.png)
+![Apache Hudi native-v2 commit and file slices](../../pngs/hudi_native_v2_commit_file_slices.png)
 
-**Figure 7 - Historical Hudi active timeline.** This screenshot shows the earlier table before native-v2 migration. The current proof instant is `20260727093340615`; its requested, inflight and completed Timeline files are listed in the end-to-end proof above.
+**Figure 7 - One completed Hudi dataset version and its file slices.** `CommitTime=20260727093340615` is the canonical dataset version used by the downstream Ray and MLflow runs. Hudi atomically committed `96,225` records across three partitions, wrote `15.2 MB`, added three files and reported zero write errors. `Total Files Updated=0` and `Total Update Records Written=0` are expected because this is the initial commit to the new native-v2 table path; subsequent upserts can update these file groups. The lower `show fsview all` output maps `split=val`, `split=test` and `split=train` to separate `FileId` values, but every row has the same `Base-Instant=20260727093340615`. This is storage-level proof that all three dataset splits belong to one atomic Hudi version rather than three independently versioned tables.
 
-![Apache Hudi CLI data versioning proof 3](../../pngs/hudi_cli_3.png)
-
-**Figure 8 - Historical Hudi commit stats and file slices.** This screenshot documents the earlier two-split table. The current native-v2 proof has three splits, three base files and 96,225 records at instant `20260727093340615`; use the proof pod command above to capture the current CLI view.
-
-**Where incremental versioning is shown in the historical Figure 8:** the initial commit has added files and no updated files, while later commits update the existing file groups. The repeated `FileId` values with newer `Base-Instant` values show the Copy-on-Write versions at storage level. The same behavior applies to native-v2 after its initial commit; however, the current proof does not mislabel its first commit as an update.
-
-**File slice explanation for Figure 8:** a Hudi file slice is one physical data-file version inside a Hudi file group at one commit instant. In this proof, the same `FileId` appears repeatedly for `split=val` and `split=train`, but each row has a different `Base-Instant`. That means Hudi kept multiple incremental versions of the same logical file group instead of replacing the whole table. The `Data-File` path also embeds the commit instant, so each parquet file can be traced back to the exact dataset version that produced it.

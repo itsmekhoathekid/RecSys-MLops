@@ -3827,6 +3827,7 @@ dependencies = [
     { name = "requests" },
     { name = "s3fs" },
     { name = "setuptools" },
+    { name = "sqlalchemy" },
     { name = "wheel" },
 ]
 
@@ -3865,6 +3866,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.0" },
     { name = "s3fs", specifier = "==2024.10.0" },
     { name = "setuptools", specifier = "==83.0.0" },
+    { name = "sqlalchemy", specifier = "==1.4.54" },
     { name = "wheel", specifier = "==0.46.2" },
 ]
 

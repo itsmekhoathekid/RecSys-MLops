@@ -115,6 +115,10 @@ def test_spark_and_flink_images_include_runtime_dependencies_without_pandas():
     assert "COPY infra/kubeflow /opt/recsys/infra/kubeflow" in drift_retrain
     assert "COPY apps/data-platform/data-generator" in data_ingestion
     assert "COPY apps/data-platform/feature-store" in feature_store
+    assert "COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock" in feature_store
+    assert "--constraint /tmp/data-constraints.txt" in feature_store
+    assert "botocore==1.35.36" not in feature_store
+    assert "sqlalchemy" in feature_store
     assert "COPY apps/data-platform/data-generator" not in feature_store
     assert "COPY apps/data-platform/data-generator" not in drift_retrain
 
@@ -556,6 +560,7 @@ def test_airflow_major_version_migration_has_typed_rollback_compensation():
     assert "airflow db downgrade {downgrade_target} --yes" in database
     assert "f\"--to-revision {previous_revision}\"" in database
     assert "f\"--to-version {previous_version}\"" in database
+    assert "downgraded Airflow metadata database to revision" in database
     assert 'case "${phase}" in' in database
     assert "COMPONENT_DEPLOY_TIMEOUT_SECONDS" in database
     assert '"allowPrivilegeEscalation": False' in database

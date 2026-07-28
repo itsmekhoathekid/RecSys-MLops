@@ -27,6 +27,7 @@ dependencies = [
     "requests>=2.32.0",
     "s3fs==2024.10.0",
     "setuptools==83.0.0",
+    "sqlalchemy==1.4.54",
     "wheel==0.46.2",
 ]
 

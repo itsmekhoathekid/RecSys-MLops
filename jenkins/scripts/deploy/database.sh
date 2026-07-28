@@ -463,5 +463,10 @@ PY
       return 1
     }
   fi
-  recsys_log "downgraded Airflow metadata database to ${previous_version}"
+  if [[ -n "${previous_migration_revision}" ]]; then
+    recsys_log \
+      "downgraded Airflow metadata database to revision ${previous_migration_revision}"
+  else
+    recsys_log "downgraded Airflow metadata database to version ${previous_version}"
+  fi
 }
