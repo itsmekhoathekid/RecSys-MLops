@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-gcp_production_field() {
-  python3 jenkins/python/configuration.py gcp "$1"
-}
+source jenkins/scripts/lib/config.sh
 
 gcp_metadata_project_id() {
   curl -fsS -H 'Metadata-Flavor: Google' \

@@ -16,7 +16,7 @@ routes and never receives the gateway Basic Auth credential.
 ## Local verification
 
 ```bash
-UV_CACHE_DIR=/tmp/recsys-demo-uv-cache bash jenkins/scripts/component_ci.sh demo_web
+UV_CACHE_DIR=/tmp/recsys-demo-uv-cache bash jenkins/scripts/entrypoints/component_ci.sh demo_web
 ```
 
 The component gate runs Ruff, pip-audit, pytest with a 90% backend coverage
@@ -40,7 +40,6 @@ Jenkins view `10 Recommendation Web App` contains:
 
 - `RecSys-GitHub-CICD`: webhook/main pipeline.
 - `RecSys-Recommendation-Web-CICD`: manual component rebuild/redeploy.
-- `RecSys-Recommendation-Web-Rollback`: revision-selectable rollback plus smoke.
 
 For authenticated public smoke, create a Jenkins username/password credential
 named `recsys-demo-gateway-smoke`. Its value is injected only for the smoke
@@ -48,13 +47,9 @@ step. A missing credential skips the authenticated HTML assertion while all
 internal, redirect, unauthenticated `401`, event-to-Feast, and recommendation
 checks still run.
 
-Manual rollback:
-
-```bash
-TARGET_REVISION=3 bash jenkins/scripts/demo_web_rollback.sh
-```
-
-Without `TARGET_REVISION`, the script selects the previous Helm revision.
+Rollback is owned by the per-component deployment transaction. A failed deploy
+or production smoke restores the previous Helm revision before Jenkins reports
+the branch failure.
 
 ## Production record
 

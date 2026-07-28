@@ -68,7 +68,6 @@ steps:
       - -e
       - KFP_CICD_PYTHON=/opt/venv/bin/python
       - -e
-      - KFP_UPLOAD_PACKAGE=0
       - -e
       - RECSYS_PIPELINE_IMAGE=${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
       - -e
@@ -77,7 +76,7 @@ steps:
       - RECSYS_SPARK_IMAGE=${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}
       - ${_IMAGE_REPO}/recsys-mlops-training:${_TAG}
       - bash
-      - jenkins/scripts/kubeflow_pipeline_cicd.sh
+      - jenkins/scripts/build/kfp_package.sh
 
   - id: drift-retrain
     name: gcr.io/cloud-builders/docker

@@ -11,7 +11,6 @@ run_build="${RUN_COMPONENT_BUILD:-1}"
 run_deploy="${RUN_COMPONENT_DEPLOY:-1}"
 run_data_e2e="${RUN_DATA_PLATFORM_E2E:-1}"
 run_ml_e2e="${RUN_ML_PLATFORM_E2E:-1}"
-run_post_deploy_e2e="${RUN_POST_DEPLOY_E2E:-1}"
 run_node_rebalance="${RUN_NODE_REBALANCE:-1}"
 validate_node_rebalance="${VALIDATE_NODE_REBALANCE:-1}"
 build_backend="${FULL_CICD_BUILD_BACKEND:-docker}"
@@ -41,11 +40,10 @@ section() {
 
 prepare_kfp_package_for_contracts() {
   section "Prepare Kubeflow Package"
-  KFP_UPLOAD_PACKAGE=0 \
-    RECSYS_PIPELINE_IMAGE="${image_registry}/recsys-mlops-training:${image_tag}" \
+  RECSYS_PIPELINE_IMAGE="${image_registry}/recsys-mlops-training:${image_tag}" \
     RECSYS_RAY_IMAGE="${image_registry}/recsys-mlops-training:${image_tag}" \
     RECSYS_SPARK_IMAGE="${image_registry}/recsys-mlops-spark:${image_tag}" \
-    bash jenkins/scripts/kubeflow_pipeline_cicd.sh
+    bash jenkins/scripts/build/kfp_package.sh
 }
 
 run_component_ci_gates() {
@@ -55,9 +53,8 @@ run_component_ci_gates() {
       RECSYS_PIPELINE_IMAGE="${image_registry}/recsys-mlops-training:${image_tag}" \
       RECSYS_RAY_IMAGE="${image_registry}/recsys-mlops-training:${image_tag}" \
       RECSYS_SPARK_IMAGE="${image_registry}/recsys-mlops-spark:${image_tag}" \
-      bash jenkins/scripts/component_ci.sh "${component}"
+      bash jenkins/scripts/entrypoints/component_ci.sh "${component}"
   done
-  bash jenkins/scripts/helm_dry_run.sh
 }
 
 build_all_images() {
@@ -70,7 +67,7 @@ build_all_images() {
         .
       ;;
     docker)
-      IMAGE_PUSH_REGISTRY="${image_registry}" IMAGE_TAG="${image_tag}" bash jenkins/scripts/component_build_publish.sh all
+      IMAGE_PUSH_REGISTRY="${image_registry}" IMAGE_TAG="${image_tag}" bash jenkins/scripts/entrypoints/component_build_publish.sh all
       ;;
     *)
       echo "Unknown FULL_CICD_BUILD_BACKEND=${build_backend}; expected docker or cloudbuild." >&2
@@ -85,7 +82,7 @@ deploy_all_services() {
     IMAGE_TAG="${image_tag}" \
     RUN_NODE_REBALANCE="${run_node_rebalance}" \
     VALIDATE_NODE_REBALANCE="${validate_node_rebalance}" \
-    bash jenkins/scripts/component_deploy.sh all
+    bash jenkins/scripts/entrypoints/component_deploy.sh all
 }
 
 run_data_platform_e2e() {
@@ -105,11 +102,6 @@ run_ml_platform_e2e() {
     RECSYS_RAY_IMAGE="${RECSYS_RAY_IMAGE:-${image_registry}/recsys-mlops-training:${image_tag}}" \
     RECSYS_SPARK_IMAGE="${RECSYS_SPARK_IMAGE:-${image_registry}/recsys-mlops-spark:${image_tag}}" \
     infra/k8s/scripts/cluster_mlops_serving_e2e.sh
-}
-
-run_post_deploy_validation() {
-  section "Post Deploy E2E"
-  jenkins/scripts/post_deploy_e2e.sh
 }
 
 echo "Full RecSys CI/CD tag: ${image_tag}"
@@ -133,9 +125,5 @@ fi
 if [[ "${run_ml_e2e}" == "1" || "${run_ml_e2e}" == "true" ]]; then
   run_ml_platform_e2e
 fi
-if [[ "${run_post_deploy_e2e}" == "1" || "${run_post_deploy_e2e}" == "true" ]]; then
-  run_post_deploy_validation
-fi
-
 section "Full CI/CD Complete"
 echo "All requested CI/CD and E2E stages completed for ${image_registry}:${image_tag}."

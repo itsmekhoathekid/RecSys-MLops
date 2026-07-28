@@ -11,10 +11,10 @@ import pytest
 import yaml
 
 
-sys.path.append(str(Path("jenkins/scripts").resolve()))
-
-import model_cd
-from model_cd import REQUIRED_MODEL_FILES, main as model_cd_main
+from jenkins.python import model_cd
+from jenkins.python.model_cd import REQUIRED_MODEL_FILES, main as model_cd_main
+from jenkins.python.model_cd import cli as model_cd_cli
+from jenkins.python.model_cd import helm_release, manifests, promotion_gates
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -194,7 +194,7 @@ def test_component_deploy_background_tunnels_do_not_inherit_deployment_lock():
     deploy_script = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (
-            ROOT / "jenkins/scripts/component_deploy.sh",
+            ROOT / "jenkins/scripts/entrypoints/component_deploy.sh",
             ROOT / "jenkins/scripts/deploy/runtime.sh",
         )
     )
@@ -399,7 +399,7 @@ def test_model_cd_evaluate_writes_decision_and_auto_renders_rollback(tmp_path, m
     )
     output_dir = tmp_path / "out"
     monkeypatch.setattr(
-        model_cd,
+        model_cd_cli,
         "evaluate_candidate_gates",
         lambda *_args, **_kwargs: model_cd.GateDecision(
             "rollback",
@@ -646,8 +646,8 @@ def test_model_cd_deploy_uses_atomic_helm_upgrade(monkeypatch, tmp_path):
     def fake_run(command: list[str]) -> None:
         commands.append(command)
 
-    monkeypatch.setattr(model_cd, "run", fake_run)
-    monkeypatch.setattr(model_cd, "crd_exists", lambda _: True)
+    monkeypatch.setattr(helm_release, "run", fake_run)
+    monkeypatch.setattr(helm_release, "crd_exists", lambda _: True)
     values_path = tmp_path / "values.json"
     values_path.write_text("{}", encoding="utf-8")
 
@@ -669,8 +669,8 @@ def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_
         commands.append(command)
 
     monkeypatch.setenv("RECSYS_MODEL_CD_ATOMIC", "0")
-    monkeypatch.setattr(model_cd, "run", fake_run)
-    monkeypatch.setattr(model_cd, "crd_exists", lambda _: False)
+    monkeypatch.setattr(helm_release, "run", fake_run)
+    monkeypatch.setattr(helm_release, "crd_exists", lambda _: False)
     values_path = tmp_path / "values.json"
     values_path.write_text("{}", encoding="utf-8")
 
@@ -687,8 +687,8 @@ def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_
 def test_model_cd_deploy_waits_for_shadow_candidate(monkeypatch, tmp_path):
     commands = []
 
-    monkeypatch.setattr(model_cd, "run", lambda command: commands.append(command))
-    monkeypatch.setattr(model_cd, "crd_exists", lambda _: True)
+    monkeypatch.setattr(helm_release, "run", lambda command: commands.append(command))
+    monkeypatch.setattr(helm_release, "crd_exists", lambda _: True)
     values_path = tmp_path / "values.json"
     values_path.write_text(
         json.dumps(
@@ -710,8 +710,8 @@ def test_model_cd_deploy_waits_for_shadow_candidate(monkeypatch, tmp_path):
 
 def test_model_cd_deploy_waits_for_retained_candidate(monkeypatch, tmp_path):
     commands = []
-    monkeypatch.setattr(model_cd, "run", lambda command: commands.append(command))
-    monkeypatch.setattr(model_cd, "crd_exists", lambda _: True)
+    monkeypatch.setattr(helm_release, "run", lambda command: commands.append(command))
+    monkeypatch.setattr(helm_release, "crd_exists", lambda _: True)
     values_path = tmp_path / "values.json"
     values_path.write_text(
         json.dumps(
@@ -770,7 +770,7 @@ def test_model_cd_s3_helpers_copy_upload_and_read(monkeypatch):
             self.uploads.append(kwargs)
 
     client = Client()
-    monkeypatch.setattr(model_cd, "s3_client", lambda: client)
+    monkeypatch.setattr(manifests, "s3_client", lambda: client)
 
     assert model_cd.parse_s3_uri("s3://bucket/manifest.json") == ("bucket", "manifest.json")
     with pytest.raises(ValueError):
@@ -848,7 +848,7 @@ def test_model_cd_prometheus_gates(monkeypatch):
             return values["candidate_latency"]
         return values["control_latency"]
 
-    monkeypatch.setattr(model_cd, "query_prometheus", fake_query)
+    monkeypatch.setattr(promotion_gates, "query_prometheus", fake_query)
     model_cd.assert_promote_gates("http://prometheus", "10m")
 
     values["candidate_error"] = 0.20
@@ -885,7 +885,7 @@ def test_model_cd_gate_decision_filters_experiment_and_covers_hold_promote_rollb
             return values["candidate_latency" if candidate else "control_latency"]
         return values["candidate_quality" if candidate else "control_quality"]
 
-    monkeypatch.setattr(model_cd, "query_prometheus", fake_query)
+    monkeypatch.setattr(promotion_gates, "query_prometheus", fake_query)
     decision = model_cd.evaluate_candidate_gates(
         "http://prometheus",
         "10m",
@@ -929,20 +929,20 @@ def test_model_cd_query_prometheus_and_crd_exists(monkeypatch):
         requested["timeout"] = timeout
         return Response()
 
-    monkeypatch.setattr(model_cd.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(promotion_gates.urllib.request, "urlopen", fake_urlopen)
     assert model_cd.query_prometheus("http://prometheus", "sum(rate(x[5m]))") == 2.5
     assert "sum%28rate%28x%5B5m%5D%29%29" in requested["url"]
     assert requested["timeout"] == 15
 
-    monkeypatch.setattr(model_cd.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 0})())
+    monkeypatch.setattr(helm_release.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 0})())
     assert model_cd.crd_exists("servicemonitors.monitoring.coreos.com") is True
-    monkeypatch.setattr(model_cd.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 1})())
+    monkeypatch.setattr(helm_release.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 1})())
     assert model_cd.crd_exists("missing.example.com") is False
 
 
 def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
     deploy_script = (ROOT / "jenkins/scripts/deploy/serving.sh").read_text(encoding="utf-8")
-    dispatch = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    dispatch = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text(encoding="utf-8")
     cicd_block = re.search(
         r"deploy_kserve_unlocked\(\) \{(?P<body>.*?)\n\}",
         deploy_script,
@@ -956,8 +956,8 @@ def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
 
     assert cicd_block is not None
     assert cd_block is not None
-    assert "model_cd.py" in cicd_block.group("body")
+    assert "jenkins.python.model_cd.cli" in cicd_block.group("body")
     assert "--apply" not in cicd_block.group("body")
-    assert "model_cd.py" in cd_block.group("body")
+    assert "jenkins.python.model_cd.cli" in cd_block.group("body")
     assert "--apply" in cd_block.group("body")
     assert "kserve_model_cd)" in dispatch

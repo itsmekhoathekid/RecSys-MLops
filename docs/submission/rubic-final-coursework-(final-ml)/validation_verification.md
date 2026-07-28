@@ -172,25 +172,20 @@ Source references:
 | Mutation-testing technique | Where it is used | Concrete code reference |
 | --- | --- | --- |
 | Focused production targets | The proof mutates `format_top_k`, which sorts scores descending, truncates to `top_k`, and builds the recommendation response; and `get_online_features`, which chooses explicit or fallback candidates and loads user/item features. Both functions are on the production recommendation path. | [`format_top_k` at ranking.py lines 99-119](../../../apps/api-serving/src/ranking.py#L99), [`get_online_features` at online_features.py lines 273-289](../../../apps/api-serving/src/online_features.py#L273), and their production call sites at [ranking.py lines 164-176](../../../apps/api-serving/src/ranking.py#L164) and [lines 204-217](../../../apps/api-serving/src/ranking.py#L204). |
-| Target and mutant filtering | `MUTATION_TARGETS` limits source files; `MUTATION_MUTANT_NAMES` narrows execution to `ranking.x_format_top_k*` and `online_features.x_get_online_features*`. The script also validates that targets belong to an approved source root. | [Target parsing and allowlist at validation_mutation.sh lines 19-49](../../../jenkins/scripts/validation_mutation.sh#L19) and [source-root validation at lines 63-99](../../../jenkins/scripts/validation_mutation.sh#L63). |
-| Isolated mutation workspace | The script creates a temporary source workspace, links required repo directories, and generates a dedicated `mutmut` configuration so mutants do not rewrite the working tree. | [Temporary workspace at lines 101-112](../../../jenkins/scripts/validation_mutation.sh#L101) and [generated `tool.mutmut` configuration at lines 114-142](../../../jenkins/scripts/validation_mutation.sh#L114). |
-| Covered-line mutation | `mutate_only_covered_lines = true` restricts mutation generation to statements exercised by the selected tests. `only_mutate` limits mutation to the requested source files. | [Generated configuration at lines 124-140](../../../jenkins/scripts/validation_mutation.sh#L124). |
+| Target and mutant filtering | The archived proof limited mutation to `ranking.format_top_k` and `online_features.get_online_features`. | [mutation-summary.md](validation-verification/mutation-summary.md) |
+| Isolated mutation workspace | The archived run used an isolated workspace so mutants did not rewrite the repository. | [mutation-results.txt](validation-verification/mutation-results.txt) |
+| Covered-line mutation | Mutation generation was restricted to statements covered by the focused tests. | [mutation-summary.md](validation-verification/mutation-summary.md) |
 | Test selection | The run selects focused unit tests for the two functions plus the property-based idempotency test, which traverses `recommend()` and therefore exercises feature retrieval, ranking, and top-k formatting together. | [`test_format_top_k_sorts_scores_descending` at test_serving.py lines 140-150](../../../tests/unit/api_serving/test_serving.py#L140), [`test_get_online_features_reads_candidates_sequence_and_items` at lines 373-393](../../../tests/unit/api_serving/test_serving.py#L373), and [the property test at test_validation_verification.py lines 359-392](../../../tests/unit/api_serving/test_validation_verification.py#L359). |
-| Mutant execution and evidence export | `mutmut run` executes each selected mutation; the script exports CI statistics and the complete mutant-status list. | [Execution and export at validation_mutation.sh lines 147-157](../../../jenkins/scripts/validation_mutation.sh#L147). |
-| Score and quality gate | Detected mutants are `killed + timeout + caught_by_type_check`; live mutants are `survived + suspicious + no_tests`. The script computes the score and fails unless it is strictly greater than the configured threshold. | [Score calculation, summary, and gate at lines 169-202](../../../jenkins/scripts/validation_mutation.sh#L169). |
+| Mutant execution and evidence export | The archived result contains the complete mutant-status list. | [mutation-results.txt](validation-verification/mutation-results.txt) |
+| Score and quality gate | Detected mutants are `killed + timeout + caught_by_type_check`; the archived run passed the `>80%` gate. | [mutation-summary.md](validation-verification/mutation-summary.md) |
 | Per-target result | All 30 `format_top_k` mutants were killed. For `get_online_features`, 22 mutants were killed and 8 survived, yielding 52 killed out of 60 selected mutants overall. | [`get_online_features` results at mutation-results.txt lines 257-286](validation-verification/mutation-results.txt#L257) and [`format_top_k` results at lines 482-511](validation-verification/mutation-results.txt#L482). |
 
 The selected test suite determines whether each mutant is killed; the report does not attribute an individual kill to one specific test case. The focused test references above show which tests cover each target, while `mutation-results.txt` is the authoritative per-mutant outcome.
 
-### 4.3 Command used
+### 4.3 Archived execution
 
-```bash
-MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' \
-MUTATION_MUTANT_NAMES='ranking.x_format_top_k* online_features.x_get_online_features*' \
-MUTATION_TEST_SELECTION='tests/unit/api_serving/test_serving.py tests/unit/api_serving/test_validation_verification.py::test_property_based_recommendation_idempotency_for_deterministic_prediction' \
-UV_CACHE_DIR=.uv-cache \
-bash jenkins/scripts/validation_mutation.sh
-```
+The one-off coursework runner has been removed from the production Jenkins
+script tree. The immutable result files below remain as historical evidence.
 
 ### 4.4 Result
 
@@ -273,37 +268,13 @@ Source references:
 
 - [pyproject.toml (line 28)](../../../pyproject.toml#L28), [pyproject.toml (line 30)](../../../pyproject.toml#L30): Locust and Uvicorn dependencies.
 - [locustfile_serving.py (line 1)](../../../tests/load/locustfile_serving.py#L1), [locustfile_serving.py (line 128)](../../../tests/load/locustfile_serving.py#L128): target selection, task dispatch, and both API payloads.
-- [validation_load_test.sh (line 1)](../../../jenkins/scripts/validation_load_test.sh#L1), [validation_load_test.sh (line 65)](../../../jenkins/scripts/validation_load_test.sh#L65): headless execution, HTML report, and SLA gate.
+- [locustfile_serving.py (line 1)](../../../tests/load/locustfile_serving.py#L1): archived load shape used for the recorded proof.
 
-### 6.2 Commands used
+### 6.2 Archived execution
 
-Inference API:
-
-```bash
-NO_PROXY=127.0.0.1,localhost \
-RECSYS_LOAD_HOST=http://127.0.0.1:8088 \
-RECSYS_LOAD_TARGET=api \
-RECSYS_LOAD_USERS=2 \
-RECSYS_LOAD_SPAWN_RATE=1 \
-RECSYS_LOAD_DURATION=8s \
-UV_CACHE_DIR=.uv-cache \
-bash jenkins/scripts/validation_load_test.sh
-```
-
-Online Feature API:
-
-```bash
-NO_PROXY=127.0.0.1,localhost \
-REPORTS_DIR=reports/validation-feature \
-EVIDENCE_DIR='docs/submission/rubic-final-coursework-(final-ml)/validation-verification/feature-load' \
-RECSYS_LOAD_HOST=http://127.0.0.1:8088 \
-RECSYS_LOAD_TARGET=feature \
-RECSYS_LOAD_USERS=2 \
-RECSYS_LOAD_SPAWN_RATE=1 \
-RECSYS_LOAD_DURATION=8s \
-UV_CACHE_DIR=.uv-cache \
-bash jenkins/scripts/validation_load_test.sh
-```
+The load-test runner was coursework-only and has been removed from the
+production Jenkins script tree. The recorded HTML and SLA summaries remain
+available below.
 
 ### 6.3 SLA results
 

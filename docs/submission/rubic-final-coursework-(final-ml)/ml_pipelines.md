@@ -84,7 +84,8 @@ Newly promoted MLflow versions always carry `promotion_manifest_uri`. For a
 legacy version created before this contract existed, the watcher quarantines a
 missing URI as `candidate=invalid` and `rollout_status=manifest_missing`
 instead of retrying forever. The operator can repair it deterministically with
-`model_rollout_demo.sh mark <registry-version> <versioned-manifest-uri>`.
+Candidate state changes are performed by the rollout watcher and the
+`RecSys-KServe-Model-CD` transaction rather than a manual demo CLI.
 
 ### Code reference
 
@@ -101,7 +102,7 @@ instead of retrying forever. The operator can repair it deterministically with
 | Compile and upload the graph package rendered by KFP UI | [`compile_pipeline`](../../../apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py#L25), [compiled root DAG](../../../infra/kubeflow/compiled/bst_training_pipeline.yaml#L473), [`upload_or_version_pipeline`](../../../apps/ml-system/src/kubeflow/upload_pipeline_package.py#L27) |
 | Submit a pipeline run and attach runtime resources | [`create_run`](../../../apps/ml-system/src/kubeflow/submit_pipeline_run.py#L88), [run submission (line 131)](../../../apps/ml-system/src/kubeflow/submit_pipeline_run.py#L131), [`wire_runtime`](../../../apps/ml-system/src/kubeflow/components/runtime.py#L53) |
 | Jenkins model rollout state machine | [KServeModelCD.Jenkinsfile (line 1)](../../../jenkins/KServeModelCD.Jenkinsfile#L1), [KServeModelCD.Jenkinsfile (line 137)](../../../jenkins/KServeModelCD.Jenkinsfile#L137) |
-| Progressive rollout changed-component CI/CD | [detect_changed_components.py (line 86)](../../../jenkins/scripts/detect_changed_components.py#L86), [detect_changed_components.py (line 520)](../../../jenkins/scripts/detect_changed_components.py#L520), [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 336)](../../../Jenkinsfile#L336), [component_ci.sh (line 1)](../../../jenkins/scripts/component_ci.sh#L1), [component_ci.sh (line 281)](../../../jenkins/scripts/component_ci.sh#L281), [component_build_publish.sh (line 1)](../../../jenkins/scripts/component_build_publish.sh#L1), [component_build_publish.sh (line 292)](../../../jenkins/scripts/component_build_publish.sh#L292), [component_deploy.sh (line 1)](../../../jenkins/scripts/component_deploy.sh#L1), [component_deploy.sh (line 832)](../../../jenkins/scripts/component_deploy.sh#L832) |
+| Progressive rollout changed-component CI/CD | [detector.py (line 420)](../../../jenkins/python/change_detection/detector.py#L420), [detector.py (line 553)](../../../jenkins/python/change_detection/detector.py#L553), [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 336)](../../../Jenkinsfile#L336), [component_ci.sh (line 1)](../../../jenkins/scripts/entrypoints/component_ci.sh#L1), [component_ci.sh (line 281)](../../../jenkins/scripts/entrypoints/component_ci.sh#L281), [component_build_publish.sh (line 1)](../../../jenkins/scripts/entrypoints/component_build_publish.sh#L1), [component_build_publish.sh (line 292)](../../../jenkins/scripts/entrypoints/component_build_publish.sh#L292), [component_deploy.sh (line 1)](../../../jenkins/scripts/entrypoints/component_deploy.sh#L1), [component_deploy.sh (line 832)](../../../jenkins/scripts/entrypoints/component_deploy.sh#L832) |
 
 `feature_engineering()` is defined as a reusable component at [bst_training_pipeline.py line 33](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L33), but it is not instantiated by `recsys_bst_pipeline()`; therefore it does not appear in the current KFP UI graph.
 

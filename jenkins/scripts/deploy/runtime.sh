@@ -156,7 +156,7 @@ run_node_rebalance_if_enabled() {
   fi
   bash infra/k8s/scripts/rebalance_ml_node_pool.sh
   if [[ "${validate_node_rebalance}" == "1" || "${validate_node_rebalance}" == "true" ]]; then
-    bash jenkins/scripts/validate_node_rebalance.sh
+    bash jenkins/scripts/test/node_placement.sh
   fi
 }
 

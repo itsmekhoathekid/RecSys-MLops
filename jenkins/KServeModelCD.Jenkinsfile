@@ -38,14 +38,14 @@ pipeline {
     stage('Checkout Rollout Source') {
       steps {
         checkout scm
-        sh 'test -f jenkins/scripts/model_cd.py && test -d infra/helm/recsys-serving'
+        sh 'test -f jenkins/python/model_cd/cli.py && test -d infra/helm/recsys-serving'
       }
     }
 
     stage('Deploy Champion') {
       when { expression { params.ROLLOUT_STAGE == 'deploy' } }
       steps {
-        sh 'MODEL_CD_STAGE=deploy jenkins/scripts/component_deploy.sh kserve_model_cd'
+        sh 'MODEL_CD_STAGE=deploy jenkins/scripts/entrypoints/component_deploy.sh kserve_model_cd'
       }
     }
 
@@ -53,7 +53,7 @@ pipeline {
       when { expression { params.ROLLOUT_STAGE == 'shadow-start' } }
       steps {
         echo "Starting shadow inference for ${params.CANDIDATE_MANIFEST_URI}; user traffic remains on champion."
-        sh 'MODEL_CD_STAGE=shadow-start jenkins/scripts/component_deploy.sh kserve_model_cd'
+        sh 'MODEL_CD_STAGE=shadow-start jenkins/scripts/entrypoints/component_deploy.sh kserve_model_cd'
       }
     }
 
@@ -77,7 +77,7 @@ pipeline {
       when { expression { params.ROLLOUT_STAGE in ['ab-start', 'ab-step'] } }
       steps {
         echo "Applying ${params.ROLLOUT_STAGE} at candidate weight ${params.AB_CANDIDATE_WEIGHT_PERCENT}%"
-        sh 'jenkins/scripts/component_deploy.sh kserve_model_cd'
+        sh 'jenkins/scripts/entrypoints/component_deploy.sh kserve_model_cd'
       }
     }
 
@@ -86,7 +86,7 @@ pipeline {
       steps {
         sh '''
           set -euo pipefail
-          MODEL_CD_STAGE=evaluate MODEL_CD_APPLY=0 jenkins/scripts/component_deploy.sh kserve_model_cd
+          MODEL_CD_STAGE=evaluate MODEL_CD_APPLY=0 jenkins/scripts/entrypoints/component_deploy.sh kserve_model_cd
           rm -f .model-cd/rollback-required
           if grep -q '"decision": "rollback"' .model-cd/ab-decision.json; then
             touch .model-cd/rollback-required
@@ -99,7 +99,7 @@ pipeline {
     stage('Promote Candidate') {
       when { expression { params.ROLLOUT_STAGE == 'promote' } }
       steps {
-        sh 'MODEL_CD_STAGE=promote jenkins/scripts/component_deploy.sh kserve_model_cd'
+        sh 'MODEL_CD_STAGE=promote jenkins/scripts/entrypoints/component_deploy.sh kserve_model_cd'
       }
     }
 
@@ -112,7 +112,7 @@ pipeline {
       }
       steps {
         echo 'Candidate gate failed or rollback was requested; restoring champion-only traffic.'
-        sh 'MODEL_CD_STAGE=rollback AB_CANDIDATE_WEIGHT_PERCENT=0 jenkins/scripts/component_deploy.sh kserve_model_cd'
+        sh 'MODEL_CD_STAGE=rollback AB_CANDIDATE_WEIGHT_PERCENT=0 jenkins/scripts/entrypoints/component_deploy.sh kserve_model_cd'
       }
     }
 
@@ -124,7 +124,7 @@ pipeline {
         }
       }
       steps {
-        sh 'bash jenkins/scripts/verify_champion_only.sh'
+        sh 'bash jenkins/scripts/test/champion_only.sh'
       }
     }
   }

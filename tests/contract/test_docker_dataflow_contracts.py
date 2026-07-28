@@ -139,7 +139,7 @@ def test_kubeflow_cloudbuild_builds_compiles_uploads_and_validates_package():
     assert "${_IMAGE_REPO}/recsys-mlops-training:${_TAG}" in cloudbuild
     assert "${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}" in cloudbuild
     assert "id: compile-kfp-package" in cloudbuild
-    assert "jenkins/scripts/kubeflow_pipeline_cicd.sh" in cloudbuild
+    assert "jenkins/scripts/build/kfp_package.sh" in cloudbuild
     assert "id: drift-retrain" in cloudbuild
     assert "id: validate-drift-retrain-kfp-package" in cloudbuild
     assert "id: upload-kfp-package" in cloudbuild
@@ -235,7 +235,7 @@ def test_jenkins_training_component_builds_runtime_images_and_package_trigger_im
 
 def test_jenkins_training_deploy_uploads_package_and_rolls_trigger_runtime():
     deploy_script = (ROOT / "jenkins/scripts/deploy/ml_platform.sh").read_text()
-    assert "jenkins/scripts/kubeflow_pipeline_cicd.sh" in deploy_script
+    assert "jenkins/scripts/deploy/kfp_version.sh" in deploy_script
     assert '--set "images.driftRetrain=${drift_retrain_image}"' in deploy_script
     assert (
         'verify_data_platform_config_image "DRIFT_RETRAIN_IMAGE" "${drift_retrain_image}"'
@@ -243,10 +243,13 @@ def test_jenkins_training_deploy_uploads_package_and_rolls_trigger_runtime():
     )
 
 
-def test_full_services_cicd_runs_all_stages_and_post_deploy_e2e():
-    script = (ROOT / "jenkins/scripts/full_services_cicd.sh").read_text()
+def test_legacy_full_services_cicd_runs_component_and_platform_flows():
+    script = (ROOT / "jenkins/scripts/legacy/full_services_cicd.sh").read_text()
     build_script = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text()
-    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    deploy_script = (
+        (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
+        + (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
+    )
     deploy_runtime = (ROOT / "jenkins/scripts/deploy/runtime.sh").read_text()
     ml_deploy = (ROOT / "jenkins/scripts/deploy/ml_platform.sh").read_text()
 
@@ -255,7 +258,7 @@ def test_full_services_cicd_runs_all_stages_and_post_deploy_e2e():
     assert "component_deploy.sh all" in script
     assert "cluster_data_setup.sh" in script
     assert "cluster_mlops_serving_e2e.sh" in script
-    assert "post_deploy_e2e.sh" in script
+    assert "post_deploy_e2e.sh" not in script
     assert "RUN_NODE_REBALANCE" in script
     assert "VALIDATE_NODE_REBALANCE" in script
     assert "FULL_CICD_BUILD_BACKEND:-docker" in script
@@ -265,7 +268,7 @@ def test_full_services_cicd_runs_all_stages_and_post_deploy_e2e():
     assert "deploy_all()" in deploy_script
     assert "run_node_rebalance_if_enabled" in deploy_script
     assert "infra/k8s/scripts/rebalance_ml_node_pool.sh" in deploy_runtime
-    assert "jenkins/scripts/validate_node_rebalance.sh" in deploy_runtime
+    assert "jenkins/scripts/test/node_placement.sh" in deploy_runtime
     assert "deploy_mlflow" in deploy_script
     assert '--set "nodeSelector.recsys\\\\.ai/pool=ml-system"' in ml_deploy
     assert '--set "minio.resources.requests.memory=512Mi"' in ml_deploy
@@ -278,7 +281,7 @@ def test_full_services_cicd_runs_all_stages_and_post_deploy_e2e():
 
 
 def test_node_rebalance_validation_covers_relocated_control_plane():
-    validator = (ROOT / "jenkins/scripts/validate_node_rebalance.sh").read_text()
+    validator = (ROOT / "jenkins/scripts/test/node_placement.sh").read_text()
     rebalance = (ROOT / "infra/k8s/scripts/rebalance_ml_node_pool.sh").read_text()
     power_script = (
         ROOT / "infra/terraform/gcp/scripts/gcp_services_power.sh"
@@ -500,7 +503,7 @@ def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
 def test_airflow_major_version_migration_has_typed_rollback_compensation():
     database = (ROOT / "jenkins/scripts/deploy/database.sh").read_text()
     transaction = (ROOT / "jenkins/scripts/deploy/transaction.sh").read_text()
-    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
 
     assert "database_snapshot_airflow_migration" in deploy
     assert "airflow-database-migration" in database
@@ -515,7 +518,7 @@ def test_airflow_major_version_migration_has_typed_rollback_compensation():
 
 def test_materialize_cicd_owns_feast_plan_apply_and_sql_registry_rollback():
     ci = (ROOT / "jenkins/scripts/ci/data.sh").read_text()
-    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    deploy = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
     feast_deploy = (ROOT / "jenkins/scripts/deploy/feast.sh").read_text()
     transaction = (ROOT / "jenkins/scripts/deploy/transaction.sh").read_text()
 
@@ -531,7 +534,7 @@ def test_materialize_cicd_owns_feast_plan_apply_and_sql_registry_rollback():
 
 
 def test_component_deploy_preserves_spark_byte_size_as_integer_string():
-    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
 
     assert '--set-string "spark.advisoryPartitionSizeBytes=' in deploy
     assert '--set "spark.advisoryPartitionSizeBytes=' not in deploy
@@ -829,7 +832,10 @@ def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
 
 
 def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_merge():
-    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    deploy_script = (
+        (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
+        + (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
+    )
     assert "--reuse-values" in deploy_script
     offset_override = (
         "realtimeFlinkConsumer.online.startingOffsets="
@@ -902,7 +908,10 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
 
 
 def test_shared_data_release_always_resolves_every_split_image_by_digest():
-    deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    deploy_script = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
+    deploy_entrypoint = (
+        ROOT / "jenkins/scripts/entrypoints/component_deploy.sh"
+    ).read_text()
     registry_script = (ROOT / "jenkins/scripts/lib/registry.sh").read_text()
     shared_deploy = deploy_script.split("deploy_data_platform_unlocked()", 1)[1].split(
         "deploy_data_platform()", 1
@@ -921,7 +930,7 @@ def test_shared_data_release_always_resolves_every_split_image_by_digest():
     ):
         assert f'--set "images.{values_key}=' in shared_deploy
 
-    assert "source jenkins/scripts/lib/registry.sh" in deploy_script
+    assert "source jenkins/scripts/lib/registry.sh" in deploy_entrypoint
     assert 'baseline_image_tag="${BASELINE_IMAGE_TAG:-$(git rev-parse HEAD^)}"' in (
         deploy_script
     )

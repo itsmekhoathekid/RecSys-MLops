@@ -36,7 +36,7 @@ deploy_training_refs() {
     RECSYS_PIPELINE_IMAGE="${training_image}" \
     RECSYS_RAY_IMAGE="${training_image}" \
     RECSYS_SPARK_IMAGE="${spark_image}" \
-    bash jenkins/scripts/kubeflow_pipeline_cicd.sh
+    bash jenkins/scripts/deploy/kfp_version.sh
   deploy_mlflow
   deploy_data_platform --set "images.driftRetrain=${drift_retrain_image}"
   verify_data_platform_config_image "DRIFT_RETRAIN_IMAGE" "${drift_retrain_image}"

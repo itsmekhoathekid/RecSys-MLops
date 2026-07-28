@@ -22,18 +22,11 @@
 - EP/BVA cases are visible in pytest IDs containing `equivalence-*` and `boundary-*` ([test_validation_verification.py (line 75)](../../../../tests/unit/api_serving/test_validation_verification.py#L75), [test_validation_verification.py (line 127)](../../../../tests/unit/api_serving/test_validation_verification.py#L127)).
 - Property-based idempotency uses Hypothesis ([test_validation_verification.py (line 341)](../../../../tests/unit/api_serving/test_validation_verification.py#L341), [test_validation_verification.py (line 378)](../../../../tests/unit/api_serving/test_validation_verification.py#L378)).
 - Mutation score: 90.74%.
-- Locust HTML SLA report: `locust-api.html` after [validation_load_test.sh (line 1)](../../../../jenkins/scripts/validation_load_test.sh#L1), [validation_load_test.sh (line 65)](../../../../jenkins/scripts/validation_load_test.sh#L65) runs.
+- Locust HTML SLA report: archived `locust-api.html`.
 
-The evidence aggregation command is implemented in [validation_evidence.sh (line 1)](../../../../jenkins/scripts/validation_evidence.sh#L1), [validation_evidence.sh (line 80)](../../../../jenkins/scripts/validation_evidence.sh#L80); mutation target selection and score gating are in [validation_mutation.sh (line 1)](../../../../jenkins/scripts/validation_mutation.sh#L1), [validation_mutation.sh (line 205)](../../../../jenkins/scripts/validation_mutation.sh#L205).
-
-## Commands
-
-```bash
-COVERAGE_MIN=90 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/component_ci.sh api
-MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' MUTATION_MUTANT_NAMES='ranking.x_format_top_k* online_features.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh
-RECSYS_LOAD_HOST=http://127.0.0.1:8088 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_load_test.sh
-bash jenkins/scripts/validation_evidence.sh
-```
+The original one-off evidence, mutation and load runners were removed from the
+production Jenkins script tree. This directory preserves their immutable
+coursework output only.
 
 ## Screenshot Checklist
 

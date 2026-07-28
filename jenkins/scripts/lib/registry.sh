@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source jenkins/scripts/lib/config.sh
+
 registry_host_from_repository() {
   printf '%s' "${1%%/*}"
 }

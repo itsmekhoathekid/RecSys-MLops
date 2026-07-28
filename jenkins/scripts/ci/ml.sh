@@ -18,7 +18,5 @@ ci_rollout() {
     --set modelRolloutWatcher.enabled=true \
     --set modelRolloutWatcher.image=registry.example/recsys-mlops-training:ci >/dev/null
   helm lint infra/helm/recsys-serving
-  bash -n jenkins/scripts/autonomous_rollout_locust.sh
-  bash -n jenkins/scripts/model_rollout_demo.sh
-  bash -n jenkins/scripts/verify_champion_only.sh
+  bash -n jenkins/scripts/test/champion_only.sh
 }

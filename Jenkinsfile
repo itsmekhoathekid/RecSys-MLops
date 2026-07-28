@@ -49,7 +49,7 @@ pipeline {
           env.CI_BASE_REF = baseRef
           echo "Changed-path range: ${baseRef ?: '<current commit>'}...HEAD"
           def baseArgument = baseRef ? "--base-ref '${baseRef}'" : ''
-          sh "python3 jenkins/scripts/detect_changed_components.py ${baseArgument} > .ci-components.env"
+          sh "python3 -m jenkins.python.change_detection.detector ${baseArgument} > .ci-components.env"
           readFile('.ci-components.env').split('\\n').each { line ->
             if (line.trim() && line.contains('=')) {
               def pair = line.split('=', 2)
@@ -111,7 +111,7 @@ pipeline {
         sh '''
           set -euo pipefail
           mkdir -p "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"
-          jenkins/scripts/prepare_component_ci_envs.sh
+          jenkins/scripts/entrypoints/prepare_component_ci_envs.sh
         '''
       }
     }
@@ -121,7 +121,7 @@ pipeline {
       steps {
         script {
           componentPipeline.runComponentBranches(
-            'jenkins/scripts/component_ci.sh',
+            'jenkins/scripts/entrypoints/component_ci.sh',
             "COVERAGE_MIN='${params.COVERAGE_MIN}'"
           )
         }
@@ -153,7 +153,7 @@ pipeline {
       steps {
         script {
           componentPipeline.runComponentBranches(
-            'jenkins/scripts/component_build_publish.sh',
+            'jenkins/scripts/entrypoints/component_build_publish.sh',
             "IMAGE_PUSH_REGISTRY='${env.IMAGE_PUSH_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' REQUIRE_GCP_ARTIFACT_REGISTRY='1'"
           )
         }
@@ -168,10 +168,10 @@ pipeline {
           def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}'"
           if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
             withCredentials([usernamePassword(credentialsId: params.GATEWAY_SMOKE_CREDENTIALS_ID, usernameVariable: 'GATEWAY_SMOKE_USER', passwordVariable: 'GATEWAY_SMOKE_PASSWORD')]) {
-              componentPipeline.runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+              componentPipeline.runComponentDeployBranches('jenkins/scripts/entrypoints/component_deploy.sh', commandEnv)
             }
           } else {
-            componentPipeline.runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)
+            componentPipeline.runComponentDeployBranches('jenkins/scripts/entrypoints/component_deploy.sh', commandEnv)
           }
         }
       }
@@ -194,7 +194,7 @@ pipeline {
               PUBLISH_IMAGES=1 \
               FORCE_DEPLOY=1 \
               IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY}" \
-              jenkins/scripts/component_deploy.sh "${component}" || exit $?
+              jenkins/scripts/entrypoints/component_deploy.sh "${component}" || exit $?
           done
           IFS="${old_ifs}"
         fi

@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from jenkins.scripts.detect_changed_components import classify_paths
+from jenkins.python.change_detection.detector import classify_paths
 
 
 def test_demo_web_paths_select_only_the_demo_component() -> None:
@@ -14,8 +14,7 @@ def test_demo_web_paths_select_only_the_demo_component() -> None:
         "apps/demo-web/frontend/src/App.tsx",
         "apps/demo-web/backend/app/main.py",
         "infra/helm/recsys-demo-web/templates/ingress.yaml",
-        "jenkins/scripts/demo_web_smoke.sh",
-        "jenkins/demo-web-rollback/Jenkinsfile",
+        "jenkins/scripts/test/demo_web_smoke.sh",
         "tests/contract/test_demo_web_contracts.py",
     ):
         result = classify_paths([path])

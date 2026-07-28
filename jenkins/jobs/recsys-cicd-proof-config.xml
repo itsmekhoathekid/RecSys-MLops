@@ -28,7 +28,7 @@ pipeline {
         sh '''
           set -eu
           test -f Jenkinsfile
-          test -f jenkins/scripts/detect_changed_components.py
+          test -f jenkins/python/change_detection/detector.py
           printf '%s\n' "materialize training dp1 dp2 dp3 api kserve rollout drift stream_offline stream_online spark_batch"
         '''
       }
@@ -37,18 +37,18 @@ pipeline {
       steps {
         sh '''
           set -eu
-          test -f jenkins/scripts/component_ci.sh
-          test -f jenkins/scripts/component_build_publish.sh
-          test -f jenkins/scripts/component_deploy.sh
-          bash -n jenkins/scripts/component_ci.sh
-          bash -n jenkins/scripts/component_build_publish.sh
-          bash -n jenkins/scripts/component_deploy.sh
+          test -f jenkins/scripts/entrypoints/component_ci.sh
+          test -f jenkins/scripts/entrypoints/component_build_publish.sh
+          test -f jenkins/scripts/entrypoints/component_deploy.sh
+          bash -n jenkins/scripts/entrypoints/component_ci.sh
+          bash -n jenkins/scripts/entrypoints/component_build_publish.sh
+          bash -n jenkins/scripts/entrypoints/component_deploy.sh
         '''
       }
     }
     stage('Component CI') {
       parallel {
-        stage('Materialize Pipeline') { steps { sh 'echo "Component CI > Materialize Pipeline"; test -f jenkins/scripts/component_ci.sh' } }
+        stage('Materialize Pipeline') { steps { sh 'echo "Component CI > Materialize Pipeline"; test -f jenkins/scripts/entrypoints/component_ci.sh' } }
         stage('Training Pipeline') { steps { sh 'echo "Component CI > Training Pipeline"; test -f infra/kubeflow/compiled/bst_training_pipeline.yaml || true' } }
         stage('DP1 Raw To Bronze') { steps { sh 'echo "Component CI > DP1 Raw To Bronze"; test -d apps/data-platform || true' } }
         stage('DP2 Bronze To Silver Gold') { steps { sh 'echo "Component CI > DP2 Bronze To Silver Gold"; test -d apps/data-platform || true' } }

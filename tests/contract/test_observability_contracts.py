@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
+import re
 import shutil
 import subprocess
-import json
 from pathlib import Path
 
 import pytest
@@ -149,8 +150,10 @@ def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
         assert "org.apache.flink.metrics.prometheus.PrometheusReporterFactory" in env["FLINK_PROPERTIES"]
 
     dockerfile = Path("apps/data-platform/Dockerfile.flink").read_text(encoding="utf-8")
-    assert "flink-metrics-prometheus-2.2.0.jar" in dockerfile
-    assert "/opt/flink/plugins/metrics-prometheus" in dockerfile
+    base_images = re.findall(r"^FROM flink:(?P<version>[^ ]+)", dockerfile, re.MULTILINE)
+    assert base_images
+    assert len(set(base_images)) == 1
+    assert "test -f /opt/flink/plugins/metrics-prometheus/flink-metrics-prometheus-*.jar" in dockerfile
 
 
 def test_flink_taskmanager_health_requires_jobmanager_registration():

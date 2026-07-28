@@ -4,7 +4,7 @@ set -euo pipefail
 component="${1:?component is required}"
 
 source jenkins/scripts/lib/common.sh
-source jenkins/scripts/lib/gcp.sh
+source jenkins/scripts/lib/config.sh
 source jenkins/scripts/lib/image_manifest.sh
 source jenkins/scripts/lib/registry.sh
 source jenkins/scripts/build/runtime.sh

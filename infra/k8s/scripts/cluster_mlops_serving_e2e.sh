@@ -135,7 +135,7 @@ promote_and_deploy() {
   export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
   export RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-0}"
 
-  if uv run python jenkins/scripts/model_cd.py \
+  if uv run python -m jenkins.python.model_cd.cli \
     --stage promote \
     --manifest-uri "${LATEST_MANIFEST_URI}" \
     --control-manifest-uri "${LATEST_MANIFEST_URI}" \
@@ -146,7 +146,7 @@ promote_and_deploy() {
   fi
 
   echo "No usable latest control manifest yet; bootstrapping latest from candidate."
-  uv run python jenkins/scripts/model_cd.py \
+  uv run python -m jenkins.python.model_cd.cli \
     --stage promote \
     --manifest-uri "${LATEST_MANIFEST_URI}" \
     --control-manifest-uri "${candidate_manifest_uri}" \

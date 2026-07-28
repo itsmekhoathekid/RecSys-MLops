@@ -311,18 +311,19 @@ def classify_jenkins(flags: dict[str, bool], path: str) -> None:
     if path in {
         "jenkins/config/components.json",
         "jenkins/config/gcp-production.json",
-        "jenkins/scripts/component_build_publish.sh",
-        "jenkins/scripts/component_ci.sh",
-        "jenkins/scripts/component_deploy.sh",
     } or path.startswith(
         (
             "jenkins/python/deploy_transaction/",
+            "jenkins/scripts/entrypoints/",
             "jenkins/scripts/lib/",
             "jenkins/scripts/deploy/transaction",
             "jenkins/scripts/deploy/database",
+            "jenkins/scripts/deploy/preflight/",
             "jenkins/scripts/test/runtime",
+            "jenkins/scripts/test/node_placement",
             "jenkins/scripts/build/engine",
             "jenkins/scripts/build/runtime",
+            "jenkins/scripts/ci/runtime",
         )
     ):
         mark(flags, *COMPONENTS)
@@ -344,22 +345,19 @@ def classify_jenkins(flags: dict[str, bool], path: str) -> None:
         mark(flags, "ANALYTICS")
     elif path.startswith(("jenkins/scripts/ci/demo", "jenkins/scripts/build/demo", "jenkins/scripts/deploy/demo", "jenkins/scripts/test/demo")):
         mark(flags, "DEMO_WEB")
-    elif path.startswith("jenkins/demo-web-rollback/"):
-        mark(flags, "DEMO_WEB")
-    elif path == "jenkins/scripts/model_cd.py":
+    elif path.startswith("jenkins/python/model_cd/"):
         mark(flags, "KSERVE", "ROLLOUT")
     elif path in {
         "jenkins/KServeModelCD.Jenkinsfile",
-        "jenkins/scripts/autonomous_rollout_locust.sh",
-        "jenkins/scripts/model_rollout_demo.sh",
-        "jenkins/scripts/verify_champion_only.sh",
+        "jenkins/scripts/test/champion_only.sh",
     }:
         mark(flags, "ROLLOUT")
-    elif path == "jenkins/scripts/kubeflow_pipeline_cicd.sh":
+    elif path in {
+        "jenkins/scripts/build/kfp_package.sh",
+        "jenkins/scripts/deploy/kfp_version.sh",
+    }:
         mark(flags, "TRAINING")
-    elif Path(path).name in {"validation_evidence.sh", "validation_load_test.sh", "validation_mutation.sh"}:
-        mark(flags, "API")
-    elif Path(path).name in {"demo_web_smoke.sh", "demo_web_rollback.sh"}:
+    elif path == "jenkins/scripts/test/demo_web_smoke.sh":
         mark(flags, "DEMO_WEB")
 
 

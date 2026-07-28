@@ -35,7 +35,7 @@ deploy_kserve_unlocked() {
     MODEL_STORE_BUCKET MODEL_STORE_PREFIX
   configure_local_model_store_endpoint
   RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-0}" \
-    uv run --no-project --with boto3 python jenkins/scripts/model_cd.py \
+    uv run --no-project --with boto3 python -m jenkins.python.model_cd.cli \
     --manifest-uri "${promotion_manifest_uri}" \
     --output-dir .model-cd \
     --timeout "${timeout}"
@@ -68,7 +68,7 @@ deploy_kserve_model_cd_unlocked() {
   [[ "${MODEL_CD_APPLY:-1}" == "1" ]] && model_cd_args+=(--apply)
   MODEL_CD_TRANSACTION_STATE="${model_store_state}" \
     RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-0}" \
-    uv run --no-project --with boto3 python jenkins/scripts/model_cd.py "${model_cd_args[@]}"
+    uv run --no-project --with boto3 python -m jenkins.python.model_cd.cli "${model_cd_args[@]}"
 }
 
 deploy_kserve() {

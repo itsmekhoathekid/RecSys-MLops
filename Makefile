@@ -134,8 +134,7 @@ help:
 	@echo "  make gateway-create-auth         Create local htpasswd file for Basic Auth"
 	@echo "  make gateway-install             Install recsys-gateway Helm chart"
 	@echo "  make gateway-smoke               Check gateway auth, API, and rate-limit behavior"
-	@echo "  make full-services-cicd          Run all service CI/CD and post-deploy E2E"
-	@echo "  make post-deploy-e2e             Verify live services after CI/CD deploy"
+	@echo "  make full-services-cicd          Run the temporary legacy full-service CI/CD proof"
 
 .PHONY: mlops-local-up
 mlops-local-up:
@@ -594,10 +593,6 @@ gateway-smoke:
 	echo "$$rate_codes"; \
 	if ! echo "$$rate_codes" | rg '429' >/dev/null; then echo "Warning: no 429 observed; check ingress replica count and configured burst behavior."; fi
 
-.PHONY: post-deploy-e2e
-post-deploy-e2e:
-	@jenkins/scripts/post_deploy_e2e.sh
-
 .PHONY: full-services-cicd
 full-services-cicd:
-	@jenkins/scripts/full_services_cicd.sh
+	@jenkins/scripts/legacy/full_services_cicd.sh

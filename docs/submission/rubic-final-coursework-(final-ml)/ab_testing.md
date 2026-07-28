@@ -45,7 +45,7 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
 2. Render serving values for the desired stage.
 
-   [model_cd.py (line 420)](../../../jenkins/scripts/model_cd.py#L420), [model_cd.py (line 439)](../../../jenkins/scripts/model_cd.py#L439) accepts these stages:
+   [model_cd.py (line 420)](../../../jenkins/python/model_cd/cli.py#L420), [model_cd.py (line 439)](../../../jenkins/python/model_cd/cli.py#L439) accepts these stages:
 
    | Stage | Purpose | Resulting A/B state |
    |---|---|---|
@@ -85,7 +85,7 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
 7. Decide promote or rollback.
 
-   [model_cd.py (line 129)](../../../jenkins/scripts/model_cd.py#L129), [model_cd.py (line 231)](../../../jenkins/scripts/model_cd.py#L231) implements promotion gates in `assert_promote_gates()`:
+   [model_cd.py (line 129)](../../../jenkins/python/model_cd/cli.py#L129), [model_cd.py (line 231)](../../../jenkins/python/model_cd/cli.py#L231) implements promotion gates in `assert_promote_gates()`:
 
    - Promote is allowed when candidate error rate is not more than `0.02` above control error rate.
    - Promote is allowed when candidate p95 latency is not more than `1.5x` control p95 latency.

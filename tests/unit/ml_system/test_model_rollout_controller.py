@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import types
@@ -326,47 +325,11 @@ def test_rollout_watcher_helm_contract():
 
 
 def test_champion_only_verifier_waits_for_api_rollout_before_requests():
-    script = (ROOT / "jenkins/scripts/verify_champion_only.sh").read_text(encoding="utf-8")
+    script = (ROOT / "jenkins/scripts/test/champion_only.sh").read_text(encoding="utf-8")
 
     rollout_wait = script.index('kubectl rollout status "deployment/${deployment}"')
     api_request = script.index('urllib.request.Request("http://127.0.0.1:8080/recommendations"')
     assert rollout_wait < api_request
-
-
-def test_locust_is_only_traffic_generator_for_autonomous_rollout():
-    demo = (ROOT / "jenkins/scripts/model_rollout_demo.sh").read_text(encoding="utf-8")
-    load = (ROOT / "jenkins/scripts/autonomous_rollout_locust.sh").read_text(encoding="utf-8")
-    locustfile = (ROOT / "tests/load/locustfile_serving.py").read_text(encoding="utf-8")
-
-    assert "progressive <mlflow-registry-version>" not in demo
-    assert "progressive_rollout" not in demo
-    assert 'locust_bin="${LOCUST_BIN' in load
-    assert '"${locust_bin}" \\' in load
-    assert "kill -KILL" in load
-    assert 'status --version "${registry_version}"' in load
-    assert "ensure_port_forward()" in load
-    assert load.index('ensure_port_forward\n  status=') > load.index('while kill -0 "${locust_pid}"')
-    assert 'load_service="${RECSYS_LOAD_SERVICE:-recsys-demo-api}"' in load
-    assert 'default_recommendations_path="/api/recommendations"' in load
-    assert "API_RECOMMENDATIONS_PATH" in locustfile
-    assert '--stage' not in load
-    assert "ROLLOUT_STAGE" not in load
-    assert "_next_user_id()" in locustfile
-    assert 'os.getenv("RECSYS_USER_ID", "").strip()' in locustfile
-
-
-def test_locust_runner_accepts_legacy_duration_users_spawn_arguments():
-    script = ROOT / "jenkins/scripts/autonomous_rollout_locust.sh"
-    output = subprocess.check_output(
-        ["bash", str(script), "15m", "10", "2"],
-        text=True,
-        env={**os.environ, "ROLLOUT_LOAD_PRINT_CONFIG": "1"},
-    )
-
-    assert "users=10" in output
-    assert "spawn_rate=2" in output
-    assert "max_duration=45m" in output
-    assert "legacy_duration=15m" in output
 
 
 def test_status_payload_is_demo_friendly():

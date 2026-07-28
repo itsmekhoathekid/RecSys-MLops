@@ -218,7 +218,7 @@ Fields to capture:
 
 The prediction API does not have a standalone Helm release. It is deployed as a resource inside the `recsys-serving` Helm release. Therefore, auto fallback for `recsys-api-serving` is inherited from the release-level `helm upgrade --install --atomic` command used by CI/CD. If the recommendation API rollout fails, Helm rolls back the whole `recsys-serving` release, including `recsys-api-serving`, `recsys-online-feature-api`, and the related serving resources.
 
-Code reference: [model_cd.py (line 333)](../../../jenkins/scripts/model_cd.py#L333) lints the chart; [line 339](../../../jenkins/scripts/model_cd.py#L339) enables atomic deployment by default; [line 340](../../../jenkins/scripts/model_cd.py#L340), [line 357](../../../jenkins/scripts/model_cd.py#L357), and [line 403](../../../jenkins/scripts/model_cd.py#L403) build and execute the two `recsys-serving` Helm upgrades.
+Code reference: [model_cd.py (line 333)](../../../jenkins/python/model_cd/cli.py#L333) lints the chart; [line 339](../../../jenkins/python/model_cd/cli.py#L339) enables atomic deployment by default; [line 340](../../../jenkins/python/model_cd/cli.py#L340), [line 357](../../../jenkins/python/model_cd/cli.py#L357), and [line 403](../../../jenkins/python/model_cd/cli.py#L403) build and execute the two `recsys-serving` Helm upgrades.
 
 Runtime command:
 

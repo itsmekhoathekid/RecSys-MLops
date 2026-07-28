@@ -57,7 +57,7 @@ kubectl port-forward -n ci svc/recsys-jenkins 18090:8080
 | `stream_online` | Flink stream jobs, Redis/online writer code | `recsys-flink` |
 | `analytics` | `apps/analytics/`, analytics tests, Airflow analytics DAG, and `infra/helm/recsys-analytics/` | `recsys-analytics-spark`, `recsys-analytics-dbt`, `recsys-analytics-superset`, `recsys-airflow` |
 
-`jenkins/scripts/detect_changed_components.py` is the source of truth for path
+`jenkins/python/change_detection/detector.py` is the source of truth for path
 classification. It writes `.ci-components.env` so Jenkins can run the matching
 component stages.
 
@@ -136,20 +136,6 @@ loaded from Kubernetes Secrets only when model CD needs them.
 
 Do not commit secret values into Jenkinsfile, Helm values, or scripts.
 
-## Post-CD E2E
-
-Full service E2E is intentionally separate from the main CI/CD pipeline.
-
-Use `jenkins/post-deploy-e2e/Jenkinsfile` or run:
-
-```bash
-jenkins/scripts/post_deploy_e2e.sh
-```
-
-The post-CD job does not build, push, or deploy. It verifies already-running
-services: FastAPI, KServe, Spark/data outputs, stream offline store, Redis online
-store, drift/metrics, and observability smoke checks.
-
 ## Full Service CI/CD
 
 To force every RecSys service through CI, image publish, deploy, and E2E gates:
@@ -157,28 +143,11 @@ To force every RecSys service through CI, image publish, deploy, and E2E gates:
 ```bash
 IMAGE_TAG="$(git rev-parse HEAD)" \
 FULL_CICD_BUILD_BACKEND=cloudbuild \
-jenkins/scripts/full_services_cicd.sh
+jenkins/scripts/legacy/full_services_cicd.sh
 ```
 
 The full flow runs component CI, builds/pushes all runtime images, compiles and
 validates the Kubeflow package with pullable image refs, uploads the package,
-deploys data platform, MLflow, API, and KServe/model CD, then runs data-platform,
-ML-platform, and post-deploy E2E checks.
-
-## Validation Evidence
-
-Rubric evidence for API validation can be generated after component CI:
-
-```bash
-COVERAGE_MIN=90 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/component_ci.sh api
-MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' MUTATION_MUTANT_NAMES='ranking.x_format_top_k* online_features.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh
-RECSYS_LOAD_HOST=http://127.0.0.1:8088 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_load_test.sh
-bash jenkins/scripts/validation_evidence.sh
-```
-
-`validation_mutation.sh` accepts `MUTATION_TARGETS` or derives changed Python
-source files from `MUTATION_BASE_REF`, then limits mutmut to those files.
-`MUTATION_MUTANT_NAMES` can narrow the run further to changed functions. The
-Locust SLA gate is `0%` failures, p95 `<1000ms`, and throughput `>=5 req/s`.
-Submission proof is written under
-`docs/submission/rubic-final-coursework-(final-ml)/validation-verification/`.
+deploys data platform, MLflow, API, and KServe/model CD, then runs the
+data-platform and ML-platform flows. This legacy helper is removed after two
+successful modular production deployments.

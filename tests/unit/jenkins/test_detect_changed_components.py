@@ -9,8 +9,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from jenkins.scripts import detect_changed_components
-from jenkins.scripts.detect_changed_components import (
+from jenkins.python.change_detection import detector as detect_changed_components
+from jenkins.python.change_detection.detector import (
     COMPONENTS,
     changed_paths,
     classify_paths,
@@ -32,7 +32,7 @@ def product_components(paths: list[str]) -> set[str]:
         ("Jenkinsfile", set(), True),
         ("infra/helm/recsys-ci/values.yaml", {"ROLLOUT"}, True),
         ("jenkins/jobs/recsys-cicd-proof-config.xml", set(), True),
-        ("jenkins/scripts/component_ci.sh", set(COMPONENTS), True),
+        ("jenkins/scripts/entrypoints/component_ci.sh", set(COMPONENTS), True),
         ("apps/api-serving/src/main.py", {"API"}, False),
         ("apps/ml-system/src/training/train.py", {"TRAINING"}, False),
         ("apps/ml-system/src/cli/model_rollout_controller.py", {"ROLLOUT"}, False),
@@ -118,10 +118,9 @@ def product_components(paths: list[str]) -> set[str]:
         ("infra/k8s/processing-baseline/spark-baseline-ui-job.yaml", {"SPARK_BATCH", "STREAM_OFFLINE"}, False),
         ("notebooks/ml.ipynb", {"TRAINING"}, False),
         ("jenkins/KServeModelCD.Jenkinsfile", {"ROLLOUT"}, True),
-        ("jenkins/scripts/model_cd.py", {"KSERVE", "ROLLOUT"}, True),
-        ("jenkins/scripts/autonomous_rollout_locust.sh", {"ROLLOUT"}, True),
-        ("jenkins/scripts/kubeflow_pipeline_cicd.sh", {"TRAINING"}, True),
-        ("jenkins/scripts/validation_load_test.sh", {"API"}, True),
+        ("jenkins/python/model_cd/cli.py", {"KSERVE", "ROLLOUT"}, True),
+        ("jenkins/scripts/test/champion_only.sh", {"ROLLOUT"}, True),
+        ("jenkins/scripts/build/kfp_package.sh", {"TRAINING"}, True),
         ("tests/unit/jenkins/test_detect_changed_components.py", set(), True),
         ("tests/contract/test_gateway_contracts.py", {"API", "DEMO_WEB"}, False),
         ("tests/unit/api_serving/test_serving.py", {"API"}, False),
@@ -219,7 +218,7 @@ def test_changed_paths_preserves_a_valid_empty_diff(monkeypatch):
         calls.append(tuple(args))
         return []
 
-    monkeypatch.setattr(detect_changed_components.detector, "git_lines", fake_git_lines)
+    monkeypatch.setattr(detect_changed_components, "git_lines", fake_git_lines)
 
     assert changed_paths("same-commit") == []
     assert calls == [("diff", "--name-only", "same-commit...HEAD")]
@@ -231,12 +230,12 @@ def test_changed_paths_falls_back_to_current_commit_when_git_history_is_unavaila
     def fake_git_lines(args: list[str]) -> list[str]:
         calls.append(tuple(args))
         if args[0] == "diff":
-            raise detect_changed_components.subprocess.CalledProcessError(128, ["git", *args])
+            raise subprocess.CalledProcessError(128, ["git", *args])
         if args[0] == "diff-tree":
             return ["docs/submission/rubic-final-coursework-(final-ml)/routing_gateway.md"]
         return []
 
-    monkeypatch.setattr(detect_changed_components.detector, "git_lines", fake_git_lines)
+    monkeypatch.setattr(detect_changed_components, "git_lines", fake_git_lines)
 
     assert changed_paths("missing-base") == ["docs/submission/rubic-final-coursework-(final-ml)/routing_gateway.md"]
     assert calls[:2] == [
@@ -298,7 +297,7 @@ def test_full_deploy_runs_demo_smoke_after_upstream_components():
     assert "env.RUN_DEMO_WEB == 'true'" in deploy_helper
     assert parallel_index < demo_index
     assert source.count(
-        "runComponentDeployBranches('jenkins/scripts/component_deploy.sh', commandEnv)"
+        "runComponentDeployBranches('jenkins/scripts/entrypoints/component_deploy.sh', commandEnv)"
     ) == 2
 
 
@@ -324,7 +323,7 @@ def test_progressive_rollout_cicd_is_wired_into_main_flow():
     components = (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
     component_ci = (ROOT / "jenkins/scripts/ci/dispatch.sh").read_text(encoding="utf-8")
     component_build = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text(encoding="utf-8")
-    component_deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    component_deploy = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text(encoding="utf-8")
     rollout_deploy = (ROOT / "jenkins/scripts/deploy/rollout.sh").read_text(encoding="utf-8")
     seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(
         encoding="utf-8"
@@ -359,7 +358,7 @@ def test_analytics_cicd_is_wired_from_main_detector_to_dedicated_view():
     ).read_text(encoding="utf-8")
     component_ci = (ROOT / "jenkins/scripts/ci/dispatch.sh").read_text(encoding="utf-8")
     component_build = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text(encoding="utf-8")
-    component_deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    component_deploy = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text(encoding="utf-8")
     seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(
         encoding="utf-8"
     )
@@ -401,15 +400,18 @@ def test_jenkins_admin_secret_is_reconciled_with_persisted_home():
 
 def test_component_ci_syncs_only_locked_profile_dependencies():
     jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    installer = (ROOT / "jenkins/scripts/prepare_component_ci_envs.sh").read_text(
+    installer = (ROOT / "jenkins/scripts/entrypoints/prepare_component_ci_envs.sh").read_text(
         encoding="utf-8"
     )
-    component_ci = (ROOT / "jenkins/scripts/component_ci.sh").read_text(encoding="utf-8")
+    component_ci = (
+        (ROOT / "jenkins/scripts/entrypoints/component_ci.sh").read_text(encoding="utf-8")
+        + (ROOT / "jenkins/scripts/ci/runtime.sh").read_text(encoding="utf-8")
+    )
     python_env_stage = jenkinsfile.split("stage('Python Env')", 1)[1].split(
         "stage('Component CI')", 1
     )[0]
 
-    assert "jenkins/scripts/prepare_component_ci_envs.sh" in jenkinsfile
+    assert "jenkins/scripts/entrypoints/prepare_component_ci_envs.sh" in jenkinsfile
     assert "uv pip install" not in python_env_stage
     assert "configuration.py ci-profiles" in installer
     assert "--frozen" in installer
@@ -422,7 +424,7 @@ def test_component_ci_syncs_only_locked_profile_dependencies():
 
 
 def test_shell_deploy_gate_accepts_an_exact_origin_main_checkout():
-    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    deploy = (ROOT / "jenkins/scripts/entrypoints/component_deploy.sh").read_text(encoding="utf-8")
 
     assert "git rev-parse --verify origin/main" in deploy
     assert '"$(git rev-parse HEAD)" == "$(git rev-parse origin/main)"' in deploy
@@ -444,7 +446,7 @@ def test_container_scans_are_serialized_and_share_the_trivy_database_cache():
 
 
 def test_data_platform_deploy_preserves_isolated_drift_snapshot_root():
-    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text(encoding="utf-8")
+    deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text(encoding="utf-8")
 
     assert "drift.currentRoot=${OFFLINE_FEATURE_DRIFT_CURRENT_ROOT:-" in deploy
     assert "monitoring/offline_feature_drift/current_snapshot" in deploy
@@ -467,7 +469,7 @@ def test_jenkins_ci_temp_data_uses_persistent_storage_not_node_ephemeral_disk():
 
 
 def test_kfp_cicd_reuses_the_prepared_jenkins_python_environment():
-    script = (ROOT / "jenkins/scripts/kubeflow_pipeline_cicd.sh").read_text(encoding="utf-8")
+    script = (ROOT / "jenkins/scripts/build/kfp_package.sh").read_text(encoding="utf-8")
 
     prepared_env_branch = script.index('UV_PROJECT_ENVIRONMENT:-')
     uv_fallback_branch = script.index('command -v uv')
@@ -477,7 +479,7 @@ def test_kfp_cicd_reuses_the_prepared_jenkins_python_environment():
 
 def test_gke_l7_backend_stays_on_the_untainted_cpu_pool():
     rebalance = (ROOT / "infra/k8s/scripts/rebalance_ml_node_pool.sh").read_text(encoding="utf-8")
-    validator = (ROOT / "jenkins/scripts/validate_node_rebalance.sh").read_text(encoding="utf-8")
+    validator = (ROOT / "jenkins/scripts/test/node_placement.sh").read_text(encoding="utf-8")
 
     assert "patch_gke_managed_deployment_cpu l7-default-backend" in rebalance
     ml_list = rebalance.split("kube_system_ml_deployments=(", 1)[1].split(")", 1)[0]
