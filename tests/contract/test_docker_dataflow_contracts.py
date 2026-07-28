@@ -533,12 +533,28 @@ def test_airflow_major_version_migration_has_typed_rollback_compensation():
     database = (ROOT / "jenkins/scripts/deploy/database.sh").read_text()
     transaction = (ROOT / "jenkins/scripts/deploy/transaction.sh").read_text()
     deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
+    dispatch = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
+    entrypoint = (
+        ROOT / "jenkins/scripts/entrypoints/component_deploy.sh"
+    ).read_text()
 
-    assert "database_snapshot_airflow_migration" in deploy
+    assert "database_snapshot_airflow_migration" not in deploy
+    assert "database_mark_airflow_migration_attempted" in deploy
+    assert "snapshot_component_external_state" in dispatch
+    assert "database_snapshot_airflow_migration" in dispatch
+    assert entrypoint.index(
+        'snapshot_component_external_state "${component}"'
+    ) < entrypoint.index("tx_transition APPLYING")
     assert "airflow-database-migration" in database
+    assert "database_airflow_version_from_image" in database
+    assert '"attempted": False' in database
     assert "airflow db downgrade --to-version" in database
+    assert 'case "${phase}" in' in database
+    assert "COMPONENT_DEPLOY_TIMEOUT_SECONDS" in database
+    assert '"allowPrivilegeEscalation": False' in database
     assert "| tr '[:upper:]' '[:lower:]'" in database
     assert "database_rollback_airflow_migration" in transaction
+    assert "tx_verify_unmodified_helm_record" in transaction
     assert "retrying legacy Helm rollback without hooks" in transaction
     assert "tx_components_sharing_locks" in transaction
     assert "tx_ensure_journal_access" in transaction

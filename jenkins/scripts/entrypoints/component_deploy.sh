@@ -106,6 +106,7 @@ fi
 tx_begin "${component}"
 tx_transition SNAPSHOT
 snapshot_component_releases "${component}"
+snapshot_component_external_state "${component}"
 tx_transition APPLYING
 database_apply_component_migration "${component}"
 deploy_component_dispatch "${component}"

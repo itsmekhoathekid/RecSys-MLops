@@ -40,6 +40,19 @@ snapshot_component_releases() {
       ;;
   esac
 }
+
+snapshot_component_external_state() {
+  local airflow_image
+  case "$1" in
+    materialize|training|spark_batch|dp1|dp2|dp3|drift|stream_offline|stream_online|analytics)
+      if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" ]]; then
+        airflow_image="$(data_platform_image_ref recsys-airflow airflow)"
+        database_snapshot_airflow_migration "${namespace_data}" "${airflow_image}"
+      fi
+      ;;
+  esac
+}
+
 deploy_component_dispatch() {
   local selected_component="$1"
   case "${selected_component}" in

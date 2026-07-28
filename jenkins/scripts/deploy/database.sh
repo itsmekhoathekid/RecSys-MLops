@@ -110,6 +110,7 @@ database_snapshot_airflow_migration() {
   local namespace="$1"
   local migration_image="$2"
   local state_path="${TX_DIR}/airflow-database-migration.json"
+  local current_image=""
   local previous_version=""
 
   [[ "${TX_ACTIVE:-0}" == "1" ]] || return 0
@@ -118,8 +119,21 @@ database_snapshot_airflow_migration() {
       kubectl exec -n "${namespace}" deployment/airflow-webserver \
         -c airflow-webserver -- airflow version 2>/dev/null \
         | tail -n 1 \
-        | tr -d '\r'
+        | tr -d '\r' || true
     )"
+    if [[ ! "${previous_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9._+-]*)?$ ]]; then
+      current_image="$(
+        kubectl get deployment/airflow-webserver -n "${namespace}" \
+          -o 'jsonpath={.spec.template.spec.containers[?(@.name=="airflow-webserver")].image}'
+      )"
+      [[ -n "${current_image}" ]] || {
+        recsys_error "cannot resolve the current Airflow image in ${namespace}"
+        return 2
+      }
+      previous_version="$(
+        database_airflow_version_from_image "${namespace}" "${current_image}"
+      )"
+    fi
   fi
   [[ -n "${previous_version}" ]] || return 0
   [[ "${previous_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9._+-]*)?$ ]] || {
@@ -140,7 +154,7 @@ Path(state_path).write_text(
             "migrationImage": migration_image,
             "previousVersion": previous_version,
             "secretName": "recsys-data-platform-secret",
-            "attempted": True,
+            "attempted": False,
         },
         indent=2,
     )
@@ -151,10 +165,119 @@ PY
   tx_register_external airflow-database-migration "${state_path}"
 }
 
+database_airflow_version_from_image() {
+  local namespace="$1"
+  local image="$2"
+  local pod_name
+  local overrides
+  local phase=""
+  local previous_version=""
+  local elapsed=0
+
+  pod_name="$(recsys_slug "airflow-version-${TX_ID}" | tr '[:upper:]' '[:lower:]')"
+  pod_name="${pod_name:0:63}"
+  pod_name="${pod_name%-}"
+  kubectl delete pod "${pod_name}" -n "${namespace}" \
+    --ignore-not-found --wait=true >/dev/null
+  overrides="$(
+    python3 - "${pod_name}" "${image}" <<'PY'
+import json
+import sys
+
+pod_name, image = sys.argv[1:]
+print(
+    json.dumps(
+        {
+            "metadata": {"annotations": {"sidecar.istio.io/inject": "false"}},
+            "spec": {
+                "securityContext": {"seccompProfile": {"type": "RuntimeDefault"}},
+                "containers": [
+                    {
+                        "name": pod_name,
+                        "image": image,
+                        "imagePullPolicy": "Always",
+                        "command": ["bash", "-lc"],
+                        "args": ["airflow version"],
+                        "securityContext": {
+                            "runAsNonRoot": True,
+                            "allowPrivilegeEscalation": False,
+                            "capabilities": {"drop": ["ALL"]},
+                        },
+                    }
+                ],
+            },
+        }
+    )
+)
+PY
+  )"
+  if ! kubectl run "${pod_name}" -n "${namespace}" \
+    --restart=Never \
+    --image="${image}" \
+    --overrides="${overrides}" >/dev/null; then
+    recsys_error "cannot start Airflow version probe using ${image}"
+    return 2
+  fi
+  while ((elapsed <= 180)); do
+    phase="$(
+      kubectl get pod "${pod_name}" -n "${namespace}" \
+        -o jsonpath='{.status.phase}' 2>/dev/null || true
+    )"
+    case "${phase}" in
+      Succeeded)
+        break
+        ;;
+      Failed)
+        kubectl logs -n "${namespace}" "${pod_name}" >&2 || true
+        kubectl delete pod "${pod_name}" -n "${namespace}" \
+          --ignore-not-found --wait=true >/dev/null
+        recsys_error "Airflow version probe failed for ${image}"
+        return 2
+        ;;
+    esac
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  if [[ "${phase}" != "Succeeded" ]]; then
+    kubectl describe pod "${pod_name}" -n "${namespace}" >&2 || true
+    kubectl delete pod "${pod_name}" -n "${namespace}" \
+      --ignore-not-found --wait=true >/dev/null
+    recsys_error "Airflow version probe timed out for ${image}"
+    return 2
+  fi
+  previous_version="$(
+    kubectl logs -n "${namespace}" "${pod_name}" \
+      | tail -n 1 \
+      | tr -d '\r'
+  )"
+  kubectl delete pod "${pod_name}" -n "${namespace}" \
+    --ignore-not-found --wait=true >/dev/null
+  printf '%s' "${previous_version}"
+}
+
+database_mark_airflow_migration_attempted() {
+  local state_path="${TX_DIR}/airflow-database-migration.json"
+  [[ "${TX_ACTIVE:-0}" == "1" && -n "${TX_DIR:-}" ]] || return 0
+  [[ -s "${state_path}" ]] || return 0
+  python3 - "${state_path}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = json.loads(path.read_text(encoding="utf-8"))
+payload["attempted"] = True
+path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 database_rollback_airflow_migration() {
   local state_path="$1"
   local namespace migration_image previous_version secret_name attempted
   local pod_name overrides status=0
+  local phase=""
+  local elapsed=0
+  local timeout_seconds="${COMPONENT_DEPLOY_TIMEOUT_SECONDS:-600}"
 
   [[ -s "${state_path}" ]] || return 0
   namespace="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["namespace"])' "${state_path}")"
@@ -192,14 +315,21 @@ print(
         {
             "metadata": {"annotations": {"sidecar.istio.io/inject": "false"}},
             "spec": {
+                "securityContext": {"seccompProfile": {"type": "RuntimeDefault"}},
                 "containers": [
                     {
                         "name": pod_name,
                         "image": image,
+                        "imagePullPolicy": "Always",
                         "command": ["bash", "-lc"],
                         "args": [
                             f"airflow db downgrade --to-version {previous_version} --yes"
                         ],
+                        "securityContext": {
+                            "runAsNonRoot": True,
+                            "allowPrivilegeEscalation": False,
+                            "capabilities": {"drop": ["ALL"]},
+                        },
                         "env": [
                             {
                                 "name": "AIRFLOW_POSTGRES_USER",
@@ -239,12 +369,24 @@ PY
     --restart=Never \
     --image="${migration_image}" \
     --overrides="${overrides}"
-  if ! kubectl wait -n "${namespace}" \
-    --for=jsonpath='{.status.phase}'=Succeeded \
-    "pod/${pod_name}" \
-    --timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"; then
-    status=1
-  fi
+  while ((elapsed <= timeout_seconds)); do
+    phase="$(
+      kubectl get pod "${pod_name}" -n "${namespace}" \
+        -o jsonpath='{.status.phase}' 2>/dev/null || true
+    )"
+    case "${phase}" in
+      Succeeded)
+        break
+        ;;
+      Failed)
+        status=1
+        break
+        ;;
+    esac
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  [[ "${phase}" == "Succeeded" ]] || status=1
   kubectl logs -n "${namespace}" "${pod_name}" \
     >"${TX_DIR}/airflow-database-rollback.log" 2>&1 || true
   kubectl delete pod "${pod_name}" -n "${namespace}" --ignore-not-found --wait=true

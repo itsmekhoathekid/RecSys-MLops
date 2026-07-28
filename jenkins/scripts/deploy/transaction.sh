@@ -490,12 +490,52 @@ if str(status).lower() != "deployed":
     --status restored
 }
 
+tx_verify_unmodified_helm_record() {
+  local record="$1"
+  local release namespace existed revision workload_snapshot_path
+  local current_revision=""
+  release="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["release"])' "${record}")"
+  namespace="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["namespace"])' "${record}")"
+  existed="$(python3 -c 'import json,sys; print("1" if json.loads(sys.argv[1])["existed"] else "0")' "${record}")"
+  revision="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["revision"])' "${record}")"
+  workload_snapshot_path="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("workloadSnapshotPath", ""))' "${record}")"
+
+  if [[ "${existed}" == "1" ]]; then
+    current_revision="$(helm_current_revision "${release}" "${namespace}")"
+    [[ "${current_revision}" == "${revision}" ]] || {
+      recsys_error \
+        "pre-apply failure changed ${release}: expected revision ${revision}, got ${current_revision}"
+      return 1
+    }
+    tx_verify_workload_images "${namespace}" "${workload_snapshot_path}"
+  else
+    ! helm status "${release}" -n "${namespace}" >/dev/null 2>&1 || {
+      recsys_error "pre-apply failure unexpectedly created ${release}"
+      return 1
+    }
+  fi
+  tx_python mark-rollback \
+    --path "${TX_JOURNAL}" \
+    --collection helm \
+    --identifier "${release}" \
+    --status restored
+}
+
 tx_abort() {
   local reason="${1:-deployment or production test failed}"
   local status=0
   local record
+  local previous_state=""
+  local preapply_failure=0
   if [[ "${TX_ACTIVE}" != "1" || "${TX_ROLLING_BACK}" == "1" ]]; then
     return 0
+  fi
+  previous_state="$(
+    python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["state"])' \
+      "${TX_JOURNAL}"
+  )"
+  if [[ "${previous_state}" == "PREFLIGHT" || "${previous_state}" == "SNAPSHOT" ]]; then
+    preapply_failure=1
   fi
   TX_ROLLING_BACK=1
   tx_transition ROLLING_BACK "${reason}"
@@ -507,10 +547,15 @@ tx_abort() {
 
   while IFS= read -r record; do
     [[ -n "${record}" ]] || continue
-    tx_rollback_helm_record "${record}" || status=1
+    if [[ "${preapply_failure}" == "1" ]]; then
+      tx_verify_unmodified_helm_record "${record}" || status=1
+    else
+      tx_rollback_helm_record "${record}" || status=1
+    fi
   done < <(tx_python list --path "${TX_JOURNAL}" --collection helm)
 
-  if [[ "${status}" == "0" ]] && declare -F component_test_verify_rollback >/dev/null 2>&1; then
+  if [[ "${status}" == "0" && "${preapply_failure}" == "0" ]] \
+    && declare -F component_test_verify_rollback >/dev/null 2>&1; then
     component_test_verify_rollback "${TX_COMPONENT}" || status=1
   fi
 

@@ -77,10 +77,7 @@ deploy_data_platform_unlocked() {
   analytics_spark_image="$(data_platform_image_ref recsys-analytics-spark analyticsSpark)" || return
   analytics_dbt_image="$(data_platform_image_ref recsys-analytics-dbt analyticsDbt)" || return
 
-  if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" ]]; then
-    database_snapshot_airflow_migration "${namespace_data}" "${airflow_image}"
-  fi
-
+  database_mark_airflow_migration_attempted
   helm upgrade --install recsys-data-platform infra/helm/recsys-data-platform \
     --namespace "${namespace_data}" \
     --create-namespace \
