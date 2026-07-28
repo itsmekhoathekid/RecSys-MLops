@@ -220,6 +220,25 @@ def test_remaining_runtime_dockerfiles_use_multistage_and_parallel_tools():
     assert "PYSPARK_PYTHON=/opt/venv/bin/python" in mlops_spark
 
 
+def test_ml_runtime_images_resolve_dependencies_from_the_ci_lock():
+    dockerfiles = (
+        ROOT / "apps/ml-system/Dockerfile.training",
+        ROOT / "apps/ml-system/Dockerfile.spark",
+    )
+
+    for path in dockerfiles:
+        source = path.read_text()
+        assert (
+            "COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock "
+            "/opt/recsys/apps/ml-system/"
+        ) in source
+        assert "--project /opt/recsys/apps/ml-system" in source
+        assert "--frozen" in source
+        assert "--no-dev" in source
+        assert "--constraint /tmp/ml-constraints.txt" in source
+        assert '"feast[redis]"' in source
+
+
 def test_jenkins_training_component_builds_runtime_images_and_package_trigger_image():
     build_script = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text()
     training_case = build_script.split("training)", 1)[1].split(";;", 1)[0]
