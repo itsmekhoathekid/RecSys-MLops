@@ -238,6 +238,12 @@ def test_ml_runtime_images_resolve_dependencies_from_the_ci_lock():
         assert "--constraint /tmp/ml-constraints.txt" in source
         assert '"feast[redis]"' in source
 
+    training = dockerfiles[0].read_text()
+    assert "--extra-index-url https://download.pytorch.org/whl/cpu" in training
+    assert "--index-strategy unsafe-best-match" in training
+    assert "torch_version=\"$(sed -n" in training
+    assert '"torch==${torch_version}+cpu"' in training
+
 
 def test_jenkins_training_component_builds_runtime_images_and_package_trigger_image():
     build_script = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text()
