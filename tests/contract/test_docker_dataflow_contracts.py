@@ -221,10 +221,14 @@ def test_remaining_runtime_dockerfiles_use_multistage_and_parallel_tools():
 
 
 def test_ml_runtime_images_resolve_dependencies_from_the_ci_lock():
+    ml_project = (ROOT / "apps/ml-system/pyproject.toml").read_text()
     dockerfiles = (
         ROOT / "apps/ml-system/Dockerfile.training",
         ROOT / "apps/ml-system/Dockerfile.spark",
     )
+
+    assert '"flask>=3.1.3"' in ml_project
+    assert '"werkzeug>=3.1.8"' in ml_project
 
     for path in dockerfiles:
         source = path.read_text()
