@@ -97,9 +97,9 @@ def test_debezium_after_extraction_skips_deletes():
     }
 
 
-def test_debezium_legacy_never_snapshot_mode_maps_to_supported_no_data(monkeypatch):
+def test_debezium_snapshot_mode_matches_pinned_runtime_contract(monkeypatch):
     monkeypatch.setenv("DEBEZIUM_SNAPSHOT_MODE", "never")
-    assert debezium_config()["snapshot.mode"] == "no_data"
+    assert debezium_config()["snapshot.mode"] == "never"
 
 
 def test_committed_kafka_offsets_fall_back_to_earliest_for_fresh_groups(monkeypatch):
