@@ -7,12 +7,18 @@ import os
 from pathlib import Path
 from typing import Any
 
-from feast.infra.registry.sql import metadata as feast_registry_metadata
 from sqlalchemy import create_engine, delete, inspect, select
 from sqlalchemy.engine import URL
 
 
 DEFAULT_PROJECT = "recsys"
+
+
+def _registry_metadata() -> Any:
+    """Load Feast's SQLAlchemy metadata only for registry state operations."""
+    from feast.infra.registry.sql import metadata
+
+    return metadata
 
 
 def build_registry_url() -> str:
@@ -62,11 +68,12 @@ def snapshot_project(
     *,
     image_reference: str = "",
 ) -> dict[str, Any]:
+    registry_metadata = _registry_metadata()
     engine = create_engine(configure_registry_url())
     inspector = inspect(engine)
     tables: dict[str, Any] = {}
     with engine.connect() as connection:
-        for table in feast_registry_metadata.sorted_tables:
+        for table in registry_metadata.sorted_tables:
             existed = inspector.has_table(table.name)
             rows: list[dict[str, Any]] = []
             if existed and "project_id" in table.c:
@@ -87,16 +94,17 @@ def snapshot_project(
 
 
 def restore_project(state: dict[str, Any]) -> None:
+    registry_metadata = _registry_metadata()
     project = str(state["project"])
     engine = create_engine(configure_registry_url())
-    feast_registry_metadata.create_all(engine)
+    registry_metadata.create_all(engine)
     table_state = state.get("tables", {})
 
     with engine.begin() as connection:
-        for table in reversed(feast_registry_metadata.sorted_tables):
+        for table in reversed(registry_metadata.sorted_tables):
             if "project_id" in table.c:
                 connection.execute(delete(table).where(table.c.project_id == project))
-        for table in feast_registry_metadata.sorted_tables:
+        for table in registry_metadata.sorted_tables:
             rows = table_state.get(table.name, {}).get("rows", [])
             if rows:
                 connection.execute(
@@ -110,6 +118,7 @@ def restore_project(state: dict[str, Any]) -> None:
 
 
 def verify_project(project: str = DEFAULT_PROJECT) -> dict[str, int]:
+    registry_metadata = _registry_metadata()
     engine = create_engine(configure_registry_url())
     inspector = inspect(engine)
     required_tables = ("projects", "entities", "feature_views", "feature_services")
@@ -122,7 +131,7 @@ def verify_project(project: str = DEFAULT_PROJECT) -> dict[str, int]:
     counts: dict[str, int] = {}
     with engine.connect() as connection:
         for name in required_tables:
-            table = feast_registry_metadata.tables[name]
+            table = registry_metadata.tables[name]
             counts[name] = len(
                 connection.execute(
                     select(table.c.project_id).where(table.c.project_id == project)
