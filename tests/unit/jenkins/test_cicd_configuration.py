@@ -91,6 +91,21 @@ def test_component_ci_profiles_use_repo_locks():
         assert (ROOT / profile["projectPath"] / "pyproject.toml").is_file()
 
 
+def test_model_cd_ci_coverage_targets_the_split_package_modules():
+    expected_modules = {
+        "jenkins.python.model_cd.cli",
+        "jenkins.python.model_cd.config",
+        "jenkins.python.model_cd.helm_release",
+        "jenkins.python.model_cd.manifests",
+        "jenkins.python.model_cd.promotion_gates",
+    }
+    for relative_path in ("jenkins/scripts/ci/ml.sh", "jenkins/scripts/ci/serving.sh"):
+        source = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "cov_paths=(model_cd)" not in source
+        assert "jenkins/scripts:apps/" not in source
+        assert all(module in source for module in expected_modules)
+
+
 def test_external_ci_audits_use_bounded_retry():
     completed = subprocess.run(
         [

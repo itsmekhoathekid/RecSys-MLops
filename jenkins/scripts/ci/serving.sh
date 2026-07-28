@@ -10,6 +10,12 @@ ci_api() {
 ci_kserve() {
   tests=(tests/unit/ml_system/test_model_promotion.py tests/contract/test_serving_contracts.py)
   append_integration_dir kserve
-  cov_paths=(model_cd)
-  component_pytest "${component}" "jenkins/scripts:apps/ml-system/src:apps/data-platform/src"
+  cov_paths=(
+    jenkins.python.model_cd.cli
+    jenkins.python.model_cd.config
+    jenkins.python.model_cd.helm_release
+    jenkins.python.model_cd.manifests
+    jenkins.python.model_cd.promotion_gates
+  )
+  component_pytest "${component}" ".:apps/ml-system/src:apps/data-platform/src"
 }

@@ -11,8 +11,14 @@ ci_training() {
 ci_rollout() {
   tests=(tests/unit/ml_system/test_model_rollout_controller.py tests/contract/test_serving_contracts.py)
   append_integration_dir rollout
-  cov_paths=(model_cd)
-  component_pytest "${component}" "jenkins/scripts:apps/ml-system/src:apps/data-platform/src"
+  cov_paths=(
+    jenkins.python.model_cd.cli
+    jenkins.python.model_cd.config
+    jenkins.python.model_cd.helm_release
+    jenkins.python.model_cd.manifests
+    jenkins.python.model_cd.promotion_gates
+  )
+  component_pytest "${component}" ".:apps/ml-system/src:apps/data-platform/src"
   helm lint infra/helm/recsys-ci
   helm template recsys-ci infra/helm/recsys-ci \
     --set modelRolloutWatcher.enabled=true \
