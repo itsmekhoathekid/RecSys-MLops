@@ -135,7 +135,7 @@ pipeline {
           set +x
           set -euo pipefail
           . jenkins/scripts/lib/common.sh
-          . jenkins/scripts/lib/gcp.sh
+          . jenkins/scripts/deploy/preflight/gcp.sh
           . jenkins/scripts/lib/registry.sh
           python3 jenkins/python/configuration.py validate
           gcp_verify_production_target
@@ -184,6 +184,7 @@ pipeline {
       archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,infra/kubeflow/compiled/*.yaml,.ci-components.env,.ci-image-manifest/*,.model-cd/*,.demo-web/**/*'
       sh '''
         set +e
+        recovery_status=0
         if [ "${DEPLOY_STARTED:-false}" = "true" ]; then
           old_ifs="${IFS}"
           IFS=','
@@ -194,13 +195,17 @@ pipeline {
               PUBLISH_IMAGES=1 \
               FORCE_DEPLOY=1 \
               IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY}" \
-              jenkins/scripts/entrypoints/component_deploy.sh "${component}" || exit $?
+              jenkins/scripts/entrypoints/component_deploy.sh "${component}" || {
+                recovery_status=$?
+                break
+              }
           done
           IFS="${old_ifs}"
         fi
         if [ -n "${CI_TMP_ROOT:-}" ] && [ -d "${CI_TMP_ROOT}" ]; then
           rm -rf "${CI_TMP_ROOT}"
         fi
+        exit "${recovery_status}"
       '''
     }
   }

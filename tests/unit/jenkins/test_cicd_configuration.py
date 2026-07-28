@@ -58,6 +58,11 @@ def test_root_jenkins_stage_view_contract_is_unchanged():
     assert "values_args=(" not in source
     assert "source jenkins/scripts/" not in source
     assert "sh '''#!/usr/bin/env bash" in source
+    assert ". jenkins/scripts/deploy/preflight/gcp.sh" in source
+    assert "jenkins/scripts/lib/gcp.sh" not in source
+    cleanup = source.index('rm -rf "${CI_TMP_ROOT}"')
+    recovery_exit = source.index('exit "${recovery_status}"')
+    assert cleanup < recovery_exit
 
 
 def test_gcp_production_target_is_strict_and_self_consistent():
