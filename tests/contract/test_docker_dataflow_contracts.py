@@ -513,6 +513,23 @@ def test_airflow_major_version_migration_has_typed_rollback_compensation():
     assert 'state_root}" != "/var/jenkins_home/ci-transactions"' in transaction
 
 
+def test_materialize_cicd_owns_feast_plan_apply_and_sql_registry_rollback():
+    ci = (ROOT / "jenkins/scripts/ci/data.sh").read_text()
+    deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    feast_deploy = (ROOT / "jenkins/scripts/deploy/feast.sh").read_text()
+    transaction = (ROOT / "jenkins/scripts/deploy/transaction.sh").read_text()
+
+    assert '"${ci_environment}/bin/feast" -c "${feast_repo}"' in ci
+    assert "plan --skip-source-validation" in ci
+    assert "apply --skip-source-validation --no-progress" in ci
+    assert "feast_registry_snapshot" in deploy
+    assert "feast_registry_plan_apply" in deploy
+    assert "feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo plan" in feast_deploy
+    assert "apply --no-progress" in feast_deploy
+    assert "tx_register_external feast-sql-registry" in feast_deploy
+    assert "tx_restore_feast_sql_registry" in transaction
+
+
 def test_component_deploy_preserves_spark_byte_size_as_integer_string():
     deploy = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
 
@@ -1097,6 +1114,10 @@ def test_required_operational_airflow_dags_are_restored_without_removed_dags():
 
     for dag_id in ["recsys_feast_materialize", "recsys_feature_drift_monitoring"]:
         assert f'dag_id="{dag_id}"' in source
+    assert "apply_feast_feature_repo" not in source
+    assert "APPLY_FEAST_FEATURE_REPO_COMMAND" not in source
+    assert "materialize_incremental >> validate_online_store" in source
+    assert "feature_store.sql_registry_state url" in source
     assert "trigger_kubeflow_retrain_if_drift" in source
     assert "recsys_lakehouse_maintenance" not in source
     assert "k8s_data_platform_dag" not in source

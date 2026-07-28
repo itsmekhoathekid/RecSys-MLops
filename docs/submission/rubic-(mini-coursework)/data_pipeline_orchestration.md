@@ -11,7 +11,7 @@ Six operational DAGs are deployed. The three rubric data-product DAGs are define
 | DP1 | `recsys_dp1_raw_to_bronze` | manual | `ingest_stage -> optimize_stage -> validate_stage` |
 | DP2 | `recsys_dp2_bronze_to_silver_gold` | manual | `ingest_stage -> optimize_stage -> validate_stage` |
 | DP3 | `recsys_dp3_offline_feature_table` | manual | `ingest_stage -> validate_stage` |
-| Feast materialization | `recsys_feast_materialize` | every two hours | apply feature repo -> materialize -> validate Redis |
+| Feast materialization | `recsys_feast_materialize` | every two hours | materialize incremental -> validate Redis |
 | Drift and conditional retraining | `recsys_feature_drift_monitoring` | daily | drift report -> metrics -> Kubeflow retrain trigger |
 | Analytics and Superset marts | `recsys_analytics_daily` | daily | sync Silver -> build dbt Gold marts |
 

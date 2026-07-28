@@ -109,8 +109,18 @@ def test_serving_chart_renders_expected_namespaces():
     assert "recsys_api_request_duration_seconds_sum" in api_scaledobject["spec"]["triggers"][1]["metadata"]["query"]
     feature_api_deployment = by_kind_name[("Deployment", "recsys-online-feature-api")]
     assert "replicas" not in feature_api_deployment["spec"]
+    feature_api_container = feature_api_deployment["spec"]["template"]["spec"]["containers"][0]
+    assert feature_api_container["envFrom"] == [
+        {"configMapRef": {"name": "recsys-online-feature-api"}},
+        {"secretRef": {"name": "recsys-online-feature-api-registry"}},
+    ]
     feature_api_scaledobject = by_kind_name[("ScaledObject", "recsys-online-feature-api-prometheus")]
     feature_api_config = by_kind_name[("ConfigMap", "recsys-online-feature-api")]
+    feature_api_secret = by_kind_name[("Secret", "recsys-online-feature-api-registry")]
+    assert feature_api_config["data"]["FEAST_APPLY_ON_STARTUP"] == "0"
+    assert feature_api_config["data"]["FEAST_POSTGRES_DB"] == "feature_store"
+    assert feature_api_config["data"]["FEAST_POSTGRES_SCHEMA"] == "feature_store"
+    assert feature_api_secret["stringData"]["FEAST_POSTGRES_USER"] == "feast"
     assert feature_api_scaledobject["metadata"]["namespace"] == "api-serving"
     assert feature_api_scaledobject["spec"]["scaleTargetRef"]["name"] == "recsys-online-feature-api"
     assert feature_api_scaledobject["spec"]["maxReplicaCount"] == 3

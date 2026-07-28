@@ -14,6 +14,9 @@ FEATURE_REPO = ROOT / "apps/data-platform/feature-store/feature_repo"
 def test_feast_offline_store_uses_postgres() -> None:
     config = yaml.safe_load((FEATURE_REPO / "feature_store.yaml").read_text())
 
+    assert config["registry"]["registry_type"] == "sql"
+    assert config["registry"]["path"] == "${FEAST_SQL_REGISTRY_URL}"
+    assert config["registry"]["cache_mode"] == "sync"
     assert config["offline_store"]["type"] == "postgres"
     assert config["offline_store"]["host"] == "feature-postgres.recsys-dataflow.svc.cluster.local"
     assert config["offline_store"]["port"] == 5432
@@ -24,9 +27,9 @@ def test_feast_offline_store_uses_postgres() -> None:
 def test_feature_views_use_postgres_sources(monkeypatch) -> None:
     monkeypatch.setenv("FEAST_POSTGRES_SCHEMA", "unit_schema")
     monkeypatch.syspath_prepend(str(FEATURE_REPO))
-    sys.modules.pop("features", None)
+    sys.modules.pop("recsys_feature_definitions", None)
 
-    features = importlib.import_module("features")
+    features = importlib.import_module("recsys_feature_definitions")
 
     assert type(features.user_sequence_source).__name__ == "PostgreSQLSource"
     assert features.user_sequence_source._postgres_options._table == "unit_schema.user_sequence_features"
@@ -36,9 +39,9 @@ def test_feature_views_use_postgres_sources(monkeypatch) -> None:
 
 def test_feast_objects_do_not_tag_lakehouse_as_feature_store(monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(FEATURE_REPO))
-    sys.modules.pop("features", None)
+    sys.modules.pop("recsys_feature_definitions", None)
 
-    features = importlib.import_module("features")
+    features = importlib.import_module("recsys_feature_definitions")
 
     feast_objects = [
         features.user_sequence_features,

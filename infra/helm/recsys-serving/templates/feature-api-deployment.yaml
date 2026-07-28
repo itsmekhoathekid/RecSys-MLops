@@ -28,6 +28,7 @@ spec:
         app.kubernetes.io/component: online-feature-api
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/feature-api-configmap.yaml") . | sha256sum }}
+        checksum/registry-secret: {{ include (print $.Template.BasePath "/feature-api-registry-secret.yaml") . | sha256sum }}
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
         prometheus.io/port: {{ .Values.featureApi.service.targetPort | quote }}
@@ -57,6 +58,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ .Values.featureApi.name }}
+            - secretRef:
+                name: {{ .Values.featureApi.name }}-registry
           env:
             - name: IMAGE_REFERENCE
               value: {{ .Values.featureApi.image | quote }}

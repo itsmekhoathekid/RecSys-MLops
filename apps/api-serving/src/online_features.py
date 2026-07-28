@@ -132,7 +132,7 @@ class FeatureClient:
             os.getenv("FEAST_REPO_PATH", "/opt/recsys/apps/data-platform/feature-store/feature_repo")
         )
         self.feast_runtime_repo_path = Path(os.getenv("FEAST_RUNTIME_REPO_PATH", "/tmp/recsys-feast-feature-repo"))
-        self.feast_apply_on_startup = os.getenv("FEAST_APPLY_ON_STARTUP", "1") == "1"
+        self.feast_apply_on_startup = os.getenv("FEAST_APPLY_ON_STARTUP", "0") == "1"
         self._store: Any | None = None
         self._store_lock = threading.RLock()
         self.client = redis.Redis(
@@ -167,7 +167,9 @@ class FeatureClient:
                 if self._store is None:
                     from feast import FeatureStore
                     from feature_store.feast_registry import apply_feature_repo
+                    from feature_store.sql_registry_state import configure_registry_url
 
+                    configure_registry_url()
                     repo_path = self._prepare_runtime_repo()
                     if self.feast_apply_on_startup:
                         apply_feature_repo(repo_path, skip_source_validation=True)

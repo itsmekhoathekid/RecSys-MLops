@@ -125,7 +125,14 @@ featureApi:
     redisPort: "6379"
     feastRepoPath: /opt/recsys/apps/data-platform/feature-store/feature_repo
     feastRuntimeRepoPath: /opt/recsys/recsys-feast-feature-repo
-    feastApplyOnStartup: "1"
+    feastApplyOnStartup: "0"
+    feastPostgresHost: feature-postgres.recsys-dataflow.svc.cluster.local
+    feastPostgresPort: "5432"
+    feastPostgresDatabase: feature_store
+    feastPostgresSchema: feature_store
+    feastPostgresSslmode: disable
+    feastPostgresUser: feast
+    feastPostgresPassword: feast
     warmupOnStartup: "1"
     forceNotReady: "0"
     allowFeatureFallback: "0"

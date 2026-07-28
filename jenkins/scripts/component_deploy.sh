@@ -22,6 +22,7 @@ source jenkins/scripts/lib/port_forward.sh
 source jenkins/scripts/deploy/transaction.sh
 source jenkins/scripts/deploy/runtime.sh
 source jenkins/scripts/deploy/database.sh
+source jenkins/scripts/deploy/feast.sh
 source jenkins/scripts/deploy/rollout.sh
 source jenkins/scripts/deploy/data_platform.sh
 source jenkins/scripts/deploy/ml_platform.sh
@@ -364,6 +365,8 @@ deploy_component_dispatch() {
       materialize)
         deploy_data_platform --set "images.featureStore=$(image recsys-feature-store)"
         verify_data_platform_config_image "FEATURE_STORE_IMAGE" "$(image recsys-feature-store)"
+        feast_registry_snapshot "$(image recsys-feature-store)"
+        feast_registry_plan_apply "$(image recsys-feature-store)"
         ;;
       spark_batch|dp2)
         deploy_data_platform --set "images.spark=$(image recsys-spark)" --set "images.airflow=$(image recsys-airflow)"

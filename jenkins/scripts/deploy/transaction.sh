@@ -429,6 +429,9 @@ tx_rollback_external_record() {
     airflow-database-migration)
       database_rollback_airflow_migration "${state_path}"
       ;;
+    feast-sql-registry)
+      tx_restore_feast_sql_registry "${state_path}"
+      ;;
     *)
       recsys_error "unknown external compensation kind: ${kind}"
       return 2

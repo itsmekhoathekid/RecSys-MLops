@@ -211,8 +211,8 @@ def classify_spark_source(flags: dict[str, bool], path: str) -> None:
 
 def classify_feature_store_source(flags: dict[str, bool], path: str) -> None:
     name = Path(path).name
-    if name == "feast_registry.py":
-        mark(flags, "MATERIALIZE")
+    if name in {"feast_registry.py", "sql_registry_state.py"}:
+        mark(flags, "MATERIALIZE", "API")
     elif name == "online_writer.py":
         mark(flags, "STREAM_ONLINE")
     elif name == "postgres_offline_store.py":
@@ -326,7 +326,15 @@ def classify_jenkins(flags: dict[str, bool], path: str) -> None:
         )
     ):
         mark(flags, *COMPONENTS)
-    elif path.startswith(("jenkins/scripts/ci/data", "jenkins/scripts/build/data", "jenkins/scripts/deploy/data_platform", "jenkins/scripts/test/data_platform")):
+    elif path.startswith(
+        (
+            "jenkins/scripts/ci/data",
+            "jenkins/scripts/build/data",
+            "jenkins/scripts/deploy/data_platform",
+            "jenkins/scripts/deploy/feast",
+            "jenkins/scripts/test/data_platform",
+        )
+    ):
         mark_data_platform(flags)
     elif path.startswith(("jenkins/scripts/ci/ml", "jenkins/scripts/build/ml", "jenkins/scripts/deploy/ml_platform", "jenkins/scripts/test/ml_platform")):
         mark(flags, "TRAINING", "ROLLOUT")
@@ -438,7 +446,14 @@ def apply_path_rules(flags: dict[str, bool], normalized: str) -> None:
     elif normalized.startswith("apps/analytics/"):
         mark(flags, "ANALYTICS")
     elif normalized.startswith("apps/data-platform/feature-store/"):
-        mark(flags, "MATERIALIZE", "DP3", "STREAM_OFFLINE", "STREAM_ONLINE")
+        mark(
+            flags,
+            "MATERIALIZE",
+            "DP3",
+            "STREAM_OFFLINE",
+            "STREAM_ONLINE",
+            "API",
+        )
     elif normalized.startswith("apps/data-platform/data-generator/"):
         mark(flags, "DP1")
         if normalized.startswith("apps/data-platform/data-generator/src/drift/"):

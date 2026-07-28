@@ -1,6 +1,12 @@
 project: recsys
 provider: local
-registry: data/registry.db
+registry:
+  registry_type: sql
+  path: ${FEAST_SQL_REGISTRY_URL}
+  cache_ttl_seconds: 60
+  cache_mode: sync
+  sqlalchemy_config_kwargs:
+    pool_pre_ping: true
 entity_key_serialization_version: 2
 
 # Feast core offline store for point-in-time historical retrieval.

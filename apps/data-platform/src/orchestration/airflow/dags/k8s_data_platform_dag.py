@@ -80,18 +80,13 @@ export FEAST_POSTGRES_SCHEMA=${FEAST_POSTGRES_SCHEMA:-feature_store}
 export FEAST_POSTGRES_USER=${FEAST_POSTGRES_USER:-feast}
 export FEAST_POSTGRES_PASSWORD=${FEAST_POSTGRES_PASSWORD:-feast}
 export FEAST_POSTGRES_SSLMODE=${FEAST_POSTGRES_SSLMODE:-disable}
-""".strip()
-
-APPLY_FEAST_FEATURE_REPO_COMMAND = f"""
-cd /opt/recsys/apps/data-platform/feature-store/feature_repo
-{FEAST_ENV_EXPORTS}
-python -c 'from feature_store.feast_registry import apply_feature_repo; apply_feature_repo(".")'
+export FEAST_SQL_REGISTRY_URL="$(python -m feature_store.sql_registry_state url)"
 """.strip()
 
 FEAST_MATERIALIZE_INCREMENTAL_COMMAND = f"""
-cd /opt/recsys/apps/data-platform/feature-store/feature_repo
 {FEAST_ENV_EXPORTS}
-feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)
+feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo \
+  materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)
 """.strip()
 
 VERIFY_REDIS_ONLINE_STORE_COMMAND = "python -m validate.governance_contracts streaming-redis"
@@ -159,9 +154,6 @@ if DAG is not None:
         max_active_runs=1,
         tags=["recsys", "feast", "materialize", "online-store"],
     ) as recsys_feast_materialize:
-        apply_feature_repo = pod_task(
-            "apply_feast_feature_repo", FEATURE_STORE_IMAGE, APPLY_FEAST_FEATURE_REPO_COMMAND
-        )  # register/update metdata trong registry
         materialize_incremental = pod_task(
             "feast_materialize_incremental",
             FEATURE_STORE_IMAGE,
@@ -173,7 +165,7 @@ if DAG is not None:
             VERIFY_REDIS_ONLINE_STORE_COMMAND,
         )
 
-        apply_feature_repo >> materialize_incremental >> validate_online_store
+        materialize_incremental >> validate_online_store
 
     with DAG(
         dag_id="recsys_feature_drift_monitoring",

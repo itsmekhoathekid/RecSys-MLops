@@ -30,7 +30,10 @@ def test_mlflow_dataset_lineage_logs_all_contexts():
     metadata = {
         "dataset_run_id": "run-1",
         "feature_service_name": "bst_ranking_v1",
-        "feast_registry_path": "/repo/data/registry.db",
+        "feast_registry_path": (
+            "postgresql://feature-postgres:5432/feature_store"
+            "?schema=feature_store&project=recsys"
+        ),
         "entity_input_path": "/labels",
         "schema_hash": "hash",
         "processing_code_version": "abc123",

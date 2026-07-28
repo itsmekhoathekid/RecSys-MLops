@@ -54,7 +54,16 @@ def product_components(paths: list[str]) -> set[str]:
             {"STREAM_OFFLINE", "STREAM_ONLINE"},
             False,
         ),
-        ("apps/data-platform/src/feature_store/feast_registry.py", {"MATERIALIZE"}, False),
+        (
+            "apps/data-platform/src/feature_store/feast_registry.py",
+            {"MATERIALIZE", "API"},
+            False,
+        ),
+        (
+            "apps/data-platform/src/feature_store/sql_registry_state.py",
+            {"MATERIALIZE", "API"},
+            False,
+        ),
         ("apps/data-platform/src/feature_store/online_writer.py", {"STREAM_ONLINE"}, False),
         (
             "apps/data-platform/src/feature_store/postgres_offline_store.py",
@@ -92,8 +101,8 @@ def product_components(paths: list[str]) -> set[str]:
             False,
         ),
         (
-            "apps/data-platform/feature-store/feature_repo/features.py",
-            {"MATERIALIZE", "DP3", "STREAM_OFFLINE", "STREAM_ONLINE"},
+            "apps/data-platform/feature-store/feature_repo/recsys_feature_definitions.py",
+            {"MATERIALIZE", "DP3", "STREAM_OFFLINE", "STREAM_ONLINE", "API"},
             False,
         ),
         ("configs/local/spark_batch.yaml", {"SPARK_BATCH", "DP2", "DP3"}, False),

@@ -299,7 +299,9 @@ def _feast_historical_to_bst_frame(
 
 def _apply_feast_repo(repo_path: str | Path) -> None:
     from feature_store.feast_registry import apply_feature_repo
+    from feature_store.sql_registry_state import configure_registry_url
 
+    configure_registry_url()
     try:
         apply_feature_repo(repo_path)
     except subprocess.CalledProcessError as exc:
@@ -323,6 +325,9 @@ def build_bst_training_table_from_feast(
 ) -> pd.DataFrame:
     if feast_offline_root:
         os.environ["FEAST_OFFLINE_ROOT"] = feast_offline_root
+    from feature_store.sql_registry_state import configure_registry_url
+
+    configure_registry_url()
     if apply_feast_repo:
         _apply_feast_repo(feast_repo_path)
 
@@ -509,7 +514,15 @@ def _bool_flag(value: str | bool | None, default: bool = False) -> bool:
 
 
 def _registry_path(feast_repo_path: str | Path) -> str:
-    return str(Path(feast_repo_path) / "data" / "registry.db")
+    del feast_repo_path
+    host = os.getenv(
+        "FEAST_POSTGRES_HOST",
+        "feature-postgres.recsys-dataflow.svc.cluster.local",
+    )
+    port = os.getenv("FEAST_POSTGRES_PORT", "5432")
+    database = os.getenv("FEAST_POSTGRES_DB", "feature_store")
+    schema = os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store")
+    return f"postgresql://{host}:{port}/{database}?schema={schema}&project=recsys"
 
 
 def _write_json(path: str | Path, payload: dict[str, Any]) -> None:

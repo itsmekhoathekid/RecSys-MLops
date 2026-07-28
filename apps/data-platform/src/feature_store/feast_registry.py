@@ -29,8 +29,10 @@ def _repo_import_context(repo_root: Path):
 def apply_feature_repo(repo_path: str | Path, skip_source_validation: bool = False) -> None:
     from feast import FeatureStore
     from feast.repo_operations import _get_repo_contents, apply_total_with_repo_instance
+    from feature_store.sql_registry_state import configure_registry_url
 
     repo_root = Path(repo_path).resolve()
+    configure_registry_url()
     store = FeatureStore(repo_path=str(repo_root))
     with _repo_import_context(repo_root):
         repo = _get_repo_contents(repo_root, project_name=store.project, repo_config=store.config)

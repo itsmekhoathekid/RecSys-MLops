@@ -1,10 +1,32 @@
 #!/usr/bin/env bash
 
 ci_materialize() {
-  tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)
+  tests=(
+    tests/unit/data_platform/test_data_platform.py
+    tests/unit/feature_store/test_bigquery_feature_repo.py
+    tests/unit/feature_store/test_sql_registry_state.py
+    tests/contract/test_docker_dataflow_contracts.py
+  )
   append_integration_dir materialize
-  cov_paths=(feature_store.online_writer)
+  cov_paths=(feature_store.online_writer feature_store.sql_registry_state)
   component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
+
+  local data_platform_src="${PWD}/apps/data-platform/src"
+  local feast_repo="${PWD}/apps/data-platform/feature-store/feature_repo"
+  local registry_path="${CI_TMP_ROOT}/feast-registry-${component}.db"
+  local feast_log="${reports_dir}/feast-${component}.log"
+  rm -f "${registry_path}"
+  (
+    export PYTHONPATH="${data_platform_src}:${PYTHONPATH:-}"
+    export FEAST_SQL_REGISTRY_URL="sqlite:///${registry_path}"
+    MPLCONFIGDIR="${CI_TMP_ROOT}/matplotlib" \
+      "${ci_environment}/bin/feast" -c "${feast_repo}" \
+        plan --skip-source-validation
+    MPLCONFIGDIR="${CI_TMP_ROOT}/matplotlib" \
+      "${ci_environment}/bin/feast" -c "${feast_repo}" \
+        apply --skip-source-validation --no-progress
+    "${ci_python}" -m feature_store.sql_registry_state verify --project recsys
+  ) 2>&1 | tee "${feast_log}"
 }
 
 ci_spark_batch() {
