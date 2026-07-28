@@ -509,6 +509,8 @@ def test_airflow_major_version_migration_has_typed_rollback_compensation():
     assert "database_rollback_airflow_migration" in transaction
     assert "retrying legacy Helm rollback without hooks" in transaction
     assert "tx_components_sharing_locks" in transaction
+    assert "tx_ensure_journal_access" in transaction
+    assert 'state_root}" != "/var/jenkins_home/ci-transactions"' in transaction
 
 
 def test_component_deploy_preserves_spark_byte_size_as_integer_string():

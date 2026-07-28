@@ -132,11 +132,57 @@ tx_archive_journal() {
   cp "${TX_JOURNAL}" "${destination}/transaction.json"
 }
 
+tx_ensure_journal_access() {
+  local state_root="$1"
+  local journal
+  local unreadable=0
+  local namespace
+  local runtime_uid
+  local runtime_gid
+
+  [[ -d "${state_root}" ]] || return 0
+  while IFS= read -r journal; do
+    [[ -r "${journal}" ]] || {
+      unreadable=1
+      break
+    }
+  done < <(find "${state_root}" -mindepth 2 -maxdepth 2 -name transaction.json -type f)
+  [[ "${unreadable}" == "1" ]] || return 0
+
+  if [[ "${DEPLOY_TARGET:-local}" != "gcp-production" \
+    || "${state_root}" != "/var/jenkins_home/ci-transactions" \
+    || -z "${HOSTNAME:-}" ]]; then
+    recsys_error "deployment journal is unreadable and automatic ownership repair is not allowed: ${state_root}"
+    return 3
+  fi
+
+  namespace="$(
+    cat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null
+  )"
+  [[ -n "${namespace}" ]] || {
+    recsys_error "cannot resolve Jenkins pod namespace for journal ownership repair"
+    return 3
+  }
+  runtime_uid="$(id -u)"
+  runtime_gid="$(id -g)"
+  kubectl exec -n "${namespace}" "pod/${HOSTNAME}" -c jenkins -- \
+    chown -R "${runtime_uid}:${runtime_gid}" "${state_root}"
+
+  while IFS= read -r journal; do
+    [[ -r "${journal}" ]] || {
+      recsys_error "deployment journal remains unreadable after ownership repair: ${journal}"
+      return 3
+    }
+  done < <(find "${state_root}" -mindepth 2 -maxdepth 2 -name transaction.json -type f)
+  recsys_log "repaired Jenkins ownership for deployment transaction journals"
+}
+
 tx_recover_component() {
   local component="$1"
   local state_root="$2"
   local blocking_paths=""
   local journal state
+  tx_ensure_journal_access "${state_root}"
   blocking_paths="$(tx_python blocking --root "${state_root}" --component "${component}" 2>/dev/null || true)"
   while IFS= read -r journal; do
     [[ -n "${journal}" ]] || continue

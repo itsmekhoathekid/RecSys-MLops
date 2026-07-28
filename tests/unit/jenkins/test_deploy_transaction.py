@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -62,3 +63,13 @@ def test_journal_contains_no_command_string_field(tmp_path):
     journal.add_external(path, "kfp-version", "/state/kfp.json")
     encoded = json.dumps(journal.load(path))
     assert '"command"' not in encoded
+
+
+def test_atomic_journal_rewrite_preserves_existing_mode(tmp_path):
+    path = tmp_path / "tx" / "transaction.json"
+    journal.initialize(path, "tx", "api", "abc")
+    path.chmod(0o640)
+
+    journal.transition(path, "SNAPSHOT")
+
+    assert os.stat(path).st_mode & 0o777 == 0o640

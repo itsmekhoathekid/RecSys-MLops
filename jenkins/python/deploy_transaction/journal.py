@@ -31,6 +31,7 @@ def load(path: Path) -> dict[str, Any]:
 
 def save(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing_stat = path.stat() if path.exists() else None
     fd, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
     )
@@ -41,6 +42,9 @@ def save(path: Path, payload: dict[str, Any]) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
+        if existing_stat is not None:
+            os.chmod(temporary, existing_stat.st_mode)
+            os.chown(temporary, existing_stat.st_uid, existing_stat.st_gid)
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
