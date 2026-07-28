@@ -41,6 +41,67 @@ registry_login_gcp() {
     | docker login "https://${registry_host}" --username oauth2accesstoken --password-stdin
 }
 
+registry_resolve_digest_reference() {
+  local reference="$1"
+  local expected_repository="${2%/}"
+  local registry_host
+  local manifest_reference
+  local manifest_repository
+  local manifest_tag
+  local response_headers
+  local digest
+  local token
+
+  if [[ "${reference}" == *@sha256:* ]]; then
+    [[ "${reference}" == "${expected_repository}/"* ]] || {
+      recsys_error "image reference is outside ${expected_repository}: ${reference}"
+      return 2
+    }
+    printf '%s' "${reference}"
+    return 0
+  fi
+
+  [[ "${reference}" == "${expected_repository}/"* ]] || {
+    recsys_error "image reference is outside ${expected_repository}: ${reference}"
+    return 2
+  }
+
+  registry_host="$(registry_host_from_repository "${reference}")"
+  manifest_reference="${reference#${registry_host}/}"
+  [[ "${manifest_reference}" == *:* ]] || {
+    recsys_error "image reference has no tag or digest: ${reference}"
+    return 2
+  }
+  manifest_repository="${manifest_reference%:*}"
+  manifest_tag="${manifest_reference##*:}"
+  [[ -n "${manifest_repository}" && -n "${manifest_tag}" ]] || {
+    recsys_error "invalid tagged image reference: ${reference}"
+    return 2
+  }
+
+  token="$(registry_gcp_access_token)"
+  response_headers="$(
+    curl -fsSI \
+      -H "Authorization: Bearer ${token}" \
+      -H 'Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json' \
+      "https://${registry_host}/v2/${manifest_repository}/manifests/${manifest_tag}"
+  )"
+  digest="$(
+    awk '
+tolower($1) == "docker-content-digest:" {
+  gsub(/\r/, "", $2)
+  print $2
+}
+' <<<"${response_headers}" | tail -n 1
+  )"
+  [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    recsys_error "registry did not return an immutable digest for ${reference}"
+    return 2
+  }
+
+  printf '%s/%s@%s' "${registry_host}" "${manifest_repository}" "${digest}"
+}
+
 registry_verify_gcp_upload_permission() {
   local token
   local project

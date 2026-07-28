@@ -903,6 +903,7 @@ def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_
 
 def test_shared_data_release_always_resolves_every_split_image_by_digest():
     deploy_script = (ROOT / "jenkins/scripts/component_deploy.sh").read_text()
+    registry_script = (ROOT / "jenkins/scripts/lib/registry.sh").read_text()
     shared_deploy = deploy_script.split("deploy_data_platform_unlocked()", 1)[1].split(
         "deploy_data_platform()", 1
     )[0]
@@ -920,8 +921,18 @@ def test_shared_data_release_always_resolves_every_split_image_by_digest():
     ):
         assert f'--set "images.{values_key}=' in shared_deploy
 
-    assert "existing images.${values_key} is not digest-pinned" in deploy_script
-    assert "no immutable candidate or existing digest" in deploy_script
+    assert "source jenkins/scripts/lib/registry.sh" in deploy_script
+    assert 'baseline_image_tag="${BASELINE_IMAGE_TAG:-$(git rev-parse HEAD^)}"' in (
+        deploy_script
+    )
+    assert (
+        'registry_resolve_digest_reference "${current_ref}" "${image_registry}"'
+        in deploy_script
+    )
+    assert "Docker-Content-Digest" not in deploy_script
+    assert "registry_resolve_digest_reference()" in registry_script
+    assert "docker-content-digest:" in registry_script
+    assert "image reference is outside ${expected_repository}" in registry_script
 
 
 def test_data_platform_smoke_uses_each_runtime_image_python():

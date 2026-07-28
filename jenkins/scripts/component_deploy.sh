@@ -19,6 +19,7 @@ source jenkins/scripts/lib/helm.sh
 source jenkins/scripts/lib/image_manifest.sh
 source jenkins/scripts/lib/kubernetes.sh
 source jenkins/scripts/lib/port_forward.sh
+source jenkins/scripts/lib/registry.sh
 source jenkins/scripts/deploy/transaction.sh
 source jenkins/scripts/deploy/runtime.sh
 source jenkins/scripts/deploy/database.sh
@@ -82,6 +83,7 @@ verify_data_platform_config_image() {
 data_platform_image_ref() {
   local image_name="$1"
   local values_key="$2"
+  local baseline_image_tag=""
   local candidate_ref
   local current_ref=""
 
@@ -101,18 +103,21 @@ document = json.load(sys.stdin)
 print(document.get("images", {}).get(sys.argv[1], ""))
 ' "${values_key}" 2>/dev/null || true
   )"
-  if [[ -n "${current_ref}" ]]; then
-    if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" && "${current_ref}" != *@sha256:* ]]; then
-      recsys_error "existing images.${values_key} is not digest-pinned: ${current_ref}"
-      return 2
+  if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" ]]; then
+    if [[ -z "${current_ref}" ]]; then
+      baseline_image_tag="${BASELINE_IMAGE_TAG:-$(git rev-parse HEAD^)}"
+      current_ref="${image_registry}/${image_name}:${baseline_image_tag}"
+      recsys_log \
+        "images.${values_key} is absent from the current release; bootstrapping ${image_name} from ${baseline_image_tag}" \
+        >&2
     fi
-    printf '%s' "${current_ref}"
-    return 0
+    registry_resolve_digest_reference "${current_ref}" "${image_registry}"
+    return
   fi
 
-  if [[ "${DEPLOY_TARGET:-local}" == "gcp-production" ]]; then
-    recsys_error "no immutable candidate or existing digest for images.${values_key}"
-    return 2
+  if [[ -n "${current_ref}" ]]; then
+    printf '%s' "${current_ref}"
+    return 0
   fi
   image "${image_name}"
 }
