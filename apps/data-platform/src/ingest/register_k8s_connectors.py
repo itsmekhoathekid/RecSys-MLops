@@ -47,8 +47,6 @@ def debezium_config() -> dict[str, Any]:
     }
     snapshot_mode = os.getenv("DEBEZIUM_SNAPSHOT_MODE")
     if snapshot_mode:
-        if snapshot_mode == "never":
-            snapshot_mode = "no_data"
         config["snapshot.mode"] = snapshot_mode
     return config
 
@@ -82,6 +80,53 @@ def register_connector(name: str, config: dict[str, Any]) -> dict[str, Any]:
     return response.json()
 
 
+def wait_for_connector_running(
+    name: str,
+    *,
+    timeout_seconds: int,
+    poll_seconds: int = 5,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last_states: dict[str, Any] = {}
+    failed_polls = 0
+    while time.monotonic() <= deadline:
+        response = requests.get(
+            f"{connect_url()}/connectors/{name}/status",
+            timeout=5,
+        )
+        response.raise_for_status()
+        status = response.json()
+        connector_state = status.get("connector", {}).get("state")
+        task_states = [
+            task.get("state")
+            for task in status.get("tasks", [])
+        ]
+        last_states = {
+            "connector": connector_state,
+            "tasks": task_states,
+        }
+        if (
+            connector_state == "RUNNING"
+            and task_states
+            and all(state == "RUNNING" for state in task_states)
+        ):
+            return last_states
+        if any(state == "FAILED" for state in task_states):
+            failed_polls += 1
+            if failed_polls >= 3:
+                raise RuntimeError(
+                    f"Kafka Connect connector task failed: {name}; "
+                    f"states={last_states}"
+                )
+        else:
+            failed_polls = 0
+        time.sleep(poll_seconds)
+    raise TimeoutError(
+        f"Kafka Connect connector did not become RUNNING: {name}; "
+        f"states={last_states}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Register K8s data-platform Kafka Connect connectors.")
     parser.add_argument("--connector", choices=sorted(CONNECTORS), required=True)
@@ -91,7 +136,11 @@ def main() -> int:
     with RuntimeLineageRecorder("CDC_INGESTION", "register_debezium_connector") as lineage:
         wait_for_connect(timeout_seconds=args.wait_timeout_seconds)
         config = config_factory()
-        result = register_connector(name, config)
+        register_connector(name, config)
+        status = wait_for_connector_running(
+            name,
+            timeout_seconds=args.wait_timeout_seconds,
+        )
         included_tables = {
             item.rsplit(".", 1)[-1]
             for item in str(config.get("table.include.list", "")).split(",")
@@ -111,7 +160,17 @@ def main() -> int:
         if report["status"] != "SUCCESS":
             lineage.fail(f"CDC connector data contract status: {report['status']}")
             raise RuntimeError(f"CDC connector contract failed: {report}")
-        print(json.dumps({"name": name, "result": result, "contract": report["status"]}, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "name": name,
+                    "status": status,
+                    "contract": report["status"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
     return 0
 
 

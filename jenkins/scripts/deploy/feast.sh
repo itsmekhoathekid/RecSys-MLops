@@ -22,6 +22,8 @@ feast_registry_start_pod() {
   local action="$1"
   local image_reference="$2"
   local overrides
+  local actual_image
+  local image_id
 
   FEAST_REGISTRY_POD="$(feast_registry_pod_name "${action}")"
   kubectl delete pod "${FEAST_REGISTRY_POD}" \
@@ -68,6 +70,20 @@ PY
     feast_registry_stop_pod
     return 1
   fi
+  actual_image="$(
+    kubectl get pod "${FEAST_REGISTRY_POD}" -n "${namespace_data}" \
+      -o jsonpath='{.spec.containers[0].image}'
+  )"
+  if [[ "${actual_image}" != "${image_reference}" ]]; then
+    recsys_error "Feast registry pod image mismatch: expected immutable candidate, got ${actual_image}"
+    feast_registry_stop_pod
+    return 1
+  fi
+  image_id="$(
+    kubectl get pod "${FEAST_REGISTRY_POD}" -n "${namespace_data}" \
+      -o jsonpath='{.status.containerStatuses[0].imageID}'
+  )"
+  recsys_log "Feast registry pod is running the requested immutable image (${image_id##*@})"
 }
 
 feast_registry_exec() {
@@ -83,8 +99,9 @@ feast_registry_snapshot() {
   feast_registry_start_pod snapshot "${image_reference}" || return
   feast_registry_exec '
     set -euo pipefail
-    export FEAST_SQL_REGISTRY_URL="$(python -m feature_store.sql_registry_state url)"
-    python -m feature_store.sql_registry_state snapshot \
+    export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m feature_store.sql_registry_state url)"
+    /opt/venv/bin/python -c "import sqlalchemy"
+    /opt/venv/bin/python -m feature_store.sql_registry_state snapshot \
       --project recsys \
       --image-reference "$IMAGE_REFERENCE"
   ' >"${state_path}" || status=$?
@@ -106,11 +123,11 @@ feast_registry_plan_apply() {
   feast_registry_start_pod apply "${image_reference}" || return
   feast_registry_exec '
     set -euo pipefail
-    export FEAST_SQL_REGISTRY_URL="$(python -m feature_store.sql_registry_state url)"
-    feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo plan
-    feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo \
+    export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m feature_store.sql_registry_state url)"
+    /opt/venv/bin/feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo plan
+    /opt/venv/bin/feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo \
       apply --no-progress
-    python -m feature_store.sql_registry_state verify --project recsys
+    /opt/venv/bin/python -m feature_store.sql_registry_state verify --project recsys
   ' 2>&1 | tee "${log_path}" || status=${PIPESTATUS[0]}
   feast_registry_stop_pod
   if [[ "${status}" != "0" ]]; then
@@ -143,8 +160,8 @@ tx_restore_feast_sql_registry() {
     status=1
   elif ! feast_registry_exec '
     set -euo pipefail
-    export FEAST_SQL_REGISTRY_URL="$(python -m feature_store.sql_registry_state url)"
-    python -m feature_store.sql_registry_state restore \
+    export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m feature_store.sql_registry_state url)"
+    /opt/venv/bin/python -m feature_store.sql_registry_state restore \
       --state-path /tmp/feast-sql-registry.json
   '; then
     status=1

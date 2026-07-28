@@ -32,6 +32,28 @@ test_dp3() {
   component_test_airflow_dag recsys_dp3_offline_feature_table
 }
 
+test_debezium_connector_tasks() {
+  local namespace="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
+  kubectl exec -n "${namespace}" deploy/kafka-connect -- \
+    curl -fsS http://localhost:8083/connectors/recsys-postgres-cdc/status \
+    | python3 -c '
+import json
+import sys
+
+status = json.load(sys.stdin)
+connector_state = status.get("connector", {}).get("state")
+task_states = [task.get("state") for task in status.get("tasks", [])]
+if connector_state != "RUNNING" or not task_states or any(
+    state != "RUNNING" for state in task_states
+):
+    raise SystemExit(
+        "Debezium connector is unhealthy: "
+        f"connector={connector_state}, tasks={task_states}"
+    )
+print({"connector": connector_state, "tasks": task_states})
+'
+}
+
 test_stream_transaction_event() {
   local namespace="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
   local event_id="ci-stream-${TX_ID:-${BUILD_NUMBER:-manual}}"
@@ -172,6 +194,8 @@ with psycopg.connect(conninfo()) as connection:
 
 test_stream_features() {
   local status=0
+  test_debezium_connector_tasks || status=$?
+  [[ "${status}" == "0" ]] || return "${status}"
   test_stream_transaction_event || status=$?
   DATA_PLATFORM_VERIFY_TIMEOUT_SECONDS="${COMPONENT_TEST_TIMEOUT_SECONDS:-600}" \
     infra/k8s/scripts/data_platform_verify_feature_stores.sh || status=$?

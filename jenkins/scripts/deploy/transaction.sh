@@ -106,7 +106,7 @@ tx_acquire_component_locks() {
     [[ -n "${lock_name}" ]] || continue
     lock_path="${lock_root}/$(recsys_slug "${lock_name}").lock"
     exec {lock_fd}>"${lock_path}"
-    if ! flock -w "${DEPLOY_LOCK_TIMEOUT_SECONDS:-1800}" "${lock_fd}"; then
+    if ! flock -w "${DEPLOY_LOCK_TIMEOUT_SECONDS:-14400}" "${lock_fd}"; then
       recsys_error "timed out acquiring deployment lock ${lock_name}"
       eval "exec ${lock_fd}>&-"
       tx_release_component_locks

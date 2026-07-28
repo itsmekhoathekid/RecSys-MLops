@@ -88,6 +88,20 @@ def test_debezium_is_the_only_kafka_connect_runtime_connector():
     )
     assert "io/debezium/debezium-connector-postgres" in kafka_connect_dockerfile
     assert "kafka-connect-s3" not in kafka_connect_dockerfile
+    assert 'snapshot_mode = "no_data"' not in registrar
+    assert "wait_for_connector_running" in registrar
+
+
+def test_stream_verification_requires_running_debezium_tasks():
+    verification = (
+        ROOT / "infra/k8s/scripts/data_platform_verify_feature_stores.sh"
+    ).read_text()
+    component_tests = (
+        ROOT / "jenkins/scripts/test/data_platform.sh"
+    ).read_text()
+
+    assert 'any(state != "RUNNING" for state in task_states)' in verification
+    assert "test_debezium_connector_tasks" in component_tests
 
 
 def test_spark_and_flink_images_include_runtime_dependencies_without_pandas():
@@ -587,8 +601,10 @@ def test_materialize_cicd_owns_feast_plan_apply_and_sql_registry_rollback():
     assert "apply --skip-source-validation --no-progress" in ci
     assert "feast_registry_snapshot" in deploy
     assert "feast_registry_plan_apply" in deploy
-    assert "feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo plan" in feast_deploy
+    assert "/opt/venv/bin/feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo plan" in feast_deploy
     assert "apply --no-progress" in feast_deploy
+    assert "/opt/venv/bin/python -m feature_store.sql_registry_state" in feast_deploy
+    assert "Feast registry pod image mismatch" in feast_deploy
     assert "tx_register_external feast-sql-registry" in feast_deploy
     assert "tx_restore_feast_sql_registry" in transaction
 

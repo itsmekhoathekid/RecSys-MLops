@@ -56,7 +56,14 @@ from pathlib import Path
 debezium = json.loads(Path("/tmp/recsys-debezium-status.json").read_text())
 if debezium.get("connector", {}).get("state") != "RUNNING":
     raise SystemExit(f"Debezium connector is not RUNNING: {debezium}")
-print({"debezium": "RUNNING"})
+task_states = [task.get("state") for task in debezium.get("tasks", [])]
+if not task_states or any(state != "RUNNING" for state in task_states):
+    raise SystemExit(
+        "Debezium connector tasks are not RUNNING: "
+        f"connector={debezium.get('connector', {}).get('state')}, "
+        f"tasks={task_states}"
+    )
+print({"debezium": "RUNNING", "tasks": task_states})
 PY
 
 flink_deadline=$((SECONDS + TIMEOUT_SECONDS))
