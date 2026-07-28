@@ -129,6 +129,29 @@ def test_external_ci_audits_use_bounded_retry():
     assert demo_ci.count("CI_AUDIT_MAX_ATTEMPTS") == 3
 
 
+def test_kubernetes_name_helper_emits_rfc1123_label():
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "source jenkins/scripts/lib/common.sh; "
+                "recsys_kubernetes_name "
+                "'Airflow.Version-RecSys_GitHub-CICD-102-stream_online'"
+            ),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (
+        completed.stdout
+        == "airflow-version-recsys-github-cicd-102-stream-online"
+    )
+    assert re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", completed.stdout)
+
+
 def test_catalog_contains_only_supported_migration_policies():
     payload = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")

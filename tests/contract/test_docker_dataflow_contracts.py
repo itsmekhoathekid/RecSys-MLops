@@ -531,6 +531,7 @@ def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
 
 def test_airflow_major_version_migration_has_typed_rollback_compensation():
     database = (ROOT / "jenkins/scripts/deploy/database.sh").read_text()
+    common = (ROOT / "jenkins/scripts/lib/common.sh").read_text()
     transaction = (ROOT / "jenkins/scripts/deploy/transaction.sh").read_text()
     deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
     dispatch = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
@@ -547,14 +548,23 @@ def test_airflow_major_version_migration_has_typed_rollback_compensation():
     ) < entrypoint.index("tx_transition APPLYING")
     assert "airflow-database-migration" in database
     assert "database_airflow_version_from_image" in database
+    assert "database_airflow_migration_revision" in database
+    assert '"previousMigrationRevision": previous_migration_revision' in database
+    assert "is unchanged; skipping database downgrade" in database
+    assert "recsys_kubernetes_name" in database
     assert '"attempted": False' in database
-    assert "airflow db downgrade --to-version" in database
+    assert "airflow db downgrade {downgrade_target} --yes" in database
+    assert "f\"--to-revision {previous_revision}\"" in database
+    assert "f\"--to-version {previous_version}\"" in database
     assert 'case "${phase}" in' in database
     assert "COMPONENT_DEPLOY_TIMEOUT_SECONDS" in database
     assert '"allowPrivilegeEscalation": False' in database
-    assert "| tr '[:upper:]' '[:lower:]'" in database
+    assert '"runAsUser": 50000' in database
+    assert "recsys_kubernetes_name()" in common
+    assert "tr '[:upper:]_.' '[:lower:]--'" in common
     assert "database_rollback_airflow_migration" in transaction
     assert "tx_verify_unmodified_helm_record" in transaction
+    assert "tx_compare_workload_images" in transaction
     assert "retrying legacy Helm rollback without hooks" in transaction
     assert "tx_components_sharing_locks" in transaction
     assert "tx_ensure_journal_access" in transaction

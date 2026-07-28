@@ -111,9 +111,18 @@ database_snapshot_airflow_migration() {
   local migration_image="$2"
   local state_path="${TX_DIR}/airflow-database-migration.json"
   local current_image=""
+  local previous_migration_revision=""
   local previous_version=""
 
   [[ "${TX_ACTIVE:-0}" == "1" ]] || return 0
+  previous_migration_revision="$(
+    database_airflow_migration_revision "${namespace}"
+  )"
+  [[ "${previous_migration_revision}" =~ ^[0-9a-f]+$ ]] || {
+    recsys_error \
+      "invalid previous Airflow migration revision: ${previous_migration_revision}"
+    return 2
+  }
   if kubectl get deployment/airflow-webserver -n "${namespace}" >/dev/null 2>&1; then
     previous_version="$(
       kubectl exec -n "${namespace}" deployment/airflow-webserver \
@@ -141,18 +150,30 @@ database_snapshot_airflow_migration() {
     return 2
   }
 
-  python3 - "${state_path}" "${namespace}" "${migration_image}" "${previous_version}" <<'PY'
+  python3 - \
+    "${state_path}" \
+    "${namespace}" \
+    "${migration_image}" \
+    "${previous_version}" \
+    "${previous_migration_revision}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-state_path, namespace, migration_image, previous_version = sys.argv[1:]
+(
+    state_path,
+    namespace,
+    migration_image,
+    previous_version,
+    previous_migration_revision,
+) = sys.argv[1:]
 Path(state_path).write_text(
     json.dumps(
         {
             "namespace": namespace,
             "migrationImage": migration_image,
             "previousVersion": previous_version,
+            "previousMigrationRevision": previous_migration_revision,
             "secretName": "recsys-data-platform-secret",
             "attempted": False,
         },
@@ -165,6 +186,15 @@ PY
   tx_register_external airflow-database-migration "${state_path}"
 }
 
+database_airflow_migration_revision() {
+  local namespace="$1"
+  kubectl exec -n "${namespace}" airflow-postgres-0 -- \
+    psql -U airflow -d airflow -Atc \
+      "select version_num from alembic_version" \
+    | tail -n 1 \
+    | tr -d '\r'
+}
+
 database_airflow_version_from_image() {
   local namespace="$1"
   local image="$2"
@@ -174,7 +204,7 @@ database_airflow_version_from_image() {
   local previous_version=""
   local elapsed=0
 
-  pod_name="$(recsys_slug "airflow-version-${TX_ID}" | tr '[:upper:]' '[:lower:]')"
+  pod_name="$(recsys_kubernetes_name "airflow-version-${TX_ID}")"
   pod_name="${pod_name:0:63}"
   pod_name="${pod_name%-}"
   kubectl delete pod "${pod_name}" -n "${namespace}" \
@@ -200,6 +230,7 @@ print(
                         "args": ["airflow version"],
                         "securityContext": {
                             "runAsNonRoot": True,
+                            "runAsUser": 50000,
                             "allowPrivilegeEscalation": False,
                             "capabilities": {"drop": ["ALL"]},
                         },
@@ -273,7 +304,8 @@ PY
 
 database_rollback_airflow_migration() {
   local state_path="$1"
-  local namespace migration_image previous_version secret_name attempted
+  local namespace migration_image previous_version previous_migration_revision
+  local current_migration_revision secret_name attempted
   local pod_name overrides status=0
   local phase=""
   local elapsed=0
@@ -283,15 +315,31 @@ database_rollback_airflow_migration() {
   namespace="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["namespace"])' "${state_path}")"
   migration_image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["migrationImage"])' "${state_path}")"
   previous_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["previousVersion"])' "${state_path}")"
+  previous_migration_revision="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("previousMigrationRevision", ""))' "${state_path}")"
   secret_name="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["secretName"])' "${state_path}")"
   attempted="$(python3 -c 'import json,sys; print("1" if json.load(open(sys.argv[1])).get("attempted") else "0")' "${state_path}")"
   [[ "${attempted}" == "1" ]] || return 0
+  if [[ -n "${previous_migration_revision}" \
+    && ! "${previous_migration_revision}" =~ ^[0-9a-f]+$ ]]; then
+    recsys_error \
+      "invalid Airflow rollback revision: ${previous_migration_revision}"
+    return 2
+  fi
+  current_migration_revision="$(
+    database_airflow_migration_revision "${namespace}"
+  )"
+  if [[ -n "${previous_migration_revision}" \
+    && "${current_migration_revision}" == "${previous_migration_revision}" ]]; then
+    recsys_log \
+      "Airflow metadata revision ${current_migration_revision} is unchanged; skipping database downgrade"
+    return 0
+  fi
   [[ "${previous_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9._+-]*)?$ ]] || {
     recsys_error "invalid Airflow rollback version: ${previous_version}"
     return 2
   }
 
-  pod_name="$(recsys_slug "airflow-db-rollback-${TX_ID}" | tr '[:upper:]' '[:lower:]')"
+  pod_name="$(recsys_kubernetes_name "airflow-db-rollback-${TX_ID}")"
   pod_name="${pod_name:0:63}"
   pod_name="${pod_name%-}"
   kubectl delete pod "${pod_name}" -n "${namespace}" --ignore-not-found --wait=true
@@ -305,11 +353,21 @@ database_rollback_airflow_migration() {
     --timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}" || true
 
   overrides="$(
-    python3 - "${pod_name}" "${migration_image}" "${secret_name}" "${previous_version}" <<'PY'
+    python3 - \
+      "${pod_name}" \
+      "${migration_image}" \
+      "${secret_name}" \
+      "${previous_version}" \
+      "${previous_migration_revision}" <<'PY'
 import json
 import sys
 
-pod_name, image, secret_name, previous_version = sys.argv[1:]
+pod_name, image, secret_name, previous_version, previous_revision = sys.argv[1:]
+downgrade_target = (
+    f"--to-revision {previous_revision}"
+    if previous_revision
+    else f"--to-version {previous_version}"
+)
 print(
     json.dumps(
         {
@@ -323,10 +381,11 @@ print(
                         "imagePullPolicy": "Always",
                         "command": ["bash", "-lc"],
                         "args": [
-                            f"airflow db downgrade --to-version {previous_version} --yes"
+                            f"airflow db downgrade {downgrade_target} --yes"
                         ],
                         "securityContext": {
                             "runAsNonRoot": True,
+                            "runAsUser": 50000,
                             "allowPrivilegeEscalation": False,
                             "capabilities": {"drop": ["ALL"]},
                         },
@@ -394,5 +453,15 @@ PY
     recsys_error "Airflow metadata database downgrade to ${previous_version} failed"
     return 1
   }
+  if [[ -n "${previous_migration_revision}" ]]; then
+    current_migration_revision="$(
+      database_airflow_migration_revision "${namespace}"
+    )"
+    [[ "${current_migration_revision}" == "${previous_migration_revision}" ]] || {
+      recsys_error \
+        "Airflow rollback revision mismatch: expected ${previous_migration_revision}, got ${current_migration_revision}"
+      return 1
+    }
+  fi
   recsys_log "downgraded Airflow metadata database to ${previous_version}"
 }

@@ -5,7 +5,7 @@ FEAST_REGISTRY_POD=""
 feast_registry_pod_name() {
   local action="$1"
   local name
-  name="$(recsys_slug "feast-registry-${action}-${TX_ID:-manual}" | tr '[:upper:]' '[:lower:]')"
+  name="$(recsys_kubernetes_name "feast-registry-${action}-${TX_ID:-manual}")"
   name="${name:0:63}"
   printf '%s' "${name%-}"
 }

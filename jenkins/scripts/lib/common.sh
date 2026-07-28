@@ -58,6 +58,13 @@ recsys_slug() {
   printf '%s' "$1" | tr -cs '[:alnum:]_.-' '-'
 }
 
+recsys_kubernetes_name() {
+  printf '%s' "$1" \
+    | tr '[:upper:]_.' '[:lower:]--' \
+    | tr -cs '[:lower:][:digit:]-' '-' \
+    | sed -e 's/^-*//' -e 's/-*$//'
+}
+
 recsys_sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'

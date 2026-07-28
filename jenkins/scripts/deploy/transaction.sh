@@ -303,11 +303,10 @@ Path(sys.argv[1]).write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\
 ' "${output_path}"
 }
 
-tx_verify_workload_images() {
+tx_compare_workload_images() {
   local namespace="$1"
   local expected_path="$2"
   local actual_path="${expected_path}.actual"
-  local identity
   [[ -s "${expected_path}" ]] || return 0
   tx_capture_workload_images "${namespace}" "${actual_path}"
   python3 - "${expected_path}" "${actual_path}" <<'PY'
@@ -322,12 +321,19 @@ for identity, images in expected.items():
             f"rollback image mismatch for {identity}: expected={images}, actual={actual.get(identity)}"
         )
 PY
+  rm -f "${actual_path}"
+}
+
+tx_verify_workload_images() {
+  local namespace="$1"
+  local expected_path="$2"
+  local identity
+  tx_compare_workload_images "${namespace}" "${expected_path}"
   while IFS= read -r identity; do
     [[ -n "${identity}" ]] || continue
     kubectl rollout status "${identity}" -n "${namespace}" \
       --timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
   done < <(python3 -c 'import json,sys; [print(x) for x in json.load(open(sys.argv[1]))]' "${expected_path}")
-  rm -f "${actual_path}"
 }
 
 tx_register_external() {
@@ -507,7 +513,7 @@ tx_verify_unmodified_helm_record() {
         "pre-apply failure changed ${release}: expected revision ${revision}, got ${current_revision}"
       return 1
     }
-    tx_verify_workload_images "${namespace}" "${workload_snapshot_path}"
+    tx_compare_workload_images "${namespace}" "${workload_snapshot_path}"
   else
     ! helm status "${release}" -n "${namespace}" >/dev/null 2>&1 || {
       recsys_error "pre-apply failure unexpectedly created ${release}"
