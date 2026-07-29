@@ -115,6 +115,14 @@ def test_airflow_is_pinned_to_the_cpu_pool_in_production_deploys():
     assert chart.count(".Values.airflow.tolerations") == 3
     assert 'airflow.nodeSelector.recsys\\\\.ai/pool=cpu-services' in deploy
     assert "DATA_PLATFORM_NODE_POOL" not in deploy
+    assert (
+        "realtimeCdcConnector.waitTimeoutSeconds="
+        "${CDC_CONNECTOR_WAIT_TIMEOUT_SECONDS:-480}"
+    ) in deploy
+    assert (
+        "realtimeCdcConnector.activeDeadlineSeconds="
+        "${CDC_CONNECTOR_ACTIVE_DEADLINE_SECONDS:-540}"
+    ) in deploy
     connector_job = jobs.split("name: register-realtime-cdc-connector", 1)[1]
     assert "backoffLimit: 0" in connector_job
     assert "realtimeCdcConnector.activeDeadlineSeconds" in connector_job

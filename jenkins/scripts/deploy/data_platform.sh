@@ -99,6 +99,8 @@ deploy_data_platform_unlocked() {
     --set "images.analyticsSpark=${analytics_spark_image}" \
     --set "images.analyticsDbt=${analytics_dbt_image}" \
     --set-string "airflow.nodeSelector.recsys\\.ai/pool=cpu-services" \
+    --set "realtimeCdcConnector.waitTimeoutSeconds=${CDC_CONNECTOR_WAIT_TIMEOUT_SECONDS:-480}" \
+    --set "realtimeCdcConnector.activeDeadlineSeconds=${CDC_CONNECTOR_ACTIVE_DEADLINE_SECONDS:-540}" \
     --set "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-1g}" \
     --set "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-512m}" \
     --set "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1g}" \
