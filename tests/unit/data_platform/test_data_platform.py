@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import requests
 
 from features.flink.features.candidate_pool import (
     candidate_updates,
@@ -55,6 +56,7 @@ from ingest.debezium import extract_debezium_after
 from ingest import register_k8s_connectors
 from ingest.register_k8s_connectors import (
     debezium_config,
+    register_connector,
     wait_for_connector_running,
 )
 from ingest.batch_lakehouse_ingestion import (
@@ -124,6 +126,63 @@ def test_debezium_registration_waits_through_stale_failed_task(monkeypatch):
         "get",
         lambda *args, **kwargs: Response(),
     )
+
+    assert wait_for_connector_running(
+        "recsys-postgres-cdc",
+        timeout_seconds=10,
+        poll_seconds=0,
+    ) == {"connector": "RUNNING", "tasks": ["RUNNING"]}
+
+
+def test_debezium_registration_retries_connect_rebalance(monkeypatch):
+    class Response:
+        def __init__(self, status_code):
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(str(self.status_code))
+
+        def json(self):
+            return {"name": "recsys-postgres-cdc"}
+
+    responses = iter([Response(409), Response(200)])
+    monkeypatch.setattr(
+        register_k8s_connectors.requests,
+        "put",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    assert register_connector(
+        "recsys-postgres-cdc",
+        {"connector.class": "PostgresConnector"},
+        timeout_seconds=10,
+        poll_seconds=0,
+    ) == {"name": "recsys-postgres-cdc"}
+
+
+def test_debezium_status_wait_retries_transient_connect_error(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "connector": {"state": "RUNNING"},
+                "tasks": [{"id": 0, "state": "RUNNING"}],
+            }
+
+    responses = iter([requests.ConnectionError("rebalance"), Response()])
+
+    def get(*args, **kwargs):
+        result = next(responses)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(register_k8s_connectors.requests, "get", get)
 
     assert wait_for_connector_running(
         "recsys-postgres-cdc",
