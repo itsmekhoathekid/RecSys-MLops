@@ -52,7 +52,11 @@ from feature_store.online_writer import (
 from local.run_batch_features import main as run_batch_features_main
 from local.run_batch_features import run_batch_features
 from ingest.debezium import extract_debezium_after
-from ingest.register_k8s_connectors import debezium_config
+from ingest import register_k8s_connectors
+from ingest.register_k8s_connectors import (
+    debezium_config,
+    wait_for_connector_running,
+)
 from ingest.batch_lakehouse_ingestion import (
     LakehouseIcebergLayout,
     infer_run_id,
@@ -100,6 +104,32 @@ def test_debezium_after_extraction_skips_deletes():
 def test_debezium_snapshot_mode_matches_pinned_runtime_contract(monkeypatch):
     monkeypatch.setenv("DEBEZIUM_SNAPSHOT_MODE", "never")
     assert debezium_config()["snapshot.mode"] == "never"
+
+
+def test_debezium_registration_waits_through_stale_failed_task(monkeypatch):
+    states = iter(["FAILED", "FAILED", "RUNNING"])
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "connector": {"state": "RUNNING"},
+                "tasks": [{"id": 0, "state": next(states)}],
+            }
+
+    monkeypatch.setattr(
+        register_k8s_connectors.requests,
+        "get",
+        lambda *args, **kwargs: Response(),
+    )
+
+    assert wait_for_connector_running(
+        "recsys-postgres-cdc",
+        timeout_seconds=10,
+        poll_seconds=0,
+    ) == {"connector": "RUNNING", "tasks": ["RUNNING"]}
 
 
 def test_committed_kafka_offsets_fall_back_to_earliest_for_fresh_groups(monkeypatch):

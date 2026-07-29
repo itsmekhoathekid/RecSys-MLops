@@ -85,7 +85,10 @@ metadata:
     "helm.sh/hook-weight": "10"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  backoffLimit: 6
+  # The registrar owns its retry loop. Restarting it repeats the PUT and can
+  # continuously reset an asynchronously recovering Kafka Connect task.
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.realtimeCdcConnector.activeDeadlineSeconds }}
   template:
     metadata:
       annotations:
@@ -106,7 +109,7 @@ spec:
                 exit "$status"
               }
               trap cleanup EXIT
-              /opt/venv/bin/python -m ingest.register_k8s_connectors --connector debezium --wait-timeout-seconds 900
+              /opt/venv/bin/python -m ingest.register_k8s_connectors --connector debezium --wait-timeout-seconds {{ .Values.realtimeCdcConnector.waitTimeoutSeconds }}
           envFrom:
             - configMapRef:
                 name: recsys-data-platform-config

@@ -104,6 +104,28 @@ def test_stream_verification_requires_running_debezium_tasks():
     assert "test_debezium_connector_tasks" in component_tests
 
 
+def test_airflow_is_pinned_to_the_cpu_pool_in_production_deploys():
+    chart = (
+        ROOT / "infra/helm/recsys-data-platform/templates/airflow.yaml"
+    ).read_text()
+    deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
+    jobs = (ROOT / "infra/helm/recsys-data-platform/templates/jobs.yaml").read_text()
+
+    assert chart.count(".Values.airflow.nodeSelector") == 3
+    assert chart.count(".Values.airflow.tolerations") == 3
+    assert 'airflow.nodeSelector.recsys\\\\.ai/pool=cpu-services' in deploy
+    assert "DATA_PLATFORM_NODE_POOL" not in deploy
+    connector_job = jobs.split("name: register-realtime-cdc-connector", 1)[1]
+    assert "backoffLimit: 0" in connector_job
+    assert "realtimeCdcConnector.activeDeadlineSeconds" in connector_job
+    assert "realtimeCdcConnector.waitTimeoutSeconds" in connector_job
+    init_schema_job = jobs.split("name: init-source-schema", 1)[1].split(
+        "name: register-realtime-cdc-connector", 1
+    )[0]
+    assert "backoffLimit: 6" in init_schema_job
+    assert "realtimeCdcConnector.activeDeadlineSeconds" not in init_schema_job
+
+
 def test_spark_and_flink_images_include_runtime_dependencies_without_pandas():
     spark_dockerfile = (ROOT / "apps/data-platform/Dockerfile.spark").read_text()
     flink_dockerfile = (ROOT / "apps/data-platform/Dockerfile.flink").read_text()
@@ -290,8 +312,8 @@ def test_jenkins_training_deploy_uploads_package_and_rolls_trigger_runtime():
     )
 
 
-def test_legacy_full_services_cicd_runs_component_and_platform_flows():
-    script = (ROOT / "jenkins/scripts/legacy/full_services_cicd.sh").read_text()
+def test_modular_full_services_dispatch_covers_component_and_platform_flows():
+    legacy_script = ROOT / "jenkins/scripts/legacy/full_services_cicd.sh"
     build_script = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text()
     deploy_script = (
         (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
@@ -300,16 +322,7 @@ def test_legacy_full_services_cicd_runs_component_and_platform_flows():
     deploy_runtime = (ROOT / "jenkins/scripts/deploy/runtime.sh").read_text()
     ml_deploy = (ROOT / "jenkins/scripts/deploy/ml_platform.sh").read_text()
 
-    assert "component_ci.sh" in script
-    assert "component_build_publish.sh all" in script
-    assert "component_deploy.sh all" in script
-    assert "cluster_data_setup.sh" in script
-    assert "cluster_mlops_serving_e2e.sh" in script
-    assert "post_deploy_e2e.sh" not in script
-    assert "RUN_NODE_REBALANCE" in script
-    assert "VALIDATE_NODE_REBALANCE" in script
-    assert "FULL_CICD_BUILD_BACKEND:-docker" in script
-    assert "cloudbuild)" in script
+    assert not legacy_script.exists()
     assert "all)" in build_script
     assert "build_mlflow" in build_script
     assert "deploy_all()" in deploy_script
@@ -538,10 +551,13 @@ def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
     assert 'command: ["bash", "-c"]' in chart
     assert 'command: ["bash", "-lc"]' not in chart
     assert (
-        "timeout 120 airflow db check-migrations --migration-wait-timeout 120 || true"
+        "timeout 300 airflow db check-migrations --migration-wait-timeout 300 &&"
         in chart
     )
-    assert "airflow db migrate &&" not in chart
+    assert "airflow db migrate &&" in chart
+    assert "airflow users create" not in chart
+    assert "admin --password admin" not in chart
+    assert chart.count("minReadySeconds: 15") == 3
     assert 'value: "900"' in chart
     assert "name: airflow-dag-processor" in chart
     assert "airflow dag-processor" in chart

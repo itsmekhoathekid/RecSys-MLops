@@ -31,7 +31,7 @@ def product_components(paths: list[str]) -> set[str]:
         ("graphify-out/graph.json", set(), False),
         ("Jenkinsfile", set(), True),
         ("infra/helm/recsys-ci/values.yaml", {"ROLLOUT"}, True),
-        ("jenkins/jobs/recsys-cicd-proof-config.xml", set(), True),
+        ("jenkins/pipeline/component_pipeline.groovy", set(), True),
         ("jenkins/scripts/entrypoints/component_ci.sh", set(COMPONENTS), True),
         ("apps/api-serving/src/main.py", {"API"}, False),
         ("apps/ml-system/src/training/train.py", {"TRAINING"}, False),
@@ -154,7 +154,7 @@ def test_docs_and_ci_config_regression_does_not_route_product_components():
     paths = [
         "docs/submission/rubic-(mini-coursework)/data_storage.md",
         "infra/helm/recsys-ci/templates/jenkins.yaml",
-        "jenkins/jobs/recsys-cicd-proof-config.xml",
+        "jenkins/pipeline/component_pipeline.groovy",
     ]
     result = classify_paths(paths)
 

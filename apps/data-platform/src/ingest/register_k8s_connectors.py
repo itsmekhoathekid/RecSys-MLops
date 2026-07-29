@@ -88,7 +88,6 @@ def wait_for_connector_running(
 ) -> dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds
     last_states: dict[str, Any] = {}
-    failed_polls = 0
     while time.monotonic() <= deadline:
         response = requests.get(
             f"{connect_url()}/connectors/{name}/status",
@@ -111,15 +110,9 @@ def wait_for_connector_running(
             and all(state == "RUNNING" for state in task_states)
         ):
             return last_states
-        if any(state == "FAILED" for state in task_states):
-            failed_polls += 1
-            if failed_polls >= 3:
-                raise RuntimeError(
-                    f"Kafka Connect connector task failed: {name}; "
-                    f"states={last_states}"
-                )
-        else:
-            failed_polls = 0
+        # PUT restarts an existing failed task asynchronously. Exiting on the
+        # stale FAILED status makes Kubernetes repeat the PUT and continuously
+        # resets Kafka Connect's recovery window.
         time.sleep(poll_seconds)
     raise TimeoutError(
         f"Kafka Connect connector did not become RUNNING: {name}; "

@@ -138,16 +138,14 @@ Do not commit secret values into Jenkinsfile, Helm values, or scripts.
 
 ## Full Service CI/CD
 
-To force every RecSys service through CI, image publish, deploy, and E2E gates:
+Run the root Jenkins job with `FORCE_DEPLOY=true` and the complete component
+list in `FORCE_COMPONENTS`:
 
-```bash
-IMAGE_TAG="$(git rev-parse HEAD)" \
-FULL_CICD_BUILD_BACKEND=cloudbuild \
-jenkins/scripts/legacy/full_services_cicd.sh
+```text
+materialize,training,spark_batch,dp1,dp2,dp3,api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,ci_config
 ```
 
-The full flow runs component CI, builds/pushes all runtime images, compiles and
-validates the Kubeflow package with pullable image refs, uploads the package,
-deploys data platform, MLflow, API, and KServe/model CD, then runs the
-data-platform and ML-platform flows. This legacy helper is removed after two
-successful modular production deployments.
+The root pipeline keeps the normal Stage View while every component runs its
+own locked CI environment, image publish, atomic deploy, production test, and
+rollback transaction. There is no separate legacy full-service script or
+post-commit data/ML flow.

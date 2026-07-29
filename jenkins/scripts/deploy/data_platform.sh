@@ -98,6 +98,7 @@ deploy_data_platform_unlocked() {
     --set "images.kafkaConnect=${kafka_connect_image}" \
     --set "images.analyticsSpark=${analytics_spark_image}" \
     --set "images.analyticsDbt=${analytics_dbt_image}" \
+    --set-string "airflow.nodeSelector.recsys\\.ai/pool=cpu-services" \
     --set "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-1g}" \
     --set "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-512m}" \
     --set "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1g}" \

@@ -224,6 +224,8 @@ realtimeCdcConnector:
   tableIncludeList: public.users,public.user_preferences,public.products,public.product_snapshots,public.sessions,public.recommendation_requests,public.impressions,public.behavior_events,public.orders,public.order_items
   snapshotMode: never
   slotName: recsys_slot_e2e
+  waitTimeoutSeconds: 480
+  activeDeadlineSeconds: 540
 
 airflow:
   dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
@@ -232,6 +234,9 @@ airflow:
   feastMaterializeSchedule: "20 */2 * * *"
   featureDriftSchedule: "30 3 * * *"
   lakehouseMaintenanceSchedule: "0 4 * * 0"
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+  tolerations: []
 
 drift:
   currentRoot: "s3a://recsys-offline-feature-store/monitoring/offline_feature_drift/current_snapshot"

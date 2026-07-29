@@ -5,6 +5,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  minReadySeconds: 15
+  progressDeadlineSeconds: 600
   strategy:
     type: Recreate
   selector:
@@ -19,6 +21,11 @@ spec:
     spec:
       enableServiceLinks: false
       serviceAccountName: default
+      {{- with .Values.airflow.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      tolerations: {{ default (list) .Values.airflow.tolerations | toJson }}
       containers:
         - name: airflow-webserver
           image: {{ .Values.images.airflow }}
@@ -26,9 +33,8 @@ spec:
           command: ["bash", "-c"]
           args:
             - >-
-              airflow db migrate;
-              airflow users create --username admin --password admin --firstname RecSys --lastname Admin --role Admin --email admin@example.com || true;
-              airflow api-server
+              airflow db migrate &&
+              exec airflow api-server
           env:
             - name: AIRFLOW_POSTGRES_USER
               valueFrom:
@@ -73,6 +79,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  minReadySeconds: 15
+  progressDeadlineSeconds: 600
   selector:
     matchLabels:
       app: airflow-scheduler
@@ -85,6 +93,11 @@ spec:
     spec:
       enableServiceLinks: false
       serviceAccountName: default
+      {{- with .Values.airflow.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      tolerations: {{ default (list) .Values.airflow.tolerations | toJson }}
       containers:
         - name: airflow-scheduler
           image: {{ .Values.images.airflow }}
@@ -92,8 +105,8 @@ spec:
           command: ["bash", "-c"]
           args:
             - >-
-              timeout 120 airflow db check-migrations --migration-wait-timeout 120 || true;
-              airflow scheduler
+              timeout 300 airflow db check-migrations --migration-wait-timeout 300 &&
+              exec airflow scheduler
           env:
             - name: AIRFLOW_POSTGRES_USER
               valueFrom:
@@ -136,6 +149,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  minReadySeconds: 15
+  progressDeadlineSeconds: 600
   strategy:
     type: Recreate
   selector:
@@ -150,6 +165,11 @@ spec:
     spec:
       enableServiceLinks: false
       serviceAccountName: default
+      {{- with .Values.airflow.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      tolerations: {{ default (list) .Values.airflow.tolerations | toJson }}
       containers:
         - name: airflow-dag-processor
           image: {{ .Values.images.airflow }}
@@ -157,8 +177,8 @@ spec:
           command: ["bash", "-c"]
           args:
             - >-
-              timeout 120 airflow db check-migrations --migration-wait-timeout 120 || true;
-              airflow dag-processor
+              timeout 300 airflow db check-migrations --migration-wait-timeout 300 &&
+              exec airflow dag-processor
           env:
             - name: AIRFLOW_POSTGRES_USER
               valueFrom:
