@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://recsys-mlops.example.invalid/schemas/image-catalog-v1.json",
+  "title": "RecSys image catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "images"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "images": {
+      "type": "object",
+      "minProperties": 15,
+      "maxProperties": 15,
+      "additionalProperties": {
+        "$ref": "#/$defs/image"
+      }
+    }
+  },
+  "$defs": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dockerfile", "context", "dependencies"],
+      "properties": {
+        "dockerfile": {
+          "type": "string",
+          "pattern": "^images/.+/Dockerfile$"
+        },
+        "context": {
+          "const": "."
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["image", "buildArg"],
+            "properties": {
+              "image": {
+                "type": "string",
+                "pattern": "^recsys-[a-z0-9-]+$"
+              },
+              "buildArg": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]+$"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

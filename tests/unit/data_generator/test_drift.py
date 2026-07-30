@@ -5,7 +5,7 @@ import numpy as np
 import pyarrow.parquet as pq
 
 from behavior import BehaviorContext, BehaviorProbabilityModel
-from config import DriftConfig, load_config
+from generator_config import DriftConfig, load_config
 from drift.controller import DriftController
 from drift.reporting import (
     DriftReporter,
@@ -104,7 +104,7 @@ def test_rolling_window_excludes_future_and_old_values():
 
 
 def test_drift_metadata_and_artifacts(tmp_path):
-    config = load_config(Path("configs/local/data_generator_drift.yaml"))
+    config = load_config(Path("configs/data-platform/generator/drift.yaml"))
     config = config.model_copy(
         update={
             "entities": config.entities.model_copy(
@@ -159,7 +159,7 @@ def test_drift_metadata_and_artifacts(tmp_path):
 
 
 def test_drift_report_is_reproducible(tmp_path):
-    config = load_config(Path("configs/local/data_generator_drift.yaml"))
+    config = load_config(Path("configs/data-platform/generator/drift.yaml"))
     compact = config.model_copy(
         update={
             "entities": config.entities.model_copy(

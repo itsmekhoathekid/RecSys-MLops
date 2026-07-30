@@ -33,40 +33,52 @@ def resolveChangedBaseRef() {
   return gitRefExists('HEAD~1') ? 'HEAD~1' : ''
 }
 
-def runComponentBranches(String scriptPath, String extraEnv) {
-  def branches = [:]
-  componentDefinitions().each { component ->
-    if (env.getProperty(component.flag) == 'true') {
+def runComponentBranches(String scriptPath, String extraEnv, int maxParallel) {
+  if (maxParallel < 1) {
+    error 'maxParallel must be at least 1'
+  }
+  def selected = componentDefinitions().findAll { component ->
+    env.getProperty(component.flag) == 'true'
+  }
+  if (!selected) {
+    echo 'No component changes detected for this stage.'
+    return
+  }
+  selected.collate(maxParallel).eachWithIndex { batch, batchIndex ->
+    def branches = [:]
+    batch.each { component ->
       def componentName = component.name
       def componentLabel = component.label
       branches.put(componentLabel, {
         sh "${extraEnv} ${scriptPath} ${componentName}"
       })
     }
-  }
-  if (branches) {
+    echo "Running component CI batch ${batchIndex + 1} with ${branches.size()} branch(es)."
     parallel branches
-  } else {
-    echo 'No component changes detected for this stage.'
   }
 }
 
-def runComponentDeployBranches(String scriptPath, String extraEnv) {
-  def upstreamBranches = [:]
-  componentDefinitions().each { component ->
-    if (env.getProperty(component.flag) == 'true' && component.name != 'demo_web') {
-      def componentName = component.name
-      def componentLabel = component.label
-      upstreamBranches.put(componentLabel, {
-        sh "${extraEnv} ${scriptPath} ${componentName}"
+def runReleaseDeployPlan(String scriptPath, String extraEnv, String planPath) {
+  def rows = sh(
+    returnStdout: true,
+    script: "python3 jenkins/python/release_plan.py plan-units --plan '${planPath}'"
+  ).trim().split('\\n').findAll { it.trim() }.collect { line ->
+    def fields = line.split('\\t', 3)
+    [layer: fields[0] as Integer, name: fields[1], lockName: fields[2]]
+  }
+  rows.groupBy { it.layer }.keySet().sort().each { layer ->
+    def branches = [:]
+    rows.findAll { it.layer == layer }.each { unit ->
+      def deployUnit = unit
+      branches.put(deployUnit.name, {
+        lock(resource: deployUnit.lockName) {
+          sh "${extraEnv} ${scriptPath} '${deployUnit.name}' '${planPath}'"
+        }
       })
     }
-  }
-  if (upstreamBranches) {
-    parallel upstreamBranches
-  }
-  if (env.RUN_DEMO_WEB == 'true') {
-    sh "${extraEnv} ${scriptPath} demo_web"
+    if (branches) {
+      parallel branches
+    }
   }
 }
 
@@ -112,7 +124,14 @@ def applyForcedComponents(String forcedComponents) {
   env.RUN_COMPONENT_BUILD = selectedByName ? 'true' : 'false'
   env.RUN_COMPONENT_DEPLOY = selectedByName ? 'true' : 'false'
   env.RUN_PYTHON = selectedByName ? 'true' : 'false'
-  def forcedNames = selectedByName.keySet().toList()
+  def selectedNames = selectedByName.keySet().toList()
+  sh(
+    "python3 jenkins/python/release_plan.py create " +
+    "--components '${selectedNames.join(',')}' " +
+    "--commit '${env.GIT_COMMIT ?: ''}' " +
+    "--output .ci-release-plan.json"
+  )
+  def forcedNames = selectedNames.toList()
   if (forceCiConfig) {
     forcedNames << 'ci_config'
   }
@@ -135,7 +154,7 @@ def shouldDeployChangedComponents() {
     returnStatus: true,
     script: 'test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"'
   ) == 0
-  return env.RUN_COMPONENT_DEPLOY == 'true' && (
+  return params.PUBLISH_IMAGES && env.RUN_COMPONENT_DEPLOY == 'true' && (
     params.FORCE_DEPLOY ||
     branchEnvironmentIsMain ||
     checkedOutCommitIsMain

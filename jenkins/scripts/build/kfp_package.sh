@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-package_path="${KFP_PACKAGE_PATH:-infra/kubeflow/compiled/bst_training_pipeline.yaml}"
+package_path="${KFP_PACKAGE_PATH:-pipelines/kubeflow/compiled/bst_training_pipeline.yaml}"
 training_image="${RECSYS_PIPELINE_IMAGE:?RECSYS_PIPELINE_IMAGE is required}"
 ray_image="${RECSYS_RAY_IMAGE:-${training_image}}"
 spark_image="${RECSYS_SPARK_IMAGE:?RECSYS_SPARK_IMAGE is required}"

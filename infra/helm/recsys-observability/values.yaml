@@ -33,8 +33,8 @@ persistence:
     enabled: false
 
 grafana:
-  domain: grafana.recsys.local
-  rootUrl: http://grafana.recsys.local/
+  domain: grafana.example.invalid
+  rootUrl: http://grafana.example.invalid/
 
 targets:
   apiNamespace: api-serving

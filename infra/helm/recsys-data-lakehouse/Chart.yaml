@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-data-lakehouse
+description: RecSys MinIO lakehouse storage and bucket initialization.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

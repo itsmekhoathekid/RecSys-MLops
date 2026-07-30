@@ -131,7 +131,7 @@ def wait_for_run(client: Any, run_id: str, timeout_seconds: int, poll_seconds: i
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit and optionally wait for a Kubeflow pipeline package.")
     parser.add_argument("--host", default="http://127.0.0.1:8888")
-    parser.add_argument("--package-path", default="infra/kubeflow/compiled/bst_training_pipeline.yaml")
+    parser.add_argument("--package-path", default="pipelines/kubeflow/compiled/bst_training_pipeline.yaml")
     parser.add_argument("--experiment-name", default="recsys-bst-ranking")
     parser.add_argument("--run-name", default=f"recsys-bst-e2e-{int(time.time())}")
     parser.add_argument("--arguments-json", default="")

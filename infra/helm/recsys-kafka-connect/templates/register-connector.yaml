@@ -1,0 +1,40 @@
+{{- if .Values.realtimeCdcConnector.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: register-realtime-cdc-connector
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.realtimeCdcConnector.activeDeadlineSeconds }}
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.kafkaConnect.istioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: register-debezium
+          image: {{ .Values.images.dataIngestion }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              cleanup() {
+                status=$?
+                python -c "import urllib.request; req=urllib.request.Request('http://127.0.0.1:15020/quitquitquit', method='POST'); urllib.request.urlopen(req, timeout=2).read()" >/dev/null 2>&1 || true
+                exit "$status"
+              }
+              trap cleanup EXIT
+              /opt/venv/bin/python -m ingest.register_k8s_connectors --connector debezium --wait-timeout-seconds {{ .Values.realtimeCdcConnector.waitTimeoutSeconds }}
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+{{- end }}

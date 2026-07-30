@@ -12,6 +12,10 @@ provider "google-beta" {
 
 data "google_client_config" "default" {}
 
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
 provider "kubernetes" {
   host                   = "https://${google_container_cluster.recsys.endpoint}"
   token                  = data.google_client_config.default.access_token

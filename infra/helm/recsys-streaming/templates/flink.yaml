@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - name: ui
+      port: 8081
+      targetPort: 8081
+    - name: rpc
+      port: 6123
+      targetPort: 6123
+    - name: blob
+      port: 6124
+      targetPort: 6124
+  selector:
+    app: flink-jobmanager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: flink-jobmanager
+  template:
+    metadata:
+      labels:
+        app: flink-jobmanager
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.flink.istioInject | quote }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ .Values.flink.metricsPort | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: flink-jobmanager
+          image: {{ .Values.images.flink }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              cat >/tmp/core-site.xml <<'EOF'
+              <configuration>
+                <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
+                <property><name>fs.s3a.endpoint</name><value>{{ .Values.minio.endpoint }}</value></property>
+                <property><name>fs.s3a.access.key</name><value>${AWS_ACCESS_KEY_ID}</value></property>
+                <property><name>fs.s3a.secret.key</name><value>${AWS_SECRET_ACCESS_KEY}</value></property>
+                <property><name>fs.s3a.path.style.access</name><value>true</value></property>
+                <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>
+                <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>
+              </configuration>
+              EOF
+              sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
+              export HADOOP_CONF_DIR=/tmp
+              printf '\njobmanager.scheduler: %s\ncluster.declarative-resource-management.enabled: true\n' \
+                {{ .Values.flink.scheduler | quote }} >> /opt/flink/conf/flink-conf.yaml
+              /docker-entrypoint.sh jobmanager
+          env:
+            - name: FLINK_PROPERTIES
+              value: "jobmanager.rpc.address: flink-jobmanager\njobmanager.rpc.port: 6123\ntaskmanager.numberOfTaskSlots: {{ .Values.flink.taskSlots }}\ntaskmanager.memory.process.size: {{ .Values.flink.taskManagerProcessMemory }}\ntaskmanager.memory.task.heap.size: {{ .Values.flink.taskManagerTaskHeapMemory }}\ntaskmanager.memory.managed.size: {{ .Values.flink.taskManagerManagedMemory }}\ntaskmanager.memory.jvm-overhead.max: {{ .Values.flink.taskManagerJvmOverheadMax }}\ntaskmanager.memory.managed.consumer-weights: {{ .Values.flink.managedConsumerWeights }}\npython.fn-execution.memory.managed: {{ .Values.flink.pythonManagedMemory }}\npython.fn-execution.bundle.size: {{ .Values.flink.pythonBundleSize }}\npython.fn-execution.bundle.time: {{ .Values.flink.pythonBundleTimeMs }}\nstate.backend.type: {{ .Values.flink.stateBackend }}\nstate.backend.incremental: {{ .Values.flink.stateBackendIncremental }}\nrestart-strategy.type: exponential-delay\nrestart-strategy.exponential-delay.initial-backoff: 2 s\nrestart-strategy.exponential-delay.max-backoff: 60 s\nrestart-strategy.exponential-delay.backoff-multiplier: 2.0\nmetrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory\nmetrics.reporter.prom.port: {{ .Values.flink.metricsPort }}\nblob.server.port: 6124\nquery.server.port: 6125\nexecution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+          ports:
+            - containerPort: 8081
+            - containerPort: 6123
+            - containerPort: 6124
+            - name: metrics
+              containerPort: {{ .Values.flink.metricsPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: {{ .Values.flinkTaskManager.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: flink-taskmanager
+  template:
+    metadata:
+      labels:
+        app: flink-taskmanager
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.flink.istioInject | quote }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ .Values.flink.metricsPort | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: flink-taskmanager
+          image: {{ .Values.images.flink }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              cat >/tmp/core-site.xml <<'EOF'
+              <configuration>
+                <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
+                <property><name>fs.s3a.endpoint</name><value>{{ .Values.minio.endpoint }}</value></property>
+                <property><name>fs.s3a.access.key</name><value>${AWS_ACCESS_KEY_ID}</value></property>
+                <property><name>fs.s3a.secret.key</name><value>${AWS_SECRET_ACCESS_KEY}</value></property>
+                <property><name>fs.s3a.path.style.access</name><value>true</value></property>
+                <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>
+                <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>
+              </configuration>
+              EOF
+              sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
+              export HADOOP_CONF_DIR=/tmp
+              /docker-entrypoint.sh taskmanager
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: DISABLE_JEMALLOC
+              value: {{ .Values.flink.disableJemalloc | quote }}
+            - name: JDK_JAVA_OPTIONS
+              value: {{ .Values.flink.javaOpens | quote }}
+            - name: FLINK_PROPERTIES
+              value: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: {{ .Values.flink.taskSlots }}\ntaskmanager.memory.process.size: {{ .Values.flink.taskManagerProcessMemory }}\ntaskmanager.memory.task.heap.size: {{ .Values.flink.taskManagerTaskHeapMemory }}\ntaskmanager.memory.managed.size: {{ .Values.flink.taskManagerManagedMemory }}\ntaskmanager.memory.jvm-overhead.max: {{ .Values.flink.taskManagerJvmOverheadMax }}\ntaskmanager.memory.managed.consumer-weights: {{ .Values.flink.managedConsumerWeights }}\npython.fn-execution.memory.managed: {{ .Values.flink.pythonManagedMemory }}\npython.fn-execution.bundle.size: {{ .Values.flink.pythonBundleSize }}\npython.fn-execution.bundle.time: {{ .Values.flink.pythonBundleTimeMs }}\nstate.backend.type: {{ .Values.flink.stateBackend }}\nstate.backend.incremental: {{ .Values.flink.stateBackendIncremental }}\nmetrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory\nmetrics.reporter.prom.port: {{ .Values.flink.metricsPort }}\ntaskmanager.data.port: 6121\ntaskmanager.rpc.port: 6122\nquery.server.port: 6125\nexecution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+          ports:
+            - containerPort: 6121
+            - containerPort: 6122
+            - containerPort: 6125
+            - name: metrics
+              containerPort: {{ .Values.flink.metricsPort }}
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - -ec
+                - >-
+                  curl -fsS --max-time 3 http://flink-jobmanager:8081/taskmanagers |
+                  grep -Fq "\"id\":\"${POD_IP}:6122-"
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - bash
+                - -ec
+                - >-
+                  curl -fsS --max-time 3 http://flink-jobmanager:8081/taskmanagers |
+                  grep -Fq "\"id\":\"${POD_IP}:6122-"
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          {{- with .Values.flinkTaskManager.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

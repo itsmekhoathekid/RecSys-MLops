@@ -8,7 +8,7 @@ from uuid import uuid4
 # Keep PyArrow before NumPy; drift.reporting relies on the same import order.
 import pyarrow.parquet as pq
 
-from config import DriftConfig, load_config
+from generator_config import DriftConfig, load_config
 from drift.controller import DriftController
 import drift.reporting as drift_reporting
 from drift.reporting import DriftReporter, calculate_psi, classify_drift
@@ -66,7 +66,7 @@ def test_drift_reporting_psi_and_status_contracts():
 
 
 def test_drift_reporter_writes_artifacts_and_summary(tmp_path):
-    config = load_config(Path("configs/local/data_generator_drift.yaml"))
+    config = load_config(Path("configs/data-platform/generator/drift.yaml"))
     config = config.model_copy(
         update={
             "drift": config.drift.model_copy(update={"psi_alert_threshold": 0.001})

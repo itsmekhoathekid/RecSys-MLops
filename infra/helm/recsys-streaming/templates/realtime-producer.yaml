@@ -1,0 +1,45 @@
+{{- if .Values.realtimeProducer.enabled }}
+{{- $producerRollout := default (dict) .Values.realtimeProducer.rollout }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.realtimeProducer.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: {{ .Values.realtimeProducer.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ get $producerRollout "maxSurge" | default 0 }}
+      maxUnavailable: {{ get $producerRollout "maxUnavailable" | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.realtimeProducer.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.realtimeProducer.name }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: realtime-event-producer
+          image: {{ .Values.images.dataIngestion }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              until PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys \
+                /opt/venv/bin/python -m ingest.init_postgres_schema; do
+                sleep 5
+              done
+              PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys \
+              /opt/venv/bin/python -m streaming.producer \
+                --config "$DATA_GENERATOR_CONFIG"
+              sleep infinity
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+{{- end }}

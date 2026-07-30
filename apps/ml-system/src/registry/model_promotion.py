@@ -669,7 +669,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Export and promote the best BST model to Triton/MinIO")
     parser.add_argument("--ray-result-path", required=True)
     parser.add_argument("--eval-metrics-path", default="")
-    parser.add_argument("--config-path", default="configs/local/bst.yaml")
+    parser.add_argument("--config-path", default="configs/ml-system/training/bst.yaml")
     parser.add_argument("--output-dir", default="/workspace/recsys/data_platform/output/ml/serving")
     parser.add_argument("--model-bucket", default=os.getenv("MODEL_STORE_BUCKET", DEFAULT_MODEL_BUCKET))
     parser.add_argument("--model-prefix", default=os.getenv("MODEL_STORE_PREFIX", DEFAULT_MODEL_PREFIX))

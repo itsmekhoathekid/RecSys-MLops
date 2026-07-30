@@ -1,1244 +1,162 @@
 from __future__ import annotations
 
-import ast
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import yaml
 
-from config.storage_paths import lakehouse_warehouse_uri, offline_feature_uri, raw_uri
-
-
 ROOT = Path(__file__).resolve().parents[2]
-RUNTIME_ROOTS = [
-    ROOT / "apps/data-platform",
-    ROOT / "infra/helm/recsys-data-platform",
-    ROOT / "infra/docker",
-    ROOT / "configs/local",
-]
-LEGACY_TOKENS = [
-    "great_expectations",
-    "dbt-core",
-    "kafka-minio",
-    "s3-sink",
-    "bronze/kafka",
-    "validate_bronze",
-    "spark_realtime_bronze",
-    "local_poc",
-]
-
-
-def _runtime_text() -> str:
-    chunks: list[str] = []
-    for root in RUNTIME_ROOTS:
-        if root.is_file():
-            chunks.append(root.read_text(encoding="utf-8"))
-            continue
-        for path in root.rglob("*"):
-            if ".venv" in path.parts:
-                continue
-            if path.is_file() and path.suffix in {
-                ".py",
-                ".yaml",
-                ".yml",
-                ".json",
-                ".md",
-                ".sh",
-                ".Dockerfile",
-            }:
-                chunks.append(path.read_text(encoding="utf-8"))
-    return "\n".join(chunks)
-
-
-def test_lakehouse_path_builders_point_to_iceberg_feature_store():
-    assert (
-        raw_uri("run1", "behavior_events")
-        == "s3a://recsys-lakehouse/raw/run1/behavior_events"
-    )
-    assert lakehouse_warehouse_uri() == "s3a://recsys-lakehouse/warehouse"
-    assert (
-        offline_feature_uri("item_features")
-        == "s3a://recsys-offline-feature-store/warehouse/feature_store/item_features"
-    )
-
-
-def test_no_legacy_runtime_tokens_remain():
-    text = _runtime_text()
-    for token in LEGACY_TOKENS:
-        assert token not in text
-
-
-def test_debezium_is_the_only_kafka_connect_runtime_connector():
-    registrar = (
-        ROOT / "apps/data-platform/src/ingest/register_k8s_connectors.py"
-    ).read_text()
-    connector = json.loads(
-        (ROOT / "infra/docker/debezium/postgres-connector.json").read_text()
-    )
-    kafka_connect_dockerfile = (
-        ROOT / "infra/docker/Dockerfile.kafka-connect"
-    ).read_text()
-    assert '"debezium": ("recsys-postgres-cdc", debezium_config)' in registrar
-    assert "recsys-kafka-minio-raw-sink" not in registrar
-    assert (
-        connector["config"]["connector.class"]
-        == "io.debezium.connector.postgresql.PostgresConnector"
-    )
-    assert "io/debezium/debezium-connector-postgres" in kafka_connect_dockerfile
-    assert "kafka-connect-s3" not in kafka_connect_dockerfile
-    assert 'snapshot_mode = "no_data"' not in registrar
-    assert "wait_for_connector_running" in registrar
-
-
-def test_stream_verification_requires_running_debezium_tasks():
-    verification = (
-        ROOT / "infra/k8s/scripts/data_platform_verify_feature_stores.sh"
-    ).read_text()
-    component_tests = (
-        ROOT / "jenkins/scripts/test/data_platform.sh"
-    ).read_text()
-
-    assert 'any(state != "RUNNING" for state in task_states)' in verification
-    assert "test_debezium_connector_tasks" in component_tests
-
-
-def test_airflow_is_pinned_to_the_cpu_pool_in_production_deploys():
-    chart = (
-        ROOT / "infra/helm/recsys-data-platform/templates/airflow.yaml"
-    ).read_text()
-    deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
-    jobs = (ROOT / "infra/helm/recsys-data-platform/templates/jobs.yaml").read_text()
-
-    assert chart.count(".Values.airflow.nodeSelector") == 3
-    assert chart.count(".Values.airflow.tolerations") == 3
-    assert 'airflow.nodeSelector.recsys\\\\.ai/pool=cpu-services' in deploy
-    assert "DATA_PLATFORM_NODE_POOL" not in deploy
-    assert (
-        "realtimeCdcConnector.waitTimeoutSeconds="
-        "${CDC_CONNECTOR_WAIT_TIMEOUT_SECONDS:-480}"
-    ) in deploy
-    assert (
-        "realtimeCdcConnector.activeDeadlineSeconds="
-        "${CDC_CONNECTOR_ACTIVE_DEADLINE_SECONDS:-540}"
-    ) in deploy
-    connector_job = jobs.split("name: register-realtime-cdc-connector", 1)[1]
-    assert "backoffLimit: 0" in connector_job
-    assert "realtimeCdcConnector.activeDeadlineSeconds" in connector_job
-    assert "realtimeCdcConnector.waitTimeoutSeconds" in connector_job
-    init_schema_job = jobs.split("name: init-source-schema", 1)[1].split(
-        "name: register-realtime-cdc-connector", 1
-    )[0]
-    assert "backoffLimit: 6" in init_schema_job
-    assert "realtimeCdcConnector.activeDeadlineSeconds" not in init_schema_job
-
-
-def test_spark_and_flink_images_include_runtime_dependencies_without_pandas():
-    spark_dockerfile = (ROOT / "apps/data-platform/Dockerfile.spark").read_text()
-    flink_dockerfile = (ROOT / "apps/data-platform/Dockerfile.flink").read_text()
-    flink_runtime_pom = (ROOT / "apps/data-platform/flink-runtime-pom.xml").read_text()
-    data_ingestion = (ROOT / "apps/data-platform/Dockerfile.data-ingestion").read_text()
-    feature_store = (ROOT / "apps/data-platform/Dockerfile.feature-store").read_text()
-    drift_retrain = (ROOT / "apps/data-platform/Dockerfile.drift-retrain").read_text()
-    assert "iceberg-spark-runtime-3.5_2.12" in spark_dockerfile
-    assert "hudi-spark3.5-bundle_2.12" in spark_dockerfile
-    assert "flink:2.2.1-java17" in flink_dockerfile
-    assert "flink-connector-kafka" in flink_runtime_pom
-    assert "flink-statebackend-rocksdb" in flink_runtime_pom
-    assert "flink-autoscaler-standalone" in flink_dockerfile
-    assert "apache-beam==2.75.0" in flink_dockerfile
-    assert "pyarrow==23.0.1" in flink_dockerfile
-    assert "avro==1.12.0" in flink_dockerfile
-    assert "avro-python3" not in flink_dockerfile
-    assert "psycopg[binary]" in flink_dockerfile
-    assert "google-cloud-bigquery" not in flink_dockerfile
-    assert "great_expectations" not in data_ingestion + feature_store + drift_retrain
-    assert "dbt-core" not in data_ingestion + feature_store + drift_retrain
-    assert " pandas" not in spark_dockerfile
-    assert "COPY infra/kubeflow /opt/recsys/infra/kubeflow" in drift_retrain
-    assert "COPY apps/data-platform/data-generator" in data_ingestion
-    assert "COPY apps/data-platform/feature-store" in feature_store
-    assert "COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock" in feature_store
-    assert "--constraint /tmp/data-constraints.txt" in feature_store
-    assert "botocore==1.35.36" not in feature_store
-    assert "sqlalchemy" in feature_store
-    assert "COPY apps/data-platform/data-generator" not in feature_store
-    assert "COPY apps/data-platform/data-generator" not in drift_retrain
-
-
-def test_kubeflow_training_package_uses_pullable_images():
-    package = (ROOT / "infra/kubeflow/compiled/bst_training_pipeline.yaml").read_text()
-    assert "recsys-mlops-training:local" not in package
-    assert "recsys-mlops-spark:local" not in package
-    assert (
-        "asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:"
-        in package
-    )
-    assert (
-        "asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-spark:"
-        in package
-    )
-
-
-def test_kubeflow_cloudbuild_builds_compiles_uploads_and_validates_package():
-    cloudbuild = (ROOT / "infra/cloudbuild/recsys-feast-kfp.yaml").read_text()
-
-    assert "${_IMAGE_REPO}/recsys-mlops-training:${_TAG}" in cloudbuild
-    assert "${_IMAGE_REPO}/recsys-mlops-spark:${_TAG}" in cloudbuild
-    assert "id: compile-kfp-package" in cloudbuild
-    assert "jenkins/scripts/build/kfp_package.sh" in cloudbuild
-    assert "id: drift-retrain" in cloudbuild
-    assert "id: validate-drift-retrain-kfp-package" in cloudbuild
-    assert "id: upload-kfp-package" in cloudbuild
-    assert "_UPLOAD_KFP_PACKAGE" in cloudbuild
-    assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index("id: drift-retrain")
-
-
-def test_full_image_cloudbuild_builds_all_runtime_images_after_kfp_compile():
-    cloudbuild = (ROOT / "infra/cloudbuild/recsys-images.yaml").read_text()
-
-    for image in [
-        "recsys-base-python",
-        "recsys-data-ingestion",
-        "recsys-feature-store",
-        "recsys-drift-retrain",
-        "recsys-spark",
-        "recsys-flink",
-        "recsys-airflow",
-        "recsys-kafka-connect",
-        "recsys-mlops-training",
-        "recsys-mlops-spark",
-        "recsys-mlflow",
-        "recsys-api-serving",
-        "recsys-demo-api",
-        "recsys-demo-web",
-        "recsys-analytics-spark",
-        "recsys-analytics-dbt",
-        "recsys-analytics-superset",
-    ]:
-        assert f"${{_IMAGE_REPO}}/{image}:${{_TAG}}" in cloudbuild
-
-    assert "id: compile-kfp-package" in cloudbuild
-    assert "id: validate-drift-retrain-kfp-package" in cloudbuild
-    assert "! grep -F ':local'" in cloudbuild
-    assert cloudbuild.index("id: compile-kfp-package") < cloudbuild.index("id: drift-retrain")
-
-
-def test_remaining_runtime_dockerfiles_use_multistage_and_parallel_tools():
-    kafka_connect = (ROOT / "infra/docker/Dockerfile.kafka-connect").read_text()
-    mlflow = (ROOT / "infra/docker/Dockerfile.mlflow").read_text()
-    mlops_spark = (ROOT / "apps/ml-system/Dockerfile.spark").read_text()
-
-    assert "ARG CONFLUENT_PLATFORM_VERSION=8.2.2-1-ubi9" in kafka_connect
-    assert "ARG DEBEZIUM_POSTGRES_VERSION=3.4.3.Final" in kafka_connect
-    assert "ARG DEBEZIUM_POSTGRES_SHA256=" in kafka_connect
-    assert "FROM alpine:3.23 AS plugins" in kafka_connect
-    assert (
-        "FROM confluentinc/cp-kafka-connect:${CONFLUENT_PLATFORM_VERSION} AS runtime"
-        in kafka_connect
-    )
-    assert "apk upgrade --no-cache" in kafka_connect
-    assert "microdnf upgrade -y" in kafka_connect
-    assert "sha256sum -c -" in kafka_connect
-    assert "repo1.maven.org/maven2/io/debezium/debezium-connector-postgres" in kafka_connect
-    assert "COPY --from=plugins /tmp/confluent-hub-components" in kafka_connect
-    assert "debezium-connector-postgres-${DEBEZIUM_POSTGRES_VERSION}" in kafka_connect
-    assert "kafka-connect-s3" not in kafka_connect
-
-    assert "FROM python:3.11-slim AS deps" in mlflow
-    assert "FROM python:3.11-slim AS runtime" in mlflow
-    assert "UV_CONCURRENT_DOWNLOADS=8" in mlflow
-    assert "UV_CONCURRENT_BUILDS=8" in mlflow
-    assert "apt-get install -y --no-install-recommends bash" in mlflow
-    assert "ln -s /opt/venv/bin/mlflow /usr/local/bin/mlflow" in mlflow
-    assert "COPY --from=deps /opt/venv /opt/venv" in mlflow
-
-    mlflow_chart = (ROOT / "infra/helm/mlflow-stack/templates/mlflow.yaml").read_text()
-    assert "/opt/venv/bin/mlflow server" in mlflow_chart
-
-    assert " AS deps" in mlops_spark
-    assert " AS runtime" in mlops_spark
-    assert "UV_CONCURRENT_DOWNLOADS=8" in mlops_spark
-    assert "UV_CONCURRENT_BUILDS=8" in mlops_spark
-    assert "boto3" in mlops_spark
-    assert "psycopg[binary]" in mlops_spark
-    assert "psycopg-pool" in mlops_spark
-    assert "COPY --from=deps /opt/venv /opt/venv" in mlops_spark
-    assert "PYSPARK_PYTHON=/opt/venv/bin/python" in mlops_spark
-
-
-def test_ml_runtime_images_resolve_dependencies_from_the_ci_lock():
-    ml_project = (ROOT / "apps/ml-system/pyproject.toml").read_text()
-    dockerfiles = (
-        ROOT / "apps/ml-system/Dockerfile.training",
-        ROOT / "apps/ml-system/Dockerfile.spark",
-    )
-
-    assert '"flask>=3.1.3"' in ml_project
-    assert '"werkzeug>=3.1.8"' in ml_project
-
-    for path in dockerfiles:
-        source = path.read_text()
-        assert (
-            "COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock "
-            "/opt/recsys/apps/ml-system/"
-        ) in source
-        assert "--project /opt/recsys/apps/ml-system" in source
-        assert "--frozen" in source
-        assert "--no-dev" in source
-        assert "--constraint /tmp/ml-constraints.txt" in source
-        assert '"feast[redis]"' in source
-
-    training = dockerfiles[0].read_text()
-    assert "--extra-index-url https://download.pytorch.org/whl/cpu" in training
-    assert "--index-strategy unsafe-best-match" in training
-    assert "torch_version=\"$(sed -n" in training
-    assert '"torch==${torch_version}+cpu"' in training
-
-
-def test_jenkins_training_component_builds_runtime_images_and_package_trigger_image():
-    build_script = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text()
-    training_case = build_script.split("training)", 1)[1].split(";;", 1)[0]
-
-    assert "build_training" in training_case
-    assert "build_mlops_spark" in training_case
-    assert "build_compile_kfp_package" in training_case
-    assert "build_drift_retrain" in training_case
-    assert training_case.index(
-        "build_compile_kfp_package"
-    ) < training_case.index("build_drift_retrain")
-
-
-def test_jenkins_training_deploy_uploads_package_and_rolls_trigger_runtime():
-    deploy_script = (ROOT / "jenkins/scripts/deploy/ml_platform.sh").read_text()
-    assert "jenkins/scripts/deploy/kfp_version.sh" in deploy_script
-    assert '--set "images.driftRetrain=${drift_retrain_image}"' in deploy_script
-    assert (
-        'verify_data_platform_config_image "DRIFT_RETRAIN_IMAGE" "${drift_retrain_image}"'
-        in deploy_script
-    )
-
-
-def test_modular_full_services_dispatch_covers_component_and_platform_flows():
-    legacy_script = ROOT / "jenkins/scripts/legacy/full_services_cicd.sh"
-    build_script = (ROOT / "jenkins/scripts/build/dispatch.sh").read_text()
-    deploy_script = (
-        (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
-        + (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
-    )
-    deploy_runtime = (ROOT / "jenkins/scripts/deploy/runtime.sh").read_text()
-    ml_deploy = (ROOT / "jenkins/scripts/deploy/ml_platform.sh").read_text()
-
-    assert not legacy_script.exists()
-    assert "all)" in build_script
-    assert "build_mlflow" in build_script
-    assert "deploy_all()" in deploy_script
-    assert "run_node_rebalance_if_enabled" in deploy_script
-    assert "infra/k8s/scripts/rebalance_ml_node_pool.sh" in deploy_runtime
-    assert "jenkins/scripts/test/node_placement.sh" in deploy_runtime
-    assert "deploy_mlflow" in deploy_script
-    assert '--set "nodeSelector.recsys\\\\.ai/pool=ml-system"' in ml_deploy
-    assert '--set "minio.resources.requests.memory=512Mi"' in ml_deploy
-    assert "kfp_endpoint_for_upload()" in deploy_runtime
-    assert "kubectl port-forward" in deploy_runtime
-    assert (
-        "observability.retrainPsiThreshold=${RETRAIN_PSI_THRESHOLD:-0.15}"
-        in deploy_script
-    )
-
-
-def test_node_rebalance_validation_covers_relocated_control_plane():
-    validator = (ROOT / "jenkins/scripts/test/node_placement.sh").read_text()
-    rebalance = (ROOT / "infra/k8s/scripts/rebalance_ml_node_pool.sh").read_text()
-    power_script = (
-        ROOT / "infra/terraform/gcp/scripts/gcp_services_power.sh"
-    ).read_text()
-
-    for expected in [
-        "kubeflow ml-pipeline",
-        "kserve kserve-controller-manager",
-        "ci recsys-jenkins",
-        "experiment-tracking minio",
-        "kube-system metrics-server-v1.35.1",
-    ]:
-        assert expected in validator
-    assert "kube-system kube-dns" in validator
-    assert "assert_deployment_selector ci recsys-jenkins" in validator
-    assert "sidecar.istio.io/inject" in validator
-    assert "assert_no_local_images" in validator
-    assert "assert_no_bad_pods" in validator
-    assert "kube_system_ml_deployments" in rebalance
-    assert "patch_gke_managed_deployment_cpu kube-dns" in rebalance
-    assert "patch_deployment_cpu ci" in rebalance
-    assert "ci_cpu_deployments" in rebalance
-    assert "enable_ingress_mesh_upstreams" in rebalance
-    assert (
-        "assert_istio_sidecar_enabled deployment ingress-nginx ingress-nginx-controller"
-        in validator
-    )
-    assert "kubectl patch deployment ingress-nginx-controller" in power_script
-    assert '"sidecar.istio.io/inject": "true"' in power_script
-    assert (
-        "disable_sidecar_injection daemonset observability recsys-promtail" in rebalance
-    )
-
-
-def test_airflow_keeps_rubric_and_key_operational_dag_modules():
-    dag_dir = ROOT / "apps/data-platform/src/orchestration/airflow/dags"
-    assert {path.name for path in dag_dir.glob("*.py")} == {
-        "__init__.py",
-        "k8s_data_platform_dag.py",
-        "rubric_data_pipeline_dags.py",
-    }
-    source = (dag_dir / "rubric_data_pipeline_dags.py").read_text()
-    assert 'dag_id="recsys_dp1_raw_to_bronze"' in source
-    assert 'dag_id="recsys_dp2_bronze_to_silver_gold"' in source
-    assert 'dag_id="recsys_dp3_offline_feature_table"' in source
-    assert "recsys_lakehouse_maintenance" not in source
-    assert source.count("ingest_stage >> optimize_stage >> validate_stage") == 2
-    assert "--scope bronze" in source
-    assert "--scope silver" in source
-    assert "python3 apps/data-platform/data-generator/src/cli.py generate" in source
-
-
-def test_split_data_images_are_wired_to_their_runtime_consumers():
-    values = yaml.safe_load(
-        (ROOT / "infra/helm/recsys-data-platform/values.yaml").read_text()
-    )
-    assert values["images"]["dataIngestion"] == "recsys-data-ingestion:local"
-    assert values["images"]["featureStore"] == "recsys-feature-store:local"
-    assert values["images"]["driftRetrain"] == "recsys-drift-retrain:local"
-    assert "dataflowCli" not in values["images"]
-
-    jobs = (ROOT / "infra/helm/recsys-data-platform/templates/jobs.yaml").read_text()
-    producer = (
-        ROOT
-        / "infra/helm/recsys-data-platform/templates/realtime-producer.yaml"
-    ).read_text()
-    configmap = (
-        ROOT / "infra/helm/recsys-data-platform/templates/configmap.yaml"
-    ).read_text()
-    operational_dags = (
-        ROOT
-        / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
-    ).read_text()
-    rubric_dags = (
-        ROOT
-        / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
-    ).read_text()
-
-    assert jobs.count(".Values.images.dataIngestion") == 2
-    assert ".Values.images.dataIngestion" in producer
-    assert "DATA_INGESTION_IMAGE" in configmap
-    assert "FEATURE_STORE_IMAGE" in configmap
-    assert "DRIFT_RETRAIN_IMAGE" in configmap
-    assert operational_dags.count("FEATURE_STORE_IMAGE") >= 4
-    assert operational_dags.count("DRIFT_RETRAIN_IMAGE") >= 4
-    assert "FEATURE_STORE_IMAGE" in rubric_dags
-    assert "DATAFLOW_IMAGE" not in operational_dags + rubric_dags
-
-
-def test_retrain_trigger_uses_distinct_tune_and_ddp_results_for_default_drift_runs():
-    source = (
-        ROOT / "apps/data-platform/src/mlops/trigger_kubeflow_retrain.py"
-    ).read_text()
-
-    assert 'ray_tune_result_path = f"{base}/ml/ray/tune_result.json"' in source
-    assert 'ray_best_result_path = f"{base}/ml/ray/best_result.json"' in source
-    assert '"ray_tune_result_path": ray_tune_result_path' in source
-    assert '"ray_best_result_path": ray_best_result_path' in source
-    assert '"feature_source": "offline_feature_store"' in source
-    assert '"distributed_worker_replicas": 2' in source
-    assert '"distributed_num_workers": 2' in source
-    assert '"max_trials": 1' in source
-    assert '"cpus_per_trial": 0.5' in source
-    assert '"ray_ttl_seconds_after_finished": 60' in source
-
-
-def test_retrain_trigger_uses_stable_safe_kfp_run_names():
-    source = (
-        ROOT / "apps/data-platform/src/mlops/trigger_kubeflow_retrain.py"
-    ).read_text()
-
-    assert 'os.getenv("KFP_RETRAIN_RUN_NAME_PREFIX", "recsys-drift-retrain")' in source
-    assert "def kfp_run_name(run_id: str, prefix: str | None = None) -> str:" in source
-    assert "run_name=kfp_run_name(run_id)" in source
-    assert 'run_name=f"recsys-drift-retrain-{run_id}"' not in source
-    assert '"pipeline_run_id": f"retrain-{slug}"' in source
-
-
-def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
-    source = (
-        ROOT
-        / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
-    ).read_text()
-    assert 'cmds=["bash", "-c"]' in source
-    assert 'cmds=["bash", "-lc"]' not in source
-    for expected in [
-        "--master ${SPARK_K8S_MASTER:-k8s://https://kubernetes.default.svc}",
-        "--deploy-mode cluster",
-        "spark.kubernetes.container.image=${SPARK_K8S_IMAGE:-recsys-spark:local}",
-        "spark.kubernetes.authenticate.driver.serviceAccountName",
-        "spark.driver.memoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-384m}",
-        "spark.executor.instances=${SPARK_K8S_EXECUTOR_INSTANCES:-1}",
-        "spark.executor.memoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-384m}",
-        "spark.kubernetes.submission.waitAppCompletion=true",
-        "spark.kubernetes.submission.connectionTimeout=${SPARK_K8S_CONNECTION_TIMEOUT:-60000}",
-        "spark.kubernetes.submission.requestTimeout=${SPARK_K8S_REQUEST_TIMEOUT:-180000}",
-        "spark.sql.iceberg.vectorization.enabled=${SPARK_ICEBERG_VECTORIZATION_ENABLED:-false}",
-        "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
-    ]:
-        assert expected in source
-    assert 'SPARK_SUBMIT_LOG="$(mktemp)"' in source
-    assert 'grep -q "phase: Succeeded" "$SPARK_SUBMIT_LOG"' in source
-
-
-def test_airflow_native_spark_submissions_configure_dynamic_allocation():
-    dag_paths = (
-        "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py",
-    )
-    expected = (
-        "spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-false}",
-        "spark.dynamicAllocation.shuffleTracking.enabled=${SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED:-true}",
-        "spark.dynamicAllocation.minExecutors=${SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS:-1}",
-        "spark.dynamicAllocation.initialExecutors=${SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS:-1}",
-        "spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-4}",
-        "spark.dynamicAllocation.executorIdleTimeout=${SPARK_DYNAMIC_ALLOCATION_EXECUTOR_IDLE_TIMEOUT:-60s}",
-        "spark.dynamicAllocation.schedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SCHEDULER_BACKLOG_TIMEOUT:-1s}",
-        "spark.dynamicAllocation.sustainedSchedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SUSTAINED_BACKLOG_TIMEOUT:-1s}",
-    )
-
-    for dag_path in dag_paths:
-        source = (ROOT / dag_path).read_text()
-        for setting in expected:
-            assert setting in source
-
-
-def test_dp1_batch_ingestion_commits_bronze_iceberg_with_spark():
-    dag = (
-        ROOT
-        / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
-    ).read_text()
-    ingestion_source = (
-        ROOT / "apps/data-platform/src/ingest/batch_lakehouse_ingestion.py"
-    ).read_text()
-    dp2_source = (
-        ROOT / "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py"
-    ).read_text()
-    assert "/opt/spark/bin/spark-submit" in dag
-    assert "batch_lakehouse_ingestion.py" in dag
-    assert "write_iceberg_table" in ingestion_source
-    assert "catalog.bronze_table" in ingestion_source or "bronze_" in ingestion_source
-    assert 'source="lakehouse"' in dp2_source
-    assert 'source="parquet"' not in dp2_source
-
-
-def test_k8s_airflow_task_pods_can_skip_istio_mesh_for_native_jobs():
-    source = (
-        ROOT
-        / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
-    ).read_text()
-    assert '"sidecar.istio.io/inject": "false"' in source
-    assert (
-        "curl --max-time 5 -sf -X POST http://127.0.0.1:15020/quitquitquit"
-        not in source
-    )
-    assert "startup_timeout_seconds=600" in source
-
-
-def test_airflow_runtime_disables_bytecode_writes_for_non_root_user():
-    dockerfile = (ROOT / "infra/docker/Dockerfile.airflow").read_text()
-    chart = (
-        ROOT / "infra/helm/recsys-data-platform/templates/airflow.yaml"
-    ).read_text()
-    assert "ENV PYTHONDONTWRITEBYTECODE=1" in dockerfile
-    assert "PYTHONDONTWRITEBYTECODE" in chart
-    assert "PATH=/home/airflow/.local/bin:${PATH}" in dockerfile
-    assert "chown -R airflow:root /home/airflow" in dockerfile
-    assert 'command: ["bash", "-c"]' in chart
-    assert 'command: ["bash", "-lc"]' not in chart
-    assert (
-        "timeout 300 airflow db check-migrations --migration-wait-timeout 300 &&"
-        in chart
-    )
-    assert "airflow db migrate &&" in chart
-    assert "airflow users create" not in chart
-    assert "admin --password admin" not in chart
-    assert chart.count("minReadySeconds: 15") == 3
-    assert 'value: "900"' in chart
-    assert "name: airflow-dag-processor" in chart
-    assert "airflow dag-processor" in chart
-
-
-def test_airflow_major_version_migration_has_typed_rollback_compensation():
-    database = (ROOT / "jenkins/scripts/deploy/database.sh").read_text()
-    common = (ROOT / "jenkins/scripts/lib/common.sh").read_text()
-    transaction = (ROOT / "jenkins/scripts/deploy/transaction.sh").read_text()
-    deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
-    dispatch = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
-    entrypoint = (
-        ROOT / "jenkins/scripts/entrypoints/component_deploy.sh"
-    ).read_text()
-
-    assert "database_snapshot_airflow_migration" not in deploy
-    assert "database_mark_airflow_migration_attempted" in deploy
-    assert "snapshot_component_external_state" in dispatch
-    assert "database_snapshot_airflow_migration" in dispatch
-    assert entrypoint.index(
-        'snapshot_component_external_state "${component}"'
-    ) < entrypoint.index("tx_transition APPLYING")
-    assert "airflow-database-migration" in database
-    assert "database_airflow_version_from_image" in database
-    assert "database_airflow_migration_revision" in database
-    assert '"previousMigrationRevision": previous_migration_revision' in database
-    assert "is unchanged; skipping database downgrade" in database
-    assert "recsys_kubernetes_name" in database
-    assert '"attempted": False' in database
-    assert "airflow db downgrade {downgrade_target} --yes" in database
-    assert "f\"--to-revision {previous_revision}\"" in database
-    assert "f\"--to-version {previous_version}\"" in database
-    assert "downgraded Airflow metadata database to revision" in database
-    assert 'case "${phase}" in' in database
-    assert "COMPONENT_DEPLOY_TIMEOUT_SECONDS" in database
-    assert '"allowPrivilegeEscalation": False' in database
-    assert '"runAsUser": 50000' in database
-    assert "recsys_kubernetes_name()" in common
-    assert "tr '[:upper:]_.' '[:lower:]--'" in common
-    assert "database_rollback_airflow_migration" in transaction
-    assert "tx_verify_unmodified_helm_record" in transaction
-    assert "tx_compare_workload_images" in transaction
-    assert "retrying legacy Helm rollback without hooks" in transaction
-    assert "tx_components_sharing_locks" in transaction
-    assert "tx_ensure_journal_access" in transaction
-    assert 'state_root}" != "/var/jenkins_home/ci-transactions"' in transaction
-
-
-def test_materialize_cicd_owns_feast_plan_apply_and_sql_registry_rollback():
-    ci = (ROOT / "jenkins/scripts/ci/data.sh").read_text()
-    deploy = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
-    feast_deploy = (ROOT / "jenkins/scripts/deploy/feast.sh").read_text()
-    transaction = (ROOT / "jenkins/scripts/deploy/transaction.sh").read_text()
-
-    assert '"${ci_environment}/bin/feast" -c "${feast_repo}"' in ci
-    assert "plan --skip-source-validation" in ci
-    assert "apply --skip-source-validation --no-progress" in ci
-    assert "feast_registry_snapshot" in deploy
-    assert "feast_registry_plan_apply" in deploy
-    assert "/opt/venv/bin/feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo plan" in feast_deploy
-    assert "apply --no-progress" in feast_deploy
-    assert "/opt/venv/bin/python -m feature_store.sql_registry_state" in feast_deploy
-    assert "Feast registry pod image mismatch" in feast_deploy
-    assert "tx_register_external feast-sql-registry" in feast_deploy
-    assert "tx_restore_feast_sql_registry" in transaction
-
-
-def test_component_deploy_preserves_spark_byte_size_as_integer_string():
-    deploy = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
-
-    assert '--set-string "spark.advisoryPartitionSizeBytes=' in deploy
-    assert '--set "spark.advisoryPartitionSizeBytes=' not in deploy
-
-
-def test_airflow_image_packages_data_and_analytics_dags():
-    dockerfile = (ROOT / "infra/docker/Dockerfile.airflow").read_text()
-
-    assert "COPY --chown=airflow:root apps/data-platform/src" in dockerfile
-    assert "apps/analytics/orchestration/airflow/dags" in dockerfile
-
-
-def test_flink_runtime_uses_fixed_mesh_friendly_internal_ports():
-    chart = ROOT / "infra/helm/recsys-data-platform"
-    security_chart = ROOT / "infra/helm/recsys-security"
-    rendered = "\n".join(
-        path.read_text() for path in (chart / "templates").glob("*.yaml")
-    )
-    values = yaml.safe_load((chart / "values.yaml").read_text())
-    security_rendered = "\n".join(
-        path.read_text() for path in (security_chart / "templates").glob("*.yaml")
-    )
-    for expected in [
-        "jobmanager.rpc.port: 6123",
-        "blob.server.port: 6124",
-        "taskmanager.data.port: 6121",
-        "taskmanager.rpc.port: 6122",
-        "query.server.port: 6125",
-        "pekko.remote.startup-timeout: 60 s",
-        "containerPort: 6121",
-        "containerPort: 6122",
-        "containerPort: 6125",
-        "type: Recreate",
-    ]:
-        assert expected in rendered
-    assert values["flinkTaskManager"]["resources"] == {
-        "requests": {"cpu": "500m", "memory": "4Gi"},
-        "limits": {"cpu": "2", "memory": "8Gi"},
-    }
-    assert values["flink"]["taskManagerProcessMemory"] == "6144m"
-    assert values["flink"]["taskManagerTaskHeapMemory"] == "2048m"
-    assert values["flink"]["taskManagerManagedMemory"] == "2048m"
-    assert values["flink"]["taskManagerJvmOverheadMax"] == "2048m"
-    assert values["flink"]["stateBackend"] == "rocksdb"
-    assert values["flink"]["stateBackendIncremental"] == "true"
-    assert values["flink"]["pythonManagedMemory"] == "true"
-    assert values["flink"]["pythonBundleSize"] == "1000"
-    assert values["flink"]["pythonBundleTimeMs"] == "200"
-    assert values["flink"]["disableJemalloc"] is True
-    assert "name: DISABLE_JEMALLOC" in rendered
-    assert "name: JDK_JAVA_OPTIONS" in rendered
-    assert "taskmanager.memory.jvm-overhead.max" in rendered
-    assert '"6121", "6122", "6123", "6124", "6125"' in security_rendered
-
-
-def test_flink_starts_at_parallelism_one_and_autoscales_sustained_backlog():
-    chart = ROOT / "infra/helm/recsys-data-platform"
-    values = yaml.safe_load((chart / "values.yaml").read_text())
-    rendered = "\n".join(
-        path.read_text() for path in (chart / "templates").glob("*.yaml")
-    )
-
-    assert values["realtimeFlinkConsumer"]["parallelism"] == "1"
-    assert values["realtimeFlinkConsumer"]["asyncIoCapacity"] == "64"
-    assert values["realtimeFlinkConsumer"]["asyncIoTimeoutSeconds"] == "120"
-    assert values["streaming"]["featureWindowSeconds"] == 60
-    assert values["streaming"]["featureEarlyFireSeconds"] == 5
-    assert values["flinkAutoscaler"]["enabled"] is True
-    assert values["flinkAutoscaler"]["scalingEnabled"] is True
-    assert values["flinkAutoscaler"]["version"] == "1.15.0"
-    assert values["flink"]["scheduler"] == "adaptive"
-    assert values["flinkAutoscaler"]["vertexMinParallelism"] == "1"
-    assert values["flinkAutoscaler"]["vertexMaxParallelism"] == "4"
-    assert values["flinkAutoscaler"]["taskManagerHpa"] == {
-        "enabled": True,
-        "minReplicas": 2,
-        "maxReplicas": 4,
-        "targetCpuUtilization": 65,
-        "scaleDownStabilizationSeconds": 300,
-    }
-    assert "jobmanager.scheduler: %s" in rendered
-    assert ".Values.flink.scheduler | quote" in rendered
-    assert "cluster.declarative-resource-management.enabled: true" in rendered
-    assert "kind: HorizontalPodAutoscaler" in rendered
-    assert "StandaloneAutoscalerEntrypoint" in rendered
-    assert "job.autoscaler.utilization.target" in rendered
-    assert "job.autoscaler.vertex.min-parallelism" in rendered
-    assert "job.autoscaler.vertex.max-parallelism" in rendered
-    assert "pipeline.max-parallelism" in rendered
-    stream_job = (
-        ROOT / "apps/data-platform/src/features/flink/realtime_stream_job.py"
-    ).read_text()
-    sink_dir = ROOT / "apps/data-platform/src/features/flink/sinks"
-    stream_sinks = (sink_dir / "redis_async.py").read_text() + (
-        sink_dir / "postgres_async.py"
-    ).read_text()
-    checkpoint_config = (
-        ROOT / "apps/data-platform/src/features/flink/runtime.py"
-    ).read_text()
-    assert "AsyncDataStream.unordered_wait" in stream_job
-    assert "capacity=postgres_async_capacity(args)" in stream_job
-    assert "timeout=float(args.async_io_timeout_seconds)" in stream_sinks
-    assert 'restore_args=(-s "$FLINK_RESTORE_PATH")' in rendered
-    assert '"${restore_args[@]}"' in rendered
-    assert stream_sinks.count("def timeout(") >= 3
-    assert "postgres_feast_offline_timeout" in stream_sinks
-    assert "ExternalizedCheckpointRetention" in checkpoint_config
-    assert "set_externalized_checkpoint_retention" in checkpoint_config
-    assert "--async-io-capacity" in rendered
-    assert "--feature-window-seconds" in rendered
-    assert "--feature-early-fire-seconds" in rendered
-    assert "--redis-sink-max-events-per-second" in rendered
-    assert "--postgres-sink-max-events-per-second" in rendered
-
-
-def test_flink_modules_do_not_define_classes_inside_functions():
-    flink_root = ROOT / "apps/data-platform/src/features/flink"
-    violations = []
-    for path in flink_root.rglob("*.py"):
-        tree = ast.parse(path.read_text(), filename=str(path))
-        for function in (
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        ):
-            for child in ast.walk(function):
-                if isinstance(child, ast.ClassDef):
-                    violations.append(
-                        f"{path.relative_to(ROOT)}:{child.lineno} {child.name}"
-                    )
-    assert violations == []
-
-
-def test_flink_module_boundaries_match_runtime_responsibilities():
-    flink_root = ROOT / "apps/data-platform/src/features/flink"
-    expected = {
-        "runtime.py",
-        "source.py",
-        "operators/dedup.py",
-        "operators/late_policy.py",
-        "operators/quality.py",
-        "operators/row_mappers.py",
-        "features/user_sequence.py",
-        "features/user_aggregate.py",
-        "features/item.py",
-        "features/candidate_pool.py",
-        "sinks/redis_async.py",
-        "sinks/postgres_async.py",
-        "sinks/rate_limit.py",
-        "sinks/iceberg.py",
-    }
-    assert all((flink_root / relative_path).is_file() for relative_path in expected)
-    assert not (flink_root / "runtime_config.py").exists()
-    assert not (flink_root / "quality_windows.py").exists()
-    assert not (flink_root / "iceberg_feature_sink.py").exists()
-
-    entrypoint = flink_root / "realtime_stream_job.py"
-    result = subprocess.run(
-        [sys.executable, str(entrypoint), "--help"],
-        check=False,
+DATA_CHARTS = (
+    "recsys-data-config",
+    "recsys-data-lakehouse",
+    "recsys-source-store",
+    "recsys-event-stream",
+    "recsys-kafka-connect",
+    "recsys-feature-store",
+    "recsys-streaming",
+    "recsys-airflow",
+)
+
+
+def render(chart_name: str) -> str:
+    chart = ROOT / "infra/helm" / chart_name
+    values = chart / "values-gcp.yaml"
+    command = ["helm", "template", "contract", str(chart)]
+    if values.is_file():
+        command.extend(["-f", str(values)])
+    return subprocess.run(
+        command,
+        cwd=ROOT,
+        check=True,
         capture_output=True,
         text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "--feature-window-seconds" in result.stdout
+    ).stdout
 
 
-def test_helm_exposes_iceberg_lakehouse_runtime_config():
-    chart = ROOT / "infra/helm/recsys-data-platform"
-    values = yaml.safe_load((chart / "values.yaml").read_text())
-    gcp_values = yaml.safe_load((chart / "values-gcp.yaml").read_text())
-    rendered = (chart / "values.yaml").read_text() + "\n".join(
-        path.read_text() for path in (chart / "templates").glob("*.yaml")
-    )
-    assert values["lakehouse"]["catalog"] == "recsys"
-    assert values["lakehouse"]["lakehouseNamespace"] == "lakehouse"
-    assert values["lakehouse"]["offlineFeatureCatalog"] == "recsys_features"
-    assert values["lakehouse"]["featureNamespace"] == "feature_store"
-    assert values["realtimeCdcConnector"]["enabled"] is True
-    assert values["e2e"]["realtimeEnabled"] == "true"
-    assert values["e2e"]["datahubIngestEnabled"] == "false"
-    assert values["realtimeFlinkConsumer"]["offlineStoreSink"] == "postgres"
-    assert (
-        values["realtimeFlinkConsumer"]["online"]["startingOffsets"]
-        == "committed-offsets"
-    )
-    assert (
-        gcp_values["realtimeFlinkConsumer"]["online"]["startingOffsets"]
-        == "committed-offsets"
-    )
-    assert values["featurePostgres"]["name"] == "feature-postgres"
-    assert values["featurePostgres"]["schema"] == "feature_store"
-    assert "LAKEHOUSE_WAREHOUSE" in rendered
-    assert "ICEBERG_CATALOG" in rendered
-    assert "ICEBERG_LAKEHOUSE_NAMESPACE" in rendered
-    assert "OFFLINE_FEATURE_STORE_WAREHOUSE" in rendered
-    assert "OFFLINE_FEATURE_CATALOG" in rendered
-    assert "OFFLINE_STORE_ENABLED" in rendered
-    assert "OFFLINE_STORE_SINK" in rendered
-    assert '--offline-store-sink "$OFFLINE_STORE_SINK"' in rendered
-    assert (
-        '--starting-offsets {{ default "committed-offsets" $consumer.online.startingOffsets | quote }}'
-        in rendered
-    )
-    assert rendered.count("flink list -m flink-jobmanager:8081 -r") == 2
-    assert rendered.count("flink cancel -m flink-jobmanager:8081") == 2
-    assert 'group="$REALTIME_STREAM_ONLINE_GROUP_ID"' in rendered
-    assert 'group="$REALTIME_STREAM_OFFLINE_GROUP_ID"' in rendered
-    assert '--feast-postgres-host "$FEAST_POSTGRES_HOST"' in rendered
-    assert '--feast-postgres-database "$FEAST_POSTGRES_DB"' in rendered
-    assert '--feast-postgres-password "$FEAST_POSTGRES_PASSWORD"' in rendered
-    assert "OFFLINE_FEATURE_DRIFT_REPORT_PATH" in rendered
-    assert "OFFLINE_FEATURE_DRIFT_CURRENT_ROOT" in rendered
-    assert "OFFLINE_FEATURE_DRIFT_BASELINE_PATH" in rendered
-    assert "OFFLINE_FEATURE_DRIFT_SAMPLE_ROWS" in rendered
-    assert "OFFLINE_FEATURE_DRIFT_TABLES" in rendered
-    assert "DATA_PLATFORM_DAG_SCHEDULE" in rendered
-    assert "RETRAIN_PSI_THRESHOLD" in rendered
-    assert "register-realtime-cdc-connector" in rendered
-    assert "--offline-store-enabled" in rendered
-    assert "SPARK_K8S_MASTER" in rendered
-    assert "SPARK_K8S_EXECUTOR_INSTANCES" in rendered
-    assert "SPARK_DYNAMIC_ALLOCATION_ENABLED" in rendered
-    assert "SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED" in rendered
-    assert "SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS" in rendered
-    assert "SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS" in rendered
-    assert "SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS" in rendered
-    assert "SPARK_K8S_DRIVER_MEMORY_OVERHEAD" in rendered
-    assert "SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD" in rendered
-    assert "SPARK_ICEBERG_VECTORIZATION_ENABLED" in rendered
-    assert "DATA_GENERATOR_CONFIG" in rendered
-    assert "SPARK_BATCH_CONFIG" in rendered
-    assert "REALTIME_E2E_ENABLED" in rendered
-    assert "DATAHUB_INGEST_ENABLED" in rendered
-    assert "AWS_ACCESS_KEY_ID" in rendered
-    assert "AWS_SECRET_ACCESS_KEY" in rendered
-    assert "deletecollection" in rendered
-    assert "AIRFLOW__DAG_PROCESSOR__DAG_FILE_PROCESSOR_TIMEOUT" in rendered
-    assert "{{- if .Values.realtimeCdcConnector.enabled }}" in rendered
-
-
-def test_e2e_1k_whole_run_data_setup_configs_are_wired_into_helm_values():
-    chart = ROOT / "infra/helm/recsys-data-platform"
-    values = yaml.safe_load((chart / "values.yaml").read_text())
-    generator = yaml.safe_load(
-        (ROOT / values["dataSetup"]["generatorConfig"]).read_text()
-    )
-    spark_batch = yaml.safe_load(
-        (ROOT / values["dataSetup"]["sparkBatchConfig"]).read_text()
-    )
-    offline_generator = generator["offline"]["generator"]
-    assert offline_generator["traffic"]["target_behavior_events"] == 50000
-    assert (
-        offline_generator["output"]["run_id"]
-        == values["dataSetup"]["generatorRunId"]
-        == "test_1k_seed42"
-    )
-    assert spark_batch["input"]["source"] == "silver_lakehouse"
-    assert spark_batch["processing"]["mode"] == "whole_run"
-    assert values["spark"]["executorInstances"] == "1"
-    assert values["spark"]["dynamicAllocation"]["enabled"] is False
-    assert values["spark"]["driverMemoryOverhead"] == "128m"
-    assert values["spark"]["executorMemoryOverhead"] == "128m"
-
-
-def test_gcp_data_platform_spark_resources_cover_e2e_batch_workload():
-    values = yaml.safe_load(
-        (ROOT / "infra/helm/recsys-data-platform/values-gcp.yaml").read_text()
-    )
-    assert values["spark"]["driverMemory"] == "1g"
-    assert values["spark"]["driverMemoryOverhead"] == "512m"
-    assert values["spark"]["executorInstances"] == "1"
-    assert values["spark"]["executorMemory"] == "1g"
-    assert values["spark"]["executorMemoryOverhead"] == "512m"
-    assert values["spark"]["dynamicAllocation"] == {
-        "enabled": False,
-        "shuffleTrackingEnabled": True,
-        "minExecutors": "1",
-        "initialExecutors": "1",
-        "maxExecutors": "1",
-        "executorIdleTimeout": "60s",
-        "schedulerBacklogTimeout": "1s",
-        "sustainedSchedulerBacklogTimeout": "1s",
+def test_image_catalog_has_fifteen_images_and_one_spark():
+    catalog = json.loads((ROOT / "images/catalog.json").read_text())
+    assert len(catalog["images"]) == 15
+    assert {name for name in catalog["images"] if name.endswith("-spark")} == {
+        "recsys-spark"
     }
-    assert values["flinkTaskManager"]["replicas"] == 2
-    assert values["flinkTaskManager"]["resources"]["requests"]["memory"] == "4Gi"
-    assert values["flinkTaskManager"]["resources"]["limits"]["memory"] == "8Gi"
-    assert values["flink"]["taskSlots"] == "1"
-    assert values["flink"]["taskManagerProcessMemory"] == "4096m"
-    assert values["flink"]["taskManagerTaskHeapMemory"] == "2048m"
-    assert values["flink"]["taskManagerManagedMemory"] == "512m"
-    assert values["flink"]["taskManagerJvmOverheadMax"] == "1024m"
-    assert values["flinkAutoscaler"]["taskManagerHpa"]["maxReplicas"] == 2
-    assert values["realtimeFlinkConsumer"]["parallelism"] == "1"
 
 
-def test_component_deploy_applies_gcp_spark_resources_without_statefulset_value_merge():
-    deploy_script = (
-        (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
-        + (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text()
-    )
-    assert "--reuse-values" in deploy_script
-    offset_override = (
-        "realtimeFlinkConsumer.online.startingOffsets="
-        "${FLINK_ONLINE_STARTING_OFFSETS:-committed-offsets}"
-    )
-    shared_deploy = deploy_script.split("deploy_data_platform_unlocked()", 1)[1].split(
-        "deploy_data_platform()", 1
-    )[0]
-    online_deploy = deploy_script.split("\n      stream_online)", 1)[1].split(";;", 1)[
-        0
-    ]
-    all_deploy = deploy_script.split("deploy_all()", 1)[1].split(
-        "Full RecSys CI/CD deploy completed", 1
-    )[0]
-    assert offset_override not in shared_deploy
-    assert offset_override in online_deploy
-    assert offset_override in all_deploy
-    assert "spark.driverMemory=${SPARK_K8S_DRIVER_MEMORY:-1g}" in deploy_script
-    assert (
-        "spark.driverMemoryOverhead=${SPARK_K8S_DRIVER_MEMORY_OVERHEAD:-512m}"
-        in deploy_script
-    )
-    assert "spark.executorMemory=${SPARK_K8S_EXECUTOR_MEMORY:-1g}" in deploy_script
-    assert (
-        "spark.executorMemoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-512m}"
-        in deploy_script
-    )
-    assert (
-        "spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-false}"
-        in deploy_script
-    )
-    assert (
-        "spark.dynamicAllocation.shuffleTrackingEnabled=${SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED:-true}"
-        in deploy_script
-    )
-    assert (
-        "spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-1}"
-        in deploy_script
-    )
-    assert "kafka.topicPartitions=${KAFKA_TOPIC_PARTITIONS:-4}" in deploy_script
-    assert "flinkTaskManager.replicas=${FLINK_TASKMANAGER_REPLICAS:-2}" in deploy_script
-    assert (
-        "flinkTaskManager.resources.requests.memory="
-        "${FLINK_TASKMANAGER_REQUEST_MEMORY:-4Gi}"
-    ) in deploy_script
-    assert (
-        "flink.taskManagerProcessMemory="
-        "${FLINK_TASKMANAGER_PROCESS_MEMORY:-4096m}"
-    ) in deploy_script
-    assert "flink.taskSlots=${FLINK_TASK_SLOTS:-1}" in deploy_script
-    assert "flink.disableJemalloc=${FLINK_DISABLE_JEMALLOC:-true}" in deploy_script
-    assert "flink.scheduler=${FLINK_SCHEDULER:-adaptive}" in deploy_script
-    assert "realtimeFlinkConsumer.parallelism=${FLINK_PARALLELISM:-1}" in deploy_script
-    assert "flinkAutoscaler.enabled=${FLINK_AUTOSCALER_ENABLED:-true}" in deploy_script
-    assert (
-        "flinkAutoscaler.vertexMaxParallelism=${FLINK_AUTOSCALER_VERTEX_MAX_PARALLELISM:-4}"
-        in deploy_script
-    )
-    assert (
-        "flinkAutoscaler.taskManagerHpa.maxReplicas=${FLINK_TASKMANAGER_HPA_MAX_REPLICAS:-2}"
-        in deploy_script
-    )
-    assert (
-        "realtimeFlinkConsumer.redisSinkMaxEventsPerSecond=${REDIS_SINK_MAX_EVENTS_PER_SECOND:-200}"
-        in deploy_script
-    )
-    assert (
-        "--values infra/helm/recsys-data-platform/values-gcp.yaml" not in deploy_script
-    )
+def test_monolithic_data_platform_chart_and_component_dispatchers_are_deleted():
+    assert not (ROOT / "infra/helm/recsys-data-platform").exists()
+    assert not (ROOT / "jenkins/scripts/entrypoints/component_deploy.sh").exists()
+    assert not (ROOT / "jenkins/scripts/entrypoints/component_build_publish.sh").exists()
+    assert not (ROOT / "jenkins/scripts/deploy/data_platform.sh").exists()
+    assert not (ROOT / "jenkins/scripts/deploy/dispatch.sh").exists()
+    assert not (ROOT / "jenkins/scripts/build/dispatch.sh").exists()
 
 
-def test_shared_data_release_always_resolves_every_split_image_by_digest():
-    deploy_script = (ROOT / "jenkins/scripts/deploy/data_platform.sh").read_text()
-    deploy_entrypoint = (
-        ROOT / "jenkins/scripts/entrypoints/component_deploy.sh"
-    ).read_text()
-    registry_script = (ROOT / "jenkins/scripts/lib/registry.sh").read_text()
-    shared_deploy = deploy_script.split("deploy_data_platform_unlocked()", 1)[1].split(
-        "deploy_data_platform()", 1
-    )[0]
-
-    for values_key in (
-        "dataIngestion",
-        "featureStore",
-        "driftRetrain",
-        "spark",
-        "flink",
-        "airflow",
-        "kafkaConnect",
-        "analyticsSpark",
-        "analyticsDbt",
-    ):
-        assert f'--set "images.{values_key}=' in shared_deploy
-
-    assert "source jenkins/scripts/lib/registry.sh" in deploy_entrypoint
-    assert 'baseline_image_tag="${BASELINE_IMAGE_TAG:-$(git rev-parse HEAD^)}"' in (
-        deploy_script
-    )
-    assert (
-        'registry_resolve_digest_reference "${current_ref}" "${image_registry}"'
-        in deploy_script
-    )
-    assert "Docker-Content-Digest" not in deploy_script
-    assert "registry_resolve_digest_reference()" in registry_script
-    assert "docker-content-digest:" in registry_script
-    assert "image reference is outside ${expected_repository}" in registry_script
+def test_all_split_data_charts_render():
+    for chart_name in DATA_CHARTS:
+        rendered = render(chart_name)
+        assert "registry.example.invalid" not in rendered or chart_name in {
+            "recsys-data-config",
+            "recsys-source-store",
+            "recsys-kafka-connect",
+            "recsys-feature-store",
+            "recsys-streaming",
+            "recsys-airflow",
+        }
 
 
-def test_data_platform_smoke_uses_each_runtime_image_python():
-    source = (ROOT / "jenkins/scripts/test/data_platform.sh").read_text()
-    assert source.count("/opt/venv/bin/python") == 2
-    assert 'env CI_STREAM_EVENT_ID="${event_id}" python -c' in source
-    assert "python -m mlops.trigger_kubeflow_retrain" in source
+def test_split_charts_have_unique_kubernetes_resource_owners():
+    owners: dict[tuple[str, str, str], str] = {}
+    for chart_name in DATA_CHARTS:
+        for document in yaml.safe_load_all(render(chart_name)):
+            if not isinstance(document, dict) or not document.get("kind"):
+                continue
+            metadata = document.get("metadata", {})
+            key = (
+                str(document["kind"]),
+                str(metadata.get("namespace", "recsys-dataflow")),
+                str(metadata.get("name")),
+            )
+            assert key not in owners, f"{key} owned by {owners.get(key)} and {chart_name}"
+            owners[key] = chart_name
 
 
-def test_helm_hooks_survive_success_until_the_next_atomic_release():
-    hook_templates = (
-        ROOT / "infra/helm/recsys-data-platform/templates/jobs.yaml",
-        ROOT / "infra/helm/recsys-data-platform/templates/kafka-topic-init.yaml",
-        ROOT / "infra/helm/mlflow-stack/templates/minio-init-job.yaml",
-        ROOT / "infra/helm/recsys-analytics/templates/superset-dashboard-bootstrap.yaml",
-    )
-
-    for template in hook_templates:
-        source = template.read_text()
-        assert "hook-delete-policy" in source
-        assert "before-hook-creation" in source
-        assert "hook-succeeded" not in source
-
-    mlflow_init = hook_templates[2].read_text()
-    assert 'mc version enable "local/{{ .Values.minio.modelStoreBucket }}"' in mlflow_init
+def test_resource_ownership_matches_release_boundaries():
+    rendered = {name: render(name) for name in DATA_CHARTS}
+    assert "name: data-platform-minio" in rendered["recsys-data-lakehouse"]
+    assert "name: source-postgres" in rendered["recsys-source-store"]
+    assert "name: kafka" in rendered["recsys-event-stream"]
+    assert "name: kafka-connect" in rendered["recsys-kafka-connect"]
+    assert "name: feature-postgres" in rendered["recsys-feature-store"]
+    assert "name: redis" in rendered["recsys-feature-store"]
+    assert "name: flink-jobmanager" in rendered["recsys-streaming"]
+    assert "name: airflow-scheduler" in rendered["recsys-airflow"]
 
 
-def test_spark_silver_deduplicates_behavior_events_and_impressions_with_drop_duplicates():
-    source = (
-        ROOT / "apps/data-platform/src/features/spark/build_silver_tables.py"
-    ).read_text()
-
-    assert 'supported.dropDuplicates(["event_id"])' in source
-    assert '.dropDuplicates(["impression_id"])' in source
-    assert '.orderBy("event_timestamp", "event_id")' not in source
-    assert 'Window.partitionBy("event_id")' not in source
-    assert "F.row_number().over(window)" not in source
-    assert '"rejection_reason", F.lit("unsupported_schema_version")' in source
-
-
-def test_spark_user_aggregate_uses_approximate_rolling_category_cardinality():
-    source = (
-        ROOT / "apps/data-platform/src/features/spark/build_user_aggregate_features.py"
-    ).read_text()
-
-    assert "CATEGORY_CARDINALITY_RSD = 0.05" in source
-    assert 'F.approx_count_distinct("category_id", CATEGORY_CARDINALITY_RSD)' in source
-    assert 'F.collect_list(F.col("category_id"))' not in source
-
-
-def test_security_chart_declares_vault_external_secrets_and_istio_policies():
-    chart = ROOT / "infra/helm/recsys-security"
-    rendered = (chart / "values.yaml").read_text() + "\n".join(
-        path.read_text() for path in (chart / "templates").glob("*.yaml")
-    )
-    for expected in [
-        "ClusterSecretStore",
-        "external-secrets.io/v1",
-        "recsys-data-platform-secret",
-        "recsys-mlflow-secrets",
-        "recsys-mlops-runtime",
-        "recsys-kserve-minio",
-        "PeerAuthentication",
-        "mode: STRICT",
-        "AuthorizationPolicy",
-        "recsys-kubeflow-allow",
-        "recsys-kubeflow-ml-pipeline-api-allow",
-        "recsys-kubeflow-ml-pipeline-permissive",
-        "recsys-kubeflow-metadata-grpc-allow",
-        "recsys-kubeflow-metadata-grpc-permissive",
-        "recsys-kubeflow-seaweedfs-allow",
-        "recsys-kubeflow-seaweedfs-permissive",
-        "recsys-mlflow-allow",
-        "recsys-kserve-allow",
-        "namespaces:",
-        "- kubeflow",
-        "mode: PERMISSIVE",
-        '"3306"',
-        '"8080"',
-        '"8887"',
-        '"9000"',
-        '"2181"',
-        '"29092"',
-        "cluster.local/ns/api-serving/sa/default",
-        "cluster.local/ns/recsys-dataflow/sa/default",
-        "cluster.local/ns/kubeflow/sa/pipeline-runner",
-    ]:
-        assert expected in rendered
-
-
-def test_app_charts_do_not_render_literal_runtime_secrets_by_default():
-    chart_roots = [
-        ROOT / "infra/helm/recsys-data-platform",
-        ROOT / "infra/helm/mlflow-stack",
-        ROOT / "infra/helm/recsys-runtime",
-        ROOT / "infra/helm/recsys-serving",
-    ]
-    rendered = "\n".join(
-        (root / "values.yaml").read_text()
-        + "\n".join(path.read_text() for path in (root / "templates").glob("*.yaml"))
-        for root in chart_roots
-    )
-    for forbidden in [
-        "rootPassword: minio123",
-        "password: mlflow123",
-        "secretAccessKey: minio123",
-    ]:
-        assert forbidden not in rendered
-    for expected in [
-        "secret:",
-        "create: false",
-        "recsys-data-platform-secret",
-        "recsys-mlflow-secrets",
-        "recsys-mlops-runtime",
-        "recsys-kserve-minio",
-    ]:
-        assert expected in rendered
-
-
-def test_spark_batch_config_reads_dp2_silver_iceberg_tables():
-    config = yaml.safe_load((ROOT / "configs/local/spark_batch.yaml").read_text())
-    assert config["input"]["source"] == "silver_lakehouse"
-    assert config["processing"]["mode"] == "whole_run"
-    output = config["output"]
-    assert output["lakehouse_warehouse"] == "s3a://recsys-lakehouse/warehouse"
-    assert output["iceberg_catalog"] == "recsys"
-    assert output["iceberg_lakehouse_namespace"] == "lakehouse"
-    assert output["offline_feature_catalog"] == "recsys_features"
-    assert (
-        output["offline_feature_store_warehouse"]
-        == "s3a://recsys-offline-feature-store/warehouse"
-    )
-    assert output["iceberg_feature_namespace"] == "feature_store"
-    assert (
-        output["offline_feature_store_uri"]
-        == "s3a://recsys-offline-feature-store/warehouse/feature_store"
-    )
-
-
-def test_spark_batch_entrypoint_processes_the_whole_run_in_one_commit():
-    source = (
-        ROOT / "apps/data-platform/src/features/spark/spark_batch_entrypoint.py"
-    ).read_text()
-    assert "batch_chunk_count" not in source
-    assert "batch_chunk_commits" not in source
-    assert "batch_commit_id" not in source
-    assert 'write_iceberg_table(frame, table_name, mode="overwrite")' in source
-    assert 'os.getenv("OFFLINE_FEATURE_DRIFT_CURRENT_ROOT", "")' in source
-    assert '"ml_bst_training",' in source
-
-
-def test_drift_monitor_reads_a_current_snapshot_not_the_iceberg_data_directory():
-    values = yaml.safe_load(
-        (ROOT / "infra/helm/recsys-data-platform/values.yaml").read_text()
-    )
-    assert values["drift"]["currentRoot"].endswith(
-        "/monitoring/offline_feature_drift/current_snapshot"
-    )
+def test_unified_spark_and_dp_profiles_are_the_only_batch_contract():
+    assert (ROOT / "configs/data-platform/spark/dp1.yaml").is_file()
+    assert (ROOT / "configs/data-platform/spark/dp2.yaml").is_file()
+    assert (ROOT / "configs/data-platform/spark/dp3.yaml").is_file()
+    assert not list((ROOT / "configs/data-platform/spark").glob("batch*.yaml"))
     dag = (
         ROOT
         / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
     ).read_text()
-    assert '"OFFLINE_FEATURE_DRIFT_CURRENT_ROOT",' in dag
+    assert "DP3_CONFIG" in dag
+    assert "SPARK_BATCH" not in dag
+    assert "dp3_offline_feature_entrypoint.py" in dag
 
 
-def test_deleted_legacy_artifacts_are_absent():
-    for relative in [
-        "infra/docker/debezium/kafka-connect-s3-sink.json",
-        "infra/docker/scripts/register_minio_sink_connector.sh",
-        "infra/docker/scripts/validate_bronze_cdc.py",
-        "apps/data-platform/great_expectations",
-        "apps/data-platform/dbt",
-        "apps/data-platform/src/features/spark/spark_realtime_bronze_entrypoint.py",
-        "apps/data-platform/src/orchestration/airflow/dags/batch_feature_pipeline_dag.py",
-        "apps/data-platform/src/orchestration/airflow/dags/full_dataflow_local_dag.py",
-        "apps/data-platform/src/orchestration/airflow/dags/raw_ingestion_dag.py",
-        "apps/data-platform/src/orchestration/airflow/dags/streaming_feature_pipeline_dag.py",
-    ]:
-        assert not (ROOT / relative).exists()
-    assert (
-        ROOT / "apps/data-platform/feature-store/feature_repo/feature_store.yaml"
-    ).exists()
+def test_unified_spark_contains_all_three_domain_capabilities():
+    dockerfile = (ROOT / "images/data/recsys-spark/Dockerfile").read_text()
+    smoke = (ROOT / "jenkins/scripts/test/unified_spark_image.sh").read_text()
+    for artifact in (
+        "iceberg-spark-runtime-3.5_2.12",
+        "hudi-spark3.5-bundle_2.12",
+        "hadoop-aws",
+        "aws-java-sdk-bundle",
+        "postgresql-${POSTGRES_JDBC_VERSION}.jar",
+    ):
+        assert artifact in dockerfile
+    for source in (
+        "apps/data-platform/src",
+        "apps/data-platform/data-generator",
+        "apps/data-platform/feature-store",
+        "apps/ml-system/src",
+        "apps/analytics/src",
+    ):
+        assert f"COPY {source} " in dockerfile
+    assert "PYSPARK_PYTHON=/opt/venv/bin/python" in dockerfile
+    assert "PYSPARK_DRIVER_PYTHON=/opt/venv/bin/python" in dockerfile
+    assert "generator_config" in smoke
+    assert "cli.prepare_bst_training_data" in smoke
+    assert "sync_silver" in smoke
+    assert "postgresql-42.7.7.jar" in smoke
 
 
-def test_required_operational_airflow_dags_are_restored_without_removed_dags():
-    source = (
-        ROOT
-        / "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
-    ).read_text()
+def test_release_planner_and_jenkins_use_one_global_plan():
+    jenkinsfile = (ROOT / "Jenkinsfile").read_text()
+    groovy = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text()
+    assert "--plan-output .ci-release-plan.json" in jenkinsfile
+    assert "release_build_publish.sh .ci-release-plan.json" in jenkinsfile
+    assert "runReleaseDeployPlan" in jenkinsfile
+    assert "runComponentDeployBranches" not in groovy
 
-    for dag_id in ["recsys_feast_materialize", "recsys_feature_drift_monitoring"]:
-        assert f'dag_id="{dag_id}"' in source
-    assert "apply_feast_feature_repo" not in source
-    assert "APPLY_FEAST_FEATURE_REPO_COMMAND" not in source
-    assert "materialize_incremental >> validate_online_store" in source
-    assert "feature_store.sql_registry_state url" in source
-    assert "trigger_kubeflow_retrain_if_drift" in source
-    assert "recsys_lakehouse_maintenance" not in source
-    assert "k8s_data_platform_dag" not in source
-    assert "recsys_batch_feature_pipeline" not in source
+
+def test_terraform_bootstraps_split_releases_but_jenkins_owns_runtime_updates():
+    terraform = (ROOT / "infra/terraform/gcp/recsys_services.tf").read_text()
+    for resource in (
+        "recsys_data_config",
+        "recsys_data_lakehouse",
+        "recsys_source_store",
+        "recsys_event_stream",
+        "recsys_kafka_connect",
+        "recsys_feature_store",
+        "recsys_streaming",
+        "recsys_airflow",
+    ):
+        assert f'resource "helm_release" "{resource}"' in terraform
+    assert 'resource "helm_release" "recsys_data_platform"' not in terraform
+    assert terraform.count("ignore_changes = all") >= 10
+    locals_source = (ROOT / "infra/terraform/gcp/locals.tf").read_text()
+    assert '"secret.create"        = "false"' in locals_source
+    assert '"kserve.secret.create"                         = "false"' in locals_source

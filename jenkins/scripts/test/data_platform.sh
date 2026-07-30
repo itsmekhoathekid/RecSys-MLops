@@ -56,7 +56,7 @@ print({"connector": connector_state, "tasks": task_states})
 
 test_stream_transaction_event() {
   local namespace="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
-  local event_id="ci-stream-${TX_ID:-${BUILD_NUMBER:-manual}}"
+  local event_id="ci-stream-${BUILD_NUMBER:-manual}"
   local deadline=$((SECONDS + ${COMPONENT_TEST_TIMEOUT_SECONDS:-600}))
   local status=0
   local offline_count=""
@@ -198,13 +198,13 @@ test_stream_features() {
   [[ "${status}" == "0" ]] || return "${status}"
   test_stream_transaction_event || status=$?
   DATA_PLATFORM_VERIFY_TIMEOUT_SECONDS="${COMPONENT_TEST_TIMEOUT_SECONDS:-600}" \
-    infra/k8s/scripts/data_platform_verify_feature_stores.sh || status=$?
+    jenkins/scripts/test/data_platform_verify_feature_stores.sh || status=$?
   return "${status}"
 }
 
 test_drift() {
   local namespace="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
-  local synthetic_id="ci-drift-${TX_ID:-${BUILD_NUMBER:-manual}}"
+  local synthetic_id="ci-drift-${BUILD_NUMBER:-manual}"
   test_data_platform_base
   kubectl exec -n "${namespace}" deploy/airflow-scheduler -c airflow-scheduler -- \
     bash -lc "

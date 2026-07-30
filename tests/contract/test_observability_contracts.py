@@ -32,15 +32,15 @@ def _render_observability(*extra_args: str) -> list[dict]:
     return _documents(rendered)
 
 
-def _render_data_platform(*extra_args: str) -> list[dict]:
+def _render_streaming(*extra_args: str) -> list[dict]:
     if shutil.which("helm") is None:
         pytest.skip("helm is not installed")
     rendered = subprocess.check_output(
         [
             "helm",
             "template",
-            "recsys-data-platform",
-            "infra/helm/recsys-data-platform",
+            "recsys-streaming",
+            "infra/helm/recsys-streaming",
             "--namespace",
             "recsys-dataflow",
             *extra_args,
@@ -62,8 +62,8 @@ def test_grafana_is_configured_for_public_gateway_origin():
         for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
     }
 
-    assert env["GF_SERVER_DOMAIN"] == "grafana.recsys.local"
-    assert env["GF_SERVER_ROOT_URL"] == "http://grafana.recsys.local/"
+    assert env["GF_SERVER_DOMAIN"] == "grafana.example.invalid"
+    assert env["GF_SERVER_ROOT_URL"] == "http://grafana.example.invalid/"
 
 
 def test_ab_dashboard_contains_shadow_candidate_proof_panels():
@@ -134,7 +134,7 @@ def test_prometheus_scrapes_api_metrics_once_per_pod():
 
 
 def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
-    docs = _render_data_platform()
+    docs = _render_streaming()
     resources = _by_kind_name(docs)
 
     for deployment_name in ("flink-jobmanager", "flink-taskmanager"):
@@ -149,7 +149,7 @@ def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
         assert any(port.get("name") == "metrics" and port["containerPort"] == 9249 for port in container["ports"])
         assert "org.apache.flink.metrics.prometheus.PrometheusReporterFactory" in env["FLINK_PROPERTIES"]
 
-    dockerfile = Path("apps/data-platform/Dockerfile.flink").read_text(encoding="utf-8")
+    dockerfile = Path("images/data/recsys-flink/Dockerfile").read_text(encoding="utf-8")
     base_images = re.findall(r"^FROM flink:(?P<version>[^ ]+)", dockerfile, re.MULTILINE)
     assert base_images
     assert len(set(base_images)) == 1
@@ -157,7 +157,7 @@ def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
 
 
 def test_flink_taskmanager_health_requires_jobmanager_registration():
-    docs = _render_data_platform()
+    docs = _render_streaming()
     deployment = _by_kind_name(docs)[("Deployment", "flink-taskmanager")]
     container = deployment["spec"]["template"]["spec"]["containers"][0]
     env = {item["name"]: item for item in container["env"]}

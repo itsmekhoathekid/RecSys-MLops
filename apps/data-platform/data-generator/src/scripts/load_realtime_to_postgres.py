@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from config import load_config
+from generator_config import load_config
 from offline.historical_pipeline import HistoricalDataPipeline
 from sinks.postgres_sink import DEFAULT_TABLE_ORDER, load_run_to_postgres
 
@@ -24,7 +24,7 @@ def main() -> int:
     import psycopg
 
     parser = argparse.ArgumentParser(description="Load a deterministic realtime source sample into Postgres.")
-    parser.add_argument("--config", default="configs/local/data_generator_test.yaml")
+    parser.add_argument("--config", default="configs/data-platform/generator/default.yaml")
     parser.add_argument("--limit-per-table", type=int, default=int(os.getenv("REALTIME_LIMIT_PER_TABLE", "200")))
     parser.add_argument("--tables", nargs="*", default=DEFAULT_TABLE_ORDER)
     args = parser.parse_args()

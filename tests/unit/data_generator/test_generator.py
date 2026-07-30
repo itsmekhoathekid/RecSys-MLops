@@ -6,7 +6,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from behavior import SessionState
-from config import ChallengeConfig
+from generator_config import ChallengeConfig
 from offline.historical_pipeline import HistoricalDataPipeline
 from offline.problem_pipeline import ChallengePipeline
 from offline.simulation import RecsysSimulation

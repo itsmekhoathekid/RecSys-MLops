@@ -12,8 +12,8 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = "recsys-dataflow"
-FEATURE_STORE_IMAGE = os.getenv("FEATURE_STORE_IMAGE", "recsys-feature-store:local")
-DRIFT_RETRAIN_IMAGE = os.getenv("DRIFT_RETRAIN_IMAGE", "recsys-drift-retrain:local")
+FEATURE_STORE_IMAGE = os.getenv("FEATURE_STORE_IMAGE", "registry.example.invalid/recsys/recsys-feature-store:required")
+DRIFT_RETRAIN_IMAGE = os.getenv("DRIFT_RETRAIN_IMAGE", "registry.example.invalid/recsys/recsys-drift-retrain:required")
 DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
@@ -139,7 +139,8 @@ TRIGGER_KUBEFLOW_RETRAIN_COMMAND = (
     "--drift-report-path $OFFLINE_FEATURE_DRIFT_REPORT_PATH "
     "--kfp-endpoint $KFP_ENDPOINT "
     "--experiment-name $KFP_EXPERIMENT_NAME "
-    "--pipeline-package-path $KFP_PIPELINE_PACKAGE_PATH "
+    "--pipeline-name $KFP_PIPELINE_NAME "
+    "--pipeline-version-id $KFP_PIPELINE_VERSION_ID "
     "--pushgateway-url $PUSHGATEWAY_URL "
     "--pipeline-arg source_run_path=s3a://$LAKE_BUCKET/raw/$DATA_GENERATOR_RUN_ID"
 )

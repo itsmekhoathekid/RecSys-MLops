@@ -135,8 +135,11 @@ build_refresh_registry_login() {
 
 build_image_locked() {
   local name="$1"
-  local dockerfile="$2"
-  shift 2
+  local spec
+  local dockerfile
+  local context
+  local build_arg
+  local docker_args=(--platform "${BUILD_DOCKER_PLATFORM}")
   local local_image="${name}:${BUILD_IMAGE_TAG}"
   local remote_image="${BUILD_IMAGE_REGISTRY}/${name}:${BUILD_IMAGE_TAG}"
   local image_key
@@ -145,6 +148,23 @@ build_image_locked() {
   local digest_hash=""
   local push_log=""
 
+  spec="$(python3 jenkins/python/image_catalog.py spec "${name}")"
+  dockerfile="$(
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["dockerfile"])' \
+      <<<"${spec}"
+  )"
+  context="$(
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["context"])' \
+      <<<"${spec}"
+  )"
+  while IFS= read -r build_arg; do
+    [[ -n "${build_arg}" ]] || continue
+    docker_args+=(--build-arg "${build_arg}")
+  done < <(
+    python3 jenkins/python/image_catalog.py build-args \
+      "${name}" --tag "${BUILD_IMAGE_TAG}"
+  )
+
   image_key="$(image_manifest_key "${name}")"
   shared_manifest="${BUILD_SHARED_MANIFEST_DIR}/${name}.env"
   if build_reuse_shared_image \
@@ -152,9 +172,9 @@ build_image_locked() {
     return 0
   fi
 
-  docker build --platform "${BUILD_DOCKER_PLATFORM}" "$@" \
+  docker build "${docker_args[@]}" \
     -f "${dockerfile}" \
-    -t "${local_image}" .
+    -t "${local_image}" "${context}"
   docker tag "${local_image}" "${remote_image}"
   build_record_image "${image_key}_IMAGE" "${remote_image}"
 
@@ -187,7 +207,7 @@ build_image_locked() {
   build_publish_shared_manifest "${image_key}" "${shared_manifest}"
 }
 
-build_image() {
+build_image_single() {
   local name="$1"
   local lock_root="${BUILD_LOCK_ROOT:-${JENKINS_HOME:-.ci-build-locks}/ci-build-locks}"
   local lock_path
@@ -227,16 +247,13 @@ build_image() {
   build_image_locked "$@"
 }
 
-build_ensure_base_python() {
-  if [[ "${BUILD_BASE_PYTHON_DONE}" == "0" ]]; then
-    build_image "recsys-base-python" "infra/docker/Dockerfile.base-python"
-    BUILD_BASE_PYTHON_DONE=1
-  fi
-}
-
-build_ensure_spark_base() {
-  if [[ "${BUILD_SPARK_BASE_DONE}" == "0" ]]; then
-    build_image "recsys-spark" "apps/data-platform/Dockerfile.spark"
-    BUILD_SPARK_BASE_DONE=1
-  fi
+build_image() {
+  local requested_image="$1"
+  local dependency_image
+  while IFS= read -r dependency_image; do
+    [[ -n "${dependency_image}" ]] || continue
+    build_image_single "${dependency_image}"
+  done < <(
+    python3 jenkins/python/image_catalog.py dependencies "${requested_image}"
+  )
 }

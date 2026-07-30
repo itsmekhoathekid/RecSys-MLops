@@ -9,7 +9,7 @@ component_test_wait_deployment() {
 
 component_test_airflow_dag() {
   local dag_id="$1"
-  local run_id="ci-${TX_ID:-${BUILD_NUMBER:-manual}}"
+  local run_id="ci-${BUILD_NUMBER:-manual}"
   local state=""
   local deadline=$((SECONDS + ${COMPONENT_TEST_TIMEOUT_SECONDS:-600}))
   local dag_registered=0
@@ -72,7 +72,7 @@ component_test_run() {
   status=$?
   set -e
   case "${component}" in
-    materialize|training|spark_batch|dp1|dp2|dp3|drift|stream_offline|stream_online)
+    materialize|training|dp1|dp2|dp3|drift|stream_offline|stream_online)
       namespace="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
       ;;
     api|kserve|kserve_model_cd)
@@ -113,7 +113,7 @@ component_test_http_from_deployment() {
 
 component_test_verify_rollback() {
   case "$1" in
-    materialize|spark_batch|dp1|dp2|dp3|drift|stream_offline|stream_online|training)
+    materialize|dp1|dp2|dp3|drift|stream_offline|stream_online|training)
       test_data_platform_base
       ;;
     api)

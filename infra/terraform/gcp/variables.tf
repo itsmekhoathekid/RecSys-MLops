@@ -253,7 +253,7 @@ variable "deploy_service_mesh" {
 variable "gateway_domain" {
   description = "Domain used by the optional gateway chart."
   type        = string
-  default     = "recsys.local"
+  default     = "example.invalid"
 }
 
 variable "gateway_tls_enabled" {

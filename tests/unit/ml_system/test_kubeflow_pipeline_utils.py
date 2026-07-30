@@ -153,7 +153,7 @@ def test_parse_toleration_supports_equal_exists_and_lists():
 
 def test_build_rayjob_uses_refactored_training_module():
     args = argparse.Namespace(
-        base_config_path="/opt/recsys/configs/local/bst.yaml",
+        base_config_path="/opt/recsys/configs/ml-system/training/bst.yaml",
         split_dir="/workspace/recsys/data_platform/output/ml/bst_split",
         ray_output_dir="/workspace/recsys/data_platform/output/ml/ray",
         training_percent=0.01,
@@ -207,7 +207,7 @@ def test_build_rayjob_uses_refactored_training_module():
 def test_build_rayjob_supports_distributed_training_mode():
     args = argparse.Namespace(
         job_mode="distributed-train",
-        base_config_path="/opt/recsys/configs/local/bst.yaml",
+        base_config_path="/opt/recsys/configs/ml-system/training/bst.yaml",
         split_dir="/workspace/recsys/data_platform/output/ml/bst_split",
         ray_output_dir="/workspace/recsys/data_platform/output/ml/ray",
         training_percent=0.02,
@@ -347,7 +347,7 @@ def test_ray_tune_best_payload_falls_back_to_trial_outputs(tmp_path):
 
 def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeypatch):
     training_image = "registry.example/recsys/recsys-mlops-training:test"
-    spark_image = "registry.example/recsys/recsys-mlops-spark:test"
+    spark_image = "registry.example/recsys/recsys-spark:test"
     monkeypatch.setenv("RECSYS_PIPELINE_IMAGE", training_image)
     monkeypatch.setenv("RECSYS_RAY_IMAGE", training_image)
     monkeypatch.setenv("RECSYS_SPARK_IMAGE", spark_image)
@@ -358,6 +358,7 @@ def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeyp
     assert package_path.name == "bst_training_pipeline.yaml"
     assert "/opt/venv/bin/python" in compiled
     assert "/opt/spark/bin/spark-submit" not in compiled
+    assert "/opt/recsys/apps/ml-system/src/run_features.py" not in compiled
     assert "/opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py" in compiled
     assert "--feature-source" in compiled
     assert "--offline-feature-table" in compiled

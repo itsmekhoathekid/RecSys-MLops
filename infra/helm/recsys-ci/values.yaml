@@ -15,39 +15,6 @@ serviceMesh:
   jenkinsPodAnnotations:
     sidecar.istio.io/inject: "false"
 
-staticVolumes:
-  enabled: true
-  reclaimPolicy: Retain
-  jenkinsHostPath: /data/recsys-ci/jenkins-home
-  registryHostPath: /data/recsys-ci/registry-data
-
-registry:
-  enabled: true
-  image: registry:3.0.0
-  replicas: 1
-  service:
-    name: recsys-registry
-    type: ClusterIP
-    port: 5000
-  pvc:
-    name: recsys-registry-data
-    volumeName: recsys-ci-registry-data
-    storage: 30Gi
-    accessModes:
-      - ReadWriteOnce
-    storageClassName: recsys-ci-local
-  nodeProxy:
-    enabled: true
-    image: registry.k8s.io/minikube/kube-registry-proxy:v0.0.11
-    hostPort: 5001
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: "1"
-      memory: 1Gi
-
 jenkins:
   enabled: true
   image: jenkins/jenkins:lts-jdk17
@@ -75,6 +42,7 @@ jenkins:
       - junit
       - git
       - github
+      - lockable-resources
   runtimeTools:
     installOnStartup: false
     kubectlVersion: v1.33.0
@@ -97,13 +65,13 @@ jenkins:
     annotations: {}
   pvc:
     name: recsys-jenkins-home
-    volumeName: recsys-ci-jenkins-home
+    volumeName: ""
     storage: 20Gi
     accessModes:
       - ReadWriteOnce
-    storageClassName: recsys-ci-local
-  imagePushRegistry: recsys-registry.ci.svc.cluster.local:5000/recsys
-  imagePullRegistry: localhost:5001/recsys
+    storageClassName: standard-rwo
+  imagePushRegistry: registry.example.invalid/recsys
+  imagePullRegistry: registry.example.invalid/recsys
   requireGcpArtifactRegistry: false
   javaOpts: "-Djenkins.install.runSetupWizard=false -Dhudson.model.DownloadService.never=true"
   dind:
@@ -118,9 +86,11 @@ jenkins:
       accessModes:
         - ReadWriteOnce
       storageClassName: ""
-    insecureRegistries:
-      - recsys-registry.ci.svc.cluster.local:5000
-      - localhost:5001
+    gc:
+      enabled: true
+      retention: 168h
+      keepStorage: 80GB
+    insecureRegistries: []
     resources:
       requests:
         cpu: 50m
@@ -138,7 +108,7 @@ jenkins:
 
 modelRolloutWatcher:
   enabled: false
-  image: localhost:5001/recsys/recsys-mlops-training:latest
+  image: registry.example.invalid/recsys/recsys-mlops-training:required
   imagePullPolicy: IfNotPresent
   replicas: 1
   mlflowTrackingUri: http://mlflow.experiment-tracking.svc.cluster.local:5000

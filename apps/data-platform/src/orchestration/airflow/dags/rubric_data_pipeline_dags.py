@@ -13,8 +13,8 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = "recsys-dataflow"
-FEATURE_STORE_IMAGE = os.getenv("FEATURE_STORE_IMAGE", "recsys-feature-store:local")
-SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "recsys-spark:local"))
+FEATURE_STORE_IMAGE = os.getenv("FEATURE_STORE_IMAGE", "registry.example.invalid/recsys/recsys-feature-store:required")
+SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "registry.example.invalid/recsys/recsys-spark:required"))
 DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
@@ -123,7 +123,7 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         "--deploy-mode cluster "
         f"--name {app_name}-${{SPARK_APP_SUFFIX}} "
         "--conf spark.kubernetes.namespace=${SPARK_K8S_NAMESPACE:-recsys-dataflow} "
-        "--conf spark.kubernetes.container.image=${SPARK_K8S_IMAGE:-recsys-spark:local} "
+        "--conf spark.kubernetes.container.image=${SPARK_K8S_IMAGE:-registry.example.invalid/recsys/recsys-spark:required} "
         "--conf spark.kubernetes.container.image.pullPolicy=${SPARK_K8S_IMAGE_PULL_POLICY:-IfNotPresent} "
         "--conf spark.kubernetes.authenticate.driver.serviceAccountName=${SPARK_K8S_SERVICE_ACCOUNT:-default} "
         "--conf spark.kubernetes.submission.waitAppCompletion=true "
@@ -159,10 +159,10 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
     )
 
 
-SPARK_BATCH_COMMAND = spark_native_submit(
+DP3_FEATURE_COMMAND = spark_native_submit(
     "dp3_offline_feature_table",
-    "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
-    "--config $SPARK_BATCH_CONFIG",
+    "local:///opt/recsys/apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py",
+    "--config $DP3_CONFIG",
 )
 
 VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = "python -m validate.governance_contracts dp3-postgres"
@@ -287,7 +287,7 @@ if DAG is not None:
         ingest_stage = pod_task(
             "ingest_stage",
             SPARK_IMAGE,
-            SPARK_BATCH_COMMAND,
+            DP3_FEATURE_COMMAND,
         )
         validate_stage = pod_task(
             "validate_stage",

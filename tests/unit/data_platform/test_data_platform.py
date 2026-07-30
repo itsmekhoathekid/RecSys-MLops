@@ -50,8 +50,6 @@ from feature_store.online_writer import (
     RedisOnlineWriter,
     dumps_feature_payload,
 )
-from local.run_batch_features import main as run_batch_features_main
-from local.run_batch_features import run_batch_features
 from ingest.debezium import extract_debezium_after
 from ingest import register_k8s_connectors
 from ingest.register_k8s_connectors import (
@@ -871,25 +869,6 @@ def test_online_writer_writes_all_feature_key_templates():
     ]
 
 
-def test_local_batch_runner_delegates_to_spark_entrypoint(monkeypatch, capsys):
-    import local.run_batch_features as module
-
-    captured = {}
-
-    def fake_run_pyspark_batch(config_path):
-        captured["config_path"] = config_path
-        return {"silver": 2, "features": 3}
-
-    monkeypatch.setattr(module, "run_pyspark_batch", fake_run_pyspark_batch)
-
-    assert run_batch_features("config.yaml") == {"silver": 2, "features": 3}
-    assert captured["config_path"] == "config.yaml"
-
-    monkeypatch.setattr("sys.argv", ["run_batch_features", "--config", "cli.yaml"])
-    assert run_batch_features_main() == 0
-    assert '"features": 3' in capsys.readouterr().out
-
-
 def test_iceberg_catalog_defaults_and_spark_conf():
     config = IcebergCatalogConfig()
     assert config.lakehouse_database == "recsys.lakehouse"
@@ -922,25 +901,27 @@ def test_spark_feature_path_is_native_iceberg_not_pandas_or_parquet_writer():
     sources = "\n".join(
         path.read_text(encoding="utf-8") for path in spark_dir.glob("*.py")
     )
-    batch_source = (spark_dir / "spark_batch_entrypoint.py").read_text(encoding="utf-8")
+    dp3_source = (spark_dir / "dp3_offline_feature_entrypoint.py").read_text(
+        encoding="utf-8"
+    )
     assert "import pandas" not in sources
     assert "pd." not in sources
     assert "from pyspark.sql" in sources
     assert (
-        'source", os.getenv("SPARK_BATCH_SOURCE", "silver_lakehouse")' in batch_source
+        'source", os.getenv("DP3_SOURCE", "silver_lakehouse")' in dp3_source
     )
-    assert "write_iceberg_table" in batch_source
-    assert "feast_offline_store_uri" in batch_source
-    assert "write_parquet(" in batch_source
+    assert "write_iceberg_table" in dp3_source
+    assert "feast_offline_store_uri" in dp3_source
+    assert "write_parquet(" in dp3_source
     assert not (spark_dir / "spark_realtime_bronze_entrypoint.py").exists()
 
 
-def test_spark_batch_postgres_export_config_supports_explicit_config_and_env(
+def test_dp3_postgres_export_config_supports_explicit_config_and_env(
     monkeypatch,
 ):
-    import features.spark.spark_batch_entrypoint as spark_batch
+    import features.spark.dp3_offline_feature_entrypoint as dp3
 
-    explicit = spark_batch._postgres_export_config(
+    explicit = dp3._postgres_export_config(
         {
             "feast_postgres_export": {
                 "enabled": True,
@@ -969,7 +950,7 @@ def test_spark_batch_postgres_export_config_supports_explicit_config_and_env(
     monkeypatch.setenv("FEAST_POSTGRES_USER", "feast_b")
     monkeypatch.setenv("FEAST_POSTGRES_PASSWORD", "secret-b")
 
-    from_env = spark_batch._postgres_export_config({})
+    from_env = dp3._postgres_export_config({})
     assert from_env["enabled"] is True
     assert from_env["config"].host == "feature-postgres-b"
     assert from_env["config"].port == 5434
@@ -1155,17 +1136,21 @@ def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
             assert name == "exp"
             return Experiment()
 
-        def create_run_from_pipeline_package(self, **kwargs):
-            assert kwargs["pipeline_file"] == "pipeline.yaml"
-            assert kwargs["run_name"] == "recsys-drift-retrain-run-2"
-            assert kwargs["arguments"]["pipeline_run_id"] == "retrain-run-2"
-            assert kwargs["arguments"]["ray_job_name"].startswith(
+        def get_pipeline_id(self, name):
+            assert name == "recsys-pipeline"
+            return "pipeline-1"
+
+        def run_pipeline(self, **kwargs):
+            assert kwargs["pipeline_id"] == "pipeline-1"
+            assert kwargs["job_name"] == "recsys-drift-retrain-run-2"
+            assert kwargs["params"]["pipeline_run_id"] == "retrain-run-2"
+            assert kwargs["params"]["ray_job_name"].startswith(
                 "recsys-bst-ray-tune-retrain-run-2-"
             )
-            assert kwargs["arguments"]["ray_train_job_name"].startswith(
+            assert kwargs["params"]["ray_train_job_name"].startswith(
                 "recsys-bst-ray-ddp-retrain-run-2-"
             )
-            assert kwargs["arguments"]["source_run_path"] == "s3a://lake/raw/run2"
+            assert kwargs["params"]["source_run_path"] == "s3a://lake/raw/run2"
             return Run()
 
     monkeypatch.setitem(
@@ -1175,7 +1160,7 @@ def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
         str(report),
         "http://kfp",
         "exp",
-        "pipeline.yaml",
+        "recsys-pipeline",
         pushgateway_url=None,
         pipeline_arguments={"source_run_path": "s3a://lake/raw/run2"},
     )

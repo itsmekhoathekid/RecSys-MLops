@@ -47,13 +47,13 @@ step. A missing credential skips the authenticated HTML assertion while all
 internal, redirect, unauthenticated `401`, event-to-Feast, and recommendation
 checks still run.
 
-Rollback is owned by the per-component deployment transaction. A failed deploy
-or production smoke restores the previous Helm revision before Jenkins reports
-the branch failure.
+The release uses Helm `--atomic --cleanup-on-fail --wait` under the
+`helm:api-serving:recsys-demo-web` Jenkins lock. A failed upgrade restores the
+previous Helm revision before Jenkins reports the branch failure.
 
 ## Production record
 
-After a rollout, archive `.ci-image-manifest/demo_web.env`, `.demo-web/`, and the
+After a rollout, archive `.ci-image-manifest/release-plan.env`, `.demo-web/`, and the
 Jenkins build artifacts. Record the Git SHA, Helm revision, and Jenkins build
 URL in the deployment ticket; none of these mutable production values belong in
 the chart defaults.

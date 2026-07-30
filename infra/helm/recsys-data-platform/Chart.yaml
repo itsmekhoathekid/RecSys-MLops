@@ -1,6 +1,0 @@
-apiVersion: v2
-name: recsys-data-platform
-description: Local Kubernetes native lakehouse data platform for RecSys CDC, Iceberg, Spark, Flink, and feature stores.
-type: application
-version: 0.1.0
-appVersion: "0.1.0"

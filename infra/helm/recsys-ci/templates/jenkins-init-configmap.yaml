@@ -388,29 +388,10 @@ data:
       }
     }
 
-    def componentJobs = [
-      [view: "01 Materialize Pipeline", job: "RecSys-Materialize-CICD", component: "materialize", label: "Materialize Pipeline"],
-      [view: "02 Training Pipeline", job: "RecSys-Training-CICD", component: "training", label: "Training Pipeline"],
-      [view: "03 Data Pipeline 1", job: "RecSys-DP1-Raw-To-Bronze-CICD", component: "dp1", label: "DP1 Raw To Bronze"],
-      [view: "04 Data Pipeline 2", job: "RecSys-DP2-Bronze-To-Silver-Gold-CICD", component: "dp2", label: "DP2 Bronze To Silver Gold"],
-      [view: "05 Data Pipeline 3", job: "RecSys-DP3-Offline-Feature-Table-CICD", component: "dp3", label: "DP3 Offline Feature Table"],
-      [view: "06 Triton Inference Engine", job: "RecSys-Triton-KServe-CICD", component: "kserve", label: "KServe Inference Engine"],
-      [view: "06B Progressive Model Rollout", job: "RecSys-Progressive-Rollout-CICD", component: "rollout", label: "Progressive Model Rollout"],
-      [view: "07 FastAPI Services", job: "RecSys-FastAPI-CICD", component: "api", label: "FastAPI Web API"],
-      [view: "08 Streaming Offline Store", job: "RecSys-Stream-Offline-Store-CICD", component: "stream_offline", label: "Stream Features To Offline Store"],
-      [view: "09 Streaming Online Store", job: "RecSys-Stream-Online-Store-CICD", component: "stream_online", label: "Stream Features To Online Store"],
-      [view: "10 Recommendation Web App", job: "RecSys-Recommendation-Web-CICD", component: "demo_web", label: "Recommendation Demo Web"],
-      [view: "11 Analytics And BI", job: "RecSys-Analytics-BI-CICD", component: "analytics", label: "Analytics And BI"],
-    ]
     def kserveCdJobName = "RecSys-KServe-Model-CD"
 
     def mainDescription = "Main GitHub webhook CI/CD entrypoint. Push/merge events call /github-webhook/, Jenkins detects changed paths, runs test/build for affected components, and deploys automatically when the resolved branch is main."
     upsertJob(mainJobName, scmPipelineXml(mainJobName, mainDescription, "", false, true, scriptPath))
-
-    componentJobs.each { componentJob ->
-      def description = "Manual CI/CD proof job for ${componentJob.label}. It runs the shared Jenkinsfile with FORCE_COMPONENTS=${componentJob.component} so the UI shows Test, Build, and Deploy evidence for this pipeline only."
-      upsertJob(componentJob.job, scmPipelineXml(componentJob.job, description, componentJob.component, true, false, scriptPath))
-    }
 
     upsertJob(
       kserveCdJobName,
@@ -453,16 +434,6 @@ data:
       true
     )
 
-    componentJobs.each { componentJob ->
-      def viewJobs = componentJob.component == "demo_web" ? [mainJobName, componentJob.job] : [componentJob.job]
-      resetListView(
-        componentJob.view,
-        "Capture proof for ${componentJob.label}. Open this view, run ${componentJob.job}, then capture Component CI, Component Build And Publish, and Component Deploy Or Update.",
-        viewJobs,
-        false
-      )
-    }
-
     resetListView(
       "06A KServe Model CD",
       "Auto/manual CD view for promoted BST models. Kubeflow triggers RecSys-KServe-Model-CD after promotion when metric score >= threshold, and this job deploys the promoted Triton repository to KServe.",
@@ -470,18 +441,47 @@ data:
       false
     )
 
-    resetListView(
-      "99 All Component CI/CD",
-      "All manual component CI/CD and model CD proof jobs in one place.",
-      componentJobs.collect { it.job } + [kserveCdJobName],
-      false
-    )
-
-    ["RecSys-Recommendation-Web-Rollback", "RecSys-Post-Deploy-E2E"].each { retiredJobName ->
+    [
+      "RecSys-Materialize-CICD",
+      "RecSys-Training-CICD",
+      "RecSys-DP1-Raw-To-Bronze-CICD",
+      "RecSys-DP2-Bronze-To-Silver-Gold-CICD",
+      "RecSys-DP3-Offline-Feature-Table-CICD",
+      "RecSys-Triton-KServe-CICD",
+      "RecSys-Progressive-Rollout-CICD",
+      "RecSys-FastAPI-CICD",
+      "RecSys-Stream-Offline-Store-CICD",
+      "RecSys-Stream-Online-Store-CICD",
+      "RecSys-Recommendation-Web-CICD",
+      "RecSys-Analytics-BI-CICD",
+      "RecSys-Recommendation-Web-Rollback",
+      "RecSys-Post-Deploy-E2E",
+    ].each { retiredJobName ->
       def retiredJob = instance.getItem(retiredJobName)
       if (retiredJob != null) {
         instance.deleteItem(retiredJob)
         println("Deleted retired Jenkins job ${retiredJobName}")
+      }
+    }
+
+    [
+      "01 Materialize Pipeline",
+      "02 Training Pipeline",
+      "03 Data Pipeline 1",
+      "04 Data Pipeline 2",
+      "05 Data Pipeline 3",
+      "06 Triton Inference Engine",
+      "06B Progressive Model Rollout",
+      "07 FastAPI Services",
+      "08 Streaming Offline Store",
+      "09 Streaming Online Store",
+      "10 Recommendation Web App",
+      "11 Analytics And BI",
+      "99 All Component CI/CD",
+    ].each { retiredViewName ->
+      def retiredView = instance.getView(retiredViewName)
+      if (retiredView != null) {
+        instance.deleteView(retiredView)
       }
     }
 

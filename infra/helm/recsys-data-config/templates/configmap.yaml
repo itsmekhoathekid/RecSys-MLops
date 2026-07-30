@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-data-platform-config
+  namespace: {{ .Values.namespace.name }}
+data:
+  PYTHONPATH: /opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys
+  DATA_PLATFORM_MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
+  MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
+  AWS_DEFAULT_REGION: us-east-1
+  LAKE_BUCKET: {{ .Values.minio.lakeBucket | quote }}
+  OFFLINE_FEATURE_BUCKET: {{ .Values.minio.offlineFeatureBucket | quote }}
+  LAKEHOUSE_WAREHOUSE: "s3a://{{ .Values.minio.lakeBucket }}/warehouse"
+  GOVERNANCE_VALIDATION_ROOT: "s3a://{{ .Values.minio.lakeBucket }}/governance/validation"
+  RUNTIME_LINEAGE_ROOT: "s3a://{{ .Values.minio.lakeBucket }}/governance/lineage"
+  RUNTIME_LINEAGE_ENABLED: "true"
+  RUNTIME_LINEAGE_STRICT: "true"
+  ICEBERG_CATALOG: {{ .Values.lakehouse.catalog | quote }}
+  ICEBERG_LAKEHOUSE_NAMESPACE: {{ .Values.lakehouse.lakehouseNamespace | quote }}
+  OFFLINE_FEATURE_CATALOG: {{ .Values.lakehouse.offlineFeatureCatalog | quote }}
+  OFFLINE_FEATURE_STORE_WAREHOUSE: "s3a://{{ .Values.minio.offlineFeatureBucket }}/warehouse"
+  ICEBERG_FEATURE_NAMESPACE: {{ .Values.lakehouse.featureNamespace | quote }}
+  OFFLINE_FEATURE_STORE_URI: "s3a://{{ .Values.minio.offlineFeatureBucket }}/warehouse/{{ .Values.lakehouse.featureNamespace }}"
+  FEAST_POSTGRES_HOST: {{ printf "%s.%s.svc.cluster.local" .Values.featurePostgres.name .Release.Namespace | quote }}
+  FEAST_POSTGRES_PORT: "5432"
+  FEAST_POSTGRES_DB: {{ .Values.featurePostgres.database | quote }}
+  FEAST_POSTGRES_SCHEMA: {{ .Values.featurePostgres.schema | quote }}
+  FEAST_POSTGRES_USER: {{ .Values.featurePostgres.user | quote }}
+  FEAST_POSTGRES_PASSWORD: {{ .Values.featurePostgres.password | quote }}
+  FEAST_POSTGRES_SSLMODE: {{ .Values.featurePostgres.sslmode | quote }}
+  FEAST_POSTGRES_EXPORT_ENABLED: "1"
+  DATA_GENERATOR_CONFIG: {{ .Values.dataSetup.generatorConfig | quote }}
+  DATA_GENERATOR_RUN_ID: {{ .Values.dataSetup.generatorRunId | quote }}
+  DP3_CONFIG: {{ .Values.dataSetup.dp3Config | quote }}
+  DATA_INGESTION_IMAGE: {{ .Values.images.dataIngestion | quote }}
+  FEATURE_STORE_IMAGE: {{ .Values.images.featureStore | quote }}
+  DRIFT_RETRAIN_IMAGE: {{ .Values.images.driftRetrain | quote }}
+  FLINK_IMAGE: {{ .Values.images.flink | quote }}
+  SPARK_IMAGE: {{ .Values.images.spark | quote }}
+  ANALYTICS_DBT_IMAGE: {{ .Values.images.analyticsDbt | quote }}
+  REALTIME_LIMIT_PER_TABLE: {{ .Values.dataSetup.realtimeLimitPerTable | quote }}
+  DATA_PLATFORM_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
+  BATCH_FEATURE_DAG_SCHEDULE: {{ .Values.airflow.batchFeatureSchedule | quote }}
+  FEAST_MATERIALIZE_DAG_SCHEDULE: {{ .Values.airflow.feastMaterializeSchedule | quote }}
+  FEATURE_DRIFT_DAG_SCHEDULE: {{ .Values.airflow.featureDriftSchedule | quote }}
+  LAKEHOUSE_MAINTENANCE_DAG_SCHEDULE: {{ .Values.airflow.lakehouseMaintenanceSchedule | quote }}
+  LAKEHOUSE_OPTIMIZATION_STRATEGY: {{ .Values.lakehouse.optimizationStrategy | quote }}
+  LAKEHOUSE_TARGET_FILE_SIZE_MB: {{ .Values.lakehouse.targetFileSizeMb | quote }}
+  LAKEHOUSE_COMPACTION_MIN_INPUT_FILES: {{ .Values.lakehouse.compactionMinInputFiles | quote }}
+  REALTIME_E2E_ENABLED: {{ .Values.e2e.realtimeEnabled | quote }}
+  DATAHUB_INGEST_ENABLED: {{ .Values.e2e.datahubIngestEnabled | quote }}
+  SPARK_K8S_MASTER: {{ .Values.spark.k8sMaster | quote }}
+  SPARK_K8S_NAMESPACE: {{ .Values.namespace.name | quote }}
+  SPARK_K8S_IMAGE: {{ .Values.images.spark | quote }}
+  SPARK_K8S_IMAGE_PULL_POLICY: {{ .Values.images.pullPolicy | quote }}
+  SPARK_K8S_SERVICE_ACCOUNT: {{ .Values.spark.serviceAccountName | quote }}
+  SPARK_K8S_DRIVER_MEMORY: {{ .Values.spark.driverMemory | quote }}
+  SPARK_K8S_DRIVER_MEMORY_OVERHEAD: {{ .Values.spark.driverMemoryOverhead | quote }}
+  SPARK_K8S_DRIVER_CORES: {{ .Values.spark.driverCores | quote }}
+  SPARK_K8S_DRIVER_REQUEST_CORES: {{ .Values.spark.driverRequestCores | quote }}
+  SPARK_K8S_EXECUTOR_INSTANCES: {{ .Values.spark.executorInstances | quote }}
+  SPARK_K8S_EXECUTOR_MEMORY: {{ .Values.spark.executorMemory | quote }}
+  SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD: {{ .Values.spark.executorMemoryOverhead | quote }}
+  SPARK_K8S_EXECUTOR_CORES: {{ .Values.spark.executorCores | quote }}
+  SPARK_K8S_EXECUTOR_REQUEST_CORES: {{ .Values.spark.executorRequestCores | quote }}
+  SPARK_ICEBERG_VECTORIZATION_ENABLED: {{ default false .Values.spark.icebergVectorizationEnabled | quote }}
+  SPARK_DYNAMIC_ALLOCATION_ENABLED: {{ .Values.spark.dynamicAllocation.enabled | quote }}
+  SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED: {{ .Values.spark.dynamicAllocation.shuffleTrackingEnabled | quote }}
+  SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS: {{ .Values.spark.dynamicAllocation.minExecutors | quote }}
+  SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS: {{ .Values.spark.dynamicAllocation.initialExecutors | quote }}
+  SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS: {{ .Values.spark.dynamicAllocation.maxExecutors | quote }}
+  SPARK_DYNAMIC_ALLOCATION_EXECUTOR_IDLE_TIMEOUT: {{ .Values.spark.dynamicAllocation.executorIdleTimeout | quote }}
+  SPARK_DYNAMIC_ALLOCATION_SCHEDULER_BACKLOG_TIMEOUT: {{ .Values.spark.dynamicAllocation.schedulerBacklogTimeout | quote }}
+  SPARK_DYNAMIC_ALLOCATION_SUSTAINED_BACKLOG_TIMEOUT: {{ .Values.spark.dynamicAllocation.sustainedSchedulerBacklogTimeout | quote }}
+  SPARK_K8S_CONNECTION_TIMEOUT: {{ .Values.spark.connectionTimeout | quote }}
+  SPARK_K8S_REQUEST_TIMEOUT: {{ .Values.spark.requestTimeout | quote }}
+  SPARK_SQL_SHUFFLE_PARTITIONS: {{ .Values.spark.sqlShufflePartitions | quote }}
+  SPARK_ADVISORY_PARTITION_SIZE_BYTES: {{ .Values.spark.advisoryPartitionSizeBytes | quote }}
+  POSTGRES_HOST: {{ .Values.sourcePostgres.name | quote }}
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: {{ .Values.sourcePostgres.database | quote }}
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
+  KAFKA_CONNECT_URL: "http://{{ .Values.kafkaConnect.name }}:{{ .Values.kafkaConnect.port }}"
+  REDIS_HOST: {{ .Values.redis.name | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+  OFFLINE_STORE_ENABLED: {{ .Values.realtimeFlinkConsumer.offlineStoreEnabled | quote }}
+  OFFLINE_STORE_SINK: {{ .Values.realtimeFlinkConsumer.offlineStoreSink | quote }}
+  OFFLINE_FEATURE_DRIFT_REPORT_PATH: "s3://{{ .Values.minio.offlineFeatureBucket }}/monitoring/offline_feature_drift/report.json"
+  OFFLINE_FEATURE_DRIFT_CURRENT_ROOT: {{ .Values.drift.currentRoot | quote }}
+  OFFLINE_FEATURE_DRIFT_BASELINE_PATH: {{ .Values.drift.baselinePath | quote }}
+  OFFLINE_FEATURE_DRIFT_CURRENT_DAYS: {{ .Values.drift.currentDays | quote }}
+  OFFLINE_FEATURE_DRIFT_SAMPLE_ROWS: {{ .Values.drift.sampleRows | quote }}
+  OFFLINE_FEATURE_DRIFT_TABLES: {{ .Values.drift.featureTables | quote }}
+  OFFLINE_FEATURE_DRIFT_BOOTSTRAP_BASELINE: {{ .Values.drift.bootstrapBaseline | quote }}
+  PUSHGATEWAY_URL: {{ .Values.observability.pushgatewayUrl | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.observability.otelEndpoint | quote }}
+  DATAHUB_GMS_URL: "http://datahub-datahub-gms.datahub.svc.cluster.local:8080"
+  KFP_ENDPOINT: {{ .Values.observability.kfpEndpoint | quote }}
+  KFP_EXPERIMENT_NAME: {{ .Values.observability.kfpExperimentName | quote }}
+  KFP_PIPELINE_NAME: {{ .Values.observability.kfpPipelineName | quote }}
+  KFP_PIPELINE_VERSION_ID: {{ .Values.observability.kfpPipelineVersionId | quote }}
+  RETRAIN_ON_DRIFT: {{ .Values.observability.retrainOnDrift | quote }}
+  RETRAIN_PSI_THRESHOLD: {{ .Values.observability.retrainPsiThreshold | quote }}
+  RECSYS_JSON_LOGS: "1"
+  REALTIME_STREAM_TOPIC: {{ .Values.realtimeFlinkConsumer.topic | quote }}
+  REALTIME_STREAM_GROUP_ID: {{ .Values.realtimeFlinkConsumer.groupId | quote }}
+  REALTIME_STREAM_ONLINE_GROUP_ID: "{{ .Values.realtimeFlinkConsumer.groupId }}-{{ .Values.realtimeFlinkConsumer.online.groupIdSuffix }}"
+  REALTIME_STREAM_OFFLINE_GROUP_ID: "{{ .Values.realtimeFlinkConsumer.groupId }}-{{ .Values.realtimeFlinkConsumer.offline.groupIdSuffix }}"
+  REALTIME_STREAM_MIN_EVENTS: {{ .Values.realtimeFlinkConsumer.minEvents | quote }}
+  REALTIME_STREAM_MAX_EVENTS: {{ .Values.realtimeFlinkConsumer.maxEvents | quote }}
+  REALTIME_STREAM_TOPIC_PARTITIONS: {{ .Values.kafka.topicPartitions | quote }}
+  DEBEZIUM_TABLE_INCLUDE_LIST: {{ .Values.realtimeCdcConnector.tableIncludeList | quote }}
+  DEBEZIUM_SNAPSHOT_MODE: {{ .Values.realtimeCdcConnector.snapshotMode | quote }}
+  DEBEZIUM_SLOT_NAME: {{ .Values.realtimeCdcConnector.slotName | quote }}
+  FLINK_PARALLELISM: {{ .Values.realtimeFlinkConsumer.parallelism | quote }}
+  REALTIME_STREAM_MAX_HISTORY_LENGTH: {{ .Values.realtimeFlinkConsumer.maxHistoryLength | quote }}
+  STREAM_PROGRESS_LOG_EVENTS: {{ .Values.realtimeFlinkConsumer.progressLogEvents | quote }}
+  STREAM_CHECKPOINT_INTERVAL_SECONDS: {{ .Values.realtimeFlinkConsumer.checkpointIntervalSeconds | quote }}
+  KAFKA_FETCH_MAX_BYTES: {{ .Values.realtimeFlinkConsumer.kafkaFetchMaxBytes | quote }}
+  KAFKA_MAX_PARTITION_FETCH_BYTES: {{ .Values.realtimeFlinkConsumer.kafkaMaxPartitionFetchBytes | quote }}
+  KAFKA_MAX_POLL_RECORDS: {{ .Values.realtimeFlinkConsumer.kafkaMaxPollRecords | quote }}
+  REDIS_SINK_MAX_EVENTS_PER_SECOND: {{ .Values.realtimeFlinkConsumer.redisSinkMaxEventsPerSecond | quote }}
+  POSTGRES_SINK_MAX_EVENTS_PER_SECOND: {{ .Values.realtimeFlinkConsumer.postgresSinkMaxEventsPerSecond | quote }}
+  SINK_RATE_LIMIT_BURST_EVENTS: {{ .Values.realtimeFlinkConsumer.sinkRateLimitBurstEvents | quote }}
+  FLINK_ASYNC_IO_CAPACITY: {{ .Values.realtimeFlinkConsumer.asyncIoCapacity | quote }}
+  FLINK_ASYNC_IO_TIMEOUT_SECONDS: {{ .Values.realtimeFlinkConsumer.asyncIoTimeoutSeconds | quote }}
+  POSTGRES_ASYNC_POOL_SIZE: {{ .Values.realtimeFlinkConsumer.postgresAsyncPoolSize | quote }}
+  FLINK_CHECKPOINT_STORAGE_URI: {{ .Values.flink.checkpointStorageUri | quote }}
+  STREAM_WATERMARK_DELAY_MINUTES: {{ .Values.streaming.watermarkDelayMinutes | quote }}
+  STREAM_ALLOWED_LATENESS_SECONDS: {{ .Values.streaming.allowedLatenessSeconds | quote }}
+  STREAM_WATERMARK_IDLENESS_SECONDS: {{ .Values.streaming.watermarkIdlenessSeconds | quote }}
+  STREAM_WATERMARK_ALIGNMENT_ENABLED: {{ .Values.streaming.watermarkAlignmentEnabled | quote }}
+  STREAM_WATERMARK_ALIGNMENT_GROUP: {{ .Values.streaming.watermarkAlignmentGroup | quote }}
+  STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS: {{ .Values.streaming.watermarkAlignmentMaxDriftSeconds | quote }}
+  STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS: {{ .Values.streaming.watermarkAlignmentUpdateIntervalSeconds | quote }}
+  STREAM_QUALITY_WINDOW_SECONDS: {{ .Values.streaming.qualityWindowSeconds | quote }}
+  STREAM_FEATURE_WINDOW_SECONDS: {{ .Values.streaming.featureWindowSeconds | quote }}
+  STREAM_FEATURE_EARLY_FIRE_SECONDS: {{ .Values.streaming.featureEarlyFireSeconds | quote }}
+  STREAM_BURST_THRESHOLD_EVENT_COUNT: {{ .Values.streaming.burstThresholdEventCount | quote }}
+  STREAM_DROP_LATE_EVENTS: {{ .Values.streaming.dropLateEvents | quote }}
+  STREAM_ENABLE_LATE_EVENT_DLQ: {{ .Values.streaming.enableLateEventDlq | quote }}
+  STREAM_STATE_TTL_SECONDS: {{ .Values.streaming.stateTtlSeconds | quote }}
+  STREAM_DEDUP_STATE_TTL_SECONDS: {{ .Values.streaming.dedupStateTtlSeconds | quote }}
+  STREAM_CHECKPOINT_MIN_PAUSE_SECONDS: {{ .Values.streaming.checkpointMinPauseSeconds | quote }}
+  STREAM_CHECKPOINT_TIMEOUT_SECONDS: {{ .Values.streaming.checkpointTimeoutSeconds | quote }}
+  STREAM_TOLERABLE_CHECKPOINT_FAILURES: {{ .Values.streaming.tolerableCheckpointFailures | quote }}
+  STREAM_UNALIGNED_CHECKPOINTS_ENABLED: {{ .Values.streaming.unalignedCheckpointsEnabled | quote }}

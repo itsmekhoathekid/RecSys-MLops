@@ -10,6 +10,7 @@ pipeline {
   parameters {
     booleanParam(name: 'PUBLISH_IMAGES', defaultValue: true, description: 'Push images after successful component CI.')
     booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'Allow deploy/update from a non-main branch.')
+    string(name: 'COMPONENT_CI_MAX_PARALLEL', defaultValue: '3', description: 'Maximum component CI branches running in the Jenkins controller pod.')
     string(name: 'GATEWAY_SMOKE_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins username/password credential for authenticated demo web smoke.')
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
@@ -49,7 +50,7 @@ pipeline {
           env.CI_BASE_REF = baseRef
           echo "Changed-path range: ${baseRef ?: '<current commit>'}...HEAD"
           def baseArgument = baseRef ? "--base-ref '${baseRef}'" : ''
-          sh "python3 -m jenkins.python.change_detection.detector ${baseArgument} > .ci-components.env"
+          sh "python3 -m jenkins.python.change_detection.detector ${baseArgument} --commit '${env.GIT_COMMIT}' --plan-output .ci-release-plan.json > .ci-components.env"
           readFile('.ci-components.env').split('\\n').each { line ->
             if (line.trim() && line.contains('=')) {
               def pair = line.split('=', 2)
@@ -75,6 +76,8 @@ pipeline {
       steps {
         sh '''
           set -euo pipefail
+          python3 jenkins/python/image_catalog.py validate
+          python3 jenkins/python/release_plan.py validate
           ci_config_venv="${CI_TMP_ROOT}/ci-config-venv"
           uv venv "${ci_config_venv}"
           uv pip install --python "${ci_config_venv}/bin/python" pytest
@@ -83,7 +86,7 @@ pipeline {
             -q \
             --junitxml=reports/junit/ci-config.xml
           python3 -m compileall -q jenkins/python jenkins/scripts
-          find jenkins/scripts infra/terraform/gcp/scripts \
+          find jenkins/scripts ops \
             -type f -name '*.sh' -print0 | xargs -0 bash -n
           python3 jenkins/python/configuration.py validate
           for chart_file in infra/helm/*/Chart.yaml; do
@@ -120,9 +123,14 @@ pipeline {
       when { expression { env.RUN_COMPONENT_CI == 'true' } }
       steps {
         script {
+          def maxParallel = params.COMPONENT_CI_MAX_PARALLEL?.trim()?.toInteger()
+          if (maxParallel < 1 || maxParallel > 13) {
+            error 'COMPONENT_CI_MAX_PARALLEL must be between 1 and 13'
+          }
           componentPipeline.runComponentBranches(
             'jenkins/scripts/entrypoints/component_ci.sh',
-            "COVERAGE_MIN='${params.COVERAGE_MIN}'"
+            "COVERAGE_MIN='${params.COVERAGE_MIN}'",
+            maxParallel
           )
         }
       }
@@ -138,10 +146,7 @@ pipeline {
           . jenkins/scripts/deploy/preflight/gcp.sh
           . jenkins/scripts/lib/registry.sh
           python3 jenkins/python/configuration.py validate
-          gcp_verify_production_target
-          gcp_verify_workload_identity
-          gcp_verify_required_crds
-          gcp_verify_transaction_storage
+          gcp_verify_registry_publish_target
           registry_verify_gcp_upload_permission
           registry_login_gcp "${IMAGE_PUSH_REGISTRY}"
         '''
@@ -151,12 +156,13 @@ pipeline {
     stage('Component Build And Publish') {
       when { expression { env.RUN_COMPONENT_BUILD == 'true' } }
       steps {
-        script {
-          componentPipeline.runComponentBranches(
-            'jenkins/scripts/entrypoints/component_build_publish.sh',
-            "IMAGE_PUSH_REGISTRY='${env.IMAGE_PUSH_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' REQUIRE_GCP_ARTIFACT_REGISTRY='1'"
-          )
-        }
+        sh """
+          IMAGE_PUSH_REGISTRY='${env.IMAGE_PUSH_REGISTRY}' \
+          IMAGE_TAG='${env.GIT_COMMIT ?: ''}' \
+          PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' \
+          REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES ? '1' : '0'}' \
+          jenkins/scripts/entrypoints/release_build_publish.sh .ci-release-plan.json
+        """
       }
     }
 
@@ -168,10 +174,12 @@ pipeline {
           def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}'"
           if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
             withCredentials([usernamePassword(credentialsId: params.GATEWAY_SMOKE_CREDENTIALS_ID, usernameVariable: 'GATEWAY_SMOKE_USER', passwordVariable: 'GATEWAY_SMOKE_PASSWORD')]) {
-              componentPipeline.runComponentDeployBranches('jenkins/scripts/entrypoints/component_deploy.sh', commandEnv)
+              componentPipeline.runReleaseDeployPlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json')
+              sh "${commandEnv} jenkins/scripts/entrypoints/release_verify.sh .ci-release-plan.json"
             }
           } else {
-            componentPipeline.runComponentDeployBranches('jenkins/scripts/entrypoints/component_deploy.sh', commandEnv)
+            componentPipeline.runReleaseDeployPlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json')
+            sh "${commandEnv} jenkins/scripts/entrypoints/release_verify.sh .ci-release-plan.json"
           }
         }
       }
@@ -181,31 +189,13 @@ pipeline {
   post {
     always {
       junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
-      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,infra/kubeflow/compiled/*.yaml,.ci-components.env,.ci-image-manifest/*,.model-cd/*,.demo-web/**/*'
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.model-cd/*,.demo-web/**/*'
       sh '''
         set +e
-        recovery_status=0
-        if [ "${DEPLOY_STARTED:-false}" = "true" ]; then
-          old_ifs="${IFS}"
-          IFS=','
-          for component in ${CHANGED_COMPONENTS:-}; do
-            [ -n "${component}" ] && [ "${component}" != "ci_config" ] || continue
-            RECOVER_ONLY=1 \
-              DEPLOY_TARGET=gcp-production \
-              PUBLISH_IMAGES=1 \
-              FORCE_DEPLOY=1 \
-              IMAGE_PULL_REGISTRY="${IMAGE_PULL_REGISTRY}" \
-              jenkins/scripts/entrypoints/component_deploy.sh "${component}" || {
-                recovery_status=$?
-                break
-              }
-          done
-          IFS="${old_ifs}"
-        fi
         if [ -n "${CI_TMP_ROOT:-}" ] && [ -d "${CI_TMP_ROOT}" ]; then
           rm -rf "${CI_TMP_ROOT}"
         fi
-        exit "${recovery_status}"
+        jenkins/scripts/maintenance/docker_gc.sh
       '''
     }
   }

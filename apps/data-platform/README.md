@@ -41,13 +41,13 @@ flowchart TD
 
 | Platform part | Implementation |
 | --- | --- |
-| PostgreSQL WAL logical replication | `infra/docker/docker-compose.dataflow.yml`, `infra/helm/recsys-data-platform/templates/postgres.yaml` |
-| Debezium connector config | `infra/docker/debezium/postgres-connector.json`, `apps/data-platform/src/ingest/register_k8s_connectors.py` |
-| Kafka Connect image | `infra/docker/Dockerfile.kafka-connect` |
+| PostgreSQL WAL logical replication | `infra/helm/recsys-source-store/templates/postgres.yaml` |
+| Debezium connector config | `apps/data-platform/src/ingest/register_k8s_connectors.py` |
+| Kafka Connect image | `images/data/recsys-kafka-connect/Dockerfile` |
 | CDC topic contracts | `apps/data-platform/src/ingest/postgres_cdc_contracts.py`, `apps/data-platform/src/ingest/kafka_raw_reader.py` |
-| Iceberg lakehouse config | `apps/data-platform/src/lakehouse/iceberg.py`, `configs/local/spark_batch.yaml` |
+| Iceberg lakehouse config | `apps/data-platform/src/lakehouse/iceberg.py`, `configs/data-platform/spark/dp1.yaml`, `dp2.yaml`, `dp3.yaml` |
 | Batch generator -> Bronze Iceberg ingestion | `apps/data-platform/src/ingest/batch_lakehouse_ingestion.py` |
-| PySpark offline processing | `apps/data-platform/src/features/spark/spark_batch_entrypoint.py` |
+| PySpark offline processing | `apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py` |
 | PyFlink graph orchestration | `apps/data-platform/src/features/flink/realtime_stream_job.py` |
 | PyFlink source, CLI, and checkpoint runtime | `apps/data-platform/src/features/flink/source.py`, `apps/data-platform/src/features/flink/stream_config.py`, `apps/data-platform/src/features/flink/runtime.py` |
 | PyFlink dedup, lateness, quality, and row mapping | `apps/data-platform/src/features/flink/operators/` |

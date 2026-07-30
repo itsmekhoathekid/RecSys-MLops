@@ -124,7 +124,8 @@ spec:
                 python3-pip \
                 python3-venv \
                 tar \
-                unzip
+                unzip \
+                util-linux
               rm -rf /var/lib/apt/lists/*
 
               if ! command -v uv >/dev/null 2>&1; then
@@ -169,6 +170,12 @@ spec:
               value: copy
             - name: JAVA_OPTS
               value: {{ .Values.jenkins.javaOpts | quote }}
+            - name: DOCKER_GC_ENABLED
+              value: {{ .Values.jenkins.dind.gc.enabled | quote }}
+            - name: DOCKER_GC_RETENTION
+              value: {{ .Values.jenkins.dind.gc.retention | quote }}
+            - name: DOCKER_GC_KEEP_STORAGE
+              value: {{ .Values.jenkins.dind.gc.keepStorage | quote }}
             - name: JENKINS_ADMIN_USER
               valueFrom:
                 secretKeyRef:

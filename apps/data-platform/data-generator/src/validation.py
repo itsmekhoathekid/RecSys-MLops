@@ -11,7 +11,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from config import GeneratorConfig
+from generator_config import GeneratorConfig
 from domain import GeneratedData
 from drift.controller import DriftController
 from drift.reporting import (

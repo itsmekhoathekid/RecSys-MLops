@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from config import ChallengeConfig
+from generator_config import ChallengeConfig
 from domain import BehaviorEvent
 from offline.problems import (
     ChallengeStats,

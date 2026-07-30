@@ -369,7 +369,7 @@ def train_loop_per_worker(config: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run final BST DDP training with Ray Train after Ray Tune")
-    parser.add_argument("--base-config-path", default="/opt/recsys/configs/local/bst.yaml")
+    parser.add_argument("--base-config-path", default="/opt/recsys/configs/ml-system/training/bst.yaml")
     parser.add_argument("--split-dir", default="/workspace/recsys/data_platform/output/ml/bst_split")
     parser.add_argument("--output-dir", default="/workspace/recsys/data_platform/output/ml/ray")
     parser.add_argument("--tune-result-path", default="/workspace/recsys/data_platform/output/ml/ray/tune_result.json")

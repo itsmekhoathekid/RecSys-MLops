@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "images": {
+    "recsys-base-python": {
+      "dockerfile": "images/base/recsys-base-python/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-data-ingestion": {
+      "dockerfile": "images/data/recsys-data-ingestion/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-base-python",
+          "buildArg": "RECSYS_BASE_IMAGE"
+        }
+      ]
+    },
+    "recsys-feature-store": {
+      "dockerfile": "images/data/recsys-feature-store/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-base-python",
+          "buildArg": "RECSYS_BASE_IMAGE"
+        }
+      ]
+    },
+    "recsys-drift-retrain": {
+      "dockerfile": "images/data/recsys-drift-retrain/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-base-python",
+          "buildArg": "RECSYS_BASE_IMAGE"
+        }
+      ]
+    },
+    "recsys-spark": {
+      "dockerfile": "images/data/recsys-spark/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-flink": {
+      "dockerfile": "images/data/recsys-flink/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-airflow": {
+      "dockerfile": "images/data/recsys-airflow/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-kafka-connect": {
+      "dockerfile": "images/data/recsys-kafka-connect/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-mlops-training": {
+      "dockerfile": "images/ml/recsys-mlops-training/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-base-python",
+          "buildArg": "RECSYS_BASE_IMAGE"
+        }
+      ]
+    },
+    "recsys-mlflow": {
+      "dockerfile": "images/ml/recsys-mlflow/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-api-serving": {
+      "dockerfile": "images/serving/recsys-api-serving/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-demo-api": {
+      "dockerfile": "images/demo/recsys-demo-api/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-demo-web": {
+      "dockerfile": "images/demo/recsys-demo-web/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-analytics-dbt": {
+      "dockerfile": "images/analytics/recsys-analytics-dbt/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-analytics-superset": {
+      "dockerfile": "images/analytics/recsys-analytics-superset/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    }
+  }
+}

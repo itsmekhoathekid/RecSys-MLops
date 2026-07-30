@@ -7,7 +7,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from config import GeneratorConfig
+from generator_config import GeneratorConfig
 from drift.reporting import DriftReporter
 from offline.problem_pipeline import OfflineProblemPipeline
 from offline.simulation import RecsysSimulation

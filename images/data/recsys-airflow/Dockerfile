@@ -1,0 +1,53 @@
+FROM apache/airflow:slim-3.2.2-python3.11 AS deps
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+USER airflow
+RUN pip install --upgrade \
+    apache-airflow-providers-docker \
+    "apache-airflow-providers-http>=6.0.0" \
+    "apache-airflow-providers-cncf-kubernetes>=10.17.0" \
+    apache-airflow-providers-postgres \
+    "cryptography==48.0.1" \
+    "httplib2==0.32.0" \
+    "jaraco.context==6.1.0" \
+    "joserfc==1.6.8" \
+    "msgpack==1.2.1" \
+    "pyasn1==0.6.4" \
+    "python-multipart==0.0.30" \
+    "pyyaml==6.0.3" \
+    "redis>=5,<8" \
+    "requests>=2.32" \
+    "setuptools==83.0.0" \
+    "soupsieve==2.8.4" \
+    "starlette==1.3.1" \
+    "tornado==6.5.6" \
+    "wheel==0.46.2"
+
+FROM apache/airflow:slim-3.2.2-python3.11 AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PATH=/home/airflow/.local/bin:${PATH}
+
+USER root
+WORKDIR /opt/recsys
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /home/airflow/.local \
+    && rm -rf /usr/python/lib/python3.11/site-packages/setuptools \
+        /usr/python/lib/python3.11/site-packages/setuptools-*.dist-info
+COPY --from=deps --chown=airflow:root /home/airflow/.local /home/airflow/.local
+COPY --chown=airflow:root configs /opt/recsys/configs
+COPY --chown=airflow:root apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY --chown=airflow:root apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
+COPY --chown=airflow:root apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
+COPY --chown=airflow:root apps/analytics/orchestration/airflow/dags /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
+RUN chown -R airflow:root /home/airflow \
+    && chmod -R g+rwX /home/airflow \
+    && rm -f /home/airflow/.local/bin/uv /home/airflow/.local/bin/uvx \
+    && rm -rf /home/airflow/.local/share/uv
+USER airflow
+
+ENV PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys

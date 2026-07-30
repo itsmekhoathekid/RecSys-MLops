@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from config import load_stream_config
+from generator_config import load_stream_config
 from streaming.config import StreamGeneratorConfig
 from streaming.event_factory import StreamEventFactory
 from streaming.problem_pipeline import StreamProblemPipeline
@@ -16,7 +16,7 @@ from streaming.problems import (
 
 
 def test_offline_and_stream_problems_are_loaded_from_one_yaml():
-    config = load_stream_config("configs/local/data_generator_test.yaml")
+    config = load_stream_config("configs/data-platform/generator/default.yaml")
     assert config.problems.burst_traffic.every_n_ticks == 5
     assert config.problems.late_arrival.delay_minutes_min == 45
     assert config.problems.duplicate_replay.rate == 0.14
@@ -51,12 +51,12 @@ def test_problem_folders_match_the_rubric_scope():
 
 
 def test_stream_problem_settings_are_not_owned_by_helm():
-    values = Path("infra/helm/recsys-data-platform/values.yaml").read_text()
+    values = Path("infra/helm/recsys-data-config/values.yaml").read_text()
     configmap = Path(
-        "infra/helm/recsys-data-platform/templates/configmap.yaml"
+        "infra/helm/recsys-data-config/templates/configmap.yaml"
     ).read_text()
     deployment = Path(
-        "infra/helm/recsys-data-platform/templates/realtime-producer.yaml"
+        "infra/helm/recsys-streaming/templates/realtime-producer.yaml"
     ).read_text()
 
     assert "eventsPerTick" not in values

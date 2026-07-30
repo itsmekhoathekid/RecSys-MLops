@@ -12,8 +12,8 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = os.getenv("ANALYTICS_NAMESPACE", "analytics")
-SPARK_IMAGE = os.getenv("ANALYTICS_SPARK_IMAGE", "recsys-analytics-spark:local")
-DBT_IMAGE = os.getenv("ANALYTICS_DBT_IMAGE", "recsys-analytics-dbt:local")
+SPARK_IMAGE = os.getenv("SPARK_IMAGE", "registry.example.invalid/recsys/recsys-spark:required")
+DBT_IMAGE = os.getenv("ANALYTICS_DBT_IMAGE", "registry.example.invalid/recsys/recsys-analytics-dbt:required")
 
 
 def analytics_env_from():
@@ -66,4 +66,3 @@ if DAG is not None:
             ["build", "--profiles-dir", "/opt/recsys/apps/analytics/profiles"],
         )
         sync_silver >> dbt_build
-

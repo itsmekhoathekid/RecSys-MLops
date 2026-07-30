@@ -5,7 +5,7 @@ from enum import Enum
 
 import numpy as np
 
-from config import SessionBehaviorConfig
+from generator_config import SessionBehaviorConfig
 from domain import Product, User
 
 

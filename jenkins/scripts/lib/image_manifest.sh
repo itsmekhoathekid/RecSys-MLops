@@ -40,5 +40,9 @@ image_manifest_record() {
   local manifest_path="$1"
   local key="$2"
   local value="$3"
-  printf '%s=%s\n' "${key}" "${value}" >>"${manifest_path}"
+  local temporary_path="${manifest_path}.tmp.$$"
+
+  awk -F= -v key="${key}" '$1 != key' "${manifest_path}" >"${temporary_path}"
+  printf '%s=%s\n' "${key}" "${value}" >>"${temporary_path}"
+  mv -f "${temporary_path}" "${manifest_path}"
 }

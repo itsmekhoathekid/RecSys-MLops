@@ -1,15 +1,160 @@
 {
-  "version": 1,
+  "version": 3,
+  "globalExcludes": [
+    "docs/**",
+    "graphify-out/**",
+    "*.md",
+    "*.rst",
+    "**/*.md",
+    "**/*.rst",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.gif",
+    "**/*.svg",
+    "**/*.webp",
+    "**/*.pyc",
+    "**/__pycache__/**",
+    "**/__init__.py",
+    ".DS_Store",
+    "**/.DS_Store",
+    ".coverage",
+    ".gitignore",
+    "**/.gitkeep",
+    ".idea/**",
+    ".vscode/**",
+    ".ci-image-manifest/**",
+    ".ci-release-plan.json",
+    "reports/**"
+  ],
+  "pathGroups": {
+    "python-common": {
+      "files": [
+        "pyproject.toml",
+        "requirements.txt",
+        "uv.lock",
+        ".python-version"
+      ]
+    },
+    "jenkins-shared-runtime": {
+      "prefixes": [
+        "jenkins/pipeline/",
+        "jenkins/scripts/entrypoints/",
+        "jenkins/scripts/lib/",
+        "jenkins/scripts/deploy/preflight/"
+      ],
+      "files": [
+        "jenkins/python/configuration.py",
+        "jenkins/python/release_plan.py",
+        "jenkins/scripts/build/engine.sh",
+        "jenkins/scripts/build/runtime.sh",
+        "jenkins/scripts/test/runtime.sh",
+        "jenkins/scripts/test/node_placement.sh"
+      ]
+    },
+    "data-common": {
+      "prefixes": [
+        "apps/data-platform/src/config/"
+      ],
+      "files": [
+        "apps/data-platform/pyproject.toml",
+        "apps/data-platform/uv.lock",
+        "tests/contract/test_docker_dataflow_contracts.py"
+      ]
+    },
+    "lakehouse-common": {
+      "prefixes": [
+        "apps/data-platform/src/lakehouse/",
+        "apps/data-platform/src/metadata/"
+      ],
+      "files": [
+        "apps/data-platform/src/validate/governance_contracts.py",
+        "tests/unit/data_platform/test_lakehouse_optimization.py",
+        "tests/unit/data_platform/test_governance_lineage.py",
+        "tests/unit/test_runtime_lineage.py",
+        "tests/integration/test_hudi_native_upsert_versioning.py"
+      ]
+    },
+    "airflow-data-release": {
+      "prefixes": [
+        "infra/helm/recsys-airflow/"
+      ]
+    },
+    "feature-store-release": {
+      "prefixes": [
+        "infra/helm/recsys-feature-store/"
+      ]
+    },
+    "streaming-release": {
+      "prefixes": [
+        "infra/helm/recsys-streaming/",
+        "infra/helm/recsys-event-stream/",
+        "infra/helm/recsys-kafka-connect/"
+      ]
+    }
+  },
+  "ciConfiguration": {
+    "flag": "RUN_CI_CONFIG",
+    "changeDetection": {
+      "prefixes": [
+        "infra/terraform/",
+        "infra/helm/",
+        "infra/helm/recsys-ci/",
+        "ops/",
+        "jenkins/config/",
+        "jenkins/python/",
+        "jenkins/scripts/",
+        "tests/unit/jenkins/",
+        "tests/contract/"
+      ],
+      "files": [
+        ".dockerignore",
+        ".gcloudignore",
+        "Jenkinsfile",
+        "Makefile",
+        "infra/__init__.py",
+        "tests/contract/test_repository_layout_contracts.py"
+      ]
+    }
+  },
   "components": [
     {
       "name": "materialize",
       "flag": "RUN_MATERIALIZE",
       "label": "Materialize Pipeline",
       "ciProfile": "data",
-      "buildProfile": "feature-store",
-      "deployProfile": "materialize",
-      "testProfile": "materialize",
-      "deployOrder": 10,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "data-common",
+          "feature-store-release",
+          "airflow-data-release"
+        ],
+        "prefixes": [
+          "apps/data-platform/feature-store/",
+          "apps/data-platform/src/feature_store/",
+          "apps/data-platform/src/metadata/",
+          "tests/unit/feature_store/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/data.sh",
+          "jenkins/scripts/deploy/feast.sh",
+          "jenkins/scripts/test/data_platform_verify_feature_stores.sh",
+          "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-feature-store",
+        "recsys-airflow"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [
+        "recsys_feast_materialize"
+      ],
+      "verifyDependsOn": [
+        "dp3"
+      ],
       "migrationPolicy": "none"
     },
     {
@@ -17,32 +162,87 @@
       "flag": "RUN_TRAINING",
       "label": "Training Pipeline",
       "ciProfile": "ml",
-      "buildProfile": "training",
-      "deployProfile": "training",
-      "testProfile": "training",
-      "deployOrder": 20,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime"
+        ],
+        "prefixes": [
+          "apps/ml-system/",
+          "configs/ml-system/",
+          "infra/helm/mlflow-stack/",
+          "infra/helm/ray-cluster/",
+          "infra/helm/recsys-runtime/",
+          "pipelines/kubeflow/",
+          "notebooks/",
+          "tests/unit/ml_system/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/ml.sh",
+          "jenkins/scripts/deploy/ml_platform.sh",
+          "jenkins/scripts/test/ml_platform.sh"
+        ]
+      },
+      "buildImages": [
+        "recsys-mlops-training",
+        "recsys-spark",
+        "recsys-mlflow",
+        "recsys-drift-retrain"
+      ],
+      "buildArtifacts": [
+        "kubeflow-bst"
+      ],
+      "workflowChecks": [
+        "bst-training"
+      ],
+      "verifyDependsOn": [
+        "materialize"
+      ],
       "migrationPolicy": "expand-only"
-    },
-    {
-      "name": "spark_batch",
-      "flag": "RUN_SPARK_BATCH",
-      "label": "Spark Batch Processing",
-      "ciProfile": "data",
-      "buildProfile": "spark-batch",
-      "deployProfile": "spark-batch",
-      "testProfile": "spark-batch",
-      "deployOrder": 30,
-      "migrationPolicy": "none"
     },
     {
       "name": "dp1",
       "flag": "RUN_DP1",
       "label": "DP1 Raw To Bronze",
       "ciProfile": "data",
-      "buildProfile": "dp1",
-      "deployProfile": "dp1",
-      "testProfile": "dp1",
-      "deployOrder": 40,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "data-common",
+          "lakehouse-common",
+          "airflow-data-release"
+        ],
+        "prefixes": [
+          "apps/data-platform/data-generator/",
+          "apps/data-platform/src/ingest/",
+          "infra/helm/recsys-data-lakehouse/",
+          "infra/helm/recsys-source-store/",
+          "tests/unit/data_generator/"
+        ],
+        "files": [
+          "configs/data-platform/generator/default.yaml",
+          "configs/data-platform/generator/drift.yaml",
+          "configs/data-platform/generator/e2e-1k.yaml",
+          "configs/data-platform/generator/e2e-2k.yaml",
+          "configs/data-platform/spark/dp1.yaml",
+          "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
+        ],
+        "globs": [
+          "apps/data-platform/src/validate/**/*.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-spark",
+        "recsys-data-ingestion",
+        "recsys-kafka-connect",
+        "recsys-airflow"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [
+        "recsys_dp1_raw_to_bronze"
+      ],
+      "verifyDependsOn": [],
       "migrationPolicy": "expand-only"
     },
     {
@@ -50,10 +250,36 @@
       "flag": "RUN_DP2",
       "label": "DP2 Bronze To Silver Gold",
       "ciProfile": "data",
-      "buildProfile": "dp2",
-      "deployProfile": "dp2",
-      "testProfile": "dp2",
-      "deployOrder": 50,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "data-common",
+          "lakehouse-common",
+          "airflow-data-release"
+        ],
+        "prefixes": [
+          "tests/unit/data_platform/"
+        ],
+        "files": [
+          "configs/data-platform/spark/dp2.yaml",
+          "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py",
+          "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
+          "apps/data-platform/src/features/spark/build_silver_tables.py"
+        ],
+        "globs": []
+      },
+      "buildImages": [
+        "recsys-spark",
+        "recsys-airflow"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [
+        "recsys_dp2_bronze_to_silver_gold"
+      ],
+      "verifyDependsOn": [
+        "dp1"
+      ],
       "migrationPolicy": "none"
     },
     {
@@ -61,10 +287,44 @@
       "flag": "RUN_DP3",
       "label": "DP3 Offline Feature Table",
       "ciProfile": "data",
-      "buildProfile": "dp3",
-      "deployProfile": "dp3",
-      "testProfile": "dp3",
-      "deployOrder": 60,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "data-common",
+          "lakehouse-common",
+          "airflow-data-release",
+          "feature-store-release"
+        ],
+        "prefixes": [
+          "apps/data-platform/src/features/",
+          "apps/data-platform/src/feature_store/",
+          "apps/data-platform/feature-store/",
+          "tests/unit/feature_store/"
+        ],
+        "files": [
+          "configs/data-platform/spark/dp3.yaml",
+          "configs/data-platform/spark/dp3-e2e-1k.yaml",
+          "configs/data-platform/spark/dp3-e2e-2k.yaml",
+          "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
+        ],
+        "exclude": [
+          "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
+          "apps/data-platform/src/features/spark/build_silver_tables.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-spark",
+        "recsys-feature-store",
+        "recsys-airflow"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [
+        "recsys_dp3_offline_feature_table"
+      ],
+      "verifyDependsOn": [
+        "dp2"
+      ],
       "migrationPolicy": "expand-only"
     },
     {
@@ -72,10 +332,35 @@
       "flag": "RUN_API",
       "label": "FastAPI Web API",
       "ciProfile": "serving",
-      "buildProfile": "api",
-      "deployProfile": "api",
-      "testProfile": "api",
-      "deployOrder": 70,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime"
+        ],
+        "prefixes": [
+          "apps/api-serving/",
+          "infra/helm/recsys-serving/",
+          "infra/helm/recsys-gateway/",
+          "tests/e2e/",
+          "tests/unit/api_serving/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/serving.sh",
+          "jenkins/scripts/deploy/serving.sh",
+          "jenkins/scripts/test/serving.sh",
+          "tests/contract/test_gateway_contracts.py",
+          "tests/contract/test_observability_contracts.py",
+          "tests/contract/test_serving_contracts.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-api-serving"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [],
+      "verifyDependsOn": [
+        "materialize"
+      ],
       "migrationPolicy": "none"
     },
     {
@@ -83,10 +368,30 @@
       "flag": "RUN_KSERVE",
       "label": "KServe Inference Engine",
       "ciProfile": "ml",
-      "buildProfile": "none",
-      "deployProfile": "kserve",
-      "testProfile": "kserve",
-      "deployOrder": 80,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime"
+        ],
+        "prefixes": [
+          "infra/helm/recsys-serving/",
+          "jenkins/python/model_cd/",
+          "tests/e2e/"
+        ],
+        "files": [
+          "jenkins/scripts/deploy/serving.sh",
+          "jenkins/scripts/test/serving.sh",
+          "tests/contract/test_observability_contracts.py",
+          "tests/contract/test_serving_contracts.py",
+          "apps/ml-system/src/registry/model_promotion.py"
+        ]
+      },
+      "buildImages": [],
+      "buildArtifacts": [],
+      "workflowChecks": [],
+      "verifyDependsOn": [
+        "training"
+      ],
       "migrationPolicy": "none"
     },
     {
@@ -94,10 +399,35 @@
       "flag": "RUN_ROLLOUT",
       "label": "Progressive Model Rollout",
       "ciProfile": "ml",
-      "buildProfile": "rollout",
-      "deployProfile": "rollout",
-      "testProfile": "rollout",
-      "deployOrder": 90,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime"
+        ],
+        "prefixes": [
+          "jenkins/python/model_cd/",
+          "tests/load/"
+        ],
+        "files": [
+          "apps/ml-system/src/cli/model_rollout_controller.py",
+          "apps/ml-system/src/cli/trigger_kserve_cd.py",
+          "jenkins/KServeModelCD.Jenkinsfile",
+          "jenkins/scripts/deploy/rollout.sh",
+          "jenkins/scripts/test/champion_only.sh",
+          "tests/unit/ml_system/test_model_rollout_controller.py",
+          "tests/unit/ml_system/test_kserve_cd_trigger.py",
+          "tests/contract/test_observability_contracts.py",
+          "tests/contract/test_serving_contracts.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-mlops-training"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [],
+      "verifyDependsOn": [
+        "kserve"
+      ],
       "migrationPolicy": "none"
     },
     {
@@ -105,10 +435,40 @@
       "flag": "RUN_DRIFT",
       "label": "Realtime Drift Detection",
       "ciProfile": "data",
-      "buildProfile": "drift",
-      "deployProfile": "drift",
-      "testProfile": "drift",
-      "deployOrder": 100,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "data-common",
+          "airflow-data-release"
+        ],
+        "prefixes": [
+          "apps/data-platform/data-generator/src/drift/",
+          "apps/data-platform/src/mlops/",
+          "apps/data-platform/src/monitoring/",
+          "apps/data-platform/src/validate/",
+          "infra/helm/recsys-observability/"
+        ],
+        "files": [
+          "configs/data-platform/generator/drift.yaml",
+          "tests/contract/test_observability_contracts.py",
+          "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
+        ],
+        "globs": [
+          "tests/unit/data_generator/test_drift*.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-drift-retrain",
+        "recsys-airflow"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [
+        "recsys_feature_drift_monitoring"
+      ],
+      "verifyDependsOn": [
+        "dp3"
+      ],
       "migrationPolicy": "none"
     },
     {
@@ -116,10 +476,31 @@
       "flag": "RUN_STREAM_OFFLINE",
       "label": "Stream Features To Offline Store",
       "ciProfile": "data",
-      "buildProfile": "flink",
-      "deployProfile": "stream-offline",
-      "testProfile": "stream-offline",
-      "deployOrder": 110,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "data-common",
+          "lakehouse-common",
+          "feature-store-release",
+          "streaming-release"
+        ],
+        "prefixes": [
+          "apps/data-platform/src/features/flink/",
+          "apps/data-platform/src/feature_store/"
+        ],
+        "files": [
+          "apps/data-platform/flink-runtime-pom.xml"
+        ]
+      },
+      "buildImages": [
+        "recsys-flink"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [],
+      "verifyDependsOn": [
+        "dp1"
+      ],
       "migrationPolicy": "none"
     },
     {
@@ -127,10 +508,30 @@
       "flag": "RUN_STREAM_ONLINE",
       "label": "Stream Features To Online Store",
       "ciProfile": "data",
-      "buildProfile": "flink",
-      "deployProfile": "stream-online",
-      "testProfile": "stream-online",
-      "deployOrder": 120,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "data-common",
+          "feature-store-release",
+          "streaming-release"
+        ],
+        "prefixes": [
+          "apps/data-platform/src/features/flink/",
+          "apps/data-platform/src/feature_store/"
+        ],
+        "files": [
+          "apps/data-platform/flink-runtime-pom.xml"
+        ]
+      },
+      "buildImages": [
+        "recsys-flink"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [],
+      "verifyDependsOn": [
+        "stream_offline"
+      ],
       "migrationPolicy": "none"
     },
     {
@@ -138,10 +539,37 @@
       "flag": "RUN_ANALYTICS",
       "label": "Analytics And BI",
       "ciProfile": "analytics",
-      "buildProfile": "analytics",
-      "deployProfile": "analytics",
-      "testProfile": "analytics",
-      "deployOrder": 130,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "airflow-data-release"
+        ],
+        "prefixes": [
+          "apps/analytics/",
+          "infra/helm/recsys-analytics/",
+          "tests/unit/analytics/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/analytics.sh",
+          "jenkins/scripts/deploy/analytics.sh",
+          "jenkins/scripts/test/analytics.sh",
+          "tests/contract/test_analytics_contracts.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-spark",
+        "recsys-analytics-dbt",
+        "recsys-analytics-superset",
+        "recsys-airflow"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [
+        "recsys_analytics_daily"
+      ],
+      "verifyDependsOn": [
+        "dp2"
+      ],
       "migrationPolicy": "expand-only"
     },
     {
@@ -149,10 +577,34 @@
       "flag": "RUN_DEMO_WEB",
       "label": "Recommendation Demo Web",
       "ciProfile": "demo",
-      "buildProfile": "demo",
-      "deployProfile": "demo",
-      "testProfile": "demo",
-      "deployOrder": 1000,
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime"
+        ],
+        "prefixes": [
+          "apps/demo-web/",
+          "infra/helm/recsys-demo-web/",
+          "infra/helm/recsys-security/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/demo.sh",
+          "jenkins/scripts/deploy/demo.sh",
+          "jenkins/scripts/test/demo.sh",
+          "jenkins/scripts/test/demo_web_smoke.sh",
+          "tests/contract/test_demo_web_contracts.py",
+          "tests/contract/test_gateway_contracts.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-demo-api",
+        "recsys-demo-web"
+      ],
+      "buildArtifacts": [],
+      "workflowChecks": [],
+      "verifyDependsOn": [
+        "api"
+      ],
       "migrationPolicy": "expand-only"
     }
   ]

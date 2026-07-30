@@ -1,0 +1,104 @@
+FROM flink:2.2.1-java17 AS jar-downloader
+
+USER root
+ARG DOWNLOAD_JOBS=4
+ARG FLINK_AUTOSCALER_VERSION=1.15.0
+ARG MAVEN_VERSION=3.9.11
+RUN curl -fsSL \
+        "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+    | tar -xz -C /tmp
+
+COPY apps/data-platform/flink-runtime-pom.xml /tmp/flink-runtime-pom.xml
+RUN mkdir -p /tmp/recsys-jars \
+    && "/tmp/apache-maven-${MAVEN_VERSION}/bin/mvn" -q \
+        -f /tmp/flink-runtime-pom.xml dependency:copy-dependencies \
+        -DincludeScope=runtime \
+        -DoutputDirectory=/tmp/recsys-jars
+
+RUN mkdir -p /tmp/recsys-tools \
+    && printf '%s %s\n' \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar /tmp/recsys-jars/hadoop-aws-3.3.4.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-api/3.3.4/hadoop-client-api-3.3.4.jar /tmp/recsys-jars/hadoop-client-api-3.3.4.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-runtime/3.3.4/hadoop-client-runtime-3.3.4.jar /tmp/recsys-jars/hadoop-client-runtime-3.3.4.jar \
+        https://repo1.maven.org/maven2/commons-logging/commons-logging/1.2/commons-logging-1.2.jar /tmp/recsys-jars/commons-logging-1.2.jar \
+        https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar /tmp/recsys-jars/aws-java-sdk-bundle-1.12.262.jar \
+        https://repo1.maven.org/maven2/org/scala-lang/scala-library/2.12.18/scala-library-2.12.18.jar /tmp/recsys-jars/scala-library-2.12.18.jar \
+    | xargs -n 2 -P "${DOWNLOAD_JOBS}" sh -c 'curl -fsSL "$1" -o "$2"' sh
+
+RUN curl -fsSL \
+    "https://repo1.maven.org/maven2/org/apache/flink/flink-autoscaler-standalone/${FLINK_AUTOSCALER_VERSION}/flink-autoscaler-standalone-${FLINK_AUTOSCALER_VERSION}.jar" \
+    -o "/tmp/recsys-tools/flink-autoscaler-standalone-${FLINK_AUTOSCALER_VERSION}.jar"
+
+FROM flink:2.2.1-java17 AS runtime
+
+USER root
+WORKDIR /opt/recsys
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        python3 \
+        python3-dev \
+        python3-pip \
+    && ln -sfn /usr/bin/python3 /usr/local/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/opt/java/openjdk \
+    PATH=/opt/java/openjdk/bin:${PATH} \
+    HADOOP_CONF_DIR=/opt/flink/conf \
+    TMPDIR=/opt/recsys/tmp \
+    PIP_CACHE_DIR=/opt/recsys/pip-cache \
+    PIP_BREAK_SYSTEM_PACKAGES=1
+
+RUN mkdir -p "${TMPDIR}" "${PIP_CACHE_DIR}" \
+    && chmod 1777 "${TMPDIR}" \
+    && python3 -m pip install --no-cache-dir pycodestyle
+
+RUN python3 -m pip install --no-cache-dir \
+        apache-beam==2.75.0 \
+        avro==1.12.0 \
+        cloudpickle==2.2.1 \
+        cryptography==47.0.0 \
+        httplib2==0.31.2 \
+        pyarrow==23.0.1 \
+        py4j==0.10.9.7 \
+        pyyaml \
+        ruamel.yaml \
+        redis \
+        requests \
+        psycopg[binary] \
+        psycopg-pool
+
+COPY --from=jar-downloader /tmp/recsys-jars/*.jar /opt/flink/lib/
+COPY --from=jar-downloader /tmp/recsys-tools /opt/flink/autoscaler
+
+RUN mkdir -p /opt/flink/plugins/s3-fs-hadoop \
+    && cp /opt/flink/opt/flink-s3-fs-hadoop-*.jar /opt/flink/plugins/s3-fs-hadoop/ \
+    && test -f /opt/flink/plugins/metrics-prometheus/flink-metrics-prometheus-*.jar
+
+RUN python3 -m zipfile -e /opt/flink/opt/python/pyflink.zip /opt/flink/opt/python \
+    && chmod +x /opt/flink/opt/python/pyflink/bin/*.sh
+
+RUN printf '%s\n' \
+        '<?xml version="1.0" encoding="UTF-8"?>' \
+        '<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>' \
+        '<configuration>' \
+        '  <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>' \
+        '  <property><name>fs.s3a.endpoint</name><value>http://data-platform-minio:9000</value></property>' \
+        '  <property><name>fs.s3a.access.key</name><value>minio</value></property>' \
+        '  <property><name>fs.s3a.secret.key</name><value>minio123</value></property>' \
+        '  <property><name>fs.s3a.path.style.access</name><value>true</value></property>' \
+        '  <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>' \
+        '  <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>' \
+        '</configuration>' \
+        > /opt/flink/conf/core-site.xml
+
+COPY configs /opt/recsys/configs
+COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
+COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
+
+ENV PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys
+
+USER flink

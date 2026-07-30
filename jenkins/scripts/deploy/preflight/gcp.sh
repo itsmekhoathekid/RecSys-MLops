@@ -7,17 +7,14 @@ gcp_metadata_project_id() {
     'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 }
 
-gcp_verify_production_target() {
+gcp_verify_registry_publish_target() {
   local image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_PUSH_REGISTRY:-${IMAGE_REGISTRY:-}}}"
   local expected_project
   local expected_registry
-  local expected_context
   local actual_project=""
-  local actual_context=""
 
   expected_project="$(gcp_production_field projectId)"
   expected_registry="$(gcp_production_field imageRegistry)"
-  expected_context="$(gcp_production_field context)"
   image_registry="${image_registry%/}"
 
   [[ "${image_registry}" == "${expected_registry}" ]] || {
@@ -40,6 +37,14 @@ gcp_verify_production_target() {
     recsys_error "cannot verify GCP project through metadata server or gcloud"
     return 2
   fi
+}
+
+gcp_verify_production_target() {
+  local expected_context
+  local actual_context=""
+
+  gcp_verify_registry_publish_target
+  expected_context="$(gcp_production_field context)"
 
   actual_context="$(kubectl config current-context 2>/dev/null || true)"
   if [[ -n "${actual_context}" ]]; then
@@ -103,89 +108,76 @@ gcp_verify_workload_identity() {
   fi
 }
 
-gcp_verify_candidate_digests() {
-  local component="$1"
-  local manifest_path="${IMAGE_MANIFEST_DIR:-.ci-image-manifest}/${component}.env"
-  local image_key image_ref digest_key digest_ref
-  if [[ "${component}" == "kserve" ]]; then
-    return 0
-  fi
-  [[ -s "${manifest_path}" ]] || {
-    recsys_error "candidate image manifest is missing: ${manifest_path}"
-    return 2
-  }
-  while IFS='=' read -r image_key image_ref; do
-    [[ "${image_key}" == *_IMAGE ]] || continue
-    digest_key="${image_key%_IMAGE}_DIGEST"
-    digest_ref="$(awk -F= -v key="${digest_key}" '$1 == key {sub(/^[^=]*=/, "", $0); print; exit}' "${manifest_path}")"
-    [[ "${digest_ref}" == "$(gcp_production_field imageRegistry)"/*@sha256:* ]] || {
-      recsys_error "${manifest_path} does not contain an immutable production digest for ${image_key}"
-      return 2
-    }
-    docker manifest inspect "${digest_ref}" >/dev/null
-  done <"${manifest_path}"
+gcp_verify_external_secret_target() {
+  local namespace="$1"
+  local name="$2"
+  kubectl wait --for=condition=Ready "externalsecret/${name}" \
+    -n "${namespace}" --timeout="${GCP_PREFLIGHT_TIMEOUT:-120s}"
+  kubectl get "secret/${name}" -n "${namespace}" >/dev/null
 }
 
-gcp_verify_transaction_storage() {
-  local root
-  local probe
-  root="$(
-    if declare -F tx_state_root >/dev/null 2>&1; then
-      tx_state_root
-    else
-      printf '%s' "${JENKINS_HOME:?JENKINS_HOME is required}/ci-transactions"
-    fi
-  )"
-  mkdir -p "${root}"
-  probe="${root}/.preflight-${BUILD_NUMBER:-manual}-$$"
-  : >"${probe}"
-  rm -f "${probe}"
-}
-
-gcp_helm_targets_for_component() {
+gcp_verify_unit_secrets() {
   case "$1" in
-    materialize|spark_batch|dp1|dp2|dp3|stream_offline|stream_online|drift)
-      printf '%s\t%s\n' "${namespace_data:-recsys-dataflow}" recsys-data-platform
-      ;;
-    training)
-      printf '%s\t%s\n' "${namespace_data:-recsys-dataflow}" recsys-data-platform
-      printf '%s\t%s\n' "${namespace_mlops:-experiment-tracking}" recsys-mlflow
-      ;;
-    api|kserve|kserve_model_cd)
-      printf '%s\t%s\n' "${namespace_kserve:-kserve-triton-inference}" recsys-serving
-      ;;
-    analytics)
-      printf '%s\t%s\n' "${namespace_data:-recsys-dataflow}" recsys-data-platform
-      printf '%s\t%s\n' "${namespace_analytics:-analytics}" recsys-analytics
-      ;;
-    demo_web)
-      printf '%s\t%s\n' recsys-security recsys-security
-      printf '%s\t%s\n' "${namespace_demo:-api-serving}" "${DEMO_WEB_RELEASE:-recsys-demo-web}"
+    data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|feature-registry|streaming|airflow)
+      gcp_verify_external_secret_target recsys-dataflow recsys-data-platform-secret
       ;;
     mlflow)
-      printf '%s\t%s\n' "${namespace_mlops:-experiment-tracking}" recsys-mlflow
+      gcp_verify_external_secret_target experiment-tracking recsys-mlflow-secrets
+      ;;
+    serving)
+      gcp_verify_external_secret_target kubeflow recsys-mlops-runtime
+      gcp_verify_external_secret_target kserve-triton-inference recsys-kserve-minio
       ;;
   esac
 }
 
+gcp_verify_candidate_digests() {
+  local plan_path="${1:-.ci-release-plan.json}"
+  local image_name digest_ref
+  [[ -s "${plan_path}" ]] || {
+    recsys_error "release plan is missing: ${plan_path}"
+    return 2
+  }
+  while IFS= read -r image_name; do
+    [[ -n "${image_name}" ]] || continue
+    digest_ref="$(image_manifest_lookup "${image_name}")"
+    [[ "${digest_ref}" == "$(gcp_production_field imageRegistry)"/*@sha256:* ]] || {
+      recsys_error "release manifest does not contain an immutable digest for ${image_name}"
+      return 2
+    }
+    docker manifest inspect "${digest_ref}" >/dev/null
+  done < <(
+    python3 -c '
+import json, sys
+for image in json.load(open(sys.argv[1], encoding="utf-8"))["buildImages"]:
+    print(image)
+' "${plan_path}"
+  )
+}
+
 gcp_verify_helm_history() {
-  local namespace release
-  while IFS=$'\t' read -r namespace release; do
-    [[ -n "${release}" ]] || continue
-    if helm status "${release}" -n "${namespace}" >/dev/null 2>&1; then
-      helm history "${release}" -n "${namespace}" -o json \
-        | python3 -c '
+  local unit_name="$1"
+  local unit_json kind namespace release
+  unit_json="$(python3 jenkins/python/release_plan.py unit "${unit_name}")"
+  kind="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["kind"])' <<<"${unit_json}")"
+  [[ "${kind}" == "helm" ]] || return 0
+  namespace="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["namespace"])' <<<"${unit_json}")"
+  release="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["release"])' <<<"${unit_json}")"
+  if helm status "${release}" -n "${namespace}" >/dev/null 2>&1; then
+    helm history "${release}" -n "${namespace}" -o json \
+      | python3 -c '
 import json, sys
 rows = json.load(sys.stdin)
 deployed = [row for row in rows if str(row.get("status", "")).lower() == "deployed"]
 if not deployed:
     raise SystemExit("release has no deployed revision available for rollback")
 '
-    fi
-  done < <(gcp_helm_targets_for_component "${component:?component is required}")
+  fi
 }
 
 gcp_production_preflight() {
+  local unit_name="$1"
+  local plan_path="${2:-.ci-release-plan.json}"
   recsys_require_command curl
   recsys_require_command docker
   recsys_require_command helm
@@ -194,8 +186,8 @@ gcp_production_preflight() {
   gcp_verify_production_target
   gcp_verify_workload_identity
   gcp_verify_required_crds
-  gcp_verify_candidate_digests "${component:?component must be set for production preflight}"
-  gcp_verify_transaction_storage
-  gcp_verify_helm_history
+  gcp_verify_unit_secrets "${unit_name}"
+  gcp_verify_candidate_digests "${plan_path}"
+  gcp_verify_helm_history "${unit_name}"
   recsys_log "validated GCP production target $(gcp_production_field projectId)/$(gcp_production_field cluster)"
 }

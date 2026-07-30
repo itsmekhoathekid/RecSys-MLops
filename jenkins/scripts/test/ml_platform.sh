@@ -3,7 +3,7 @@
 test_training() {
   local namespace="${MLOPS_NAMESPACE:-experiment-tracking}"
   local kfp_endpoint=""
-  local smoke_run_id="ci-${TX_ID:-${BUILD_NUMBER:-manual}}"
+  local smoke_run_id="ci-${BUILD_NUMBER:-manual}"
   component_test_wait_deployment "${namespace}" mlflow
   kubectl exec -n "${namespace}" deploy/mlflow -- \
     /opt/venv/bin/python -c '
@@ -11,19 +11,19 @@ import urllib.request
 with urllib.request.urlopen("http://127.0.0.1:5000/health", timeout=10) as response:
     assert response.status == 200
 '
-  if [[ -n "${TX_DIR:-}" && -f "${TX_DIR}/kfp-upload.json" ]]; then
+  if [[ -f ".ci-deploy/kfp-upload.json" ]]; then
     python3 -c '
 import json, sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 assert payload.get("pipeline_id")
 assert payload.get("pipeline_version_id") or payload.get("action") == "uploaded_pipeline"
-' "${TX_DIR}/kfp-upload.json"
+' ".ci-deploy/kfp-upload.json"
   fi
   kfp_endpoint="$(kfp_endpoint_for_upload)"
   PYTHONPATH=apps/ml-system/src:apps/data-platform/src \
-    tx_runtime_python apps/ml-system/src/kubeflow/submit_pipeline_run.py \
+    runtime_python apps/ml-system/src/kubeflow/submit_pipeline_run.py \
     --host "${kfp_endpoint}" \
-    --package-path infra/kubeflow/compiled/bst_training_pipeline.yaml \
+    --package-path pipelines/kubeflow/compiled/bst_training_pipeline.yaml \
     --experiment-name recsys-ci-smoke \
     --run-name "${smoke_run_id}" \
     --argument "pipeline_run_id=${smoke_run_id}" \

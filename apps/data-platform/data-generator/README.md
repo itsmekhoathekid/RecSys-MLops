@@ -8,10 +8,10 @@ data-quality challenges before writing explicit-schema Parquet files.
 
 ```bash
 PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/cli.py generate \
-  --config configs/local/data_generator_test.yaml
+  --config configs/data-platform/generator/default.yaml
 
 PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/cli.py validate \
-  --config configs/local/data_generator_test.yaml
+  --config configs/data-platform/generator/default.yaml
 ```
 
 Output is written to `apps/data-platform/data-generator/src/output/<run_id>/`. Time-series tables use
@@ -67,7 +67,7 @@ both reuse the root seed.
 
 ## Purchase-frequency drift
 
-`configs/local/data_generator_drift.yaml` enables Scenario A over 150 historical days:
+`configs/data-platform/generator/drift.yaml` enables Scenario A over 150 historical days:
 
 The drift block lives at `offline.generator.drift`; it remains separate from
 the assessed offline problem classes.
@@ -90,7 +90,7 @@ Run the drift scenario:
 
 ```bash
 PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/cli.py generate \
-  --config configs/local/data_generator_drift.yaml
+  --config configs/data-platform/generator/drift.yaml
 ```
 
 Drift-enabled runs add:

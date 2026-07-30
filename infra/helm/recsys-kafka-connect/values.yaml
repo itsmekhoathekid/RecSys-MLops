@@ -1,0 +1,16 @@
+namespace:
+  name: recsys-dataflow
+images:
+  kafkaConnect: registry.example.invalid/recsys/recsys-kafka-connect:required
+  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  pullPolicy: IfNotPresent
+kafka:
+  bootstrapServers: kafka:29092
+kafkaConnect:
+  name: kafka-connect
+  port: 8083
+  istioInject: "false"
+realtimeCdcConnector:
+  enabled: true
+  waitTimeoutSeconds: 480
+  activeDeadlineSeconds: 540

@@ -18,8 +18,8 @@ The JDBC catalog, Superset metadata database, and Redis cache are separate servi
 ## Local validation
 
 ```bash
-docker build -f apps/analytics/Dockerfile.dbt -t recsys-analytics-dbt:local .
-docker run --rm recsys-analytics-dbt:local parse
+docker build -f images/analytics/recsys-analytics-dbt/Dockerfile -t registry.example.invalid/recsys/recsys-analytics-dbt:required .
+docker run --rm registry.example.invalid/recsys/recsys-analytics-dbt:required parse
 helm lint infra/helm/recsys-analytics
 ```
 

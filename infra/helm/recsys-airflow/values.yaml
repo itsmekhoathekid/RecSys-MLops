@@ -1,0 +1,23 @@
+namespace:
+  name: recsys-dataflow
+storageClassName: ""
+images:
+  airflow: registry.example.invalid/recsys/recsys-airflow:required
+  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  featureStore: registry.example.invalid/recsys/recsys-feature-store:required
+  driftRetrain: registry.example.invalid/recsys/recsys-drift-retrain:required
+  spark: registry.example.invalid/recsys/recsys-spark:required
+  analyticsDbt: registry.example.invalid/recsys/recsys-analytics-dbt:required
+  postgres: postgres:16
+  pullPolicy: IfNotPresent
+airflowPostgres:
+  name: airflow-postgres
+  database: airflow
+  user: airflow
+  storage: 5Gi
+  istioInject: "false"
+airflow:
+  dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+  tolerations: []

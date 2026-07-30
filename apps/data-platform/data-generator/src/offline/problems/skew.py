@@ -4,7 +4,7 @@ from typing import Sequence
 
 import numpy as np
 
-from config import DistributionConfig
+from generator_config import DistributionConfig
 from domain import Product, User
 
 

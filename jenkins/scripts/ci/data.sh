@@ -29,13 +29,6 @@ ci_materialize() {
   ) 2>&1 | tee "${feast_log}"
 }
 
-ci_spark_batch() {
-  tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_spark_schema_merge.py tests/contract/test_docker_dataflow_contracts.py)
-  append_integration_dir spark_batch
-  cov_paths=(lakehouse.iceberg)
-  component_pytest "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
-}
-
 ci_dp1() {
   run_plain_pytest_with_pythonpath_override "dp1-data-generator" "apps/data-platform/data-generator/src" tests/unit/data_generator
   tests=(tests/unit/data_platform/test_data_platform.py tests/contract/test_docker_dataflow_contracts.py)

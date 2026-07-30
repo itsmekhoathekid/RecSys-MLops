@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import json
 from pathlib import Path
 
 import pytest
@@ -117,31 +118,37 @@ def test_demo_web_paths_route_to_the_dedicated_jenkins_component() -> None:
             "jenkins/scripts/test/demo_web_smoke.sh",
         ]
     )
-    assert result.component_names == ("demo_web", "ci_config")
+    assert result.component_names == ("demo_web",)
+    assert result.flags["RUN_CI_CONFIG"] is True
     assert result.unmapped_paths == ()
 
 
-def test_jenkins_seeds_demo_view_cicd_without_manual_rollback_job() -> None:
+def test_jenkins_retires_demo_proof_jobs_and_uses_catalog_build() -> None:
     seed = (ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml").read_text(encoding="utf-8")
     demo_deploy = (ROOT / "jenkins/scripts/deploy/demo.sh").read_text(encoding="utf-8")
     demo_test = (ROOT / "jenkins/scripts/test/demo.sh").read_text(encoding="utf-8")
-    build = (ROOT / "jenkins/scripts/build/demo.sh").read_text(encoding="utf-8")
+    build = (ROOT / "jenkins/scripts/entrypoints/release_build_publish.sh").read_text(
+        encoding="utf-8"
+    )
 
-    assert "10 Recommendation Web App" in seed
-    assert "RecSys-Recommendation-Web-CICD" in seed
-    assert '"RecSys-Recommendation-Web-Rollback", "RecSys-Post-Deploy-E2E"' in seed
+    assert '"RecSys-Recommendation-Web-CICD"' in seed
+    assert '"RecSys-Recommendation-Web-Rollback"' in seed
+    assert '"RecSys-Post-Deploy-E2E"' in seed
     assert "jenkins/demo-web-rollback/Jenkinsfile" not in seed
     assert "helm_atomic_upgrade" in demo_deploy
     assert "demo_web_smoke.sh" in demo_test
-    assert "migrate_demo_ingress_split" in demo_deploy
-    assert "ingress/recsys-demo-api" in demo_deploy
-    assert "nginx.ingress.kubernetes.io~1upstream-vhost" in demo_deploy
+    assert "migrate_demo_ingress_split" not in demo_deploy
     assert 'with_file_lock "/tmp/recsys-demo-web-helm.lock" deploy_demo_web_unlocked' in demo_deploy
     smoke = (ROOT / "jenkins/scripts/test/demo_web_smoke.sh").read_text(encoding="utf-8")
     assert 'kubectl exec -n "${namespace}" deploy/recsys-demo-api -c backend' in smoke
     assert ".demo-web/**/*" in (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    assert 'build_image "recsys-demo-api"' in build
-    assert 'build_image "recsys-demo-web"' in build
+    assert '["buildImages"]' in build
+    assert 'build_image "${image_name}"' in build
+    components = json.loads(
+        (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
+    )["components"]
+    demo = next(component for component in components if component["name"] == "demo_web")
+    assert demo["buildImages"] == ["recsys-demo-api", "recsys-demo-web"]
 
 
 def test_demo_frontend_container_cleanup_is_scope_safe() -> None:

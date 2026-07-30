@@ -11,7 +11,7 @@ from behavior import (
     SessionState,
     SessionStateMachine,
 )
-from config import GeneratorConfig
+from generator_config import GeneratorConfig
 from domain import (
     BehaviorEvent,
     GeneratedData,

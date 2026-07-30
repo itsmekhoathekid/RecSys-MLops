@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-event-stream
+description: RecSys Kafka event backbone and topic lifecycle.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

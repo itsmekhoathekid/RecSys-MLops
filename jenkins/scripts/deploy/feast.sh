@@ -2,14 +2,6 @@
 
 FEAST_REGISTRY_POD=""
 
-feast_registry_pod_name() {
-  local action="$1"
-  local name
-  name="$(recsys_kubernetes_name "feast-registry-${action}-${TX_ID:-manual}")"
-  name="${name:0:63}"
-  printf '%s' "${name%-}"
-}
-
 feast_registry_stop_pod() {
   if [[ -n "${FEAST_REGISTRY_POD:-}" ]]; then
     kubectl delete pod "${FEAST_REGISTRY_POD}" \
@@ -19,13 +11,15 @@ feast_registry_stop_pod() {
 }
 
 feast_registry_start_pod() {
-  local action="$1"
-  local image_reference="$2"
+  local image_reference="$1"
   local overrides
   local actual_image
-  local image_id
 
-  FEAST_REGISTRY_POD="$(feast_registry_pod_name "${action}")"
+  FEAST_REGISTRY_POD="$(
+    recsys_kubernetes_name "feast-registry-apply-${BUILD_NUMBER:-manual}"
+  )"
+  FEAST_REGISTRY_POD="${FEAST_REGISTRY_POD:0:63}"
+  FEAST_REGISTRY_POD="${FEAST_REGISTRY_POD%-}"
   kubectl delete pod "${FEAST_REGISTRY_POD}" \
     -n "${namespace_data}" --ignore-not-found --wait=true >/dev/null 2>&1 || true
   overrides="$(
@@ -45,7 +39,6 @@ print(
                         "name": name,
                         "image": image,
                         "command": ["sleep", "1800"],
-                        "env": [{"name": "IMAGE_REFERENCE", "value": image}],
                         "envFrom": [
                             {"configMapRef": {"name": "recsys-data-platform-config"}},
                             {"secretRef": {"name": "recsys-data-platform-secret"}},
@@ -74,54 +67,22 @@ PY
     kubectl get pod "${FEAST_REGISTRY_POD}" -n "${namespace_data}" \
       -o jsonpath='{.spec.containers[0].image}'
   )"
-  if [[ "${actual_image}" != "${image_reference}" ]]; then
-    recsys_error "Feast registry pod image mismatch: expected immutable candidate, got ${actual_image}"
+  [[ "${actual_image}" == "${image_reference}" ]] || {
+    recsys_error "Feast registry pod image mismatch: expected ${image_reference}, got ${actual_image}"
     feast_registry_stop_pod
     return 1
-  fi
-  image_id="$(
-    kubectl get pod "${FEAST_REGISTRY_POD}" -n "${namespace_data}" \
-      -o jsonpath='{.status.containerStatuses[0].imageID}'
-  )"
-  recsys_log "Feast registry pod is running the requested immutable image (${image_id##*@})"
+  }
 }
 
-feast_registry_exec() {
-  kubectl exec -n "${namespace_data}" "${FEAST_REGISTRY_POD}" -- \
-    bash -lc "$1"
-}
-
-feast_registry_snapshot() {
-  local image_reference="$1"
-  local state_path="${TX_DIR}/feast-sql-registry.json"
-  local status=0
-
-  feast_registry_start_pod snapshot "${image_reference}" || return
-  feast_registry_exec '
-    set -euo pipefail
-    export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m feature_store.sql_registry_state url)"
-    /opt/venv/bin/python -c "import sqlalchemy"
-    /opt/venv/bin/python -m feature_store.sql_registry_state snapshot \
-      --project recsys \
-      --image-reference "$IMAGE_REFERENCE"
-  ' >"${state_path}" || status=$?
-  feast_registry_stop_pod
-  if [[ "${status}" != "0" || ! -s "${state_path}" ]]; then
-    recsys_error "failed to snapshot Feast SQL registry"
-    return 1
-  fi
-  tx_register_external feast-sql-registry "${state_path}"
-}
-
-feast_registry_plan_apply() {
+feast_registry_apply() {
   local image_reference="$1"
   local report_dir="reports/gcp/materialize"
   local log_path="${report_dir}/feast-plan-apply.log"
   local status=0
 
   mkdir -p "${report_dir}"
-  feast_registry_start_pod apply "${image_reference}" || return
-  feast_registry_exec '
+  feast_registry_start_pod "${image_reference}" || return
+  kubectl exec -n "${namespace_data}" "${FEAST_REGISTRY_POD}" -- bash -lc '
     set -euo pipefail
     export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m feature_store.sql_registry_state url)"
     /opt/venv/bin/feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo plan
@@ -130,45 +91,8 @@ feast_registry_plan_apply() {
     /opt/venv/bin/python -m feature_store.sql_registry_state verify --project recsys
   ' 2>&1 | tee "${log_path}" || status=${PIPESTATUS[0]}
   feast_registry_stop_pod
-  if [[ "${status}" != "0" ]]; then
-    recsys_error "Feast plan/apply failed; component transaction will roll back"
-    return "${status}"
-  fi
-}
-
-tx_restore_feast_sql_registry() {
-  local state_path="$1"
-  local image_reference
-  local status=0
-
-  [[ -s "${state_path}" ]] || {
-    recsys_error "Feast SQL registry snapshot is missing: ${state_path}"
-    return 1
-  }
-  image_reference="$(
-    python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["imageReference"])' \
-      "${state_path}"
-  )"
-  [[ -n "${image_reference}" ]] || {
-    recsys_error "Feast SQL registry snapshot has no recovery image"
-    return 1
-  }
-
-  feast_registry_start_pod restore "${image_reference}" || return
-  if ! kubectl exec -i -n "${namespace_data}" "${FEAST_REGISTRY_POD}" -- \
-    bash -lc 'cat > /tmp/feast-sql-registry.json' <"${state_path}"; then
-    status=1
-  elif ! feast_registry_exec '
-    set -euo pipefail
-    export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m feature_store.sql_registry_state url)"
-    /opt/venv/bin/python -m feature_store.sql_registry_state restore \
-      --state-path /tmp/feast-sql-registry.json
-  '; then
-    status=1
-  fi
-  feast_registry_stop_pod
   [[ "${status}" == "0" ]] || {
-    recsys_error "failed to restore Feast SQL registry"
-    return 1
+    recsys_error "Feast plan/apply failed"
+    return "${status}"
   }
 }

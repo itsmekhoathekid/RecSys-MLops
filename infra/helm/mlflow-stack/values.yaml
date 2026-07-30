@@ -36,7 +36,7 @@ postgres:
     port: 5432
 
 mlflow:
-  image: recsys-mlflow:local
+  image: registry.example.invalid/recsys/recsys-mlflow:required
   imagePullPolicy: IfNotPresent
   resources:
     requests:

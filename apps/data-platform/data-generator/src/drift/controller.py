@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from config import DriftConfig
+from generator_config import DriftConfig
 
 
 class DriftController:

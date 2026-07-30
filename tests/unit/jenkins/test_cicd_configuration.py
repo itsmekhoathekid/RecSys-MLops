@@ -6,6 +6,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[3]
 CONFIGURATION_PATH = ROOT / "jenkins/python/configuration.py"
 SPEC = importlib.util.spec_from_file_location("jenkins_configuration", CONFIGURATION_PATH)
@@ -26,7 +28,6 @@ EXPECTED_STAGES = [
 EXPECTED_LABELS = [
     "Materialize Pipeline",
     "Training Pipeline",
-    "Spark Batch Processing",
     "DP1 Raw To Bronze",
     "DP2 Bronze To Silver Gold",
     "DP3 Offline Feature Table",
@@ -45,9 +46,60 @@ def test_component_catalog_is_valid_and_preserves_stage_view_labels():
     components = configuration.load_components()
     assert [component["label"] for component in components] == EXPECTED_LABELS
     assert components[-1]["name"] == "demo_web"
-    assert components[-1]["deployOrder"] > max(
-        component["deployOrder"] for component in components[:-1]
+    assert all(component["changeDetection"] for component in components)
+    assert all("buildImages" in component for component in components)
+    assert all("verifyDependsOn" in component for component in components)
+
+
+def test_full_release_verification_orders_data_before_training(tmp_path):
+    plan_path = tmp_path / "release-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "components": [
+                    "materialize",
+                    "training",
+                    "dp1",
+                    "dp2",
+                    "dp3",
+                    "analytics",
+                ]
+            }
+        ),
+        encoding="utf-8",
     )
+    completed = subprocess.run(
+        [
+            "python3",
+            "jenkins/python/release_plan.py",
+            "plan-verifications",
+            "--plan",
+            str(plan_path),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    ordered = completed.stdout.splitlines()
+    assert ordered.index("dp1") < ordered.index("dp2") < ordered.index("dp3")
+    assert ordered.index("dp3") < ordered.index("materialize")
+    assert ordered.index("materialize") < ordered.index("training")
+    assert ordered.index("dp2") < ordered.index("analytics")
+
+
+def test_component_catalog_rejects_misspelled_declared_path(tmp_path):
+    payload = json.loads(
+        (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
+    )
+    payload["components"][0]["changeDetection"]["files"].append(
+        "apps/data-platform/does-not-exist.py"
+    )
+    config_path = tmp_path / "components.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="path does not exist"):
+        configuration.load_component_config(config_path)
 
 
 def test_root_jenkins_stage_view_contract_is_unchanged():
@@ -60,9 +112,16 @@ def test_root_jenkins_stage_view_contract_is_unchanged():
     assert "sh '''#!/usr/bin/env bash" in source
     assert ". jenkins/scripts/deploy/preflight/gcp.sh" in source
     assert "jenkins/scripts/lib/gcp.sh" not in source
-    cleanup = source.index('rm -rf "${CI_TMP_ROOT}"')
-    recovery_exit = source.index('exit "${recovery_status}"')
-    assert cleanup < recovery_exit
+    assert 'rm -rf "${CI_TMP_ROOT}"' in source
+    assert "recovery_status" not in source
+    pipeline_helper = (
+        ROOT / "jenkins/pipeline/component_pipeline.groovy"
+    ).read_text(encoding="utf-8")
+    assert "release_plan.py create" in pipeline_helper
+    assert "--output .ci-release-plan.json" in pipeline_helper
+    assert "selected.collate(maxParallel)" in pipeline_helper
+    assert "params.PUBLISH_IMAGES && env.RUN_COMPONENT_DEPLOY" in pipeline_helper
+    assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" in source
 
 
 def test_gcp_production_target_is_strict_and_self_consistent():
@@ -161,32 +220,18 @@ def test_catalog_contains_only_supported_migration_policies():
     } <= {"none", "expand-only", "reversible"}
 
 
-def test_modular_docker_builder_owns_exactly_the_seventeen_images():
-    source = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((ROOT / "jenkins/scripts/build").glob("*.sh"))
-    )
-    images = set(re.findall(r'build_image "([^"]+)"', source))
-    assert images == {
-        "recsys-base-python",
-        "recsys-data-ingestion",
-        "recsys-feature-store",
-        "recsys-drift-retrain",
-        "recsys-spark",
-        "recsys-flink",
-        "recsys-airflow",
-        "recsys-kafka-connect",
-        "recsys-mlops-training",
-        "recsys-mlops-spark",
-        "recsys-mlflow",
-        "recsys-api-serving",
-        "recsys-demo-api",
-        "recsys-demo-web",
-        "recsys-analytics-spark",
-        "recsys-analytics-dbt",
-        "recsys-analytics-superset",
+def test_catalog_driven_builder_owns_exactly_fifteen_images():
+    catalog = json.loads((ROOT / "images/catalog.json").read_text(encoding="utf-8"))
+    assert catalog["version"] == 1
+    assert len(catalog["images"]) == 15
+    assert {name for name in catalog["images"] if name.endswith("-spark")} == {
+        "recsys-spark"
     }
+    assert all(spec["context"] == "." for spec in catalog["images"].values())
     engine = (ROOT / "jenkins/scripts/build/engine.sh").read_text(encoding="utf-8")
+    assert "image_catalog.py spec" in engine
+    assert "image_catalog.py dependencies" in engine
+    assert "image_catalog.py build-args" in engine
     assert "flock -w" in engine
     assert "build_reuse_shared_image" in engine
     assert "BUILD_COMPONENT}-$$" in engine

@@ -11,33 +11,9 @@ from kubeflow.components.runtime import (
 )
 
 
-PIPELINE_IMAGE = os.getenv("RECSYS_PIPELINE_IMAGE", "recsys-mlops-training:local")
+PIPELINE_IMAGE = os.getenv("RECSYS_PIPELINE_IMAGE", "registry.example.invalid/recsys/recsys-mlops-training:required")
 RAY_IMAGE = os.getenv("RECSYS_RAY_IMAGE", PIPELINE_IMAGE)
-SPARK_IMAGE = os.getenv("RECSYS_SPARK_IMAGE", "recsys-mlops-spark:local")
-SPARK_PACKAGES = os.getenv(
-    "RECSYS_SPARK_PACKAGES",
-    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2,"
-    "org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.2,"
-    "org.apache.hadoop:hadoop-aws:3.3.4,"
-    "com.amazonaws:aws-java-sdk-bundle:1.12.262",
-)
-
-@dsl.container_component
-def feature_engineering(config_path: str, output_base: str, run_path: str, summary_path: str):
-    return dsl.ContainerSpec(
-        image=PIPELINE_IMAGE,
-        command=["python", "/opt/recsys/apps/ml-system/src/run_features.py"],
-        args=[
-            "--source-config",
-            config_path,
-            "--output-base",
-            output_base,
-            "--run-path",
-            run_path,
-            "--summary-path",
-            summary_path,
-        ],
-    )
+SPARK_IMAGE = os.getenv("RECSYS_SPARK_IMAGE", "registry.example.invalid/recsys/recsys-spark:required")
 
 
 @dsl.container_component
@@ -290,12 +266,7 @@ def trigger_kserve_model_cd(
 )
 def recsys_bst_pipeline(
     pipeline_run_id: str = "manual",
-    config_path: str = "configs/local/spark_batch.yaml",
-    bst_config_path: str = "configs/local/bst.yaml",
-    source_run_path: str = "apps/data-platform/data-generator/src/output/test_10k_seed42",
-    workspace_root: str = "/workspace/recsys",
-    output_base: str = "/workspace/recsys/data_platform/output",
-    feature_summary_path: str = "/workspace/recsys/data_platform/output/feature_summary.json",
+    bst_config_path: str = "configs/ml-system/training/bst.yaml",
     feature_source: str = "feast",
     offline_feature_table: str = "recsys_features.feature_store.ml_bst_training",
     entity_input_path: str = "postgresql://feature-postgres.recsys-dataflow.svc.cluster.local:5432/feature_store/feature_store.ml_ranking_labels",

@@ -25,7 +25,7 @@ def _documents(rendered: str) -> list[dict]:
 
 
 def test_api_serving_image_includes_feast_postgres_driver():
-    dockerfile = (ROOT / "apps/api-serving/Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "images/serving/recsys-api-serving/Dockerfile").read_text(encoding="utf-8")
     project = (ROOT / "apps/api-serving/pyproject.toml").read_text(encoding="utf-8")
     assert "uv sync --frozen" in dockerfile
     assert "feast[redis]" in project
@@ -190,13 +190,9 @@ def test_api_component_deploy_does_not_disable_kserve_autoscaling():
     assert "verify_and_wait_workload deployment recsys-api-serving" in api_deploy.group("body")
 
 
-def test_component_deploy_background_tunnels_do_not_inherit_deployment_lock():
-    deploy_script = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (
-            ROOT / "jenkins/scripts/entrypoints/component_deploy.sh",
-            ROOT / "jenkins/scripts/deploy/runtime.sh",
-        )
+def test_release_deploy_background_tunnels_do_not_inherit_deployment_lock():
+    deploy_script = (ROOT / "jenkins/scripts/deploy/runtime.sh").read_text(
+        encoding="utf-8"
     )
     port_forwards = [
         line.strip()
@@ -206,7 +202,7 @@ def test_component_deploy_background_tunnels_do_not_inherit_deployment_lock():
 
     assert len(port_forwards) == 2
     assert all("exec kubectl port-forward" in command for command in port_forwards)
-    assert 'eval "exec ${lock_fd}>&-"' in deploy_script
+    assert deploy_script.count("9>&- &") == 2
     lock_body = re.search(
         r"with_file_lock\(\) \{(?P<body>.*?)\n\}", deploy_script, re.DOTALL
     )
@@ -942,7 +938,12 @@ def test_model_cd_query_prometheus_and_crd_exists(monkeypatch):
 
 def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
     deploy_script = (ROOT / "jenkins/scripts/deploy/serving.sh").read_text(encoding="utf-8")
-    dispatch = (ROOT / "jenkins/scripts/deploy/dispatch.sh").read_text(encoding="utf-8")
+    model_cd_entrypoint = (
+        ROOT / "jenkins/scripts/entrypoints/model_cd_deploy.sh"
+    ).read_text(encoding="utf-8")
+    model_cd_pipeline = (ROOT / "jenkins/KServeModelCD.Jenkinsfile").read_text(
+        encoding="utf-8"
+    )
     cicd_block = re.search(
         r"deploy_kserve_unlocked\(\) \{(?P<body>.*?)\n\}",
         deploy_script,
@@ -960,4 +961,6 @@ def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
     assert "--apply" not in cicd_block.group("body")
     assert "jenkins.python.model_cd.cli" in cd_block.group("body")
     assert "--apply" in cd_block.group("body")
-    assert "kserve_model_cd)" in dispatch
+    assert "deploy_kserve_model_cd" in model_cd_entrypoint
+    assert "model_cd_deploy.sh" in model_cd_pipeline
+    assert not (ROOT / "jenkins/scripts/deploy/dispatch.sh").exists()

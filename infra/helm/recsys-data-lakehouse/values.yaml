@@ -1,0 +1,17 @@
+namespace:
+  name: recsys-dataflow
+storageClassName: ""
+images:
+  minio: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+  minioClient: minio/mc:RELEASE.2025-04-16T18-13-26Z
+  pullPolicy: IfNotPresent
+minio:
+  name: data-platform-minio
+  rootUser: minio
+  rootPassword: ""
+  lakeBucket: recsys-lakehouse
+  offlineFeatureBucket: recsys-offline-feature-store
+  storage: 20Gi
+  service:
+    apiPort: 9000
+    consolePort: 9001

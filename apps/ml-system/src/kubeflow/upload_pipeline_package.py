@@ -63,7 +63,7 @@ def upload_or_version_pipeline(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Upload a compiled Kubeflow pipeline package without creating a run.")
     parser.add_argument("--host", default=os.getenv("KFP_ENDPOINT", "http://127.0.0.1:8888"))
-    parser.add_argument("--package-path", default="infra/kubeflow/compiled/bst_training_pipeline.yaml")
+    parser.add_argument("--package-path", default="pipelines/kubeflow/compiled/bst_training_pipeline.yaml")
     parser.add_argument("--pipeline-name", default=os.getenv("KFP_PIPELINE_NAME", "recsys-bst-feature-train-evaluate"))
     parser.add_argument("--pipeline-version-name", default=os.getenv("KFP_PIPELINE_VERSION_NAME", ""))
     parser.add_argument("--description", default="RecSys BST training pipeline package uploaded by Jenkins CI/CD.")

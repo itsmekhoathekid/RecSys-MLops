@@ -1,0 +1,14 @@
+pipeline: dp2
+input:
+  lakehouse_warehouse: s3a://recsys-lakehouse/warehouse
+  iceberg_catalog: recsys
+  source_layer: bronze
+output:
+  silver_namespace: lakehouse
+  gold_namespace: lakehouse
+processing:
+  action: ingest
+optimization:
+  strategy: binpack
+  target_file_size_mb: 128
+  min_input_files: 2

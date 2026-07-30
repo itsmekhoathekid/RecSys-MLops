@@ -61,7 +61,7 @@ locals {
 }
 
 resource "kubernetes_secret_v1" "centralized_recsys" {
-  for_each = var.deploy_service_mesh ? local.external_secret_payloads : {}
+  for_each = local.external_secret_payloads
 
   metadata {
     name      = each.key
@@ -76,4 +76,33 @@ resource "kubernetes_secret_v1" "centralized_recsys" {
   type = "Opaque"
 
   depends_on = [helm_release.external_secrets]
+}
+
+resource "null_resource" "recsys_external_secrets_ready" {
+  triggers = {
+    cluster_id     = google_container_cluster.recsys.id
+    chart_revision = local.service_mesh_sets["chartRevision"]
+  }
+
+  provisioner "local-exec" {
+    command     = <<-EOT
+      set -euo pipefail
+      while read -r namespace name; do
+        kubectl wait --for=condition=Ready "externalsecret/$${name}" \
+          -n "$${namespace}" --timeout=300s
+        kubectl get "secret/$${name}" -n "$${namespace}" >/dev/null
+      done <<'SECRETS'
+      recsys-dataflow recsys-data-platform-secret
+      observability recsys-data-platform-secret
+      experiment-tracking recsys-mlflow-secrets
+      kubeflow recsys-mlops-runtime
+      kserve-triton-inference recsys-kserve-minio
+      api-serving recsys-gateway-basic-auth
+      observability recsys-gateway-basic-auth
+      SECRETS
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  depends_on = [helm_release.recsys_security]
 }

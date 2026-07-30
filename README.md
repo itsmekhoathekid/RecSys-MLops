@@ -14,7 +14,7 @@ This project is an end-to-end recommendation platform for e-commerce. It turns c
 
 - **ML training and retraining platform:** Trains a PyTorch Behavior Sequence Transformer with time-aware datasets, negative sampling, ranking metrics, checkpointing, and ONNX/Triton model packaging. Kubeflow Pipelines coordinates data preparation, KubeRay/Ray Tune hyperparameter search and distributed training, evaluation, and promotion. MLflow uses PostgreSQL for tracking and registry metadata and MinIO for artifacts and versioned models; offline NDCG gates, feature-drift checks, and online candidate error/latency gates control promotion and drift-triggered retraining.
 
-- **Serving, infrastructure, and delivery:** FastAPI retrieves Feast online features, calls the Triton V2 inference API, ranks candidates, and returns personalized Top-K recommendations through NGINX. KServe manages stable and candidate Triton deployments, while KEDA HTTP/resource scalers and HPA policies autoscale API and inference workloads. Terraform and Helm provision GCP/GKE and Kubernetes resources; Jenkins and Cloud Build automate testing, image publishing, and deployment with shadow traffic, sticky progressive A/B rollout, model promotion, champion fallback, Helm rollback, and candidate cleanup.
+- **Serving, infrastructure, and delivery:** FastAPI retrieves Feast online features, calls the Triton V2 inference API, ranks candidates, and returns personalized Top-K recommendations through NGINX. KServe manages stable and candidate Triton deployments, while KEDA HTTP/resource scalers and HPA policies autoscale API and inference workloads. Terraform and Helm provision GCP/GKE and Kubernetes resources; Jenkins validates the 15-image catalog and automates testing, immutable image publishing, deployment, shadow traffic, sticky progressive A/B rollout, model promotion, champion fallback, Helm rollback, and candidate cleanup.
 
 - **Web UI module:** Provides a React, TypeScript, Vite, and TanStack Query storefront served by a non-root NGINX container, backed by a same-origin FastAPI API. The backend uses a bounded PostgreSQL connection pool for transactional user, event, and order writes, and calls the feature and recommendation services to exercise the complete `PostgreSQL → Debezium → Kafka → Flink → Redis/Feast → Triton` real-time path. The frontend and backend are released atomically with Helm and include ingress routing, PDBs, External Secrets, Prometheus/OpenTelemetry instrumentation, CI security checks, deployment smoke tests, and revision-based rollback.
 
@@ -211,7 +211,7 @@ flowchart LR
     Debezium["Debezium CDC"]
     Kafka["Kafka"]
     BronzeLake[("Iceberg Bronze Tables")]
-    Spark["Spark Batch<br/>Feature Engineering"]
+    Spark["DP2 + DP3 Spark<br/>Transform & Features"]
     SilverGoldLake[("Iceberg Silver / Gold Tables")]
     Flink["Flink Realtime<br/>Feature Engineering"]
 
@@ -282,16 +282,15 @@ flowchart LR
 │   ├── api-serving/              # Online feature and recommendation APIs
 │   ├── data-platform/            # Ingestion, processing, orchestration, feature store, and governance
 │   └── ml-system/                # Training, experimentation, model promotion, and serving packaging
-├── configs/                      # Versioned environment and service configuration
+├── images/                       # Catalog and Dockerfiles for all 15 runtime images
+├── configs/                      # Data-platform and ML-system runtime configuration
 ├── docs/                         # Architecture, design, and coursework documentation
-├── infra/                        # Local and cloud infrastructure definitions
-│   ├── cloudbuild/               # Cloud image build pipelines
-│   ├── docker/                   # Docker images and local Compose runtime
+├── infra/                        # Production infrastructure definitions
 │   ├── helm/                     # Kubernetes application charts
-│   ├── k8s/                      # Kubernetes manifests and cluster lifecycle scripts
-│   ├── kubeflow/                 # Kubeflow pipeline deployment artifacts
-│   └── terraform/                # Cloud infrastructure as code
+│   └── terraform/gcp/            # GCP infrastructure as code
 ├── jenkins/                      # CI/CD jobs, model rollout, and deployment automation
+├── ops/                          # GCP, Kubernetes, and production validation operations
+├── pipelines/kubeflow/           # Generated Kubeflow artifact location
 ├── notebooks/                    # Tracked exploration and ML workflow notebooks
 └── tests/                        # Unit, contract, integration, end-to-end, and load tests
 ```

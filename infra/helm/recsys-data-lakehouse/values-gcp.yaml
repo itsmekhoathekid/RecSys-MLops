@@ -1,0 +1,3 @@
+storageClassName: standard-rwo
+minio:
+  storage: 20Gi

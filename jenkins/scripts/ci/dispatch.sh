@@ -4,7 +4,6 @@ ci_dispatch() {
   case "$1" in
     materialize) ci_materialize ;;
     training) ci_training ;;
-    spark_batch) ci_spark_batch ;;
     dp1) ci_dp1 ;;
     dp2) ci_dp2 ;;
     dp3) ci_dp3 ;;

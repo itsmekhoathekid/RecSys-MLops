@@ -9,7 +9,7 @@ from typing import Any
 
 import pyarrow.parquet as pq
 
-from config import GeneratorConfig, load_config
+from generator_config import GeneratorConfig, load_config
 from sink import read_table
 
 

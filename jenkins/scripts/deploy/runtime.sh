@@ -7,17 +7,6 @@ cleanup_port_forwards() {
   done
 }
 
-component_deploy_on_exit() {
-  local status=$?
-  trap - EXIT
-  cleanup_port_forwards
-  port_forward_cleanup
-  if [[ "${status}" != "0" ]]; then
-    tx_handle_exit "${status}" || true
-  fi
-  exit "${status}"
-}
-
 image() {
   local immutable_ref
   immutable_ref="$(image_manifest_lookup "$1")"
@@ -54,10 +43,6 @@ kfp_endpoint_for_upload() {
   fi
 
   (
-    local lock_fd
-    for lock_fd in "${TX_LOCK_FDS[@]:-}"; do
-      eval "exec ${lock_fd}>&-"
-    done
     exec kubectl port-forward -n "${namespace_kubeflow}" svc/ml-pipeline "${local_port}:8888"
   ) >"${log_path}" 2>&1 9>&- &
   kfp_port_forward_pids+=("$!")
@@ -81,10 +66,6 @@ local_model_store_endpoint() {
   fi
 
   (
-    local lock_fd
-    for lock_fd in "${TX_LOCK_FDS[@]:-}"; do
-      eval "exec ${lock_fd}>&-"
-    done
     exec kubectl port-forward -n "${namespace_mlops}" svc/minio "${local_port}:9000"
   ) >"${log_path}" 2>&1 9>&- &
   kfp_port_forward_pids+=("$!")
@@ -154,7 +135,7 @@ run_node_rebalance_if_enabled() {
     recsys_log "skipping node rebalance because RUN_NODE_REBALANCE=${run_node_rebalance}"
     return 0
   fi
-  bash infra/k8s/scripts/rebalance_ml_node_pool.sh
+  bash jenkins/scripts/deploy/rebalance_ml_node_pool.sh
   if [[ "${validate_node_rebalance}" == "1" || "${validate_node_rebalance}" == "true" ]]; then
     bash jenkins/scripts/test/node_placement.sh
   fi
@@ -223,7 +204,15 @@ verify_model_store_versioning_if_required() {
     AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION MINIO_ENDPOINT \
     MINIO_ROOT_USER MINIO_ROOT_PASSWORD MLFLOW_S3_ENDPOINT_URL MODEL_STORE_ENDPOINT
   configure_local_model_store_endpoint
-  tx_runtime_python -m jenkins.python.model_cd.storage check-versioning \
+  runtime_python -m jenkins.python.model_cd.storage check-versioning \
     --uri "${promotion_manifest_uri}"
   recsys_log "verified model-store bucket versioning for ${promotion_manifest_uri}"
+}
+
+runtime_python() {
+  if [[ -n "${UV_PROJECT_ENVIRONMENT:-}" && -x "${UV_PROJECT_ENVIRONMENT}/bin/python" ]]; then
+    "${UV_PROJECT_ENVIRONMENT}/bin/python" "$@"
+  else
+    python3 "$@"
+  fi
 }

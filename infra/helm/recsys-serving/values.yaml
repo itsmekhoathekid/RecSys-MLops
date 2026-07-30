@@ -57,7 +57,7 @@ api:
     create: true
     name: api-serving
   name: recsys-api-serving
-  image: recsys-api-serving:local
+  image: registry.example.invalid/recsys/recsys-api-serving:required
   imagePullPolicy: IfNotPresent
   command: ["uvicorn"]
   args: ["inference_api:app", "--host", "0.0.0.0", "--port", "8080"]
@@ -107,7 +107,7 @@ api:
 featureApi:
   enabled: true
   name: recsys-online-feature-api
-  image: recsys-api-serving:local
+  image: registry.example.invalid/recsys/recsys-api-serving:required
   imagePullPolicy: IfNotPresent
   command: ["uvicorn"]
   args: ["feature_api:app", "--host", "0.0.0.0", "--port", "8080"]

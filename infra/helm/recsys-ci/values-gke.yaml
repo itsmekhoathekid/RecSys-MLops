@@ -10,15 +10,6 @@ productionTarget:
   context: gke_rec-sys-503309_asia-southeast1-b_recsys-mlops-gke
   imageRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
 
-staticVolumes:
-  enabled: false
-
-registry:
-  pvc:
-    volumeName: ""
-    storage: 10Gi
-    storageClassName: standard-rwo
-
 jenkins:
   imagePushRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
   imagePullRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
@@ -33,7 +24,11 @@ jenkins:
   runtimeCredentialsSecret:
     enabled: true
   dind:
-    useJenkinsHomePvc: true
+    useJenkinsHomePvc: false
+    pvc:
+      enabled: true
+      storage: 200Gi
+      storageClassName: standard-rwo
   runtimeTools:
     installOnStartup: true
   webhookIngress:

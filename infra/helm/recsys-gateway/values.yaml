@@ -1,6 +1,6 @@
 gateway:
   ingressClassName: nginx
-  domain: recsys.local
+  domain: example.invalid
 
 auth:
   enabled: true
@@ -32,7 +32,7 @@ tls:
 api:
   enabled: true
   namespace: api-serving
-  host: api.recsys.local
+  host: api.example.invalid
   service:
     name: recsys-api-serving
     port: 80
@@ -46,7 +46,7 @@ api:
 featureApi:
   enabled: true
   namespace: api-serving
-  host: features.recsys.local
+  host: features.example.invalid
   rootRedirect:
     enabled: false
     path: /docs
@@ -63,7 +63,7 @@ featureApi:
 grafana:
   enabled: true
   namespace: observability
-  host: grafana.recsys.local
+  host: grafana.example.invalid
   meshRoute:
     enabled: true
   service:
@@ -79,7 +79,7 @@ grafana:
 logs:
   enabled: true
   namespace: observability
-  host: logs.recsys.local
+  host: logs.example.invalid
   rootRedirect:
     enabled: true
     path: /d/recsys-logs/logs-overview
@@ -96,7 +96,7 @@ logs:
 traces:
   enabled: true
   namespace: observability
-  host: traces.recsys.local
+  host: traces.example.invalid
   service:
     name: recsys-tempo
     port: 3200

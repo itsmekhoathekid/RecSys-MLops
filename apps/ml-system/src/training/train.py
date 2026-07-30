@@ -45,7 +45,7 @@ def _log_to_mlflow(config, metrics, checkpoint_path, dataset_metadata=None):
                 mlflow.log_metric(_mlflow_metric_name(name), float(value))
         if checkpoint_path and Path(checkpoint_path).exists():
             mlflow.log_artifact(checkpoint_path, artifact_path="model")
-        mlflow.log_dict(config, "configs/local/bst.yaml")
+        mlflow.log_dict(config, "configs/ml-system/training/bst.yaml")
         mlflow.log_dict(metrics, "metrics/training_metrics.json")
         artifact_uri = mlflow.get_artifact_uri("model")
         return run.info.run_id, artifact_uri
@@ -71,7 +71,7 @@ def _maybe_register_config(config, metrics, checkpoint_path, run_id, artifact_ur
 
 
 def run_training(
-    config_path="./configs/local/bst.yaml",
+    config_path="./configs/ml-system/training/bst.yaml",
     training_percent=None,
     num_epochs=None,
     metrics_path=None,
@@ -147,7 +147,7 @@ def run_training(
 
 def train():
     args = argparse.ArgumentParser()
-    args.add_argument("--config_path", type=str, default="./configs/local/bst.yaml")
+    args.add_argument("--config_path", type=str, default="./configs/ml-system/training/bst.yaml")
     args.add_argument("--training-percent", type=float, default=None)
     args.add_argument("--num-epochs", type=int, default=None)
     args.add_argument("--metrics-path", default="")

@@ -11,6 +11,7 @@ deploy_api_unlocked() {
     --set "api.imagePullPolicy=Always"
     --set "featureApi.image=$(image recsys-api-serving)"
     --set "featureApi.imagePullPolicy=Always"
+    --set "kserve.secret.create=false"
     --set "shadow.enabled=false"
     --set "shadow.samplePercent=100"
     --set "shadow.timeoutMs=1000"
@@ -47,11 +48,6 @@ deploy_kserve_model_cd_unlocked() {
     MINIO_ROOT_USER MINIO_ROOT_PASSWORD MLFLOW_S3_ENDPOINT_URL MODEL_STORE_ENDPOINT \
     MODEL_STORE_BUCKET MODEL_STORE_PREFIX
   configure_local_model_store_endpoint
-  local model_store_state=""
-  if [[ "${TX_ACTIVE}" == "1" ]]; then
-    model_store_state="${TX_DIR}/model-store.json"
-    tx_register_external model-store "${model_store_state}"
-  fi
   local model_cd_args=(
     --manifest-uri "${promotion_manifest_uri}"
     --stage "${MODEL_CD_STAGE:-deploy}"
@@ -66,8 +62,7 @@ deploy_kserve_model_cd_unlocked() {
   [[ -n "${AB_GATE_WINDOW:-}" ]] && model_cd_args+=(--gate-window "${AB_GATE_WINDOW}")
   [[ -n "${AB_MIN_SAMPLES:-}" ]] && model_cd_args+=(--min-samples "${AB_MIN_SAMPLES}")
   [[ "${MODEL_CD_APPLY:-1}" == "1" ]] && model_cd_args+=(--apply)
-  MODEL_CD_TRANSACTION_STATE="${model_store_state}" \
-    RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-0}" \
+  RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-1}" \
     uv run --no-project --with boto3 python -m jenkins.python.model_cd.cli "${model_cd_args[@]}"
 }
 

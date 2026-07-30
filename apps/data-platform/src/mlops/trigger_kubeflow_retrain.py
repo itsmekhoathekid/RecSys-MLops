@@ -127,7 +127,8 @@ def trigger_retrain(
     drift_report_path: str,
     endpoint: str,
     experiment_name: str,
-    pipeline_package_path: str,
+    pipeline_name: str,
+    pipeline_version_id: str = "",
     retrain_on_drift: bool = True,
     pushgateway_url: str | None = None,
     pipeline_arguments: dict[str, Any] | None = None,
@@ -150,12 +151,18 @@ def trigger_retrain(
 
         client = kfp.Client(host=endpoint)
         experiment = client.create_experiment(name=experiment_name)
-        run = client.create_run_from_pipeline_package(
-            pipeline_file=pipeline_package_path,
-            arguments=arguments,
-            experiment_id=experiment.experiment_id,
-            run_name=kfp_run_name(run_id),
-        )
+        pipeline_id = client.get_pipeline_id(pipeline_name)
+        if not pipeline_id:
+            raise RuntimeError(f"uploaded Kubeflow pipeline not found: {pipeline_name}")
+        run_options: dict[str, Any] = {
+            "experiment_id": experiment.experiment_id,
+            "job_name": kfp_run_name(run_id),
+            "pipeline_id": pipeline_id,
+            "params": arguments,
+        }
+        if pipeline_version_id:
+            run_options["version_id"] = pipeline_version_id
+        run = client.run_pipeline(**run_options)
         result = RetrainResult(run_id, True, getattr(run, "run_id", None), "feature_drift", failed_features=failures, pipeline_arguments=arguments)
     except Exception as exc:
         result = RetrainResult(run_id, False, None, "feature_drift", error=str(exc), failed_features=failures, pipeline_arguments=arguments)
@@ -168,7 +175,14 @@ def main() -> int:
     parser.add_argument("--drift-report-path", default=os.getenv("OFFLINE_FEATURE_DRIFT_REPORT_PATH", "s3://recsys-offline-feature-store/monitoring/offline_feature_drift/report.json"))
     parser.add_argument("--kfp-endpoint", default=os.getenv("KFP_ENDPOINT", "http://ml-pipeline.kubeflow.svc.cluster.local:8888"))
     parser.add_argument("--experiment-name", default=os.getenv("KFP_EXPERIMENT_NAME", "recsys-observability-retrain"))
-    parser.add_argument("--pipeline-package-path", default=os.getenv("KFP_PIPELINE_PACKAGE_PATH", "/opt/recsys/infra/kubeflow/compiled/bst_training_pipeline.yaml"))
+    parser.add_argument(
+        "--pipeline-name",
+        default=os.getenv("KFP_PIPELINE_NAME", "recsys-bst-feature-train-evaluate"),
+    )
+    parser.add_argument(
+        "--pipeline-version-id",
+        default=os.getenv("KFP_PIPELINE_VERSION_ID", ""),
+    )
     parser.add_argument("--pushgateway-url", default=os.getenv("PUSHGATEWAY_URL", ""))
     parser.add_argument("--pipeline-arg", action="append", dest="pipeline_args", default=[])
     parser.add_argument("--disable-retrain", action="store_true")
@@ -178,7 +192,8 @@ def main() -> int:
         args.drift_report_path,
         args.kfp_endpoint,
         args.experiment_name,
-        args.pipeline_package_path,
+        args.pipeline_name,
+        args.pipeline_version_id,
         retrain_on_drift=not args.disable_retrain and os.getenv("RETRAIN_ON_DRIFT", "true").lower() in {"1", "true", "yes"},
         pushgateway_url=args.pushgateway_url or None,
         pipeline_arguments=parse_pipeline_args(args.pipeline_args),

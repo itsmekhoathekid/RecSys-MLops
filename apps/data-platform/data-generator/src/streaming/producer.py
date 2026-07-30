@@ -6,7 +6,7 @@ import random
 import time
 from datetime import datetime, timezone
 
-from config import load_stream_config
+from generator_config import load_stream_config
 from streaming.config import StreamGeneratorConfig
 from streaming.event_factory import StreamEventFactory
 from streaming.metrics import push_realtime_metrics
@@ -14,7 +14,7 @@ from streaming.postgres import bootstrap_dimensions, conninfo, write_bundle
 from streaming.problem_pipeline import StreamProblemPipeline
 
 
-DEFAULT_CONFIG = "configs/local/data_generator_test.yaml"
+DEFAULT_CONFIG = "configs/data-platform/generator/default.yaml"
 
 
 def run(config: StreamGeneratorConfig) -> None:

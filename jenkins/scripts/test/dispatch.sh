@@ -5,7 +5,7 @@ component_test_dispatch() {
     materialize) test_materialize ;;
     training) test_training ;;
     mlflow) test_mlflow ;;
-    spark_batch|dp2) test_dp2 ;;
+    dp2) test_dp2 ;;
     dp1) test_dp1 ;;
     dp3) test_dp3 ;;
     api) test_api ;;

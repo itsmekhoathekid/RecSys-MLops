@@ -36,6 +36,7 @@ resource "helm_release" "recsys_observability" {
   }
 
   depends_on = [
+    null_resource.recsys_external_secrets_ready,
     google_container_node_pool.cpu,
     kubernetes_namespace.observability,
     helm_release.prometheus_operator,
@@ -62,17 +63,12 @@ resource "helm_release" "recsys_mlflow" {
     }
   }
 
-  set_sensitive {
-    name  = "minio.rootPassword"
-    value = random_password.minio_root.result
-  }
-
-  set_sensitive {
-    name  = "postgres.password"
-    value = random_password.mlflow_postgres.result
+  lifecycle {
+    ignore_changes = all
   }
 
   depends_on = [
+    null_resource.recsys_external_secrets_ready,
     google_container_node_pool.ml_system,
     kubernetes_namespace.experiment_tracking,
   ]
@@ -98,61 +94,225 @@ resource "helm_release" "recsys_runtime" {
     }
   }
 
-  set_sensitive {
-    name  = "secret.minioRootPassword"
-    value = random_password.minio_root.result
-  }
-
-  set_sensitive {
-    name  = "secret.modelRegistryPostgresUri"
-    value = "postgresql://mlflow:${random_password.mlflow_postgres.result}@postgres.experiment-tracking.svc.cluster.local:5432/mlflow"
-  }
-
   depends_on = [
     helm_release.recsys_mlflow,
     null_resource.kubeflow_pipelines,
   ]
 }
 
-resource "helm_release" "recsys_data_platform" {
-  name             = "recsys-data-platform"
-  chart            = "${local.helm_dir}/recsys-data-platform"
+resource "helm_release" "recsys_data_config" {
+  name             = "recsys-data-config"
+  chart            = "${local.helm_dir}/recsys-data-config"
   namespace        = "recsys-dataflow"
   create_namespace = false
   wait             = true
-  timeout          = 1200
+  timeout          = 600
 
   values = [
-    file("${local.helm_dir}/recsys-data-platform/values-gcp.yaml"),
+    file("${local.helm_dir}/recsys-data-config/values-gcp.yaml"),
   ]
 
   dynamic "set" {
-    for_each = local.data_platform_sets
+    for_each = local.data_config_sets
     content {
       name  = set.key
       value = set.value
     }
   }
 
-  set_sensitive {
-    name  = "minio.rootPassword"
-    value = random_password.minio_root.result
-  }
-
-  set_sensitive {
-    name  = "sourcePostgres.password"
-    value = random_password.source_postgres.result
-  }
-
-  set_sensitive {
-    name  = "airflowPostgres.password"
-    value = random_password.airflow_postgres.result
+  lifecycle {
+    ignore_changes = all
   }
 
   depends_on = [
+    null_resource.recsys_external_secrets_ready,
     helm_release.recsys_observability,
     google_container_node_pool.cpu,
     kubernetes_namespace.recsys_dataflow,
+  ]
+}
+
+resource "helm_release" "recsys_data_lakehouse" {
+  name             = "recsys-data-lakehouse"
+  chart            = "${local.helm_dir}/recsys-data-lakehouse"
+  namespace        = "recsys-dataflow"
+  create_namespace = false
+  wait             = true
+  timeout          = 900
+  values           = [file("${local.helm_dir}/recsys-data-lakehouse/values-gcp.yaml")]
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [helm_release.recsys_data_config]
+}
+
+resource "helm_release" "recsys_source_store" {
+  name             = "recsys-source-store"
+  chart            = "${local.helm_dir}/recsys-source-store"
+  namespace        = "recsys-dataflow"
+  create_namespace = false
+  wait             = true
+  timeout          = 900
+  values           = [file("${local.helm_dir}/recsys-source-store/values-gcp.yaml")]
+
+  set {
+    name  = "images.dataIngestion"
+    value = local.images.data_ingestion
+  }
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [helm_release.recsys_data_config]
+}
+
+resource "helm_release" "recsys_event_stream" {
+  name             = "recsys-event-stream"
+  chart            = "${local.helm_dir}/recsys-event-stream"
+  namespace        = "recsys-dataflow"
+  create_namespace = false
+  wait             = true
+  timeout          = 900
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [helm_release.recsys_data_config]
+}
+
+resource "helm_release" "recsys_feature_store" {
+  name             = "recsys-feature-store"
+  chart            = "${local.helm_dir}/recsys-feature-store"
+  namespace        = "recsys-dataflow"
+  create_namespace = false
+  wait             = true
+  timeout          = 900
+  values           = [file("${local.helm_dir}/recsys-feature-store/values-gcp.yaml")]
+
+  set {
+    name  = "images.featureStore"
+    value = local.images.feature_store
+  }
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [
+    helm_release.recsys_data_config,
+    helm_release.recsys_data_lakehouse,
+  ]
+}
+
+resource "helm_release" "recsys_kafka_connect" {
+  name             = "recsys-kafka-connect"
+  chart            = "${local.helm_dir}/recsys-kafka-connect"
+  namespace        = "recsys-dataflow"
+  create_namespace = false
+  wait             = true
+  timeout          = 900
+  values           = [file("${local.helm_dir}/recsys-kafka-connect/values-gcp.yaml")]
+
+  set {
+    name  = "images.kafkaConnect"
+    value = local.images.kafka_connect
+  }
+
+  set {
+    name  = "images.dataIngestion"
+    value = local.images.data_ingestion
+  }
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [
+    helm_release.recsys_data_config,
+    helm_release.recsys_source_store,
+    helm_release.recsys_event_stream,
+  ]
+}
+
+resource "helm_release" "recsys_streaming" {
+  name             = "recsys-streaming"
+  chart            = "${local.helm_dir}/recsys-streaming"
+  namespace        = "recsys-dataflow"
+  create_namespace = false
+  wait             = true
+  timeout          = 1200
+  values           = [file("${local.helm_dir}/recsys-streaming/values-gcp.yaml")]
+
+  set {
+    name  = "images.dataIngestion"
+    value = local.images.data_ingestion
+  }
+
+  set {
+    name  = "images.flink"
+    value = local.images.flink
+  }
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [
+    helm_release.recsys_data_config,
+    helm_release.recsys_data_lakehouse,
+    helm_release.recsys_event_stream,
+    helm_release.recsys_feature_store,
+  ]
+}
+
+resource "helm_release" "recsys_airflow" {
+  name             = "recsys-airflow"
+  chart            = "${local.helm_dir}/recsys-airflow"
+  namespace        = "recsys-dataflow"
+  create_namespace = false
+  wait             = true
+  timeout          = 1200
+  values           = [file("${local.helm_dir}/recsys-airflow/values-gcp.yaml")]
+
+  set {
+    name  = "images.airflow"
+    value = local.images.airflow
+  }
+
+  set {
+    name  = "images.dataIngestion"
+    value = local.images.data_ingestion
+  }
+
+  set {
+    name  = "images.featureStore"
+    value = local.images.feature_store
+  }
+
+  set {
+    name  = "images.driftRetrain"
+    value = local.images.drift_retrain
+  }
+
+  set {
+    name  = "images.spark"
+    value = local.images.spark
+  }
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [
+    helm_release.recsys_data_config,
+    helm_release.recsys_data_lakehouse,
+    helm_release.recsys_source_store,
+    helm_release.recsys_event_stream,
+    helm_release.recsys_feature_store,
   ]
 }
 
@@ -178,15 +338,16 @@ resource "helm_release" "recsys_serving" {
     }
   }
 
-  set_sensitive {
-    name  = "kserve.secret.secretAccessKey"
-    value = random_password.minio_root.result
+  lifecycle {
+    ignore_changes = all
   }
 
   depends_on = [
+    null_resource.recsys_external_secrets_ready,
     helm_release.keda_http,
     helm_release.recsys_mlflow,
-    helm_release.recsys_data_platform,
+    helm_release.recsys_airflow,
+    helm_release.recsys_feature_store,
     null_resource.kserve,
     google_container_node_pool.ml_system,
     kubernetes_namespace.api_serving,
@@ -219,7 +380,7 @@ resource "helm_release" "recsys_ray_gpu" {
   depends_on = [
     helm_release.kuberay_operator,
     helm_release.recsys_runtime,
-    helm_release.recsys_data_platform,
+    helm_release.recsys_data_config,
     google_container_node_pool.gpu,
   ]
 }
@@ -306,7 +467,7 @@ resource "helm_release" "recsys_gateway" {
 
   set {
     name  = "auth.createSecret"
-    value = var.deploy_service_mesh ? "false" : "true"
+    value = "false"
   }
 
   set_sensitive {
@@ -323,7 +484,7 @@ resource "helm_release" "recsys_gateway" {
 }
 
 resource "helm_release" "recsys_security" {
-  count = var.deploy_service_mesh ? 1 : 0
+  count = 1
 
   name             = "recsys-security"
   chart            = "${local.helm_dir}/recsys-security"
@@ -343,9 +504,7 @@ resource "helm_release" "recsys_security" {
   depends_on = [
     helm_release.external_secrets,
     helm_release.istiod,
-    helm_release.recsys_mlflow,
-    helm_release.recsys_data_platform,
-    helm_release.recsys_observability,
+    kubernetes_secret_v1.centralized_recsys,
     null_resource.kubeflow_pipelines,
     kubernetes_namespace.experiment_tracking,
     kubernetes_namespace.recsys_dataflow,

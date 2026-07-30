@@ -2,7 +2,7 @@
 
 build_runtime_initialize() {
   BUILD_COMPONENT="${1:?component is required}"
-  BUILD_IMAGE_REGISTRY="${IMAGE_PUSH_REGISTRY:-${IMAGE_REGISTRY:-localhost:5001/recsys}}"
+  BUILD_IMAGE_REGISTRY="${IMAGE_PUSH_REGISTRY:-${IMAGE_REGISTRY:-$(python3 jenkins/python/configuration.py gcp imageRegistry)}}"
   BUILD_IMAGE_REGISTRY="${BUILD_IMAGE_REGISTRY%/}"
   BUILD_REGISTRY_HOST="${BUILD_IMAGE_REGISTRY%%/*}"
   BUILD_IMAGE_TAG="${IMAGE_TAG:-${GIT_COMMIT:-}}"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-package_path="${KFP_PACKAGE_PATH:-infra/kubeflow/compiled/bst_training_pipeline.yaml}"
+package_path="${KFP_PACKAGE_PATH:-pipelines/kubeflow/compiled/bst_training_pipeline.yaml}"
 kfp_endpoint="${KFP_ENDPOINT:-http://ml-pipeline.kubeflow.svc.cluster.local:8888}"
 pipeline_name="${KFP_PIPELINE_NAME:-recsys-bst-feature-train-evaluate}"
 pipeline_version_name="${KFP_PIPELINE_VERSION_NAME:-}"
