@@ -66,7 +66,10 @@ def pod_task(task_id: str, image: str, command: str):
         annotations={"sidecar.istio.io/inject": "false"},
         node_selector=parse_node_selector(DATAFLOW_NODE_SELECTOR),
         get_logs=True,
-        is_delete_operator_pod=True,
+        # Delete only after a successful terminal observation.  This prevents
+        # KubernetesPodOperator from losing the pod to its deprecated cleanup
+        # path before it can record task success.
+        on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
     )

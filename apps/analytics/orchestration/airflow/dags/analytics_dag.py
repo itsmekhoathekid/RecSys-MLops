@@ -38,7 +38,11 @@ def analytics_task(task_id: str, image: str, command: list[str], arguments: list
         node_selector={"recsys.ai/pool": "cpu-services"},
         image_pull_policy=os.getenv("ANALYTICS_IMAGE_PULL_POLICY", "IfNotPresent"),
         get_logs=True,
-        is_delete_operator_pod=True,
+        # Keep failed pods for diagnosis; delete a successful pod only after the
+        # operator has observed its terminal state.  The deprecated boolean
+        # cleanup flag can delete the pod while it is still being polled, which
+        # turns an otherwise successful task into a 404.
+        on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
     )

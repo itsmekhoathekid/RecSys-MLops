@@ -97,7 +97,9 @@ def pod_task(task_id: str, image: str, command: str):
         annotations={"sidecar.istio.io/inject": "false"},
         node_selector=parse_node_selector(DATAFLOW_NODE_SELECTOR),
         get_logs=True,
-        is_delete_operator_pod=True,
+        # Use the provider's explicit finish policy so completed task pods are
+        # observed before cleanup and failed pods remain available for debug.
+        on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
     )
