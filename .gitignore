@@ -41,7 +41,7 @@ AGENTS.md
 .uv-cache/
 .ci-image-manifest/
 .hypothesis/
-data_platform/
+/data_platform/
 output
 notebooks/models/
 

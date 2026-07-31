@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "artifacts": {
     "kubeflow-bst": {
       "consumesImages": [
@@ -37,8 +37,7 @@
       "consumesArtifacts": [],
       "dependsOn": [
         "kubeflow-bst-package"
-      ],
-      "migrationPolicy": "none"
+      ]
     },
     {
       "name": "data-lakehouse",
@@ -54,8 +53,7 @@
       "consumesArtifacts": [],
       "dependsOn": [
         "data-config"
-      ],
-      "migrationPolicy": "none"
+      ]
     },
     {
       "name": "source-store",
@@ -73,8 +71,7 @@
       "consumesArtifacts": [],
       "dependsOn": [
         "data-config"
-      ],
-      "migrationPolicy": "expand-only"
+      ]
     },
     {
       "name": "event-stream",
@@ -90,8 +87,7 @@
       "consumesArtifacts": [],
       "dependsOn": [
         "data-config"
-      ],
-      "migrationPolicy": "none"
+      ]
     },
     {
       "name": "feature-store",
@@ -110,8 +106,7 @@
       "dependsOn": [
         "data-config",
         "data-lakehouse"
-      ],
-      "migrationPolicy": "expand-only"
+      ]
     },
     {
       "name": "kafka-connect",
@@ -133,8 +128,7 @@
         "data-config",
         "source-store",
         "event-stream"
-      ],
-      "migrationPolicy": "none"
+      ]
     },
     {
       "name": "feature-registry",
@@ -150,8 +144,7 @@
       "consumesArtifacts": [],
       "dependsOn": [
         "feature-store"
-      ],
-      "migrationPolicy": "expand-only"
+      ]
     },
     {
       "name": "streaming",
@@ -174,8 +167,7 @@
         "data-lakehouse",
         "event-stream",
         "feature-store"
-      ],
-      "migrationPolicy": "none"
+      ]
     },
     {
       "name": "airflow",
@@ -207,8 +199,7 @@
         "source-store",
         "event-stream",
         "feature-store"
-      ],
-      "migrationPolicy": "expand-only"
+      ]
     },
     {
       "name": "mlflow",
@@ -221,8 +212,7 @@
         "recsys-mlflow"
       ],
       "consumesArtifacts": [],
-      "dependsOn": [],
-      "migrationPolicy": "expand-only"
+      "dependsOn": []
     },
     {
       "name": "kubeflow-bst-package",
@@ -239,8 +229,7 @@
       ],
       "dependsOn": [
         "mlflow"
-      ],
-      "migrationPolicy": "none"
+      ]
     },
     {
       "name": "analytics",
@@ -256,8 +245,7 @@
       "consumesArtifacts": [],
       "dependsOn": [
         "data-lakehouse"
-      ],
-      "migrationPolicy": "expand-only"
+      ]
     },
     {
       "name": "serving",
@@ -272,8 +260,7 @@
         "recsys-api-serving"
       ],
       "consumesArtifacts": [],
-      "dependsOn": [],
-      "migrationPolicy": "none"
+      "dependsOn": []
     },
     {
       "name": "rollout",
@@ -289,8 +276,7 @@
       "consumesArtifacts": [],
       "dependsOn": [
         "serving"
-      ],
-      "migrationPolicy": "none"
+      ]
     },
     {
       "name": "demo-web",
@@ -306,8 +292,7 @@
       "consumesArtifacts": [],
       "dependsOn": [
         "serving"
-      ],
-      "migrationPolicy": "expand-only"
+      ]
     }
   ]
 }

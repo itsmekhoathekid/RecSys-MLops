@@ -3,6 +3,7 @@ pipeline {
 
   options {
     skipDefaultCheckout(true)
+    disableConcurrentBuilds()
   }
 
   parameters {
@@ -45,7 +46,9 @@ pipeline {
     stage('Deploy Champion') {
       when { expression { params.ROLLOUT_STAGE == 'deploy' } }
       steps {
-        sh 'MODEL_CD_STAGE=deploy jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
+          sh 'MODEL_CD_STAGE=deploy jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        }
       }
     }
 
@@ -53,7 +56,9 @@ pipeline {
       when { expression { params.ROLLOUT_STAGE == 'shadow-start' } }
       steps {
         echo "Starting shadow inference for ${params.CANDIDATE_MANIFEST_URI}; user traffic remains on champion."
-        sh 'MODEL_CD_STAGE=shadow-start jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
+          sh 'MODEL_CD_STAGE=shadow-start jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        }
       }
     }
 
@@ -77,29 +82,35 @@ pipeline {
       when { expression { params.ROLLOUT_STAGE in ['ab-start', 'ab-step'] } }
       steps {
         echo "Applying ${params.ROLLOUT_STAGE} at candidate weight ${params.AB_CANDIDATE_WEIGHT_PERCENT}%"
-        sh 'jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
+          sh 'jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        }
       }
     }
 
     stage('Evaluate Candidate') {
       when { expression { params.ROLLOUT_STAGE == 'evaluate' } }
       steps {
-        sh '''
-          set -euo pipefail
-          MODEL_CD_STAGE=evaluate MODEL_CD_APPLY=0 jenkins/scripts/entrypoints/model_cd_deploy.sh
-          rm -f .model-cd/rollback-required
-          if grep -q '"decision": "rollback"' .model-cd/ab-decision.json; then
-            touch .model-cd/rollback-required
-          fi
-          python3 -m json.tool .model-cd/ab-decision.json
-        '''
+        lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
+          sh '''
+            set -euo pipefail
+            MODEL_CD_STAGE=evaluate MODEL_CD_APPLY=0 jenkins/scripts/entrypoints/model_cd_deploy.sh
+            rm -f .model-cd/rollback-required
+            if grep -q '"decision": "rollback"' .model-cd/ab-decision.json; then
+              touch .model-cd/rollback-required
+            fi
+            python3 -m json.tool .model-cd/ab-decision.json
+          '''
+        }
       }
     }
 
     stage('Promote Candidate') {
       when { expression { params.ROLLOUT_STAGE == 'promote' } }
       steps {
-        sh 'MODEL_CD_STAGE=promote jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
+          sh 'MODEL_CD_STAGE=promote jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        }
       }
     }
 
@@ -112,7 +123,9 @@ pipeline {
       }
       steps {
         echo 'Candidate gate failed or rollback was requested; restoring champion-only traffic.'
-        sh 'MODEL_CD_STAGE=rollback AB_CANDIDATE_WEIGHT_PERCENT=0 jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
+          sh 'MODEL_CD_STAGE=rollback AB_CANDIDATE_WEIGHT_PERCENT=0 jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        }
       }
     }
 

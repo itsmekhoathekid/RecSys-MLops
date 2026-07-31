@@ -1,31 +1,36 @@
 import json
 import math
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
 from tqdm.auto import tqdm
 from sklearn.preprocessing import LabelEncoder
 
+
 def bucketize_seconds_diff(seconds: int) -> int:
-    if seconds < 60 * 5:                 # < 5 phút
+    if seconds < 60 * 5:  # < 5 phút
         return 0
-    if seconds < 60 * 30:                # < 30 phút
+    if seconds < 60 * 30:  # < 30 phút
         return 1
-    if seconds < 60 * 60 * 2:            # < 2 giờ
+    if seconds < 60 * 60 * 2:  # < 2 giờ
         return 2
-    if seconds < 60 * 60 * 6:            # < 6 giờ
+    if seconds < 60 * 60 * 6:  # < 6 giờ
         return 3
-    if seconds < 60 * 60 * 24:           # < 1 ngày
+    if seconds < 60 * 60 * 24:  # < 1 ngày
         return 4
-    if seconds < 60 * 60 * 24 * 3:       # < 3 ngày
+    if seconds < 60 * 60 * 24 * 3:  # < 3 ngày
         return 5
-    if seconds < 60 * 60 * 24 * 7:       # < 7 ngày
+    if seconds < 60 * 60 * 24 * 7:  # < 7 ngày
         return 6
-    if seconds < 60 * 60 * 24 * 14:      # < 14 ngày
+    if seconds < 60 * 60 * 24 * 14:  # < 14 ngày
         return 7
-    return 8                             # >= 14 ngày
+    return 8  # >= 14 ngày
+
 
 def from_ts_to_bucket(ts, current_ts):
-    ts = ts/1000
-    current_ts = current_ts/1000
+    ts = ts / 1000
+    current_ts = current_ts / 1000
     return bucketize_seconds_diff(current_ts - ts)
 
 
@@ -38,7 +43,9 @@ def normalize_row_worker(row):
     row["target_brand"] = str(row.get("target_brand") or "UNK_BRAND")
 
     row["hist_item_id"] = [str(x or "UNK_ITEM") for x in row.get("hist_item_id", [])]
-    row["hist_category"] = [str(x or "UNK_CATEGORY") for x in row.get("hist_category", [])]
+    row["hist_category"] = [
+        str(x or "UNK_CATEGORY") for x in row.get("hist_category", [])
+    ]
     row["hist_brand"] = [str(x or "UNK_BRAND") for x in row.get("hist_brand", [])]
 
     row["hist_event_type"] = [int(x) for x in row.get("hist_event_type", [])]
@@ -72,7 +79,9 @@ def normalize_row_worker(row):
     row["hist_price_bucket"] = row["hist_price_bucket"][:true_len]
     row["hist_time"] = row["hist_time"][:true_len]
     row["hist_len"] = true_len
-    row["hist_time_bucket"] = [from_ts_to_bucket(ts, row['event_time']) for ts in row["hist_time"]]
+    row["hist_time_bucket"] = [
+        from_ts_to_bucket(ts, row["event_time"]) for ts in row["hist_time"]
+    ]
 
     return row
 
@@ -93,7 +102,6 @@ def process_chunk_normalize_worker(lines):
         categories.update(row["hist_category"])
         brands.add(row["target_brand"])
         brands.update(row["hist_brand"])
-
 
     return rows, items, categories, brands, users
 
@@ -172,7 +180,7 @@ def preprocessing_bst_ranking_parallel(
             futures = [
                 ex.submit(
                     process_chunk_encode_worker,
-                    (rows, item2id, cat2id, brand2id, user2id)
+                    (rows, item2id, cat2id, brand2id, user2id),
                 )
                 for rows in normalized_chunks
             ]
@@ -210,8 +218,6 @@ def preprocessing_bst_ranking_parallel(
             json.dump(encoder_json, f, ensure_ascii=False, indent=2)
 
         print(f"Saved encoder mapping JSON to: {encoder_json_output}")
-from pathlib import Path
-from collections import defaultdict
 
 
 def split_preprocessed_bst_jsonl_by_time(
@@ -306,6 +312,7 @@ def split_preprocessed_bst_jsonl_by_time(
 
     print(f"Saved split metadata -> {output_dir / 'split_meta.json'}")
     return split_meta
+
 
 if __name__ == "__main__":
     preprocessing_bst_ranking_parallel(

@@ -84,3 +84,6 @@ pythonpath = [
     "apps/data-platform/src",
     "apps/analytics/src",
 ]
+
+[tool.ruff]
+extend-exclude = ["notebooks/*.ipynb"]

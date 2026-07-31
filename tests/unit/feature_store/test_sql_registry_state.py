@@ -90,7 +90,7 @@ def test_registry_url_uses_offline_postgres_connection(monkeypatch) -> None:
     registry_url = configure_registry_url()
 
     assert registry_url.startswith(
-        "postgresql+psycopg://registry:secret@postgres.internal:5544/offline?"
+        "postgresql+psycopg2://registry:secret@postgres.internal:5544/offline?"
     )
     assert "search_path%3Dfeast_registry" in registry_url
     assert "sslmode=require" in registry_url

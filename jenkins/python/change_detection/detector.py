@@ -1,23 +1,16 @@
-"""Configuration-driven monorepo change detection.
-
-The detector has one responsibility: map changed paths to component flags.
-Image fan-out is resolved through images/catalog.json. Build artifacts and
-deployment units are resolved by release_plan.py.
-"""
+"""Configuration-driven, single-pass Jenkins release planning."""
 
 from __future__ import annotations
 
 import argparse
 import fnmatch
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from jenkins.python.configuration import (
-    load_component_config,
-    path_matches_rules,
-)
+from jenkins.python.configuration import load_component_config, path_matches_rules
 from jenkins.python.image_catalog import image_closure, load_catalog
 from jenkins.python.release_plan import create_release_plan
 
@@ -32,42 +25,89 @@ ROUTING_FLAGS = (
 
 
 @dataclass(frozen=True)
-class ClassificationResult:
+class ChangedFile:
+    status: str
+    path: str
+
+
+@dataclass(frozen=True)
+class DetectionOutcome:
     flags: dict[str, bool]
     component_names: tuple[str, ...]
     changed_images: tuple[str, ...]
     changed_paths: tuple[str, ...]
     ignored_paths: tuple[str, ...]
     unmapped_paths: tuple[str, ...]
+    deleted_unmapped_paths: tuple[str, ...]
+    release_plan: dict[str, object]
 
 
-def git_lines(args: list[str]) -> list[str]:
-    output = subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL)
-    return [line.strip() for line in output.splitlines() if line.strip()]
+def _parse_name_status(payload: bytes) -> list[ChangedFile]:
+    tokens = [
+        token
+        for token in payload.decode("utf-8", errors="surrogateescape").split("\0")
+        if token
+    ]
+    changes: list[ChangedFile] = []
+    index = 0
+    while index < len(tokens):
+        status_token = tokens[index]
+        index += 1
+        status = status_token[:1]
+        if status in {"R", "C"}:
+            if index + 1 >= len(tokens):
+                raise ValueError(f"invalid git name-status payload near {status_token}")
+            old_path, new_path = tokens[index], tokens[index + 1]
+            index += 2
+            if status == "R":
+                changes.append(ChangedFile("D", old_path))
+            changes.append(ChangedFile("A", new_path))
+            continue
+        if index >= len(tokens):
+            raise ValueError(f"invalid git name-status payload near {status_token}")
+        changes.append(ChangedFile(status, tokens[index]))
+        index += 1
+    return changes
 
 
-def current_commit_paths() -> list[str]:
+def _git_name_status(args: list[str]) -> list[ChangedFile]:
+    output = subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL)
+    return _parse_name_status(output)
+
+
+def current_commit_changes() -> list[ChangedFile]:
     for args in (
-        ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-m", "HEAD"],
-        ["show", "--pretty=format:", "--name-only", "HEAD"],
+        [
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "--name-status",
+            "-z",
+            "-r",
+            "-m",
+            "HEAD",
+        ],
+        ["show", "--pretty=format:", "--name-status", "-z", "HEAD"],
     ):
         try:
-            return list(dict.fromkeys(git_lines(args)))
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            return _git_name_status(args)
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
             continue
     return []
 
 
-def changed_paths(base_ref: str | None) -> list[str]:
+def changed_files(base_ref: str | None) -> list[ChangedFile]:
     if base_ref:
         try:
-            return git_lines(["diff", "--name-only", f"{base_ref}...HEAD"])
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            return _git_name_status(
+                ["diff", "--name-status", "-z", f"{base_ref}...HEAD"]
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
             pass
     try:
-        return git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return current_commit_paths()
+        return _git_name_status(["diff", "--name-status", "-z", "HEAD~1", "HEAD"])
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+        return current_commit_changes()
 
 
 def normalize_path(path: str) -> str:
@@ -90,7 +130,41 @@ def _image_for_path(path: str, images: dict[str, dict]) -> str | None:
     return None
 
 
-def classify_paths(paths: list[str]) -> ClassificationResult:
+def _forced_selection(
+    value: str, components: list[dict]
+) -> tuple[tuple[str, ...], bool]:
+    requested = [token.strip().lower() for token in value.split(",") if token.strip()]
+    force_ci_config = "ci_config" in requested
+    requested = [token for token in requested if token != "ci_config"]
+    by_token: dict[str, str] = {}
+    for component in components:
+        tokens = {
+            component["name"],
+            component["flag"].lower().removeprefix("run_"),
+            re.sub(r"[^a-z0-9]+", "_", component["label"].lower()).strip("_"),
+        }
+        for token in tokens:
+            by_token[token] = component["name"]
+    unknown = sorted(set(requested) - by_token.keys())
+    if unknown:
+        raise ValueError(f"unknown FORCE_COMPONENTS token(s): {', '.join(unknown)}")
+    selected = {by_token[token] for token in requested}
+    return (
+        tuple(
+            component["name"]
+            for component in components
+            if component["name"] in selected
+        ),
+        force_ci_config,
+    )
+
+
+def detect_changed_components(
+    changes: list[ChangedFile],
+    *,
+    commit: str = "",
+    forced_components: str = "",
+) -> DetectionOutcome:
     config = load_component_config()
     components = config["components"]
     path_groups = config["pathGroups"]
@@ -98,86 +172,105 @@ def classify_paths(paths: list[str]) -> ClassificationResult:
     flags = {component["flag"]: False for component in components}
     flags.update({name: False for name in ROUTING_FLAGS})
 
-    normalized_paths = tuple(
-        dict.fromkeys(normalize_path(path) for path in paths if normalize_path(path))
+    normalized_changes = tuple(
+        ChangedFile(change.status[:1].upper(), normalize_path(change.path))
+        for change in changes
+        if normalize_path(change.path)
     )
     ignored: list[str] = []
     unmapped: list[str] = []
-    direct_component_names: set[str] = set()
+    deleted_unmapped: list[str] = []
     directly_changed_images: set[str] = set()
 
-    for path in normalized_paths:
-        if _glob_match(path, config["globalExcludes"]):
-            ignored.append(path)
-            continue
+    if forced_components.strip():
+        ordered_names, force_ci_config = _forced_selection(
+            forced_components, components
+        )
+        flags["RUN_CI_CONFIG"] = force_ci_config
+    else:
+        direct_component_names: set[str] = set()
+        for change in normalized_changes:
+            path = change.path
+            if _glob_match(path, config["globalExcludes"]):
+                ignored.append(path)
+                continue
 
-        matched = False
-        if path_matches_rules(
-            path,
-            config["ciConfiguration"]["changeDetection"],
-            path_groups,
-        ):
-            flags["RUN_CI_CONFIG"] = True
-            matched = True
-
-        if path in {"images/catalog.json", "images/catalog.schema.json"}:
-            flags["RUN_CI_CONFIG"] = True
-            direct_component_names.update(component["name"] for component in components)
-            matched = True
-        else:
-            image_name = _image_for_path(path, images)
-            if image_name:
-                directly_changed_images.add(image_name)
+            matched = False
+            if path_matches_rules(
+                path, config["ciConfiguration"]["changeDetection"], path_groups
+            ):
+                flags["RUN_CI_CONFIG"] = True
                 matched = True
 
-        for component in components:
-            if path_matches_rules(path, component["changeDetection"], path_groups):
-                direct_component_names.add(component["name"])
+            if path in {"images/catalog.json", "images/catalog.schema.json"}:
+                flags["RUN_CI_CONFIG"] = True
+                direct_component_names.update(
+                    component["name"] for component in components
+                )
                 matched = True
+            else:
+                image_name = _image_for_path(path, images)
+                if image_name:
+                    directly_changed_images.add(image_name)
+                    matched = True
 
-        if not matched:
-            unmapped.append(path)
+            for component in components:
+                if path_matches_rules(path, component["changeDetection"], path_groups):
+                    direct_component_names.add(component["name"])
+                    matched = True
 
-    if directly_changed_images:
-        for component in components:
-            closure = image_closure(component["buildImages"], images)
-            if closure & directly_changed_images:
-                direct_component_names.add(component["name"])
+            if not matched:
+                if change.status == "D":
+                    deleted_unmapped.append(path)
+                else:
+                    unmapped.append(path)
 
-    ordered_names = tuple(
-        component["name"]
-        for component in components
-        if component["name"] in direct_component_names
-    )
+        if directly_changed_images:
+            for component in components:
+                if (
+                    image_closure(component["buildImages"], images)
+                    & directly_changed_images
+                ):
+                    direct_component_names.add(component["name"])
+        ordered_names = tuple(
+            component["name"]
+            for component in components
+            if component["name"] in direct_component_names
+        )
+
     for component in components:
-        if component["name"] in direct_component_names:
+        if component["name"] in ordered_names:
             flags[component["flag"]] = True
-    plan = create_release_plan(
+    changed_image_names = tuple(
+        name for name in images if name in directly_changed_images
+    )
+    release_plan = create_release_plan(
         list(ordered_names),
-        changed_images=[
-            name for name in images if name in directly_changed_images
-        ],
-        changed_paths=list(normalized_paths),
+        changed_images=list(changed_image_names),
+        changed_paths=[change.path for change in normalized_changes],
+        commit=commit,
     )
     if ordered_names:
         flags["RUN_COMPONENT_CI"] = True
         flags["RUN_PYTHON"] = True
     flags["RUN_COMPONENT_BUILD"] = bool(
-        plan["buildImages"] or plan["buildArtifacts"]
+        release_plan["buildImages"] or release_plan["buildArtifacts"]
     )
-    flags["RUN_COMPONENT_DEPLOY"] = bool(plan["deployUnits"])
+    flags["RUN_COMPONENT_DEPLOY"] = bool(release_plan["deployUnits"])
 
-    return ClassificationResult(
+    return DetectionOutcome(
         flags=flags,
         component_names=ordered_names,
-        changed_images=tuple(name for name in images if name in directly_changed_images),
-        changed_paths=normalized_paths,
-        ignored_paths=tuple(ignored),
-        unmapped_paths=tuple(unmapped),
+        changed_images=changed_image_names,
+        changed_paths=tuple(change.path for change in normalized_changes),
+        ignored_paths=tuple(dict.fromkeys(ignored)),
+        unmapped_paths=tuple(dict.fromkeys(unmapped)),
+        deleted_unmapped_paths=tuple(dict.fromkeys(deleted_unmapped)),
+        release_plan=release_plan,
     )
 
 
-def render_environment(result: ClassificationResult) -> str:
+def render_jenkins_environment(result: DetectionOutcome) -> str:
     lines = [
         f"{name}={'true' if value else 'false'}"
         for name, value in sorted(result.flags.items())
@@ -190,52 +283,57 @@ def render_environment(result: ClassificationResult) -> str:
             f"IGNORED_PATHS_COUNT={len(result.ignored_paths)}",
             f"UNMAPPED_PATHS_COUNT={len(result.unmapped_paths)}",
             f"UNMAPPED_PATHS={'|'.join(result.unmapped_paths)}",
+            f"DELETED_UNMAPPED_PATHS_COUNT={len(result.deleted_unmapped_paths)}",
+            f"DELETED_UNMAPPED_PATHS={'|'.join(result.deleted_unmapped_paths)}",
         )
     )
     return "\n".join(lines)
 
 
-def write_release_plan(result: ClassificationResult, path: Path, commit: str) -> None:
-    plan = create_release_plan(
-        list(result.component_names),
-        changed_images=list(result.changed_images),
-        changed_paths=list(result.changed_paths),
-        commit=commit,
-    )
-    path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Map changed paths to RecSys component flags and a release plan."
+        description="Map changed paths to Jenkins flags and one immutable release plan."
     )
     parser.add_argument("--base-ref", default="")
-    parser.add_argument(
-        "--path",
-        action="append",
-        default=[],
-        help="Classify an explicit path instead of reading git diff.",
-    )
+    parser.add_argument("--path", action="append", default=[])
+    parser.add_argument("--force-components", default="")
     parser.add_argument("--plan-output", default=".ci-release-plan.json")
     parser.add_argument("--commit", default="")
     args = parser.parse_args()
 
-    paths = args.path or changed_paths(args.base_ref or None)
-    result = classify_paths(paths)
-    print(render_environment(result))
-    if result.unmapped_paths:
-        print(
-            "ERROR: Unmapped runtime path(s). Add changeDetection rules: "
-            + ", ".join(result.unmapped_paths)
-        )
-        return 2
     commit = args.commit
     if not commit:
         try:
-            commit = git_lines(["rev-parse", "HEAD"])[0]
-        except (IndexError, subprocess.CalledProcessError, FileNotFoundError):
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
             commit = ""
-    write_release_plan(result, Path(args.plan_output), commit)
+    changes = (
+        [ChangedFile("M", path) for path in args.path]
+        if args.path
+        else changed_files(args.base_ref or None)
+    )
+    try:
+        result = detect_changed_components(
+            changes,
+            commit=commit,
+            forced_components=args.force_components,
+        )
+    except ValueError as error:
+        print(f"ERROR: {error}")
+        return 2
+    print(render_jenkins_environment(result))
+    if result.unmapped_paths:
+        print(
+            "ERROR: Unmapped active runtime path(s). Add changeDetection rules: "
+            + ", ".join(result.unmapped_paths)
+        )
+        return 2
+    Path(args.plan_output).write_text(
+        json.dumps(result.release_plan, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return 0
 
 

@@ -4,7 +4,7 @@ ci_api() {
   tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)
   append_integration_dir api
   cov_paths=(ab_testing api_runtime api_schemas feature_api feature_service_client inference_api online_features ranking serving_utils shadow triton)
-  component_pytest "${component}" "apps/api-serving/src"
+  run_configured_component_tests "${component}" "apps/api-serving/src"
 }
 
 ci_kserve() {
@@ -17,5 +17,5 @@ ci_kserve() {
     jenkins.python.model_cd.manifests
     jenkins.python.model_cd.promotion_gates
   )
-  component_pytest "${component}" ".:apps/ml-system/src:apps/data-platform/src"
+  run_configured_component_tests "${component}" ".:apps/ml-system/src:apps/data-platform/src"
 }

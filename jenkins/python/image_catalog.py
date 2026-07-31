@@ -49,7 +49,9 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, dict[str, Any]]:
         dockerfile = ROOT / str(spec["dockerfile"])
         context = ROOT / str(spec["context"])
         if not dockerfile.is_file():
-            raise ValueError(f"image {image_name} Dockerfile does not exist: {dockerfile}")
+            raise ValueError(
+                f"image {image_name} Dockerfile does not exist: {dockerfile}"
+            )
         if not context.is_dir():
             raise ValueError(f"image {image_name} context does not exist: {context}")
         if spec["context"] != ".":
@@ -59,7 +61,10 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, dict[str, Any]]:
             raise ValueError(f"image {image_name} dependencies must be a list")
         seen_args: set[str] = set()
         for dependency in dependencies:
-            if not isinstance(dependency, dict) or set(dependency) != REQUIRED_DEPENDENCY_FIELDS:
+            if (
+                not isinstance(dependency, dict)
+                or set(dependency) != REQUIRED_DEPENDENCY_FIELDS
+            ):
                 raise ValueError(
                     f"image {image_name} dependencies require image and buildArg"
                 )
@@ -70,7 +75,9 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, dict[str, Any]]:
                     f"image {image_name} references unknown dependency {dependency_image}"
                 )
             if not isinstance(build_arg, str) or not build_arg:
-                raise ValueError(f"image {image_name} has an invalid dependency buildArg")
+                raise ValueError(
+                    f"image {image_name} has an invalid dependency buildArg"
+                )
             if build_arg in seen_args:
                 raise ValueError(
                     f"image {image_name} has duplicate dependency buildArg {build_arg}"
@@ -172,11 +179,15 @@ def _validate_component_coverage(images: dict[str, dict[str, Any]]) -> None:
         referenced.extend(component_images)
     uncovered = images.keys() - image_closure(referenced, images)
     if uncovered:
-        raise ValueError(f"catalog images are not reachable from components: {sorted(uncovered)}")
+        raise ValueError(
+            f"catalog images are not reachable from components: {sorted(uncovered)}"
+        )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate and query the RecSys image catalog.")
+    parser = argparse.ArgumentParser(
+        description="Validate and query the RecSys image catalog."
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate")
     spec_parser = subparsers.add_parser("spec")
@@ -186,6 +197,9 @@ def main() -> int:
     build_args_parser = subparsers.add_parser("build-args")
     build_args_parser.add_argument("image")
     build_args_parser.add_argument("--tag", required=True)
+    build_spec_parser = subparsers.add_parser("build-spec")
+    build_spec_parser.add_argument("image")
+    build_spec_parser.add_argument("--tag", required=True)
     args = parser.parse_args()
 
     images = load_catalog()
@@ -203,6 +217,12 @@ def main() -> int:
     if args.command == "build-args":
         for build_arg in dependency_build_args(args.image, args.tag, images):
             print(build_arg)
+        return 0
+    if args.command == "build-spec":
+        spec = images[args.image]
+        print(f"CONTEXT\t{spec['dockerfile']}\t{spec['context']}")
+        for build_arg in dependency_build_args(args.image, args.tag, images):
+            print(f"ARG\t{build_arg}")
         return 0
     raise AssertionError(args.command)
 

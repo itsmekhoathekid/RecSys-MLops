@@ -1,4 +1,4 @@
-def componentDefinitions() {
+def loadComponentDefinitions() {
   return sh(
     returnStdout: true,
     script: 'python3 jenkins/python/configuration.py components-tsv'
@@ -8,7 +8,7 @@ def componentDefinitions() {
   }
 }
 
-def gitRefExists(String ref) {
+def gitCommitExists(String ref) {
   if (!ref?.trim() || ref ==~ /^0+$/) {
     return false
   }
@@ -18,26 +18,26 @@ def gitRefExists(String ref) {
   ) == 0
 }
 
-def resolveChangedBaseRef() {
+def resolveDiffBase() {
   if (env.CHANGE_TARGET?.trim()) {
     def pullRequestBase = "origin/${env.CHANGE_TARGET}"
-    if (gitRefExists(pullRequestBase)) {
+    if (gitCommitExists(pullRequestBase)) {
       return pullRequestBase
     }
   }
   for (String candidate : [env.GIT_PREVIOUS_COMMIT, env.GIT_PREVIOUS_SUCCESSFUL_COMMIT]) {
-    if (gitRefExists(candidate)) {
+    if (gitCommitExists(candidate)) {
       return candidate
     }
   }
-  return gitRefExists('HEAD~1') ? 'HEAD~1' : ''
+  return gitCommitExists('HEAD~1') ? 'HEAD~1' : ''
 }
 
-def runComponentBranches(String scriptPath, String extraEnv, int maxParallel) {
+def runSelectedComponentCi(String scriptPath, String extraEnv, int maxParallel) {
   if (maxParallel < 1) {
     error 'maxParallel must be at least 1'
   }
-  def selected = componentDefinitions().findAll { component ->
+  def selected = loadComponentDefinitions().findAll { component ->
     env.getProperty(component.flag) == 'true'
   }
   if (!selected) {
@@ -58,7 +58,7 @@ def runComponentBranches(String scriptPath, String extraEnv, int maxParallel) {
   }
 }
 
-def runReleaseDeployPlan(String scriptPath, String extraEnv, String planPath) {
+def deployReleasePlan(String scriptPath, String extraEnv, String planPath) {
   def rows = sh(
     returnStdout: true,
     script: "python3 jenkins/python/release_plan.py plan-units --plan '${planPath}'"
@@ -82,65 +82,7 @@ def runReleaseDeployPlan(String scriptPath, String extraEnv, String planPath) {
   }
 }
 
-def applyForcedComponents(String forcedComponents) {
-  def requested = forcedComponents
-    ?.split(',')
-    ?.collect { it.trim().toLowerCase() }
-    ?.findAll { it }
-  if (!requested) {
-    return false
-  }
-
-  def forceCiConfig = requested.contains('ci_config')
-  requested = requested.findAll { it != 'ci_config' }
-  def componentsByToken = [:]
-  componentDefinitions().each { component ->
-    componentsByToken.put(component.name, component)
-    componentsByToken.put(component.flag.toLowerCase().replaceFirst('^run_', ''), component)
-    componentsByToken.put(
-      component.label.toLowerCase().replaceAll(/[^a-z0-9]+/, '_').replaceAll(/^_|_$/, ''),
-      component
-    )
-  }
-
-  def selectedByName = [:]
-  def unknown = []
-  requested.each { token ->
-    def component = componentsByToken.get(token)
-    if (component) {
-      selectedByName.put(component.name, component)
-    } else {
-      unknown << token
-    }
-  }
-  if (unknown) {
-    error "Unknown FORCE_COMPONENTS token(s): ${unknown.join(', ')}"
-  }
-
-  componentDefinitions().each { component -> env.setProperty(component.flag, 'false') }
-  selectedByName.values().each { component -> env.setProperty(component.flag, 'true') }
-  env.RUN_CI_CONFIG = forceCiConfig ? 'true' : 'false'
-  env.RUN_COMPONENT_CI = selectedByName ? 'true' : 'false'
-  env.RUN_COMPONENT_BUILD = selectedByName ? 'true' : 'false'
-  env.RUN_COMPONENT_DEPLOY = selectedByName ? 'true' : 'false'
-  env.RUN_PYTHON = selectedByName ? 'true' : 'false'
-  def selectedNames = selectedByName.keySet().toList()
-  sh(
-    "python3 jenkins/python/release_plan.py create " +
-    "--components '${selectedNames.join(',')}' " +
-    "--commit '${env.GIT_COMMIT ?: ''}' " +
-    "--output .ci-release-plan.json"
-  )
-  def forcedNames = selectedNames.toList()
-  if (forceCiConfig) {
-    forcedNames << 'ci_config'
-  }
-  env.CHANGED_COMPONENTS = forcedNames.join(',')
-  echo "Forced CI/CD components: ${env.CHANGED_COMPONENTS}"
-  return true
-}
-
-def shouldDeployChangedComponents() {
+def shouldDeployRelease() {
   def branchEnvironmentIsMain = [
     env.BRANCH_NAME,
     env.GIT_BRANCH
@@ -150,7 +92,7 @@ def shouldDeployChangedComponents() {
       branch == 'refs/heads/main' ||
       branch == 'refs/remotes/origin/main'
   }
-  def checkedOutCommitIsMain = gitRefExists('origin/main') && sh(
+  def checkedOutCommitIsMain = gitCommitExists('origin/main') && sh(
     returnStatus: true,
     script: 'test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"'
   ) == 0

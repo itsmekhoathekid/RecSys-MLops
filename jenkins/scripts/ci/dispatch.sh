@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-ci_dispatch() {
+run_component_ci() {
   case "$1" in
     materialize) ci_materialize ;;
     training) ci_training ;;

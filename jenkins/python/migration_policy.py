@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from jenkins.python.configuration import ROOT, load_components
+from jenkins.python.configuration import ROOT, load_components  # noqa: E402
 
 MIGRATION_PATH = re.compile(r"(^|/)(migrations?|alembic|schema)(/|$)", re.IGNORECASE)
 DESTRUCTIVE_SQL = re.compile(
@@ -51,21 +51,29 @@ def validate(component: str, base_ref: str = "") -> None:
     if component not in components:
         raise ValueError(f"unknown component: {component}")
     policy = components[component]["migrationPolicy"]
-    candidates = [path for path in changed_files(base_ref) if path.exists() and path.is_file()]
+    candidates = [
+        path for path in changed_files(base_ref) if path.exists() and path.is_file()
+    ]
     if policy == "none" and candidates:
         names = ", ".join(str(path.relative_to(ROOT)) for path in candidates)
-        raise ValueError(f"{component} has migrationPolicy=none but migration files changed: {names}")
+        raise ValueError(
+            f"{component} has migrationPolicy=none but migration files changed: {names}"
+        )
     for path in candidates:
         if path.suffix.lower() == ".sql" and DESTRUCTIVE_SQL.search(
             path.read_text(encoding="utf-8", errors="replace")
         ):
-            raise ValueError(f"destructive migration is forbidden by {policy}: {path.relative_to(ROOT)}")
+            raise ValueError(
+                f"destructive migration is forbidden by {policy}: {path.relative_to(ROOT)}"
+            )
     if policy == "reversible":
         validate_reversible_manifest(component)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Enforce component database migration rollback policy.")
+    parser = argparse.ArgumentParser(
+        description="Enforce component database migration rollback policy."
+    )
     parser.add_argument("--component", required=True)
     parser.add_argument("--base-ref", default="")
     args = parser.parse_args()

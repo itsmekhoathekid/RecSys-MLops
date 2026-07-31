@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,11 +11,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from jenkins.python.image_catalog import (
+from jenkins.python.image_catalog import (  # noqa: E402
     dependency_build_args,
     dependency_order,
     load_catalog,
 )
+from jenkins.python.configuration import load_components  # noqa: E402
+from jenkins.python.release_plan import create_release_plan  # noqa: E402
 
 
 def _catalog_payload() -> dict:
@@ -54,3 +58,63 @@ def test_catalog_rejects_legacy_spark_images(tmp_path: Path) -> None:
 def test_every_catalog_image_is_reachable_from_a_component() -> None:
     # load_catalog performs closure, unknown dependency, and cycle validation.
     assert set(load_catalog()) == set(_catalog_payload()["images"])
+
+
+def test_full_release_plan_builds_every_image_once_in_topological_order() -> None:
+    images = load_catalog()
+    plan = create_release_plan([component["name"] for component in load_components()])
+
+    assert len(plan["buildImages"]) == len(set(plan["buildImages"])) == 15
+    position = {name: index for index, name in enumerate(plan["buildImages"])}
+    for name, spec in images.items():
+        for dependency in spec["dependencies"]:
+            assert position[dependency["image"]] < position[name]
+
+
+def test_release_builder_invokes_each_planned_image_once(tmp_path: Path) -> None:
+    plan = create_release_plan([component["name"] for component in load_components()])
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker_log = tmp_path / "docker.log"
+    docker_stub = bin_dir / "docker"
+    docker_stub.write_text(
+        '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >>"${DOCKER_LOG}"\n',
+        encoding="utf-8",
+    )
+    docker_stub.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "DOCKER_LOG": str(docker_log),
+            "IMAGE_MANIFEST_DIR": str(tmp_path / "manifest"),
+            "REPORTS_DIR": str(tmp_path / "reports"),
+            "IMAGE_PUSH_REGISTRY": "registry.example.invalid/recsys",
+            "IMAGE_TAG": "a" * 40,
+            "PUBLISH_IMAGES": "0",
+            "REQUIRE_GCP_ARTIFACT_REGISTRY": "0",
+            "CONTAINER_SCAN_ENABLED": "0",
+        }
+    )
+    subprocess.run(
+        [
+            "bash",
+            "jenkins/scripts/entrypoints/release_build_publish.sh",
+            str(plan_path),
+        ],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    builds = [
+        line
+        for line in docker_log.read_text().splitlines()
+        if line.startswith("build ")
+    ]
+    assert len(builds) == 15
+    for image_name in plan["buildImages"]:
+        assert sum(f"-t {image_name}:" in line for line in builds) == 1

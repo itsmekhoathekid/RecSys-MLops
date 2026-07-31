@@ -10,7 +10,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIGURATION_PATH = ROOT / "jenkins/python/configuration.py"
-SPEC = importlib.util.spec_from_file_location("jenkins_configuration", CONFIGURATION_PATH)
+SPEC = importlib.util.spec_from_file_location(
+    "jenkins_configuration", CONFIGURATION_PATH
+)
 assert SPEC and SPEC.loader
 configuration = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(configuration)
@@ -18,7 +20,6 @@ SPEC.loader.exec_module(configuration)
 EXPECTED_STAGES = [
     "Checkout",
     "Detect Changed Components",
-    "CI Configuration Validation",
     "Python Env",
     "Component CI",
     "Docker Login",
@@ -56,6 +57,8 @@ def test_full_release_verification_orders_data_before_training(tmp_path):
     plan_path.write_text(
         json.dumps(
             {
+                "version": 2,
+                "commit": "abc",
                 "components": [
                     "materialize",
                     "training",
@@ -63,7 +66,10 @@ def test_full_release_verification_orders_data_before_training(tmp_path):
                     "dp2",
                     "dp3",
                     "analytics",
-                ]
+                ],
+                "buildImages": [],
+                "buildArtifacts": [],
+                "deployUnits": [],
             }
         ),
         encoding="utf-8",
@@ -88,6 +94,144 @@ def test_full_release_verification_orders_data_before_training(tmp_path):
     assert ordered.index("dp2") < ordered.index("analytics")
 
 
+def test_stream_components_share_one_production_verification():
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source jenkins/scripts/test/dispatch.sh; "
+            "component_verification_key stream_offline; "
+            "component_verification_key stream_online",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.splitlines() == ["stream_features", "stream_features"]
+
+
+def test_rollout_deploy_uses_release_plan_namespace():
+    entrypoint = (ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh").read_text(
+        encoding="utf-8"
+    )
+    rollout = (ROOT / "jenkins/scripts/deploy/rollout.sh").read_text(encoding="utf-8")
+
+    assert 'deploy_rollout_watcher "${unit_namespace}"' in entrypoint
+    assert 'local namespace="$1"' in rollout
+    assert "namespace_ci" not in rollout
+
+
+def test_registry_push_refreshes_login_and_retries_once(tmp_path):
+    attempt_path = tmp_path / "push-attempts"
+    login_path = tmp_path / "registry-logins"
+    push_log = tmp_path / "push.log"
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            r'''
+set -euo pipefail
+source jenkins/scripts/lib/common.sh
+source jenkins/scripts/build/engine.sh
+attempt_path="$1"
+login_path="$2"
+push_log="$3"
+printf '0\n' >"${attempt_path}"
+docker() {
+  local count
+  count="$(<"${attempt_path}")"
+  count=$((count + 1))
+  printf '%s\n' "${count}" >"${attempt_path}"
+  if [[ "${count}" == "1" ]]; then
+    printf 'unauthorized: authentication failed\n' >&2
+    return 1
+  fi
+  printf 'digest: sha256:%064d\n' 0
+}
+registry_login_gcp() {
+  printf 'login\n' >>"${login_path}"
+}
+BUILD_REGISTRY_HOST=asia-southeast1-docker.pkg.dev
+BUILD_IMAGE_REGISTRY=asia-southeast1-docker.pkg.dev/example/recsys
+BUILD_REGISTRY_LOGIN_EPOCH=0
+push_built_image example/image:tag "${push_log}"
+printf 'attempts=%s logins=%s\n' \
+  "$(<"${attempt_path}")" \
+  "$(wc -l <"${login_path}" | tr -d ' ')"
+''',
+            "registry-push-test",
+            str(attempt_path),
+            str(login_path),
+            str(push_log),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "attempts=2 logins=1" in completed.stdout
+    assert "digest: sha256:" in push_log.read_text(encoding="utf-8")
+
+
+def test_production_verification_is_fail_fast_and_kfp_check_is_read_only():
+    runtime = (ROOT / "jenkins/scripts/test/runtime.sh").read_text(encoding="utf-8")
+    ml_platform = (ROOT / "jenkins/scripts/test/ml_platform.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "set -euo pipefail\n    run_component_verification" in runtime
+    assert "component_ci_python training" in ml_platform
+    assert '"${training_python}" apps/ml-system/src/kubeflow/verify_pipeline_upload.py' in (
+        ml_platform
+    )
+    assert "submit_pipeline_run.py" not in ml_platform
+    assert "create_run_from_pipeline_package" not in ml_platform
+
+
+def test_production_verification_does_not_launch_component_workloads():
+    test_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (ROOT / "jenkins/scripts/test").glob("*.sh")
+    )
+    for forbidden in (
+        "airflow dags trigger",
+        "airflow dags unpause",
+        "kubectl apply",
+        "kubectl create",
+        "kubectl run",
+        "--verification-event-id",
+        "submit_pipeline_run.py",
+        "create_run_from_pipeline_package",
+        "mesh_request POST",
+        "dbt test",
+    ):
+        assert forbidden not in test_sources
+    assert "component_test_airflow_dag_registered" in test_sources
+
+
+def test_kfp_runtime_secret_contract_is_checked_without_reading_values():
+    preflight = (ROOT / "jenkins/scripts/deploy/preflight/gcp.sh").read_text(
+        encoding="utf-8"
+    )
+    terraform = (ROOT / "infra/terraform/gcp/secret_management.tf").read_text(
+        encoding="utf-8"
+    )
+    for key in (
+        "HUDI_DATASET_TABLE",
+        "HUDI_CLEAN_HOURS_RETAINED",
+        "HUDI_ZK_URL",
+        "HUDI_ZK_PORT",
+        "HUDI_ZK_BASE_PATH",
+        "HUDI_ZK_LOCK_KEY",
+    ):
+        assert key in preflight
+        assert key in terraform
+    assert 'json.load(sys.stdin).get("data", {})' in preflight
+
+
 def test_component_catalog_rejects_misspelled_declared_path(tmp_path):
     payload = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
@@ -102,10 +246,26 @@ def test_component_catalog_rejects_misspelled_declared_path(tmp_path):
         configuration.load_component_config(config_path)
 
 
-def test_root_jenkins_stage_view_contract_is_unchanged():
+def test_component_catalog_rejects_local_only_declared_file(monkeypatch):
+    relative_path = "tests/unit/jenkins/test_cicd_configuration.py"
+    assert (ROOT / relative_path).is_file()
+    monkeypatch.setattr(configuration, "_tracked_paths", lambda: frozenset())
+
+    with pytest.raises(ValueError, match="path is not tracked by Git"):
+        configuration._validate_rule_paths(
+            {"files": [relative_path]}, "local-only rule"
+        )
+
+
+def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     source = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
-    assert re.findall(r"^\s*stage\('([^']+)'\)", source, flags=re.MULTILINE) == EXPECTED_STAGES
-    assert "skipDefaultCheckout(true)" in source
+    assert (
+        re.findall(r"^\s*stage\('([^']+)'\)", source, flags=re.MULTILINE)
+        == EXPECTED_STAGES
+    )
+    assert "skipDefaultCheckout" not in source
+    assert "checkout scm" not in source
+    assert "disableConcurrentBuilds()" in source
     assert "script: 'git rev-parse HEAD'" in source
     assert "values_args=(" not in source
     assert "source jenkins/scripts/" not in source
@@ -114,14 +274,29 @@ def test_root_jenkins_stage_view_contract_is_unchanged():
     assert "jenkins/scripts/lib/gcp.sh" not in source
     assert 'rm -rf "${CI_TMP_ROOT}"' in source
     assert "recovery_status" not in source
-    pipeline_helper = (
-        ROOT / "jenkins/pipeline/component_pipeline.groovy"
-    ).read_text(encoding="utf-8")
-    assert "release_plan.py create" in pipeline_helper
-    assert "--output .ci-release-plan.json" in pipeline_helper
+    pipeline_helper = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text(
+        encoding="utf-8"
+    )
+    assert "release_plan.py create" not in pipeline_helper
+    assert "applyForcedComponents" not in pipeline_helper
     assert "selected.collate(maxParallel)" in pipeline_helper
     assert "params.PUBLISH_IMAGES && env.RUN_COMPONENT_DEPLOY" in pipeline_helper
+    assert source.count("python3 jenkins/python/configuration.py validate") == 1
+    assert source.count("release_deploy_preflight.sh") == 1
     assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" in source
+    for marker in (
+        "[CI] Contract checks",
+        "[BUILD] Build, scan and publish catalog images",
+        "[PACKAGE] Compile Kubeflow package",
+        "[DEPLOY] Production preflight",
+        "[DEPLOY] Deploy release",
+        "[VERIFY] Verify release",
+    ):
+        assert marker in source
+    build_entrypoint = (
+        ROOT / "jenkins/scripts/entrypoints/release_build_publish.sh"
+    ).read_text(encoding="utf-8")
+    assert '[BUILD] Build image ${image_index}/${image_total}' in build_entrypoint
 
 
 def test_gcp_production_target_is_strict_and_self_consistent():
@@ -204,10 +379,7 @@ def test_kubernetes_name_helper_emits_rfc1123_label():
         capture_output=True,
         text=True,
     )
-    assert (
-        completed.stdout
-        == "airflow-version-recsys-github-cicd-102-stream-online"
-    )
+    assert completed.stdout == "airflow-version-recsys-github-cicd-102-stream-online"
     assert re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", completed.stdout)
 
 
@@ -215,9 +387,11 @@ def test_catalog_contains_only_supported_migration_policies():
     payload = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
     )
-    assert {
-        component["migrationPolicy"] for component in payload["components"]
-    } <= {"none", "expand-only", "reversible"}
+    assert {component["migrationPolicy"] for component in payload["components"]} <= {
+        "none",
+        "expand-only",
+        "reversible",
+    }
 
 
 def test_catalog_driven_builder_owns_exactly_fifteen_images():
@@ -229,21 +403,48 @@ def test_catalog_driven_builder_owns_exactly_fifteen_images():
     }
     assert all(spec["context"] == "." for spec in catalog["images"].values())
     engine = (ROOT / "jenkins/scripts/build/engine.sh").read_text(encoding="utf-8")
-    assert "image_catalog.py spec" in engine
-    assert "image_catalog.py dependencies" in engine
-    assert "image_catalog.py build-args" in engine
-    assert "flock -w" in engine
-    assert "build_reuse_shared_image" in engine
-    assert "BUILD_COMPONENT}-$$" in engine
-    assert "already failed in this build" in engine
+    assert "image_catalog.py build-spec" in engine
+    assert "image_catalog.py dependencies" not in engine
+    assert "flock" not in engine
+    assert "build_reuse_shared_image" not in engine
+    assert "build_scan_publish_image" in engine
     assert "BUILD_SCAN_REPORT_DIR" in engine
     assert "container_scan_policy.py" in engine
 
 
-def test_prometheus_operator_is_pinned_and_operator_only():
-    source = (
-        ROOT / "infra/terraform/gcp/dependencies.tf"
+def test_kubeflow_release_package_is_compiled_once_then_uploaded() -> None:
+    package_entrypoint = (
+        ROOT / "jenkins/scripts/entrypoints/release_package_artifacts.sh"
     ).read_text(encoding="utf-8")
+    upload = (ROOT / "jenkins/scripts/deploy/upload_kfp_package.sh").read_text(
+        encoding="utf-8"
+    )
+    deploy = (ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert package_entrypoint.count("jenkins/scripts/build/kfp_package.sh") == 1
+    assert "kfp_package.sh" not in upload
+    assert "compile_training_pipeline.py" not in upload
+    assert "upload_kfp_package.sh" in deploy
+    assert "kfp_version.sh" not in deploy
+
+
+def test_seed_jobs_do_not_expose_retired_registry_parameters() -> None:
+    seed = (
+        ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml"
+    ).read_text(encoding="utf-8")
+    for parameter in (
+        "IMAGE_PUSH_REGISTRY",
+        "IMAGE_PULL_REGISTRY",
+        "REQUIRE_GCP_ARTIFACT_REGISTRY",
+        "DEPLOY_CHANGED_COMPONENTS",
+    ):
+        assert f"<name>{parameter}</name>" not in seed
+
+
+def test_prometheus_operator_is_pinned_and_operator_only():
+    source = (ROOT / "infra/terraform/gcp/dependencies.tf").read_text(encoding="utf-8")
     assert 'resource "helm_release" "prometheus_operator"' in source
     assert 'version          = "87.19.2"' in source
     assert 'name  = "prometheus.enabled"' in source

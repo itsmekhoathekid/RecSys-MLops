@@ -3,11 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 
+import pytest
 import torch
 
 from kubeflow.components import runtime
 from kubeflow.pipelines.compile_training_pipeline import compile_pipeline
 from kubeflow.upload_pipeline_package import upload_or_version_pipeline
+from kubeflow.verify_pipeline_upload import verify_uploaded_pipeline
 from kubeflow.validate_pipeline_package import validate_pipeline_package
 from cli.submit_ray_job import build_rayjob, container_spec, parse_toleration, pod_template, reusable_best_result
 from training.ray_distributed_train_bst import ModelLifecycleService
@@ -460,3 +462,51 @@ def test_upload_pipeline_package_creates_pipeline_when_missing():
         "pipeline_name": "recsys-pipeline",
         "description": "ci upload",
     }
+
+
+def test_verify_uploaded_pipeline_is_read_only():
+    class Client:
+        def __init__(self):
+            self.reads = []
+
+        def get_pipeline(self, resource_id):
+            self.reads.append(("pipeline", resource_id))
+
+        def get_pipeline_version(self, pipeline_id, resource_id):
+            self.reads.append(("version", pipeline_id, resource_id))
+
+    client = Client()
+    result = verify_uploaded_pipeline(
+        client,
+        {
+            "action": "uploaded_pipeline_version",
+            "pipeline_id": "pipeline-1",
+            "pipeline_version_id": "version-1",
+        },
+    )
+
+    assert result == {
+        "action": "uploaded_pipeline_version",
+        "pipeline_id": "pipeline-1",
+        "pipeline_version_id": "version-1",
+        "status": "available",
+    }
+    assert client.reads == [
+        ("pipeline", "pipeline-1"),
+        ("version", "pipeline-1", "version-1"),
+    ]
+
+
+def test_verify_uploaded_pipeline_rejects_incomplete_state():
+    class Client:
+        def get_pipeline(self, resource_id):
+            raise AssertionError("invalid state must fail before calling KFP")
+
+    with pytest.raises(RuntimeError, match="pipeline_version_id"):
+        verify_uploaded_pipeline(
+            Client(),
+            {
+                "action": "uploaded_pipeline_version",
+                "pipeline_id": "pipeline-1",
+            },
+        )

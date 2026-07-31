@@ -17,6 +17,43 @@ from streaming.problem_pipeline import StreamProblemPipeline
 DEFAULT_CONFIG = "configs/data-platform/generator/default.yaml"
 
 
+def write_verification_event(event_id: str) -> None:
+    import psycopg
+
+    if not event_id.strip():
+        raise ValueError("verification event ID must not be empty")
+
+    now = datetime.now(timezone.utc)
+    rows = StreamEventFactory(1, 1).create(0, now, now)
+    rows["sessions"]["session_id"] = f"{event_id}-session"
+    rows["recommendation_requests"].update(
+        request_id=f"{event_id}-request",
+        session_id=f"{event_id}-session",
+    )
+    rows["impressions"].update(
+        impression_id=f"{event_id}-impression",
+        request_id=f"{event_id}-request",
+        session_id=f"{event_id}-session",
+    )
+    rows["behavior_events"].update(
+        event_id=event_id,
+        payload_hash=event_id,
+        session_id=f"{event_id}-session",
+        request_id=f"{event_id}-request",
+        impression_id=f"{event_id}-impression",
+    )
+    with psycopg.connect(conninfo()) as connection:
+        with connection.cursor() as cursor:
+            bootstrap_dimensions(cursor, now, 1, 1)
+            write_bundle(cursor, rows)
+        connection.commit()
+        # The second write exercises Flink idempotency for the same event ID.
+        with connection.cursor() as cursor:
+            write_bundle(cursor, rows)
+        connection.commit()
+    print(json.dumps({"event_id": event_id, "writes": 2}), flush=True)
+
+
 def run(config: StreamGeneratorConfig) -> None:
     import psycopg
 
@@ -96,7 +133,11 @@ def main() -> int:
         description="Continuously simulate online source events."
     )
     parser.add_argument("--config", default=DEFAULT_CONFIG)
+    parser.add_argument("--verification-event-id")
     args = parser.parse_args()
+    if args.verification_event_id:
+        write_verification_event(args.verification_event_id)
+        return 0
     run(load_stream_config(args.config))
     return 0
 

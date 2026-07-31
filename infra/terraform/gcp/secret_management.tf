@@ -45,6 +45,12 @@ locals {
       HUDI_ENABLED                = "true"
       HUDI_CATALOG_NAME           = "recsys_features"
       HUDI_WAREHOUSE              = "s3a://recsys-offline-feature-store/warehouse"
+      HUDI_DATASET_TABLE          = "ml.bst_samples_native_v2"
+      HUDI_CLEAN_HOURS_RETAINED   = "2160"
+      HUDI_ZK_URL                 = "zookeeper.recsys-dataflow.svc.cluster.local"
+      HUDI_ZK_PORT                = "2181"
+      HUDI_ZK_BASE_PATH           = "/hudi/locks/bst_samples_native_v2"
+      HUDI_ZK_LOCK_KEY            = "bst_samples_native_v2"
     }
     kserve-minio = {
       AWS_ACCESS_KEY_ID     = "minio"

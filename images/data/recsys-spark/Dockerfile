@@ -32,6 +32,9 @@ RUN apt-get update \
 COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/
 COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock /opt/recsys/apps/data-platform/
 
+# Spark owns PySpark and its JARs. Distributed Ray training remains in the
+# dedicated training image. This image installs the locked ML/data runtime
+# needed by Spark jobs and replaces PyPI's CUDA torch closure with the CPU wheel.
 RUN uv export \
         --project /opt/recsys/apps/ml-system \
         --frozen \
@@ -40,25 +43,51 @@ RUN uv export \
         --no-emit-local \
         --no-hashes \
         --format requirements-txt \
-        --output-file /tmp/spark-runtime-requirements.txt \
+        --output-file /tmp/ml-constraints.txt \
+    && torch_version="$(sed -n 's/^torch==\([^ ;]*\).*$/\1/p' /tmp/ml-constraints.txt | head -n 1)" \
+    && test -n "${torch_version}" \
     && uv pip install \
         --python /opt/venv/bin/python \
         --no-cache \
-        --constraint /tmp/spark-runtime-requirements.txt \
-        numpy \
-        pandas \
-        pyarrow \
-        pyyaml \
+        --constraint /tmp/ml-constraints.txt \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        --index-strategy unsafe-best-match \
+        "torch==${torch_version}+cpu" \
+    && uv pip install \
+        --python /opt/venv/bin/python \
+        --no-cache \
+        --constraint /tmp/ml-constraints.txt \
         boto3 \
+        cryptography \
+        evidently \
+        "feast[redis]" \
+        flask \
+        fsspec \
+        kfp \
+        kfp-kubernetes \
+        kubernetes \
+        jaraco.context \
+        mlflow \
+        numpy \
+        onnx \
+        onnxscript \
+        pandas \
+        pendulum \
         "psycopg[binary]" \
         psycopg-pool \
+        psycopg2-binary \
+        pyarrow \
+        pyyaml \
         redis \
-        s3fs==2024.10.0 \
-        fsspec==2024.10.0 \
-        "feast[redis]" \
+        requests \
+        s3fs \
+        scikit-learn \
+        sqlalchemy \
+        tqdm \
+        werkzeug \
         setuptools==83.0.0 \
         wheel==0.46.2 \
-        jaraco.context==6.1.0
+    && uv pip check --python /opt/venv/bin/python
 
 FROM spark:3.5.8-scala2.12-java11-ubuntu AS runtime
 

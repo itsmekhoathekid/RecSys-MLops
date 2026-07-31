@@ -39,8 +39,9 @@ data:
   SPARK_IMAGE: {{ .Values.images.spark | quote }}
   ANALYTICS_DBT_IMAGE: {{ .Values.images.analyticsDbt | quote }}
   REALTIME_LIMIT_PER_TABLE: {{ .Values.dataSetup.realtimeLimitPerTable | quote }}
-  DATA_PLATFORM_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
-  BATCH_FEATURE_DAG_SCHEDULE: {{ .Values.airflow.batchFeatureSchedule | quote }}
+  DP1_DAG_SCHEDULE: {{ .Values.airflow.dp1Schedule | quote }}
+  DP2_DAG_SCHEDULE: {{ .Values.airflow.dp2Schedule | quote }}
+  DP3_DAG_SCHEDULE: {{ .Values.airflow.dp3Schedule | quote }}
   FEAST_MATERIALIZE_DAG_SCHEDULE: {{ .Values.airflow.feastMaterializeSchedule | quote }}
   FEATURE_DRIFT_DAG_SCHEDULE: {{ .Values.airflow.featureDriftSchedule | quote }}
   LAKEHOUSE_MAINTENANCE_DAG_SCHEDULE: {{ .Values.airflow.lakehouseMaintenanceSchedule | quote }}

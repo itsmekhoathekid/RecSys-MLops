@@ -14,49 +14,29 @@ source jenkins/scripts/lib/registry.sh
 source jenkins/scripts/build/runtime.sh
 source jenkins/scripts/build/engine.sh
 
-build_runtime_initialize release-plan
+initialize_release_build
+built_spark=0
+image_index=0
+image_total="$(
+  python3 jenkins/python/release_plan.py plan-images --plan "${plan_path}" \
+    | awk 'NF {count++} END {print count+0}'
+)"
 
 while IFS= read -r image_name; do
   [[ -n "${image_name}" ]] || continue
-  build_image "${image_name}"
+  ((image_index += 1))
+  recsys_log "[BUILD] Build image ${image_index}/${image_total}: ${image_name}"
+  build_scan_publish_image "${image_name}"
+  if [[ "${image_name}" == "recsys-spark" ]]; then
+    built_spark=1
+  fi
 done < <(
-  python3 -c '
-import json, sys
-for item in json.load(open(sys.argv[1], encoding="utf-8"))["buildImages"]:
-    print(item)
-' "${plan_path}"
+  python3 jenkins/python/release_plan.py plan-images --plan "${plan_path}"
 )
 
-if python3 -c '
-import json, sys
-raise SystemExit(
-    0 if "recsys-spark" in json.load(open(sys.argv[1], encoding="utf-8"))["buildImages"] else 1
-)
-' "${plan_path}"; then
+if [[ "${built_spark}" == "1" ]]; then
   bash jenkins/scripts/test/unified_spark_image.sh \
     "recsys-spark:${BUILD_IMAGE_TAG}"
 fi
-
-while IFS= read -r artifact; do
-  [[ -n "${artifact}" ]] || continue
-  case "${artifact}" in
-    kubeflow-bst)
-      RECSYS_PIPELINE_IMAGE="${BUILD_IMAGE_REGISTRY}/recsys-mlops-training:${BUILD_IMAGE_TAG}" \
-        RECSYS_RAY_IMAGE="${BUILD_IMAGE_REGISTRY}/recsys-mlops-training:${BUILD_IMAGE_TAG}" \
-        RECSYS_SPARK_IMAGE="${BUILD_IMAGE_REGISTRY}/recsys-spark:${BUILD_IMAGE_TAG}" \
-        bash jenkins/scripts/build/kfp_package.sh
-      ;;
-    *)
-      recsys_error "unsupported release-plan artifact: ${artifact}"
-      exit 2
-      ;;
-  esac
-done < <(
-  python3 -c '
-import json, sys
-for item in json.load(open(sys.argv[1], encoding="utf-8"))["buildArtifacts"]:
-    print(item)
-' "${plan_path}"
-)
 
 recsys_log "wrote release image manifest: ${BUILD_MANIFEST_PATH}"

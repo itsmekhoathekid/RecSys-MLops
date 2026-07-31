@@ -67,26 +67,8 @@ data:
         </com.coravy.hudson.plugins.github.GithubProjectProperty>
         <hudson.model.ParametersDefinitionProperty>
           <parameterDefinitions>
-            <hudson.model.StringParameterDefinition>
-              <name>IMAGE_PUSH_REGISTRY</name>
-              <defaultValue>{{ .Values.jenkins.imagePushRegistry }}</defaultValue>
-              <trim>true</trim>
-            </hudson.model.StringParameterDefinition>
-            <hudson.model.StringParameterDefinition>
-              <name>IMAGE_PULL_REGISTRY</name>
-              <defaultValue>{{ .Values.jenkins.imagePullRegistry }}</defaultValue>
-              <trim>true</trim>
-            </hudson.model.StringParameterDefinition>
             <hudson.model.BooleanParameterDefinition>
               <name>PUBLISH_IMAGES</name>
-              <defaultValue>true</defaultValue>
-            </hudson.model.BooleanParameterDefinition>
-            <hudson.model.BooleanParameterDefinition>
-              <name>REQUIRE_GCP_ARTIFACT_REGISTRY</name>
-              <defaultValue>{{ .Values.jenkins.requireGcpArtifactRegistry }}</defaultValue>
-            </hudson.model.BooleanParameterDefinition>
-            <hudson.model.BooleanParameterDefinition>
-              <name>DEPLOY_CHANGED_COMPONENTS</name>
               <defaultValue>true</defaultValue>
             </hudson.model.BooleanParameterDefinition>
             <hudson.model.BooleanParameterDefinition>
@@ -146,9 +128,6 @@ data:
     def branchSpec = "{{ .Values.jenkins.github.branchSpec }}"
     def projectUrl = "{{ .Values.jenkins.github.projectUrl }}"
     def scriptPath = "{{ .Values.jenkins.seedJob.scriptPath }}"
-    def imagePushRegistry = "{{ .Values.jenkins.imagePushRegistry }}"
-    def imagePullRegistry = "{{ .Values.jenkins.imagePullRegistry }}"
-    def requireGcpArtifactRegistry = {{ .Values.jenkins.requireGcpArtifactRegistry }}
     def mainJobName = "{{ .Values.jenkins.seedJob.name }}"
 
     def xmlEscape = { value ->
@@ -179,30 +158,12 @@ data:
         <hudson.model.ParametersDefinitionProperty>
           <parameterDefinitions>
             <hudson.model.StringParameterDefinition>
-              <name>IMAGE_PUSH_REGISTRY</name>
-              <defaultValue>${xmlEscape(imagePushRegistry)}</defaultValue>
-              <trim>true</trim>
-            </hudson.model.StringParameterDefinition>
-            <hudson.model.StringParameterDefinition>
-              <name>IMAGE_PULL_REGISTRY</name>
-              <defaultValue>${xmlEscape(imagePullRegistry)}</defaultValue>
-              <trim>true</trim>
-            </hudson.model.StringParameterDefinition>
-            <hudson.model.StringParameterDefinition>
               <name>IMAGE_REGISTRY</name>
               <defaultValue></defaultValue>
               <trim>true</trim>
             </hudson.model.StringParameterDefinition>
             <hudson.model.BooleanParameterDefinition>
               <name>PUBLISH_IMAGES</name>
-              <defaultValue>true</defaultValue>
-            </hudson.model.BooleanParameterDefinition>
-            <hudson.model.BooleanParameterDefinition>
-              <name>REQUIRE_GCP_ARTIFACT_REGISTRY</name>
-              <defaultValue>${requireGcpArtifactRegistry ? "true" : "false"}</defaultValue>
-            </hudson.model.BooleanParameterDefinition>
-            <hudson.model.BooleanParameterDefinition>
-              <name>DEPLOY_CHANGED_COMPONENTS</name>
               <defaultValue>true</defaultValue>
             </hudson.model.BooleanParameterDefinition>
             <hudson.model.BooleanParameterDefinition>

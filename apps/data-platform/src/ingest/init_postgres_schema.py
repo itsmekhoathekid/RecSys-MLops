@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 import time
-from decimal import Decimal
-
 import pyarrow as pa
 
 from schemas import SCHEMAS
@@ -71,10 +69,7 @@ SECONDARY_INDEXES = {
 
 
 def build_table_ddl(table_name: str, schema: pa.Schema) -> str:
-    columns = [
-        f"  {field.name} {arrow_type_to_sql(field.type)}"
-        for field in schema
-    ]
+    columns = [f"  {field.name} {arrow_type_to_sql(field.type)}" for field in schema]
     pk = PRIMARY_KEYS.get(table_name)
     if pk:
         columns.append(f"  PRIMARY KEY ({', '.join(pk)})")
@@ -86,14 +81,15 @@ def build_index_ddl() -> str:
     statements = []
     for table_name, indexes in SECONDARY_INDEXES.items():
         for index_name, columns in indexes:
-            statements.append(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({', '.join(columns)});")
+            statements.append(
+                f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({', '.join(columns)});"
+            )
     return "\n".join(statements)
 
 
 def build_all_ddl() -> str:
     table_ddl = "\n\n".join(
-        build_table_ddl(table_name, schema)
-        for table_name, schema in SCHEMAS.items()
+        build_table_ddl(table_name, schema) for table_name, schema in SCHEMAS.items()
     )
     return f"{table_ddl}\n\n{build_index_ddl()}"
 
@@ -115,7 +111,9 @@ def main() -> int:
         try:
             with psycopg.connect(conninfo) as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute("SELECT pg_advisory_xact_lock(hashtext('recsys_source_schema_init'))")
+                    cursor.execute(
+                        "SELECT pg_advisory_xact_lock(hashtext('recsys_source_schema_init'))"
+                    )
                     cursor.execute(build_all_ddl())
                 connection.commit()
             print("Postgres source schema initialized.")

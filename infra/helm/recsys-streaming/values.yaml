@@ -10,7 +10,7 @@ flinkTaskManager:
   replicas: 2
   resources:
     requests:
-      cpu: 500m
+      cpu: 300m
       memory: 4Gi
     limits:
       cpu: "2"

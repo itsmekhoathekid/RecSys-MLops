@@ -26,6 +26,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         pydantic \
         psycopg[binary] \
         psycopg-pool \
+        psycopg2-binary \
         pyyaml \
         redis \
         requests \

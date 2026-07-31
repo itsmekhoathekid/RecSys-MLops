@@ -70,9 +70,6 @@ jenkins:
     accessModes:
       - ReadWriteOnce
     storageClassName: standard-rwo
-  imagePushRegistry: registry.example.invalid/recsys
-  imagePullRegistry: registry.example.invalid/recsys
-  requireGcpArtifactRegistry: false
   javaOpts: "-Djenkins.install.runSetupWizard=false -Dhudson.model.DownloadService.never=true"
   dind:
     enabled: true

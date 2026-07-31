@@ -5,26 +5,33 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from jenkins.python.change_detection import detector
-from jenkins.python.change_detection.detector import (
-    changed_paths,
-    classify_paths,
-    render_environment,
+from jenkins.python.change_detection import detector  # noqa: E402
+from jenkins.python.change_detection.detector import (  # noqa: E402
+    ChangedFile,
+    changed_files,
+    detect_changed_components,
+    render_jenkins_environment,
 )
-from jenkins.python.release_plan import create_release_plan
+from jenkins.python.release_plan import create_release_plan  # noqa: E402
 
 
 def selected(paths: list[str]) -> set[str]:
-    return set(classify_paths(paths).component_names)
+    return set(
+        detect_changed_components(
+            [ChangedFile("M", path) for path in paths]
+        ).component_names
+    )
+
+
+def detect(paths: list[str]):
+    return detect_changed_components([ChangedFile("M", path) for path in paths])
 
 
 def test_dp2_entrypoint_selects_only_dp2():
-    result = classify_paths(
+    result = detect(
         ["apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py"]
     )
     assert result.component_names == ("dp2",)
@@ -44,12 +51,14 @@ def test_shared_lakehouse_path_selects_all_declared_consumers():
 
 def test_one_path_can_match_multiple_components():
     assert selected(
-        ["apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"]
+        [
+            "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
+        ]
     ) == {"dp1", "dp2", "dp3"}
 
 
 def test_spark_dockerfile_expands_through_image_catalog_consumers():
-    result = classify_paths(["images/data/recsys-spark/Dockerfile"])
+    result = detect(["images/data/recsys-spark/Dockerfile"])
     assert set(result.component_names) == {
         "training",
         "dp1",
@@ -61,14 +70,14 @@ def test_spark_dockerfile_expands_through_image_catalog_consumers():
 
 
 def test_component_exclude_wins_over_broad_dp3_prefix():
-    result = classify_paths(
+    result = detect(
         ["apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py"]
     )
     assert "dp3" not in result.component_names
 
 
 def test_docs_and_generated_files_are_ignored():
-    result = classify_paths(
+    result = detect(
         [
             "docs/architecture.md",
             "docs/submission/historical.md",
@@ -82,14 +91,14 @@ def test_docs_and_generated_files_are_ignored():
 
 
 def test_ci_configuration_path_does_not_fake_product_component():
-    result = classify_paths(["jenkins/config/workflows.json"])
+    result = detect(["jenkins/config/deploy-units.json"])
     assert result.flags["RUN_CI_CONFIG"]
     assert result.component_names == ()
-    assert "CHANGED_COMPONENTS=ci_config" not in render_environment(result)
+    assert "CHANGED_COMPONENTS=ci_config" not in render_jenkins_environment(result)
 
 
 def test_unknown_runtime_path_fails_closed(monkeypatch, capsys, tmp_path):
-    result = classify_paths(["new-runtime/worker.py"])
+    result = detect(["new-runtime/worker.py"])
     assert result.unmapped_paths == ("new-runtime/worker.py",)
     monkeypatch.setattr(
         sys,
@@ -103,7 +112,7 @@ def test_unknown_runtime_path_fails_closed(monkeypatch, capsys, tmp_path):
         ],
     )
     assert detector.main() == 2
-    assert "ERROR: Unmapped runtime path" in capsys.readouterr().out
+    assert "ERROR: Unmapped active runtime path" in capsys.readouterr().out
 
 
 def test_dp2_release_plan_builds_spark_and_immutable_airflow_once():
@@ -114,14 +123,20 @@ def test_dp2_release_plan_builds_spark_and_immutable_airflow_once():
         ],
         commit="abc",
     )
-    assert plan["buildImages"] == ["recsys-spark", "recsys-airflow"]
+    assert plan["buildImages"] == [
+        "recsys-base-python",
+        "recsys-spark",
+        "recsys-airflow",
+        "recsys-mlops-training",
+    ]
     assert plan["buildArtifacts"] == ["kubeflow-bst"]
     assert plan["deployUnits"] == [
         "kubeflow-bst-package",
         "data-config",
         "airflow",
     ]
-    assert plan["workflowChecks"] == ["recsys_dp2_bronze_to_silver_gold"]
+    assert plan["version"] == 2
+    assert "workflowChecks" not in plan
 
 
 def test_chart_change_selects_its_exact_deploy_unit():
@@ -134,7 +149,7 @@ def test_chart_change_selects_its_exact_deploy_unit():
 
 
 def test_chart_only_change_deploys_exact_release_without_fake_component():
-    result = classify_paths(["infra/helm/recsys-data-config/values.yaml"])
+    result = detect(["infra/helm/recsys-data-config/values.yaml"])
 
     assert result.component_names == ()
     assert result.flags["RUN_CI_CONFIG"] is True
@@ -172,34 +187,85 @@ def test_detector_cli_writes_environment_and_plan(monkeypatch, tmp_path, capsys)
     assert json.loads(plan_path.read_text())["commit"] == "abc"
 
 
-def test_changed_paths_preserves_successful_empty_diff(monkeypatch):
+def test_changed_files_preserves_successful_empty_diff(monkeypatch):
     calls: list[tuple[str, ...]] = []
 
-    def fake_git_lines(args: list[str]) -> list[str]:
+    def fake_git_name_status(args: list[str]) -> list[ChangedFile]:
         calls.append(tuple(args))
         return []
 
-    monkeypatch.setattr(detector, "git_lines", fake_git_lines)
-    assert changed_paths("same") == []
-    assert calls == [("diff", "--name-only", "same...HEAD")]
+    monkeypatch.setattr(detector, "_git_name_status", fake_git_name_status)
+    assert changed_files("same") == []
+    assert calls == [("diff", "--name-status", "-z", "same...HEAD")]
 
 
-def test_changed_paths_falls_back_to_current_commit(monkeypatch):
-    def fake_git_lines(args: list[str]) -> list[str]:
+def test_changed_files_falls_back_to_current_commit(monkeypatch):
+    def fake_git_name_status(args: list[str]) -> list[ChangedFile]:
         if args[0] == "diff":
             raise subprocess.CalledProcessError(128, ["git", *args])
         if args[0] == "diff-tree":
-            return ["apps/api-serving/src/main.py"]
+            return [ChangedFile("M", "apps/api-serving/src/main.py")]
         return []
 
-    monkeypatch.setattr(detector, "git_lines", fake_git_lines)
-    assert changed_paths("missing") == ["apps/api-serving/src/main.py"]
+    monkeypatch.setattr(detector, "_git_name_status", fake_git_name_status)
+    assert changed_files("missing") == [
+        ChangedFile("M", "apps/api-serving/src/main.py")
+    ]
+
+
+def test_deleted_unmapped_legacy_path_is_diagnostic_only():
+    result = detect_changed_components([ChangedFile("D", "legacy/removed.sh")])
+    assert result.unmapped_paths == ()
+    assert result.deleted_unmapped_paths == ("legacy/removed.sh",)
+
+
+def test_rename_is_classified_as_delete_and_add():
+    changes = detector._parse_name_status(
+        b"R100\0legacy/old.py\0apps/api-serving/src/new.py\0"
+    )
+    assert changes == [
+        ChangedFile("D", "legacy/old.py"),
+        ChangedFile("A", "apps/api-serving/src/new.py"),
+    ]
+    result = detect_changed_components(changes)
+    assert result.component_names == ("api",)
+    assert result.deleted_unmapped_paths == ("legacy/old.py",)
+
+
+def test_force_components_builds_one_plan_without_classifying_paths():
+    result = detect_changed_components(
+        [ChangedFile("M", "unmapped/ignored-by-force.py")],
+        commit="abc",
+        forced_components="dp2,ci_config",
+    )
+    assert result.component_names == ("dp2",)
+    assert result.flags["RUN_CI_CONFIG"] is True
+    assert result.unmapped_paths == ()
+    assert result.release_plan["commit"] == "abc"
+
+
+def test_detector_creates_release_plan_once(monkeypatch):
+    original = detector.create_release_plan
+    calls = 0
+
+    def counted_create_release_plan(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(detector, "create_release_plan", counted_create_release_plan)
+    result = detect(
+        ["apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py"]
+    )
+
+    assert calls == 1
+    assert result.release_plan["components"] == ["dp2"]
 
 
 def test_detector_contains_no_domain_path_router_functions():
-    source = (
-        ROOT / "jenkins/python/change_detection/detector.py"
-    ).read_text(encoding="utf-8")
+    source = (ROOT / "jenkins/python/change_detection/detector.py").read_text(
+        encoding="utf-8"
+    )
     assert "classify_data_platform_source" not in source
     assert "classify_airflow_dag" not in source
     assert "classify_tests" not in source
@@ -214,5 +280,5 @@ def test_every_tracked_runtime_path_is_mapped_or_ignored():
         ).splitlines()
         if (ROOT / path).exists()
     ]
-    result = classify_paths(paths)
+    result = detect(paths)
     assert result.unmapped_paths == ()

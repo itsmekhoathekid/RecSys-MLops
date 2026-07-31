@@ -1,31 +1,37 @@
-FROM apache/airflow:slim-3.2.2-python3.11 AS deps
+ARG AIRFLOW_VERSION=2.9.3
+ARG AIRFLOW_PYTHON_VERSION=3.10
+
+FROM apache/airflow:slim-${AIRFLOW_VERSION}-python${AIRFLOW_PYTHON_VERSION} AS deps
+
+ARG AIRFLOW_VERSION
+ARG AIRFLOW_PYTHON_VERSION
+ARG AIRFLOW_CONSTRAINTS_URL=https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${AIRFLOW_PYTHON_VERSION}.txt
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 USER airflow
 RUN pip install --upgrade \
+    --constraint "${AIRFLOW_CONSTRAINTS_URL}" \
+    "apache-airflow==${AIRFLOW_VERSION}" \
     apache-airflow-providers-docker \
-    "apache-airflow-providers-http>=6.0.0" \
-    "apache-airflow-providers-cncf-kubernetes>=10.17.0" \
+    apache-airflow-providers-http \
+    apache-airflow-providers-cncf-kubernetes \
     apache-airflow-providers-postgres \
+    pyyaml \
+    redis \
+    requests \
+    && pip install --upgrade \
+    "Mako==1.3.12" \
+    "PyJWT==2.13.0" \
+    "aiohttp==3.13.3" \
     "cryptography==48.0.1" \
-    "httplib2==0.32.0" \
-    "jaraco.context==6.1.0" \
-    "joserfc==1.6.8" \
-    "msgpack==1.2.1" \
-    "pyasn1==0.6.4" \
-    "python-multipart==0.0.30" \
-    "pyyaml==6.0.3" \
-    "redis>=5,<8" \
-    "requests>=2.32" \
-    "setuptools==83.0.0" \
-    "soupsieve==2.8.4" \
-    "starlette==1.3.1" \
-    "tornado==6.5.6" \
-    "wheel==0.46.2"
+    "setuptools==78.1.1" \
+    "urllib3==2.7.0" \
+    "wheel==0.46.2" \
+    && pip check
 
-FROM apache/airflow:slim-3.2.2-python3.11 AS runtime
+FROM apache/airflow:slim-${AIRFLOW_VERSION}-python${AIRFLOW_PYTHON_VERSION} AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/home/airflow/.local/bin:${PATH}
@@ -33,11 +39,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 USER root
 WORKDIR /opt/recsys
 RUN apt-get update \
+    && apt-mark hold msodbcsql18 \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /home/airflow/.local \
-    && rm -rf /usr/python/lib/python3.11/site-packages/setuptools \
-        /usr/python/lib/python3.11/site-packages/setuptools-*.dist-info
+    && rm -rf /home/airflow/.local
 COPY --from=deps --chown=airflow:root /home/airflow/.local /home/airflow/.local
 COPY --chown=airflow:root configs /opt/recsys/configs
 COPY --chown=airflow:root apps/data-platform/src /opt/recsys/apps/data-platform/src

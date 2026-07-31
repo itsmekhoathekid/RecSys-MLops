@@ -28,7 +28,7 @@ def build_registry_url() -> str:
 
     schema = os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store")
     url = URL.create(
-        drivername="postgresql+psycopg",
+        drivername="postgresql+psycopg2",
         username=os.getenv("FEAST_POSTGRES_USER", "feast"),
         password=os.getenv("FEAST_POSTGRES_PASSWORD", "feast"),
         host=os.getenv(

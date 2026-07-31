@@ -136,10 +136,6 @@ restore_pdbs_after_hibernate() {
     '.items[] | [.metadata.namespace, .metadata.name, (.metadata.annotations["recsys.ai/hibernate-min-available"] // ""), (.metadata.annotations["recsys.ai/hibernate-max-unavailable"] // "")] | join("\u001f")')
 }
 
-cluster_args() {
-  printf -- '--project=%s --zone=%s' "${PROJECT_ID}" "${ZONE}"
-}
-
 get_credentials() {
   gcloud container clusters get-credentials "${CLUSTER}" --zone "${ZONE}" --project "${PROJECT_ID}" >/dev/null
 }
@@ -520,7 +516,7 @@ normalize_keda_http_addon() {
   # The chart defaults reserve 250m CPU for each HTTP add-on pod even though the
   # coursework workload normally uses single-digit millicores. Keep the services
   # enabled, but use the proof-cluster profile also applied by
-  # jenkins/scripts/deploy/rebalance_ml_node_pool.sh.
+  # workload placement is declared by Terraform and Helm.
   local keda_http_deployments=(
     keda-add-ons-http-controller-manager
     keda-add-ons-http-external-scaler

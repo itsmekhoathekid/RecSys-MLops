@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +23,6 @@ REQUIRED_COMPONENT_FIELDS = {
     "changeDetection",
     "buildImages",
     "buildArtifacts",
-    "workflowChecks",
     "verifyDependsOn",
     "migrationPolicy",
 }
@@ -45,7 +46,9 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def _validate_string_list(value: Any, label: str) -> list[str]:
-    if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item for item in value
+    ):
         raise ValueError(f"{label} must be a list of non-empty strings")
     if len(value) != len(set(value)):
         raise ValueError(f"{label} contains duplicates")
@@ -63,15 +66,21 @@ def _validate_rules(
         raise ValueError(f"{label} must be an object")
     unknown_fields = set(rules) - RULE_FIELDS
     if unknown_fields:
-        raise ValueError(f"{label} contains unsupported fields: {sorted(unknown_fields)}")
-    if require_rule and not any(rules.get(field) for field in RULE_FIELDS - {"exclude"}):
+        raise ValueError(
+            f"{label} contains unsupported fields: {sorted(unknown_fields)}"
+        )
+    if require_rule and not any(
+        rules.get(field) for field in RULE_FIELDS - {"exclude"}
+    ):
         raise ValueError(f"{label} must contain at least one positive rule")
     for field in RULE_FIELDS:
         if field in rules:
             _validate_string_list(rules[field], f"{label}.{field}")
     unknown_groups = set(rules.get("groups", [])) - path_groups.keys()
     if unknown_groups:
-        raise ValueError(f"{label} references unknown path groups: {sorted(unknown_groups)}")
+        raise ValueError(
+            f"{label} references unknown path groups: {sorted(unknown_groups)}"
+        )
     return rules
 
 
@@ -79,18 +88,56 @@ def _validate_rule_paths(rules: dict[str, Any], label: str) -> None:
     for relative_path in rules.get("files", []):
         if not (ROOT / relative_path).is_file():
             raise ValueError(f"{label}.files path does not exist: {relative_path}")
+        if relative_path not in _tracked_paths():
+            raise ValueError(
+                f"{label}.files path is not tracked by Git: {relative_path}"
+            )
     for relative_path in rules.get("prefixes", []):
         if not (ROOT / relative_path).exists():
             raise ValueError(f"{label}.prefixes path does not exist: {relative_path}")
+        prefix = relative_path.rstrip("/") + "/"
+        if not any(
+            path == relative_path or path.startswith(prefix)
+            for path in _tracked_paths()
+        ):
+            raise ValueError(
+                f"{label}.prefixes path has no Git-tracked files: {relative_path}"
+            )
     for pattern in rules.get("globs", []):
-        if not any(ROOT.glob(pattern)):
+        matched_paths = {
+            str(path.relative_to(ROOT)) for path in ROOT.glob(pattern) if path.is_file()
+        }
+        if not matched_paths:
             raise ValueError(f"{label}.globs pattern matches no files: {pattern}")
+        if not matched_paths.intersection(_tracked_paths()):
+            raise ValueError(
+                f"{label}.globs pattern matches no Git-tracked files: {pattern}"
+            )
 
 
-def load_component_config(path: Path = CONFIG_DIR / "components.json") -> dict[str, Any]:
+@lru_cache(maxsize=1)
+def _tracked_paths() -> frozenset[str]:
+    if not (ROOT / ".git").exists():
+        return frozenset(
+            str(path.relative_to(ROOT)) for path in ROOT.rglob("*") if path.is_file()
+        )
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    )
+    return frozenset(
+        item.decode("utf-8") for item in completed.stdout.split(b"\0") if item
+    )
+
+
+def load_component_config(
+    path: Path = CONFIG_DIR / "components.json",
+) -> dict[str, Any]:
     payload = read_json(path)
-    if payload.get("version") != 3:
-        raise ValueError("components.json version must be 3")
+    if payload.get("version") != 4:
+        raise ValueError("components.json version must be 4")
     global_excludes = _validate_string_list(
         payload.get("globalExcludes", []), "components.json globalExcludes"
     )
@@ -147,12 +194,11 @@ def load_component_config(path: Path = CONFIG_DIR / "components.json") -> dict[s
             component["changeDetection"],
             f"component {component['name']} changeDetection",
         )
-        _validate_string_list(component["buildImages"], f"component {component['name']} buildImages")
         _validate_string_list(
-            component["buildArtifacts"], f"component {component['name']} buildArtifacts"
+            component["buildImages"], f"component {component['name']} buildImages"
         )
         _validate_string_list(
-            component["workflowChecks"], f"component {component['name']} workflowChecks"
+            component["buildArtifacts"], f"component {component['name']} buildArtifacts"
         )
         _validate_string_list(
             component["verifyDependsOn"],
@@ -202,7 +248,9 @@ def load_component_config(path: Path = CONFIG_DIR / "components.json") -> dict[s
     return payload
 
 
-def load_components(path: Path = CONFIG_DIR / "components.json") -> list[dict[str, Any]]:
+def load_components(
+    path: Path = CONFIG_DIR / "components.json",
+) -> list[dict[str, Any]]:
     return load_component_config(path)["components"]
 
 
@@ -230,7 +278,9 @@ def path_matches_rules(
     )
 
 
-def load_gcp_production(path: Path = CONFIG_DIR / "gcp-production.json") -> dict[str, str]:
+def load_gcp_production(
+    path: Path = CONFIG_DIR / "gcp-production.json",
+) -> dict[str, str]:
     payload = read_json(path)
     missing = REQUIRED_GCP_FIELDS - payload.keys()
     if missing:
@@ -238,7 +288,9 @@ def load_gcp_production(path: Path = CONFIG_DIR / "gcp-production.json") -> dict
     result = {field: str(payload[field]).strip() for field in REQUIRED_GCP_FIELDS}
     if any(not value for value in result.values()):
         raise ValueError("gcp-production.json fields must not be empty")
-    expected_registry = f"{result['region']}-docker.pkg.dev/{result['projectId']}/recsys"
+    expected_registry = (
+        f"{result['region']}-docker.pkg.dev/{result['projectId']}/recsys"
+    )
     if result["imageRegistry"] != expected_registry:
         raise ValueError(
             f"production registry must be {expected_registry}, got {result['imageRegistry']}"
@@ -277,23 +329,28 @@ def load_ci_environments(
         if not (ROOT / normalized["lockFile"]).is_file():
             raise ValueError(f"CI profile {name} lock file does not exist")
         result[name] = normalized
-    unknown_profiles = {component["ciProfile"] for component in load_components()} - result.keys()
+    unknown_profiles = {
+        component["ciProfile"] for component in load_components()
+    } - result.keys()
     if unknown_profiles:
-        raise ValueError(f"components reference unknown CI profiles: {sorted(unknown_profiles)}")
+        raise ValueError(
+            f"components reference unknown CI profiles: {sorted(unknown_profiles)}"
+        )
     return result
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate or query Jenkins CI/CD configuration.")
+    parser = argparse.ArgumentParser(
+        description="Validate or query Jenkins CI/CD configuration."
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate")
     subparsers.add_parser("components-tsv")
     profiles_parser = subparsers.add_parser("ci-profiles")
     profiles_parser.add_argument("--components", required=True)
-    profile_parser = subparsers.add_parser("ci-profile")
-    profile_parser.add_argument("name")
-    component_parser = subparsers.add_parser("component")
+    component_parser = subparsers.add_parser("component-profile")
     component_parser.add_argument("name")
+    subparsers.add_parser("gcp-tsv")
     gcp_parser = subparsers.add_parser("gcp")
     gcp_parser.add_argument("field", choices=sorted(REQUIRED_GCP_FIELDS))
     args = parser.parse_args()
@@ -303,11 +360,10 @@ def main() -> int:
         load_gcp_production()
         load_ci_environments()
         from jenkins.python.image_catalog import load_catalog
-        from jenkins.python.release_plan import load_deploy_config, load_workflows
+        from jenkins.python.release_plan import load_deploy_config
 
         load_catalog()
         load_deploy_config()
-        load_workflows()
         return 0
     if args.command == "components-tsv":
         for component in load_components():
@@ -324,25 +380,33 @@ def main() -> int:
         if unknown:
             raise SystemExit(f"unknown component(s): {', '.join(unknown)}")
         requested_profiles = {components[name]["ciProfile"] for name in requested}
-        for profile in load_ci_environments():
-            if profile in requested_profiles:
-                print(profile)
-        return 0
-    if args.command == "ci-profile":
         profiles = load_ci_environments()
-        if args.name not in profiles:
-            raise SystemExit(f"unknown CI profile: {args.name}")
-        print(json.dumps(profiles[args.name], sort_keys=True))
+        for profile in profiles:
+            if profile in requested_profiles:
+                spec = profiles[profile]
+                print(
+                    "\t".join(
+                        (
+                            profile,
+                            spec["projectPath"],
+                            spec["lockFile"],
+                            spec["pythonVersion"],
+                        )
+                    )
+                )
         return 0
-    if args.command == "component":
+    if args.command == "component-profile":
         components = {item["name"]: item for item in load_components()}
         if args.name not in components:
             raise SystemExit(f"unknown component: {args.name}")
-        component = components[args.name]
-        print(json.dumps(component, sort_keys=True))
+        print(components[args.name]["ciProfile"])
         return 0
     if args.command == "gcp":
         print(load_gcp_production()[args.field])
+        return 0
+    if args.command == "gcp-tsv":
+        target = load_gcp_production()
+        print("\t".join(target[field] for field in sorted(REQUIRED_GCP_FIELDS)))
         return 0
     raise AssertionError(args.command)
 

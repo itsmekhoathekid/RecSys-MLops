@@ -12,8 +12,6 @@ source jenkins/scripts/lib/common.sh
 source jenkins/scripts/lib/config.sh
 source jenkins/scripts/lib/helm.sh
 source jenkins/scripts/lib/image_manifest.sh
-source jenkins/scripts/lib/kubernetes.sh
-source jenkins/scripts/lib/port_forward.sh
 source jenkins/scripts/lib/registry.sh
 source jenkins/scripts/deploy/preflight/gcp.sh
 source jenkins/scripts/deploy/runtime.sh
@@ -37,39 +35,60 @@ namespace_demo="${DEMO_WEB_NAMESPACE:-api-serving}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
 timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
 kfp_port_forward_pids=()
+kfp_upload_endpoint_result=""
 local_model_store_endpoint_result=""
-cleanup_release_deploy() {
-  cleanup_port_forwards
-  port_forward_cleanup
+trap stop_runtime_port_forwards EXIT
+
+unit_kind=""
+unit_release=""
+unit_namespace=""
+unit_chart=""
+unit_image_names=()
+unit_image_paths=()
+selected_components=","
+while IFS=$'\t' read -r record_type value_a value_b value_c value_d; do
+  case "${record_type}" in
+    UNIT)
+      unit_kind="${value_a}"
+      unit_release="${value_b}"
+      unit_namespace="${value_c}"
+      unit_chart="${value_d}"
+      ;;
+    IMAGE)
+      unit_image_names+=("${value_a}")
+      unit_image_paths+=("${value_b}")
+      ;;
+    SELECTED_COMPONENT)
+      selected_components+="${value_a},"
+      ;;
+    *)
+      recsys_error "unsupported deploy context record: ${record_type}"
+      exit 2
+      ;;
+  esac
+done < <(
+  python3 jenkins/python/release_plan.py deploy-context "${unit_name}" --plan "${plan_path}"
+)
+[[ -n "${unit_kind}" && -n "${unit_release}" && -n "${unit_namespace}" ]] || {
+  recsys_error "deploy context is incomplete for ${unit_name}"
+  exit 2
 }
-trap cleanup_release_deploy EXIT
+
+has_selected_component() {
+  [[ "${selected_components}" == *",$1,"* ]]
+}
 
 if [[ "${DEPLOY_TARGET:-gcp-production}" == "gcp-production" ]]; then
-  branch_name="${BRANCH_NAME:-${GIT_BRANCH:-}}"
-  checked_out_main=0
-  if git rev-parse --verify origin/main >/dev/null 2>&1 \
-    && [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]]; then
-    checked_out_main=1
-  fi
-  if [[ "${branch_name}" != "main" && "${branch_name}" != "origin/main" ]] \
-    && [[ "${checked_out_main}" != "1" ]] \
-    && ! recsys_is_true "${FORCE_DEPLOY:-0}"; then
-    recsys_error "GCP production deploy requires main or FORCE_DEPLOY=true"
-    exit 2
-  fi
-  recsys_is_true "${PUBLISH_IMAGES:-0}" || {
-    recsys_error "GCP production deploy requires PUBLISH_IMAGES=true"
-    exit 2
-  }
-  gcp_production_preflight "${unit_name}" "${plan_path}"
+  [[ -s .ci-deploy/preflight-commit ]] \
+    && [[ "$(<.ci-deploy/preflight-commit)" == "$(git rev-parse HEAD)" ]] || {
+      recsys_error "production release preflight is missing or stale"
+      exit 2
+    }
+  verify_gcp_deploy_unit \
+    "${unit_name}" "${unit_kind}" "${unit_namespace}" "${unit_release}"
 fi
 
-unit_json="$(python3 jenkins/python/release_plan.py unit "${unit_name}")"
-unit_kind="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["kind"])' <<<"${unit_json}")"
-unit_release="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["release"])' <<<"${unit_json}")"
-unit_namespace="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["namespace"])' <<<"${unit_json}")"
-
-current_helm_value() {
+read_current_helm_value() {
   local value_path="$1"
   helm get values "${unit_release}" -n "${unit_namespace}" -o json 2>/dev/null \
     | python3 -c '
@@ -81,52 +100,61 @@ print(value if isinstance(value, str) else "")
 ' "${value_path}" 2>/dev/null || true
 }
 
-resolved_image() {
+resolve_unit_image() {
   local image_name="$1"
   local value_path="$2"
-  local ref
-  ref="$(image_manifest_lookup "${image_name}")"
-  if [[ -z "${ref}" ]]; then
-    ref="$(current_helm_value "${value_path}")"
+  local reference
+  reference="$(image_manifest_lookup "${image_name}")"
+  if [[ -z "${reference}" ]]; then
+    reference="$(read_current_helm_value "${value_path}")"
   fi
-  if [[ -z "${ref}" ]]; then
-    ref="${image_registry}/${image_name}:${image_tag}"
+  if [[ -z "${reference}" ]]; then
+    reference="${image_registry}/${image_name}:${image_tag}"
   fi
-  if [[ "${DEPLOY_TARGET:-gcp-production}" == "gcp-production" && "${ref}" != *@sha256:* ]]; then
-    registry_resolve_digest_reference "${ref}" "${image_registry}"
+  if [[ "${DEPLOY_TARGET:-gcp-production}" == "gcp-production" && "${reference}" != *@sha256:* ]]; then
+    registry_resolve_digest_reference "${reference}" "${image_registry}"
   else
-    printf '%s' "${ref}"
+    printf '%s' "${reference}"
   fi
 }
 
-deploy_catalog_helm_unit() {
-  local chart
-  local values_file
-  local image_name
-  local value_path
-  local image_ref
+deploy_helm_unit() {
+  local values_file="${unit_chart}/values-gcp.yaml"
+  local image_index image_reference
   local helm_args=()
-  chart="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["chart"])' <<<"${unit_json}")"
-  values_file="${chart}/values-gcp.yaml"
+  [[ -n "${unit_chart}" ]] || {
+    recsys_error "Helm deploy unit ${unit_name} has no chart"
+    return 2
+  }
   [[ -f "${values_file}" ]] && helm_args+=(-f "${values_file}")
-  while IFS=$'\t' read -r image_name value_path; do
-    [[ -n "${image_name}" ]] || continue
-    image_ref="$(resolved_image "${image_name}" "${value_path}")"
-    helm_args+=(--set-string "${value_path}=${image_ref}")
-  done < <(
-    python3 -c '
-import json, sys
-for image_name, value_path in json.load(sys.stdin).get("imageValues", {}).items():
-    print("{}\t{}".format(image_name, value_path))
-' <<<"${unit_json}"
-  )
+  for image_index in "${!unit_image_names[@]}"; do
+    image_reference="$(resolve_unit_image \
+      "${unit_image_names[image_index]}" "${unit_image_paths[image_index]}")"
+    helm_args+=(--set-string "${unit_image_paths[image_index]}=${image_reference}")
+  done
   if [[ "${unit_name}" == "data-config" && -s .ci-deploy/kfp-upload.json ]]; then
-    helm_args+=(
-      --set "observability.kfpPipelineName=$(python3 -c 'import json; print(json.load(open(".ci-deploy/kfp-upload.json"))["pipeline_name"])')"
-      --set-string "observability.kfpPipelineVersionId=$(python3 -c 'import json; print(json.load(open(".ci-deploy/kfp-upload.json")).get("pipeline_version_id", ""))')"
+    local kfp_pipeline_name kfp_pipeline_version
+    IFS=$'\t' read -r kfp_pipeline_name kfp_pipeline_version < <(
+      python3 -c '
+import json
+payload = json.load(open(".ci-deploy/kfp-upload.json", encoding="utf-8"))
+print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id", "")))
+'
     )
+    helm_args+=(
+      --set "observability.kfpPipelineName=${kfp_pipeline_name}"
+      --set-string "observability.kfpPipelineVersionId=${kfp_pipeline_version}"
+    )
+  elif [[ "${unit_name}" == "data-config" ]]; then
+    local current_kfp_name current_kfp_version
+    current_kfp_name="$(read_current_helm_value observability.kfpPipelineName)"
+    current_kfp_version="$(read_current_helm_value observability.kfpPipelineVersionId)"
+    [[ -n "${current_kfp_name}" ]] \
+      && helm_args+=(--set "observability.kfpPipelineName=${current_kfp_name}")
+    [[ -n "${current_kfp_version}" ]] \
+      && helm_args+=(--set-string "observability.kfpPipelineVersionId=${current_kfp_version}")
   fi
-  helm upgrade --install "${unit_release}" "${chart}" \
+  helm upgrade --install "${unit_release}" "${unit_chart}" \
     --namespace "${unit_namespace}" \
     --create-namespace \
     --reset-values \
@@ -141,36 +169,34 @@ for image_name, value_path in json.load(sys.stdin).get("imageValues", {}).items(
 
 case "${unit_name}" in
   data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow)
-    deploy_catalog_helm_unit
+    deploy_helm_unit
     ;;
   feature-registry)
-    feast_registry_apply "$(image recsys-feature-store)"
+    feast_registry_apply "$(resolve_release_image recsys-feature-store)"
     ;;
   mlflow)
     deploy_mlflow
     ;;
   kubeflow-bst-package)
     mkdir -p .ci-deploy
+    open_kfp_upload_endpoint
     KFP_UPLOAD_RESULT_PATH=.ci-deploy/kfp-upload.json \
-      KFP_ENDPOINT="$(kfp_endpoint_for_upload)" \
-      RECSYS_PIPELINE_IMAGE="$(image recsys-mlops-training)" \
-      RECSYS_RAY_IMAGE="$(image recsys-mlops-training)" \
-      RECSYS_SPARK_IMAGE="$(image recsys-spark)" \
-      bash jenkins/scripts/deploy/kfp_version.sh
+      KFP_ENDPOINT="${kfp_upload_endpoint_result}" \
+      bash jenkins/scripts/deploy/upload_kfp_package.sh
     ;;
   analytics)
     deploy_analytics
     ;;
   serving)
-    if python3 -c 'import json,sys; raise SystemExit(0 if "api" in json.load(open(sys.argv[1]))["components"] else 1)' "${plan_path}"; then
+    if has_selected_component api; then
       deploy_api
     fi
-    if python3 -c 'import json,sys; raise SystemExit(0 if "kserve" in json.load(open(sys.argv[1]))["components"] else 1)' "${plan_path}"; then
+    if has_selected_component kserve; then
       deploy_kserve
     fi
     ;;
   rollout)
-    deploy_rollout_watcher
+    deploy_rollout_watcher "${unit_namespace}"
     ;;
   demo-web)
     deploy_demo_web

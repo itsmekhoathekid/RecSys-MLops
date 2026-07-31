@@ -124,7 +124,7 @@ flinkTaskManager:
   replicas: 2
   resources:
     requests:
-      cpu: 500m
+      cpu: 300m
       memory: 4Gi
     limits:
       cpu: "2"
@@ -221,15 +221,16 @@ flinkAutoscaler:
 realtimeCdcConnector:
   enabled: true
   tableIncludeList: public.users,public.user_preferences,public.products,public.product_snapshots,public.sessions,public.recommendation_requests,public.impressions,public.behavior_events,public.orders,public.order_items
-  snapshotMode: never
+  snapshotMode: no_data
   slotName: recsys_slot_e2e
   waitTimeoutSeconds: 480
   activeDeadlineSeconds: 540
 
 airflow:
   dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
-  schedule: "@daily"
-  batchFeatureSchedule: "0 1 * * *"
+  dp1Schedule: "@daily"
+  dp2Schedule: "0 1 * * *"
+  dp3Schedule: "30 1 * * *"
   feastMaterializeSchedule: "20 */2 * * *"
   featureDriftSchedule: "30 3 * * *"
   lakehouseMaintenanceSchedule: "0 4 * * 0"

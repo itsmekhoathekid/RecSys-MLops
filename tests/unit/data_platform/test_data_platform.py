@@ -102,8 +102,8 @@ def test_debezium_after_extraction_skips_deletes():
 
 
 def test_debezium_snapshot_mode_matches_pinned_runtime_contract(monkeypatch):
-    monkeypatch.setenv("DEBEZIUM_SNAPSHOT_MODE", "never")
-    assert debezium_config()["snapshot.mode"] == "never"
+    monkeypatch.setenv("DEBEZIUM_SNAPSHOT_MODE", "no_data")
+    assert debezium_config()["snapshot.mode"] == "no_data"
 
 
 def test_debezium_registration_waits_through_stale_failed_task(monkeypatch):

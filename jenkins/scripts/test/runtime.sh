@@ -7,57 +7,24 @@ component_test_wait_deployment() {
     --timeout="${COMPONENT_TEST_TIMEOUT:-600s}"
 }
 
-component_test_airflow_dag() {
+component_test_airflow_dag_registered() {
   local dag_id="$1"
-  local run_id="ci-${BUILD_NUMBER:-manual}"
-  local state=""
   local deadline=$((SECONDS + ${COMPONENT_TEST_TIMEOUT_SECONDS:-600}))
-  local dag_registered=0
 
   while ((SECONDS < deadline)); do
     if kubectl exec -n "${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}" \
       deploy/airflow-webserver -c airflow-webserver -- \
       airflow dags list --output plain 2>/dev/null \
       | grep -Fq "${dag_id}"; then
-      dag_registered=1
-      break
+      return 0
     fi
     sleep 5
   done
-  if [[ "${dag_registered}" != "1" ]]; then
-    recsys_error "Airflow DAG was not registered before smoke timeout: ${dag_id}"
-    return 1
-  fi
-
-  kubectl exec -n "${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}" \
-    deploy/airflow-webserver -c airflow-webserver -- \
-    airflow dags unpause "${dag_id}" >/dev/null
-  kubectl exec -n "${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}" \
-    deploy/airflow-webserver -c airflow-webserver -- \
-    airflow dags trigger "${dag_id}" --run-id "${run_id}" >/dev/null
-
-  while ((SECONDS < deadline)); do
-    state="$(
-      kubectl exec -n "${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}" \
-        deploy/airflow-webserver -c airflow-webserver -- \
-        airflow dags state "${dag_id}" "${run_id}" 2>/dev/null \
-        | tail -n 1 \
-        | tr -d '\r'
-    )"
-    case "${state}" in
-      success) return 0 ;;
-      failed|upstream_failed)
-        recsys_error "Airflow smoke ${dag_id}/${run_id} failed"
-        return 1
-        ;;
-    esac
-    sleep 10
-  done
-  recsys_error "Airflow smoke ${dag_id}/${run_id} timed out; last state=${state:-unknown}"
+  recsys_error "Airflow DAG was not registered before verification timeout: ${dag_id}"
   return 1
 }
 
-component_test_run() {
+verify_deployed_component() {
   local component="$1"
   local status=0
   local message=""
@@ -66,7 +33,10 @@ component_test_run() {
   mkdir -p "reports/gcp/${component}"
 
   set +e
-  component_test_dispatch "${component}" \
+  (
+    set -euo pipefail
+    run_component_verification "${component}"
+  ) \
     > >(tee "reports/gcp/${component}/smoke.log") \
     2> >(tee "reports/gcp/${component}/smoke-error.log" >&2)
   status=$?
@@ -102,6 +72,19 @@ component_test_run() {
   return "${status}"
 }
 
+component_ci_python() {
+  local component="$1"
+  local profile
+  local python_path
+  profile="$(python3 jenkins/python/configuration.py component-profile "${component}")"
+  python_path="${CI_TMP_ROOT:?CI_TMP_ROOT is required}/envs/${profile}/bin/python"
+  [[ -x "${python_path}" ]] || {
+    recsys_error "locked CI Python is missing for ${component}: ${python_path}"
+    return 2
+  }
+  printf '%s\n' "${python_path}"
+}
+
 component_test_http_from_deployment() {
   local namespace="$1"
   local deployment="$2"
@@ -109,35 +92,4 @@ component_test_http_from_deployment() {
   local url="$4"
   kubectl exec -n "${namespace}" "deploy/${deployment}" -c "${container}" -- \
     python -c 'import sys,urllib.request; assert urllib.request.urlopen(sys.argv[1], timeout=15).status == 200' "${url}"
-}
-
-component_test_verify_rollback() {
-  case "$1" in
-    materialize|dp1|dp2|dp3|drift|stream_offline|stream_online|training)
-      test_data_platform_base
-      ;;
-    api)
-      component_test_http_from_deployment \
-        "${API_NAMESPACE:-api-serving}" recsys-api-serving api http://127.0.0.1:8080/ready
-      ;;
-    kserve|kserve_model_cd)
-      kubectl wait --for=condition=Ready inferenceservice/recsys-bst-triton \
-        -n "${KSERVE_NAMESPACE:-kserve-triton-inference}" \
-        --timeout="${COMPONENT_TEST_TIMEOUT:-600s}"
-      ;;
-    rollout)
-      component_test_wait_deployment "${CI_NAMESPACE:-ci}" recsys-model-rollout-watcher
-      ;;
-    analytics)
-      component_test_wait_deployment "${ANALYTICS_NAMESPACE:-analytics}" recsys-analytics-trino
-      component_test_wait_deployment "${ANALYTICS_NAMESPACE:-analytics}" recsys-analytics-superset
-      ;;
-    demo_web)
-      component_test_http_from_deployment \
-        "${DEMO_WEB_NAMESPACE:-api-serving}" recsys-demo-api backend http://127.0.0.1:8080/ready
-      ;;
-    mlflow)
-      component_test_wait_deployment "${MLOPS_NAMESPACE:-experiment-tracking}" mlflow
-      ;;
-  esac
 }

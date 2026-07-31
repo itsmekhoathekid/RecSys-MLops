@@ -160,10 +160,6 @@ spec:
             - name: agent
               containerPort: 50000
           env:
-            - name: IMAGE_PUSH_REGISTRY
-              value: {{ .Values.jenkins.imagePushRegistry }}
-            - name: IMAGE_PULL_REGISTRY
-              value: {{ .Values.jenkins.imagePullRegistry }}
             - name: DOCKER_HOST
               value: tcp://localhost:2375
             - name: UV_LINK_MODE

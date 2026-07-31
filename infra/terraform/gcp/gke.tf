@@ -113,8 +113,8 @@ resource "google_container_node_pool" "cpu" {
   }
 
   upgrade_settings {
-    max_surge       = 0
-    max_unavailable = 1
+    max_surge       = 1
+    max_unavailable = 0
   }
 
   node_config {
@@ -158,8 +158,8 @@ resource "google_container_node_pool" "ml_system" {
   }
 
   upgrade_settings {
-    max_surge       = 0
-    max_unavailable = 1
+    max_surge       = 1
+    max_unavailable = 0
   }
 
   node_config {

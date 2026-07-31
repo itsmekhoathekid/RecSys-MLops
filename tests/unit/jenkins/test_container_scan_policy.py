@@ -10,14 +10,21 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from jenkins.python.container_scan_policy import evaluate
+from jenkins.python.container_scan_policy import evaluate  # noqa: E402
+
+
+def test_base_python_refreshes_os_security_packages_before_tooling_install():
+    dockerfile = (
+        ROOT / "images/base/recsys-base-python/Dockerfile"
+    ).read_text()
+    assert "apt-get update" in dockerfile
+    assert "apt-get upgrade -y --no-install-recommends" in dockerfile
+    assert dockerfile.index("apt-get upgrade") < dockerfile.index("apt-get install")
 
 
 def policy() -> dict:
     return json.loads(
-        (ROOT / "jenkins/config/container-scan-policy.json").read_text(
-            encoding="utf-8"
-        )
+        (ROOT / "jenkins/config/container-scan-policy.json").read_text(encoding="utf-8")
     )
 
 
@@ -79,6 +86,45 @@ def test_unlisted_images_cannot_use_vendor_exception():
     )
     assert len(rejected) == 1
     assert accepted == {"HIGH": 0, "CRITICAL": 0}
+
+
+def test_airflow_rollback_exception_is_exact_and_short_lived():
+    scan_report = {
+        "Results": [
+            {
+                "Target": "Python",
+                "Type": "python-pkg",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2024-45034",
+                        "PkgName": "apache-airflow",
+                        "Severity": "HIGH",
+                    },
+                    {
+                        "VulnerabilityID": "CVE-unapproved",
+                        "PkgName": "unapproved-library",
+                        "Severity": "HIGH",
+                    },
+                ],
+            }
+        ]
+    }
+    rejected, accepted = evaluate(
+        "recsys-airflow",
+        scan_report,
+        policy(),
+        today=dt.date(2026, 8, 1),
+    )
+    assert [item["package"] for item in rejected] == ["unapproved-library"]
+    assert accepted == {"HIGH": 1, "CRITICAL": 0}
+
+    with pytest.raises(ValueError, match="expired"):
+        evaluate(
+            "recsys-airflow",
+            scan_report,
+            policy(),
+            today=dt.date(2026, 8, 15),
+        )
 
 
 def test_exact_package_cve_exception_does_not_allow_other_python_findings():

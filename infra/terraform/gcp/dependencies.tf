@@ -193,6 +193,7 @@ resource "helm_release" "prometheus_operator" {
   set {
     name  = "prometheusOperator.podAnnotations.sidecar\\.istio\\.io/inject"
     value = "false"
+    type  = "string"
   }
 
   depends_on = [

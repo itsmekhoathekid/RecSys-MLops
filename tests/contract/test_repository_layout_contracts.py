@@ -63,6 +63,33 @@ def test_retired_runtime_roots_are_absent() -> None:
     assert all(not (ROOT / relative).exists() for relative in retired)
 
 
+def test_retired_jenkins_helpers_and_metadata_are_absent() -> None:
+    retired = (
+        "jenkins/config/workflows.json",
+        "jenkins/scripts/lib/kubernetes.sh",
+        "jenkins/scripts/lib/port_forward.sh",
+        "jenkins/scripts/deploy/kfp_version.sh",
+        "jenkins/scripts/deploy/rebalance_ml_node_pool.sh",
+        "jenkins/scripts/test/node_placement.sh",
+    )
+    assert all(not (ROOT / relative).exists() for relative in retired)
+
+    runtime_text = "\n".join(
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in (ROOT / "jenkins").rglob("*")
+        if path.is_file()
+        and path.suffix in {".py", ".sh", ".json", ".groovy", ".Jenkinsfile"}
+    )
+    for retired_name in (
+        "workflowChecks",
+        "build_image_single",
+        "gcp_production_preflight",
+        "with_file_lock",
+        "run_node_rebalance_if_enabled",
+    ):
+        assert retired_name not in runtime_text
+
+
 def test_runtime_has_no_retired_spark_names_or_local_tag() -> None:
     forbidden = (
         "recsys-" + "mlops-spark",
@@ -76,7 +103,8 @@ def test_runtime_has_no_retired_spark_names_or_local_tag() -> None:
         if (
             "tests" in path.parts
             or path in allowed_name_validators
-            or path.suffix not in {
+            or path.suffix
+            not in {
                 ".py",
                 ".sh",
                 ".json",
@@ -93,6 +121,12 @@ def test_runtime_has_no_retired_spark_names_or_local_tag() -> None:
             "validate_pipeline_package.py",
             "kfp_package.sh",
             "runtime.sh",
-            "node_placement.sh",
         }:
             assert ":local" not in text, path
+
+
+def test_stateful_gke_node_pools_upgrade_without_delete_first_downtime() -> None:
+    gke = (ROOT / "infra/terraform/gcp/gke.tf").read_text(encoding="utf-8")
+    assert gke.count("max_surge       = 1") == 2
+    assert gke.count("max_unavailable = 0") == 2
+    assert "max_surge       = 0" not in gke

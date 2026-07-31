@@ -50,10 +50,6 @@ recsys_retry() {
   done
 }
 
-recsys_repo_root() {
-  git rev-parse --show-toplevel
-}
-
 recsys_slug() {
   printf '%s' "$1" | tr -cs '[:alnum:]_.-' '-'
 }
@@ -63,20 +59,4 @@ recsys_kubernetes_name() {
     | tr '[:upper:]_.' '[:lower:]--' \
     | tr -cs '[:lower:][:digit:]-' '-' \
     | sed -e 's/^-*//' -e 's/-*$//'
-}
-
-recsys_sha256_file() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  else
-    shasum -a 256 "$1" | awk '{print $1}'
-  fi
-}
-
-recsys_sha256_stdin() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum | awk '{print $1}'
-  else
-    shasum -a 256 | awk '{print $1}'
-  fi
 }

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 
-component_test_dispatch() {
+component_verification_key() {
+  case "$1" in
+    stream_offline|stream_online) printf '%s\n' stream_features ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+run_component_verification() {
   case "$1" in
     materialize) test_materialize ;;
     training) test_training ;;

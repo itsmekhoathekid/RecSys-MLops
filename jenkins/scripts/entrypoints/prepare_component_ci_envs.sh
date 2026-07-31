@@ -10,29 +10,8 @@ changed_components="${CHANGED_COMPONENTS:-}"
   exit 2
 }
 
-profiles=()
-while IFS= read -r profile; do
-  [[ -n "${profile}" ]] && profiles+=("${profile}")
-done < <(
-  python3 jenkins/python/configuration.py ci-profiles \
-    --components "${changed_components}"
-)
-
-for profile in "${profiles[@]}"; do
+while IFS=$'\t' read -r profile project_path lock_file python_version; do
   [[ -n "${profile}" ]] || continue
-  profile_json="$(python3 jenkins/python/configuration.py ci-profile "${profile}")"
-  project_path="$(
-    python3 -c 'import json,sys; print(json.load(sys.stdin)["projectPath"])' \
-      <<<"${profile_json}"
-  )"
-  lock_file="$(
-    python3 -c 'import json,sys; print(json.load(sys.stdin)["lockFile"])' \
-      <<<"${profile_json}"
-  )"
-  python_version="$(
-    python3 -c 'import json,sys; print(json.load(sys.stdin)["pythonVersion"])' \
-      <<<"${profile_json}"
-  )"
   environment_path="${ci_tmp_root}/envs/${profile}"
 
   [[ -f "${project_path}/pyproject.toml" && -f "${lock_file}" ]] || {
@@ -47,4 +26,7 @@ for profile in "${profiles[@]}"; do
       --group dev \
       --no-install-project \
       --python "${python_version}"
-done
+done < <(
+  python3 jenkins/python/configuration.py ci-profiles \
+    --components "${changed_components}"
+)

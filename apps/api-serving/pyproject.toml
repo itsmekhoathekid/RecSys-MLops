@@ -15,6 +15,7 @@ dependencies = [
   "prometheus-client>=0.21,<1",
   "psycopg[binary]>=3.3.4,<4",
   "psycopg-pool>=3.3.1,<4",
+  "psycopg2-binary>=2.9.10,<3",
   "pydantic>=2.10,<3",
   "redis>=5,<8",
   "setuptools==83.0.0",

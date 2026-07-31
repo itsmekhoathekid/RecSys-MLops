@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "globalExcludes": [
     "docs/**",
     "graphify-out/**",
@@ -48,8 +48,7 @@
         "jenkins/python/release_plan.py",
         "jenkins/scripts/build/engine.sh",
         "jenkins/scripts/build/runtime.sh",
-        "jenkins/scripts/test/runtime.sh",
-        "jenkins/scripts/test/node_placement.sh"
+        "jenkins/scripts/test/runtime.sh"
       ]
     },
     "data-common": {
@@ -140,7 +139,6 @@
         "files": [
           "jenkins/scripts/ci/data.sh",
           "jenkins/scripts/deploy/feast.sh",
-          "jenkins/scripts/test/data_platform_verify_feature_stores.sh",
           "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
         ]
       },
@@ -149,9 +147,6 @@
         "recsys-airflow"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [
-        "recsys_feast_materialize"
-      ],
       "verifyDependsOn": [
         "dp3"
       ],
@@ -179,6 +174,8 @@
         ],
         "files": [
           "jenkins/scripts/ci/ml.sh",
+          "jenkins/scripts/build/kfp_package.sh",
+          "jenkins/scripts/deploy/upload_kfp_package.sh",
           "jenkins/scripts/deploy/ml_platform.sh",
           "jenkins/scripts/test/ml_platform.sh"
         ]
@@ -191,9 +188,6 @@
       ],
       "buildArtifacts": [
         "kubeflow-bst"
-      ],
-      "workflowChecks": [
-        "bst-training"
       ],
       "verifyDependsOn": [
         "materialize"
@@ -239,9 +233,6 @@
         "recsys-airflow"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [
-        "recsys_dp1_raw_to_bronze"
-      ],
       "verifyDependsOn": [],
       "migrationPolicy": "expand-only"
     },
@@ -274,9 +265,6 @@
         "recsys-airflow"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [
-        "recsys_dp2_bronze_to_silver_gold"
-      ],
       "verifyDependsOn": [
         "dp1"
       ],
@@ -319,9 +307,6 @@
         "recsys-airflow"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [
-        "recsys_dp3_offline_feature_table"
-      ],
       "verifyDependsOn": [
         "dp2"
       ],
@@ -357,7 +342,6 @@
         "recsys-api-serving"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [],
       "verifyDependsOn": [
         "materialize"
       ],
@@ -388,7 +372,6 @@
       },
       "buildImages": [],
       "buildArtifacts": [],
-      "workflowChecks": [],
       "verifyDependsOn": [
         "training"
       ],
@@ -424,7 +407,6 @@
         "recsys-mlops-training"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [],
       "verifyDependsOn": [
         "kserve"
       ],
@@ -463,9 +445,6 @@
         "recsys-airflow"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [
-        "recsys_feature_drift_monitoring"
-      ],
       "verifyDependsOn": [
         "dp3"
       ],
@@ -497,7 +476,6 @@
         "recsys-flink"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [],
       "verifyDependsOn": [
         "dp1"
       ],
@@ -528,7 +506,6 @@
         "recsys-flink"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [],
       "verifyDependsOn": [
         "stream_offline"
       ],
@@ -564,9 +541,6 @@
         "recsys-airflow"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [
-        "recsys_analytics_daily"
-      ],
       "verifyDependsOn": [
         "dp2"
       ],
@@ -601,7 +575,6 @@
         "recsys-demo-web"
       ],
       "buildArtifacts": [],
-      "workflowChecks": [],
       "verifyDependsOn": [
         "api"
       ],

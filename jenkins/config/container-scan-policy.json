@@ -10,6 +10,36 @@
       "owner": "platform",
       "reason": "Unified data, ML, and analytics Spark runtime; includes the approved Spark/Hudi and PostgreSQL JDBC bundles."
     },
+    "recsys-airflow": {
+      "types": [],
+      "acceptedVulnerabilities": [
+        {"id": "CVE-2024-34069", "package": "Werkzeug", "type": "python-pkg"},
+        {"id": "CVE-2024-45034", "package": "apache-airflow", "type": "python-pkg"},
+        {"id": "CVE-2024-56373", "package": "apache-airflow", "type": "python-pkg"},
+        {"id": "CVE-2025-54550", "package": "apache-airflow", "type": "python-pkg"},
+        {"id": "CVE-2025-68675", "package": "apache-airflow", "type": "python-pkg"},
+        {"id": "CVE-2026-40961", "package": "apache-airflow", "type": "python-pkg"},
+        {"id": "CVE-2026-45360", "package": "apache-airflow", "type": "python-pkg"},
+        {"id": "CVE-2026-27173", "package": "apache-airflow-providers-cncf-kubernetes", "type": "python-pkg"},
+        {"id": "CVE-2025-30473", "package": "apache-airflow-providers-common-sql", "type": "python-pkg"},
+        {"id": "CVE-2025-69219", "package": "apache-airflow-providers-http", "type": "python-pkg"},
+        {"id": "CVE-2025-43859", "package": "h11", "type": "python-pkg"},
+        {"id": "CVE-2026-23949", "package": "jaraco.context", "type": "python-pkg"},
+        {"id": "CVE-2025-4565", "package": "protobuf", "type": "python-pkg"},
+        {"id": "CVE-2026-0994", "package": "protobuf", "type": "python-pkg"},
+        {"id": "CVE-2026-30922", "package": "pyasn1", "type": "python-pkg"},
+        {"id": "CVE-2026-59885", "package": "pyasn1", "type": "python-pkg"},
+        {"id": "CVE-2026-59886", "package": "pyasn1", "type": "python-pkg"},
+        {"id": "CVE-2024-6345", "package": "setuptools", "type": "python-pkg"},
+        {"id": "CVE-2025-47273", "package": "setuptools", "type": "python-pkg"},
+        {"id": "CVE-2026-24049", "package": "wheel", "type": "python-pkg"}
+      ],
+      "maxHigh": 20,
+      "maxCritical": 1,
+      "expiresOn": "2026-08-14",
+      "owner": "data-platform",
+      "reason": "Time-boxed Airflow 2.9.3 rollback while replacing the Airflow 3 task execution path that cannot connect to its execution API; OS and compatible Python dependencies are patched, and only this exact compatibility baseline is accepted."
+    },
     "recsys-mlops-training": {
       "types": ["jar"],
       "maxHigh": 3,

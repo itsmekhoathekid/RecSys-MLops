@@ -1,5 +1,6 @@
 .git
 **/.venv
+**/*.egg-info
 **/.uv-cache
 **/.pytest_cache
 **/.hypothesis

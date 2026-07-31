@@ -1,0 +1,26 @@
+{{- if and .Values.istio.enabled (has "recsys-dataflow" .Values.istio.namespaces) }}
+{{- range $store := list (dict "name" "feature-postgres" "port" 5432) (dict "name" "redis" "port" 6379) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recsys-dataflow-{{ $store.name }}-ingress
+  namespace: recsys-dataflow
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $store.name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range $namespace := list "recsys-dataflow" "api-serving" "kubeflow" "datahub" "observability" }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $namespace }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $store.port }}
+{{- end }}
+{{- end }}

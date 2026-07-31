@@ -11,9 +11,6 @@ productionTarget:
   imageRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
 
 jenkins:
-  imagePushRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
-  imagePullRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
-  requireGcpArtifactRegistry: true
   resources:
     requests:
       cpu: 500m

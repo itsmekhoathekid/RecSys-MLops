@@ -22,8 +22,8 @@ class FakeClient:
     def delete_pipeline_version(self, resource_id: str):
         self.deleted.append(("version", resource_id))
 
-    def get_pipeline_version(self, resource_id: str):
-        raise NotFound(resource_id)
+    def get_pipeline_version(self, pipeline_id: str, resource_id: str):
+        raise NotFound(f"{pipeline_id}/{resource_id}")
 
     def delete_pipeline(self, resource_id: str):
         self.deleted.append(("pipeline", resource_id))
@@ -38,6 +38,7 @@ def test_kfp_version_compensation_deletes_and_verifies_absence():
         client,
         {
             "action": "uploaded_pipeline_version",
+            "pipeline_id": "pipeline-1",
             "pipeline_version_id": "version-1",
         },
     )

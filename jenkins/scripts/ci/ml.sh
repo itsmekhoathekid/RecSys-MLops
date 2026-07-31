@@ -4,7 +4,7 @@ ci_training() {
   tests=(tests/unit/ml_system)
   append_integration_dir training
   cov_paths=(kubeflow.components.runtime kubeflow.pipelines.bst_training_pipeline kubeflow.pipelines.compile_training_pipeline)
-  component_pytest "${component}" "apps/ml-system/src:apps/data-platform/src"
+  run_configured_component_tests "${component}" "apps/ml-system/src:apps/data-platform/src"
   run_kfp_compile
 }
 
@@ -18,7 +18,7 @@ ci_rollout() {
     jenkins.python.model_cd.manifests
     jenkins.python.model_cd.promotion_gates
   )
-  component_pytest "${component}" ".:apps/ml-system/src:apps/data-platform/src"
+  run_configured_component_tests "${component}" ".:apps/ml-system/src:apps/data-platform/src"
   helm lint infra/helm/recsys-ci
   helm template recsys-ci infra/helm/recsys-ci \
     --set modelRolloutWatcher.enabled=true \

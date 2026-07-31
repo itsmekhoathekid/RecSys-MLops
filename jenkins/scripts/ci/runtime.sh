@@ -15,7 +15,7 @@ append_integration_dir() {
   fi
 }
 
-run_component_pytest() {
+run_pytest_with_coverage() {
   local name="$1"
   local pythonpath="$2"
   shift 2
@@ -33,7 +33,7 @@ run_component_pytest() {
         shift 2
         ;;
       *)
-        echo "Unknown run_component_pytest argument: $1" >&2
+        echo "Unknown run_pytest_with_coverage argument: $1" >&2
         return 2
         ;;
     esac
@@ -60,7 +60,7 @@ run_component_pytest() {
     --junitxml="${reports_dir}/junit/${name}.xml"
 }
 
-component_pytest() {
+run_configured_component_tests() {
   local name="$1"
   local pythonpath="$2"
   local args=()
@@ -72,7 +72,7 @@ component_pytest() {
     args+=(--test-path "${test_path}")
   done
 
-  run_component_pytest "${name}" "${pythonpath}" "${args[@]}"
+  run_pytest_with_coverage "${name}" "${pythonpath}" "${args[@]}"
 }
 
 run_kfp_compile() {

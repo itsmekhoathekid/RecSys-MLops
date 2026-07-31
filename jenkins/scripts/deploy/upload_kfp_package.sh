@@ -5,8 +5,10 @@ package_path="${KFP_PACKAGE_PATH:-pipelines/kubeflow/compiled/bst_training_pipel
 kfp_endpoint="${KFP_ENDPOINT:-http://ml-pipeline.kubeflow.svc.cluster.local:8888}"
 pipeline_name="${KFP_PIPELINE_NAME:-recsys-bst-feature-train-evaluate}"
 pipeline_version_name="${KFP_PIPELINE_VERSION_NAME:-}"
-
-bash jenkins/scripts/build/kfp_package.sh
+[[ -s "${package_path}" ]] || {
+  printf 'compiled Kubeflow package does not exist: %s\n' "${package_path}" >&2
+  exit 2
+}
 
 python_cmd=()
 if [[ -n "${KFP_CICD_PYTHON:-}" ]]; then

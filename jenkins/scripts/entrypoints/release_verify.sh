@@ -5,8 +5,6 @@ plan_path="${1:-.ci-release-plan.json}"
 source jenkins/scripts/lib/common.sh
 source jenkins/scripts/lib/config.sh
 source jenkins/scripts/lib/image_manifest.sh
-source jenkins/scripts/lib/kubernetes.sh
-source jenkins/scripts/lib/port_forward.sh
 source jenkins/scripts/deploy/runtime.sh
 source jenkins/scripts/test/runtime.sh
 source jenkins/scripts/test/data_platform.sh
@@ -28,15 +26,24 @@ namespace_analytics="${ANALYTICS_NAMESPACE:-analytics}"
 namespace_demo="${DEMO_WEB_NAMESPACE:-api-serving}"
 namespace_ci="${CI_NAMESPACE:-ci}"
 timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
-run_node_rebalance="${RUN_NODE_REBALANCE:-1}"
-validate_node_rebalance="${VALIDATE_NODE_REBALANCE:-1}"
 kfp_port_forward_pids=()
+kfp_upload_endpoint_result=""
 local_model_store_endpoint_result=""
-trap 'cleanup_port_forwards; port_forward_cleanup' EXIT
+trap stop_runtime_port_forwards EXIT
 
+declare -A completed_verifications=()
 while IFS= read -r component; do
   [[ -n "${component}" ]] || continue
-  component_test_run "${component}"
+  verification_key="$(component_verification_key "${component}")"
+  if [[ -n "${completed_verifications[${verification_key}]:-}" ]]; then
+    printf 'Skipping %s verification; shared check %s already passed for %s.\n' \
+      "${component}" \
+      "${verification_key}" \
+      "${completed_verifications[${verification_key}]}"
+    continue
+  fi
+  verify_deployed_component "${component}"
+  completed_verifications["${verification_key}"]="${component}"
 done < <(
   python3 jenkins/python/release_plan.py plan-verifications --plan "${plan_path}"
 )

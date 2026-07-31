@@ -17,15 +17,3 @@ helm_atomic_upgrade() {
     --timeout "${timeout}" \
     "$@"
 }
-
-helm_current_revision() {
-  local release="$1"
-  local namespace="$2"
-  helm history "${release}" -n "${namespace}" -o json 2>/dev/null \
-    | python3 -c '
-import json, sys
-rows = json.load(sys.stdin)
-deployed = [row for row in rows if str(row.get("status", "")).lower() == "deployed"]
-print(deployed[-1]["revision"] if deployed else "")
-' 2>/dev/null
-}

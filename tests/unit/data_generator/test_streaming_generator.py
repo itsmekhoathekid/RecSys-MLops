@@ -1,4 +1,5 @@
 import random
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from generator_config import load_stream_config
 from streaming.config import StreamGeneratorConfig
 from streaming.event_factory import StreamEventFactory
 from streaming.problem_pipeline import StreamProblemPipeline
+from streaming import producer
 from streaming.problems import (
     BurstTrafficProblem,
     DuplicateReplayProblem,
@@ -141,3 +143,16 @@ def test_duplicate_replay_preserves_identity_and_payload():
         replay["behavior_events"]["payload_hash"]
         == original["behavior_events"]["payload_hash"]
     )
+
+
+def test_producer_cli_dispatches_a_named_verification_event(monkeypatch):
+    written: list[str] = []
+    monkeypatch.setattr(producer, "write_verification_event", written.append)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["streaming.producer", "--verification-event-id", "ci-stream-42"],
+    )
+
+    assert producer.main() == 0
+    assert written == ["ci-stream-42"]

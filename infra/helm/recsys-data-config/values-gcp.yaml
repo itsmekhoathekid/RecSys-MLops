@@ -16,7 +16,9 @@ minio:
   storage: 20Gi
 
 airflow:
-  schedule: manual
+  dp1Schedule: manual
+  dp2Schedule: manual
+  dp3Schedule: manual
 
 dataSetup:
   generatorConfig: configs/data-platform/generator/e2e-2k.yaml
@@ -53,7 +55,7 @@ flinkTaskManager:
   replicas: 2
   resources:
     requests:
-      cpu: 500m
+      cpu: 300m
       memory: 4Gi
     limits:
       cpu: "2"

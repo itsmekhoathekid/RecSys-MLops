@@ -153,9 +153,15 @@ list in `FORCE_COMPONENTS`:
 materialize,training,dp1,dp2,dp3,api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,ci_config
 ```
 
-The root pipeline keeps the normal Stage View. Component CI runs in parallel,
-then one release plan deduplicates image builds and deploys independently owned
-release units with per-release Jenkins locks.
+The root pipeline keeps a compact Stage View: Declarative checkout, Checkout,
+Detect Changed Components, Python Env, Component CI, Docker Login, Component
+Build And Publish, Component Deploy Or Update, and Declarative post actions.
+Component CI still runs selected branches in parallel. Build/package and
+preflight/deploy/verification retain their internal checkpoints and release
+locks, but no longer create one UI column per checkpoint. Post-deploy
+verification checks only applied resources, health endpoints, registered DAGs,
+and uploaded KFP packages; it never starts Airflow DAGs, KFP runs, Spark jobs,
+or synthetic production events.
 
 Run the local preflight, then trigger the job through the Jenkins API:
 

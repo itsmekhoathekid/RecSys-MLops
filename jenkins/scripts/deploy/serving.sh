@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 
-deploy_api_unlocked() {
+deploy_api() {
   local helm_args=(
     upgrade --install recsys-serving infra/helm/recsys-serving
     --namespace "${namespace_kserve}" --create-namespace --reuse-values
     --atomic --cleanup-on-fail --wait --wait-for-jobs
     --history-max "${HELM_HISTORY_MAX:-10}" --timeout "${timeout}"
     --set "api.namespace.name=${namespace_api}"
-    --set "api.image=$(image recsys-api-serving)"
+    --set "api.image=$(resolve_release_image recsys-api-serving)"
     --set "api.imagePullPolicy=Always"
-    --set "featureApi.image=$(image recsys-api-serving)"
+    --set "featureApi.image=$(resolve_release_image recsys-api-serving)"
     --set "featureApi.imagePullPolicy=Always"
     --set "kserve.secret.create=false"
     --set "shadow.enabled=false"
@@ -21,15 +21,11 @@ deploy_api_unlocked() {
   [[ -n "${API_ROLLOUT_MAX_SURGE:-}" ]] && helm_args+=(--set "api.rollout.maxSurge=${API_ROLLOUT_MAX_SURGE}")
   [[ -n "${API_ROLLOUT_MAX_UNAVAILABLE:-}" ]] && helm_args+=(--set "api.rollout.maxUnavailable=${API_ROLLOUT_MAX_UNAVAILABLE}")
   helm "${helm_args[@]}"
-  verify_and_wait_workload deployment recsys-online-feature-api "${namespace_api}" "$(image recsys-api-serving)"
-  verify_and_wait_workload deployment recsys-api-serving "${namespace_api}" "$(image recsys-api-serving)"
+  verify_and_wait_workload deployment recsys-online-feature-api "${namespace_api}" "$(resolve_release_image recsys-api-serving)"
+  verify_and_wait_workload deployment recsys-api-serving "${namespace_api}" "$(resolve_release_image recsys-api-serving)"
 }
 
-deploy_api() {
-  with_file_lock "/tmp/recsys-serving-helm.lock" deploy_api_unlocked
-}
-
-deploy_kserve_unlocked() {
+deploy_kserve() {
   load_secret_env_if_unset "${namespace_kubeflow}" "${MLOPS_RUNTIME_SECRET_NAME:-recsys-mlops-runtime}" \
     AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION MINIO_ENDPOINT \
     MINIO_ROOT_USER MINIO_ROOT_PASSWORD MLFLOW_S3_ENDPOINT_URL MODEL_STORE_ENDPOINT \
@@ -42,7 +38,7 @@ deploy_kserve_unlocked() {
     --timeout "${timeout}"
 }
 
-deploy_kserve_model_cd_unlocked() {
+deploy_kserve_model_cd() {
   load_secret_env_if_unset "${namespace_kubeflow}" "${MLOPS_RUNTIME_SECRET_NAME:-recsys-mlops-runtime}" \
     AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION MINIO_ENDPOINT \
     MINIO_ROOT_USER MINIO_ROOT_PASSWORD MLFLOW_S3_ENDPOINT_URL MODEL_STORE_ENDPOINT \
@@ -64,12 +60,4 @@ deploy_kserve_model_cd_unlocked() {
   [[ "${MODEL_CD_APPLY:-1}" == "1" ]] && model_cd_args+=(--apply)
   RECSYS_MODEL_CD_ATOMIC="${RECSYS_MODEL_CD_ATOMIC:-1}" \
     uv run --no-project --with boto3 python -m jenkins.python.model_cd.cli "${model_cd_args[@]}"
-}
-
-deploy_kserve() {
-  with_file_lock "/tmp/recsys-serving-helm.lock" deploy_kserve_unlocked
-}
-
-deploy_kserve_model_cd() {
-  with_file_lock "/tmp/recsys-serving-helm.lock" deploy_kserve_model_cd_unlocked
 }

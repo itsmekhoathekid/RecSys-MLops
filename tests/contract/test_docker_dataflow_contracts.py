@@ -19,12 +19,14 @@ DATA_CHARTS = (
 )
 
 
-def render(chart_name: str) -> str:
+def render(chart_name: str, *, set_values: tuple[str, ...] = ()) -> str:
     chart = ROOT / "infra/helm" / chart_name
     values = chart / "values-gcp.yaml"
     command = ["helm", "template", "contract", str(chart)]
     if values.is_file():
         command.extend(["-f", str(values)])
+    for value in set_values:
+        command.extend(["--set", value])
     return subprocess.run(
         command,
         cwd=ROOT,
@@ -45,7 +47,9 @@ def test_image_catalog_has_fifteen_images_and_one_spark():
 def test_monolithic_data_platform_chart_and_component_dispatchers_are_deleted():
     assert not (ROOT / "infra/helm/recsys-data-platform").exists()
     assert not (ROOT / "jenkins/scripts/entrypoints/component_deploy.sh").exists()
-    assert not (ROOT / "jenkins/scripts/entrypoints/component_build_publish.sh").exists()
+    assert not (
+        ROOT / "jenkins/scripts/entrypoints/component_build_publish.sh"
+    ).exists()
     assert not (ROOT / "jenkins/scripts/deploy/data_platform.sh").exists()
     assert not (ROOT / "jenkins/scripts/deploy/dispatch.sh").exists()
     assert not (ROOT / "jenkins/scripts/build/dispatch.sh").exists()
@@ -76,7 +80,9 @@ def test_split_charts_have_unique_kubernetes_resource_owners():
                 str(metadata.get("namespace", "recsys-dataflow")),
                 str(metadata.get("name")),
             )
-            assert key not in owners, f"{key} owned by {owners.get(key)} and {chart_name}"
+            assert key not in owners, (
+                f"{key} owned by {owners.get(key)} and {chart_name}"
+            )
             owners[key] = chart_name
 
 
@@ -90,6 +96,34 @@ def test_resource_ownership_matches_release_boundaries():
     assert "name: redis" in rendered["recsys-feature-store"]
     assert "name: flink-jobmanager" in rendered["recsys-streaming"]
     assert "name: airflow-scheduler" in rendered["recsys-airflow"]
+
+
+def test_airflow_runtime_is_pinned_to_the_stable_2_9_control_plane():
+    dockerfile = (ROOT / "images/data/recsys-airflow/Dockerfile").read_text()
+    rendered_airflow = render("recsys-airflow")
+    runtime_verifier = (ROOT / "jenkins/scripts/test/runtime.sh").read_text()
+
+    assert "ARG AIRFLOW_VERSION=2.9.3" in dockerfile
+    assert "ARG AIRFLOW_PYTHON_VERSION=3.10" in dockerfile
+    assert "ARG PYTHON_VERSION" not in dockerfile
+    assert "constraints-${AIRFLOW_VERSION}" in dockerfile
+    assert "constraints-${AIRFLOW_PYTHON_VERSION}.txt" in dockerfile
+    assert "exec airflow webserver" in rendered_airflow
+    assert "exec airflow scheduler" in rendered_airflow
+    assert "airflow api-server" not in rendered_airflow
+    assert "airflow dag-processor" not in rendered_airflow
+    assert rendered_airflow.count("name: AIRFLOW__CORE__EXECUTOR") == 2
+    assert "component_test_airflow_dag_registered" in runtime_verifier
+    assert "airflow dags list --output plain" in runtime_verifier
+    assert "airflow dags trigger" not in runtime_verifier
+    assert "airflow dags list-runs" not in runtime_verifier
+    assert "airflow dags state" not in runtime_verifier
+
+    data_config = render("recsys-data-config")
+    for pipeline in ("DP1", "DP2", "DP3"):
+        assert f"{pipeline}_DAG_SCHEDULE" in data_config
+    assert "DATA_PLATFORM_DAG_SCHEDULE" not in data_config
+    assert "BATCH_FEATURE_DAG_SCHEDULE" not in data_config
 
 
 def test_unified_spark_and_dp_profiles_are_the_only_batch_contract():
@@ -133,12 +167,99 @@ def test_unified_spark_contains_all_three_domain_capabilities():
     assert "postgresql-42.7.7.jar" in smoke
 
 
+def test_feature_store_image_matches_feast_sqlalchemy_registry_driver():
+    dockerfile = (
+        ROOT / "images/data/recsys-feature-store/Dockerfile"
+    ).read_text()
+    registry = (
+        ROOT
+        / "apps/data-platform/src/feature_store/sql_registry_state.py"
+    ).read_text()
+    serving_project = (ROOT / "apps/api-serving/pyproject.toml").read_text()
+    assert "psycopg2-binary" in dockerfile
+    assert "psycopg2-binary" in serving_project
+    assert 'drivername="postgresql+psycopg2"' in registry
+    assert 'drivername="postgresql+psycopg"' not in registry
+
+
+def test_stream_verifier_is_read_only_and_checks_deployed_services():
+    verifier = (ROOT / "jenkins/scripts/test/data_platform.sh").read_text()
+    assert "test_debezium_connector_tasks" in verifier
+    assert "realtime-flink-offline-store" in verifier
+    assert "realtime-flink-online-store" in verifier
+    assert "redis-cli PING" in verifier
+    assert "pg_isready" in verifier
+    assert "kind: Job" not in verifier
+    assert "--verification-event-id" not in verifier
+    assert "redis-cli DEL" not in verifier
+
+
+def test_spark_can_reach_feature_stores_without_weakening_namespace_mtls():
+    rendered = render(
+        "recsys-security",
+        set_values=("istio.namespaces[5]=recsys-dataflow",),
+    )
+    resources = {
+        (document["kind"], document["metadata"]["name"]): document
+        for document in yaml.safe_load_all(rendered)
+        if isinstance(document, dict) and document.get("kind")
+    }
+
+    strict = resources[("PeerAuthentication", "recsys-strict-mtls")]
+    assert strict["spec"]["mtls"]["mode"] == "STRICT"
+
+    stores = {"feature-postgres": 5432, "redis": 6379}
+    allowed_namespaces = {
+        "recsys-dataflow",
+        "api-serving",
+        "kubeflow",
+        "datahub",
+        "observability",
+    }
+    for store, port in stores.items():
+        peer_auth = resources[
+            ("PeerAuthentication", f"recsys-dataflow-{store}-permissive")
+        ]
+        assert peer_auth["spec"]["selector"]["matchLabels"]["app"] == store
+        assert peer_auth["spec"]["portLevelMtls"][port]["mode"] == "PERMISSIVE"
+        assert "mtls" not in peer_auth["spec"]
+
+        authorization = resources[
+            ("AuthorizationPolicy", f"recsys-dataflow-{store}-allow")
+        ]
+        assert authorization["spec"]["selector"]["matchLabels"]["app"] == store
+        assert authorization["spec"]["rules"][0]["to"][0]["operation"][
+            "ports"
+        ] == [str(port)]
+
+        network_policy = resources[
+            ("NetworkPolicy", f"recsys-dataflow-{store}-ingress")
+        ]
+        ingress = network_policy["spec"]["ingress"][0]
+        assert {item["namespaceSelector"]["matchLabels"][
+            "kubernetes.io/metadata.name"
+        ] for item in ingress["from"]} == allowed_namespaces
+        assert ingress["ports"] == [{"protocol": "TCP", "port": port}]
+
+
+def test_flink_taskmanagers_fit_the_production_node_pool_cpu_budget():
+    rendered = render("recsys-streaming")
+    resources = {
+        (document["kind"], document["metadata"]["name"]): document
+        for document in yaml.safe_load_all(rendered)
+        if isinstance(document, dict) and document.get("kind")
+    }
+    taskmanager = resources[("Deployment", "flink-taskmanager")]
+    container = taskmanager["spec"]["template"]["spec"]["containers"][0]
+    assert container["resources"]["requests"]["cpu"] == "300m"
+
+
 def test_release_planner_and_jenkins_use_one_global_plan():
     jenkinsfile = (ROOT / "Jenkinsfile").read_text()
     groovy = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text()
     assert "--plan-output .ci-release-plan.json" in jenkinsfile
     assert "release_build_publish.sh .ci-release-plan.json" in jenkinsfile
-    assert "runReleaseDeployPlan" in jenkinsfile
+    assert "deployReleasePlan" in jenkinsfile
     assert "runComponentDeployBranches" not in groovy
 
 

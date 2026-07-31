@@ -13,6 +13,7 @@ gcp_verify_registry_publish_target() {
   local expected_registry
   local actual_project=""
 
+  load_gcp_production_config
   expected_project="$(gcp_production_field projectId)"
   expected_registry="$(gcp_production_field imageRegistry)"
   image_registry="${image_registry%/}"
@@ -40,10 +41,12 @@ gcp_verify_registry_publish_target() {
 }
 
 gcp_verify_production_target() {
+  local expected_project
   local expected_context
   local actual_context=""
 
   gcp_verify_registry_publish_target
+  expected_project="$(gcp_production_field projectId)"
   expected_context="$(gcp_production_field context)"
 
   actual_context="$(kubectl config current-context 2>/dev/null || true)"
@@ -111,9 +114,23 @@ gcp_verify_workload_identity() {
 gcp_verify_external_secret_target() {
   local namespace="$1"
   local name="$2"
+  shift 2
   kubectl wait --for=condition=Ready "externalsecret/${name}" \
     -n "${namespace}" --timeout="${GCP_PREFLIGHT_TIMEOUT:-120s}"
-  kubectl get "secret/${name}" -n "${namespace}" >/dev/null
+  if (($# == 0)); then
+    kubectl get "secret/${name}" -n "${namespace}" >/dev/null
+    return
+  fi
+  kubectl get "secret/${name}" -n "${namespace}" -o json \
+    | python3 -c '
+import json
+import sys
+
+available = json.load(sys.stdin).get("data", {})
+missing = sorted(set(sys.argv[1:]) - set(available))
+if missing:
+    raise SystemExit(f"Secret is missing required keys: {missing}")
+' "$@"
 }
 
 gcp_verify_unit_secrets() {
@@ -125,7 +142,15 @@ gcp_verify_unit_secrets() {
       gcp_verify_external_secret_target experiment-tracking recsys-mlflow-secrets
       ;;
     serving)
-      gcp_verify_external_secret_target kubeflow recsys-mlops-runtime
+      gcp_verify_external_secret_target kubeflow recsys-mlops-runtime \
+        MINIO_ENDPOINT MINIO_ROOT_USER MINIO_ROOT_PASSWORD \
+        MLFLOW_TRACKING_URI MLFLOW_EXPERIMENT_NAME MLFLOW_S3_ENDPOINT_URL \
+        MODEL_STORE_ENDPOINT MODEL_REGISTRY_POSTGRES_URI MODEL_STORE_BUCKET \
+        MODEL_STORE_PREFIX PROMOTION_MANIFEST_KEY AWS_ACCESS_KEY_ID \
+        AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION ICEBERG_ENABLED \
+        ICEBERG_CATALOG_NAME ICEBERG_WAREHOUSE HUDI_ENABLED HUDI_CATALOG_NAME \
+        HUDI_WAREHOUSE HUDI_DATASET_TABLE HUDI_CLEAN_HOURS_RETAINED \
+        HUDI_ZK_URL HUDI_ZK_PORT HUDI_ZK_BASE_PATH HUDI_ZK_LOCK_KEY
       gcp_verify_external_secret_target kserve-triton-inference recsys-kserve-minio
       ;;
   esac
@@ -147,22 +172,15 @@ gcp_verify_candidate_digests() {
     }
     docker manifest inspect "${digest_ref}" >/dev/null
   done < <(
-    python3 -c '
-import json, sys
-for image in json.load(open(sys.argv[1], encoding="utf-8"))["buildImages"]:
-    print(image)
-' "${plan_path}"
+    python3 jenkins/python/release_plan.py plan-images --plan "${plan_path}"
   )
 }
 
 gcp_verify_helm_history() {
-  local unit_name="$1"
-  local unit_json kind namespace release
-  unit_json="$(python3 jenkins/python/release_plan.py unit "${unit_name}")"
-  kind="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["kind"])' <<<"${unit_json}")"
+  local kind="$1"
+  local namespace="$2"
+  local release="$3"
   [[ "${kind}" == "helm" ]] || return 0
-  namespace="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["namespace"])' <<<"${unit_json}")"
-  release="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["release"])' <<<"${unit_json}")"
   if helm status "${release}" -n "${namespace}" >/dev/null 2>&1; then
     helm history "${release}" -n "${namespace}" -o json \
       | python3 -c '
@@ -175,19 +193,26 @@ if not deployed:
   fi
 }
 
-gcp_production_preflight() {
-  local unit_name="$1"
-  local plan_path="${2:-.ci-release-plan.json}"
+verify_gcp_release_target() {
+  local plan_path="${1:-.ci-release-plan.json}"
+  load_gcp_production_config
   recsys_require_command curl
   recsys_require_command docker
   recsys_require_command helm
   recsys_require_command kubectl
-  python3 jenkins/python/configuration.py validate
   gcp_verify_production_target
   gcp_verify_workload_identity
   gcp_verify_required_crds
-  gcp_verify_unit_secrets "${unit_name}"
   gcp_verify_candidate_digests "${plan_path}"
-  gcp_verify_helm_history "${unit_name}"
   recsys_log "validated GCP production target $(gcp_production_field projectId)/$(gcp_production_field cluster)"
+}
+
+verify_gcp_deploy_unit() {
+  local unit_name="$1"
+  local unit_kind="$2"
+  local unit_namespace="$3"
+  local unit_release="$4"
+  gcp_verify_unit_secrets "${unit_name}"
+  gcp_verify_helm_history "${unit_kind}" "${unit_namespace}" "${unit_release}"
+  recsys_log "validated deploy-unit prerequisites for ${unit_name}"
 }
