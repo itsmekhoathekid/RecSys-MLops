@@ -26,6 +26,7 @@ USER_ID_RANGE = max(1, int(os.getenv("RECSYS_USER_ID_RANGE", "1000000")))
 USER_IDS = itertools.count(USER_ID_START)
 CANDIDATES = _candidates()
 TOP_K = int(os.getenv("RECSYS_TOP_K", "3"))
+API_RECOMMENDATIONS_PATH = os.getenv("RECSYS_API_RECOMMENDATIONS_PATH", "/recommendations")
 
 
 def _next_user_id() -> int:
@@ -59,7 +60,7 @@ class RecsysServingUser(HttpUser):
             "top_k": TOP_K,
         }
         with self.client.post(
-            "/recommendations",
+            API_RECOMMENDATIONS_PATH,
             json=payload,
             headers=self._headers(),
             name="api:/recommendations",

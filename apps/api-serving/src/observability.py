@@ -197,11 +197,12 @@ def timed_operation(metric: str, labels: dict[str, str] | None = None) -> Iterat
 
 
 def observe_request(route: str, method: str, status: int, duration_seconds: float) -> None:
-    labels = {"route": route, "method": method, "status": str(status)}
+    request_labels = {"service": SERVICE_NAME, "route": route, "method": method}
+    labels = {**request_labels, "status": str(status)}
     METRICS.inc("recsys_api_requests_total", labels=labels)
     if status >= 500:
-        METRICS.inc("recsys_api_failures_total", labels={"route": route, "method": method, "status": str(status)})
-    METRICS.observe("recsys_api_request_duration_seconds", duration_seconds, {"route": route, "method": method})
+        METRICS.inc("recsys_api_failures_total", labels=labels)
+    METRICS.observe("recsys_api_request_duration_seconds", duration_seconds, request_labels)
 
 
 def observe_redis(operation: str, duration_seconds: float, error: bool = False) -> None:

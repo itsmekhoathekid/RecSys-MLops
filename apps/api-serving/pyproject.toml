@@ -1,0 +1,36 @@
+[project]
+name = "recsys-api-serving"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "fastapi>=0.138,<1",
+  "feast[redis]==0.64.0",
+  "httpx>=0.28.1,<1",
+  "jaraco.context==6.1.0",
+  "numpy>=2.2.6,<3",
+  "opentelemetry-api>=1.30,<2",
+  "opentelemetry-exporter-otlp>=1.30,<2",
+  "opentelemetry-instrumentation-fastapi>=0.51b0,<1",
+  "opentelemetry-sdk>=1.30,<2",
+  "prometheus-client>=0.21,<1",
+  "psycopg[binary]>=3.3.4,<4",
+  "psycopg-pool>=3.3.1,<4",
+  "psycopg2-binary>=2.9.10,<3",
+  "pydantic>=2.10,<3",
+  "redis>=5,<8",
+  "setuptools==83.0.0",
+  "tritonclient[grpc]>=2.54,<3",
+  "uvicorn>=0.34,<1",
+  "wheel==0.46.2",
+]
+
+[dependency-groups]
+dev = [
+  "hypothesis>=6.155.7,<7",
+  "pytest>=9,<10",
+  "pytest-cov>=7,<8",
+  "pyyaml>=6,<7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

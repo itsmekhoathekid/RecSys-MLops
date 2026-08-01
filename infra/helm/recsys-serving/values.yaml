@@ -20,6 +20,7 @@ kserve:
     deploymentMode: RawDeployment
     storageUri: s3://recsys-model-store/triton/bst/latest
     candidateStorageUri: ""
+    retainCandidate: false
   grpcService:
     name: recsys-bst-triton-grpc
     candidateName: recsys-bst-triton-candidate-grpc
@@ -56,7 +57,7 @@ api:
     create: true
     name: api-serving
   name: recsys-api-serving
-  image: recsys-api-serving:local
+  image: registry.example.invalid/recsys/recsys-api-serving:required
   imagePullPolicy: IfNotPresent
   command: ["uvicorn"]
   args: ["inference_api:app", "--host", "0.0.0.0", "--port", "8080"]
@@ -106,7 +107,7 @@ api:
 featureApi:
   enabled: true
   name: recsys-online-feature-api
-  image: recsys-api-serving:local
+  image: registry.example.invalid/recsys/recsys-api-serving:required
   imagePullPolicy: IfNotPresent
   command: ["uvicorn"]
   args: ["feature_api:app", "--host", "0.0.0.0", "--port", "8080"]
@@ -124,7 +125,14 @@ featureApi:
     redisPort: "6379"
     feastRepoPath: /opt/recsys/apps/data-platform/feature-store/feature_repo
     feastRuntimeRepoPath: /opt/recsys/recsys-feast-feature-repo
-    feastApplyOnStartup: "1"
+    feastApplyOnStartup: "0"
+    feastPostgresHost: feature-postgres.recsys-dataflow.svc.cluster.local
+    feastPostgresPort: "5432"
+    feastPostgresDatabase: feature_store
+    feastPostgresSchema: feature_store
+    feastPostgresSslmode: disable
+    feastPostgresUser: feast
+    feastPostgresPassword: feast
     warmupOnStartup: "1"
     forceNotReady: "0"
     allowFeatureFallback: "0"
@@ -154,7 +162,7 @@ autoscaling:
       name: recsys-api-serving-http
       host: recsys-api-serving.local
       pathPrefix: /
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 3
       scaledownPeriod: 120
       requestRate:

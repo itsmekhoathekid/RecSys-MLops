@@ -2,7 +2,7 @@ namespace: api-serving
 
 frontend:
   name: recsys-demo-web
-  image: recsys-demo-web:local
+  image: registry.example.invalid/recsys/recsys-demo-web:required
   imagePullPolicy: IfNotPresent
   replicas: 1
   service:
@@ -20,7 +20,7 @@ frontend:
 
 backend:
   name: recsys-demo-api
-  image: recsys-demo-api:local
+  image: registry.example.invalid/recsys/recsys-demo-api:required
   imagePullPolicy: IfNotPresent
   replicas: 1
   service:
@@ -71,7 +71,7 @@ externalSecret:
 ingress:
   enabled: true
   className: nginx
-  host: recsys.local
+  host: example.invalid
   serviceUpstream: false
   auth:
     enabled: true

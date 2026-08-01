@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,16 +60,25 @@ class DeterministicFeatureService:
 
 @pytest.fixture
 def deterministic_api(monkeypatch) -> TestClient:
-    ranker = DeterministicRanker()
-    monkeypatch.setattr(inference_api, "feature_service_client", lambda: DeterministicFeatureService())
+    feature_service_impl = DeterministicFeatureService()
+    feature_service = Mock(spec=DeterministicFeatureService)
+    feature_service.fetch = AsyncMock(side_effect=feature_service_impl.fetch)
+    ranker_impl = DeterministicRanker()
+    ranker = Mock(spec=DeterministicRanker, wraps=ranker_impl)
+    ranker.model_version = ranker_impl.model_version
+    monkeypatch.setattr(inference_api, "feature_service_client", Mock(return_value=feature_service))
     monkeypatch.setattr(inference_api, "ranker", lambda: ranker)
     monkeypatch.setenv("MODEL_VERSION", ranker.model_version)
-    return TestClient(inference_api.app)
+    client = TestClient(inference_api.app)
+    client.app.state.feature_service_mock = feature_service
+    client.app.state.ranker_mock = ranker
+    return client
 
 
 @pytest.fixture
 def deterministic_feature_api(monkeypatch) -> TestClient:
-    monkeypatch.setattr(feature_api, "feature_client", lambda: DeterministicFeatureClient())
+    feature_client = Mock(spec=DeterministicFeatureClient, wraps=DeterministicFeatureClient())
+    monkeypatch.setattr(feature_api, "feature_client", Mock(return_value=feature_client))
     return TestClient(feature_api.app)
 
 
@@ -98,6 +108,8 @@ def test_recommendations_web_api_equivalence_and_boundary_valid_cases(
     body = response.json()
     assert body["model_version"] == "deterministic-test"
     assert len(body["items"]) == expected_count
+    deterministic_api.app.state.feature_service_mock.fetch.assert_awaited_once()
+    deterministic_api.app.state.ranker_mock.score.assert_called_once()
 
 
 @pytest.mark.parametrize(
@@ -124,6 +136,8 @@ def test_recommendations_web_api_equivalence_and_boundary_invalid_cases(
     response = deterministic_api.post("/recommendations", json=payload)
 
     assert response.status_code == 422
+    deterministic_api.app.state.feature_service_mock.fetch.assert_not_awaited()
+    deterministic_api.app.state.ranker_mock.score.assert_not_called()
 
 
 def test_api_health_ready_version_metrics_and_online_features(

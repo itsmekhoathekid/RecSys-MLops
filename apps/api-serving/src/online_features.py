@@ -132,7 +132,7 @@ class FeatureClient:
             os.getenv("FEAST_REPO_PATH", "/opt/recsys/apps/data-platform/feature-store/feature_repo")
         )
         self.feast_runtime_repo_path = Path(os.getenv("FEAST_RUNTIME_REPO_PATH", "/tmp/recsys-feast-feature-repo"))
-        self.feast_apply_on_startup = os.getenv("FEAST_APPLY_ON_STARTUP", "1") == "1"
+        self.feast_apply_on_startup = os.getenv("FEAST_APPLY_ON_STARTUP", "0") == "1"
         self._store: Any | None = None
         self._store_lock = threading.RLock()
         self.client = redis.Redis(
@@ -167,7 +167,9 @@ class FeatureClient:
                 if self._store is None:
                     from feast import FeatureStore
                     from feature_store.feast_registry import apply_feature_repo
+                    from feature_store.sql_registry_state import configure_registry_url
 
+                    configure_registry_url()
                     repo_path = self._prepare_runtime_repo()
                     if self.feast_apply_on_startup:
                         apply_feature_repo(repo_path, skip_source_validation=True)
@@ -238,13 +240,31 @@ class FeatureClient:
     def candidates(self, user_id: int, limit: int) -> list[int]:
         start = time.perf_counter()
         try:
-            with span("redis.candidates", operation="candidates", limit=limit):
-                raw = self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
-            candidates = [int(item.decode("utf-8") if isinstance(item, bytes) else item) for item in raw]
+            with span("redis.candidates", operation="candidates", user_id=user_id, limit=limit):
+                personalized = self.client.zrevrange(
+                    f"candidate:user:{user_id}",
+                    0,
+                    max(limit - 1, 0),
+                )
+                global_candidates = (
+                    self.client.zrevrange("candidate:popular:global", 0, max(limit - 1, 0))
+                    if len(personalized) < limit
+                    else []
+                )
+            candidates: list[int] = []
+            seen: set[int] = set()
+            for item in [*personalized, *global_candidates]:
+                product_id = int(item.decode("utf-8") if isinstance(item, bytes) else item)
+                if product_id in seen:
+                    continue
+                seen.add(product_id)
+                candidates.append(product_id)
+                if len(candidates) >= limit:
+                    break
             observe_redis("candidates", time.perf_counter() - start)
             if candidates or self.allow_fallback:
                 return candidates
-            raise RuntimeError("candidate:popular:global returned no candidates")
+            raise RuntimeError(f"candidate:user:{user_id} and candidate:popular:global returned no candidates")
         except Exception as exc:
             observe_redis("candidates", time.perf_counter() - start, error=True)
             if self.allow_fallback:

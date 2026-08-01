@@ -10,7 +10,12 @@ data:
   FEAST_REPO_PATH: {{ .Values.featureApi.config.feastRepoPath | quote }}
   FEAST_RUNTIME_REPO_PATH: {{ .Values.featureApi.config.feastRuntimeRepoPath | quote }}
   FEAST_REDIS_CONNECTION_STRING: "{{ .Values.featureApi.config.redisHost }}:{{ .Values.featureApi.config.redisPort }}"
-  FEAST_APPLY_ON_STARTUP: {{ .Values.featureApi.config.feastApplyOnStartup | quote }}
+  FEAST_APPLY_ON_STARTUP: {{ default "0" .Values.featureApi.config.feastApplyOnStartup | quote }}
+  FEAST_POSTGRES_HOST: {{ default "feature-postgres.recsys-dataflow.svc.cluster.local" .Values.featureApi.config.feastPostgresHost | quote }}
+  FEAST_POSTGRES_PORT: {{ default "5432" .Values.featureApi.config.feastPostgresPort | quote }}
+  FEAST_POSTGRES_DB: {{ default "feature_store" .Values.featureApi.config.feastPostgresDatabase | quote }}
+  FEAST_POSTGRES_SCHEMA: {{ default "feature_store" .Values.featureApi.config.feastPostgresSchema | quote }}
+  FEAST_POSTGRES_SSLMODE: {{ default "disable" .Values.featureApi.config.feastPostgresSslmode | quote }}
   FEATURE_API_WARMUP_ON_STARTUP: {{ .Values.featureApi.config.warmupOnStartup | quote }}
   FORCE_NOT_READY: {{ .Values.featureApi.config.forceNotReady | quote }}
   ALLOW_FEATURE_FALLBACK: {{ .Values.featureApi.config.allowFeatureFallback | quote }}

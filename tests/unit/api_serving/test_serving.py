@@ -11,7 +11,7 @@ import pytest
 import online_features
 from ab_testing import TritonABRouter
 from api_schemas import RecommendationRequest
-from observability import METRICS, metrics_text, span
+from observability import METRICS, SERVICE_NAME, metrics_text, observe_request, span
 from online_features import (
     FeatureClient,
     get_online_features,
@@ -465,6 +465,41 @@ def test_feature_client_success_and_error_without_fallback(monkeypatch):
         raise AssertionError("expected item feature Redis failure")
 
 
+def test_feature_client_prefers_user_candidates_and_fills_from_global():
+    class RedisClient:
+        def __init__(self):
+            self.keys = []
+
+        def zrevrange(self, key, start, end):
+            self.keys.append(key)
+            if key == "candidate:user:7":
+                return [b"21", b"10"]
+            if key == "candidate:popular:global":
+                return [b"10", b"11", b"12"]
+            return []
+
+    client = object.__new__(FeatureClient)
+    client.allow_fallback = False
+    client.client = RedisClient()
+
+    assert client.candidates(7, 4) == [21, 10, 11, 12]
+    assert client.client.keys == ["candidate:user:7", "candidate:popular:global"]
+
+
+def test_feature_client_falls_back_to_global_candidates_for_new_user():
+    class RedisClient:
+        def zrevrange(self, key, start, end):
+            if key == "candidate:popular:global":
+                return [b"10", b"11"]
+            return []
+
+    client = object.__new__(FeatureClient)
+    client.allow_fallback = False
+    client.client = RedisClient()
+
+    assert client.candidates(99, 2) == [10, 11]
+
+
 def test_triton_ranker_scores_and_records_errors(monkeypatch):
     class InferInput:
         def __init__(self, name, shape, dtype):
@@ -591,3 +626,19 @@ def test_observability_metrics_expose_api_redis_and_triton_series():
     assert 'route="/recommendations"' in text
     assert "recsys_api_redis_errors_total" in text
     assert "recsys_api_triton_errors_total" in text
+
+
+def test_request_metrics_include_service_label_required_by_keda():
+    route = "/keda-service-label-contract"
+
+    observe_request(route, "POST", 200, 0.25)
+    text = metrics_text()
+
+    assert (
+        f'recsys_api_requests_total{{method="POST",route="{route}",service="{SERVICE_NAME}",status="200"}} 1.0'
+        in text
+    )
+    assert (
+        f'recsys_api_request_duration_seconds_count{{method="POST",route="{route}",service="{SERVICE_NAME}"}} 1.0'
+        in text
+    )
