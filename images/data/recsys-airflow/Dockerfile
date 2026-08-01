@@ -27,6 +27,7 @@ RUN pip install --upgrade \
     "aiohttp==3.13.3" \
     "cryptography==48.0.1" \
     "pyasn1==0.6.4" \
+    "pyasn1-modules==0.4.2" \
     "setuptools==78.1.1" \
     "urllib3==2.7.0" \
     "wheel==0.46.2" \
