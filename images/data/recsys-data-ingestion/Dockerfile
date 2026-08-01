@@ -35,6 +35,8 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         setuptools==81.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0
+RUN /opt/venv/bin/python -m pip uninstall -y pip \
+    && /opt/venv/bin/python -c "from datahub.emitter.rest_emitter import DatahubRestEmitter; from openlineage.client import OpenLineageClient"
 
 FROM python:3.11-slim AS runtime
 

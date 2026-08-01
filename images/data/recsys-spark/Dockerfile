@@ -89,7 +89,9 @@ RUN uv export \
         werkzeug==3.1.8 \
         setuptools==81.0.0 \
         wheel==0.46.2 \
-    && uv pip check --python /opt/venv/bin/python
+    && uv pip check --python /opt/venv/bin/python \
+    && /opt/venv/bin/python -m pip uninstall -y pip \
+    && /opt/venv/bin/python -c "from datahub.emitter.rest_emitter import DatahubRestEmitter; from openlineage.client import OpenLineageClient"
 
 FROM spark:3.5.8-scala2.12-java11-ubuntu AS runtime
 
