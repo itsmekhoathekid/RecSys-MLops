@@ -34,6 +34,8 @@ def _runtime_text() -> str:
             chunks.append(root.read_text(encoding="utf-8"))
             continue
         for path in root.rglob("*"):
+            if any(part.startswith(".") for part in path.relative_to(root).parts):
+                continue
             if path.is_file() and path.suffix in {".py", ".yaml", ".yml", ".json", ".md", ".sh", ".Dockerfile"}:
                 chunks.append(path.read_text(encoding="utf-8"))
     return "\n".join(chunks)
@@ -247,6 +249,9 @@ def test_airflow_keeps_only_rubric_dp1_dp2_dp3_dags():
     assert source.count("ingest_stage >> optimize_stage >> validate_stage") == 2
     assert "--scope bronze" in source
     assert "--scope silver" in source
+    assert "python3 apps/data-platform/data-generator/src/cli.py generate" in source
+    assert '"python3 -m validate.governance_contracts dp3-postgres"' in source
+    assert "\npython apps/data-platform/data-generator/src/cli.py generate" not in source
 
 
 def test_retrain_trigger_uses_distinct_tune_and_ddp_results_for_default_drift_runs():
