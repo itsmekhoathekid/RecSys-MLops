@@ -9,27 +9,33 @@ test_data_platform_base() {
   fi
   kubectl exec -n "${namespace}" deploy/airflow-webserver -c airflow-webserver -- \
     airflow db check
+  local dag_id
+  for dag_id in \
+    recsys_dp1_raw_to_bronze \
+    recsys_dp2_bronze_to_silver_gold \
+    recsys_dp3_offline_feature_table \
+    recsys_feast_materialize \
+    recsys_feature_drift_monitoring \
+    recsys_analytics_daily; do
+    component_test_airflow_dag_registered "${dag_id}"
+  done
 }
 
 test_materialize() {
   test_data_platform_base
-  component_test_airflow_dag_registered recsys_feast_materialize
 }
 
 test_dp1() {
   test_data_platform_base
   component_test_wait_deployment "${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}" kafka-connect
-  component_test_airflow_dag_registered recsys_dp1_raw_to_bronze
 }
 
 test_dp2() {
   test_data_platform_base
-  component_test_airflow_dag_registered recsys_dp2_bronze_to_silver_gold
 }
 
 test_dp3() {
   test_data_platform_base
-  component_test_airflow_dag_registered recsys_dp3_offline_feature_table
 }
 
 test_debezium_connector_tasks() {
@@ -79,5 +85,4 @@ print({"flink_running_jobs": len(running)})
 
 test_drift() {
   test_data_platform_base
-  component_test_airflow_dag_registered recsys_feature_drift_monitoring
 }

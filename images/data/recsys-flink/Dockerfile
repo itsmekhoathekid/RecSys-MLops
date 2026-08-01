@@ -61,6 +61,7 @@ RUN python3 -m pip install --no-cache-dir \
         cloudpickle==2.2.1 \
         cryptography==47.0.0 \
         httplib2==0.31.2 \
+        openlineage-python==1.52.0 \
         pyarrow==23.0.1 \
         py4j==0.10.9.7 \
         pyyaml==6.0.3 \

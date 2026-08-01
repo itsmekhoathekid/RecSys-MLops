@@ -57,6 +57,7 @@ RUN uv export \
         --python /opt/venv/bin/python \
         --no-cache \
         --constraint /tmp/ml-constraints.txt \
+        acryl-datahub==1.6.0.17 \
         boto3==1.35.36 \
         cryptography==48.0.1 \
         evidently==0.7.21 \
@@ -71,6 +72,7 @@ RUN uv export \
         numpy==2.2.6 \
         onnx==1.22.0 \
         onnxscript==0.7.1 \
+        openlineage-python==1.52.0 \
         pandas==2.3.3 \
         pendulum==3.2.0 \
         "psycopg[binary]==3.3.4" \
@@ -85,7 +87,7 @@ RUN uv export \
         sqlalchemy==1.4.54 \
         tqdm==4.69.0 \
         werkzeug==3.1.8 \
-        setuptools==83.0.0 \
+        setuptools==81.0.0 \
         wheel==0.46.2 \
     && uv pip check --python /opt/venv/bin/python
 

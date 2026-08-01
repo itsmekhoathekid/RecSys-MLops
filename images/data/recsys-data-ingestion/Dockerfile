@@ -18,6 +18,7 @@ RUN uv export \
         --output-file /tmp/data-constraints.txt
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
         --constraint /tmp/data-constraints.txt \
+        acryl-datahub==1.6.0.17 \
         boto3==1.35.36 \
         botocore==1.35.93 \
         fsspec==2024.10.0 \
@@ -26,11 +27,12 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         pydantic==2.13.4 \
         "psycopg[binary]==3.3.4" \
         psycopg-pool==3.3.1 \
+        openlineage-python==1.52.0 \
         pyyaml==6.0.3 \
         requests==2.34.2 \
         s3fs==2024.10.0 \
         tqdm==4.69.0 \
-        setuptools==83.0.0 \
+        setuptools==81.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0
 

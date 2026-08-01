@@ -33,7 +33,9 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         s3fs==2024.10.0 \
         sqlalchemy==1.4.54
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
-        setuptools==83.0.0 \
+        acryl-datahub==1.6.0.17 \
+        openlineage-python==1.52.0 \
+        setuptools==81.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0
 

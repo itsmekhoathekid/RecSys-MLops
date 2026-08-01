@@ -7,6 +7,7 @@ name = "recsys-data-platform"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
+    "acryl-datahub>=1.6.0.17",
     "boto3==1.35.36",
     "cryptography==48.0.1",
     "evidently>=0.7.0",
@@ -14,6 +15,7 @@ dependencies = [
     "fsspec==2024.10.0",
     "kfp>=2.16.1",
     "kubernetes>=30.1.0",
+    "openlineage-python>=1.52.0",
     "jaraco.context==6.1.0",
     "pandas>=2.3.3",
     "pendulum>=3.0.0,<4",
@@ -26,7 +28,7 @@ dependencies = [
     "redis>=5.0.0",
     "requests>=2.32.0",
     "s3fs==2024.10.0",
-    "setuptools==83.0.0",
+    "setuptools==81.0.0",
     "sqlalchemy==1.4.54",
     "wheel==0.46.2",
 ]
