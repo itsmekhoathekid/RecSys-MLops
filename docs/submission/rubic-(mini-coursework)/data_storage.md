@@ -16,7 +16,7 @@ Code references:
 
 - Catalogs and table inventory: [iceberg.py (line 8)](../../../apps/data-platform/src/lakehouse/iceberg.py#L8).
 - Parquet-fragment read and Bronze Iceberg commit: [batch_lakehouse_ingestion.py (line 69)](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L69), [line 91](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L91), and [line 97](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L97).
-- DP1/DP2 optimizer commands and ordered dependencies: [rubric_data_pipeline_dags.py (line 182)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L182), [line 210](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L210), [line 246](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L246), and [line 272](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L272).
+- DP1/DP2 optimizer commands and ordered dependencies: [recsys_dp1_raw_to_bronze.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py) and [recsys_dp2_bronze_to_silver_gold.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py).
 
 ## Before Optimization
 
@@ -180,13 +180,13 @@ DP1 optimizes all ten Bronze tables. The Z-order profiles are:
 | `bronze_order_items` | `order_id`, `product_id`, `created_ts` |
 | `bronze_product_snapshots` | `product_id`, `valid_from` |
 
-The remaining Bronze dimension tables use bin-pack because their dominant access path does not justify the extra sort shuffle. The inventory is selected at [optimize.py (line 34)](../../../apps/data-platform/src/lakehouse/optimize.py#L34) and the DP1 command is defined at [rubric_data_pipeline_dags.py (line 182)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L182).
+The remaining Bronze dimension tables use bin-pack because their dominant access path does not justify the extra sort shuffle. The inventory is selected at [optimize.py (line 34)](../../../apps/data-platform/src/lakehouse/optimize.py#L34) and the DP1 command is defined in [recsys_dp1_raw_to_bronze.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py).
 
 ## DP2 Silver Optimization Profile
 
 DP2 optimizes all nine Silver tables. `silver_clean_behavior_events` uses `user_id`, `product_id`, and `event_timestamp`; `silver_clean_impressions` uses `user_id`, `candidate_product_id`, and `impression_timestamp`. Other Silver tables receive bin-pack compaction plus the same write, compression, and manifest policy.
 
-The Silver inventory is selected at [optimize.py (line 38)](../../../apps/data-platform/src/lakehouse/optimize.py#L38) and the DP2 command is defined at [rubric_data_pipeline_dags.py (line 210)](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L210).
+The Silver inventory is selected at [optimize.py (line 38)](../../../apps/data-platform/src/lakehouse/optimize.py#L38) and the DP2 command is defined in [recsys_dp2_bronze_to_silver_gold.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py).
 
 ## Before/After Evidence
 

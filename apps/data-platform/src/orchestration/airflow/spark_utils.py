@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 
-# Airflow DAG definitions for rubric DP1/DP2/DP3 orchestration proof.
 try:
     from airflow import DAG
     from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
@@ -13,9 +12,25 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = "recsys-dataflow"
-FEATURE_STORE_IMAGE = os.getenv("FEATURE_STORE_IMAGE", "registry.example.invalid/recsys/recsys-feature-store:required")
-SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "registry.example.invalid/recsys/recsys-spark:required"))
-DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
+FEATURE_STORE_IMAGE = os.getenv(
+    "FEATURE_STORE_IMAGE",
+    "registry.example.invalid/recsys/recsys-feature-store:required",
+)
+SPARK_IMAGE = os.getenv(
+    "SPARK_IMAGE",
+    os.getenv(
+        "SPARK_K8S_IMAGE",
+        "registry.example.invalid/recsys/recsys-spark:required",
+    ),
+)
+DRIFT_RETRAIN_IMAGE = os.getenv(
+    "DRIFT_RETRAIN_IMAGE",
+    "registry.example.invalid/recsys/recsys-drift-retrain:required",
+)
+DATAFLOW_NODE_SELECTOR = os.getenv(
+    "DATAFLOW_NODE_SELECTOR",
+    "recsys.ai/pool=cpu-services",
+)
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
     "VALIDATION_RUN_ID": "{{ run_id }}",
@@ -53,7 +68,12 @@ SPARK_DRIVER_EXECUTOR_ENV = (
     "RUNTIME_LINEAGE_STRICT",
     "VALIDATION_RUN_ID",
 )
-SPARK_SECRET_ENV = ("MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
+SPARK_SECRET_ENV = (
+    "MINIO_ROOT_USER",
+    "MINIO_ROOT_PASSWORD",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+)
 
 
 def env_schedule(name: str, default: str | None):
@@ -67,8 +87,12 @@ def pod_env_from():
     if k8s is None:
         return []
     return [
-        k8s.V1EnvFromSource(config_map_ref=k8s.V1ConfigMapEnvSource(name="recsys-data-platform-config")),
-        k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="recsys-data-platform-secret")),
+        k8s.V1EnvFromSource(
+            config_map_ref=k8s.V1ConfigMapEnvSource(name="recsys-data-platform-config")
+        ),
+        k8s.V1EnvFromSource(
+            secret_ref=k8s.V1SecretEnvSource(name="recsys-data-platform-secret")
+        ),
     ]
 
 
@@ -97,15 +121,17 @@ def pod_task(task_id: str, image: str, command: str):
         annotations={"sidecar.istio.io/inject": "false"},
         node_selector=parse_node_selector(DATAFLOW_NODE_SELECTOR),
         get_logs=True,
-        # Use the provider's explicit finish policy so completed task pods are
-        # observed before cleanup and failed pods remain available for debug.
         on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
     )
 
 
-def spark_native_submit(task_id: str, application: str, application_args: str = "") -> str:
+def spark_native_submit(
+    task_id: str,
+    application: str,
+    application_args: str = "",
+) -> str:
     app_name = f"recsys-{task_id.replace('_', '-')}"
     env_conf = " ".join(
         f"--conf spark.kubernetes.driverEnv.{name}=${{{name}:-}} "
@@ -113,8 +139,10 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         for name in SPARK_DRIVER_EXECUTOR_ENV
     )
     secret_conf = " ".join(
-        f"--conf spark.kubernetes.driver.secretKeyRef.{name}=recsys-data-platform-secret:{name} "
-        f"--conf spark.kubernetes.executor.secretKeyRef.{name}=recsys-data-platform-secret:{name}"
+        f"--conf spark.kubernetes.driver.secretKeyRef.{name}="
+        f"recsys-data-platform-secret:{name} "
+        f"--conf spark.kubernetes.executor.secretKeyRef.{name}="
+        f"recsys-data-platform-secret:{name}"
         for name in SPARK_SECRET_ENV
     )
     return (
@@ -159,142 +187,3 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         '2>&1 | tee "$SPARK_SUBMIT_LOG"; '
         'grep -q "phase: Succeeded" "$SPARK_SUBMIT_LOG"'
     )
-
-
-DP3_FEATURE_COMMAND = spark_native_submit(
-    "dp3_offline_feature_table",
-    "local:///opt/recsys/apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py",
-    "--config $DP3_CONFIG",
-)
-
-VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = "python -m validate.governance_contracts dp3-postgres"
-
-
-DP1_INGEST_COMMAND = """
-PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys \
-python3 apps/data-platform/data-generator/src/cli.py generate \
-  --config $DATA_GENERATOR_CONFIG
-
-/opt/spark/bin/spark-submit \
-  --master local[*] \
-  --deploy-mode client \
-  --name recsys-dp1-generator-to-iceberg \
-  /opt/recsys/apps/data-platform/src/ingest/batch_lakehouse_ingestion.py \
-  --run-path apps/data-platform/data-generator/src/output/$DATA_GENERATOR_RUN_ID \
-  --run-id $DATA_GENERATOR_RUN_ID \
-  --lakehouse-warehouse $LAKEHOUSE_WAREHOUSE \
-  --mode overwrite
-""".strip()
-
-DP1_OPTIMIZE_COMMAND = spark_native_submit(
-    "dp1_optimize_bronze",
-    "local:///opt/recsys/apps/data-platform/src/lakehouse/optimize.py",
-    "--scope bronze "
-    "--pipeline DP1 "
-    "--strategy ${LAKEHOUSE_OPTIMIZATION_STRATEGY:-binpack} "
-    "--target-file-size-mb ${LAKEHOUSE_TARGET_FILE_SIZE_MB:-128} "
-    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2}",
-)
-
-DP1_VALIDATE_COMMAND = spark_native_submit(
-    "dp1_validate_iceberg",
-    "local:///opt/recsys/apps/data-platform/src/validate/governance_contracts.py",
-    "dp1",
-)
-
-DP2_INGEST_COMMAND = spark_native_submit(
-    "dp2_ingest_bronze_to_silver_gold",
-    "local:///opt/recsys/apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
-    "--action ingest",
-)
-
-DP2_VALIDATE_COMMAND = spark_native_submit(
-    "dp2_verify_silver_gold",
-    "local:///opt/recsys/apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
-    "--action validate",
-)
-
-DP2_OPTIMIZE_COMMAND = spark_native_submit(
-    "dp2_optimize_silver",
-    "local:///opt/recsys/apps/data-platform/src/lakehouse/optimize.py",
-    "--scope silver "
-    "--pipeline DP2 "
-    "--strategy ${LAKEHOUSE_OPTIMIZATION_STRATEGY:-binpack} "
-    "--target-file-size-mb ${LAKEHOUSE_TARGET_FILE_SIZE_MB:-128} "
-    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2}",
-)
-
-
-if DAG is not None:
-    with DAG(
-        dag_id="recsys_dp1_raw_to_bronze",
-        start_date=datetime(2026, 1, 1),
-        schedule=env_schedule("DP1_DAG_SCHEDULE", "manual"),
-        catchup=False,
-        max_active_runs=1,
-        tags=["recsys", "dp1", "raw", "bronze"],
-    ) as recsys_dp1_raw_to_bronze:
-        ingest_stage = pod_task(
-            "ingest_stage",
-            SPARK_IMAGE,
-            DP1_INGEST_COMMAND,
-        )
-        optimize_stage = pod_task(
-            "optimize_stage",
-            SPARK_IMAGE,
-            DP1_OPTIMIZE_COMMAND,
-        )
-        validate_stage = pod_task(
-            "validate_stage",
-            SPARK_IMAGE,
-            DP1_VALIDATE_COMMAND,
-        )
-
-        ingest_stage >> optimize_stage >> validate_stage
-
-    with DAG(
-        dag_id="recsys_dp2_bronze_to_silver_gold",
-        start_date=datetime(2026, 1, 1),
-        schedule=env_schedule("DP2_DAG_SCHEDULE", "manual"),
-        catchup=False,
-        max_active_runs=1,
-        tags=["recsys", "dp2", "bronze", "silver", "gold"],
-    ) as recsys_dp2_bronze_to_silver_gold:
-        ingest_stage = pod_task(
-            "ingest_stage",
-            SPARK_IMAGE,
-            DP2_INGEST_COMMAND,
-        )
-        optimize_stage = pod_task(
-            "optimize_stage",
-            SPARK_IMAGE,
-            DP2_OPTIMIZE_COMMAND,
-        )
-        validate_stage = pod_task(
-            "validate_stage",
-            SPARK_IMAGE,
-            DP2_VALIDATE_COMMAND,
-        )
-
-        ingest_stage >> optimize_stage >> validate_stage
-
-    with DAG(
-        dag_id="recsys_dp3_offline_feature_table",
-        start_date=datetime(2026, 1, 1),
-        schedule=env_schedule("DP3_DAG_SCHEDULE", "manual"),
-        catchup=False,
-        max_active_runs=1,
-        tags=["recsys", "dp3", "offline-store", "features"],
-    ) as recsys_dp3_offline_feature_table:
-        ingest_stage = pod_task(
-            "ingest_stage",
-            SPARK_IMAGE,
-            DP3_FEATURE_COMMAND,
-        )
-        validate_stage = pod_task(
-            "validate_stage",
-            FEATURE_STORE_IMAGE,
-            VERIFY_POSTGRES_OFFLINE_STORE_COMMAND,
-        )
-
-        ingest_stage >> validate_stage

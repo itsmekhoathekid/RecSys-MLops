@@ -79,6 +79,11 @@
         "infra/helm/recsys-airflow/"
       ]
     },
+    "spark-utils": {
+      "files": [
+        "apps/data-platform/src/orchestration/airflow/spark_utils.py"
+      ]
+    },
     "feature-store-release": {
       "prefixes": [
         "infra/helm/recsys-feature-store/"
@@ -128,7 +133,8 @@
           "jenkins-shared-runtime",
           "data-common",
           "feature-store-release",
-          "airflow-data-release"
+          "airflow-data-release",
+          "spark-utils"
         ],
         "prefixes": [
           "apps/data-platform/feature-store/",
@@ -139,7 +145,7 @@
         "files": [
           "jenkins/scripts/ci/data.sh",
           "jenkins/scripts/deploy/feast.sh",
-          "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
+          "apps/data-platform/src/orchestration/airflow/dags/recsys_feast_materialize.py"
         ]
       },
       "buildImages": [
@@ -205,7 +211,8 @@
           "jenkins-shared-runtime",
           "data-common",
           "lakehouse-common",
-          "airflow-data-release"
+          "airflow-data-release",
+          "spark-utils"
         ],
         "prefixes": [
           "apps/data-platform/data-generator/",
@@ -220,7 +227,7 @@
           "configs/data-platform/generator/e2e-1k.yaml",
           "configs/data-platform/generator/e2e-2k.yaml",
           "configs/data-platform/spark/dp1.yaml",
-          "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
+          "apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py"
         ],
         "globs": [
           "apps/data-platform/src/validate/**/*.py"
@@ -247,14 +254,15 @@
           "jenkins-shared-runtime",
           "data-common",
           "lakehouse-common",
-          "airflow-data-release"
+          "airflow-data-release",
+          "spark-utils"
         ],
         "prefixes": [
           "tests/unit/data_platform/"
         ],
         "files": [
           "configs/data-platform/spark/dp2.yaml",
-          "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py",
+          "apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py",
           "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
           "apps/data-platform/src/features/spark/build_silver_tables.py"
         ],
@@ -282,7 +290,8 @@
           "data-common",
           "lakehouse-common",
           "airflow-data-release",
-          "feature-store-release"
+          "feature-store-release",
+          "spark-utils"
         ],
         "prefixes": [
           "apps/data-platform/src/features/",
@@ -294,7 +303,7 @@
           "configs/data-platform/spark/dp3.yaml",
           "configs/data-platform/spark/dp3-e2e-1k.yaml",
           "configs/data-platform/spark/dp3-e2e-2k.yaml",
-          "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
+          "apps/data-platform/src/orchestration/airflow/dags/recsys_dp3_offline_feature_table.py"
         ],
         "exclude": [
           "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
@@ -422,7 +431,8 @@
           "python-common",
           "jenkins-shared-runtime",
           "data-common",
-          "airflow-data-release"
+          "airflow-data-release",
+          "spark-utils"
         ],
         "prefixes": [
           "apps/data-platform/data-generator/src/drift/",
@@ -434,7 +444,7 @@
         "files": [
           "configs/data-platform/generator/drift.yaml",
           "tests/contract/test_observability_contracts.py",
-          "apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py"
+          "apps/data-platform/src/orchestration/airflow/dags/recsys_feature_drift_monitoring.py"
         ],
         "globs": [
           "tests/unit/data_generator/test_drift*.py"

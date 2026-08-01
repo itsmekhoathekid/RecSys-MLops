@@ -49,12 +49,24 @@ def test_shared_lakehouse_path_selects_all_declared_consumers():
     }
 
 
-def test_one_path_can_match_multiple_components():
+def test_shared_data_platform_dag_helper_selects_all_consumers():
     assert selected(
-        [
-            "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
-        ]
-    ) == {"dp1", "dp2", "dp3"}
+        ["apps/data-platform/src/orchestration/airflow/spark_utils.py"]
+    ) == {"materialize", "dp1", "dp2", "dp3", "drift"}
+
+
+def test_each_split_airflow_dag_selects_only_its_component():
+    expected = {
+        "recsys_dp1_raw_to_bronze.py": "dp1",
+        "recsys_dp2_bronze_to_silver_gold.py": "dp2",
+        "recsys_dp3_offline_feature_table.py": "dp3",
+        "recsys_feast_materialize.py": "materialize",
+        "recsys_feature_drift_monitoring.py": "drift",
+    }
+
+    for filename, component in expected.items():
+        path = f"apps/data-platform/src/orchestration/airflow/dags/{filename}"
+        assert detect([path]).component_names == (component,)
 
 
 def test_spark_dockerfile_expands_through_image_catalog_consumers():

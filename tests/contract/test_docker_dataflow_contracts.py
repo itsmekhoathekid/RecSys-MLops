@@ -133,7 +133,7 @@ def test_unified_spark_and_dp_profiles_are_the_only_batch_contract():
     assert not list((ROOT / "configs/data-platform/spark").glob("batch*.yaml"))
     dag = (
         ROOT
-        / "apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py"
+        / "apps/data-platform/src/orchestration/airflow/dags/recsys_dp3_offline_feature_table.py"
     ).read_text()
     assert "DP3_CONFIG" in dag
     assert "SPARK_BATCH" not in dag
@@ -168,12 +168,9 @@ def test_unified_spark_contains_all_three_domain_capabilities():
 
 
 def test_feature_store_image_matches_feast_sqlalchemy_registry_driver():
-    dockerfile = (
-        ROOT / "images/data/recsys-feature-store/Dockerfile"
-    ).read_text()
+    dockerfile = (ROOT / "images/data/recsys-feature-store/Dockerfile").read_text()
     registry = (
-        ROOT
-        / "apps/data-platform/src/feature_store/sql_registry_state.py"
+        ROOT / "apps/data-platform/src/feature_store/sql_registry_state.py"
     ).read_text()
     serving_project = (ROOT / "apps/api-serving/pyproject.toml").read_text()
     assert "psycopg2-binary" in dockerfile
@@ -228,17 +225,18 @@ def test_spark_can_reach_feature_stores_without_weakening_namespace_mtls():
             ("AuthorizationPolicy", f"recsys-dataflow-{store}-allow")
         ]
         assert authorization["spec"]["selector"]["matchLabels"]["app"] == store
-        assert authorization["spec"]["rules"][0]["to"][0]["operation"][
-            "ports"
-        ] == [str(port)]
+        assert authorization["spec"]["rules"][0]["to"][0]["operation"]["ports"] == [
+            str(port)
+        ]
 
         network_policy = resources[
             ("NetworkPolicy", f"recsys-dataflow-{store}-ingress")
         ]
         ingress = network_policy["spec"]["ingress"][0]
-        assert {item["namespaceSelector"]["matchLabels"][
-            "kubernetes.io/metadata.name"
-        ] for item in ingress["from"]} == allowed_namespaces
+        assert {
+            item["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+            for item in ingress["from"]
+        } == allowed_namespaces
         assert ingress["ports"] == [{"protocol": "TCP", "port": port}]
 
 

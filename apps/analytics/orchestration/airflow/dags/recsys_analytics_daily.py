@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 
 try:
     from airflow import DAG
@@ -12,16 +13,32 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = os.getenv("ANALYTICS_NAMESPACE", "analytics")
-SPARK_IMAGE = os.getenv("SPARK_IMAGE", "registry.example.invalid/recsys/recsys-spark:required")
-DBT_IMAGE = os.getenv("ANALYTICS_DBT_IMAGE", "registry.example.invalid/recsys/recsys-analytics-dbt:required")
+SPARK_IMAGE = os.getenv(
+    "SPARK_IMAGE", "registry.example.invalid/recsys/recsys-spark:required"
+)
+DBT_IMAGE = os.getenv(
+    "ANALYTICS_DBT_IMAGE",
+    "registry.example.invalid/recsys/recsys-analytics-dbt:required",
+)
+
+
+def env_schedule(name: str, default: str | None):
+    schedule = os.getenv(name, default or "")
+    if schedule.lower() in {"", "none", "manual"}:
+        return None
+    return schedule
 
 
 def analytics_env_from():
     if k8s is None:
         return []
     return [
-        k8s.V1EnvFromSource(config_map_ref=k8s.V1ConfigMapEnvSource(name="recsys-analytics-config")),
-        k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="recsys-analytics-secret")),
+        k8s.V1EnvFromSource(
+            config_map_ref=k8s.V1ConfigMapEnvSource(name="recsys-analytics-config")
+        ),
+        k8s.V1EnvFromSource(
+            secret_ref=k8s.V1SecretEnvSource(name="recsys-analytics-secret")
+        ),
     ]
 
 
@@ -51,12 +68,16 @@ def analytics_task(task_id: str, image: str, command: list[str], arguments: list
 if DAG is not None:
     with DAG(
         dag_id="recsys_analytics_daily",
-        start_date=datetime(2025, 1, 1, tz="UTC"),
-        schedule=os.getenv("ANALYTICS_DAG_SCHEDULE", "30 2 * * *"),
+        start_date=datetime(2026, 1, 1, tz="UTC"),
+        schedule=env_schedule("ANALYTICS_DAG_SCHEDULE", "30 2 * * *"),
         catchup=False,
         max_active_runs=1,
+        default_args={
+            "retries": 2,
+            "retry_delay": timedelta(minutes=5),
+        },
         tags=["analytics", "iceberg", "dbt"],
-    ) as analytics_dag:
+    ) as recsys_analytics_daily:
         sync_silver = analytics_task(
             "sync_silver_catalog",
             SPARK_IMAGE,
@@ -67,6 +88,12 @@ if DAG is not None:
             "build_gold_marts",
             DBT_IMAGE,
             ["dbt"],
-            ["build", "--profiles-dir", "/opt/recsys/apps/analytics/profiles"],
+            [
+                "build",
+                "--project-dir",
+                "/opt/recsys/apps/analytics",
+                "--profiles-dir",
+                "/opt/recsys/apps/analytics/profiles",
+            ],
         )
         sync_silver >> dbt_build

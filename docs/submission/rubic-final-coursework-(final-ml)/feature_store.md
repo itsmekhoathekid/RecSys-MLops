@@ -19,9 +19,8 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 ## Airflow Data Pipeline For Incremental Materialize Offline -> Online Store
 
 The referenced Airflow object is the dedicated `recsys_feast_materialize` DAG,
-not the removed `k8s_data_platform_dag` DAG ID. Its source module retains the
-historical filename, but the deployed DAG contains only the materialization
-stages shown below.
+not the removed `k8s_data_platform_dag` DAG ID. Its dedicated source file
+contains only the materialization stages shown below.
 
 ```mermaid
 flowchart LR
@@ -57,20 +56,20 @@ with DAG(
     materialize_incremental >> validate_online_store
 ```
 
-Source: [`recsys_feast_materialize` DAG definition](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L153) and [ordered dependencies](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L175).
+Source: [`recsys_feast_materialize` DAG definition and ordered dependencies](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_feast_materialize.py).
 
 ### DAG Stages
 
 | Stage | Task and command | Result | Code reference |
 | ---: | --- | --- | --- |
-| 1 | `feast_materialize_incremental`: `feast -c ... materialize-incremental <UTC time>` | Reads feature rows newer than the previous materialization boundary from PostgreSQL and writes the latest values to Redis. | [DAG source](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py), [FeatureViews](../../../apps/data-platform/feature-store/feature_repo/recsys_feature_definitions.py) |
-| 2 | `verify_redis_online_store_updated`: `python -m validate.governance_contracts streaming-redis` | Fails the DAG unless Redis contains non-empty user-sequence, user-aggregate, and item-feature keys. | [DAG source](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py), [Redis checks](../../../apps/data-platform/src/validate/governance_contracts.py) |
+| 1 | `feast_materialize_incremental`: `feast -c ... materialize-incremental <UTC time>` | Reads feature rows newer than the previous materialization boundary from PostgreSQL and writes the latest values to Redis. | [DAG source](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_feast_materialize.py), [FeatureViews](../../../apps/data-platform/feature-store/feature_repo/recsys_feature_definitions.py) |
+| 2 | `verify_redis_online_store_updated`: `python -m validate.governance_contracts streaming-redis` | Fails the DAG unless Redis contains non-empty user-sequence, user-aggregate, and item-feature keys. | [DAG source](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_feast_materialize.py), [Redis checks](../../../apps/data-platform/src/validate/governance_contracts.py) |
 
 `feast plan` and `feast apply` run before this DAG in the Jenkins materialize
 component transaction. Jenkins snapshots the current SQL registry project and
 restores it if apply, materialization, or validation fails.
 
-Every DAG stage uses the shared [`KubernetesPodOperator` factory](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py), imports the platform ConfigMap and Secret, streams logs, and deletes its temporary pod after completion.
+Every DAG stage uses the shared [`KubernetesPodOperator` factory](../../../apps/data-platform/src/orchestration/airflow/spark_utils.py), imports the platform ConfigMap and Secret, streams logs, and deletes its temporary pod after completion.
 
 ### Image Proof Of Feast Incremental Materialize On Airflow Graph
 
@@ -81,7 +80,7 @@ Every DAG stage uses the shared [`KubernetesPodOperator` factory](../../../apps/
 Feast offline store into the Redis online store:
 `feast_materialize_incremental` -> `verify_redis_online_store_updated`. The
 upstream batch refresh is handled by
-[`recsys_dp3_offline_feature_table`](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L274),
+[`recsys_dp3_offline_feature_table`](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp3_offline_feature_table.py),
 while the Flink offline-store job writes continuous updates. Drift/retrain
 checks are handled by the separate
 `recsys_feature_drift_monitoring` DAG.

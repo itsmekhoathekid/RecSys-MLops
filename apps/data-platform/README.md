@@ -54,7 +54,7 @@ flowchart TD
 | PyFlink rolling user/item/candidate calculators | `apps/data-platform/src/features/flink/features/`, `apps/data-platform/src/features/flink/feature_windows.py` |
 | PyFlink Redis, PostgreSQL, and Iceberg sinks | `apps/data-platform/src/features/flink/sinks/` |
 | Redis online writer | `apps/data-platform/src/feature_store/online_writer.py` |
-| Airflow orchestration | `apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py` |
+| Airflow orchestration | `apps/data-platform/src/orchestration/airflow/dags/recsys_*.py`, with shared Spark/Kubernetes helpers in `apps/data-platform/src/orchestration/airflow/spark_utils.py` |
 | Governance lineage | `apps/data-platform/src/metadata/ingest_datahub_governance.py` |
 
 ## Runtime Notes
