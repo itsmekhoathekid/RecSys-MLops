@@ -21,17 +21,17 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         boto3==1.35.36 \
         "feast[redis]==0.64.0" \
         fsspec==2024.10.0 \
-        numpy \
-        pyarrow \
-        pydantic \
-        psycopg[binary] \
-        psycopg-pool \
-        psycopg2-binary \
-        pyyaml \
-        redis \
-        requests \
+        numpy==2.4.6 \
+        pyarrow==25.0.0 \
+        pydantic==2.13.4 \
+        "psycopg[binary]==3.3.4" \
+        psycopg-pool==3.3.1 \
+        psycopg2-binary==2.9.12 \
+        pyyaml==6.0.3 \
+        redis==7.4.1 \
+        requests==2.34.2 \
         s3fs==2024.10.0 \
-        sqlalchemy
+        sqlalchemy==1.4.54
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
         setuptools==83.0.0 \
         wheel==0.46.2 \

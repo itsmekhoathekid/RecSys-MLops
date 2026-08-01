@@ -26,7 +26,7 @@ ENV UV_LINK_MODE=copy \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3-pip python3.10-venv \
     && rm -rf /var/lib/apt/lists/* \
-    && python3 -m pip install --no-cache-dir uv \
+    && python3 -m pip install --no-cache-dir uv==0.10.9 \
     && python3 -m venv /opt/venv
 
 COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/
@@ -57,34 +57,34 @@ RUN uv export \
         --python /opt/venv/bin/python \
         --no-cache \
         --constraint /tmp/ml-constraints.txt \
-        boto3 \
-        cryptography \
-        evidently \
-        "feast[redis]" \
-        flask \
-        fsspec \
-        kfp \
-        kfp-kubernetes \
-        kubernetes \
-        jaraco.context \
-        mlflow \
-        numpy \
-        onnx \
-        onnxscript \
-        pandas \
-        pendulum \
-        "psycopg[binary]" \
-        psycopg-pool \
-        psycopg2-binary \
-        pyarrow \
-        pyyaml \
-        redis \
-        requests \
-        s3fs \
-        scikit-learn \
-        sqlalchemy \
-        tqdm \
-        werkzeug \
+        boto3==1.35.36 \
+        cryptography==48.0.1 \
+        evidently==0.7.21 \
+        "feast[redis]==0.64.0" \
+        flask==3.1.3 \
+        fsspec==2024.10.0 \
+        kfp==2.16.1 \
+        kfp-kubernetes==2.16.1 \
+        kubernetes==30.1.0 \
+        jaraco.context==6.1.0 \
+        mlflow==3.14.0 \
+        numpy==2.2.6 \
+        onnx==1.22.0 \
+        onnxscript==0.7.1 \
+        pandas==2.3.3 \
+        pendulum==3.2.0 \
+        "psycopg[binary]==3.3.4" \
+        psycopg-pool==3.3.1 \
+        psycopg2-binary==2.9.12 \
+        pyarrow==24.0.0 \
+        pyyaml==6.0.3 \
+        redis==7.4.1 \
+        requests==2.34.2 \
+        s3fs==2024.10.0 \
+        scikit-learn==1.7.2 \
+        sqlalchemy==1.4.54 \
+        tqdm==4.69.0 \
+        werkzeug==3.1.8 \
         setuptools==83.0.0 \
         wheel==0.46.2 \
     && uv pip check --python /opt/venv/bin/python

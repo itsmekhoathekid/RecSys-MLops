@@ -14,13 +14,13 @@ USER airflow
 RUN pip install --upgrade \
     --constraint "${AIRFLOW_CONSTRAINTS_URL}" \
     "apache-airflow==${AIRFLOW_VERSION}" \
-    apache-airflow-providers-docker \
-    apache-airflow-providers-http \
-    apache-airflow-providers-cncf-kubernetes \
-    apache-airflow-providers-postgres \
-    pyyaml \
-    redis \
-    requests \
+    apache-airflow-providers-docker==3.12.2 \
+    apache-airflow-providers-http==4.12.0 \
+    apache-airflow-providers-cncf-kubernetes==8.3.3 \
+    apache-airflow-providers-postgres==5.11.2 \
+    pyyaml==6.0.1 \
+    redis==5.0.7 \
+    requests==2.31.0 \
     && pip install --upgrade \
     "Mako==1.3.12" \
     "PyJWT==2.13.0" \

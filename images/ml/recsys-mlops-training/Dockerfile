@@ -31,24 +31,24 @@ RUN torch_version="$(sed -n 's/^torch==\([^ ;]*\).*$/\1/p' /tmp/ml-constraints.t
 
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
     --constraint /tmp/ml-constraints.txt \
-    boto3 \
-    "feast[redis]" \
-    kfp \
-    kfp-kubernetes \
-    kubernetes \
-    mlflow \
-    numpy \
-    onnx \
-    onnxscript \
-    pandas \
-    psycopg[binary] \
-    psycopg-pool \
-    pyarrow \
-    pyyaml \
+    boto3==1.35.36 \
+    "feast[redis]==0.64.0" \
+    kfp==2.16.1 \
+    kfp-kubernetes==2.16.1 \
+    kubernetes==30.1.0 \
+    mlflow==3.14.0 \
+    numpy==2.4.6 \
+    onnx==1.22.0 \
+    onnxscript==0.7.1 \
+    pandas==2.3.3 \
+    "psycopg[binary]==3.3.4" \
+    psycopg-pool==3.3.1 \
+    pyarrow==24.0.0 \
+    pyyaml==6.0.3 \
     "ray[default,train,tune]==2.56.1" \
-    s3fs \
-    scikit-learn \
-    tqdm \
+    s3fs==2024.10.0 \
+    scikit-learn==1.9.0 \
+    tqdm==4.69.0 \
     setuptools==83.0.0 \
     wheel==0.46.2 \
     jaraco.context==6.1.0

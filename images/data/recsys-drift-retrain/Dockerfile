@@ -2,17 +2,27 @@ ARG RECSYS_BASE_IMAGE=registry.example.invalid/recsys/recsys-base-python:require
 FROM ${RECSYS_BASE_IMAGE} AS deps
 
 WORKDIR /opt/recsys
+COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock /opt/recsys/apps/data-platform/
 ENV UV_LINK_MODE=copy \
     UV_CONCURRENT_DOWNLOADS=8 \
     UV_CONCURRENT_BUILDS=8
 
-RUN python -m venv /opt/venv \
-    && uv pip install --python /opt/venv/bin/python --no-cache \
+RUN python -m venv /opt/venv
+RUN uv export \
+        --project /opt/recsys/apps/data-platform \
+        --frozen \
+        --no-dev \
+        --no-emit-project \
+        --no-hashes \
+        --format requirements-txt \
+        --output-file /tmp/data-constraints.txt
+RUN uv pip install --python /opt/venv/bin/python --no-cache \
+        --constraint /tmp/data-constraints.txt \
         boto3==1.35.36 \
-        botocore==1.35.36 \
+        botocore==1.35.93 \
         kfp==2.16.1 \
-        pandas \
-        pyarrow \
+        pandas==2.3.3 \
+        pyarrow==25.0.0 \
         setuptools==83.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0

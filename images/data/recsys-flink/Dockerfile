@@ -53,7 +53,7 @@ ENV JAVA_HOME=/opt/java/openjdk \
 
 RUN mkdir -p "${TMPDIR}" "${PIP_CACHE_DIR}" \
     && chmod 1777 "${TMPDIR}" \
-    && python3 -m pip install --no-cache-dir pycodestyle
+    && python3 -m pip install --no-cache-dir pycodestyle==2.14.0
 
 RUN python3 -m pip install --no-cache-dir \
         apache-beam==2.75.0 \
@@ -63,12 +63,12 @@ RUN python3 -m pip install --no-cache-dir \
         httplib2==0.31.2 \
         pyarrow==23.0.1 \
         py4j==0.10.9.7 \
-        pyyaml \
-        ruamel.yaml \
-        redis \
-        requests \
-        psycopg[binary] \
-        psycopg-pool
+        pyyaml==6.0.3 \
+        ruamel.yaml==0.19.1 \
+        redis==7.4.1 \
+        requests==2.34.2 \
+        "psycopg[binary]==3.3.4" \
+        psycopg-pool==3.3.1
 
 COPY --from=jar-downloader /tmp/recsys-jars/*.jar /opt/flink/lib/
 COPY --from=jar-downloader /tmp/recsys-tools /opt/flink/autoscaler

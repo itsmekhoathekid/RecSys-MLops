@@ -6,14 +6,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_CONCURRENT_DOWNLOADS=8 \
     UV_CONCURRENT_BUILDS=8
 
-RUN pip install --no-cache-dir uv \
+COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/
+RUN pip install --no-cache-dir uv==0.10.9 \
     && python -m venv /opt/venv
 
+RUN uv export \
+        --project /opt/recsys/apps/ml-system \
+        --frozen \
+        --no-dev \
+        --no-emit-project \
+        --no-emit-local \
+        --no-hashes \
+        --format requirements-txt \
+        --output-file /tmp/ml-constraints.txt
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
-    boto3 \
+    --constraint /tmp/ml-constraints.txt \
+    boto3==1.35.36 \
     jaraco.context==6.1.0 \
-    mlflow \
-    psycopg2-binary \
+    mlflow==3.14.0 \
+    psycopg2-binary==2.9.12 \
     setuptools==83.0.0 \
     wheel==0.46.2
 

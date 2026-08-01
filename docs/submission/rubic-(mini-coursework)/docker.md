@@ -1,259 +1,562 @@
-# Docker And Docker Compose
+# Docker Image Architecture
 
-This document covers the rubric rows:
+This document covers the mini-coursework evidence for:
 
-- Docker and Docker Compose are used.
-- Dockerfiles are optimized.
-- Image-size/optimization proof is documented.
+- using Docker to package the RecSys platform;
+- organizing and optimizing Dockerfiles;
+- validating, building, scanning and publishing images reproducibly; and
+- measuring image size and clean-build latency.
 
-## Runtime Layout
+The current repository is **production-only**. Docker Compose, Minikube and the
+old local runtime have been retired. Docker produces immutable application
+images; Jenkins publishes them to GCP Artifact Registry, and Helm deploys them
+to GKE.
 
-Docker Compose is the local data-platform runtime. GCP proof builds use Cloud Build so image build does not depend on local Docker.
+## Current Runtime Contract
 
-Runtime orchestration references:
+The runtime contract has four rules:
 
-- [docker-compose.dataflow.yml (line 44)](../../../infra/docker/docker-compose.dataflow.yml#L44), [docker-compose.dataflow.yml (line 371)](../../../infra/docker/docker-compose.dataflow.yml#L371): local data-platform Compose services and build mappings.
-- [recsys-images.yaml (line 1)](../../../infra/cloudbuild/recsys-images.yaml#L1), [recsys-images.yaml (line 176)](../../../infra/cloudbuild/recsys-images.yaml#L176): GCP Cloud Build image pipeline.
+1. [`images/catalog.json`](../../../images/catalog.json) is the single source of
+   truth for image names, Dockerfile locations, build context and internal image
+   dependencies.
+2. The catalog contains exactly **15 images** and exactly one Spark image:
+   `recsys-spark`.
+3. Every production Dockerfile is located below `images/`; a Dockerfile outside
+   that tree fails the repository layout contract.
+4. Production workloads use immutable
+   `registry/image@sha256:<digest>` references, not mutable `:local` tags.
 
-### Shared Base
+The JSON schema fixes the catalog at 15 entries, requires Dockerfile paths to
+match `images/**/Dockerfile`, requires repository-root build context, and
+defines the dependency `image` plus `buildArg` contract
+([catalog schema](../../../images/catalog.schema.json#L1-L55)).
 
-| Image | Purpose | Dockerfile |
-|---|---|---|
-| `recsys-base-python` | Shared slim Python base image | [Dockerfile.base-python (line 1)](../../../infra/docker/Dockerfile.base-python#L1), [Dockerfile.base-python (line 19)](../../../infra/docker/Dockerfile.base-python#L19) |
+The Python validator additionally rejects:
 
-### Data Platform
+- a catalog version other than 1;
+- either retired Spark image name;
+- missing Dockerfiles or contexts;
+- unknown dependencies;
+- duplicate build arguments;
+- dependency cycles; and
+- images that are not reachable from at least one Jenkins component.
 
-| Image / component | Purpose | Dockerfile |
-|---|---|---|
-| `recsys-dataflow-cli` | Data pipeline CLI, Feast materialization, and drift jobs | [Dockerfile.dataflow-cli (line 1)](../../../apps/data-platform/Dockerfile.dataflow-cli#L1), [Dockerfile.dataflow-cli (line 49)](../../../apps/data-platform/Dockerfile.dataflow-cli#L49) |
-| `recsys-data-generator` | Synthetic source-data generation | [Dockerfile (line 1)](../../../apps/data-platform/data-generator/Dockerfile#L1), [Dockerfile (line 27)](../../../apps/data-platform/data-generator/Dockerfile#L27) |
-| `recsys-airflow` | Data-pipeline orchestration with the Airflow scheduler and webserver | [Dockerfile.airflow (line 1)](../../../infra/docker/Dockerfile.airflow#L1), [Dockerfile.airflow (line 34)](../../../infra/docker/Dockerfile.airflow#L34) |
-| `recsys-spark` | Batch processing with Spark, Iceberg, and Hudi | [Dockerfile.spark (line 1)](../../../apps/data-platform/Dockerfile.spark#L1), [Dockerfile.spark (line 50)](../../../apps/data-platform/Dockerfile.spark#L50) |
-| `recsys-flink` | Streaming from Kafka to the PostgreSQL offline store and Redis online store | [Dockerfile.flink (line 1)](../../../apps/data-platform/Dockerfile.flink#L1), [Dockerfile.flink (line 94)](../../../apps/data-platform/Dockerfile.flink#L94) |
-| `recsys-kafka-connect` | Debezium CDC from PostgreSQL into Kafka | [Dockerfile.kafka-connect (line 1)](../../../infra/docker/Dockerfile.kafka-connect#L1), [Dockerfile.kafka-connect (line 23)](../../../infra/docker/Dockerfile.kafka-connect#L23) |
+Code:
+[`image_catalog.py`, lines 9-88](../../../jenkins/python/image_catalog.py#L9-L88)
+and
+[`image_catalog.py`, lines 96-184](../../../jenkins/python/image_catalog.py#L96-L184).
 
-### ML/MLOps
+## Why Docker Compose Is Not Used
 
-| Image / component | Purpose | Dockerfile |
-|---|---|---|
-| `recsys-mlflow` | Experiment tracking and model registry | [Dockerfile.mlflow (line 1)](../../../infra/docker/Dockerfile.mlflow#L1), [Dockerfile.mlflow (line 30)](../../../infra/docker/Dockerfile.mlflow#L30) |
-| `recsys-api-serving` | Online model inference and recommendation API | [Dockerfile (line 1)](../../../apps/api-serving/Dockerfile#L1), [Dockerfile (line 46)](../../../apps/api-serving/Dockerfile#L46) |
-| `recsys-mlops-training` | Model training and Kubeflow pipeline runtime | [Dockerfile.training (line 1)](../../../apps/ml-system/Dockerfile.training#L1), [Dockerfile.training (line 61)](../../../apps/ml-system/Dockerfile.training#L61) |
-| `recsys-mlops-spark` | ML jobs running on the shared Spark image | [Dockerfile.spark (line 1)](../../../apps/ml-system/Dockerfile.spark#L1), [Dockerfile.spark (line 40)](../../../apps/ml-system/Dockerfile.spark#L40) |
+Docker Compose previously represented the local platform. That architecture was
+removed because production deployment is split into independently owned Helm
+releases and Jenkins is the only CI/CD implementation.
 
-## Optimization Notes
+The current contract test requires these runtime roots to be absent:
 
-The Dockerfile optimization follows the Docker Build Cloud guidance from <https://docs.docker.com/build-cloud/optimization/>:
+```text
+infra/docker
+infra/k8s
+infra/kubeflow
+infra/cloudbuild
+configs/local
+```
 
-- Multi-stage builds: build dependency/tooling layers in a separate stage, then copy only runtime artifacts into the final stage.
-- Multi-threaded tools: enable tool-level parallelism where the tool does not use multiple cores by default.
+It also compares every runtime Dockerfile in the repository with the catalog,
+so adding an unregistered Dockerfile fails CI
+([repository layout contract](../../../tests/contract/test_repository_layout_contracts.py#L44-L63)).
 
-| Image | Optimization used | Why it reduces image/runtime cost |
-|---|---|---|
-| `recsys-base-python` | `python:3.11-slim`, `--no-install-recommends`, removes `/var/lib/apt/lists` | Avoids full Debian/Python image and removes apt metadata. |
-| `recsys-dataflow-cli` | Multi-stage build: dependency stage uses shared `recsys-base-python`; final stage is `python:3.11-slim` with only venv, configs, data-platform source, feature repo, data generator, Docker scripts, Debezium connector config. `uv` uses `UV_CONCURRENT_DOWNLOADS=8` and `UV_CONCURRENT_BUILDS=8`. | Keeps build tools and dependency resolver out of the final runtime image, avoids copying the full repository, and parallelizes dependency resolution/build work. |
-| `recsys-data-generator` | Multi-stage build with `uv` concurrency; final image copies only venv, configs, and data-generator source. | Removes build-only base tooling from the final image and avoids shipping unrelated repo files. |
-| `recsys-spark` | Multi-stage JAR downloader; Spark/Iceberg/Hudi/S3 JARs are fetched in parallel with `xargs -P ${DOWNLOAD_JOBS}` and copied into the final Spark runtime. Final stage copies only runtime source folders. | Parallel remote downloads reduce build latency; selective copy avoids docs/tests/artifacts in the runtime layer. |
-| `recsys-flink` | Multi-stage JAR downloader; Flink Kafka/Iceberg/Hadoop/S3 JARs are fetched in parallel with `xargs -P ${DOWNLOAD_JOBS}` and copied into the final Flink runtime. Final stage copies only runtime source folders. | Parallel remote downloads reduce build latency; final image keeps only Flink runtime files and required project code. |
-| `recsys-kafka-connect` | Multi-stage connector installer; the Debezium connector is installed into a plugin stage with bounded shell background jobs controlled by `CONNECTOR_INSTALL_JOBS`, and only `/usr/share/confluent-hub-components` is copied into the final Kafka Connect runtime. | Keeps connector installation work out of the final runtime stage and supports parallel connector installation without adding the removed S3 sink plugin. |
-| `recsys-airflow` | Multi-stage Airflow dependency image; final Airflow image copies only `/home/airflow/.local` provider packages and DAG/runtime folders. | Avoids copying the full repository into the scheduler/webserver image while preserving Airflow provider dependencies. |
-| `recsys-api-serving` | Multi-stage Python venv build with `uv` concurrency; final `python:3.11-slim` image copies only venv, API source, Feast repo, and feature-store module. | Keeps dependency build tooling out of serving runtime and narrows the serving attack surface. |
-| `recsys-mlflow` | Multi-stage Python venv build with `uv` concurrency; final `python:3.11-slim` image copies only the MLflow venv. | Removes dependency resolver tooling from the final tracking image while parallelizing Python package download/build work. |
-| `recsys-mlops-training` | Multi-stage Python venv build with `uv` concurrency; final `python:3.11-slim` image copies venv plus ML source, data-platform source, configs, Kubeflow package, and feature repo. | Removes base image build tooling from the final training image and avoids full-repo copy. |
-| `recsys-mlops-spark` | Multi-stage Python venv build on top of `recsys-spark`; `uv` concurrency installs ML Spark dependencies, Feast, PostgreSQL client/pool packages, and the MinIO/S3 client in a dependency stage, then the final Spark runtime copies only the venv and ML/data source folders. | Keeps ML-specific Python dependency installation separate from the final runtime and avoids copying docs/tests/artifacts. |
+Therefore:
 
-## Before/After Measurement
+- Docker remains the application packaging and build mechanism.
+- Helm/Kubernetes is the runtime orchestration mechanism.
+- Docker Compose is historical evidence only and is not a supported execution
+  path.
 
-Use these commands to capture the proof before and after Dockerfile optimization. They keep stable `:before` and `:after` tags, record build latency from `/usr/bin/time -p`, and record image size from `docker image inspect`.
+## 15-Image Catalog
 
-Run these commands from the repository root. Use `set -eo pipefail` instead of `set -euo pipefail` because interactive zsh/VS Code prompts may reference unset prompt variables such as `RPROMPT`.
+### Shared base
 
-Run this shared helper in the same terminal session before the before/after command blocks:
+| Image | Responsibility | Dockerfile |
+| --- | --- | --- |
+| `recsys-base-python` | Shared Python 3.11 build/dependency base used by selected Python images | [`images/base/recsys-base-python/Dockerfile`](../../../images/base/recsys-base-python/Dockerfile) |
 
-```bash
-mkdir -p .docker-metrics
+### Data platform
 
-measure_build() {
-  image="$1"
-  logfile="$2"
-  shift 2
-  /usr/bin/time -p docker build --no-cache -t "$image" "$@" . 2>&1 | tee "$logfile"
-}
+| Image | Responsibility | Dockerfile |
+| --- | --- | --- |
+| `recsys-data-ingestion` | Synthetic generator, source ingestion and lakehouse ingestion runtime | [`images/data/recsys-data-ingestion/Dockerfile`](../../../images/data/recsys-data-ingestion/Dockerfile) |
+| `recsys-feature-store` | Feast repository, SQL registry, offline/online feature-store operations | [`images/data/recsys-feature-store/Dockerfile`](../../../images/data/recsys-feature-store/Dockerfile) |
+| `recsys-drift-retrain` | Drift reporting and Kubeflow retraining trigger runtime | [`images/data/recsys-drift-retrain/Dockerfile`](../../../images/data/recsys-drift-retrain/Dockerfile) |
+| `recsys-spark` | Unified data-platform, ML-system and analytics Spark runtime | [`images/data/recsys-spark/Dockerfile`](../../../images/data/recsys-spark/Dockerfile) |
+| `recsys-flink` | Continuous Kafka-to-offline-store and Kafka-to-online-store processing | [`images/data/recsys-flink/Dockerfile`](../../../images/data/recsys-flink/Dockerfile) |
+| `recsys-airflow` | Airflow scheduler/webserver plus data and analytics DAGs | [`images/data/recsys-airflow/Dockerfile`](../../../images/data/recsys-airflow/Dockerfile) |
+| `recsys-kafka-connect` | Kafka Connect worker with verified Debezium PostgreSQL CDC plugin | [`images/data/recsys-kafka-connect/Dockerfile`](../../../images/data/recsys-kafka-connect/Dockerfile) |
 
-write_image_sizes() {
-  output_path="$1"
-  shift
-  : > "$output_path"
-  for image in "$@"; do
-    size_bytes="$(docker image inspect "$image" --format '{{.Size}}')"
-    awk -v image="$image" -v size_bytes="$size_bytes" \
-      'BEGIN { printf "%-36s %.2f MB\n", image, size_bytes / 1024 / 1024 }' \
-      | tee -a "$output_path"
-  done
-}
+### ML platform
 
-write_build_latency() {
-  output_path="$1"
-  shift
-  : > "$output_path"
-  for logfile in "$@"; do
-    image="$(basename "$logfile" -build.log)"
-    latency="$(awk '/^real / {print $2 "s"}' "$logfile" | tail -1)"
-    printf "%-28s %s\n" "$image" "$latency" | tee -a "$output_path"
-  done
+| Image | Responsibility | Dockerfile |
+| --- | --- | --- |
+| `recsys-mlops-training` | Kubeflow components, Ray Train/Tune, evaluation and model promotion | [`images/ml/recsys-mlops-training/Dockerfile`](../../../images/ml/recsys-mlops-training/Dockerfile) |
+| `recsys-mlflow` | MLflow experiment tracking and model registry server | [`images/ml/recsys-mlflow/Dockerfile`](../../../images/ml/recsys-mlflow/Dockerfile) |
+
+### Serving
+
+| Image | Responsibility | Dockerfile |
+| --- | --- | --- |
+| `recsys-api-serving` | Recommendation API, online feature API and Triton client | [`images/serving/recsys-api-serving/Dockerfile`](../../../images/serving/recsys-api-serving/Dockerfile) |
+
+### Demo application
+
+| Image | Responsibility | Dockerfile |
+| --- | --- | --- |
+| `recsys-demo-api` | Demo backend API | [`images/demo/recsys-demo-api/Dockerfile`](../../../images/demo/recsys-demo-api/Dockerfile) |
+| `recsys-demo-web` | Compiled frontend served by unprivileged Nginx | [`images/demo/recsys-demo-web/Dockerfile`](../../../images/demo/recsys-demo-web/Dockerfile) |
+
+### Analytics
+
+| Image | Responsibility | Dockerfile |
+| --- | --- | --- |
+| `recsys-analytics-dbt` | dbt transformations through Trino | [`images/analytics/recsys-analytics-dbt/Dockerfile`](../../../images/analytics/recsys-analytics-dbt/Dockerfile) |
+| `recsys-analytics-superset` | Superset BI runtime and dashboard bootstrap | [`images/analytics/recsys-analytics-superset/Dockerfile`](../../../images/analytics/recsys-analytics-superset/Dockerfile) |
+
+The exact names and paths above are machine-readable in
+[`catalog.json`, lines 1-100](../../../images/catalog.json#L1-L100).
+
+## Internal Image Dependencies
+
+Only images that genuinely consume the shared build base declare an internal
+dependency:
+
+```text
+recsys-base-python
+├── recsys-data-ingestion
+├── recsys-feature-store
+├── recsys-drift-retrain
+└── recsys-mlops-training
+```
+
+For example, the catalog edge:
+
+```json
+{
+  "image": "recsys-base-python",
+  "buildArg": "RECSYS_BASE_IMAGE"
 }
 ```
 
-Run this before applying the Dockerfile optimization. This block uses the historical Dockerfile snapshots in `dockerfiles-before-optimization/` so the `:before` images are a real baseline even when the active repo Dockerfiles are already optimized:
+means Jenkins must build `recsys-base-python:<commit>` before the consumer and
+pass:
 
-```bash
-set -eo pipefail
-mkdir -p .docker-metrics/before
-
-measure_build recsys-base-python:before .docker-metrics/before/base-python-build.log \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.base-python.before'
-measure_build recsys-dataflow-cli:before .docker-metrics/before/dataflow-cli-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.dataflow-cli.before'
-measure_build recsys-data-generator:before .docker-metrics/before/data-generator-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.data-generator.before'
-measure_build recsys-airflow:before .docker-metrics/before/airflow-build.log \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.airflow.before'
-measure_build recsys-spark:before .docker-metrics/before/spark-build.log \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.spark.before'
-measure_build recsys-flink:before .docker-metrics/before/flink-build.log \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.flink.before'
-measure_build recsys-kafka-connect:before .docker-metrics/before/kafka-connect-build.log \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.kafka-connect.before'
-measure_build recsys-mlflow:before .docker-metrics/before/mlflow-build.log \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.mlflow.before'
-measure_build recsys-api-serving:before .docker-metrics/before/api-serving-build.log \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.api-serving.before'
-measure_build recsys-mlops-training:before .docker-metrics/before/mlops-training-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:before \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.mlops-training.before'
-measure_build recsys-mlops-spark:before .docker-metrics/before/mlops-spark-build.log \
-  --build-arg RECSYS_SPARK_BASE_IMAGE=recsys-spark:before \
-  -f 'docs/submission/rubic-(mini-coursework)/dockerfiles-before-optimization/Dockerfile.mlops-spark.before'
-
-write_image_sizes .docker-metrics/before/image-size.txt \
-  recsys-base-python:before \
-  recsys-dataflow-cli:before \
-  recsys-data-generator:before \
-  recsys-airflow:before \
-  recsys-spark:before \
-  recsys-flink:before \
-  recsys-kafka-connect:before \
-  recsys-mlflow:before \
-  recsys-api-serving:before \
-  recsys-mlops-training:before \
-  recsys-mlops-spark:before
-
-write_build_latency .docker-metrics/before/build-latency.txt .docker-metrics/before/*-build.log
+```text
+--build-arg RECSYS_BASE_IMAGE=recsys-base-python:<commit>
 ```
 
-Run this after applying the Dockerfile optimization:
+The catalog CLI exposes the resolved order and arguments:
 
 ```bash
-set -eo pipefail
-mkdir -p .docker-metrics/after
-
-measure_build recsys-base-python:after .docker-metrics/after/base-python-build.log \
-  -f infra/docker/Dockerfile.base-python
-measure_build recsys-dataflow-cli:after .docker-metrics/after/dataflow-cli-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:after \
-  -f apps/data-platform/Dockerfile.dataflow-cli
-measure_build recsys-data-generator:after .docker-metrics/after/data-generator-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:after \
-  -f apps/data-platform/data-generator/Dockerfile
-measure_build recsys-airflow:after .docker-metrics/after/airflow-build.log \
-  -f infra/docker/Dockerfile.airflow
-measure_build recsys-spark:after .docker-metrics/after/spark-build.log \
-  --build-arg DOWNLOAD_JOBS=4 \
-  -f apps/data-platform/Dockerfile.spark
-measure_build recsys-flink:after .docker-metrics/after/flink-build.log \
-  --build-arg DOWNLOAD_JOBS=4 \
-  -f apps/data-platform/Dockerfile.flink
-measure_build recsys-kafka-connect:after .docker-metrics/after/kafka-connect-build.log \
-  --build-arg CONNECTOR_INSTALL_JOBS=2 \
-  -f infra/docker/Dockerfile.kafka-connect
-measure_build recsys-mlflow:after .docker-metrics/after/mlflow-build.log \
-  -f infra/docker/Dockerfile.mlflow
-measure_build recsys-api-serving:after .docker-metrics/after/api-serving-build.log \
-  -f apps/api-serving/Dockerfile
-measure_build recsys-mlops-training:after .docker-metrics/after/mlops-training-build.log \
-  --build-arg RECSYS_BASE_IMAGE=recsys-base-python:after \
-  -f apps/ml-system/Dockerfile.training
-measure_build recsys-mlops-spark:after .docker-metrics/after/mlops-spark-build.log \
-  --build-arg RECSYS_SPARK_BASE_IMAGE=recsys-spark:after \
-  -f apps/ml-system/Dockerfile.spark
-
-write_image_sizes .docker-metrics/after/image-size.txt \
-  recsys-base-python:after \
-  recsys-dataflow-cli:after \
-  recsys-data-generator:after \
-  recsys-airflow:after \
-  recsys-spark:after \
-  recsys-flink:after \
-  recsys-kafka-connect:after \
-  recsys-mlflow:after \
-  recsys-api-serving:after \
-  recsys-mlops-training:after \
-  recsys-mlops-spark:after
-
-write_build_latency .docker-metrics/after/build-latency.txt .docker-metrics/after/*-build.log
+python3 jenkins/python/image_catalog.py validate
+python3 jenkins/python/image_catalog.py dependencies recsys-data-ingestion
+python3 jenkins/python/image_catalog.py build-args \
+  recsys-data-ingestion \
+  --tag "$(git rev-parse HEAD)"
+python3 jenkins/python/image_catalog.py build-spec \
+  recsys-data-ingestion \
+  --tag "$(git rev-parse HEAD)"
 ```
 
-Generate the before/after proof summary:
+Implementation:
+[`image_catalog.py`, lines 115-158](../../../jenkins/python/image_catalog.py#L115-L158)
+and
+[`image_catalog.py`, lines 187-226](../../../jenkins/python/image_catalog.py#L187-L226).
+
+## Unified `recsys-spark`
+
+`recsys-spark` replaces separate data, ML and analytics Spark variants. Spark
+jobs differ primarily by command and configuration, so one tested runtime
+eliminates dependency drift and guarantees that all domains execute against the
+same Spark/JAR/Python closure.
+
+The image uses three stages:
+
+1. `jar-downloader` downloads in parallel:
+   - Iceberg Spark runtime;
+   - Hudi Spark 3.5 bundle;
+   - Hadoop AWS;
+   - AWS SDK bundle; and
+   - PostgreSQL JDBC.
+2. `python-deps` exports the locked ML and data dependency closure, installs a
+   CPU-only PyTorch wheel, and verifies the environment with `uv pip check`.
+3. `runtime` copies only the JARs, virtual environment, configs and required
+   data/ML/analytics source trees.
+
+Runtime variables force both PySpark driver and executors to use
+`/opt/venv/bin/python`, while `PYTHONPATH` exposes all three domains
+([unified Spark Dockerfile](../../../images/data/recsys-spark/Dockerfile#L1-L115)).
+
+The post-build smoke test verifies:
+
+- data ingestion and DP2/DP3 imports;
+- ML preparation, training and Hudi savepoint imports;
+- analytics `sync_silver` imports;
+- CPU-only PyTorch and absence of CUDA/NVIDIA packages;
+- Spark 3.5.8;
+- absence of duplicate PyPI `pyspark` and Ray;
+- all five required JARs;
+- the standardized DP2, DP3, generator and BST configs; and
+- `/opt/venv` as both PySpark Python executables.
+
+Code:
+[`unified_spark_image.sh`, lines 4-74](../../../jenkins/scripts/test/unified_spark_image.sh#L4-L74).
+The catalog contract also asserts that there are 15 images and only one Spark
+image
+([catalog tests](../../../tests/unit/jenkins/test_image_catalog.py#L27-L43)).
+
+The accepted trade-off is that the unified image is larger than a domain-only
+Spark image. The benefit is one build, one scan baseline, one digest and one
+runtime dependency closure across data processing, ML preparation and
+analytics.
+
+## Dockerfile Optimization
+
+The implementation follows Docker's official guidance for
+[multi-stage builds](https://docs.docker.com/build/building/multi-stage/),
+[build contexts and `.dockerignore`](https://docs.docker.com/build/concepts/context/),
+and
+[image build best practices](https://docs.docker.com/build/building/best-practices/).
+
+### 1. Build dependencies do not automatically enter runtime images
+
+Twelve of the fifteen Dockerfiles use multiple stages. Typical Python images
+create `/opt/venv` in `deps`, then copy that environment into a fresh slim
+runtime image. Spark/Flink download or resolve JARs in dedicated stages.
+Kafka Connect extracts the Debezium plugin in Alpine before copying only the
+plugin directory into the worker.
+
+Examples:
+
+- [`recsys-feature-store`](../../../images/data/recsys-feature-store/Dockerfile#L1-L59)
+- [`recsys-spark`](../../../images/data/recsys-spark/Dockerfile#L1-L115)
+- [`recsys-flink`](../../../images/data/recsys-flink/Dockerfile#L1-L104)
+- [`recsys-kafka-connect`](../../../images/data/recsys-kafka-connect/Dockerfile#L1-L29)
+- [`recsys-api-serving`](../../../images/serving/recsys-api-serving/Dockerfile#L1-L35)
+- [`recsys-demo-web`](../../../images/demo/recsys-demo-web/Dockerfile#L1-L15)
+
+### 2. Dependency inputs are reproducible
+
+- Every direct Python requirement written in a Dockerfile uses an exact
+  `package==version` specifier. A catalog unit test parses every `pip install`
+  and `uv pip install` command and rejects a floating requirement.
+- Project-based Python images run `uv sync --frozen` or `uv export --frozen`
+  against checked-in lock files. Data ingestion, drift, feature store, Spark,
+  MLflow and training also install against an exported lock constraint, so
+  their transitive closure cannot silently move.
+- Airflow is pinned to 2.9.3/Python 3.10 and installs against the matching
+  official constraints file.
+- Spark, Flink, Kafka Connect, Debezium, Superset, Nginx and other major runtime
+  versions are explicit.
+- The Debezium plugin archive is checked against a pinned SHA-256 value before
+  extraction.
+- `npm ci` builds the frontend from `package-lock.json`.
+
+This makes a changed lock/version/checksum an explicit source change rather than
+an invisible runtime mutation. The enforcement test is
+[`test_dockerfile_python_dependencies_are_exactly_pinned`](../../../tests/unit/jenkins/test_image_catalog.py).
+
+### 3. Runtime content is selective
+
+Dockerfiles copy the virtual environment and only the source/config directories
+needed by that workload. They do not use `COPY . .`.
+
+The common root context remains necessary because images combine code from
+multiple monorepo domains. [`.dockerignore`](../../../.dockerignore#L1-L46)
+prevents Git history, virtual environments, caches, bytecode, reports,
+`node_modules`, notebook data, generated lake data and artifacts from being sent
+to the builder.
+
+### 4. Package-manager residue is removed
+
+Runtime stages use `--no-install-recommends`, remove apt metadata and disable
+Python package caches. Several final Python images also remove the system
+`pip`/build tooling after the prepared virtual environment is copied.
+
+### 5. Parallel work is bounded
+
+- Python dependency stages use `UV_CONCURRENT_DOWNLOADS=8` and
+  `UV_CONCURRENT_BUILDS=8`.
+- Spark downloads independent JARs with `xargs -P "${DOWNLOAD_JOBS}"`.
+- Flink separates Maven dependency resolution from bounded parallel downloads.
+
+These settings reduce clean-build latency without introducing multiple
+different runtime images.
+
+### 6. Non-root execution is used where supported
+
+Airflow runs as `airflow`, Flink as `flink`, Kafka Connect as `appuser`,
+Superset as `superset`, the demo backend as UID/GID `10001`, and the frontend as
+unprivileged Nginx UID `101`.
+
+Some framework images still require root-owned runtime preparation. Those are
+handled through Kubernetes security configuration and container scan policy;
+this document does not claim that every image is rootless.
+
+## Jenkins Build, Scan and Publish Flow
+
+```mermaid
+flowchart LR
+    A["Git diff"] --> B["Release plan"]
+    B --> C["Unique buildImages in topological order"]
+    C --> D["Catalog build-spec"]
+    D --> E["docker build"]
+    E --> F["Trivy scan + policy"]
+    F --> G{"PUBLISH_IMAGES?"}
+    G -- "No" --> H["Keep commit-scoped local image"]
+    G -- "Yes" --> I["Push to GCP Artifact Registry"]
+    I --> J["Resolve image@sha256 digest"]
+    H --> K["Release image manifest"]
+    J --> K
+    K --> L["Helm and Kubeflow consumers"]
+```
+
+Jenkins does not run a separate recursive build function per component:
+
+1. The release plan provides one unique, topologically ordered `buildImages`
+   list.
+2. `release_build_publish.sh` loops through that list once.
+3. The engine asks the catalog for Dockerfile, context and internal build args.
+4. Each image runs build, scan, optional push and manifest recording once.
+5. If Spark was built, its unified smoke test runs once.
+
+Code:
+[`release_build_publish.sh`, lines 17-42](../../../jenkins/scripts/entrypoints/release_build_publish.sh#L17-L42)
+and
+[`engine.sh`, lines 96-162](../../../jenkins/scripts/build/engine.sh#L96-L162).
+
+Production publishing requires:
+
+- the configured GCP Artifact Registry;
+- a full 40-character Git commit tag;
+- successful registry permission/login checks; and
+- an immutable digest resolved after push.
+
+Code:
+[`build runtime`, lines 3-42](../../../jenkins/scripts/build/runtime.sh#L3-L42)
+and
+[`Jenkinsfile`, lines 140-175](../../../Jenkinsfile#L140-L175).
+
+Tags provide build traceability, while the deployment manifest stores the
+immutable digest. Docker documents that pulling by digest selects one exact
+image version:
+[Docker image pull by digest](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier).
+
+## Vulnerability Scanning
+
+Every planned image is scanned with Trivy before publishing. `HIGH` and
+`CRITICAL` findings block the build unless they match a time-bounded,
+owner/reason-qualified exception. An exception also has maximum HIGH/CRITICAL
+counts; exceeding the approved vendor baseline still fails CI.
+
+Code:
+
+- scan execution:
+  [`engine.sh`, lines 7-60](../../../jenkins/scripts/build/engine.sh#L7-L60);
+- policy evaluation:
+  [`container_scan_policy.py`, lines 20-92](../../../jenkins/python/container_scan_policy.py#L20-L92);
+- current time-bounded exceptions:
+  [`container-scan-policy.json`](../../../jenkins/config/container-scan-policy.json).
+
+`recsys-spark` has one unified JAR exception instead of separate data/ML/
+analytics Spark exceptions. The policy is an explicit temporary risk record, not
+a permanent allow-list.
+
+## Validation and Proof Commands
+
+Run all commands from the repository root.
+
+### Fast catalog and layout validation
+
+```bash
+make validate
+
+uv run pytest \
+  tests/unit/jenkins/test_image_catalog.py \
+  tests/unit/jenkins/test_container_scan_policy.py \
+  tests/contract/test_repository_layout_contracts.py \
+  tests/contract/test_docker_dataflow_contracts.py \
+  -q
+```
+
+These tests prove the 15-image count, one-Spark invariant, dependency order,
+build-once behavior, Dockerfile ownership, unified Spark capabilities and scan
+policy.
+
+### Build one standalone image
+
+```bash
+commit="$(git rev-parse HEAD)"
+
+/usr/bin/time -p docker build \
+  --pull \
+  --no-cache \
+  --platform linux/amd64 \
+  -f images/data/recsys-spark/Dockerfile \
+  -t "recsys-spark:${commit}" \
+  .
+
+bash jenkins/scripts/test/unified_spark_image.sh "recsys-spark:${commit}"
+
+docker image inspect "recsys-spark:${commit}" \
+  --format 'size_bytes={{.Size}} layers={{len .RootFS.Layers}}'
+```
+
+### Build a catalog image with an internal base
+
+```bash
+commit="$(git rev-parse HEAD)"
+
+docker build \
+  --platform linux/amd64 \
+  -f images/base/recsys-base-python/Dockerfile \
+  -t "recsys-base-python:${commit}" \
+  .
+
+docker build \
+  --platform linux/amd64 \
+  --build-arg "RECSYS_BASE_IMAGE=recsys-base-python:${commit}" \
+  -f images/data/recsys-feature-store/Dockerfile \
+  -t "recsys-feature-store:${commit}" \
+  .
+
+docker image inspect \
+  "recsys-base-python:${commit}" \
+  "recsys-feature-store:${commit}" \
+  --format '{{.RepoTags}} {{.Size}}'
+```
+
+### Full 15-image build-parity proof without publishing
+
+This is intentionally expensive. It uses the same release builder as Jenkins,
+scans every image and runs the unified Spark smoke test, but does not push:
 
 ```bash
 set -eo pipefail
+
+commit="$(git rev-parse HEAD)"
+components="$(
+  python3 jenkins/python/configuration.py components-tsv \
+    | cut -f2 \
+    | paste -sd, -
+)"
+
+python3 jenkins/python/release_plan.py create \
+  --components "${components}" \
+  --commit "${commit}" \
+  --output /tmp/recsys-full-image-plan.json
+
+IMAGE_PUSH_REGISTRY=registry.example.invalid/recsys \
+IMAGE_TAG="${commit}" \
+PUBLISH_IMAGES=0 \
+REQUIRE_GCP_ARTIFACT_REGISTRY=0 \
+CONTAINER_SCAN_ENABLED=1 \
+jenkins/scripts/entrypoints/release_build_publish.sh \
+  /tmp/recsys-full-image-plan.json
+```
+
+Record the current size of every built image:
+
+```bash
+mkdir -p .docker-metrics/current
+commit="$(git rev-parse HEAD)"
 
 {
-  echo "## Before Optimization"
-  echo
-  echo "### Build latency"
-  sed 's/^/- /' .docker-metrics/before/build-latency.txt
-  echo
-  echo "### Image size"
-  sed 's/^/- /' .docker-metrics/before/image-size.txt
-  echo
-  echo "## After Optimization"
-  echo
-  echo "### Build latency"
-  sed 's/^/- /' .docker-metrics/after/build-latency.txt
-  echo
-  echo "### Image size"
-  sed 's/^/- /' .docker-metrics/after/image-size.txt
-} | tee .docker-metrics/docker-optimization-proof.md
+  printf '%-36s %14s %12s\n' IMAGE SIZE_BYTES SIZE_MIB
+  python3 jenkins/python/release_plan.py plan-images \
+    --plan /tmp/recsys-full-image-plan.json \
+    | while IFS= read -r image; do
+        bytes="$(docker image inspect "${image}:${commit}" --format '{{.Size}}')"
+        mib="$(awk -v value="${bytes}" 'BEGIN {printf "%.2f", value/1024/1024}')"
+        printf '%-36s %14s %12s\n' "${image}" "${bytes}" "${mib}"
+      done
+} | tee .docker-metrics/current/image-sizes.txt
 ```
 
-After running the summary command, capture the terminal output as screenshots and save them to these paths for the submission:
+Docker's `image inspect` command is the source for the byte measurement:
+[Docker image inspect reference](https://docs.docker.com/reference/cli/docker/image/inspect/).
 
-![Before Docker optimization proof](../../pngs/docker_before_optimization_proof.png)
+## How to Interpret Optimization Evidence
 
-![After Docker optimization proof](../../pngs/docker_after_optimization_proof.png)
+Compare measurements only when these inputs are identical:
 
-Measured results from `.docker-metrics/`:
+- source commit;
+- build platform;
+- Docker/BuildKit version;
+- `--pull` and `--no-cache` settings;
+- network/registry location; and
+- image capability set.
 
-| Image | Before build latency (`real`) | After build latency (`real`) | Latency result | Before size | After size | Size result | Optimization responsible |
-|---|---:|---:|---:|---:|---:|---:|---|
-| `recsys-dataflow-cli` | 39.50s | 52.78s | 13.28s slower (33.6%) | 514.63 MB | 276.18 MB | 238.45 MB smaller (46.3%) | Multi-stage venv + selective runtime copy + `uv` concurrency |
-| `recsys-data-generator` | 16.91s | 16.07s | 0.84s faster (5.0%) | 470.36 MB | 139.97 MB | 330.39 MB smaller (70.2%) | Multi-stage venv + selective runtime copy + `uv` concurrency |
-| `recsys-airflow` | 28.91s | 17.87s | 11.04s faster (38.2%) | 576.29 MB | 378.83 MB | 197.46 MB smaller (34.3%) | Multi-stage provider install + selective DAG/runtime copy |
-| `recsys-spark` | 82.26s | 73.44s | 8.82s faster (10.7%) | 872.99 MB | 1054.75 MB | 181.76 MB larger (20.8%) | Multi-stage parallel JAR download + selective runtime copy |
-| `recsys-flink` | 110.10s | 64.13s | 45.97s faster (41.8%) | 1108.10 MB | 1255.41 MB | 147.31 MB larger (13.3%) | Multi-stage parallel JAR download + selective runtime copy |
-| `recsys-kafka-connect` | 43.84s | 5.94s | 37.90s faster (86.5%) | 1126.35 MB | 1087.97 MB | 38.38 MB smaller (3.4%) | Multi-stage connector install + bounded parallel connector installer |
-| `recsys-api-serving` | 19.70s | 28.63s | 8.93s slower (45.3%) | 83.12 MB | 182.37 MB | 99.25 MB larger (119.4%) | Multi-stage venv + API-only runtime copy + `uv` concurrency |
-| `recsys-mlflow` | 72.30s | 32.54s | 39.76s faster (55.0%) | 289.10 MB | 238.06 MB | 51.04 MB smaller (17.7%) | Multi-stage venv + `uv` concurrency |
-| `recsys-mlops-training` | 269.92s | 114.37s | 155.55s faster (57.6%) | 3424.50 MB | 527.92 MB | 2896.58 MB smaller (84.6%) | Multi-stage venv + ML/runtime-only copy + `uv` concurrency |
-| `recsys-mlops-spark` | 3.87s | 36.37s | 32.50s slower (839.8%) | 872.99 MB | 1191.85 MB | 318.86 MB larger (36.5%) | Multi-stage Spark venv + Feast/Postgres client and pool deps + MinIO/S3 client + ML/runtime-only copy + `uv` concurrency |
+Do not claim that a larger image is automatically worse. For example,
+`recsys-spark` intentionally includes the data, ML and analytics dependency
+closure and five production JARs. The valid comparison is:
 
-## Optimization Result Analysis
+1. total catalog size and build time;
+2. number of separately maintained images;
+3. runtime capabilities present;
+4. vulnerability results; and
+5. whether one immutable digest is reused consistently.
 
-Across the ten runtime images measured in the table, total no-cache build latency fell from 687.31s to 442.14s. That is a 245.17s reduction, or 35.7% faster overall. The largest latency wins came from `recsys-mlops-training` (155.55s faster), `recsys-flink` (45.97s faster), `recsys-mlflow` (39.76s faster), and `recsys-kafka-connect` (37.90s faster). These are the images where multi-stage builds and tool-level parallelism removed the most repeated dependency/build work.
+The files under
+[`dockerfiles-before-optimization/`](dockerfiles-before-optimization/)
+and the existing `.docker-metrics/` output are historical coursework evidence
+from the pre-catalog architecture. They must not be presented as a current
+15-image benchmark because the image names and capability boundaries changed
+during the production-only refactor.
 
-Total image size fell from 9338.43 MB to 6333.31 MB, a reduction of 3005.12 MB, or 32.2% smaller overall. The largest image-size reduction was `recsys-mlops-training`, which dropped from 3424.50 MB to 527.92 MB (2896.58 MB smaller, 84.6%). The next biggest reductions were `recsys-data-generator` (330.39 MB smaller, 70.2%), `recsys-dataflow-cli` (238.45 MB smaller, 46.3%), and `recsys-airflow` (197.46 MB smaller, 34.3%).
+![Historical Docker optimization baseline](../../pngs/docker_before_optimization_proof.png)
 
-Not every individual image became smaller or faster. `recsys-spark` and `recsys-flink` became larger because the optimized runtime now includes the required lakehouse, object-store, and streaming JARs in a reproducible runtime layer instead of relying on ad hoc runtime resolution. `recsys-api-serving` and `recsys-mlops-spark` also became larger because the final images now include the full runtime dependencies needed in GCP/Kubeflow, including Feast, PostgreSQL client/pool packages, and MinIO/S3 client support. Those are intentional reliability trade-offs: the optimized image set is smaller overall, while the larger images are the ones that carry additional production runtime dependencies.
+**Figure: historical pre-optimization measurement.** This screenshot belongs to
+the archived image layout and is retained only as before-refactor evidence.
+
+![Historical Docker optimization result](../../pngs/docker_after_optimization_proof.png)
+
+**Figure: historical post-optimization measurement.** This result predates the
+15-image catalog and unified Spark refactor; use the current proof commands
+above for present-day measurements.
+
+## Evidence Checklist
+
+For the final submission, capture:
+
+- `make validate` passing;
+- the catalog showing exactly 15 image IDs;
+- a full plan showing each image once and `recsys-spark` once;
+- Jenkins `[BUILD] Build image N/M` markers;
+- Trivy policy output;
+- unified Spark smoke-test success;
+- Artifact Registry commit tag and SHA-256 digest;
+- `.ci-image-manifest/release-plan.env`; and
+- Helm/Kubeflow values using the same immutable digest produced by the build.
+
+Suggested screenshot filenames:
+
+```text
+docs/pngs/docker_catalog_validation_proof.png
+docs/pngs/docker_build_scan_proof.png
+docs/pngs/docker_artifact_registry_digest_proof.png
+docs/pngs/docker_unified_spark_smoke_proof.png
+```
+
+## Authoritative Code Reference
+
+| Responsibility | Code |
+| --- | --- |
+| Image catalog | [`images/catalog.json`](../../../images/catalog.json) |
+| Catalog schema | [`images/catalog.schema.json`](../../../images/catalog.schema.json) |
+| Catalog validation/query CLI | [`jenkins/python/image_catalog.py`](../../../jenkins/python/image_catalog.py) |
+| Release image ordering | [`jenkins/python/release_plan.py`](../../../jenkins/python/release_plan.py) |
+| Build-once loop | [`release_build_publish.sh`](../../../jenkins/scripts/entrypoints/release_build_publish.sh) |
+| Build, scan, push and digest recording | [`engine.sh`](../../../jenkins/scripts/build/engine.sh) |
+| Image manifest | [`image_manifest.sh`](../../../jenkins/scripts/lib/image_manifest.sh) |
+| Container scan policy | [`container_scan_policy.py`](../../../jenkins/python/container_scan_policy.py), [`container-scan-policy.json`](../../../jenkins/config/container-scan-policy.json) |
+| Unified Spark smoke test | [`unified_spark_image.sh`](../../../jenkins/scripts/test/unified_spark_image.sh) |
+| Build context exclusions | [`.dockerignore`](../../../.dockerignore) |
+| No-legacy/runtime layout contracts | [`test_repository_layout_contracts.py`](../../../tests/contract/test_repository_layout_contracts.py) |

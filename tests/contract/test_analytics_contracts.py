@@ -149,3 +149,20 @@ def test_data_platform_airflow_dags_are_split_one_file_per_dag():
         contents = (dag_dir / filename).read_text(encoding="utf-8")
         assert f'dag_id="{dag_id}"' in contents
         assert contents.count("dag_id=") == 1
+
+
+def test_drift_retrain_dag_fails_on_kfp_error_and_uses_mtls():
+    dag = (
+        ROOT
+        / "apps"
+        / "data-platform"
+        / "src"
+        / "orchestration"
+        / "airflow"
+        / "dags"
+        / "recsys_feature_drift_monitoring.py"
+    ).read_text(encoding="utf-8")
+
+    assert "--fail-on-trigger-error" in dag
+    assert "source_run_path=" not in dag
+    assert dag.count("istio_inject=True") == 3

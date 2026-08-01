@@ -72,7 +72,6 @@ def main() -> int:
     payload: dict[str, object] = {"drift_report": report}
     if not args.skip_trigger:
         pipeline_args = parse_pipeline_args(args.pipeline_arg)
-        pipeline_args.setdefault("source_run_path", f"smoke://{args.run_id}")
         result = trigger_retrain(
             str(report_path),
             args.kfp_endpoint,

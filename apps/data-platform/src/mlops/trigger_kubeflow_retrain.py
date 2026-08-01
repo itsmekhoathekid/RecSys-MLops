@@ -87,8 +87,6 @@ def default_pipeline_arguments(run_id: str) -> dict[str, Any]:
     ray_best_result_path = f"{base}/ml/ray/best_result.json"
     return {
         "pipeline_run_id": f"retrain-{slug}",
-        "output_base": base,
-        "feature_summary_path": f"{base}/feature_summary.json",
         "feature_source": "offline_feature_store",
         "split_output_dir": f"{base}/ml/bst_split",
         "dataset_metadata_path": f"{base}/ml/bst_split/dataset_version_meta.json",

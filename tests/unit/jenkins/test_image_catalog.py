@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +33,49 @@ def test_catalog_contains_exactly_fifteen_images_and_one_spark() -> None:
     assert {name for name in images if name.endswith("-spark")} == {"recsys-spark"}
     assert all(spec["context"] == "." for spec in images.values())
     assert all((ROOT / spec["dockerfile"]).is_file() for spec in images.values())
+
+
+def test_dockerfile_python_dependencies_are_exactly_pinned() -> None:
+    flags_with_value = {
+        "--constraint",
+        "--extra-index-url",
+        "--index-strategy",
+        "--index-url",
+        "--python",
+        "--requirement",
+        "-r",
+    }
+    floating: dict[str, list[str]] = {}
+
+    for dockerfile in sorted((ROOT / "images").rglob("Dockerfile")):
+        logical_lines = re.sub(
+            r"\\\n\s*",
+            " ",
+            dockerfile.read_text(encoding="utf-8"),
+        )
+        for install in re.finditer(
+            r"(?:(?:python\d*(?:\.\d+)?\s+-m\s+)?pip|uv\s+pip)"
+            r"\s+install\b(.*?)(?=\s+&&|\n|$)",
+            logical_lines,
+        ):
+            tokens = shlex.split(install.group(1))
+            skip_next = False
+            for token in tokens:
+                if skip_next:
+                    skip_next = False
+                    continue
+                if token in flags_with_value:
+                    skip_next = True
+                    continue
+                if token.startswith("-"):
+                    continue
+                if "==" not in token and "@" not in token:
+                    floating.setdefault(
+                        str(dockerfile.relative_to(ROOT)),
+                        [],
+                    ).append(token)
+
+    assert floating == {}
 
 
 def test_internal_dependencies_are_topologically_ordered() -> None:

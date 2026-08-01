@@ -60,7 +60,7 @@ TRIGGER_KUBEFLOW_RETRAIN_COMMAND = (
     "--pipeline-name $KFP_PIPELINE_NAME "
     "--pipeline-version-id $KFP_PIPELINE_VERSION_ID "
     "--pushgateway-url $PUSHGATEWAY_URL "
-    "--pipeline-arg source_run_path=s3a://$LAKE_BUCKET/raw/$DATA_GENERATOR_RUN_ID"
+    "--fail-on-trigger-error"
 )
 
 
@@ -77,16 +77,19 @@ if DAG is not None:
             "run_offline_feature_drift",
             DRIFT_RETRAIN_IMAGE,
             RUN_OFFLINE_FEATURE_DRIFT_COMMAND,
+            istio_inject=True,
         )
         push_metrics = pod_task(
             "push_drift_metrics",
             DRIFT_RETRAIN_IMAGE,
             PUSH_DRIFT_METRICS_COMMAND,
+            istio_inject=True,
         )
         trigger_retrain = pod_task(
             "trigger_kubeflow_retrain_if_drift",
             DRIFT_RETRAIN_IMAGE,
             TRIGGER_KUBEFLOW_RETRAIN_COMMAND,
+            istio_inject=True,
         )
 
         run_drift >> push_metrics >> trigger_retrain

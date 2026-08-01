@@ -2,24 +2,34 @@ ARG RECSYS_BASE_IMAGE=registry.example.invalid/recsys/recsys-base-python:require
 FROM ${RECSYS_BASE_IMAGE} AS deps
 
 WORKDIR /opt/recsys
+COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock /opt/recsys/apps/data-platform/
 ENV UV_LINK_MODE=copy \
     UV_CONCURRENT_DOWNLOADS=8 \
     UV_CONCURRENT_BUILDS=8
 
-RUN python -m venv /opt/venv \
-    && uv pip install --python /opt/venv/bin/python --no-cache \
+RUN python -m venv /opt/venv
+RUN uv export \
+        --project /opt/recsys/apps/data-platform \
+        --frozen \
+        --no-dev \
+        --no-emit-project \
+        --no-hashes \
+        --format requirements-txt \
+        --output-file /tmp/data-constraints.txt
+RUN uv pip install --python /opt/venv/bin/python --no-cache \
+        --constraint /tmp/data-constraints.txt \
         boto3==1.35.36 \
-        botocore==1.35.36 \
+        botocore==1.35.93 \
         fsspec==2024.10.0 \
-        numpy \
-        pyarrow \
-        pydantic \
-        psycopg[binary] \
-        psycopg-pool \
-        pyyaml \
-        requests \
+        numpy==2.4.6 \
+        pyarrow==25.0.0 \
+        pydantic==2.13.4 \
+        "psycopg[binary]==3.3.4" \
+        psycopg-pool==3.3.1 \
+        pyyaml==6.0.3 \
+        requests==2.34.2 \
         s3fs==2024.10.0 \
-        tqdm \
+        tqdm==4.69.0 \
         setuptools==83.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0

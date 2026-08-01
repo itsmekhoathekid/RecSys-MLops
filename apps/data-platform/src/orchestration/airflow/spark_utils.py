@@ -108,7 +108,13 @@ def parse_node_selector(value: str) -> dict[str, str]:
     return selectors
 
 
-def pod_task(task_id: str, image: str, command: str):
+def pod_task(
+    task_id: str,
+    image: str,
+    command: str,
+    *,
+    istio_inject: bool = False,
+):
     return KubernetesPodOperator(
         task_id=task_id,
         name=task_id.replace("_", "-"),
@@ -118,7 +124,7 @@ def pod_task(task_id: str, image: str, command: str):
         arguments=[f"set -euo pipefail; {command}"],
         env_vars=COMMON_ENV,
         env_from=pod_env_from(),
-        annotations={"sidecar.istio.io/inject": "false"},
+        annotations={"sidecar.istio.io/inject": str(istio_inject).lower()},
         node_selector=parse_node_selector(DATAFLOW_NODE_SELECTOR),
         get_logs=True,
         on_finish_action="delete_succeeded_pod",

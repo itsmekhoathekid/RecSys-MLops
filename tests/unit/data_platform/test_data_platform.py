@@ -1073,12 +1073,14 @@ def test_offline_feature_drift_bootstraps_missing_reference_baseline(tmp_path):
 
 def test_pipeline_arg_parser_and_default_retrain_arguments():
     parsed = parse_pipeline_args(
-        ["source_run_path=s3a://lake/raw/run1", "training_percent=0.02"]
+        ["training_percent=0.02", "max_trials=1"]
     )
     defaults = default_pipeline_arguments("run-1")
 
-    assert parsed["source_run_path"] == "s3a://lake/raw/run1"
+    assert parsed == {"training_percent": "0.02", "max_trials": "1"}
     assert defaults["pipeline_run_id"] == "retrain-run-1"
+    assert "output_base" not in defaults
+    assert "feature_summary_path" not in defaults
     assert defaults["ray_job_name"].startswith("recsys-bst-ray-tune-retrain-run-1-")
     assert defaults["ray_train_job_name"].startswith(
         "recsys-bst-ray-ddp-retrain-run-1-"
@@ -1150,7 +1152,10 @@ def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
             assert kwargs["params"]["ray_train_job_name"].startswith(
                 "recsys-bst-ray-ddp-retrain-run-2-"
             )
-            assert kwargs["params"]["source_run_path"] == "s3a://lake/raw/run2"
+            assert kwargs["params"]["training_percent"] == 0.02
+            assert "output_base" not in kwargs["params"]
+            assert "feature_summary_path" not in kwargs["params"]
+            assert "source_run_path" not in kwargs["params"]
             return Run()
 
     monkeypatch.setitem(
@@ -1162,7 +1167,7 @@ def test_trigger_retrain_calls_kfp_when_drift_fails(monkeypatch, tmp_path):
         "exp",
         "recsys-pipeline",
         pushgateway_url=None,
-        pipeline_arguments={"source_run_path": "s3a://lake/raw/run2"},
+        pipeline_arguments={"training_percent": 0.02},
     )
 
     assert failed_features(json.loads(report.read_text(encoding="utf-8"))) == [
