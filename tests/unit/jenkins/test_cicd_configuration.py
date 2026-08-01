@@ -176,6 +176,14 @@ printf 'attempts=%s logins=%s\n' \
     assert "digest: sha256:" in push_log.read_text(encoding="utf-8")
 
 
+def test_full_jenkins_trigger_reuses_crumb_session_cookie():
+    trigger = (ROOT / "ops/gcp/trigger_full_jenkins.sh").read_text(encoding="utf-8")
+
+    assert '--cookie-jar "${cookie_file}"' in trigger
+    assert '--cookie "${cookie_file}"' in trigger
+    assert 'rm -f "${headers_file}" "${cookie_file}"' in trigger
+
+
 def test_production_verification_is_fail_fast_and_kfp_check_is_read_only():
     runtime = (ROOT / "jenkins/scripts/test/runtime.sh").read_text(encoding="utf-8")
     ml_platform = (ROOT / "jenkins/scripts/test/ml_platform.sh").read_text(

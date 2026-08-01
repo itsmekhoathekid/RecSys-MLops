@@ -11,10 +11,15 @@ gateway_credentials_id="${GATEWAY_SMOKE_CREDENTIALS_ID:-}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
 components="${FORCE_COMPONENTS:-materialize,training,dp1,dp2,dp3,api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,ci_config}"
 crumb_header=()
+headers_file="$(mktemp)"
+cookie_file="$(mktemp)"
+trap 'rm -f "${headers_file}" "${cookie_file}"' EXIT
 
 jenkins_url="${jenkins_url%/}"
 if crumb_json="$(
-  curl -fsS --user "${jenkins_user}:${jenkins_token}" \
+  curl -fsS \
+    --user "${jenkins_user}:${jenkins_token}" \
+    --cookie-jar "${cookie_file}" \
     "${jenkins_url}/crumbIssuer/api/json" 2>/dev/null
 )"; then
   crumb_field="$(
@@ -28,10 +33,9 @@ if crumb_json="$(
   crumb_header=(-H "${crumb_field}: ${crumb_value}")
 fi
 
-headers_file="$(mktemp)"
-trap 'rm -f "${headers_file}"' EXIT
 curl -fsS \
   --user "${jenkins_user}:${jenkins_token}" \
+  --cookie "${cookie_file}" \
   "${crumb_header[@]}" \
   -D "${headers_file}" \
   -o /dev/null \
