@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+unit_name="${1:?deploy unit is required}"
+plan_path="${2:-.ci-release-plan.json}"
+[[ -f "${plan_path}" ]] || {
+  printf 'release plan does not exist: %s\n' "${plan_path}" >&2
+  exit 2
+}
+
+source jenkins/scripts/lib/common.sh
+source jenkins/scripts/lib/config.sh
+source jenkins/scripts/lib/helm.sh
+source jenkins/scripts/lib/image_manifest.sh
+source jenkins/scripts/lib/registry.sh
+source jenkins/scripts/deploy/preflight/gcp.sh
+source jenkins/scripts/deploy/runtime.sh
+source jenkins/scripts/deploy/feast.sh
+source jenkins/scripts/deploy/ml_platform.sh
+source jenkins/scripts/deploy/serving.sh
+source jenkins/scripts/deploy/rollout.sh
+source jenkins/scripts/deploy/demo.sh
+source jenkins/scripts/deploy/analytics.sh
+
+image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_REGISTRY:-$(python3 jenkins/python/configuration.py gcp imageRegistry)}}"
+image_registry="${image_registry%/}"
+image_tag="${IMAGE_TAG:-${GIT_COMMIT:-$(git rev-parse HEAD)}}"
+namespace_data="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
+namespace_api="${API_NAMESPACE:-api-serving}"
+namespace_kserve="${KSERVE_NAMESPACE:-kserve-triton-inference}"
+namespace_kubeflow="${KUBEFLOW_NAMESPACE:-kubeflow}"
+namespace_mlops="${MLOPS_NAMESPACE:-experiment-tracking}"
+namespace_analytics="${ANALYTICS_NAMESPACE:-analytics}"
+namespace_demo="${DEMO_WEB_NAMESPACE:-api-serving}"
+promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
+timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
+kfp_port_forward_pids=()
+kfp_upload_endpoint_result=""
+local_model_store_endpoint_result=""
+trap stop_runtime_port_forwards EXIT
+
+unit_kind=""
+unit_release=""
+unit_namespace=""
+unit_chart=""
+unit_image_names=()
+unit_image_paths=()
+selected_components=","
+while IFS=$'\t' read -r record_type value_a value_b value_c value_d; do
+  case "${record_type}" in
+    UNIT)
+      unit_kind="${value_a}"
+      unit_release="${value_b}"
+      unit_namespace="${value_c}"
+      unit_chart="${value_d}"
+      ;;
+    IMAGE)
+      unit_image_names+=("${value_a}")
+      unit_image_paths+=("${value_b}")
+      ;;
+    SELECTED_COMPONENT)
+      selected_components+="${value_a},"
+      ;;
+    *)
+      recsys_error "unsupported deploy context record: ${record_type}"
+      exit 2
+      ;;
+  esac
+done < <(
+  python3 jenkins/python/release_plan.py deploy-context "${unit_name}" --plan "${plan_path}"
+)
+[[ -n "${unit_kind}" && -n "${unit_release}" && -n "${unit_namespace}" ]] || {
+  recsys_error "deploy context is incomplete for ${unit_name}"
+  exit 2
+}
+
+has_selected_component() {
+  [[ "${selected_components}" == *",$1,"* ]]
+}
+
+if [[ "${DEPLOY_TARGET:-gcp-production}" == "gcp-production" ]]; then
+  [[ -s .ci-deploy/preflight-commit ]] \
+    && [[ "$(<.ci-deploy/preflight-commit)" == "$(git rev-parse HEAD)" ]] || {
+      recsys_error "production release preflight is missing or stale"
+      exit 2
+    }
+  verify_gcp_deploy_unit \
+    "${unit_name}" "${unit_kind}" "${unit_namespace}" "${unit_release}"
+fi
+
+read_current_helm_value() {
+  local value_path="$1"
+  helm get values "${unit_release}" -n "${unit_namespace}" -o json 2>/dev/null \
+    | python3 -c '
+import json, sys
+value = json.load(sys.stdin)
+for token in sys.argv[1].split("."):
+    value = value.get(token, {}) if isinstance(value, dict) else {}
+print(value if isinstance(value, str) else "")
+' "${value_path}" 2>/dev/null || true
+}
+
+resolve_unit_image() {
+  local image_name="$1"
+  local value_path="$2"
+  local reference
+  reference="$(image_manifest_lookup "${image_name}")"
+  if [[ -z "${reference}" ]]; then
+    reference="$(read_current_helm_value "${value_path}")"
+  fi
+  if [[ -z "${reference}" ]]; then
+    reference="${image_registry}/${image_name}:${image_tag}"
+  fi
+  if [[ "${DEPLOY_TARGET:-gcp-production}" == "gcp-production" && "${reference}" != *@sha256:* ]]; then
+    registry_resolve_digest_reference "${reference}" "${image_registry}"
+  else
+    printf '%s' "${reference}"
+  fi
+}
+
+deploy_helm_unit() {
+  local values_file="${unit_chart}/values-gcp.yaml"
+  local image_index image_reference
+  local helm_args=()
+  [[ -n "${unit_chart}" ]] || {
+    recsys_error "Helm deploy unit ${unit_name} has no chart"
+    return 2
+  }
+  [[ -f "${values_file}" ]] && helm_args+=(-f "${values_file}")
+  for image_index in "${!unit_image_names[@]}"; do
+    image_reference="$(resolve_unit_image \
+      "${unit_image_names[image_index]}" "${unit_image_paths[image_index]}")"
+    helm_args+=(--set-string "${unit_image_paths[image_index]}=${image_reference}")
+  done
+  if [[ "${unit_name}" == "data-config" && -s .ci-deploy/kfp-upload.json ]]; then
+    local kfp_pipeline_name kfp_pipeline_version
+    IFS=$'\t' read -r kfp_pipeline_name kfp_pipeline_version < <(
+      python3 -c '
+import json
+payload = json.load(open(".ci-deploy/kfp-upload.json", encoding="utf-8"))
+print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id", "")))
+'
+    )
+    helm_args+=(
+      --set "observability.kfpPipelineName=${kfp_pipeline_name}"
+      --set-string "observability.kfpPipelineVersionId=${kfp_pipeline_version}"
+    )
+  elif [[ "${unit_name}" == "data-config" ]]; then
+    local current_kfp_name current_kfp_version
+    current_kfp_name="$(read_current_helm_value observability.kfpPipelineName)"
+    current_kfp_version="$(read_current_helm_value observability.kfpPipelineVersionId)"
+    [[ -n "${current_kfp_name}" ]] \
+      && helm_args+=(--set "observability.kfpPipelineName=${current_kfp_name}")
+    [[ -n "${current_kfp_version}" ]] \
+      && helm_args+=(--set-string "observability.kfpPipelineVersionId=${current_kfp_version}")
+  fi
+  helm upgrade --install "${unit_release}" "${unit_chart}" \
+    --namespace "${unit_namespace}" \
+    --create-namespace \
+    --reset-values \
+    --atomic \
+    --cleanup-on-fail \
+    --wait \
+    --wait-for-jobs \
+    --history-max "${HELM_HISTORY_MAX:-10}" \
+    --timeout "${timeout}" \
+    "${helm_args[@]}"
+}
+
+case "${unit_name}" in
+  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow)
+    deploy_helm_unit
+    ;;
+  feature-registry)
+    feast_registry_apply "$(resolve_release_image recsys-feature-store)"
+    ;;
+  mlflow)
+    deploy_mlflow
+    ;;
+  kubeflow-bst-package)
+    mkdir -p .ci-deploy
+    open_kfp_upload_endpoint
+    KFP_UPLOAD_RESULT_PATH=.ci-deploy/kfp-upload.json \
+      KFP_ENDPOINT="${kfp_upload_endpoint_result}" \
+      bash jenkins/scripts/deploy/upload_kfp_package.sh
+    ;;
+  analytics)
+    deploy_analytics
+    ;;
+  serving)
+    if has_selected_component api; then
+      deploy_api
+    fi
+    if has_selected_component kserve; then
+      deploy_kserve
+    fi
+    ;;
+  rollout)
+    deploy_rollout_watcher "${unit_namespace}"
+    ;;
+  demo-web)
+    deploy_demo_web
+    ;;
+  *)
+    recsys_error "unsupported deploy unit: ${unit_name} (${unit_kind})"
+    exit 2
+    ;;
+esac

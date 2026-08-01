@@ -1,33 +1,43 @@
 namespace:
   create: false
 
-staticVolumes:
-  enabled: false
-
-registry:
-  pvc:
-    volumeName: ""
-    storage: 10Gi
-    storageClassName: standard-rwo
+productionTarget:
+  enabled: true
+  projectId: rec-sys-503309
+  region: asia-southeast1
+  zone: asia-southeast1-b
+  cluster: recsys-mlops-gke
+  context: gke_rec-sys-503309_asia-southeast1-b_recsys-mlops-gke
+  imageRegistry: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys
 
 jenkins:
-  imagePushRegistry: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
-  imagePullRegistry: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys
-  requireGcpArtifactRegistry: true
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  runtimeCredentialsSecret:
+    enabled: true
   dind:
-    useJenkinsHomePvc: true
+    useJenkinsHomePvc: false
+    pvc:
+      enabled: true
+      storage: 200Gi
+      storageClassName: standard-rwo
   runtimeTools:
     installOnStartup: true
   webhookIngress:
     enabled: true
   pvc:
     volumeName: ""
-    storage: 50Gi
+    storage: 200Gi
     storageClassName: standard-rwo
 
 modelRolloutWatcher:
   enabled: true
-  image: asia-southeast1-docker.pkg.dev/fsds-coursework/recsys/recsys-mlops-training:latest
+  image: asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys/recsys-mlops-training:gcp
   imagePullPolicy: Always
   autoProgressiveEnabled: true
   progressiveWeights: "10,25,50"

@@ -1,0 +1,298 @@
+{
+  "version": 2,
+  "artifacts": {
+    "kubeflow-bst": {
+      "consumesImages": [
+        "recsys-mlops-training",
+        "recsys-spark"
+      ]
+    }
+  },
+  "units": [
+    {
+      "name": "data-config",
+      "kind": "helm",
+      "release": "recsys-data-config",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-data-config",
+      "components": [
+        "dp1"
+      ],
+      "consumesImages": [
+        "recsys-data-ingestion",
+        "recsys-feature-store",
+        "recsys-drift-retrain",
+        "recsys-spark",
+        "recsys-flink",
+        "recsys-analytics-dbt"
+      ],
+      "imageValues": {
+        "recsys-data-ingestion": "images.dataIngestion",
+        "recsys-feature-store": "images.featureStore",
+        "recsys-drift-retrain": "images.driftRetrain",
+        "recsys-spark": "images.spark",
+        "recsys-flink": "images.flink",
+        "recsys-analytics-dbt": "images.analyticsDbt"
+      },
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "kubeflow-bst-package"
+      ]
+    },
+    {
+      "name": "data-lakehouse",
+      "kind": "helm",
+      "release": "recsys-data-lakehouse",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-data-lakehouse",
+      "components": [
+        "dp1"
+      ],
+      "consumesImages": [],
+      "imageValues": {},
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "data-config"
+      ]
+    },
+    {
+      "name": "source-store",
+      "kind": "helm",
+      "release": "recsys-source-store",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-source-store",
+      "components": [],
+      "consumesImages": [
+        "recsys-data-ingestion"
+      ],
+      "imageValues": {
+        "recsys-data-ingestion": "images.dataIngestion"
+      },
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "data-config"
+      ]
+    },
+    {
+      "name": "event-stream",
+      "kind": "helm",
+      "release": "recsys-event-stream",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-event-stream",
+      "components": [
+        "dp1"
+      ],
+      "consumesImages": [],
+      "imageValues": {},
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "data-config"
+      ]
+    },
+    {
+      "name": "feature-store",
+      "kind": "helm",
+      "release": "recsys-feature-store",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-feature-store",
+      "components": [],
+      "consumesImages": [
+        "recsys-feature-store"
+      ],
+      "imageValues": {
+        "recsys-feature-store": "images.featureStore"
+      },
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "data-config",
+        "data-lakehouse"
+      ]
+    },
+    {
+      "name": "kafka-connect",
+      "kind": "helm",
+      "release": "recsys-kafka-connect",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-kafka-connect",
+      "components": [],
+      "consumesImages": [
+        "recsys-kafka-connect",
+        "recsys-data-ingestion"
+      ],
+      "imageValues": {
+        "recsys-kafka-connect": "images.kafkaConnect",
+        "recsys-data-ingestion": "images.dataIngestion"
+      },
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "data-config",
+        "source-store",
+        "event-stream"
+      ]
+    },
+    {
+      "name": "feature-registry",
+      "kind": "kubernetes-action",
+      "release": "recsys-feast-registry",
+      "namespace": "recsys-dataflow",
+      "components": [
+        "materialize"
+      ],
+      "consumesImages": [
+        "recsys-feature-store"
+      ],
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "feature-store"
+      ]
+    },
+    {
+      "name": "streaming",
+      "kind": "helm",
+      "release": "recsys-streaming",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-streaming",
+      "components": [],
+      "consumesImages": [
+        "recsys-data-ingestion",
+        "recsys-flink"
+      ],
+      "imageValues": {
+        "recsys-data-ingestion": "images.dataIngestion",
+        "recsys-flink": "images.flink"
+      },
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "data-config",
+        "data-lakehouse",
+        "event-stream",
+        "feature-store"
+      ]
+    },
+    {
+      "name": "airflow",
+      "kind": "helm",
+      "release": "recsys-airflow",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-airflow",
+      "components": [],
+      "consumesImages": [
+        "recsys-airflow",
+        "recsys-data-ingestion",
+        "recsys-analytics-dbt",
+        "recsys-drift-retrain",
+        "recsys-feature-store",
+        "recsys-spark"
+      ],
+      "imageValues": {
+        "recsys-airflow": "images.airflow",
+        "recsys-data-ingestion": "images.dataIngestion",
+        "recsys-feature-store": "images.featureStore",
+        "recsys-drift-retrain": "images.driftRetrain",
+        "recsys-spark": "images.spark",
+        "recsys-analytics-dbt": "images.analyticsDbt"
+      },
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "data-config",
+        "data-lakehouse",
+        "source-store",
+        "event-stream",
+        "feature-store"
+      ]
+    },
+    {
+      "name": "mlflow",
+      "kind": "helm",
+      "release": "recsys-mlflow",
+      "namespace": "experiment-tracking",
+      "chart": "infra/helm/mlflow-stack",
+      "components": [],
+      "consumesImages": [
+        "recsys-mlflow"
+      ],
+      "consumesArtifacts": [],
+      "dependsOn": []
+    },
+    {
+      "name": "kubeflow-bst-package",
+      "kind": "kubeflow-package",
+      "release": "recsys-bst-feature-train-evaluate",
+      "namespace": "kubeflow",
+      "components": [],
+      "consumesImages": [
+        "recsys-mlops-training",
+        "recsys-spark"
+      ],
+      "consumesArtifacts": [
+        "kubeflow-bst"
+      ],
+      "dependsOn": [
+        "mlflow"
+      ]
+    },
+    {
+      "name": "analytics",
+      "kind": "helm",
+      "release": "recsys-analytics",
+      "namespace": "analytics",
+      "chart": "infra/helm/recsys-analytics",
+      "components": [],
+      "consumesImages": [
+        "recsys-analytics-dbt",
+        "recsys-analytics-superset"
+      ],
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "data-lakehouse"
+      ]
+    },
+    {
+      "name": "serving",
+      "kind": "helm",
+      "release": "recsys-serving",
+      "namespace": "kserve-triton-inference",
+      "chart": "infra/helm/recsys-serving",
+      "components": [
+        "kserve"
+      ],
+      "consumesImages": [
+        "recsys-api-serving"
+      ],
+      "consumesArtifacts": [],
+      "dependsOn": []
+    },
+    {
+      "name": "rollout",
+      "kind": "jenkins-action",
+      "release": "recsys-progressive-rollout",
+      "namespace": "ci",
+      "components": [
+        "rollout"
+      ],
+      "consumesImages": [
+        "recsys-mlops-training"
+      ],
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "serving"
+      ]
+    },
+    {
+      "name": "demo-web",
+      "kind": "helm",
+      "release": "recsys-demo-web",
+      "namespace": "api-serving",
+      "chart": "infra/helm/recsys-demo-web",
+      "components": [],
+      "consumesImages": [
+        "recsys-demo-api",
+        "recsys-demo-web"
+      ],
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "serving"
+      ]
+    }
+  ]
+}

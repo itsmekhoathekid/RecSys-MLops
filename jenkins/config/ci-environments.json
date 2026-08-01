@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "profiles": {
+    "data": {
+      "projectPath": "apps/data-platform",
+      "lockFile": "apps/data-platform/uv.lock",
+      "pythonVersion": "3.11"
+    },
+    "ml": {
+      "projectPath": "apps/ml-system",
+      "lockFile": "apps/ml-system/uv.lock",
+      "pythonVersion": "3.11"
+    },
+    "serving": {
+      "projectPath": "apps/api-serving",
+      "lockFile": "apps/api-serving/uv.lock",
+      "pythonVersion": "3.11"
+    },
+    "demo": {
+      "projectPath": "apps/demo-web/backend",
+      "lockFile": "apps/demo-web/backend/uv.lock",
+      "pythonVersion": "3.11"
+    },
+    "analytics": {
+      "projectPath": "apps/analytics",
+      "lockFile": "apps/analytics/uv.lock",
+      "pythonVersion": "3.11"
+    }
+  }
+}

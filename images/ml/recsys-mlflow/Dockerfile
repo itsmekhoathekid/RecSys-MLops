@@ -1,0 +1,35 @@
+FROM python:3.11-slim AS deps
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    UV_CONCURRENT_DOWNLOADS=8 \
+    UV_CONCURRENT_BUILDS=8
+
+RUN pip install --no-cache-dir uv \
+    && python -m venv /opt/venv
+
+RUN uv pip install --python /opt/venv/bin/python --no-cache \
+    boto3 \
+    jaraco.context==6.1.0 \
+    mlflow \
+    psycopg2-binary \
+    setuptools==83.0.0 \
+    wheel==0.46.2
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/venv/bin:${PATH}
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash \
+    && ln -s /opt/venv/bin/mlflow /usr/local/bin/mlflow \
+    && rm -rf /var/lib/apt/lists/* \
+    && /usr/local/bin/pip uninstall -y wheel setuptools jaraco.context \
+    && /usr/local/bin/pip uninstall -y pip
+
+COPY --from=deps /opt/venv /opt/venv
+
+CMD ["mlflow", "--help"]

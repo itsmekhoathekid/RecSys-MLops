@@ -6,7 +6,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from jenkins.scripts.detect_changed_components import classify_paths
+from jenkins.python.change_detection.detector import (  # noqa: E402
+    ChangedFile,
+    detect_changed_components,
+)
+
+
+def detect(path: str):
+    return detect_changed_components([ChangedFile("M", path)])
 
 
 def test_demo_web_paths_select_only_the_demo_component() -> None:
@@ -14,18 +21,19 @@ def test_demo_web_paths_select_only_the_demo_component() -> None:
         "apps/demo-web/frontend/src/App.tsx",
         "apps/demo-web/backend/app/main.py",
         "infra/helm/recsys-demo-web/templates/ingress.yaml",
-        "jenkins/scripts/demo_web_smoke.sh",
-        "jenkins/demo-web-rollback/Jenkinsfile",
+        "jenkins/scripts/test/demo_web_smoke.sh",
         "tests/contract/test_demo_web_contracts.py",
     ):
-        result = classify_paths([path])
-        expected = ("demo_web", "ci_config") if path.startswith("jenkins/") else ("demo_web",)
-        assert result.component_names == expected
+        result = detect(path)
+        assert result.component_names == ("demo_web",)
+        if path.startswith(("jenkins/", "infra/helm/", "tests/contract/")):
+            assert result.flags["RUN_CI_CONFIG"] is True
 
 
 def test_demo_security_and_gateway_contracts_include_the_demo_component() -> None:
-    security = classify_paths(["infra/helm/recsys-security/templates/istio-authorization.yaml"])
-    gateway = classify_paths(["tests/contract/test_gateway_contracts.py"])
+    security = detect("infra/helm/recsys-security/templates/istio-authorization.yaml")
+    gateway = detect("tests/contract/test_gateway_contracts.py")
 
-    assert security.component_names == ("demo_web", "ci_config")
+    assert security.component_names == ("demo_web",)
+    assert security.flags["RUN_CI_CONFIG"] is True
     assert gateway.component_names == ("api", "demo_web")
