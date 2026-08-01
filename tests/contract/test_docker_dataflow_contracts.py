@@ -294,6 +294,10 @@ def test_k8s_airflow_spark_tasks_use_native_kubernetes_mode():
         "spark.kubernetes.submission.waitAppCompletion=true",
         "spark.kubernetes.submission.connectionTimeout=${SPARK_K8S_CONNECTION_TIMEOUT:-60000}",
         "spark.kubernetes.submission.requestTimeout=${SPARK_K8S_REQUEST_TIMEOUT:-180000}",
+        'SPARK_SUBMIT_LOG="$(mktemp)"',
+        "Application status .*",
+        "exit code: [1-9][0-9]*",
+        'echo "Spark Kubernetes application failed" >&2; exit 1',
         "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
     ]:
         assert expected in source
@@ -328,6 +332,7 @@ def test_dp1_batch_ingestion_commits_bronze_iceberg_with_spark():
     assert "batch_lakehouse_ingestion.py" in dag
     assert "write_iceberg_table" in ingestion_source
     assert "catalog.bronze_table" in ingestion_source or "bronze_" in ingestion_source
+    assert 'frame.fillna({"brand_id": 0})' in ingestion_source
     assert 'source="lakehouse"' in dp2_source
     assert 'source="parquet"' not in dp2_source
 

@@ -93,6 +93,11 @@ def load_generator_run_to_lakehouse(
             counts: dict[str, int] = {}
             for table_name in RAW_GENERATOR_TABLES:
                 frame = read_parquet_table(spark, str(run_path), table_name)
+                if table_name == "user_preferences":
+                    # PostgreSQL uses 0 for an absent optional brand so the composite
+                    # source key remains non-null. Keep Bronze consistent with that
+                    # canonical representation and its DataHub data contract.
+                    frame = frame.fillna({"brand_id": 0})
                 frame = frame.withColumn("source_run_id", F.lit(source_run_id)).withColumn(
                     "lakehouse_ingestion_ts",
                     F.lit(ingestion_ts).cast("timestamp"),

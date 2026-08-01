@@ -121,6 +121,8 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
     )
     return (
         'SPARK_APP_SUFFIX="$(date +%s)-${RANDOM}"; '
+        'SPARK_SUBMIT_LOG="$(mktemp)"; '
+        "trap 'rm -f \"$SPARK_SUBMIT_LOG\"' EXIT; "
         "/opt/spark/bin/spark-submit "
         "--master ${SPARK_K8S_MASTER:-k8s://https://kubernetes.default.svc} "
         "--deploy-mode cluster "
@@ -156,6 +158,9 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         f"{env_conf} "
         f"{secret_conf} "
         f"{application} {application_args}".strip()
+        + ' 2>&1 | tee "$SPARK_SUBMIT_LOG"; '
+        + "if grep -Eq 'Application status .*\\(phase: Failed\\)|exit code: [1-9][0-9]*' \"$SPARK_SUBMIT_LOG\"; then "
+        + 'echo "Spark Kubernetes application failed" >&2; exit 1; fi'
     )
 
 
