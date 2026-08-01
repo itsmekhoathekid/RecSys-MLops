@@ -18,17 +18,24 @@ def dataset_versions(metadata: dict[str, Any] | None) -> dict[str, Any]:
     if not metadata:
         return {}
     splits = metadata.get("splits", {})
-    return {
-        split: {
+    versions: dict[str, Any] = {}
+    for split, payload in splits.items():
+        hudi_instant = (
+            payload.get("hudi_instant")
+            or payload.get("commit_time")
+            or payload.get("snapshot_id")
+        )
+        versions[split] = {
             "table": payload.get("table", ""),
+            "table_path": payload.get("table_path", ""),
+            "hudi_instant": hudi_instant,
             "snapshot_id": payload.get("snapshot_id"),
-            "commit_time": payload.get("commit_time"),
+            "commit_time": payload.get("commit_time") or hudi_instant,
             "tag": payload.get("tag", ""),
             "row_count": payload.get("row_count", 0),
             "jsonl_path": payload.get("jsonl_path", ""),
         }
-        for split, payload in splits.items()
-    }
+    return versions
 
 
 def log_dataset_lineage(mlflow, metadata: dict[str, Any] | None, split_contexts: dict[str, Any]) -> None:
@@ -65,10 +72,18 @@ def log_dataset_lineage(mlflow, metadata: dict[str, Any] | None, split_contexts:
             contexts = [contexts]
         for context in contexts:
             prefix = f"dataset.{context}"
+            hudi_instant = (
+                payload.get("hudi_instant")
+                or payload.get("commit_time")
+                or payload.get("snapshot_id")
+            )
             params = {
                 f"{prefix}.split": split,
                 f"{prefix}.hudi_table": payload.get("table", ""),
-                f"{prefix}.hudi_commit_time": payload.get("commit_time") or payload.get("snapshot_id"),
+                f"{prefix}.hudi_table_path": payload.get("table_path", ""),
+                f"{prefix}.hudi_instant": hudi_instant,
+                # Keep the old parameter during the artifact migration.
+                f"{prefix}.hudi_commit_time": hudi_instant,
                 f"{prefix}.hudi_tag": payload.get("tag", ""),
                 f"{prefix}.row_count": payload.get("row_count", 0),
                 f"{prefix}.jsonl_path": payload.get("jsonl_path", ""),

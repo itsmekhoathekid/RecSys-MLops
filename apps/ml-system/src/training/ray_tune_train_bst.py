@@ -272,7 +272,7 @@ def register_best_result(best_payload: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Tune and train BST with Ray Tune")
-    parser.add_argument("--base-config-path", default="/opt/recsys/configs/local/bst.yaml")
+    parser.add_argument("--base-config-path", default="/opt/recsys/configs/ml-system/training/bst.yaml")
     parser.add_argument("--split-dir", default="/workspace/recsys/data_platform/output/ml/bst_split")
     parser.add_argument("--output-dir", default="/workspace/recsys/data_platform/output/ml/ray")
     parser.add_argument("--training-percent", type=float, default=0.01)

@@ -11,7 +11,7 @@ from cli.evaluate_bst import evaluate_bst
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate the best BST checkpoint produced by Ray Tune")
     parser.add_argument("--ray-result-path", default="/workspace/recsys/data_platform/output/ml/ray/best_result.json")
-    parser.add_argument("--config-path", default="configs/local/bst.yaml")
+    parser.add_argument("--config-path", default="configs/ml-system/training/bst.yaml")
     parser.add_argument("--split", default="test")
     parser.add_argument("--metrics-path", default="")
     parser.add_argument("--dataset-metadata-path", default="")

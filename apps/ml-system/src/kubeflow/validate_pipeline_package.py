@@ -39,7 +39,7 @@ def validate_pipeline_package(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate a compiled Kubeflow pipeline package image contract.")
-    parser.add_argument("--package-path", default="infra/kubeflow/compiled/bst_training_pipeline.yaml")
+    parser.add_argument("--package-path", default="pipelines/kubeflow/compiled/bst_training_pipeline.yaml")
     parser.add_argument("--required-image", action="append", default=[])
     parser.add_argument("--forbidden-token", action="append", default=[])
     args = parser.parse_args()

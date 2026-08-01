@@ -11,45 +11,14 @@ from kubeflow.components.runtime import (
 )
 
 
-PIPELINE_IMAGE = os.getenv("RECSYS_PIPELINE_IMAGE", "recsys-mlops-training:local")
+PIPELINE_IMAGE = os.getenv("RECSYS_PIPELINE_IMAGE", "registry.example.invalid/recsys/recsys-mlops-training:required")
 RAY_IMAGE = os.getenv("RECSYS_RAY_IMAGE", PIPELINE_IMAGE)
-SPARK_IMAGE = os.getenv("RECSYS_SPARK_IMAGE", "recsys-mlops-spark:local")
-SPARK_PACKAGES = os.getenv(
-    "RECSYS_SPARK_PACKAGES",
-    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2,"
-    "org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.2,"
-    "org.apache.hadoop:hadoop-aws:3.3.4,"
-    "com.amazonaws:aws-java-sdk-bundle:1.12.262",
-)
-
-KSERVE_CD_SECRET_KEY_TO_ENV = {
-    **SECRET_KEY_TO_ENV,
-    "JENKINS_URL": "JENKINS_URL",
-    "JENKINS_USER": "JENKINS_USER",
-    "JENKINS_TOKEN": "JENKINS_TOKEN",
-}
-
-
-@dsl.container_component
-def feature_engineering(config_path: str, output_base: str, run_path: str, summary_path: str):
-    return dsl.ContainerSpec(
-        image=PIPELINE_IMAGE,
-        command=["python", "/opt/recsys/apps/ml-system/src/run_features.py"],
-        args=[
-            "--source-config",
-            config_path,
-            "--output-base",
-            output_base,
-            "--run-path",
-            run_path,
-            "--summary-path",
-            summary_path,
-        ],
-    )
+SPARK_IMAGE = os.getenv("RECSYS_SPARK_IMAGE", "registry.example.invalid/recsys/recsys-spark:required")
 
 
 @dsl.container_component
 def prepare_training_data(
+    dataset_run_id: str,
     feature_source: str,
     offline_feature_table: str,
     entity_input_path: str,
@@ -63,6 +32,7 @@ def prepare_training_data(
     iceberg_warehouse: str,
     hudi_catalog_name: str,
     hudi_warehouse: str,
+    hudi_table: str,
 ):
     return dsl.ContainerSpec(
         image=SPARK_IMAGE,
@@ -71,6 +41,8 @@ def prepare_training_data(
             "/opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py",
             "--feature-source",
             feature_source,
+            "--dataset-run-id",
+            dataset_run_id,
             "--entity-input-path",
             entity_input_path,
             "--feast-repo-path",
@@ -92,10 +64,25 @@ def prepare_training_data(
             hudi_catalog_name,
             "--hudi-warehouse",
             hudi_warehouse,
+            "--hudi-table",
+            hudi_table,
             "--iceberg-catalog-name",
             iceberg_catalog_name,
             "--iceberg-warehouse",
             iceberg_warehouse,
+            "--dataset-metadata-path",
+            dataset_metadata_path,
+        ],
+    )
+
+
+@dsl.container_component
+def create_hudi_savepoint(dataset_metadata_path: str):
+    return dsl.ContainerSpec(
+        image=SPARK_IMAGE,
+        command=["/opt/venv/bin/python"],
+        args=[
+            "/opt/recsys/apps/ml-system/src/cli/create_hudi_savepoint.py",
             "--dataset-metadata-path",
             dataset_metadata_path,
         ],
@@ -218,6 +205,7 @@ def evaluate_bst(config_path: str, ray_result_path: str, metrics_path: str, data
 def promote_bst_model(
     config_path: str,
     ray_result_path: str,
+    eval_metrics_path: str,
     output_dir: str,
     manifest_path: str,
     metric_name: str,
@@ -230,6 +218,8 @@ def promote_bst_model(
             config_path,
             "--ray-result-path",
             ray_result_path,
+            "--eval-metrics-path",
+            eval_metrics_path,
             "--output-dir",
             output_dir,
             "--manifest-path",
@@ -276,12 +266,7 @@ def trigger_kserve_model_cd(
 )
 def recsys_bst_pipeline(
     pipeline_run_id: str = "manual",
-    config_path: str = "configs/local/spark_batch.yaml",
-    bst_config_path: str = "configs/local/bst.yaml",
-    source_run_path: str = "apps/data-platform/data-generator/src/output/test_10k_seed42",
-    workspace_root: str = "/workspace/recsys",
-    output_base: str = "/workspace/recsys/data_platform/output",
-    feature_summary_path: str = "/workspace/recsys/data_platform/output/feature_summary.json",
+    bst_config_path: str = "configs/ml-system/training/bst.yaml",
     feature_source: str = "feast",
     offline_feature_table: str = "recsys_features.feature_store.ml_bst_training",
     entity_input_path: str = "postgresql://feature-postgres.recsys-dataflow.svc.cluster.local:5432/feature_store/feature_store.ml_ranking_labels",
@@ -296,7 +281,7 @@ def recsys_bst_pipeline(
     serving_output_dir: str = "/workspace/recsys/data_platform/output/ml/serving",
     promotion_manifest_path: str = "/workspace/recsys/data_platform/output/ml/serving/promotion_manifest.json",
     promotion_metric_name: str = "test_ndcg_at_10",
-    kserve_cd_score_threshold: float = 0.0,
+    kserve_cd_score_threshold: float = 0.05,
     kserve_cd_jenkins_url: str = "http://recsys-jenkins.ci.svc.cluster.local:8080",
     kserve_cd_job_name: str = "RecSys-KServe-Model-CD",
     kserve_cd_status_path: str = "/workspace/recsys/data_platform/output/ml/serving/kserve_cd_status.json",
@@ -314,15 +299,16 @@ def recsys_bst_pipeline(
     iceberg_warehouse: str = "s3a://recsys-offline-feature-store/warehouse",
     hudi_catalog_name: str = "recsys_features",
     hudi_warehouse: str = "s3a://recsys-offline-feature-store/warehouse",
+    hudi_table: str = "ml.bst_samples_native_v2",
     max_history_len: int = 50,
-    training_percent: float = 0.01,
+    training_percent: float = 1.0,
     num_epochs: int = 1,
     max_trials: int = 2,
     parallel_trials: int = 1,
     cpus_per_trial: float = 1.0,
     gpus_per_trial: float = 0.0,
     worker_replicas: int = 1,
-    distributed_training_percent: float = 0.02,
+    distributed_training_percent: float = 1.0,
     distributed_num_epochs: int = 1,
     distributed_worker_replicas: int = 2,
     distributed_num_workers: int = 2,
@@ -335,6 +321,7 @@ def recsys_bst_pipeline(
 ):
     prepare = wire_runtime(
         prepare_training_data(
+            dataset_run_id=pipeline_run_id,
             feature_source=feature_source,
             offline_feature_table=offline_feature_table,
             entity_input_path=entity_input_path,
@@ -348,10 +335,18 @@ def recsys_bst_pipeline(
             iceberg_warehouse=iceberg_warehouse,
             hudi_catalog_name=hudi_catalog_name,
             hudi_warehouse=hudi_warehouse,
+            hudi_table=hudi_table,
         ),
         pvc_name=DEFAULT_PVC_NAME,
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
+    )
+    prepare.set_display_name("Prepare versioned Hudi dataset")
+    prepare.set_retry(
+        num_retries=3,
+        backoff_duration="30s",
+        backoff_factor=2.0,
+        backoff_max_duration="5m",
     )
     tune_train = wire_runtime(
         submit_rayjob(
@@ -436,10 +431,18 @@ def recsys_bst_pipeline(
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
     ).after(distributed_train)
+    savepoint = wire_runtime(
+        create_hudi_savepoint(dataset_metadata_path=dataset_metadata_path),
+        pvc_name=DEFAULT_PVC_NAME,
+        mount_path=DEFAULT_PVC_MOUNT_PATH,
+        secret_name=DEFAULT_RUNTIME_SECRET_NAME,
+    ).after(evaluate)
+    savepoint.set_display_name("Protect Hudi dataset version")
     promote = wire_runtime(
         promote_bst_model(
             config_path=bst_config_path,
             ray_result_path=ray_best_result_path,
+            eval_metrics_path=eval_metrics_path,
             output_dir=serving_output_dir,
             manifest_path=promotion_manifest_path,
             metric_name=promotion_metric_name,
@@ -447,7 +450,7 @@ def recsys_bst_pipeline(
         pvc_name=DEFAULT_PVC_NAME,
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
-    ).after(evaluate)
+    ).after(savepoint)
     handoff = wire_runtime(
         trigger_kserve_model_cd(
             manifest_path=promotion_manifest_path,
@@ -460,7 +463,7 @@ def recsys_bst_pipeline(
         pvc_name=DEFAULT_PVC_NAME,
         mount_path=DEFAULT_PVC_MOUNT_PATH,
         secret_name=DEFAULT_RUNTIME_SECRET_NAME,
-        secret_key_to_env=KSERVE_CD_SECRET_KEY_TO_ENV,
+        secret_key_to_env=SECRET_KEY_TO_ENV,
     )
     handoff.set_display_name("Bootstrap Or Await Candidate")
     handoff.after(promote)

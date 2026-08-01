@@ -63,10 +63,11 @@ def upload_or_version_pipeline(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Upload a compiled Kubeflow pipeline package without creating a run.")
     parser.add_argument("--host", default=os.getenv("KFP_ENDPOINT", "http://127.0.0.1:8888"))
-    parser.add_argument("--package-path", default="infra/kubeflow/compiled/bst_training_pipeline.yaml")
+    parser.add_argument("--package-path", default="pipelines/kubeflow/compiled/bst_training_pipeline.yaml")
     parser.add_argument("--pipeline-name", default=os.getenv("KFP_PIPELINE_NAME", "recsys-bst-feature-train-evaluate"))
     parser.add_argument("--pipeline-version-name", default=os.getenv("KFP_PIPELINE_VERSION_NAME", ""))
     parser.add_argument("--description", default="RecSys BST training pipeline package uploaded by Jenkins CI/CD.")
+    parser.add_argument("--output-json", default=os.getenv("KFP_UPLOAD_RESULT_PATH", ""))
     args = parser.parse_args()
 
     package_path = Path(args.package_path)
@@ -90,6 +91,15 @@ def main() -> int:
         description=args.description,
     )
     result.update({"host": args.host, "package_path": str(package_path)})
+    if args.output_json:
+        output_path = Path(args.output_json)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = output_path.with_suffix(f"{output_path.suffix}.tmp")
+        temporary_path.write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temporary_path.replace(output_path)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

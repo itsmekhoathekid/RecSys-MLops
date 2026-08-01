@@ -4,8 +4,12 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from lineage.mlflow_dataset_lineage import dataset_versions, load_dataset_metadata, log_dataset_lineage
-from models import *
+from lineage.mlflow_dataset_lineage import (
+    dataset_versions,
+    load_dataset_metadata,
+    log_dataset_lineage,
+)
+from models import Trainer, load_config, recommenderDataset
 from registry.model_registry import register_model_config
 
 
@@ -45,7 +49,7 @@ def _log_to_mlflow(config, metrics, checkpoint_path, dataset_metadata=None):
                 mlflow.log_metric(_mlflow_metric_name(name), float(value))
         if checkpoint_path and Path(checkpoint_path).exists():
             mlflow.log_artifact(checkpoint_path, artifact_path="model")
-        mlflow.log_dict(config, "configs/local/bst.yaml")
+        mlflow.log_dict(config, "configs/ml-system/training/bst.yaml")
         mlflow.log_dict(metrics, "metrics/training_metrics.json")
         artifact_uri = mlflow.get_artifact_uri("model")
         return run.info.run_id, artifact_uri
@@ -54,11 +58,15 @@ def _log_to_mlflow(config, metrics, checkpoint_path, dataset_metadata=None):
 def _maybe_register_config(config, metrics, checkpoint_path, run_id, artifact_uri):
     if os.getenv("SKIP_MODEL_REGISTRY", "").lower() in {"1", "true", "yes"}:
         return
-    postgres_uri = os.getenv("MODEL_REGISTRY_POSTGRES_URI") or os.getenv("POSTGRES_MODEL_REGISTRY_URI")
+    postgres_uri = os.getenv("MODEL_REGISTRY_POSTGRES_URI") or os.getenv(
+        "POSTGRES_MODEL_REGISTRY_URI"
+    )
     if not postgres_uri:
         return
     model_name = config["model_args"].get("model_name", "BST")
-    model_version = os.getenv("MODEL_VERSION") or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    model_version = os.getenv("MODEL_VERSION") or datetime.now(timezone.utc).strftime(
+        "%Y%m%d%H%M%S"
+    )
     register_model_config(
         postgres_uri=postgres_uri,
         model_name=model_name,
@@ -71,26 +79,36 @@ def _maybe_register_config(config, metrics, checkpoint_path, run_id, artifact_ur
 
 
 def run_training(
-    config_path="./configs/local/bst.yaml",
+    config_path="./configs/ml-system/training/bst.yaml",
     training_percent=None,
     num_epochs=None,
     metrics_path=None,
     dataset_metadata_path=None,
 ):
     config = load_config(config_path)
-    metadata_path = dataset_metadata_path or config.get("data_args", {}).get("dataset_metadata_path") or os.getenv(
-        "DATASET_VERSION_METADATA_PATH"
+    metadata_path = (
+        dataset_metadata_path
+        or config.get("data_args", {}).get("dataset_metadata_path")
+        or os.getenv("DATASET_VERSION_METADATA_PATH")
     )
     dataset_metadata = load_dataset_metadata(metadata_path)
     if num_epochs is not None:
         config["training_args"]["num_epochs"] = num_epochs
 
     trainer = Trainer(config)
-    percent = training_percent if training_percent is not None else config["data_args"].get("percent", 1.0)
-    training_data = recommenderDataset(config["data_args"], split="train", percent=percent)
+    percent = (
+        training_percent
+        if training_percent is not None
+        else config["data_args"].get("percent", 1.0)
+    )
+    training_data = recommenderDataset(
+        config["data_args"], split="train", percent=percent
+    )
     val_data = recommenderDataset(config["data_args"], split="val", percent=percent)
 
-    train_loader = trainer.get_data_loader(training_data, shuffle=config["data_args"]["shuffle"])
+    train_loader = trainer.get_data_loader(
+        training_data, shuffle=config["data_args"]["shuffle"]
+    )
     val_loader = trainer.get_data_loader(val_data, shuffle=False)
     best_checkpoint_path = None
     final_metrics = {}
@@ -113,7 +131,9 @@ def run_training(
             trainer.best_score = ndcg_10_val
             print(f"New best model saved with NDCG@10: {ndcg_10_val:.4f}")
         else:
-            print(f"No improvement in NDCG@10: {ndcg_10_val:.4f} (best: {best_score:.4f})")
+            print(
+                f"No improvement in NDCG@10: {ndcg_10_val:.4f} (best: {best_score:.4f})"
+            )
 
         final_metrics = {
             "epoch": epoch,
@@ -128,8 +148,12 @@ def run_training(
             trainer.get_best_score(),
         )
 
-    run_id, artifact_uri = _log_to_mlflow(config, final_metrics, best_checkpoint_path, dataset_metadata=dataset_metadata)
-    _maybe_register_config(config, final_metrics, best_checkpoint_path, run_id, artifact_uri)
+    run_id, artifact_uri = _log_to_mlflow(
+        config, final_metrics, best_checkpoint_path, dataset_metadata=dataset_metadata
+    )
+    _maybe_register_config(
+        config, final_metrics, best_checkpoint_path, run_id, artifact_uri
+    )
 
     result = {
         "checkpoint_path": best_checkpoint_path,
@@ -140,14 +164,18 @@ def run_training(
     }
     if metrics_path:
         Path(metrics_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(metrics_path).write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+        Path(metrics_path).write_text(
+            json.dumps(result, indent=2, sort_keys=True), encoding="utf-8"
+        )
     print(json.dumps(result, indent=2, sort_keys=True))
     return result
 
 
 def train():
     args = argparse.ArgumentParser()
-    args.add_argument("--config_path", type=str, default="./configs/local/bst.yaml")
+    args.add_argument(
+        "--config_path", type=str, default="./configs/ml-system/training/bst.yaml"
+    )
     args.add_argument("--training-percent", type=float, default=None)
     args.add_argument("--num-epochs", type=int, default=None)
     args.add_argument("--metrics-path", default="")

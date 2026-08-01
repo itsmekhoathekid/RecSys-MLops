@@ -19,7 +19,7 @@ for source_root in reversed(SOURCE_ROOTS):
     if source_path not in sys.path:
         sys.path.insert(0, source_path)
 
-DEFAULT_PACKAGE_PATH = REPO_ROOT / "infra/kubeflow/compiled/bst_training_pipeline.yaml"
+DEFAULT_PACKAGE_PATH = REPO_ROOT / "pipelines/kubeflow/compiled/bst_training_pipeline.yaml"
 
 
 def compile_pipeline(package_path: str | Path = DEFAULT_PACKAGE_PATH) -> Path:

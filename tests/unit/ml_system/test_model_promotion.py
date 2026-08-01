@@ -116,3 +116,37 @@ def test_promote_best_model_writes_manifest_without_upload(tmp_path):
     assert result.manifest["triton_storage_uri"] == "s3://recsys-model-store/triton/bst/trial-001"
     assert result.manifest["serving_storage_uri"] == "s3://recsys-model-store/triton/bst/trial-001"
     assert result.manifest["promotion_manifest_uri"] == "s3://recsys-model-store/promotions/bst/trial-001.json"
+
+
+def test_promote_best_model_uses_held_out_test_metric(tmp_path):
+    config_path = _config(tmp_path / "bst.yaml")
+    ray_result = tmp_path / "best_result.json"
+    ray_result.write_text(
+        json.dumps(
+            {
+                "best_trial_name": "trial-test-metric",
+                "best_config_path": str(config_path),
+                "checkpoint_path": str(tmp_path / "checkpoint.pt"),
+                "metrics": {"val/ndcg@10": 0.27},
+            }
+        ),
+        encoding="utf-8",
+    )
+    eval_metrics = tmp_path / "eval_metrics.json"
+    eval_metrics.write_text(
+        json.dumps({"split": "test", "metrics": {"ndcg@10": 0.3375}}),
+        encoding="utf-8",
+    )
+
+    result = promote_best_model(
+        ray_result_path=str(ray_result),
+        eval_metrics_path=str(eval_metrics),
+        config_path=str(config_path),
+        output_dir=str(tmp_path / "serving"),
+        metric_name=DEFAULT_OBJECTIVE_METRIC,
+        upload=False,
+        skip_onnx_export=True,
+    )
+
+    assert result.manifest["metric_name"] == "test_ndcg_at_10"
+    assert result.manifest["metric_value"] == 0.3375

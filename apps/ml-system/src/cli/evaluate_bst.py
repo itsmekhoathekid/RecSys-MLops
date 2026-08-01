@@ -66,7 +66,7 @@ def evaluate_bst(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate a trained BST checkpoint")
-    parser.add_argument("--config-path", default="./configs/local/bst.yaml")
+    parser.add_argument("--config-path", default="./configs/ml-system/training/bst.yaml")
     parser.add_argument("--checkpoint-path", default="./data_platform/output/ml/checkpoints/BST")
     parser.add_argument("--split", default="test")
     parser.add_argument("--metrics-path", default="")

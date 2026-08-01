@@ -1,7 +1,9 @@
-from torch.utils.data import Dataset
 import json
+import logging
+
 import torch
 import yaml
+from torch.utils.data import Dataset
 
 class recommenderDataset(Dataset):
     def __init__(self, config, split = "train", percent=1.0):
@@ -29,6 +31,8 @@ class recommenderDataset(Dataset):
 
     def __getitem__(self, idx):
         item = {
+            "impression_id": self.data[idx].get("impression_id", ""),
+            "request_id": self.data[idx].get("request_id", ""),
             "user_id": self.data[idx]["user_id"],
             "hist_item_id": self.data[idx]["hist_item_id"],
             "hist_event_type": self.data[idx]["hist_event_type"],
@@ -54,6 +58,12 @@ class recommenderDataset(Dataset):
     def collate_fn(self, batch):
         # patch hist features to max_len and convert to tensor
         batch_dict = {
+            "ranking_group_id": [
+                item["request_id"]
+                or item["impression_id"]
+                or f'{item["user_id"]}:{item["event_time"]}'
+                for item in batch
+            ],
             "user_id" : torch.stack([torch.tensor(item["user_id"]) for item in batch]),
             "hist_item_id" : torch.stack([self._pad_and_trim(item["hist_item_id"], self.max_len, self.padding_idx) for item in batch]),
             "hist_event_type" : torch.stack([self._pad_and_trim(item["hist_event_type"], self.max_len, self.padding_idx) for item in batch]),
@@ -71,7 +81,6 @@ class recommenderDataset(Dataset):
         
         return batch_dict
 
-import logging
 class Logger:
     def __init__(self):
         logging.basicConfig(

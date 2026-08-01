@@ -152,9 +152,10 @@ class Trainer:
             all_probs.extend(probs.tolist())
             all_labels.extend(labels_cpu.tolist())
 
-            # group key for ranking metrics:
-            # one impression group = (user_id, event_time)
-            group_keys = list(
+            # One ranking group contains every candidate exposed by the same
+            # recommendation request. Legacy datasets retain a deterministic
+            # user/timestamp fallback.
+            group_keys = batch.get("ranking_group_id") or list(
                 zip(
                     batch["user_id"].detach().cpu().tolist(),
                     batch["event_time"].detach().cpu().tolist(),
@@ -195,7 +196,7 @@ class Trainer:
                 all_probs.extend(probs.tolist())
                 all_labels.extend(labels_cpu.tolist())
 
-                group_keys = list(
+                group_keys = batch.get("ranking_group_id") or list(
                     zip(
                         batch["user_id"].detach().cpu().tolist(),
                         batch["event_time"].detach().cpu().tolist(),

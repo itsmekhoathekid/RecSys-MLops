@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from lineage.dataset_versioning import (
+    DATASET_TABLE,
     DEFAULT_CATALOG_NAME,
     DEFAULT_WAREHOUSE,
     HudiConfig,
@@ -42,6 +43,8 @@ MODEL_COLUMNS = [
     "event_time",
     "label",
 ]
+
+RANKING_GROUP_COLUMNS = ["impression_id", "request_id"]
 
 SEQUENCE_COLUMNS = [
     "hist_item_id",
@@ -296,7 +299,9 @@ def _feast_historical_to_bst_frame(
 
 def _apply_feast_repo(repo_path: str | Path) -> None:
     from feature_store.feast_registry import apply_feature_repo
+    from feature_store.sql_registry_state import configure_registry_url
 
+    configure_registry_url()
     try:
         apply_feature_repo(repo_path)
     except subprocess.CalledProcessError as exc:
@@ -320,6 +325,9 @@ def build_bst_training_table_from_feast(
 ) -> pd.DataFrame:
     if feast_offline_root:
         os.environ["FEAST_OFFLINE_ROOT"] = feast_offline_root
+    from feature_store.sql_registry_state import configure_registry_url
+
+    configure_registry_url()
     if apply_feast_repo:
         _apply_feast_repo(feast_repo_path)
 
@@ -488,7 +496,12 @@ def _write_jsonl(rows: list[dict[str, Any]], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:
         for row in rows:
-            payload = {column: row.get(column) for column in MODEL_COLUMNS}
+            # Preserve request lineage so ranking metrics can evaluate all
+            # candidates from one recommendation request as one impression set.
+            payload = {
+                column: row.get(column)
+                for column in [*MODEL_COLUMNS, *RANKING_GROUP_COLUMNS]
+            }
             file.write(json.dumps(payload, separators=(",", ":")) + "\n")
 
 
@@ -501,7 +514,15 @@ def _bool_flag(value: str | bool | None, default: bool = False) -> bool:
 
 
 def _registry_path(feast_repo_path: str | Path) -> str:
-    return str(Path(feast_repo_path) / "data" / "registry.db")
+    del feast_repo_path
+    host = os.getenv(
+        "FEAST_POSTGRES_HOST",
+        "feature-postgres.recsys-dataflow.svc.cluster.local",
+    )
+    port = os.getenv("FEAST_POSTGRES_PORT", "5432")
+    database = os.getenv("FEAST_POSTGRES_DB", "feature_store")
+    schema = os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store")
+    return f"postgresql://{host}:{port}/{database}?schema={schema}&project=recsys"
 
 
 def _write_json(path: str | Path, payload: dict[str, Any]) -> None:
@@ -525,8 +546,8 @@ def _dataset_metadata(
     feature_source: str,
     offline_feature_table: str,
 ) -> dict[str, Any]:
-    training_table = hudi["tables"]["training"]
-    evaluation_table = hudi["tables"]["evaluation"]
+    dataset_table = hudi["table"]
+    hudi_instant = dataset_table.get("hudi_instant")
     return {
         "dataset_run_id": dataset_run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -546,26 +567,23 @@ def _dataset_metadata(
             "train": {
                 "row_count": split_counts.get("train", 0),
                 "jsonl_path": str(output_dir / "train.jsonl"),
-                "table": training_table["name"],
-                "snapshot_id": training_table["snapshot_id"],
-                "commit_time": training_table.get("commit_time"),
-                "tag": training_table["tag"],
+                "table": dataset_table["name"],
+                "table_path": dataset_table.get("path", ""),
+                "hudi_instant": hudi_instant,
             },
             "val": {
                 "row_count": split_counts.get("val", 0),
                 "jsonl_path": str(output_dir / "val.jsonl"),
-                "table": training_table["name"],
-                "snapshot_id": training_table["snapshot_id"],
-                "commit_time": training_table.get("commit_time"),
-                "tag": training_table["tag"],
+                "table": dataset_table["name"],
+                "table_path": dataset_table.get("path", ""),
+                "hudi_instant": hudi_instant,
             },
             "test": {
                 "row_count": split_counts.get("test", 0),
                 "jsonl_path": str(output_dir / "test.jsonl"),
-                "table": evaluation_table["name"],
-                "snapshot_id": evaluation_table["snapshot_id"],
-                "commit_time": evaluation_table.get("commit_time"),
-                "tag": evaluation_table["tag"],
+                "table": dataset_table["name"],
+                "table_path": dataset_table.get("path", ""),
+                "hudi_instant": hudi_instant,
             },
         },
     }
@@ -659,6 +677,7 @@ def prepare_bst_jsonl_splits(
     hudi_enabled: bool = False,
     hudi_warehouse: str = DEFAULT_WAREHOUSE,
     hudi_catalog_name: str = DEFAULT_CATALOG_NAME,
+    hudi_table: str | None = None,
     iceberg_enabled: bool | None = None,
     iceberg_catalog_name: str = DEFAULT_CATALOG_NAME,
     iceberg_warehouse: str = DEFAULT_WAREHOUSE,
@@ -691,17 +710,18 @@ def prepare_bst_jsonl_splits(
     processing_code = processing_code_version or resolve_processing_code_version()
     versioning_enabled = hudi_enabled if iceberg_enabled is None else hudi_enabled or iceberg_enabled
     if versioning_enabled:
-        samples = to_versioned_samples(
-            splits,
-            dataset_run_id=run_id,
-            feature_service_version=feature_service_name,
-            processing_code=processing_code,
-        )
+        samples = to_versioned_samples(splits)
         hudi_metadata = commit_samples_to_hudi(
             samples=samples,
             output_dir=output,
             dataset_run_id=run_id,
-            config=HudiConfig(catalog_name=hudi_catalog_name, warehouse=hudi_warehouse),
+            config=HudiConfig.from_env(
+                catalog_name=hudi_catalog_name,
+                warehouse=hudi_warehouse,
+                dataset_table=hudi_table,
+            ),
+            processing_code=processing_code,
+            feature_service_version=feature_service_name,
         )
     else:
         split_service.write_jsonl_splits(splits, output)
@@ -774,6 +794,7 @@ def main() -> int:
     parser.add_argument("--hudi-enabled", default=os.getenv("HUDI_ENABLED", os.getenv("ICEBERG_ENABLED", "false")))
     parser.add_argument("--hudi-warehouse", default=os.getenv("HUDI_WAREHOUSE", DEFAULT_WAREHOUSE))
     parser.add_argument("--hudi-catalog-name", default=os.getenv("HUDI_CATALOG_NAME", DEFAULT_CATALOG_NAME))
+    parser.add_argument("--hudi-table", default=os.getenv("HUDI_DATASET_TABLE", DATASET_TABLE))
     parser.add_argument("--iceberg-enabled", default=None)
     parser.add_argument("--iceberg-catalog-name", default=os.getenv("ICEBERG_CATALOG_NAME", DEFAULT_CATALOG_NAME))
     parser.add_argument("--iceberg-warehouse", default=os.getenv("ICEBERG_WAREHOUSE", DEFAULT_WAREHOUSE))
@@ -797,6 +818,7 @@ def main() -> int:
         hudi_enabled=_bool_flag(args.hudi_enabled, default=False),
         hudi_warehouse=args.hudi_warehouse,
         hudi_catalog_name=args.hudi_catalog_name,
+        hudi_table=args.hudi_table,
         iceberg_enabled=_bool_flag(args.iceberg_enabled, default=False) if args.iceberg_enabled is not None else None,
         iceberg_catalog_name=args.iceberg_catalog_name,
         iceberg_warehouse=args.iceberg_warehouse,
