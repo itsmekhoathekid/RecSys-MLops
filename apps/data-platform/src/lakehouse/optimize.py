@@ -134,7 +134,6 @@ def main() -> int:
                 "optimize_stage",
                 inputs=urns,
                 outputs=urns,
-                upstream_jobs={"ingest_stage"},
             )
             if args.pipeline
             else nullcontext()

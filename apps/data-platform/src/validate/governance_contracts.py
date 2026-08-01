@@ -113,7 +113,6 @@ def validate_dp1_bronze(*, root: str | None = None, spark=None) -> dict[str, Any
         "DP1",
         "validate_stage",
         inputs=set(BRONZE_URNS.values()),
-        upstream_jobs={"optimize_stage"},
     ) as lineage:
         datasets: dict[str, dict[str, Any]] = {}
         for table_name in RAW_GENERATOR_TABLES:
@@ -163,7 +162,6 @@ def validate_dp3_postgres(*, root: str | None = None) -> dict[str, Any]:
         "DP3",
         "validate_stage",
         inputs=set(POSTGRES_FEATURE_URNS.values()),
-        upstream_jobs={"ingest_stage"},
     ) as lineage:
         datasets: dict[str, dict[str, Any]] = {}
         with config.connect() as conn:

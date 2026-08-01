@@ -21,6 +21,8 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     psycopg-pool \
     redis \
     requests \
+    openlineage-python==1.52.0 \
+    acryl-datahub==1.6.0.17 \
     kfp \
     "feast[redis]"
 

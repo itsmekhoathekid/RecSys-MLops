@@ -174,19 +174,29 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
     )
     create_spark_namespace(spark, catalog)
     source, run_path = _batch_source_path(input_config, output)
+    lineage_inputs = (
+        set(SILVER_URNS.values())
+        if source == "silver_lakehouse"
+        else set(BRONZE_URNS.values())
+    )
+    lineage_outputs = set(ICEBERG_FEATURE_URNS.values())
+    if _postgres_export_config(output)["enabled"]:
+        lineage_outputs.update(POSTGRES_FEATURE_URNS.values())
 
     try:
-        with RuntimeLineageRecorder("DP3", "ingest_stage") as lineage:
+        with RuntimeLineageRecorder(
+            "DP3",
+            "ingest_stage",
+            inputs=lineage_inputs,
+            outputs=lineage_outputs,
+        ) as lineage:
             if source == "silver_lakehouse":
                 silver = read_silver_lakehouse_tables(spark, catalog)
-                lineage.add_inputs(*SILVER_URNS.values())
             else:
                 silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source=source)
-                lineage.add_inputs(*BRONZE_URNS.values())
             outputs = _build_feature_outputs(silver, catalog=catalog, features=features)
             for table_name, frame in outputs.items():
                 write_iceberg_table(frame, table_name, mode="overwrite")
-                lineage.add_outputs(ICEBERG_FEATURE_URNS[table_name.rsplit(".", 1)[-1]])
             feast_offline_root = output.get("feast_offline_store_uri")
             if feast_offline_root:
                 for table_name in ("user_sequence_features", "user_aggregate_features", "item_features"):
@@ -194,7 +204,7 @@ def run_pyspark_batch(config_path: str | Path = "configs/local/spark_batch.yaml"
                         outputs[catalog.feature_table(table_name)],
                         f"{feast_offline_root.rstrip('/')}/{table_name}",
                     )
-            lineage.add_outputs(*_write_postgres_tables(outputs, catalog=catalog, output=output))
+            _write_postgres_tables(outputs, catalog=catalog, output=output)
             report = _write_dp3_iceberg_validation_report(outputs, catalog=catalog)
             if report["status"] != "SUCCESS":
                 lineage.fail(f"DP3 Iceberg data contract status: {report['status']}")

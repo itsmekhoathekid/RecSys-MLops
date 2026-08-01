@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import pytest
+from datahub.emitter.mcp import MetadataChangeProposalWrapper
+from openlineage.client.event_v2 import RunEvent, RunState
 
 from metadata.governance_catalog import (
     BRONZE_URNS,
+    ENV,
+    ICEBERG_FEATURE_URNS,
     KAFKA_TOPIC_URNS,
     POSTGRES_FEATURE_URNS,
     REDIS_FEATURE_URNS,
     SILVER_URNS,
     SOURCE_POSTGRES_URNS,
+    dataset_urn,
+    flow_urn,
+    job_urn,
+    openlineage_job_name,
+    pipeline_flow_id,
 )
 from metadata.ingest_datahub_governance import (
     cdc_ingestion,
@@ -19,36 +28,11 @@ from metadata.ingest_datahub_governance import (
     streaming_features,
     verify_governance_coverage,
 )
-from metadata.runtime_lineage import build_event, read_latest_event, write_event
+from metadata.runtime_lineage import RuntimeLineageRecorder, build_event, emit_event
 
 
 def _products():
     return (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
-
-
-def _events(products):
-    events = {}
-    for product in products:
-        product_datasets = [dataset.urn for dataset in product.datasets]
-        for index, job in enumerate(product.jobs):
-            inputs = product_datasets if index else []
-            outputs = product_datasets if index == 0 else []
-            if product.id == "CDC_INGESTION":
-                inputs = list(SOURCE_POSTGRES_URNS.values())
-                outputs = list(KAFKA_TOPIC_URNS.values())
-            elif product.id == "STREAMING_FEATURES":
-                inputs = [KAFKA_TOPIC_URNS["behavior_events"]]
-                outputs = list(REDIS_FEATURE_URNS.values()) if job.id.endswith("online_store") else []
-            events[(product.id, job.id)] = build_event(
-                pipeline=product.id,
-                job_id=job.id,
-                run_id="run-coverage",
-                event_type="START" if product.id == "STREAMING_FEATURES" else "COMPLETE",
-                inputs=inputs,
-                outputs=outputs,
-                upstream_jobs=[product.jobs[0].id] if index else [],
-            )
-    return events
 
 
 def test_catalog_contains_no_predeclared_lineage():
@@ -56,9 +40,14 @@ def test_catalog_contains_no_predeclared_lineage():
         assert all(not hasattr(dataset, "upstreams") for dataset in product.datasets)
         assert all(not hasattr(job, "inputs") for job in product.jobs)
         assert all(not hasattr(job, "outputs") for job in product.jobs)
+        flow = flow_urn(product.flow_id)
+        for job in product.jobs:
+            assert job_urn(flow, job.id) == (
+                f"urn:li:dataJob:({flow},{openlineage_job_name(product.id, job.id)})"
+            )
 
 
-def test_openlineage_event_round_trip_uses_observed_datasets(tmp_path):
+def test_openlineage_event_maps_to_exact_catalog_dataset_and_job_urns():
     event = build_event(
         pipeline="DP2",
         job_id="ingest_stage",
@@ -67,38 +56,160 @@ def test_openlineage_event_round_trip_uses_observed_datasets(tmp_path):
         inputs=BRONZE_URNS.values(),
         outputs=SILVER_URNS.values(),
     )
-    write_event(event, root=str(tmp_path))
+    assert isinstance(event, RunEvent)
+    observed_inputs = {
+        dataset_urn(item.namespace, item.name, ENV) for item in event.inputs
+    }
+    observed_outputs = {
+        dataset_urn(item.namespace, item.name, ENV) for item in event.outputs
+    }
+    assert observed_inputs == set(BRONZE_URNS.values())
+    assert observed_outputs == set(SILVER_URNS.values())
+    assert event.job.namespace == ENV
+    assert event.job.name == openlineage_job_name("DP2", "ingest_stage")
+    flow = flow_urn(pipeline_flow_id("DP2"))
+    assert job_urn(flow, "ingest_stage") == f"urn:li:dataJob:({flow},{event.job.name})"
 
-    observed = read_latest_event("DP2", "ingest_stage", root=str(tmp_path))
-    assert observed["run"]["runId"] == event["run"]["runId"]
-    assert {item["name"] for item in observed["inputs"]} == set(BRONZE_URNS.values())
-    assert {item["name"] for item in observed["outputs"]} == set(SILVER_URNS.values())
+
+def test_openlineage_dataset_identity_covers_every_governed_platform():
+    catalog_urns = set().union(
+        BRONZE_URNS.values(),
+        SILVER_URNS.values(),
+        ICEBERG_FEATURE_URNS.values(),
+        POSTGRES_FEATURE_URNS.values(),
+        SOURCE_POSTGRES_URNS.values(),
+        KAFKA_TOPIC_URNS.values(),
+        REDIS_FEATURE_URNS.values(),
+    )
+    event = build_event(
+        pipeline="DP3",
+        job_id="ingest_stage",
+        run_id="all-platform-identities",
+        event_type="COMPLETE",
+        inputs=catalog_urns,
+    )
+    mapped_urns = {dataset_urn(item.namespace, item.name, ENV) for item in event.inputs}
+    assert mapped_urns == catalog_urns
 
 
-def test_datahub_job_io_is_built_from_runtime_event():
+def test_governance_job_emission_leaves_lineage_to_native_openlineage():
     product = streaming_features()
     job = product.jobs[0]
-    event = build_event(
-        pipeline=product.id,
-        job_id=job.id,
-        run_id="scheduled__2026-07-12",
-        event_type="COMPLETE",
-        inputs=[KAFKA_TOPIC_URNS["behavior_events"]],
-        outputs=[POSTGRES_FEATURE_URNS[table] for table in REDIS_FEATURE_URNS],
-    )
-    calls = []
+    proposals = []
 
     class Emitter:
-        def emit(self, entity_urn, entity_type, aspect_name, aspect):
-            calls.append((aspect_name, aspect))
+        def emit_mcp(self, proposal):
+            proposals.append(proposal)
 
-    emit_job(Emitter(), "urn:li:dataFlow:(airflow,recsys_flink_stream_features,PROD)", job, event)
-    io_aspect = next(aspect for name, aspect in calls if name == "dataJobInputOutput")
-    assert io_aspect["inputDatasets"] == [KAFKA_TOPIC_URNS["behavior_events"]]
-    assert set(io_aspect["outputDatasets"]) == {POSTGRES_FEATURE_URNS[table] for table in REDIS_FEATURE_URNS}
+    emit_job(Emitter(), flow_urn(product.flow_id), job)
+    assert all(isinstance(item, MetadataChangeProposalWrapper) for item in proposals)
+    assert {item.aspectName for item in proposals} == {"dataJobInfo", "globalTags"}
 
 
-def test_coverage_gate_requires_every_runtime_job_and_contract(monkeypatch):
+def test_emit_event_posts_to_native_datahub_openlineage_endpoint(monkeypatch):
+    import metadata.runtime_lineage as runtime_lineage
+
+    clients = []
+
+    class Client:
+        def __init__(self, *, transport):
+            self.transport = transport
+            self.events = []
+            self.closed = False
+            clients.append(self)
+
+        def emit(self, event):
+            self.events.append(event)
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(runtime_lineage, "OpenLineageClient", Client)
+    monkeypatch.setenv("DATAHUB_GMS_URL", "http://datahub-gms:8080")
+    monkeypatch.setenv("DATAHUB_TOKEN", "secret-token")
+    event = build_event(
+        pipeline="DP2",
+        job_id="ingest_stage",
+        run_id="run-direct",
+        event_type="COMPLETE",
+        inputs=BRONZE_URNS.values(),
+        outputs=SILVER_URNS.values(),
+    )
+
+    assert emit_event(event) == event
+    assert clients[0].events == [event]
+    assert clients[0].closed is True
+    assert clients[0].transport.config.url == (
+        "http://datahub-gms:8080/openapi/openlineage/api/v1/lineage"
+    )
+    assert clients[0].transport.config.endpoint == ""
+    assert clients[0].transport.config.auth.get_bearer() == "Bearer secret-token"
+    assert clients[0].transport.config.timeout == 5.0
+
+
+def test_openlineage_sdk_configures_transient_retries(monkeypatch):
+    import metadata.runtime_lineage as runtime_lineage
+
+    monkeypatch.setenv("RUNTIME_LINEAGE_MAX_ATTEMPTS", "3")
+    monkeypatch.setenv("RUNTIME_LINEAGE_RETRY_DELAY_SECONDS", "0.25")
+
+    client = runtime_lineage._openlineage_client()
+    try:
+        retry = client.transport.config.retry
+        assert retry["total"] == 2
+        assert retry["connect"] == 2
+        assert retry["read"] == 2
+        assert retry["backoff_factor"] == 0.25
+        assert retry["allowed_methods"] == ["POST"]
+        assert 429 in retry["status_forcelist"]
+        assert 503 in retry["status_forcelist"]
+    finally:
+        client.close()
+
+
+def test_recorder_emits_start_and_complete_with_known_runtime_datasets(monkeypatch):
+    import metadata.runtime_lineage as runtime_lineage
+
+    events = []
+    monkeypatch.setattr(
+        runtime_lineage, "emit_event", lambda event: events.append(event) or event
+    )
+    with RuntimeLineageRecorder(
+        "DP2",
+        "ingest_stage",
+        inputs=set(BRONZE_URNS.values()),
+        outputs=set(SILVER_URNS.values()),
+        run_id="run-recorder",
+    ):
+        pass
+
+    assert [event.eventType for event in events] == [RunState.START, RunState.COMPLETE]
+    assert len(events[0].inputs) == len(BRONZE_URNS)
+    assert len(events[0].outputs) == len(SILVER_URNS)
+    assert len(events[1].inputs) == len(BRONZE_URNS)
+    assert len(events[1].outputs) == len(SILVER_URNS)
+
+
+def test_recorder_does_not_fail_data_plane_when_datahub_is_unavailable(
+    monkeypatch, caplog
+):
+    import metadata.runtime_lineage as runtime_lineage
+
+    monkeypatch.setenv("RUNTIME_LINEAGE_STRICT", "false")
+
+    def unavailable(event):
+        raise ConnectionError("down")
+
+    monkeypatch.setattr(runtime_lineage, "emit_event", unavailable)
+
+    with RuntimeLineageRecorder("DP2", "ingest_stage", run_id="run-datahub-down"):
+        pass
+
+    assert "Unable to publish START runtime lineage" in caplog.text
+    assert "Unable to publish COMPLETE runtime lineage" in caplog.text
+
+
+def test_coverage_gate_requires_every_governance_definition_and_contract(monkeypatch):
     import metadata.ingest_datahub_governance as governance
 
     products = _products()
@@ -106,24 +217,25 @@ def test_coverage_gate_requires_every_runtime_job_and_contract(monkeypatch):
         product.id: {
             "run_id": "run-coverage",
             "status": "SUCCESS",
-            "datasets": {dataset.urn: {"status": "SUCCESS", "checks": []} for dataset in product.datasets},
+            "datasets": {
+                dataset.urn: {"status": "SUCCESS", "checks": []}
+                for dataset in product.datasets
+            },
         }
         for product in products
     }
     monkeypatch.setattr(governance, "read_report", lambda pipeline: reports[pipeline])
 
-    coverage = verify_governance_coverage(products, _events(products))
+    coverage = verify_governance_coverage(products)
     assert coverage["verified"] is True
     assert coverage["datasets"] == 51
     assert coverage["jobs"] == sum(len(product.jobs) for product in products)
 
 
-def test_coverage_gate_rejects_missing_runtime_job(monkeypatch):
+def test_coverage_gate_rejects_missing_contract_dataset(monkeypatch):
     import metadata.ingest_datahub_governance as governance
 
     products = _products()
-    events = _events(products)
-    events.pop(("DP2", "ingest_stage"))
     monkeypatch.setattr(
         governance,
         "read_report",
@@ -135,9 +247,13 @@ def test_coverage_gate_rejects_missing_runtime_job(monkeypatch):
                 for product in products
                 if product.id == pipeline
                 for dataset in product.datasets
+                if not (
+                    pipeline == "DP2"
+                    and dataset.urn == next(iter(SILVER_URNS.values()))
+                )
             },
         },
     )
 
-    with pytest.raises(RuntimeError, match="Missing runtime lineage for DP2.ingest_stage"):
-        verify_governance_coverage(products, events)
+    with pytest.raises(RuntimeError, match="Data contract report DP2 is missing"):
+        verify_governance_coverage(products)

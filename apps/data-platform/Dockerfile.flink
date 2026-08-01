@@ -59,6 +59,7 @@ RUN python3 -m pip install --no-cache-dir \
         ruamel.yaml \
         redis \
         requests \
+        openlineage-python==1.52.0 \
         psycopg[binary] \
         psycopg-pool
 

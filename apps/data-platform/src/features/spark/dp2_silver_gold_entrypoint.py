@@ -16,11 +16,14 @@ def build_dp2_silver_gold() -> dict[str, int]:
     spark = spark_session("recsys-dp2-bronze-to-silver-gold")
     catalog = IcebergCatalogConfig()
     try:
-        with RuntimeLineageRecorder("DP2", "ingest_stage") as lineage:
+        with RuntimeLineageRecorder(
+            "DP2",
+            "ingest_stage",
+            inputs=set(BRONZE_URNS.values()),
+            outputs=set(SILVER_URNS.values()),
+        ):
             create_spark_namespace(spark, catalog)
             silver = build_silver_tables(spark, catalog=catalog, source="lakehouse")
-            lineage.add_inputs(*BRONZE_URNS.values())
-            lineage.add_outputs(*(SILVER_URNS[name] for name in silver))
             return {name: row_count(frame) for name, frame in sorted(silver.items())}
     finally:
         spark.stop()
@@ -34,7 +37,6 @@ def validate_dp2_silver_gold() -> dict[str, int]:
             "DP2",
             "validate_stage",
             inputs=set(SILVER_URNS.values()),
-            upstream_jobs={"optimize_stage"},
         ) as lineage:
             counts: dict[str, int] = {}
             datasets: dict[str, dict[str, Any]] = {}

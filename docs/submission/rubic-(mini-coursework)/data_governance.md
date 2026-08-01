@@ -33,11 +33,11 @@ flowchart TD
   CDC --> VR
   Flink --> VR
 
-  LE --> Gate["verify_governance_coverage"]
+  LE --> GMS["DataHub GMS"]
   VR --> Gate
   Gate --> Ingest["datahub_ingest"]
 
-  Ingest --> GMS["DataHub GMS"]
+  Ingest --> GMS
   GMS --> UI["Catalog / Lineage / Contracts UI"]
 ```
 
@@ -45,7 +45,7 @@ The mechanism has a **data plane**, which creates and moves real data, and a **g
 
 ### 1. Define The Governed Catalog
 
-The repository first declares the expected governance model through `dp1()`, `dp2()`, `dp3()`, `cdc_ingestion()`, and `streaming_features()`. Together these definitions describe five Data Products, 51 datasets, five DataFlows, and nine DataJobs, along with each dataset's schema, primary key, contract description, and validation pipeline. These definitions are the expected catalog model; they do not prove that a runtime job actually produced the data.
+The repository first declares the expected governance model through `dp1()`, `dp2()`, `dp3()`, `cdc_ingestion()`, and `streaming_features()`. Together these definitions describe five Data Products, 51 datasets, five DataFlows, and 11 DataJobs, along with each dataset's schema, primary key, contract description, and validation pipeline. These definitions are the expected catalog model; they do not prove that a runtime job actually produced the data.
 
 The component definitions are assembled and published by [`emit_products`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L965-L994).
 
@@ -67,7 +67,7 @@ These jobs create the real Parquet, Iceberg, PostgreSQL, Kafka, and Redis data. 
 
 ### 3. Record Runtime Lineage
 
-Each processing or validation job uses [`RuntimeLineageRecorder`](../../../apps/data-platform/src/metadata/runtime_lineage.py#L201-L255). Entering the context emits `START`; a successful exit emits `COMPLETE`; an exception emits `FAIL`. The event contains the pipeline and job identity, Airflow run ID, deterministic runtime UUID, event time, upstream jobs, and the dataset URNs observed as inputs and outputs.
+Each processing or validation job uses [`RuntimeLineageRecorder`](../../../apps/data-platform/src/metadata/runtime_lineage.py). Entering the context emits `START`; a successful exit emits `COMPLETE`; an exception emits `FAIL`. The event contains the canonical DataHub flow/job identity, Airflow run ID, deterministic runtime UUID, event time, and the datasets observed as inputs and outputs.
 
 ```text
 DP1.ingest_stage: no catalog input -> 10 Bronze outputs
@@ -78,12 +78,15 @@ Flink offline job: cdc.behavior_events -> 3 PostgreSQL outputs
 Flink online job: cdc.behavior_events -> 3 Redis outputs
 ```
 
-[`write_event`](../../../apps/data-platform/src/metadata/runtime_lineage.py#L160-L168) stores both a run-scoped event and a job-level latest event:
+The recorder constructs typed `RunEvent`, `Run`, `Job`, `InputDataset`, and `OutputDataset` objects from `openlineage-python`. `OpenLineageClient` sends every event through its retrying HTTP transport to DataHub's native OpenLineage endpoint:
 
 ```text
-s3a://recsys-lakehouse/governance/lineage/<pipeline>/runs/<run-id>/<job>/<event>.json
-s3a://recsys-lakehouse/governance/lineage/<pipeline>/jobs/<job>/latest.json
+POST <DATAHUB_GMS_URL>/openapi/openlineage/api/v1/lineage
 ```
+
+Dataset references use the DataHub platform as the OpenLineage namespace and the exact catalog dataset name. Job names use `<flow_id>.<job_id>`. With the GMS OpenLineage environment set to `PROD`, the native mapper therefore produces the same Dataset, DataFlow, and DataJob URNs as the governance catalog instead of duplicate entities. Short retries protect against transient errors; the default non-strict mode logs a warning without failing the processing job because DataHub is metadata-plane infrastructure.
+
+The deployed DataHub v1.6.0 endpoint uses UPSERT mode (`DATAHUB_OPENLINEAGE_USE_PATCH=false`). Some batch jobs emit `START` before their observed input/output sets are populated; the later `COMPLETE` UPSERT must replace that temporary empty topology with the full runtime lineage.
 
 ### 4. Execute Data Validation
 
@@ -100,27 +103,24 @@ The detailed check logic and direct code references appear in each component sec
 
 ### 5. Verify Governance Coverage
 
-Before publishing to DataHub, [`verify_governance_coverage`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L883-L962) loads the runtime events and validation reports and verifies that:
+Before publishing catalog and contract metadata, [`verify_governance_coverage`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py) loads the validation reports and verifies that:
 
-- every governed DataJob has a runtime event;
-- all 51 governed datasets appear in runtime lineage;
-- runtime events contain no unknown dataset URNs;
-- pipeline, job, run, and event identities are valid;
+- Dataset and DataJob URNs are unique across the governed products;
 - every dataset has a schema, contract description, and validation pipeline;
 - every Data Product has a validation report containing all expected datasets.
 
-The gate fails before DataHub publication when any required evidence is missing, preventing a complete-looking catalog from being built from incomplete runtime observations.
+Runtime lineage no longer passes through this batch gate: DataHub validates and materializes each OpenLineage run event when it arrives. The governance gate fails before catalog publication when definitions or contract evidence are incomplete.
 
 ### 6. Ingest Governance Metadata Into DataHub
 
-When coverage succeeds, `datahub_ingest` calls `emit_products()`. For each component, the emitter creates or updates the Domain, Data Product, Dataset, schema, DataFlow, DataJob, tags, assertions, and Data Contract. This is metadata ingestion only; no business data is copied into DataHub.
+When coverage succeeds, `datahub_ingest` calls `emit_products()`. For each component, the official `DataHubRestEmitter` creates or updates the Domain, Data Product, Dataset, schema, DataFlow, DataJob, tags, assertions, and Data Contract. Each aspect is converted to its generated DataHub schema class, wrapped in `MetadataChangeProposalWrapper`, and emitted with `emit_mcp()`. GraphQL-only mutations reuse the emitter's authenticated `requests.Session`; the former custom `urllib` proposal client has been removed. This is metadata ingestion only; no business data is copied into DataHub.
 
-[`emit_flow`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L557-L575) creates the parent DataFlow. [`emit_job`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L578-L612) converts the latest runtime event into `DataJobInfo` and `DataJobInputOutput`:
+[`emit_flow`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py) creates the parent DataFlow. [`emit_job`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py) publishes only the governed DataJob definition and tags. The native OpenLineage endpoint owns the runtime topology and run status:
 
 ```text
-runtime inputs        -> inputDatasets  (SDK term: inlets)
-runtime outputs       -> outputDatasets (SDK term: outlets)
-runtime upstream jobs -> inputDatajobs
+OpenLineage inputs  -> DataJob inputDatasets
+OpenLineage outputs -> DataJob outputDatasets
+START/COMPLETE/FAIL -> DataProcessInstance run status
 ```
 
 DataHub can then render dataset -> job -> dataset lineage and downstream impact paths.
@@ -145,29 +145,34 @@ DataHub GMS persists and indexes the metadata for the frontend. A governed datas
 
 ### Failure Path
 
-The validator writes its failure report before returning a non-zero exit code or raising an exception. Airflow then marks that validation task as failed and normally skips the downstream governance ingest task. As a result, DataHub may continue displaying the previous successful assertion result even though the newest report contains a failure. Publishing every failure would require a final governance-ingest task with an `all_done`-style trigger after the report has been written.
+The recorder sends a `FAIL` event when processing raises, so DataHub can retain the failed `DataProcessInstance` independently of the later governance ingest task. OpenLineage delivery retries transient failures and is non-strict by default: an unavailable DataHub logs a warning but does not turn a metadata-plane outage into a data-plane failure.
+
+The validator writes its failure report before returning a non-zero exit code or raising an exception. Airflow then marks that validation task as failed and normally skips the downstream governance ingest task. As a result, DataHub may continue displaying the previous successful assertion result even though the newest report contains a failure. Publishing every assertion failure would require a final governance-ingest task with an `all_done`-style trigger after the report has been written.
 
 ## How The Components Reach DataHub
 
-DataHub's high-level SDK documentation calls a job's dataset dependencies `inlets` and `outlets`. This repository emits the equivalent low-level `DataJobInputOutput` aspect: `inputDatasets` are the inlets and `outputDatasets` are the outlets. The mapping is implemented by [`emit_job`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L578-L612), while [`emit_flow`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L557-L575) creates the parent `DataFlow`. This follows the official [DataHub DataFlow and DataJob model](https://docs.datahub.com/docs/api/tutorials/dataflow-datajob).
+Runtime and governance metadata use separate official SDK interfaces. `RuntimeLineageRecorder` uses `OpenLineageClient` to send typed OpenLineage run events straight to GMS; DataHub converts their inputs and outputs into `DataJobInputOutput` and their run IDs/statuses into `DataProcessInstance` metadata. The governance publisher uses `DataHubRestEmitter` and `MetadataChangeProposalWrapper` for stable Dataset, Data Product, Domain, schema, tag, assertion, and contract definitions. Both paths share canonical Dataset/DataFlow/DataJob identities from `governance_catalog.py`.
 
 Every governed component enters the same publication path:
 
 ```mermaid
 flowchart LR
   Component["DP1 / DP2 / DP3 / CDC / Streaming runtime"] --> Runtime["Runtime lineage event"]
+  Runtime --> OpenLineage["OpenLineageClient → native endpoint"]
+  OpenLineage --> GMS["DataHub GMS"]
   Component --> Validation["Validation report"]
   Catalog["dp1() / dp2() / dp3() / cdc_ingestion() / streaming_features()"] --> Products["emit_products()"]
-  Runtime --> Products
   Validation --> Contracts["emit_dataset_contract()"]
+  Products --> MCP["DataHubRestEmitter.emit_mcp()"]
+  MCP --> GMS
   Products --> Flow["emit_flow(): DataFlow"]
-  Products --> Job["emit_job(): DataJobInputOutput"]
+  Products --> Job["emit_job(): governed DataJob definition"]
   Products --> Dataset["emit_dataset()"]
   Dataset --> Contracts
   Contracts --> Assertion["_emit_assertion()"]
   Assertion --> Result["reportAssertionResult"]
   Contracts --> Contract["upsertDataContract"]
-  Flow --> GMS["DataHub GMS"]
+  Flow --> GMS
   Job --> GMS
   Result --> GMS
   Contract --> GMS

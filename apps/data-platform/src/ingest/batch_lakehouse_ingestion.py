@@ -85,7 +85,11 @@ def load_generator_run_to_lakehouse(
     ingestion_ts = datetime.now(timezone.utc)
     try:
         create_spark_namespace(spark, catalog)
-        with RuntimeLineageRecorder("DP1", "ingest_stage") as lineage:
+        with RuntimeLineageRecorder(
+            "DP1",
+            "ingest_stage",
+            outputs=set(BRONZE_URNS.values()),
+        ):
             counts: dict[str, int] = {}
             for table_name in RAW_GENERATOR_TABLES:
                 frame = read_parquet_table(spark, str(run_path), table_name)
@@ -95,7 +99,6 @@ def load_generator_run_to_lakehouse(
                 )
                 counts[table_name] = row_count(frame)
                 write_iceberg_table(frame, layout.table_name(table_name), mode=mode)
-                lineage.add_outputs(BRONZE_URNS[table_name])
             return counts
     finally:
         if owns_spark:

@@ -31,6 +31,7 @@ RUN apt-get update \
         psycopg[binary] \
         psycopg-pool \
         redis \
+        openlineage-python==1.52.0 \
         numpy \
         pyarrow \
         s3fs==2024.10.0 \

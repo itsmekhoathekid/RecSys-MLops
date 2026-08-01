@@ -4,25 +4,29 @@ import argparse
 import json
 import os
 import re
-import socket
 import time
-import urllib.error
-import urllib.request
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
+from datahub.emitter.aspect import ASPECT_MAP
+from datahub.emitter.mcp import MetadataChangeProposalWrapper
+from datahub.emitter.rest_emitter import DataHubRestEmitter
+
 from lakehouse.iceberg import RAW_GENERATOR_TABLES, SILVER_LAKEHOUSE_TABLES
 from metadata.governance_catalog import (
     BRONZE_URNS,
+    ENV,
     ICEBERG_FEATURE_URNS,
     KAFKA_TOPIC_URNS,
     POSTGRES_FEATURE_URNS,
     REDIS_FEATURE_URNS,
     SILVER_URNS,
     SOURCE_POSTGRES_URNS,
+    dataset_urn_parts,
     flow_urn,
     job_urn,
+    pipeline_flow_id,
 )
 from metadata.governance_schemas import (
     FEATURE_PRIMARY_KEYS,
@@ -35,14 +39,15 @@ from metadata.governance_schemas import (
     raw_schema,
     silver_schema,
 )
-from metadata.runtime_lineage import event_dataset_urns, event_runtime, read_latest_event
 from monitoring.pushgateway import MetricSample, push_metrics
 from validate.governance_contracts import read_report
 
 
 ACTOR = "urn:li:corpuser:datahub"
 GOVERNANCE_DOMAIN_NAME = "RecSys Data Platform"
-GOVERNANCE_DOMAIN_DESCRIPTION = "Governed batch, CDC, and streaming pipelines for the RecSys data platform."
+GOVERNANCE_DOMAIN_DESCRIPTION = (
+    "Governed batch, CDC, and streaming pipelines for the RecSys data platform."
+)
 ASSERTION_NAMESPACE = uuid.UUID("5851f697-2fcb-4938-b5c8-34fcb1f9f297")
 
 
@@ -79,71 +84,53 @@ class DataProduct:
     jobs: tuple[Job, ...]
 
 
-class DataHubEmitter:
+class GovernanceEmitter(DataHubRestEmitter):
+    """Official DataHub emitter plus authenticated GraphQL for unsupported mutations."""
+
     def __init__(self, gms_url: str) -> None:
         self.gms_url = gms_url.rstrip("/")
-
-    def emit(self, entity_urn: str, entity_type: str, aspect_name: str, aspect: dict[str, Any]) -> None:
-        payload = {
-            "proposal": {
-                "entityType": entity_type,
-                "entityUrn": entity_urn,
-                "changeType": "UPSERT",
-                "aspectName": aspect_name,
-                "aspect": {
-                    "value": json.dumps(aspect, separators=(",", ":"), sort_keys=True),
-                    "contentType": "application/json",
-                },
-            }
-        }
-        body = json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.gms_url}/aspects?action=ingestProposal",
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "X-RestLi-Protocol-Version": "2.0.0",
-            },
-            method="POST",
+        token = (
+            os.getenv("DATAHUB_TOKEN") or os.getenv("DATAHUB_GMS_TOKEN") or ""
+        ).strip()
+        super().__init__(
+            gms_server=self.gms_url,
+            token=token or None,
+            timeout_sec=180,
+            retry_status_codes=[408, 425, 429, *range(500, 600)],
+            retry_methods=["POST"],
+            retry_max_times=5,
+            openapi_ingestion=False,
+            datahub_component="recsys-governance-ingestion",
         )
-        for attempt in range(1, 6):
-            try:
-                with urllib.request.urlopen(request, timeout=180) as response:
-                    if response.status >= 300:
-                        raise RuntimeError(f"DataHub ingest failed with HTTP {response.status}")
-                    return
-            except urllib.error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")
-                if exc.code < 500 or attempt == 5:
-                    raise RuntimeError(f"DataHub ingest failed for {entity_urn} {aspect_name}: HTTP {exc.code} {detail}") from exc
-            except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
-                if attempt == 5:
-                    raise RuntimeError(f"DataHub ingest failed for {entity_urn} {aspect_name}: {exc}") from exc
-            time.sleep(2 * attempt)
 
     def graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-        payload = json.dumps({"query": query, "variables": variables}).encode("utf-8")
-        request = urllib.request.Request(
+        response = self.session.post(
             f"{self.gms_url}/api/graphql",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
+            json={"query": query, "variables": variables},
+            timeout=180,
         )
-        for attempt in range(1, 6):
-            try:
-                with urllib.request.urlopen(request, timeout=180) as response:
-                    body = json.loads(response.read().decode("utf-8"))
-                    if body.get("errors"):
-                        raise RuntimeError(json.dumps(body["errors"], sort_keys=True))
-                    return body["data"]
-            except urllib.error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")
-                if exc.code < 500 or attempt == 5:
-                    raise RuntimeError(f"DataHub GraphQL failed: HTTP {exc.code} {detail}") from exc
-            except (TimeoutError, socket.timeout, urllib.error.URLError, RuntimeError) as exc:
-                if attempt == 5:
-                    raise RuntimeError(f"DataHub GraphQL failed: {exc}") from exc
-            time.sleep(2 * attempt)
+        response.raise_for_status()
+        body = response.json()
+        if body.get("errors"):
+            raise RuntimeError(json.dumps(body["errors"], sort_keys=True))
+        return body["data"]
+
+
+def emit_aspect(
+    emitter: DataHubRestEmitter,
+    entity_urn: str,
+    aspect_name: str,
+    aspect: dict[str, Any],
+) -> None:
+    try:
+        aspect_type = ASPECT_MAP[aspect_name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown DataHub aspect: {aspect_name}") from exc
+    proposal = MetadataChangeProposalWrapper(
+        entityUrn=entity_urn,
+        aspect=aspect_type.from_obj(aspect),
+    )
+    emitter.emit_mcp(proposal)
 
 
 def audit_stamp() -> dict[str, Any]:
@@ -163,10 +150,12 @@ def tag_associations(tags: tuple[str, ...]) -> dict[str, Any]:
     return {"tags": [{"tag": f"urn:li:tag:{tag}"} for tag in tags]}
 
 
-def emit_tag(emitter: DataHubEmitter, tag: str, description: str, color_hex: str) -> None:
-    emitter.emit(
+def emit_tag(
+    emitter: GovernanceEmitter, tag: str, description: str, color_hex: str
+) -> None:
+    emit_aspect(
+        emitter,
         f"urn:li:tag:{tag}",
-        "tag",
         "tagProperties",
         {
             "name": tag,
@@ -176,7 +165,9 @@ def emit_tag(emitter: DataHubEmitter, tag: str, description: str, color_hex: str
     )
 
 
-def find_entity_by_exact_name(emitter: DataHubEmitter, entity_type: str, name: str) -> dict[str, Any] | None:
+def find_entity_by_exact_name(
+    emitter: GovernanceEmitter, entity_type: str, name: str
+) -> dict[str, Any] | None:
     data = emitter.graphql(
         """
         query searchEntity($input: SearchAcrossEntitiesInput!) {
@@ -206,7 +197,9 @@ def find_entity_by_exact_name(emitter: DataHubEmitter, entity_type: str, name: s
     return None
 
 
-def find_data_product_in_domain(emitter: DataHubEmitter, product_id: str, domain_urn: str) -> dict[str, Any] | None:
+def find_data_product_in_domain(
+    emitter: GovernanceEmitter, product_id: str, domain_urn: str
+) -> dict[str, Any] | None:
     data = emitter.graphql(
         """
         query searchDataProduct($input: SearchAcrossEntitiesInput!) {
@@ -224,16 +217,26 @@ def find_data_product_in_domain(emitter: DataHubEmitter, product_id: str, domain
           }
         }
         """,
-        {"input": {"types": ["DATA_PRODUCT"], "query": product_id, "start": 0, "count": 25}},
+        {
+            "input": {
+                "types": ["DATA_PRODUCT"],
+                "query": product_id,
+                "start": 0,
+                "count": 25,
+            }
+        },
     )
     for result in data["searchAcrossEntities"]["searchResults"]:
         entity = result["entity"]
-        if entity.get("properties", {}).get("name") == product_id and (entity.get("domain") or {}).get("domain", {}).get("urn") == domain_urn:
+        if (
+            entity.get("properties", {}).get("name") == product_id
+            and (entity.get("domain") or {}).get("domain", {}).get("urn") == domain_urn
+        ):
             return entity
     return None
 
 
-def ensure_governance_domain(emitter: DataHubEmitter) -> str:
+def ensure_governance_domain(emitter: GovernanceEmitter) -> str:
     existing = find_entity_by_exact_name(emitter, "DOMAIN", GOVERNANCE_DOMAIN_NAME)
     if existing:
         return existing["urn"]
@@ -243,12 +246,17 @@ def ensure_governance_domain(emitter: DataHubEmitter) -> str:
           createDomain(input: $input)
         }
         """,
-        {"input": {"name": GOVERNANCE_DOMAIN_NAME, "description": GOVERNANCE_DOMAIN_DESCRIPTION}},
+        {
+            "input": {
+                "name": GOVERNANCE_DOMAIN_NAME,
+                "description": GOVERNANCE_DOMAIN_DESCRIPTION,
+            }
+        },
     )
     return data["createDomain"]
 
 
-def emit_data_product(emitter: DataHubEmitter, product: DataProduct) -> str:
+def emit_data_product(emitter: GovernanceEmitter, product: DataProduct) -> str:
     domain_urn = ensure_governance_domain(emitter)
     existing = find_data_product_in_domain(emitter, product.id, domain_urn)
     if existing:
@@ -259,7 +267,10 @@ def emit_data_product(emitter: DataHubEmitter, product: DataProduct) -> str:
               updateDataProduct(urn: $urn, input: $input) { urn }
             }
             """,
-            {"urn": urn, "input": {"name": product.id, "description": product.description}},
+            {
+                "urn": urn,
+                "input": {"name": product.id, "description": product.description},
+            },
         )
     else:
         data = emitter.graphql(
@@ -271,17 +282,20 @@ def emit_data_product(emitter: DataHubEmitter, product: DataProduct) -> str:
             {
                 "input": {
                     "domainUrn": domain_urn,
-                    "properties": {"name": product.id, "description": product.description},
+                    "properties": {
+                        "name": product.id,
+                        "description": product.description,
+                    },
                 }
             },
         )
         urn = data["createDataProduct"]["urn"]
-    emitter.emit(urn, "dataProduct", "globalTags", tag_associations(product.tags))
+    emit_aspect(emitter, urn, "globalTags", tag_associations(product.tags))
     return urn
 
 
 def batch_set_data_product(
-    emitter: DataHubEmitter,
+    emitter: GovernanceEmitter,
     product: DataProduct,
     product_urn: str,
     resource_urns: tuple[str, ...],
@@ -295,9 +309,9 @@ def batch_set_data_product(
         {"input": {"dataProductUrn": product_urn, "resourceUrns": list(resource_urns)}},
     )
     stamp = audit_stamp()
-    emitter.emit(
+    emit_aspect(
+        emitter,
         product_urn,
-        "dataProduct",
         "dataProductProperties",
         {
             "name": product.id,
@@ -314,10 +328,10 @@ def batch_set_data_product(
     )
 
 
-def emit_dataset(emitter: DataHubEmitter, dataset: Dataset) -> None:
-    emitter.emit(
+def emit_dataset(emitter: GovernanceEmitter, dataset: Dataset) -> None:
+    emit_aspect(
+        emitter,
         dataset.urn,
-        "dataset",
         "datasetProperties",
         {
             "name": dataset.name,
@@ -325,11 +339,11 @@ def emit_dataset(emitter: DataHubEmitter, dataset: Dataset) -> None:
             "customProperties": dataset.custom_properties,
         },
     )
-    emitter.emit(dataset.urn, "dataset", "globalTags", tag_associations(dataset.tags))
-    emitter.emit(dataset.urn, "dataset", "schemaMetadata", schema_metadata(dataset))
-    emitter.emit(
+    emit_aspect(emitter, dataset.urn, "globalTags", tag_associations(dataset.tags))
+    emit_aspect(emitter, dataset.urn, "schemaMetadata", schema_metadata(dataset))
+    emit_aspect(
+        emitter,
         dataset.urn,
-        "dataset",
         "upstreamLineage",
         {
             # Direct dataset lineage used to be declared in this catalog. Emptying
@@ -362,7 +376,10 @@ def _datahub_type(native_type: str) -> str:
         return "TimeType"
     if "BOOL" in normalized:
         return "BooleanType"
-    if any(token in normalized for token in ("INT", "DECIMAL", "NUMERIC", "FLOAT", "DOUBLE", "REAL")):
+    if any(
+        token in normalized
+        for token in ("INT", "DECIMAL", "NUMERIC", "FLOAT", "DOUBLE", "REAL")
+    ):
         return "NumberType"
     if any(token in normalized for token in ("BINARY", "BYTES", "BLOB")):
         return "BytesType"
@@ -375,8 +392,11 @@ def schema_metadata(dataset: Dataset) -> dict[str, Any]:
         {
             "fieldPath": column.name,
             "nullable": column.nullable,
-            "description": column.description or f"{column.name} field in {dataset.name}.",
-            "type": {"type": {f"com.linkedin.schema.{_datahub_type(column.native_type)}": {}}},
+            "description": column.description
+            or f"{column.name} field in {dataset.name}.",
+            "type": {
+                "type": {f"com.linkedin.schema.{_datahub_type(column.native_type)}": {}}
+            },
             "nativeDataType": column.native_type,
             "recursive": False,
             "isPartOfKey": column.name in dataset.primary_keys,
@@ -401,7 +421,11 @@ def schema_metadata(dataset: Dataset) -> dict[str, Any]:
         "platform": _platform_urn(dataset.urn),
         "version": 0,
         "hash": "",
-        "platformSchema": {"com.linkedin.schema.OtherSchema": {"rawSchema": json.dumps(raw_schema, sort_keys=True)}},
+        "platformSchema": {
+            "com.linkedin.schema.OtherSchema": {
+                "rawSchema": json.dumps(raw_schema, sort_keys=True)
+            }
+        },
         "fields": fields,
         "primaryKeys": list(dataset.primary_keys),
         "created": stamp,
@@ -431,31 +455,49 @@ def validation_result(dataset: Dataset) -> tuple[str, str, list[dict[str, Any]]]
     try:
         report = read_report(dataset.validation_pipeline or "")
     except Exception as exc:
-        return "ERROR", "unknown", [{"name": "validation_report", "status": "ERROR", "observed": str(exc)}]
+        return (
+            "ERROR",
+            "unknown",
+            [{"name": "validation_report", "status": "ERROR", "observed": str(exc)}],
+        )
     result = report.get("datasets", {}).get(dataset.urn)
     if not isinstance(result, dict):
-        return "ERROR", str(report.get("run_id", "unknown")), [
-            {
-                "name": "validation_report",
-                "status": "ERROR",
-                "observed": f"Dataset {dataset.urn} missing from latest {dataset.validation_pipeline} report",
-            }
-        ]
+        return (
+            "ERROR",
+            str(report.get("run_id", "unknown")),
+            [
+                {
+                    "name": "validation_report",
+                    "status": "ERROR",
+                    "observed": f"Dataset {dataset.urn} missing from latest {dataset.validation_pipeline} report",
+                }
+            ],
+        )
     status = str(result.get("status", "ERROR"))
     if status not in {"SUCCESS", "FAILURE", "ERROR"}:
         status = "ERROR"
     return status, str(report.get("run_id", "unknown")), list(result.get("checks", []))
 
 
-def _assertion_status(checks: list[dict[str, Any]], names: set[str], fallback: str) -> str:
-    selected = [str(item.get("status", "ERROR")) for item in checks if item.get("name") in names]
+def _assertion_status(
+    checks: list[dict[str, Any]], names: set[str], fallback: str
+) -> str:
+    selected = [
+        str(item.get("status", "ERROR")) for item in checks if item.get("name") in names
+    ]
     if not selected:
         return fallback
-    return "ERROR" if "ERROR" in selected else "FAILURE" if "FAILURE" in selected else "SUCCESS"
+    return (
+        "ERROR"
+        if "ERROR" in selected
+        else "FAILURE"
+        if "FAILURE" in selected
+        else "SUCCESS"
+    )
 
 
 def _emit_assertion(
-    emitter: DataHubEmitter,
+    emitter: GovernanceEmitter,
     dataset: Dataset,
     *,
     assertion_type: str,
@@ -465,7 +507,7 @@ def _emit_assertion(
 ) -> str:
     urn = assertion_urn(dataset.urn, assertion_type.lower())
     if assertion_type == "SCHEMA":
-        emitter.emit(urn, "assertion", "assertionInfo", schema_assertion_info(dataset))
+        emit_aspect(emitter, urn, "assertionInfo", schema_assertion_info(dataset))
         assertion = urn
     else:
         assertion = emitter.graphql(
@@ -504,9 +546,15 @@ def _emit_assertion(
                 "type": status,
                 "timestampMillis": int(time.time() * 1000),
                 "properties": [
-                    {"key": "pipeline", "value": dataset.validation_pipeline or "unknown"},
+                    {
+                        "key": "pipeline",
+                        "value": dataset.validation_pipeline or "unknown",
+                    },
                     {"key": "run_id", "value": run_id},
-                    {"key": "observed_checks", "value": json.dumps(checks, sort_keys=True)},
+                    {
+                        "key": "observed_checks",
+                        "value": json.dumps(checks, sort_keys=True),
+                    },
                 ],
             },
         },
@@ -514,7 +562,7 @@ def _emit_assertion(
     return assertion
 
 
-def emit_dataset_contract(emitter: DataHubEmitter, dataset: Dataset) -> None:
+def emit_dataset_contract(emitter: GovernanceEmitter, dataset: Dataset) -> None:
     status, run_id, checks = validation_result(dataset)
     schema_status = _assertion_status(checks, {"required_columns", "schema"}, status)
     schema_assertion = _emit_assertion(
@@ -523,7 +571,11 @@ def emit_dataset_contract(emitter: DataHubEmitter, dataset: Dataset) -> None:
         assertion_type="SCHEMA",
         status=schema_status,
         run_id=run_id,
-        checks=[item for item in checks if item.get("name") in {"required_columns", "schema"}],
+        checks=[
+            item
+            for item in checks
+            if item.get("name") in {"required_columns", "schema"}
+        ],
     )
     quality_assertion = _emit_assertion(
         emitter,
@@ -553,11 +605,11 @@ def emit_dataset_contract(emitter: DataHubEmitter, dataset: Dataset) -> None:
     )
 
 
-def emit_flow(emitter: DataHubEmitter, product: DataProduct) -> str:
+def emit_flow(emitter: GovernanceEmitter, product: DataProduct) -> str:
     urn = flow_urn(product.flow_id)
-    emitter.emit(
+    emit_aspect(
+        emitter,
         urn,
-        "dataFlow",
         "dataFlowInfo",
         {
             "name": product.flow_name,
@@ -570,45 +622,24 @@ def emit_flow(emitter: DataHubEmitter, product: DataProduct) -> str:
             },
         },
     )
-    emitter.emit(urn, "dataFlow", "globalTags", tag_associations(product.tags))
+    emit_aspect(emitter, urn, "globalTags", tag_associations(product.tags))
     return urn
 
 
-def emit_job(emitter: DataHubEmitter, flow: str, job: Job, runtime_event: dict[str, Any]) -> None:
+def emit_job(emitter: GovernanceEmitter, flow: str, job: Job) -> None:
     urn = job_urn(flow, job.id)
-    runtime = event_runtime(runtime_event)
-    runtime_properties = {
-        "runtime_event_type": str(runtime_event["eventType"]),
-        "runtime_event_time": str(runtime_event["eventTime"]),
-        "runtime_run_uuid": str(runtime_event["run"]["runId"]),
-        "airflow_run_id": str(runtime["airflowRunId"]),
-        "lineage_source": "OpenLineage runtime event",
-    }
-    error_facet = runtime_event.get("run", {}).get("facets", {}).get("errorMessage", {})
-    if error_facet.get("message"):
-        runtime_properties["runtime_error"] = str(error_facet["message"])
-    emitter.emit(
+    emit_aspect(
+        emitter,
         urn,
-        "dataJob",
         "dataJobInfo",
         {
             "name": job.name,
             "type": {"string": "COMMAND"},
             "description": job.description,
-            "customProperties": {**job.custom_properties, **runtime_properties},
+            "customProperties": job.custom_properties,
         },
     )
-    emitter.emit(
-        urn,
-        "dataJob",
-        "dataJobInputOutput",
-        {
-            "inputDatasets": list(event_dataset_urns(runtime_event, "inputs")),
-            "outputDatasets": list(event_dataset_urns(runtime_event, "outputs")),
-            "inputDatajobs": [job_urn(flow, job_id) for job_id in runtime.get("upstreamJobs", [])],
-        },
-    )
-    emitter.emit(urn, "dataJob", "globalTags", tag_associations(job.tags))
+    emit_aspect(emitter, urn, "globalTags", tag_associations(job.tags))
 
 
 def _dataset(
@@ -653,7 +684,7 @@ def dp1() -> DataProduct:
     )
     return DataProduct(
         id="DP1",
-        flow_id="recsys_dp1_raw_to_bronze",
+        flow_id=pipeline_flow_id("DP1"),
         flow_name="DP1 Data Generator Batch Ingestion To Bronze Lakehouse",
         description="Direct batch ingestion from Data Generator output into the Bronze Iceberg lakehouse.",
         tags=("DP1", "DataContract", "NativePipeline"),
@@ -695,13 +726,15 @@ def dp2() -> DataProduct:
             schema=silver_schema(table),
             primary_keys=SILVER_PRIMARY_KEYS[table],
             validation_pipeline="DP2",
-            required_columns=("event_id", "event_timestamp", "ingestion_ts") if table == "clean_behavior_events" else (),
+            required_columns=("event_id", "event_timestamp", "ingestion_ts")
+            if table == "clean_behavior_events"
+            else (),
         )
         for table in SILVER_LAKEHOUSE_TABLES
     )
     return DataProduct(
         id="DP2",
-        flow_id="recsys_dp2_bronze_to_silver_gold",
+        flow_id=pipeline_flow_id("DP2"),
         flow_name="DP2 Bronze To Silver And Gold",
         description="PySpark curation from Bronze Iceberg tables into deduplicated and normalized Silver Iceberg tables.",
         tags=("DP2", "DataContract", "NativePipeline"),
@@ -770,7 +803,7 @@ def dp3() -> DataProduct:
     )
     return DataProduct(
         id="DP3",
-        flow_id="recsys_dp3_offline_feature_table",
+        flow_id=pipeline_flow_id("DP3"),
         flow_name="DP3 Silver To Feast Offline Features",
         description="PySpark feature engineering from DP2 Silver Iceberg tables into Iceberg features and PostgreSQL Feast offline tables.",
         tags=("DP3", "DataContract", "NativePipeline"),
@@ -822,7 +855,7 @@ def cdc_ingestion() -> DataProduct:
     )
     return DataProduct(
         id="CDC_INGESTION",
-        flow_id="recsys_cdc_postgres_to_kafka",
+        flow_id=pipeline_flow_id("CDC_INGESTION"),
         flow_name="CDC PostgreSQL To Kafka",
         description="PostgreSQL WAL captured by Debezium and published to cdc.* Kafka topics.",
         tags=("CDC_INGESTION", "DataContract", "NativePipeline"),
@@ -833,7 +866,9 @@ def cdc_ingestion() -> DataProduct:
                 name="Register Debezium Connector",
                 description="Registers the Debezium connector linking source PostgreSQL tables to Kafka topics.",
                 tags=("CDC_INGESTION", "DataContract", "NativePipeline"),
-                custom_properties={"contract": "ingest.postgres_cdc_contracts.SOURCE_TABLE_CONTRACTS"},
+                custom_properties={
+                    "contract": "ingest.postgres_cdc_contracts.SOURCE_TABLE_CONTRACTS"
+                },
             ),
         ),
     )
@@ -855,7 +890,7 @@ def streaming_features() -> DataProduct:
     )
     return DataProduct(
         id="STREAMING_FEATURES",
-        flow_id="recsys_flink_stream_features",
+        flow_id=pipeline_flow_id("STREAMING_FEATURES"),
         flow_name="Flink Streaming Features",
         description="Two continuously running Flink jobs consume cdc.behavior_events and update the configured offline store plus Redis online features.",
         tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
@@ -866,7 +901,9 @@ def streaming_features() -> DataProduct:
                 name="Run Flink Stream To Offline Store",
                 description="Consumes behavior CDC events and updates the runtime-configured Iceberg or PostgreSQL offline feature tables.",
                 tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
-                custom_properties={"engine": "PyFlink DataStream plus runtime-configured offline sink"},
+                custom_properties={
+                    "engine": "PyFlink DataStream plus runtime-configured offline sink"
+                },
             ),
             Job(
                 id="run_flink_stream_to_online_store",
@@ -879,55 +916,35 @@ def streaming_features() -> DataProduct:
     )
 
 
-def load_runtime_events(products: tuple[DataProduct, ...]) -> dict[tuple[str, str], dict[str, Any]]:
-    events: dict[tuple[str, str], dict[str, Any]] = {}
+def verify_governance_coverage(products: tuple[DataProduct, ...]) -> dict[str, Any]:
+    known_datasets = {
+        dataset.urn for product in products for dataset in product.datasets
+    }
     errors: list[str] = []
+    if len(known_datasets) != sum(len(product.datasets) for product in products):
+        errors.append("Duplicate dataset URNs across governed data products")
+    for urn in known_datasets:
+        try:
+            _, _, env = dataset_urn_parts(urn)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        if env != ENV:
+            errors.append(
+                f"Dataset environment must be {ENV} for native OpenLineage identity: {urn}"
+            )
     for product in products:
-        for job in product.jobs:
-            try:
-                events[(product.id, job.id)] = read_latest_event(product.id, job.id)
-            except Exception as exc:
-                errors.append(f"{product.id}.{job.id}: {exc}")
-    if errors:
-        raise RuntimeError("Missing runtime lineage events: " + "; ".join(errors))
-    return events
-
-
-def verify_governance_coverage(
-    products: tuple[DataProduct, ...],
-    runtime_events: dict[tuple[str, str], dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    runtime_events = runtime_events or load_runtime_events(products)
-    known_datasets = {dataset.urn for product in products for dataset in product.datasets}
-    observed_datasets: set[str] = set()
-    lineage_runs: dict[str, dict[str, str]] = {}
-    errors: list[str] = []
-
-    for product in products:
-        product_runs: dict[str, str] = {}
-        product_run_ids: set[str] = set()
-        for job in product.jobs:
-            event = runtime_events.get((product.id, job.id))
-            if event is None:
-                errors.append(f"Missing runtime lineage for {product.id}.{job.id}")
-                continue
-            runtime = event_runtime(event)
-            if runtime.get("pipeline") != product.id or runtime.get("jobId") != job.id:
-                errors.append(f"Runtime identity mismatch for {product.id}.{job.id}")
-            if event.get("eventType") not in {"START", "COMPLETE", "FAIL"}:
-                errors.append(f"Invalid runtime status for {product.id}.{job.id}: {event.get('eventType')}")
-            input_urns = set(event_dataset_urns(event, "inputs"))
-            output_urns = set(event_dataset_urns(event, "outputs"))
-            unknown = (input_urns | output_urns).difference(known_datasets)
-            if unknown:
-                errors.append(f"Unknown datasets in {product.id}.{job.id}: {sorted(unknown)}")
-            observed_datasets.update(input_urns | output_urns)
-            airflow_run_id = str(runtime.get("airflowRunId", "unknown"))
-            product_run_ids.add(airflow_run_id)
-            product_runs[job.id] = f"{event['eventType']}:{airflow_run_id}"
-        if product.id != "STREAMING_FEATURES" and len(product_run_ids) > 1:
-            errors.append(f"Runtime jobs for {product.id} came from different runs: {sorted(product_run_ids)}")
-        lineage_runs[product.id] = product_runs
+        if product.flow_id != pipeline_flow_id(product.id):
+            errors.append(
+                f"DataFlow identity mismatch for {product.id}: {product.flow_id} != {pipeline_flow_id(product.id)}"
+            )
+    all_job_urns = {
+        job_urn(flow_urn(product.flow_id), job.id)
+        for product in products
+        for job in product.jobs
+    }
+    if len(all_job_urns) != sum(len(product.jobs) for product in products):
+        errors.append("Duplicate DataJob URNs across governed data products")
 
     contract_runs: dict[str, str] = {}
     for product in products:
@@ -947,49 +964,86 @@ def verify_governance_coverage(
         reported = set(report.get("datasets", {}))
         missing = expected.difference(reported)
         if missing:
-            errors.append(f"Data contract report {product.id} is missing: {sorted(missing)}")
+            errors.append(
+                f"Data contract report {product.id} is missing: {sorted(missing)}"
+            )
         invalid_statuses = {
             urn: result.get("status")
             for urn, result in report.get("datasets", {}).items()
-            if urn in expected and result.get("status") not in {"SUCCESS", "FAILURE", "ERROR"}
+            if urn in expected
+            and result.get("status") not in {"SUCCESS", "FAILURE", "ERROR"}
         }
         if invalid_statuses:
-            errors.append(f"Invalid data contract statuses for {product.id}: {invalid_statuses}")
+            errors.append(
+                f"Invalid data contract statuses for {product.id}: {invalid_statuses}"
+            )
         if report.get("status") not in {"SUCCESS", "FAILURE", "ERROR"}:
-            errors.append(f"Invalid overall data contract status for {product.id}: {report.get('status')}")
+            errors.append(
+                f"Invalid overall data contract status for {product.id}: {report.get('status')}"
+            )
         if not report.get("run_id"):
             errors.append(f"Data contract report {product.id} has no run_id")
-        contract_runs[product.id] = f"{report.get('status', 'ERROR')}:{report.get('run_id', 'unknown')}"
+        contract_runs[product.id] = (
+            f"{report.get('status', 'ERROR')}:{report.get('run_id', 'unknown')}"
+        )
 
-    missing_observations = known_datasets.difference(observed_datasets)
-    if missing_observations:
-        errors.append(f"Datasets absent from runtime lineage: {sorted(missing_observations)}")
     if errors:
-        raise RuntimeError("Governance coverage verification failed: " + " | ".join(errors))
+        raise RuntimeError(
+            "Governance coverage verification failed: " + " | ".join(errors)
+        )
     return {
         "contracts": contract_runs,
         "datasets": len(known_datasets),
-        "jobs": len(runtime_events),
-        "lineage": lineage_runs,
+        "jobs": len(all_job_urns),
+        "runtime_lineage": {
+            "mode": "native-openlineage",
+            "endpoint": "/openapi/openlineage/api/v1/lineage",
+        },
         "verified": True,
     }
 
 
 def emit_products(
-    emitter: DataHubEmitter,
+    emitter: GovernanceEmitter,
     products: tuple[DataProduct, ...],
-    runtime_events: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> tuple[dict[str, str], dict[str, Any]]:
-    runtime_events = runtime_events or load_runtime_events(products)
-    coverage = verify_governance_coverage(products, runtime_events)
+    coverage = verify_governance_coverage(products)
     for tag, description, color in (
-        ("DP1", "Data product DP1: Data Generator to optimized Bronze Iceberg lakehouse.", "#2E7D32"),
-        ("DP2", "Data product DP2: Bronze Iceberg to optimized curated Silver Iceberg.", "#1565C0"),
-        ("DP3", "Data product DP3: Silver Iceberg to Iceberg features and PostgreSQL Feast offline store.", "#6A1B9A"),
-        ("CDC_INGESTION", "PostgreSQL WAL captured by Debezium and published to Kafka.", "#EF6C00"),
-        ("STREAMING_FEATURES", "Continuous Flink processing into PostgreSQL and Redis feature stores.", "#00838F"),
-        ("DataContract", "Entity has an explicit schema or pipeline contract in the RecSys data platform repo.", "#455A64"),
-        ("NativePipeline", "Entity is produced by Spark, Flink, Debezium, Iceberg, or Redis native runtime.", "#00897B"),
+        (
+            "DP1",
+            "Data product DP1: Data Generator to optimized Bronze Iceberg lakehouse.",
+            "#2E7D32",
+        ),
+        (
+            "DP2",
+            "Data product DP2: Bronze Iceberg to optimized curated Silver Iceberg.",
+            "#1565C0",
+        ),
+        (
+            "DP3",
+            "Data product DP3: Silver Iceberg to Iceberg features and PostgreSQL Feast offline store.",
+            "#6A1B9A",
+        ),
+        (
+            "CDC_INGESTION",
+            "PostgreSQL WAL captured by Debezium and published to Kafka.",
+            "#EF6C00",
+        ),
+        (
+            "STREAMING_FEATURES",
+            "Continuous Flink processing into PostgreSQL and Redis feature stores.",
+            "#00838F",
+        ),
+        (
+            "DataContract",
+            "Entity has an explicit schema or pipeline contract in the RecSys data platform repo.",
+            "#455A64",
+        ),
+        (
+            "NativePipeline",
+            "Entity is produced by Spark, Flink, Debezium, Iceberg, or Redis native runtime.",
+            "#00897B",
+        ),
     ):
         emit_tag(emitter, tag, description, color)
 
@@ -1001,21 +1055,27 @@ def emit_products(
             emit_dataset(emitter, dataset)
         flow = emit_flow(emitter, product)
         for job in product.jobs:
-            emit_job(emitter, flow, job, runtime_events[(product.id, job.id)])
-        resource_urns = tuple(item.urn for item in product.datasets) + (flow,) + tuple(job_urn(flow, job.id) for job in product.jobs)
+            emit_job(emitter, flow, job)
+        resource_urns = (
+            tuple(item.urn for item in product.datasets)
+            + (flow,)
+            + tuple(job_urn(flow, job.id) for job in product.jobs)
+        )
         batch_set_data_product(emitter, product, product_urn, resource_urns)
     return product_urns, coverage
 
 
-def emit_schemas(emitter: DataHubEmitter, products: tuple[DataProduct, ...]) -> int:
+def emit_schemas(emitter: GovernanceEmitter, products: tuple[DataProduct, ...]) -> int:
     count = 0
     for product in products:
         for dataset in product.datasets:
-            emitter.emit(dataset.urn, "dataset", "schemaMetadata", schema_metadata(dataset))
+            emit_aspect(
+                emitter, dataset.urn, "schemaMetadata", schema_metadata(dataset)
+            )
             if dataset.validation_pipeline:
-                emitter.emit(
+                emit_aspect(
+                    emitter,
                     assertion_urn(dataset.urn, "schema"),
-                    "assertion",
                     "assertionInfo",
                     schema_assertion_info(dataset),
                 )
@@ -1027,17 +1087,32 @@ def datahub_metric_samples(summary: dict[str, Any]) -> list[MetricSample]:
     ingested = 1.0 if summary.get("ingested") else 0.0
     samples = [
         MetricSample("recsys_datahub_ingest_success", ingested),
-        MetricSample("recsys_datahub_ingest_timestamp_seconds", float(int(time.time()))),
-        MetricSample("recsys_datahub_ingest_dataset_count", float(summary.get("datasets", 0))),
+        MetricSample(
+            "recsys_datahub_ingest_timestamp_seconds", float(int(time.time()))
+        ),
+        MetricSample(
+            "recsys_datahub_ingest_dataset_count", float(summary.get("datasets", 0))
+        ),
         MetricSample("recsys_datahub_ingest_job_count", float(summary.get("jobs", 0))),
-        MetricSample("recsys_datahub_ingest_data_product_count", float(len(summary.get("data_products", [])))),
+        MetricSample(
+            "recsys_datahub_ingest_data_product_count",
+            float(len(summary.get("data_products", []))),
+        ),
     ]
     for product in summary.get("data_products", []):
-        samples.append(MetricSample("recsys_datahub_ingest_data_product_present", 1.0, {"data_product": str(product)}))
+        samples.append(
+            MetricSample(
+                "recsys_datahub_ingest_data_product_present",
+                1.0,
+                {"data_product": str(product)},
+            )
+        )
     return samples
 
 
-def push_datahub_ingest_metrics(summary: dict[str, Any], pushgateway_url: str | None) -> None:
+def push_datahub_ingest_metrics(
+    summary: dict[str, Any], pushgateway_url: str | None
+) -> None:
     push_metrics(
         datahub_metric_samples(summary),
         "recsys_datahub_governance",
@@ -1047,23 +1122,47 @@ def push_datahub_ingest_metrics(summary: dict[str, Any], pushgateway_url: str | 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Ingest RecSys batch, CDC, and streaming governance metadata into DataHub.")
-    parser.add_argument("--gms-url", default="http://localhost:8088", help="DataHub GMS base URL.")
-    parser.add_argument("--pushgateway-url", default=os.getenv("PUSHGATEWAY_URL", ""), help="Optional Pushgateway URL for ingest metrics.")
-    parser.add_argument("--strict", action="store_true", default=os.getenv("DATAHUB_INGEST_STRICT", "").lower() in {"1", "true", "yes"})
-    parser.add_argument("--schemas-only", action="store_true", help="Refresh dataset schemas without re-emitting lineage or validation results.")
-    parser.add_argument("--verify-only", action="store_true", help="Verify runtime-lineage and data-contract coverage without contacting DataHub.")
+    parser = argparse.ArgumentParser(
+        description="Ingest RecSys batch, CDC, and streaming governance metadata into DataHub."
+    )
+    parser.add_argument(
+        "--gms-url", default="http://localhost:8088", help="DataHub GMS base URL."
+    )
+    parser.add_argument(
+        "--pushgateway-url",
+        default=os.getenv("PUSHGATEWAY_URL", ""),
+        help="Optional Pushgateway URL for ingest metrics.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        default=os.getenv("DATAHUB_INGEST_STRICT", "").lower() in {"1", "true", "yes"},
+    )
+    parser.add_argument(
+        "--schemas-only",
+        action="store_true",
+        help="Refresh dataset schemas without re-emitting lineage or validation results.",
+    )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Verify governance definitions and data-contract coverage without contacting DataHub.",
+    )
     args = parser.parse_args()
     products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
     if args.verify_only:
         try:
             coverage = verify_governance_coverage(products)
         except Exception as exc:
-            print(json.dumps({"verified": False, "error": str(exc)}, indent=2, sort_keys=True))
+            print(
+                json.dumps(
+                    {"verified": False, "error": str(exc)}, indent=2, sort_keys=True
+                )
+            )
             return 1
         print(json.dumps(coverage, indent=2, sort_keys=True))
         return 0
-    emitter = DataHubEmitter(args.gms_url)
+    emitter = GovernanceEmitter(args.gms_url)
     try:
         if args.schemas_only:
             dataset_count = emit_schemas(emitter, products)
@@ -1082,6 +1181,8 @@ def main() -> int:
         push_datahub_ingest_metrics(summary, args.pushgateway_url or None)
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 1 if args.strict else 0
+    finally:
+        emitter.close()
     summary = {
         "data_products": [product.id for product in products],
         "data_product_entities": product_urns,

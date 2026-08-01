@@ -2,6 +2,22 @@ acryl-datahub-actions:
   enabled: false
 
 datahub-gms:
+  extraEnvs:
+    - name: DATAHUB_OPENLINEAGE_ORCHESTRATOR
+      value: airflow
+    - name: DATAHUB_OPENLINEAGE_ENV
+      value: PROD
+    - name: DATAHUB_OPENLINEAGE_PLATFORM_INSTANCE
+      value: PROD
+    - name: DATAHUB_OPENLINEAGE_MATERIALIZE_DATASET
+      value: "false"
+    - name: DATAHUB_OPENLINEAGE_INCLUDE_SCHEMA_METADATA
+      value: "false"
+    - name: DATAHUB_OPENLINEAGE_CAPTURE_COLUMN_LEVEL_LINEAGE
+      value: "true"
+    - name: DATAHUB_OPENLINEAGE_USE_PATCH
+      # DataHub v1.6.0 must UPSERT the COMPLETE event after an input/output-empty START.
+      value: "false"
   resources:
     requests:
       cpu: "100m"
