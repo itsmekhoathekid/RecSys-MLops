@@ -11,9 +11,9 @@ externalSecret:
 
 images:
   trino: trinodb/trino:482
-  superset: recsys-analytics-superset:local
-  dbt: recsys-analytics-dbt:local
-  spark: recsys-analytics-spark:local
+  superset: registry.example.invalid/recsys/recsys-analytics-superset:required
+  dbt: registry.example.invalid/recsys/recsys-analytics-dbt:required
+  spark: registry.example.invalid/recsys/recsys-spark:required
   postgres: postgres:16-alpine
   redis: redis:7.4-alpine
   pullPolicy: IfNotPresent
@@ -21,7 +21,7 @@ images:
 catalog:
   database: iceberg_catalog
   user: iceberg
-  password: iceberg-local-change-me
+  password: render-only-change-me
   warehouse: s3://recsys-lakehouse/analytics
   storage: 5Gi
   storageClassName: standard
@@ -29,10 +29,10 @@ catalog:
 superset:
   database: superset
   databaseUser: superset
-  databasePassword: superset-local-change-me
-  secretKey: local-only-change-this-superset-secret-key
+  databasePassword: render-only-change-me
+  secretKey: render-only-change-this-superset-secret-key
   adminUser: admin
-  adminPassword: admin-local-change-me
+  adminPassword: render-only-change-me
   storage: 5Gi
   storageClassName: standard
 

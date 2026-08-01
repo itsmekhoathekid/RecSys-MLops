@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.kafkaConnect.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - name: rest
+      port: {{ .Values.kafkaConnect.port }}
+      targetPort: 8083
+  selector:
+    app: {{ .Values.kafkaConnect.name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.kafkaConnect.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ .Values.kafkaConnect.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.kafkaConnect.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.kafkaConnect.istioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: kafka-connect
+          image: {{ .Values.images.kafkaConnect }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xms256m -Xmx512m"
+            - name: CONNECT_BOOTSTRAP_SERVERS
+              value: {{ .Values.kafka.bootstrapServers | quote }}
+            - name: CONNECT_REST_ADVERTISED_HOST_NAME
+              value: {{ .Values.kafkaConnect.name | quote }}
+            - name: CONNECT_GROUP_ID
+              value: recsys-connect
+            - name: CONNECT_CONFIG_STORAGE_TOPIC
+              value: recsys_connect_configs
+            - name: CONNECT_OFFSET_STORAGE_TOPIC
+              value: recsys_connect_offsets
+            - name: CONNECT_STATUS_STORAGE_TOPIC
+              value: recsys_connect_status
+            - name: CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: CONNECT_KEY_CONVERTER
+              value: org.apache.kafka.connect.json.JsonConverter
+            - name: CONNECT_VALUE_CONVERTER
+              value: org.apache.kafka.connect.json.JsonConverter
+            - name: CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE
+              value: "false"
+            - name: CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE
+              value: "false"
+            - name: CONNECT_PLUGIN_PATH
+              value: /usr/share/java,/usr/share/confluent-hub-components
+            - name: CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY
+              value: All
+          ports:
+            - containerPort: 8083

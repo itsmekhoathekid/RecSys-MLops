@@ -2,15 +2,25 @@ from __future__ import annotations
 
 import argparse
 import json
+from contextlib import nullcontext
 from typing import Any
 
 from features.spark.session import compact_iceberg_table, spark_session
-from lakehouse.iceberg import FEATURE_TABLES, SILVER_LAKEHOUSE_TABLES, IcebergCatalogConfig
+from lakehouse.iceberg import FEATURE_TABLES, RAW_GENERATOR_TABLES, SILVER_LAKEHOUSE_TABLES, IcebergCatalogConfig
+from metadata.governance_catalog import BRONZE_URNS, ICEBERG_FEATURE_URNS, SILVER_URNS
+from metadata.runtime_lineage import RuntimeLineageRecorder
 
 
 # Z-order is reserved for tables whose dominant access path uses these columns.
 # Tables without a profile are still compacted with Iceberg bin-packing.
 ZORDER_COLUMNS: dict[str, tuple[str, ...]] = {
+    "bronze_behavior_events": ("user_id", "product_id", "event_timestamp"),
+    "bronze_impressions": ("user_id", "candidate_product_id", "impression_timestamp"),
+    "bronze_recommendation_requests": ("user_id", "request_timestamp"),
+    "bronze_sessions": ("user_id", "session_start_ts"),
+    "bronze_orders": ("user_id", "order_timestamp"),
+    "bronze_order_items": ("order_id", "product_id", "created_ts"),
+    "bronze_product_snapshots": ("product_id", "valid_from"),
     "silver_clean_behavior_events": ("user_id", "product_id", "event_timestamp"),
     "silver_clean_impressions": ("user_id", "candidate_product_id", "impression_timestamp"),
     "user_sequence_features": ("user_id", "feature_timestamp"),
@@ -23,6 +33,8 @@ ZORDER_COLUMNS: dict[str, tuple[str, ...]] = {
 
 def optimization_tables(scope: str, catalog: IcebergCatalogConfig) -> list[str]:
     tables: list[str] = []
+    if scope in {"bronze", "all"}:
+        tables.extend(catalog.bronze_table(name) for name in RAW_GENERATOR_TABLES)
     if scope in {"silver", "all"}:
         tables.extend(catalog.lakehouse_table(f"silver_{name}") for name in SILVER_LAKEHOUSE_TABLES)
     if scope in {"features", "all"}:
@@ -42,6 +54,17 @@ def _is_missing_table_error(exc: Exception) -> bool:
         marker in message
         for marker in ("table_or_view_not_found", "no such table", "cannot find table", "does not exist")
     )
+
+
+def optimization_dataset_urns(scope: str) -> set[str]:
+    urns: set[str] = set()
+    if scope in {"bronze", "all"}:
+        urns.update(BRONZE_URNS.values())
+    if scope in {"silver", "all"}:
+        urns.update(SILVER_URNS.values())
+    if scope in {"features", "all"}:
+        urns.update(ICEBERG_FEATURE_URNS.values())
+    return urns
 
 
 def optimize_lakehouse(
@@ -93,7 +116,8 @@ def optimize_lakehouse(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Compact and cluster the RecSys Iceberg lakehouse")
-    parser.add_argument("--scope", choices=("silver", "features", "all"), default="all")
+    parser.add_argument("--scope", choices=("bronze", "silver", "features", "all"), default="all")
+    parser.add_argument("--pipeline", choices=("DP1", "DP2", "DP3"))
     parser.add_argument("--strategy", choices=("binpack", "zorder"), default="binpack")
     parser.add_argument("--target-file-size-mb", type=int, default=128)
     parser.add_argument("--min-input-files", type=int, default=2)
@@ -103,15 +127,28 @@ def main() -> int:
 
     spark = spark_session("recsys-lakehouse-optimization")
     try:
-        report = optimize_lakehouse(
-            spark,
-            scope=args.scope,
-            strategy=args.strategy,
-            target_file_size_bytes=args.target_file_size_mb * 1024 * 1024,
-            min_input_files=args.min_input_files,
-            rewrite_all=args.rewrite_all,
-            skip_missing=args.skip_missing,
+        urns = optimization_dataset_urns(args.scope)
+        lineage = (
+            RuntimeLineageRecorder(
+                args.pipeline,
+                "optimize_stage",
+                inputs=urns,
+                outputs=urns,
+                upstream_jobs={"ingest_stage"},
+            )
+            if args.pipeline
+            else nullcontext()
         )
+        with lineage:
+            report = optimize_lakehouse(
+                spark,
+                scope=args.scope,
+                strategy=args.strategy,
+                target_file_size_bytes=args.target_file_size_mb * 1024 * 1024,
+                min_input_files=args.min_input_files,
+                rewrite_all=args.rewrite_all,
+                skip_missing=args.skip_missing,
+            )
         print(json.dumps(report, indent=2, sort_keys=True, default=str))
     finally:
         spark.stop()

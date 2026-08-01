@@ -40,7 +40,7 @@ spec:
               superset fab create-admin \
                 --username "$SUPERSET_ADMIN_USERNAME" \
                 --firstname RecSys --lastname Admin \
-                --email admin@recsys.local \
+                --email admin@example.invalid \
                 --password "$SUPERSET_ADMIN_PASSWORD" || true
               superset init
               superset set-database-uri \

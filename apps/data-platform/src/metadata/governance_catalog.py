@@ -26,7 +26,7 @@ def job_urn(flow: str, job_id: str) -> str:
 
 
 def bronze_urn(table: str) -> str:
-    return dataset_urn("parquet", f"recsys.lakehouse.bronze_{table}")
+    return dataset_urn("iceberg", f"recsys.lakehouse.bronze_{table}")
 
 
 def silver_urn(table: str) -> str:

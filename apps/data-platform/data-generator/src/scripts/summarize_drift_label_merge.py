@@ -8,7 +8,7 @@ from typing import Any
 
 import pyarrow.parquet as pq
 
-from config import GeneratorConfig, load_config
+from generator_config import GeneratorConfig, load_config
 from sink import read_table
 
 
@@ -78,7 +78,7 @@ def summarize(config: GeneratorConfig) -> None:
     health_path = run_path / "monitoring/agg_feature_health_daily.parquet"
     if not feature_path.exists() or not health_path.exists():
         raise FileNotFoundError(
-            "Missing drift artifacts. Run generator with configs/local/data_generator_drift.yaml first."
+            "Missing drift artifacts. Run generator with configs/data-platform/generator/drift.yaml first."
         )
 
     labels = build_label_rows(config, run_path)

@@ -48,7 +48,8 @@ def main() -> int:
     parser.add_argument("--run-id", default=f"retrain-smoke-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}")
     parser.add_argument("--kfp-endpoint", default="http://127.0.0.1:8888")
     parser.add_argument("--experiment-name", default="recsys-observability-retrain")
-    parser.add_argument("--pipeline-package-path", default="infra/kubeflow/compiled/bst_training_pipeline.yaml")
+    parser.add_argument("--pipeline-name", default="recsys-bst-feature-train-evaluate")
+    parser.add_argument("--pipeline-version-id", default="")
     parser.add_argument("--pushgateway-url", default="")
     parser.add_argument("--pipeline-arg", action="append", default=[])
     parser.add_argument("--skip-trigger", action="store_true")
@@ -76,7 +77,8 @@ def main() -> int:
             str(report_path),
             args.kfp_endpoint,
             args.experiment_name,
-            args.pipeline_package_path,
+            args.pipeline_name,
+            args.pipeline_version_id,
             pushgateway_url=args.pushgateway_url or None,
             pipeline_arguments=pipeline_args,
         )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 import sys
 
@@ -7,10 +8,11 @@ import pandas as pd
 import pytest
 
 from lineage.dataset_versioning import (
-    _hudi_identifier_suffix,
+    HudiConfig,
+    _build_hudi_delta,
+    _hudi_options,
+    _sample_schema,
     _spark_safe_records,
-    sample_id_for,
-    row_hash_for,
     to_versioned_samples,
 )
 from cli.prepare_bst_training_data import (
@@ -96,6 +98,179 @@ def test_training_data_service_validates_canonical_schema():
 
     with pytest.raises(ValueError, match="missing columns"):
         service.validate_schema(pd.DataFrame([{"user_id": 1}]))
+
+
+def test_hudi_dataset_upsert_reconciles_ranking_group_schema():
+    options = _hudi_options(
+        "bst_samples_native_v2",
+        HudiConfig(),
+        dataset_run_id="run-1",
+        processing_code="abc123",
+        feature_service_version="bst_ranking_v1",
+    )
+
+    assert options["hoodie.datasource.write.operation"] == "upsert"
+    assert options["hoodie.datasource.write.recordkey.field"] == "impression_id,target_item_id"
+    assert options["hoodie.index.type"] == "GLOBAL_BLOOM"
+    assert options["hoodie.bloom.index.update.partition.path"] == "true"
+    assert options["hoodie.datasource.write.reconcile.schema"] == "true"
+    assert options["recsys_dataset_run_id"] == "run-1"
+    assert options["hoodie.cleaner.policy.failed.writes"] == "LAZY"
+
+
+def test_hudi_config_reads_native_table_retention_and_zookeeper_env(monkeypatch):
+    monkeypatch.setenv("HUDI_DATASET_TABLE", "ml.custom_native")
+    monkeypatch.setenv("HUDI_CLEAN_HOURS_RETAINED", "48")
+    monkeypatch.setenv("HUDI_ZK_URL", "zk.internal")
+    monkeypatch.setenv("HUDI_ZK_PORT", "22181")
+    monkeypatch.setenv("HUDI_ZK_BASE_PATH", "/locks/custom")
+    monkeypatch.setenv("HUDI_ZK_LOCK_KEY", "custom")
+
+    config = HudiConfig.from_env(warehouse="file:///tmp/hudi-warehouse")
+
+    assert config.dataset_ident == "recsys_features.ml.custom_native"
+    assert config.table_path == (
+        "file:///tmp/hudi-warehouse/recsys_features/ml/custom_native"
+    )
+    assert config.clean_hours_retained == 48
+    assert config.zookeeper_url == "zk.internal"
+    assert config.zookeeper_port == 22181
+    assert config.zookeeper_base_path == "/locks/custom"
+    assert config.zookeeper_lock_key == "custom"
+
+
+@pytest.fixture(scope="module")
+def local_spark():
+    from pyspark.sql import SparkSession
+
+    spark = (
+        SparkSession.builder.master("local[1]")
+        .appName("recsys-hudi-change-detection-test")
+        .config("spark.ui.enabled", "false")
+        .config("spark.driver.host", "127.0.0.1")
+        .config("spark.driver.bindAddress", "127.0.0.1")
+        .config("spark.pyspark.python", sys.executable)
+        .config("spark.pyspark.driver.python", sys.executable)
+        .getOrCreate()
+    )
+    yield spark
+    spark.stop()
+
+
+def _versioned_row(impression_id: str, target_item_id: int, **overrides):
+    return {
+        "impression_id": impression_id,
+        "request_id": f"req-{impression_id}",
+        "user_id": 7,
+        "target_item_id": target_item_id,
+        "event_time": 1767226200,
+        "hist_item_id": [10],
+        "hist_event_type": [2],
+        "hist_category": [3],
+        "hist_brand": [4],
+        "hist_price_bucket": [5],
+        "hist_time": [1],
+        "target_category": 22,
+        "target_brand": 33,
+        "target_price_bucket": 44,
+        "label": 1,
+        **overrides,
+    }
+
+
+def _spark_samples(spark, splits):
+    frame = to_versioned_samples(splits)
+    return spark.createDataFrame(_spark_safe_records(frame), schema=_sample_schema())
+
+
+def test_hudi_delta_emits_tombstone_only_for_missing_key(monkeypatch, local_spark):
+    existing = _spark_samples(
+        local_spark,
+        {
+            "train": [
+                _versioned_row("moved", 11),
+                _versioned_row("deleted", 12),
+            ],
+            "val": [],
+            "test": [],
+        },
+    )
+    incoming = _spark_samples(
+        local_spark,
+        {
+            "train": [_versioned_row("new", 13)],
+            "val": [_versioned_row("moved", 11)],
+            "test": [],
+        },
+    )
+    monkeypatch.setattr("lineage.dataset_versioning._hudi_table_exists", lambda spark, path: True)
+    monkeypatch.setattr("lineage.dataset_versioning._read_hudi_table", lambda spark, path: existing)
+
+    delta, compared_with_snapshot, delete_rows = _build_hudi_delta(
+        local_spark,
+        incoming,
+        "ignored",
+        pd.Timestamp("2026-01-02T00:00:00Z").to_pydatetime(),
+    )
+    rows = {
+        (row.impression_id, row.target_item_id, row.split, row._hoodie_is_deleted)
+        for row in delta.collect()
+    }
+
+    assert compared_with_snapshot is True
+    assert delete_rows == 1
+    assert rows == {
+        ("new", 13, "train", False),
+        ("moved", 11, "val", False),
+        ("deleted", 12, "train", True),
+    }
+
+
+def test_hudi_change_detection_writes_everything_on_initial_load(monkeypatch, local_spark):
+    incoming = _spark_samples(
+        local_spark,
+        {"train": [_versioned_row("new", 11)], "val": [], "test": []},
+    )
+
+    monkeypatch.setattr("lineage.dataset_versioning._hudi_table_exists", lambda spark, path: False)
+
+    changes, compared_with_snapshot, delete_rows = _build_hudi_delta(
+        local_spark,
+        incoming,
+        "missing",
+        pd.Timestamp("2026-01-02T00:00:00Z").to_pydatetime(),
+    )
+
+    assert compared_with_snapshot is False
+    assert delete_rows == 0
+    assert changes.collect() == incoming.collect()
+
+
+def test_hudi_delta_does_not_treat_existing_table_read_failure_as_initial_load(
+    monkeypatch,
+    local_spark,
+):
+    incoming = _spark_samples(
+        local_spark,
+        {"train": [_versioned_row("new", 11)], "val": [], "test": []},
+    )
+    monkeypatch.setattr(
+        "lineage.dataset_versioning._hudi_table_exists",
+        lambda spark, path: True,
+    )
+
+    def failed_read(*_args, **_kwargs):
+        raise RuntimeError("storage unavailable")
+
+    monkeypatch.setattr("lineage.dataset_versioning._read_hudi_table", failed_read)
+
+    with pytest.raises(RuntimeError, match="storage unavailable"):
+        _build_hudi_delta(
+            local_spark,
+            incoming,
+            "existing",
+            pd.Timestamp("2026-01-02T00:00:00Z").to_pydatetime(),
+        )
 
 
 def test_split_service_applies_temporal_boundaries_and_normalization():
@@ -289,6 +464,11 @@ def test_prepare_splits_records_feast_source(monkeypatch, tmp_path):
     assert metadata["hudi"]["enabled"] is False
     assert (tmp_path / "splits" / "dataset_version_meta.json").exists()
     assert (tmp_path / "splits" / "train.jsonl").exists()
+    first_train_row = json.loads(
+        (tmp_path / "splits" / "train.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert first_train_row["request_id"] == "req-0"
+    assert first_train_row["impression_id"] == "imp-0"
 
 
 def test_prepare_splits_reads_default_offline_feature_store(monkeypatch, tmp_path):
@@ -371,32 +551,37 @@ def test_prepare_splits_records_hudi_latency_when_versioning_enabled(monkeypatch
             ]
         )
 
-    def fake_commit_samples_to_hudi(samples, output_dir, dataset_run_id, config):
+    def fake_commit_samples_to_hudi(
+        samples,
+        output_dir,
+        dataset_run_id,
+        config,
+        *,
+        processing_code,
+        feature_service_version,
+    ):
+        assert config.dataset_table == "ml.bst_samples_native_v2"
+        assert processing_code
+        assert feature_service_version == "bst_ranking_v1"
         for split in ("train", "val", "test"):
             (tmp_path / "splits" / f"{split}.jsonl").write_text("", encoding="utf-8")
         return {
             "enabled": True,
             "storage": "hudi",
-            "tables": {
-                "training": {
-                    "name": "recsys_features.ml.bst_training_samples",
-                    "snapshot_id": "001",
-                    "commit_time": "001",
-                    "tag": "bst_training_run_1",
-                    "row_count": 4,
-                    "splits": ["train", "val"],
-                },
-                "evaluation": {
-                    "name": "recsys_features.ml.bst_evaluation_samples",
-                    "snapshot_id": "002",
-                    "commit_time": "002",
-                    "tag": "bst_evaluation_run_1",
-                    "row_count": 1,
-                    "splits": ["test"],
-                },
+            "operation": "upsert",
+            "table": {
+                "name": "recsys_features.ml.bst_samples_native_v2",
+                "path": "s3a://warehouse/recsys_features/ml/bst_samples_native_v2",
+                "hudi_instant": "001",
+                "input_rows": 5,
+                "upsert_rows": 5,
+                "delete_rows": 0,
+                "write_rows": 5,
+                "snapshot_rows": 5,
+                "split_rows": {"train": 3, "val": 1, "test": 1},
             },
             "jsonl_counts": {"train": 3, "val": 1, "test": 1},
-            "latency_ms": {"training_commit": 12.5, "evaluation_commit": 6.5, "jsonl_export": 3.0, "total": 22.0},
+            "latency_ms": {"commit": 19.0, "jsonl_export": 3.0, "total": 22.0},
         }
 
     monkeypatch.setattr(
@@ -416,52 +601,61 @@ def test_prepare_splits_records_hudi_latency_when_versioning_enabled(monkeypatch
 
     assert metadata["hudi"]["storage"] == "hudi"
     assert metadata["versioning_latency_ms"]["total"] == 22.0
-    assert metadata["hudi"]["tables"]["training"]["commit_time"] == "001"
+    assert metadata["hudi"]["table"]["hudi_instant"] == "001"
+    dataset_metadata = json.loads(
+        (tmp_path / "splits" / "dataset_version_meta.json").read_text(encoding="utf-8")
+    )
+    assert {
+        dataset_metadata["splits"][split]["hudi_instant"]
+        for split in ("train", "val", "test")
+    } == {"001"}
 
 
-def test_versioned_samples_use_stable_sample_id_and_split_routes():
-    row = {
-        "impression_id": "imp-1",
-        "request_id": "req-1",
-        "user_id": 7,
-        "target_item_id": 11,
-        "event_time": 1767226200,
-        "hist_item_id": [10],
-        "hist_event_type": [2],
-        "hist_category": [3],
-        "hist_brand": [4],
-        "hist_price_bucket": [5],
-        "hist_time": [1],
-        "target_category": 22,
-        "target_brand": 33,
-        "target_price_bucket": 44,
-        "label": 1,
-    }
-
-    assert sample_id_for(row) == sample_id_for(dict(row))
-    assert row_hash_for(row) == row_hash_for(dict(row))
+def test_versioned_samples_use_composite_key_and_split_routes():
+    row = _versioned_row("imp-1", 11)
     samples = to_versioned_samples(
-        {"train": [row], "val": [], "test": [dict(row, request_id="req-2")]},
-        dataset_run_id="run-1",
-        feature_service_version="bst_ranking_v1",
-        processing_code="abc123",
+        {
+            "train": [row],
+            "val": [],
+            "test": [_versioned_row("imp-2", 11)],
+        },
     )
 
-    assert samples["sample_id"].nunique() == 2
     assert samples.groupby("split").size().to_dict() == {"test": 1, "train": 1}
-    assert samples["feature_service_version"].unique().tolist() == ["bst_ranking_v1"]
+    assert "sample_id" not in samples
+    assert "row_hash" not in samples
+    assert set(samples["_hoodie_is_deleted"]) == {False}
+    assert str(samples["source_updated_at"].dt.tz) == "UTC"
+
+
+def test_versioned_samples_reject_null_duplicate_and_empty_keys():
+    with pytest.raises(ValueError, match="non-null"):
+        to_versioned_samples(
+            {"train": [_versioned_row("", 11)], "val": [], "test": []}
+        )
+
+    duplicate = _versioned_row("imp-1", 11)
+    with pytest.raises(ValueError, match="unique"):
+        to_versioned_samples(
+            {"train": [duplicate], "val": [dict(duplicate)], "test": []}
+        )
+
+    with pytest.raises(ValueError, match="empty source snapshot"):
+        to_versioned_samples({"train": [], "val": [], "test": []})
 
 
 def test_spark_safe_records_convert_timezone_aware_timestamps():
     samples = pd.DataFrame(
         [
             {
-                "sample_id": "s1",
-                "entity_id": "7",
+                "impression_id": "imp-1",
+                "request_id": "req-1",
                 "user_id": 7,
                 "target_item_id": 11,
                 "event_timestamp": pd.Timestamp("2026-01-01T00:10:00Z"),
+                "source_updated_at": pd.Timestamp("2026-01-01T00:12:00Z"),
                 "split": "train",
+                "_hoodie_is_deleted": False,
                 "label": 1,
                 "hist_item_id": [10],
                 "hist_event_type": [2],
@@ -473,13 +667,6 @@ def test_spark_safe_records_convert_timezone_aware_timestamps():
                 "target_brand": 33,
                 "target_price_bucket": 44,
                 "event_time": 1767226200,
-                "features_json": "{}",
-                "feature_service_version": "bst_ranking_v1",
-                "processing_code_version": "abc123",
-                "row_hash": "hash",
-                "dataset_run_id": "run-1",
-                "created_at": pd.Timestamp("2026-01-01T00:11:00Z"),
-                "updated_at": pd.Timestamp("2026-01-01T00:12:00Z"),
             }
         ]
     )
@@ -487,10 +674,4 @@ def test_spark_safe_records_convert_timezone_aware_timestamps():
     record = _spark_safe_records(samples)[0]
 
     assert record["event_timestamp"].tzinfo is None
-    assert record["created_at"].tzinfo is None
-    assert record["updated_at"].tzinfo is None
-
-
-def test_hudi_identifier_suffix_sanitizes_dataset_run_id():
-    assert _hudi_identifier_suffix("smoke-offline-feature-store") == "smoke_offline_feature_store"
-    assert _hudi_identifier_suffix("2026.06.25") == "run_2026_06_25"
+    assert record["source_updated_at"].tzinfo is None

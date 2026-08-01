@@ -1,0 +1,2 @@
+kafkaConnect:
+  istioInject: "true"

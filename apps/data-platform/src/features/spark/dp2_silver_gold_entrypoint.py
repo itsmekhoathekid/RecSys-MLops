@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from typing import Any
 
 from features.spark.build_silver_tables import build_silver_tables
@@ -13,18 +12,13 @@ from metadata.runtime_lineage import RuntimeLineageRecorder
 from validate.governance_contracts import check, dataset_result, write_report
 
 
-def bronze_lakehouse_path(catalog: IcebergCatalogConfig) -> str:
-    return f"{catalog.warehouse_uri.rstrip('/')}/{catalog.lakehouse_namespace}"
-
-
 def build_dp2_silver_gold() -> dict[str, int]:
     spark = spark_session("recsys-dp2-bronze-to-silver-gold")
     catalog = IcebergCatalogConfig()
     try:
         with RuntimeLineageRecorder("DP2", "ingest_stage") as lineage:
             create_spark_namespace(spark, catalog)
-            run_path = os.getenv("DP2_BRONZE_RUN_PATH", bronze_lakehouse_path(catalog))
-            silver = build_silver_tables(spark, run_path=run_path, catalog=catalog, source="parquet")
+            silver = build_silver_tables(spark, catalog=catalog, source="lakehouse")
             lineage.add_inputs(*BRONZE_URNS.values())
             lineage.add_outputs(*(SILVER_URNS[name] for name in silver))
             return {name: row_count(frame) for name, frame in sorted(silver.items())}
@@ -40,7 +34,7 @@ def validate_dp2_silver_gold() -> dict[str, int]:
             "DP2",
             "validate_stage",
             inputs=set(SILVER_URNS.values()),
-            upstream_jobs={"ingest_stage"},
+            upstream_jobs={"optimize_stage"},
         ) as lineage:
             counts: dict[str, int] = {}
             datasets: dict[str, dict[str, Any]] = {}

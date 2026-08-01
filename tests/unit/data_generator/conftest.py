@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from config import load_config
+from generator_config import load_config
 
 
 @pytest.fixture
 def base_config():
-    return load_config(Path("configs/local/data_generator_test.yaml"))
+    return load_config(Path("configs/data-platform/generator/default.yaml"))
 
 
 @pytest.fixture

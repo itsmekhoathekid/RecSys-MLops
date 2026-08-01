@@ -11,16 +11,23 @@ from lakehouse.iceberg import (
 )
 
 
-def _ensure_column(frame: Any, column: str, expression: Any):
-    return frame if column in frame.columns else frame.withColumn(column, expression)
+SUPPORTED_BEHAVIOR_SCHEMA_VERSION = 2
+
+
+def _normalize_optional_column(frame: Any, column: str, default_expression: Any):
+    from pyspark.sql import functions as F
+
+    if column not in frame.columns:
+        return frame.withColumn(column, default_expression)
+    return frame.withColumn(column, F.coalesce(F.col(column), default_expression))
 
 
 def build_clean_behavior_events(events: Any) -> tuple[Any, Any]:
-    from pyspark.sql import Window
     from pyspark.sql import functions as F
 
-    normalized = _ensure_column(events, "device_type", F.lit("unknown"))
-    normalized = _ensure_column(normalized, "campaign_id", F.lit("none"))
+    normalized = _normalize_optional_column(events, "device_type", F.lit("unknown"))
+    normalized = _normalize_optional_column(normalized, "campaign_id", F.lit("none"))
+    normalized = _normalize_optional_column(normalized, "schema_version", F.lit(1).cast("smallint"))
     normalized = normalized.withColumn("event_timestamp", F.to_timestamp("event_timestamp"))
     normalized = normalized.withColumn("ingestion_ts", F.to_timestamp("ingestion_ts"))
     normalized = normalized.withColumn(
@@ -31,11 +38,12 @@ def build_clean_behavior_events(events: Any) -> tuple[Any, Any]:
         .otherwise(F.lit(0))
         .cast("smallint"),
     )
-    window = Window.partitionBy("event_id").orderBy(F.col("ingestion_ts").desc_nulls_last())
-    ranked = normalized.withColumn("_dedup_rank", F.row_number().over(window))
-    clean = ranked.filter(F.col("_dedup_rank") == 1).drop("_dedup_rank")
-    rejected = ranked.filter(F.col("_dedup_rank") > 1).drop("_dedup_rank")
-    return clean.orderBy("event_timestamp", "event_id"), rejected
+    unsupported = normalized.filter(F.col("schema_version") > F.lit(SUPPORTED_BEHAVIOR_SCHEMA_VERSION)).withColumn(
+        "rejection_reason", F.lit("unsupported_schema_version")
+    )
+    supported = normalized.filter(F.col("schema_version") <= F.lit(SUPPORTED_BEHAVIOR_SCHEMA_VERSION))
+    clean = supported.dropDuplicates(["event_id"])
+    return clean, unsupported
 
 
 def build_clean_impressions(impressions: Any) -> Any:
@@ -51,7 +59,7 @@ def build_clean_impressions(impressions: Any) -> Any:
 def build_clean_recommendation_requests(requests: Any) -> Any:
     from pyspark.sql import functions as F
 
-    frame = _ensure_column(requests, "request_context", F.lit("{}"))
+    frame = _normalize_optional_column(requests, "request_context", F.lit("{}"))
     return frame.withColumn("request_timestamp", F.to_timestamp("request_timestamp"))
 
 
@@ -81,7 +89,7 @@ def read_raw_parquet_tables(spark: Any, run_path: str) -> dict[str, Any]:
 
 
 def read_raw_lakehouse_tables(spark: Any, catalog: IcebergCatalogConfig) -> dict[str, Any]:
-    return {table: read_iceberg_table(spark, catalog.lakehouse_table(table)) for table in RAW_GENERATOR_TABLES}
+    return {table: read_iceberg_table(spark, catalog.bronze_table(table)) for table in RAW_GENERATOR_TABLES}
 
 
 def read_silver_lakehouse_tables(spark: Any, catalog: IcebergCatalogConfig) -> dict[str, Any]:

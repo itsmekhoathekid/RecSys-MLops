@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-source-store
+description: RecSys CDC source PostgreSQL and schema initialization.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

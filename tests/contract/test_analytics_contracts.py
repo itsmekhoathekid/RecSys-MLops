@@ -77,7 +77,7 @@ def test_superset_dashboard_is_bootstrapped_idempotently_after_helm_upgrades():
     assert '"helm.sh/hook": post-install,post-upgrade' in rendered
     assert "/app/pythonpath/bootstrap_dashboards.py" in rendered
 
-    dockerfile = (ROOT / "apps/analytics/Dockerfile.superset").read_text()
+    dockerfile = (ROOT / "images/analytics/recsys-analytics-superset/Dockerfile").read_text()
     bootstrap = (ROOT / "apps/analytics/superset/bootstrap_dashboards.py").read_text()
     assert "COPY apps/analytics/superset/bootstrap_dashboards.py" in dockerfile
     assert 'DASHBOARD_SLUG = "recsys-business-pulse"' in bootstrap
@@ -86,8 +86,21 @@ def test_superset_dashboard_is_bootstrapped_idempotently_after_helm_upgrades():
 
 def test_airflow_dag_orders_silver_sync_before_dbt_build():
     dag = (ANALYTICS / "orchestration" / "airflow" / "dags" / "analytics_dag.py").read_text()
-    airflow_image = (ROOT / "infra" / "docker" / "Dockerfile.airflow").read_text()
+    airflow_image = (ROOT / "images/data/recsys-airflow/Dockerfile").read_text()
 
     assert "sync_silver >> dbt_build" in dag
     assert "recsys_analytics_daily" in dag
     assert "apps/analytics/orchestration/airflow/dags" in airflow_image
+
+
+def test_airflow_pod_tasks_use_terminal_state_aware_cleanup():
+    dag_files = (
+        ANALYTICS / "orchestration" / "airflow" / "dags" / "analytics_dag.py",
+        ROOT / "apps" / "data-platform" / "src" / "orchestration" / "airflow" / "dags" / "k8s_data_platform_dag.py",
+        ROOT / "apps" / "data-platform" / "src" / "orchestration" / "airflow" / "dags" / "rubric_data_pipeline_dags.py",
+    )
+
+    for dag_file in dag_files:
+        contents = dag_file.read_text(encoding="utf-8")
+        assert 'on_finish_action="delete_succeeded_pod"' in contents
+        assert "is_delete_operator_pod" not in contents

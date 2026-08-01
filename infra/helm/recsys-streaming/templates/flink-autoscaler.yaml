@@ -1,0 +1,82 @@
+{{- if .Values.flinkAutoscaler.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-autoscaler
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: flink-autoscaler
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: flink-autoscaler
+  template:
+    metadata:
+      labels:
+        app: flink-autoscaler
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.flink.istioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: flink-autoscaler
+          image: {{ .Values.images.flink }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              cat >>/opt/flink/conf/flink-conf.yaml <<'EOF'
+              job.autoscaler.enabled: true
+              job.autoscaler.scaling.enabled: {{ .Values.flinkAutoscaler.scalingEnabled | quote }}
+              job.autoscaler.stabilization.interval: {{ .Values.flinkAutoscaler.stabilizationInterval }}
+              job.autoscaler.metrics.window: {{ .Values.flinkAutoscaler.metricsWindow }}
+              job.autoscaler.utilization.target: {{ .Values.flinkAutoscaler.targetUtilization }}
+              job.autoscaler.utilization.min: {{ .Values.flinkAutoscaler.utilizationMin }}
+              job.autoscaler.utilization.max: {{ .Values.flinkAutoscaler.utilizationMax }}
+              job.autoscaler.catch-up.duration: {{ .Values.flinkAutoscaler.catchUpDuration }}
+              job.autoscaler.restart.time: {{ .Values.flinkAutoscaler.restartTime }}
+              job.autoscaler.vertex.min-parallelism: {{ .Values.flinkAutoscaler.vertexMinParallelism }}
+              job.autoscaler.vertex.max-parallelism: {{ .Values.flinkAutoscaler.vertexMaxParallelism }}
+              EOF
+              exec java \
+                -cp /opt/flink/autoscaler/flink-autoscaler-standalone-{{ .Values.flinkAutoscaler.version }}.jar \
+                org.apache.flink.autoscaler.standalone.StandaloneAutoscalerEntrypoint \
+                --autoscaler.standalone.fetcher.flink-cluster.host flink-jobmanager \
+                --autoscaler.standalone.fetcher.flink-cluster.port 8081
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+{{- if .Values.flinkAutoscaler.taskManagerHpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flink-taskmanager
+  namespace: {{ .Values.namespace.name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: flink-taskmanager
+  minReplicas: {{ .Values.flinkAutoscaler.taskManagerHpa.minReplicas }}
+  maxReplicas: {{ .Values.flinkAutoscaler.taskManagerHpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.flinkAutoscaler.taskManagerHpa.targetCpuUtilization }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.flinkAutoscaler.taskManagerHpa.scaleDownStabilizationSeconds }}
+{{- end }}
+{{- end }}

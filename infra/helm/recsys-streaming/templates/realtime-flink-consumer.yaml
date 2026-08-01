@@ -1,0 +1,244 @@
+{{- $consumer := .Values.realtimeFlinkConsumer -}}
+{{- $submitterIstioInject := default .Values.flink.istioInject $consumer.istioInject -}}
+{{- if and $consumer.enabled $consumer.online.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ default "realtime-flink-online-store" $consumer.online.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: {{ default $consumer.replicas $consumer.online.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ default "realtime-flink-online-store" $consumer.online.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ default "realtime-flink-online-store" $consumer.online.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ $submitterIstioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: realtime-flink-online-store
+          image: {{ .Values.images.flink }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              cat >/tmp/core-site.xml <<'EOF'
+              <configuration>
+                <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
+                <property><name>fs.s3a.endpoint</name><value>{{ .Values.minio.endpoint }}</value></property>
+                <property><name>fs.s3a.access.key</name><value>${AWS_ACCESS_KEY_ID}</value></property>
+                <property><name>fs.s3a.secret.key</name><value>${AWS_SECRET_ACCESS_KEY}</value></property>
+                <property><name>fs.s3a.path.style.access</name><value>true</value></property>
+                <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>
+                <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>
+              </configuration>
+              EOF
+              sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
+              export HADOOP_CONF_DIR=/tmp
+              printf '\n%s\n' "$FLINK_PROPERTIES" >> /opt/flink/conf/flink-conf.yaml
+              restore_args=()
+              if [[ -n "$FLINK_RESTORE_PATH" ]]; then
+                restore_args=(-s "$FLINK_RESTORE_PATH")
+              fi
+              while IFS= read -r existing_job_id; do
+                [[ -z "$existing_job_id" ]] && continue
+                echo "Cancelling previous online-store Flink job $existing_job_id before rollout."
+                flink cancel -m flink-jobmanager:8081 "$existing_job_id"
+              done < <(
+                flink list -m flink-jobmanager:8081 -r \
+                  | awk -F ' : ' -v group="$REALTIME_STREAM_ONLINE_GROUP_ID" \
+                      'index($3, group) > 0 { print $2 }'
+              )
+              PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
+              flink run -m flink-jobmanager:8081 \
+                "${restore_args[@]}" \
+                -py apps/data-platform/src/features/flink/realtime_stream_job.py \
+                -- \
+                --runner pyflink \
+                --topic "$REALTIME_STREAM_TOPIC" \
+                --group-id "$REALTIME_STREAM_ONLINE_GROUP_ID" \
+                --starting-offsets {{ default "committed-offsets" $consumer.online.startingOffsets | quote }} \
+                --continuous \
+                --min-events "$REALTIME_STREAM_MIN_EVENTS" \
+                --max-events "$REALTIME_STREAM_MAX_EVENTS" \
+                --parallelism "$FLINK_PARALLELISM" \
+                --redis-sink-max-events-per-second "$REDIS_SINK_MAX_EVENTS_PER_SECOND" \
+                --postgres-sink-max-events-per-second "$POSTGRES_SINK_MAX_EVENTS_PER_SECOND" \
+                --sink-rate-limit-burst-events "$SINK_RATE_LIMIT_BURST_EVENTS" \
+                --async-io-capacity "$FLINK_ASYNC_IO_CAPACITY" \
+                --async-io-timeout-seconds "$FLINK_ASYNC_IO_TIMEOUT_SECONDS" \
+                --postgres-async-pool-size "$POSTGRES_ASYNC_POOL_SIZE" \
+                --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
+                --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
+                --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --checkpoint-min-pause-seconds "$STREAM_CHECKPOINT_MIN_PAUSE_SECONDS" \
+                --checkpoint-timeout-seconds "$STREAM_CHECKPOINT_TIMEOUT_SECONDS" \
+                --tolerable-checkpoint-failures "$STREAM_TOLERABLE_CHECKPOINT_FAILURES" \
+                $([ "$STREAM_UNALIGNED_CHECKPOINTS_ENABLED" = "true" ] && echo "--unaligned-checkpoints-enabled" || echo "--no-unaligned-checkpoints-enabled") \
+                --watermark-delay-minutes "$STREAM_WATERMARK_DELAY_MINUTES" \
+                --allowed-lateness-seconds "$STREAM_ALLOWED_LATENESS_SECONDS" \
+                --watermark-idleness-seconds "$STREAM_WATERMARK_IDLENESS_SECONDS" \
+                $([ "$STREAM_WATERMARK_ALIGNMENT_ENABLED" = "true" ] && echo "--watermark-alignment-enabled" || echo "--no-watermark-alignment-enabled") \
+                --watermark-alignment-group "$STREAM_WATERMARK_ALIGNMENT_GROUP" \
+                --watermark-alignment-max-drift-seconds "$STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS" \
+                --watermark-alignment-update-interval-seconds "$STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS" \
+                --quality-window-seconds "$STREAM_QUALITY_WINDOW_SECONDS" \
+                --feature-window-seconds "$STREAM_FEATURE_WINDOW_SECONDS" \
+                --feature-early-fire-seconds "$STREAM_FEATURE_EARLY_FIRE_SECONDS" \
+                --burst-threshold-event-count "$STREAM_BURST_THRESHOLD_EVENT_COUNT" \
+                $([ "$STREAM_DROP_LATE_EVENTS" = "true" ] && echo "--drop-late-events" || echo "--no-drop-late-events") \
+                $([ "$STREAM_ENABLE_LATE_EVENT_DLQ" = "true" ] && echo "--enable-late-event-dlq" || echo "--no-enable-late-event-dlq") \
+                --state-ttl-seconds "$STREAM_STATE_TTL_SECONDS" \
+                --dedup-state-ttl-seconds "$STREAM_DEDUP_STATE_TTL_SECONDS" \
+                --disable-offline-store \
+                --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
+                --iceberg-catalog "$ICEBERG_CATALOG" \
+                --offline-feature-catalog "$OFFLINE_FEATURE_CATALOG" \
+                --offline-feature-store-warehouse "$OFFLINE_FEATURE_STORE_WAREHOUSE" \
+                --iceberg-feature-namespace "$ICEBERG_FEATURE_NAMESPACE"
+              echo "Submitted realtime Flink online-store job; keeping submitter pod alive."
+              sleep infinity
+          env:
+            - name: FLINK_RESTORE_PATH
+              value: {{ default "" $consumer.online.restorePath | quote }}
+            - name: FLINK_PROPERTIES
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\npipeline.max-parallelism: {{ .Values.flinkAutoscaler.pipelineMaxParallelism }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+{{- end }}
+{{- if and $consumer.enabled $consumer.offline.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ default "realtime-flink-offline-store" $consumer.offline.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: {{ default $consumer.replicas $consumer.offline.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ default "realtime-flink-offline-store" $consumer.offline.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ default "realtime-flink-offline-store" $consumer.offline.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ $submitterIstioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: realtime-flink-offline-store
+          image: {{ .Values.images.flink }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              cat >/tmp/core-site.xml <<'EOF'
+              <configuration>
+                <property><name>fs.s3a.impl</name><value>org.apache.hadoop.fs.s3a.S3AFileSystem</value></property>
+                <property><name>fs.s3a.endpoint</name><value>{{ .Values.minio.endpoint }}</value></property>
+                <property><name>fs.s3a.access.key</name><value>${AWS_ACCESS_KEY_ID}</value></property>
+                <property><name>fs.s3a.secret.key</name><value>${AWS_SECRET_ACCESS_KEY}</value></property>
+                <property><name>fs.s3a.path.style.access</name><value>true</value></property>
+                <property><name>fs.s3a.connection.ssl.enabled</name><value>false</value></property>
+                <property><name>fs.s3a.aws.credentials.provider</name><value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value></property>
+              </configuration>
+              EOF
+              sed -i "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g; s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" /tmp/core-site.xml
+              export HADOOP_CONF_DIR=/tmp
+              printf '\n%s\n' "$FLINK_PROPERTIES" >> /opt/flink/conf/flink-conf.yaml
+              restore_args=()
+              if [[ -n "$FLINK_RESTORE_PATH" ]]; then
+                restore_args=(-s "$FLINK_RESTORE_PATH")
+              fi
+              while IFS= read -r existing_job_id; do
+                [[ -z "$existing_job_id" ]] && continue
+                echo "Cancelling previous offline-store Flink job $existing_job_id before rollout."
+                flink cancel -m flink-jobmanager:8081 "$existing_job_id"
+              done < <(
+                flink list -m flink-jobmanager:8081 -r \
+                  | awk -F ' : ' -v group="$REALTIME_STREAM_OFFLINE_GROUP_ID" \
+                      'index($3, group) > 0 { print $2 }'
+              )
+              PYTHONPATH=/opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys \
+              flink run -m flink-jobmanager:8081 \
+                "${restore_args[@]}" \
+                -py apps/data-platform/src/features/flink/realtime_stream_job.py \
+                -- \
+                --runner pyflink \
+                --topic "$REALTIME_STREAM_TOPIC" \
+                --group-id "$REALTIME_STREAM_OFFLINE_GROUP_ID" \
+                --starting-offsets {{ default "latest" $consumer.offline.startingOffsets | quote }} \
+                --continuous \
+                --min-events "$REALTIME_STREAM_MIN_EVENTS" \
+                --max-events "$REALTIME_STREAM_MAX_EVENTS" \
+                --parallelism "$FLINK_PARALLELISM" \
+                --redis-sink-max-events-per-second "$REDIS_SINK_MAX_EVENTS_PER_SECOND" \
+                --postgres-sink-max-events-per-second "$POSTGRES_SINK_MAX_EVENTS_PER_SECOND" \
+                --sink-rate-limit-burst-events "$SINK_RATE_LIMIT_BURST_EVENTS" \
+                --async-io-capacity "$FLINK_ASYNC_IO_CAPACITY" \
+                --async-io-timeout-seconds "$FLINK_ASYNC_IO_TIMEOUT_SECONDS" \
+                --postgres-async-pool-size "$POSTGRES_ASYNC_POOL_SIZE" \
+                --max-history-length "$REALTIME_STREAM_MAX_HISTORY_LENGTH" \
+                --progress-log-events "$STREAM_PROGRESS_LOG_EVENTS" \
+                --checkpoint-interval-seconds "$STREAM_CHECKPOINT_INTERVAL_SECONDS" \
+                --checkpoint-min-pause-seconds "$STREAM_CHECKPOINT_MIN_PAUSE_SECONDS" \
+                --checkpoint-timeout-seconds "$STREAM_CHECKPOINT_TIMEOUT_SECONDS" \
+                --tolerable-checkpoint-failures "$STREAM_TOLERABLE_CHECKPOINT_FAILURES" \
+                $([ "$STREAM_UNALIGNED_CHECKPOINTS_ENABLED" = "true" ] && echo "--unaligned-checkpoints-enabled" || echo "--no-unaligned-checkpoints-enabled") \
+                --watermark-delay-minutes "$STREAM_WATERMARK_DELAY_MINUTES" \
+                --allowed-lateness-seconds "$STREAM_ALLOWED_LATENESS_SECONDS" \
+                --watermark-idleness-seconds "$STREAM_WATERMARK_IDLENESS_SECONDS" \
+                $([ "$STREAM_WATERMARK_ALIGNMENT_ENABLED" = "true" ] && echo "--watermark-alignment-enabled" || echo "--no-watermark-alignment-enabled") \
+                --watermark-alignment-group "$STREAM_WATERMARK_ALIGNMENT_GROUP" \
+                --watermark-alignment-max-drift-seconds "$STREAM_WATERMARK_ALIGNMENT_MAX_DRIFT_SECONDS" \
+                --watermark-alignment-update-interval-seconds "$STREAM_WATERMARK_ALIGNMENT_UPDATE_INTERVAL_SECONDS" \
+                --quality-window-seconds "$STREAM_QUALITY_WINDOW_SECONDS" \
+                --feature-window-seconds "$STREAM_FEATURE_WINDOW_SECONDS" \
+                --feature-early-fire-seconds "$STREAM_FEATURE_EARLY_FIRE_SECONDS" \
+                --burst-threshold-event-count "$STREAM_BURST_THRESHOLD_EVENT_COUNT" \
+                $([ "$STREAM_DROP_LATE_EVENTS" = "true" ] && echo "--drop-late-events" || echo "--no-drop-late-events") \
+                $([ "$STREAM_ENABLE_LATE_EVENT_DLQ" = "true" ] && echo "--enable-late-event-dlq" || echo "--no-enable-late-event-dlq") \
+                --state-ttl-seconds "$STREAM_STATE_TTL_SECONDS" \
+                --dedup-state-ttl-seconds "$STREAM_DEDUP_STATE_TTL_SECONDS" \
+                --offline-store-enabled \
+                --disable-online-store \
+                --offline-store-sink "$OFFLINE_STORE_SINK" \
+                --feast-postgres-host "$FEAST_POSTGRES_HOST" \
+                --feast-postgres-port "$FEAST_POSTGRES_PORT" \
+                --feast-postgres-database "$FEAST_POSTGRES_DB" \
+                --feast-postgres-schema "$FEAST_POSTGRES_SCHEMA" \
+                --feast-postgres-user "$FEAST_POSTGRES_USER" \
+                --feast-postgres-password "$FEAST_POSTGRES_PASSWORD" \
+                --feast-postgres-sslmode "$FEAST_POSTGRES_SSLMODE" \
+                --lakehouse-warehouse "$LAKEHOUSE_WAREHOUSE" \
+                --iceberg-catalog "$ICEBERG_CATALOG" \
+                --offline-feature-catalog "$OFFLINE_FEATURE_CATALOG" \
+                --offline-feature-store-warehouse "$OFFLINE_FEATURE_STORE_WAREHOUSE" \
+                --iceberg-feature-namespace "$ICEBERG_FEATURE_NAMESPACE"
+              echo "Submitted realtime Flink $OFFLINE_STORE_SINK offline-store job; keeping submitter pod alive."
+              sleep infinity
+          env:
+            - name: FLINK_RESTORE_PATH
+              value: {{ default "" $consumer.offline.restorePath | quote }}
+            - name: FLINK_PROPERTIES
+              value: "execution.checkpointing.storage: filesystem\nstate.checkpoints.dir: {{ .Values.flink.checkpointStorageUri }}\npipeline.max-parallelism: {{ .Values.flinkAutoscaler.pipelineMaxParallelism }}\nfs.s3a.endpoint: {{ .Values.minio.endpoint }}\nfs.s3a.path.style.access: true\nfs.s3a.connection.ssl.enabled: false\nfs.s3a.aws.credentials.provider: com.amazonaws.auth.EnvironmentVariableCredentialsProvider\nenv.java.opts.client: {{ .Values.flink.javaOpens }}\nenv.java.opts.all: {{ .Values.flink.javaOpens }}\nenv.java.opts.jobmanager: {{ .Values.flink.javaOpens }}\nenv.java.opts.taskmanager: {{ .Values.flink.javaOpens }}"
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+{{- end }}

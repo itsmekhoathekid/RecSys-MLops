@@ -1,10 +1,15 @@
 from collections import defaultdict
 from datetime import date
+from pathlib import Path
+
+import pyarrow.parquet as pq
+import pytest
 
 from behavior import SessionState
-from challenges import ChallengePipeline
-from pipeline import HistoricalDataPipeline
-from simulation import RecsysSimulation
+from generator_config import ChallengeConfig
+from offline.historical_pipeline import HistoricalDataPipeline
+from offline.problem_pipeline import ChallengePipeline
+from offline.simulation import RecsysSimulation
 from validation import InvariantValidator, validate_parquet_output
 
 
@@ -54,6 +59,8 @@ def test_state_machine_transitions_are_valid(small_config):
 
 def test_clean_data_invariants(small_config):
     clean = RecsysSimulation(small_config).generate()
+    assert all(preference.brand_id is not None for preference in clean.user_preferences)
+    assert any(preference.brand_id == 0 for preference in clean.user_preferences)
     emitted, _ = ChallengePipeline(
         RecsysSimulation(small_config).rng,
         small_config.challenges,
@@ -90,12 +97,7 @@ def test_purchase_order_and_impression_linkage(small_config):
 def test_challenge_contracts(small_config):
     data = RecsysSimulation(small_config).generate()
     challenge_config = small_config.challenges.model_copy(
-        update={
-            "duplicate_event_rate": 1.0,
-            "conflicting_duplicate_rate": 1.0,
-            "late_arrival_rate": 1.0,
-            "out_of_order_rate": 1.0,
-        }
+        update={"duplicate_event_rate": 1.0}
     )
     pipeline = ChallengePipeline(
         RecsysSimulation(small_config).rng,
@@ -103,29 +105,22 @@ def test_challenge_contracts(small_config):
         small_config.schema_evolution.change_date,
     )
     output, stats = pipeline.apply(data.behavior_events[:10])
-    assert len(output) == 30
+    assert len(output) == 20
     assert stats.exact_duplicates_injected == 10
-    assert stats.conflicting_duplicates_injected == 10
-    assert stats.late_arrivals_injected == 10
-    assert stats.out_of_order_injected == 10
-    assert all(
-        challenge_config.late_delay_minutes_min * 60
-        <= (event.created_ts - event.event_timestamp).total_seconds()
-        <= challenge_config.late_delay_minutes_max * 60
-        for event in output
-    )
+
+
+def test_removed_offline_problem_keys_are_rejected():
+    with pytest.raises(ValueError):
+        ChallengeConfig.model_validate(
+            {"duplicate_event_rate": 0.02, "late_arrival_rate": 0.10}
+        )
 
 
 def test_schema_evolution(small_config):
     data = RecsysSimulation(small_config).generate()
     output, stats = ChallengePipeline(
         RecsysSimulation(small_config).rng,
-        small_config.challenges.model_copy(
-            update={
-                "duplicate_event_rate": 0,
-                "conflicting_duplicate_rate": 0,
-            }
-        ),
+        small_config.challenges.model_copy(update={"duplicate_event_rate": 0}),
         small_config.schema_evolution.change_date,
     ).apply(data.behavior_events)
     assert stats.schema_v1_events > 0
@@ -158,8 +153,16 @@ def test_breaking_schema_evolution_can_generate_version_three(small_config):
 
 def test_parquet_round_trip(small_config):
     result = HistoricalDataPipeline(small_config).run()
+    run_path = Path(result["run_path"])
     validation = validate_parquet_output(
-        __import__("pathlib").Path(result["run_path"])
+        run_path
     )
     assert validation.passed, validation.errors
     assert validation.metrics["row_counts"]["behavior_events"] > 0
+
+    physical_schemas = [
+        pq.ParquetFile(path).schema_arrow
+        for path in sorted((run_path / "behavior_events").rglob("*.parquet"))
+    ]
+    assert any("device_type" not in schema.names for schema in physical_schemas)
+    assert any("device_type" in schema.names for schema in physical_schemas)

@@ -1,0 +1,13 @@
+pipeline: dp1
+input:
+  generator_config: configs/data-platform/generator/default.yaml
+  run_id: production
+output:
+  lakehouse_warehouse: s3a://recsys-lakehouse/warehouse
+  iceberg_catalog: recsys
+  namespace: lakehouse
+  table_layer: bronze
+optimization:
+  strategy: binpack
+  target_file_size_mb: 128
+  min_input_files: 2

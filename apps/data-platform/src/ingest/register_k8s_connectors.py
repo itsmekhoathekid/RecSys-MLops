@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import time
 from typing import Any
@@ -69,15 +70,97 @@ def wait_for_connect(timeout_seconds: int = 180, poll_seconds: int = 5) -> None:
     raise SystemExit(f"Kafka Connect not ready at {connect_url()}: {last_error}")
 
 
-def register_connector(name: str, config: dict[str, Any]) -> dict[str, Any]:
-    response = requests.put(
-        f"{connect_url()}/connectors/{name}/config",
-        headers={"Content-Type": "application/json"},
-        data=json.dumps(config),
-        timeout=30,
+def _retryable_status(status_code: int) -> bool:
+    return status_code in {404, 409, 423, 429} or status_code >= 500
+
+
+def register_connector(
+    name: str,
+    config: dict[str, Any],
+    *,
+    timeout_seconds: int,
+    poll_seconds: int = 5,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | str | None = None
+    while time.monotonic() <= deadline:
+        try:
+            response = requests.put(
+                f"{connect_url()}/connectors/{name}/config",
+                headers={"Content-Type": "application/json"},
+                data=json.dumps(config),
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+        else:
+            status_code = int(getattr(response, "status_code", 200))
+            if _retryable_status(status_code):
+                last_error = f"HTTP {status_code}"
+            else:
+                response.raise_for_status()
+                return response.json()
+        time.sleep(poll_seconds)
+    raise TimeoutError(
+        f"Kafka Connect did not accept connector config: {name}; "
+        f"last_error={last_error}"
     )
-    response.raise_for_status()
-    return response.json()
+
+
+def wait_for_connector_running(
+    name: str,
+    *,
+    timeout_seconds: int,
+    poll_seconds: int = 5,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last_states: dict[str, Any] = {}
+    last_error: Exception | str | None = None
+    while time.monotonic() <= deadline:
+        try:
+            response = requests.get(
+                f"{connect_url()}/connectors/{name}/status",
+                timeout=5,
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+            time.sleep(poll_seconds)
+            continue
+        else:
+            status_code = int(getattr(response, "status_code", 200))
+            if _retryable_status(status_code):
+                last_error = f"HTTP {status_code}"
+                time.sleep(poll_seconds)
+                continue
+            response.raise_for_status()
+        status = response.json()
+        connector_state = status.get("connector", {}).get("state")
+        task_states = [
+            task.get("state")
+            for task in status.get("tasks", [])
+        ]
+        last_states = {
+            "connector": connector_state,
+            "tasks": task_states,
+        }
+        if (
+            connector_state == "RUNNING"
+            and task_states
+            and all(state == "RUNNING" for state in task_states)
+        ):
+            return last_states
+        # PUT restarts an existing failed task asynchronously. Exiting on the
+        # stale FAILED status makes Kubernetes repeat the PUT and continuously
+        # resets Kafka Connect's recovery window.
+        time.sleep(poll_seconds)
+    raise TimeoutError(
+        f"Kafka Connect connector did not become RUNNING: {name}; "
+        f"states={last_states}; last_error={last_error}"
+    )
+
+
+def remaining_seconds(deadline: float) -> int:
+    return max(1, math.ceil(deadline - time.monotonic()))
 
 
 def main() -> int:
@@ -87,9 +170,18 @@ def main() -> int:
     args = parser.parse_args()
     name, config_factory = CONNECTORS[args.connector]
     with RuntimeLineageRecorder("CDC_INGESTION", "register_debezium_connector") as lineage:
-        wait_for_connect(timeout_seconds=args.wait_timeout_seconds)
+        deadline = time.monotonic() + args.wait_timeout_seconds
+        wait_for_connect(timeout_seconds=remaining_seconds(deadline))
         config = config_factory()
-        result = register_connector(name, config)
+        register_connector(
+            name,
+            config,
+            timeout_seconds=remaining_seconds(deadline),
+        )
+        status = wait_for_connector_running(
+            name,
+            timeout_seconds=remaining_seconds(deadline),
+        )
         included_tables = {
             item.rsplit(".", 1)[-1]
             for item in str(config.get("table.include.list", "")).split(",")
@@ -109,7 +201,17 @@ def main() -> int:
         if report["status"] != "SUCCESS":
             lineage.fail(f"CDC connector data contract status: {report['status']}")
             raise RuntimeError(f"CDC connector contract failed: {report}")
-        print(json.dumps({"name": name, "result": result, "contract": report["status"]}, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "name": name,
+                    "status": status,
+                    "contract": report["status"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
     return 0
 
 

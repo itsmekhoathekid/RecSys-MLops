@@ -1,0 +1,5 @@
+storageClassName: standard-rwo
+featurePostgres:
+  istioInject: "true"
+redis:
+  istioInject: "true"

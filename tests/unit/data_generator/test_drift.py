@@ -1,19 +1,19 @@
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 
 import numpy as np
 import pyarrow.parquet as pq
 
 from behavior import BehaviorContext, BehaviorProbabilityModel
-from config import DriftConfig, load_config
+from generator_config import DriftConfig, load_config
 from drift.controller import DriftController
 from drift.reporting import (
     DriftReporter,
     calculate_psi,
     classify_drift,
 )
-from pipeline import HistoricalDataPipeline
-from simulation import RecsysSimulation
+from offline.historical_pipeline import HistoricalDataPipeline
+from offline.simulation import RecsysSimulation
 from validation import validate_drift_output
 
 
@@ -69,9 +69,7 @@ def test_purchase_probability_applies_factor_and_clamps(small_config):
             update={"purchase_after_cart_base": 0.9}
         )
     )
-    context = BehaviorContext(
-        rank_position=1, is_campaign=True, drift_factor=10.0
-    )
+    context = BehaviorContext(rank_position=1, is_campaign=True, drift_factor=10.0)
     assert model.p_purchase(users[0], products[0], context) == 0.95
 
 
@@ -104,7 +102,7 @@ def test_rolling_window_excludes_future_and_old_values():
 
 
 def test_drift_metadata_and_artifacts(tmp_path):
-    config = load_config(Path("configs/local/data_generator_drift.yaml"))
+    config = load_config(Path("configs/data-platform/generator/drift.yaml"))
     config = config.model_copy(
         update={
             "entities": config.entities.model_copy(
@@ -140,8 +138,7 @@ def test_drift_metadata_and_artifacts(tmp_path):
     ).to_pylist()
     controller = DriftController(config.drift)
     assert all(
-        event["drift_factor"]
-        == controller.get_factor(event["event_timestamp"])
+        event["drift_factor"] == controller.get_factor(event["event_timestamp"])
         for event in events
     )
     assert (run_path / "reports/drift_validation_report.csv").exists()
@@ -149,9 +146,7 @@ def test_drift_metadata_and_artifacts(tmp_path):
     alerts = pq.read_table(
         run_path / "monitoring/feature_drift_alerts.parquet"
     ).to_pylist()
-    assert all(
-        row["alert_date"] >= config.drift.drift_start_date for row in alerts
-    )
+    assert all(row["alert_date"] >= config.drift.drift_start_date for row in alerts)
     assert (
         result["data_quality_report"]["drift"]["post_ramp_purchase_rate"]
         > result["data_quality_report"]["drift"]["baseline_purchase_rate"]
@@ -159,7 +154,7 @@ def test_drift_metadata_and_artifacts(tmp_path):
 
 
 def test_drift_report_is_reproducible(tmp_path):
-    config = load_config(Path("configs/local/data_generator_drift.yaml"))
+    config = load_config(Path("configs/data-platform/generator/drift.yaml"))
     compact = config.model_copy(
         update={
             "entities": config.entities.model_copy(
@@ -180,9 +175,7 @@ def test_drift_report_is_reproducible(tmp_path):
     )
     first = HistoricalDataPipeline(compact).run()
     second_config = compact.model_copy(
-        update={
-            "output": compact.output.model_copy(update={"run_id": "second"})
-        }
+        update={"output": compact.output.model_copy(update={"run_id": "second"})}
     )
     second = HistoricalDataPipeline(second_config).run()
     first_csv = (

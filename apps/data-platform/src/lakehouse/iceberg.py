@@ -30,6 +30,9 @@ class IcebergCatalogConfig:
     def lakehouse_table(self, table_name: str) -> str:
         return f"{self.lakehouse_database}.{table_name}"
 
+    def bronze_table(self, table_name: str) -> str:
+        return self.lakehouse_table(f"bronze_{table_name}")
+
     def feature_table(self, table_name: str) -> str:
         return f"{self.feature_database}.{table_name}"
 
@@ -59,6 +62,8 @@ RAW_GENERATOR_TABLES = (
     "orders",
     "order_items",
 )
+
+BRONZE_LAKEHOUSE_TABLES = tuple(f"bronze_{table}" for table in RAW_GENERATOR_TABLES)
 
 SILVER_LAKEHOUSE_TABLES = (
     "clean_behavior_events",

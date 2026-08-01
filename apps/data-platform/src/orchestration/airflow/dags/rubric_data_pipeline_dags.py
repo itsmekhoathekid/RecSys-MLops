@@ -13,8 +13,8 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = "recsys-dataflow"
-DATAFLOW_IMAGE = os.getenv("DATAFLOW_IMAGE", "recsys-dataflow-cli:local")
-SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "recsys-spark:local"))
+FEATURE_STORE_IMAGE = os.getenv("FEATURE_STORE_IMAGE", "registry.example.invalid/recsys/recsys-feature-store:required")
+SPARK_IMAGE = os.getenv("SPARK_IMAGE", os.getenv("SPARK_K8S_IMAGE", "registry.example.invalid/recsys/recsys-spark:required"))
 DATAFLOW_NODE_SELECTOR = os.getenv("DATAFLOW_NODE_SELECTOR", "recsys.ai/pool=cpu-services")
 COMMON_ENV = {
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
@@ -36,6 +36,7 @@ SPARK_DRIVER_EXECUTOR_ENV = (
     "OFFLINE_FEATURE_STORE_WAREHOUSE",
     "ICEBERG_FEATURE_NAMESPACE",
     "OFFLINE_FEATURE_STORE_URI",
+    "OFFLINE_FEATURE_DRIFT_CURRENT_ROOT",
     "FEAST_POSTGRES_HOST",
     "FEAST_POSTGRES_PORT",
     "FEAST_POSTGRES_DB",
@@ -96,7 +97,9 @@ def pod_task(task_id: str, image: str, command: str):
         annotations={"sidecar.istio.io/inject": "false"},
         node_selector=parse_node_selector(DATAFLOW_NODE_SELECTOR),
         get_logs=True,
-        is_delete_operator_pod=True,
+        # Use the provider's explicit finish policy so completed task pods are
+        # observed before cleanup and failed pods remain available for debug.
+        on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
     )
@@ -116,18 +119,20 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
     )
     return (
         'SPARK_APP_SUFFIX="$(date +%s)-${RANDOM}"; '
+        'SPARK_SUBMIT_LOG="$(mktemp)"; '
         "/opt/spark/bin/spark-submit "
         "--master ${SPARK_K8S_MASTER:-k8s://https://kubernetes.default.svc} "
         "--deploy-mode cluster "
         f"--name {app_name}-${{SPARK_APP_SUFFIX}} "
         "--conf spark.kubernetes.namespace=${SPARK_K8S_NAMESPACE:-recsys-dataflow} "
-        "--conf spark.kubernetes.container.image=${SPARK_K8S_IMAGE:-recsys-spark:local} "
+        "--conf spark.kubernetes.container.image=${SPARK_K8S_IMAGE:-registry.example.invalid/recsys/recsys-spark:required} "
         "--conf spark.kubernetes.container.image.pullPolicy=${SPARK_K8S_IMAGE_PULL_POLICY:-IfNotPresent} "
         "--conf spark.kubernetes.authenticate.driver.serviceAccountName=${SPARK_K8S_SERVICE_ACCOUNT:-default} "
         "--conf spark.kubernetes.submission.waitAppCompletion=true "
         "--conf spark.kubernetes.submission.connectionTimeout=${SPARK_K8S_CONNECTION_TIMEOUT:-60000} "
         "--conf spark.kubernetes.submission.requestTimeout=${SPARK_K8S_REQUEST_TIMEOUT:-180000} "
         "--conf spark.kubernetes.report.interval=5s "
+        "--conf spark.sql.iceberg.vectorization.enabled=${SPARK_ICEBERG_VECTORIZATION_ENABLED:-false} "
         "--conf spark.kubernetes.driver.annotation.sidecar.istio.io/inject=false "
         "--conf spark.kubernetes.executor.annotation.sidecar.istio.io/inject=false "
         "--conf spark.kubernetes.node.selector.recsys.ai/pool=${SPARK_K8S_NODE_POOL:-cpu-services} "
@@ -136,38 +141,66 @@ def spark_native_submit(task_id: str, application: str, application_args: str = 
         "--conf spark.driver.cores=${SPARK_K8S_DRIVER_CORES:-1} "
         "--conf spark.kubernetes.driver.request.cores=${SPARK_K8S_DRIVER_REQUEST_CORES:-500m} "
         "--conf spark.executor.instances=${SPARK_K8S_EXECUTOR_INSTANCES:-1} "
+        "--conf spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-false} "
+        "--conf spark.dynamicAllocation.shuffleTracking.enabled=${SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED:-true} "
+        "--conf spark.dynamicAllocation.minExecutors=${SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS:-1} "
+        "--conf spark.dynamicAllocation.initialExecutors=${SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS:-1} "
+        "--conf spark.dynamicAllocation.maxExecutors=${SPARK_DYNAMIC_ALLOCATION_MAX_EXECUTORS:-4} "
+        "--conf spark.dynamicAllocation.executorIdleTimeout=${SPARK_DYNAMIC_ALLOCATION_EXECUTOR_IDLE_TIMEOUT:-60s} "
+        "--conf spark.dynamicAllocation.schedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SCHEDULER_BACKLOG_TIMEOUT:-1s} "
+        "--conf spark.dynamicAllocation.sustainedSchedulerBacklogTimeout=${SPARK_DYNAMIC_ALLOCATION_SUSTAINED_BACKLOG_TIMEOUT:-1s} "
         "--conf spark.executor.memory=${SPARK_K8S_EXECUTOR_MEMORY:-1g} "
         "--conf spark.executor.memoryOverhead=${SPARK_K8S_EXECUTOR_MEMORY_OVERHEAD:-384m} "
         "--conf spark.executor.cores=${SPARK_K8S_EXECUTOR_CORES:-1} "
         "--conf spark.kubernetes.executor.request.cores=${SPARK_K8S_EXECUTOR_REQUEST_CORES:-500m} "
         f"{env_conf} "
         f"{secret_conf} "
-        f"{application} {application_args}".strip()
+        f"{application} {application_args} "
+        '2>&1 | tee "$SPARK_SUBMIT_LOG"; '
+        'grep -q "phase: Succeeded" "$SPARK_SUBMIT_LOG"'
     )
 
 
-SPARK_BATCH_COMMAND = spark_native_submit(
+DP3_FEATURE_COMMAND = spark_native_submit(
     "dp3_offline_feature_table",
-    "local:///opt/recsys/apps/data-platform/src/features/spark/spark_batch_entrypoint.py",
-    "--config $SPARK_BATCH_CONFIG",
+    "local:///opt/recsys/apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py",
+    "--config $DP3_CONFIG",
 )
 
 VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = "python -m validate.governance_contracts dp3-postgres"
 
 
 DP1_INGEST_COMMAND = """
-PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys \
-python apps/data-platform/data-generator/src/cli.py generate \
+PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys \
+python3 apps/data-platform/data-generator/src/cli.py generate \
   --config $DATA_GENERATOR_CONFIG
 
-python -m ingest.batch_lakehouse_ingestion \
+/opt/spark/bin/spark-submit \
+  --master local[*] \
+  --deploy-mode client \
+  --name recsys-dp1-generator-to-iceberg \
+  /opt/recsys/apps/data-platform/src/ingest/batch_lakehouse_ingestion.py \
   --run-path apps/data-platform/data-generator/src/output/$DATA_GENERATOR_RUN_ID \
   --run-id $DATA_GENERATOR_RUN_ID \
   --lakehouse-warehouse $LAKEHOUSE_WAREHOUSE \
   --mode overwrite
 """.strip()
 
-DP1_VALIDATE_COMMAND = "python -m validate.governance_contracts dp1"
+DP1_OPTIMIZE_COMMAND = spark_native_submit(
+    "dp1_optimize_bronze",
+    "local:///opt/recsys/apps/data-platform/src/lakehouse/optimize.py",
+    "--scope bronze "
+    "--pipeline DP1 "
+    "--strategy ${LAKEHOUSE_OPTIMIZATION_STRATEGY:-binpack} "
+    "--target-file-size-mb ${LAKEHOUSE_TARGET_FILE_SIZE_MB:-128} "
+    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2}",
+)
+
+DP1_VALIDATE_COMMAND = spark_native_submit(
+    "dp1_validate_iceberg",
+    "local:///opt/recsys/apps/data-platform/src/validate/governance_contracts.py",
+    "dp1",
+)
 
 DP2_INGEST_COMMAND = spark_native_submit(
     "dp2_ingest_bronze_to_silver_gold",
@@ -181,14 +214,14 @@ DP2_VALIDATE_COMMAND = spark_native_submit(
     "--action validate",
 )
 
-LAKEHOUSE_OPTIMIZE_COMMAND = spark_native_submit(
-    "lakehouse_optimize",
+DP2_OPTIMIZE_COMMAND = spark_native_submit(
+    "dp2_optimize_silver",
     "local:///opt/recsys/apps/data-platform/src/lakehouse/optimize.py",
-    "--scope all "
+    "--scope silver "
+    "--pipeline DP2 "
     "--strategy ${LAKEHOUSE_OPTIMIZATION_STRATEGY:-binpack} "
     "--target-file-size-mb ${LAKEHOUSE_TARGET_FILE_SIZE_MB:-128} "
-    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2} "
-    "--skip-missing",
+    "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2}",
 )
 
 
@@ -203,16 +236,21 @@ if DAG is not None:
     ) as recsys_dp1_raw_to_bronze:
         ingest_stage = pod_task(
             "ingest_stage",
-            DATAFLOW_IMAGE,
+            SPARK_IMAGE,
             DP1_INGEST_COMMAND,
+        )
+        optimize_stage = pod_task(
+            "optimize_stage",
+            SPARK_IMAGE,
+            DP1_OPTIMIZE_COMMAND,
         )
         validate_stage = pod_task(
             "validate_stage",
-            DATAFLOW_IMAGE,
+            SPARK_IMAGE,
             DP1_VALIDATE_COMMAND,
         )
 
-        ingest_stage >> validate_stage
+        ingest_stage >> optimize_stage >> validate_stage
 
     with DAG(
         dag_id="recsys_dp2_bronze_to_silver_gold",
@@ -227,13 +265,18 @@ if DAG is not None:
             SPARK_IMAGE,
             DP2_INGEST_COMMAND,
         )
+        optimize_stage = pod_task(
+            "optimize_stage",
+            SPARK_IMAGE,
+            DP2_OPTIMIZE_COMMAND,
+        )
         validate_stage = pod_task(
             "validate_stage",
             SPARK_IMAGE,
             DP2_VALIDATE_COMMAND,
         )
 
-        ingest_stage >> validate_stage
+        ingest_stage >> optimize_stage >> validate_stage
 
     with DAG(
         dag_id="recsys_dp3_offline_feature_table",
@@ -246,26 +289,12 @@ if DAG is not None:
         ingest_stage = pod_task(
             "ingest_stage",
             SPARK_IMAGE,
-            SPARK_BATCH_COMMAND,
+            DP3_FEATURE_COMMAND,
         )
         validate_stage = pod_task(
             "validate_stage",
-            DATAFLOW_IMAGE,
+            FEATURE_STORE_IMAGE,
             VERIFY_POSTGRES_OFFLINE_STORE_COMMAND,
         )
 
         ingest_stage >> validate_stage
-
-    with DAG(
-        dag_id="recsys_lakehouse_maintenance",
-        start_date=datetime(2026, 1, 1),
-        schedule=env_schedule("LAKEHOUSE_MAINTENANCE_DAG_SCHEDULE", "manual"),
-        catchup=False,
-        max_active_runs=1,
-        tags=["recsys", "lakehouse", "iceberg", "optimization"],
-    ) as recsys_lakehouse_maintenance:
-        pod_task(
-            "optimize_iceberg_tables",
-            SPARK_IMAGE,
-            LAKEHOUSE_OPTIMIZE_COMMAND,
-        )

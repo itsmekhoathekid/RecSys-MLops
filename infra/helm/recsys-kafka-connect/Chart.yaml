@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-kafka-connect
+description: RecSys Kafka Connect runtime and connector registration.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

@@ -1,0 +1,3 @@
+storageClassName: standard-rwo
+airflowPostgres:
+  storage: 5Gi

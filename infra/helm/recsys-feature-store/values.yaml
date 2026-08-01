@@ -1,0 +1,20 @@
+namespace:
+  name: recsys-dataflow
+storageClassName: ""
+images:
+  postgres: postgres:16
+  redis: redis:7.4
+  featureStore: registry.example.invalid/recsys/recsys-feature-store:required
+  pullPolicy: IfNotPresent
+featurePostgres:
+  name: feature-postgres
+  database: feature_store
+  schema: feature_store
+  user: feast
+  storage: 20Gi
+  sslmode: disable
+  istioInject: "false"
+redis:
+  name: redis
+  port: 6379
+  istioInject: "false"

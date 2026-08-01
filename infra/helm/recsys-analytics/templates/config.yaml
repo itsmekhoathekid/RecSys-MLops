@@ -20,6 +20,5 @@ data:
   RUNTIME_LINEAGE_ENABLED: "true"
   ANALYTICS_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
   ANALYTICS_NAMESPACE: {{ .Values.namespace | quote }}
-  ANALYTICS_SPARK_IMAGE: {{ .Values.images.spark | quote }}
+  SPARK_IMAGE: {{ .Values.images.spark | quote }}
   ANALYTICS_DBT_IMAGE: {{ .Values.images.dbt | quote }}
-

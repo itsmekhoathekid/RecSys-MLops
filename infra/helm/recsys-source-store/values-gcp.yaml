@@ -1,0 +1,4 @@
+storageClassName: standard-rwo
+istioInject: "true"
+sourcePostgres:
+  storage: 20Gi

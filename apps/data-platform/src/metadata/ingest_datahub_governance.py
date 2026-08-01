@@ -515,7 +515,6 @@ def _emit_assertion(
 
 
 def emit_dataset_contract(emitter: DataHubEmitter, dataset: Dataset) -> None:
-    contract_text = dataset.custom_properties.get("contract", "RecSys governed dataset contract")
     status, run_id, checks = validation_result(dataset)
     schema_status = _assertion_status(checks, {"required_columns", "schema"}, status)
     schema_assertion = _emit_assertion(
@@ -567,7 +566,7 @@ def emit_flow(emitter: DataHubEmitter, product: DataProduct) -> str:
             "externalUrl": "http://airflow-webserver.recsys-dataflow.svc.cluster.local:8080",
             "customProperties": {
                 "data_product": product.id,
-                "orchestrator": "Airflow k8s_data_platform_dag",
+                "orchestrator": "Kubernetes CDC and Flink runtime",
             },
         },
     )
@@ -642,7 +641,7 @@ def dp1() -> DataProduct:
         _dataset(
             BRONZE_URNS[table],
             f"recsys.lakehouse.bronze_{table}",
-            "DP1 Bronze Parquet lakehouse table with source-run and ingestion metadata.",
+            "DP1 Bronze Iceberg lakehouse table with source-run and ingestion metadata.",
             "DP1",
             "Non-empty Bronze table with source key, source_run_id, and lakehouse_ingestion_ts",
             schema=bronze_schema(table),
@@ -656,16 +655,23 @@ def dp1() -> DataProduct:
         id="DP1",
         flow_id="recsys_dp1_raw_to_bronze",
         flow_name="DP1 Data Generator Batch Ingestion To Bronze Lakehouse",
-        description="Direct batch ingestion from Data Generator output into the Bronze Parquet lakehouse.",
+        description="Direct batch ingestion from Data Generator output into the Bronze Iceberg lakehouse.",
         tags=("DP1", "DataContract", "NativePipeline"),
         datasets=bronze,
         jobs=(
             Job(
                 id="ingest_stage",
                 name="Ingest Stage - Data Generator Batch Ingestion",
-                description="Runs the historical Data Generator in the batch pod and ingests its ephemeral output directly into the Bronze Parquet lakehouse.",
+                description="Runs the historical Data Generator in the Spark pod and commits its ephemeral output as Bronze Iceberg tables.",
                 tags=("DP1", "DataContract", "NativePipeline"),
-                custom_properties={"engine": "Data Generator plus PyArrow Parquet ingestion"},
+                custom_properties={"engine": "Data Generator plus PySpark and Iceberg"},
+            ),
+            Job(
+                id="optimize_stage",
+                name="Optimize Stage - Bronze Iceberg",
+                description="Applies compaction, write sizing, compression, and manifest maintenance to all DP1 Bronze Iceberg tables.",
+                tags=("DP1", "DataContract", "NativePipeline", "LakehouseOptimization"),
+                custom_properties={"engine": "Apache Iceberg Spark procedures"},
             ),
             Job(
                 id="validate_stage",
@@ -683,7 +689,7 @@ def dp2() -> DataProduct:
         _dataset(
             SILVER_URNS[table],
             f"iceberg.recsys.lakehouse.silver_{table}",
-            "DP2 curated Silver Iceberg table produced from Bronze Parquet inputs.",
+            "DP2 curated Silver Iceberg table produced from Bronze Iceberg inputs.",
             "DP2",
             "Readable Silver Iceberg table; clean_behavior_events must be unique by event_id",
             schema=silver_schema(table),
@@ -697,16 +703,23 @@ def dp2() -> DataProduct:
         id="DP2",
         flow_id="recsys_dp2_bronze_to_silver_gold",
         flow_name="DP2 Bronze To Silver And Gold",
-        description="PySpark curation from Bronze Parquet tables into deduplicated and normalized Silver Iceberg tables.",
+        description="PySpark curation from Bronze Iceberg tables into deduplicated and normalized Silver Iceberg tables.",
         tags=("DP2", "DataContract", "NativePipeline"),
         datasets=silver,
         jobs=(
             Job(
                 id="ingest_stage",
                 name="Ingest Stage",
-                description="Reads Bronze Parquet, normalizes schemas, deduplicates events, and writes Silver Iceberg tables.",
+                description="Reads Bronze Iceberg, normalizes schemas, deduplicates events, and writes Silver Iceberg tables.",
                 tags=("DP2", "DataContract", "NativePipeline"),
                 custom_properties={"engine": "PySpark plus Iceberg"},
+            ),
+            Job(
+                id="optimize_stage",
+                name="Optimize Stage - Silver Iceberg",
+                description="Applies compaction, write sizing, compression, and manifest maintenance to all DP2 Silver Iceberg tables.",
+                tags=("DP2", "DataContract", "NativePipeline", "LakehouseOptimization"),
+                custom_properties={"engine": "Apache Iceberg Spark procedures"},
             ),
             Job(
                 id="validate_stage",
@@ -970,8 +983,8 @@ def emit_products(
     runtime_events = runtime_events or load_runtime_events(products)
     coverage = verify_governance_coverage(products, runtime_events)
     for tag, description, color in (
-        ("DP1", "Data product DP1: Data Generator raw S3 to Bronze Parquet lakehouse.", "#2E7D32"),
-        ("DP2", "Data product DP2: Bronze Parquet to curated Silver Iceberg.", "#1565C0"),
+        ("DP1", "Data product DP1: Data Generator to optimized Bronze Iceberg lakehouse.", "#2E7D32"),
+        ("DP2", "Data product DP2: Bronze Iceberg to optimized curated Silver Iceberg.", "#1565C0"),
         ("DP3", "Data product DP3: Silver Iceberg to Iceberg features and PostgreSQL Feast offline store.", "#6A1B9A"),
         ("CDC_INGESTION", "PostgreSQL WAL captured by Debezium and published to Kafka.", "#EF6C00"),
         ("STREAMING_FEATURES", "Continuous Flink processing into PostgreSQL and Redis feature stores.", "#00838F"),

@@ -1,0 +1,14 @@
+namespace:
+  name: recsys-dataflow
+storageClassName: ""
+istioInject: "false"
+images:
+  postgres: postgres:16
+  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  pullPolicy: IfNotPresent
+sourcePostgres:
+  name: source-postgres
+  database: recsys
+  user: recsys
+  storage: 20Gi
+  istioInject: "false"

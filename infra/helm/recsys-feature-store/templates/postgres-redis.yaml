@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.featurePostgres.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  selector:
+    app: {{ .Values.featurePostgres.name }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.featurePostgres.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  serviceName: {{ .Values.featurePostgres.name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.featurePostgres.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.featurePostgres.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.featurePostgres.istioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_DB
+              value: {{ .Values.featurePostgres.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.featurePostgres.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: recsys-data-platform-secret
+                  key: FEAST_POSTGRES_PASSWORD
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.storageClassName }}
+        storageClassName: {{ .Values.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.featurePostgres.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.redis.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - port: {{ .Values.redis.port }}
+      targetPort: 6379
+  selector:
+    app: {{ .Values.redis.name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.redis.name }}
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.redis.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.redis.name }}
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.redis.istioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: redis
+          image: {{ .Values.images.redis }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - containerPort: 6379

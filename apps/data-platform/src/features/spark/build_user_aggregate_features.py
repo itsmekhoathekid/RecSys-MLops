@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 
+CATEGORY_CARDINALITY_RSD = 0.05
+
+
 def build_user_aggregate_features(
     clean_events: Any,
     feature_version: str = "user_aggregate_v1",
@@ -30,7 +33,9 @@ def build_user_aggregate_features(
         F.sum(F.when(F.col("event_type") == "view", 1).otherwise(0)).over(w30m).alias("views_30m"),
         F.sum(F.when(F.col("event_type") == "cart", 1).otherwise(0)).over(w30m).alias("carts_30m"),
         F.sum(F.when(F.col("event_type") == "purchase", 1).otherwise(0)).over(w24h).alias("purchases_24h"),
-        F.size(F.array_distinct(F.collect_list(F.col("category_id")).over(w7d))).alias("distinct_categories_7d"),
+        F.approx_count_distinct("category_id", CATEGORY_CARDINALITY_RSD)
+        .over(w7d)
+        .alias("distinct_categories_7d"),
         F.when(view_count_7d > 0, viewed_price_sum / view_count_7d).otherwise(F.lit(0.0)).alias("avg_viewed_price_7d"),
         F.when(carts_7d > 0, purchases_7d / carts_7d).otherwise(F.lit(0.0)).alias("cart_to_purchase_ratio_7d"),
         F.lit(0).alias("last_event_age_seconds"),

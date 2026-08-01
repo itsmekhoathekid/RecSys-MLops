@@ -1,0 +1,16 @@
+flink:
+  istioInject: "true"
+  taskManagerProcessMemory: 4096m
+  taskManagerTaskHeapMemory: 2048m
+  taskManagerManagedMemory: 512m
+  taskManagerJvmOverheadMax: 1024m
+realtimeProducer:
+  replicas: 0
+realtimeFlinkConsumer:
+  istioInject: "true"
+  checkpointIntervalSeconds: "120"
+  online:
+    startingOffsets: committed-offsets
+flinkAutoscaler:
+  taskManagerHpa:
+    maxReplicas: 2
