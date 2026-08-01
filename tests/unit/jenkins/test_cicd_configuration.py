@@ -184,6 +184,14 @@ def test_full_jenkins_trigger_reuses_crumb_session_cookie():
     assert 'rm -f "${headers_file}" "${cookie_file}"' in trigger
 
 
+def test_api_verification_uses_metric_available_before_live_traffic():
+    serving = (ROOT / "jenkins/scripts/test/serving.sh").read_text(encoding="utf-8")
+
+    assert "recsys_api_rollout_config_info" in serving
+    assert '"model_predictions_total" in response.read()' not in serving
+    assert "API image mismatch" in serving
+
+
 def test_production_verification_is_fail_fast_and_kfp_check_is_read_only():
     runtime = (ROOT / "jenkins/scripts/test/runtime.sh").read_text(encoding="utf-8")
     ml_platform = (ROOT / "jenkins/scripts/test/ml_platform.sh").read_text(

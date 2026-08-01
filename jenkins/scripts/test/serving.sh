@@ -12,11 +12,16 @@ import sys
 import urllib.request
 for path in ("/healthz", "/ready", "/version"):
     with urllib.request.urlopen("http://127.0.0.1:8080" + path, timeout=15) as response:
-        assert response.status == 200
         if path == "/version":
-            assert json.load(response)["image_reference"] == sys.argv[1]
+            actual_image = json.load(response)["image_reference"]
+            if actual_image != sys.argv[1]:
+                raise SystemExit(
+                    f"API image mismatch: expected {sys.argv[1]}, got {actual_image}"
+                )
 with urllib.request.urlopen("http://127.0.0.1:8080/metrics", timeout=15) as response:
-    assert "model_predictions_total" in response.read().decode()
+    metrics = response.read().decode()
+    if "recsys_api_rollout_config_info" not in metrics:
+        raise SystemExit("API startup metric recsys_api_rollout_config_info is missing")
 ' "$(resolve_release_image recsys-api-serving)"
 }
 
