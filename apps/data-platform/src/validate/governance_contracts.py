@@ -3,51 +3,24 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime, timezone
 from typing import Any
 
 from psycopg import sql
 
-from feature_store.postgres_offline_store import TABLE_SCHEMAS, PostgresOfflineStoreConfig
-from ingest.batch_lakehouse_ingestion import _filesystem_and_path
+from feature_store.postgres_offline_store import (
+    TABLE_SCHEMAS,
+    PostgresOfflineStoreConfig,
+)
 from ingest.postgres_cdc_contracts import SOURCE_TABLE_CONTRACTS
 from features.spark.session import read_iceberg_table, row_count, spark_session
 from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES
-from metadata.governance_catalog import BRONZE_URNS, POSTGRES_FEATURE_URNS, REDIS_FEATURE_URNS
+from metadata.datahub_validation import publish_validation_results
+from metadata.governance_catalog import (
+    BRONZE_URNS,
+    POSTGRES_FEATURE_URNS,
+    REDIS_FEATURE_URNS,
+)
 from metadata.runtime_lineage import RuntimeLineageRecorder
-
-
-DEFAULT_REPORT_ROOT = "s3a://recsys-lakehouse/governance/validation"
-
-
-def validation_run_id() -> str:
-    return (
-        os.getenv("VALIDATION_RUN_ID")
-        or os.getenv("AIRFLOW_CTX_DAG_RUN_ID")
-        or datetime.now(timezone.utc).strftime("manual-%Y%m%dT%H%M%SZ")
-    )
-
-
-def validation_report_root() -> str:
-    return os.getenv("GOVERNANCE_VALIDATION_ROOT", DEFAULT_REPORT_ROOT).rstrip("/")
-
-
-def report_uri(pipeline: str, name: str = "latest.json", *, root: str | None = None) -> str:
-    return f"{(root or validation_report_root()).rstrip('/')}/{pipeline.lower()}/{name}"
-
-
-def read_report(pipeline: str, *, root: str | None = None) -> dict[str, Any]:
-    filesystem, path = _filesystem_and_path(report_uri(pipeline, root=root))
-    with filesystem.open_input_file(path) as stream:
-        return json.loads(stream.read().decode("utf-8"))
-
-
-def _write_json(uri: str, payload: dict[str, Any]) -> None:
-    filesystem, path = _filesystem_and_path(uri)
-    parent = path.rsplit("/", 1)[0]
-    filesystem.create_dir(parent, recursive=True)
-    with filesystem.open_output_stream(path) as stream:
-        stream.write(json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"))
 
 
 def check(name: str, status: str, expected: Any, observed: Any) -> dict[str, Any]:
@@ -61,45 +34,17 @@ def check(name: str, status: str, expected: Any, observed: Any) -> dict[str, Any
 
 def dataset_result(checks: list[dict[str, Any]]) -> dict[str, Any]:
     statuses = {item["status"] for item in checks}
-    status = "ERROR" if "ERROR" in statuses else "FAILURE" if "FAILURE" in statuses else "SUCCESS"
+    status = (
+        "ERROR"
+        if "ERROR" in statuses
+        else "FAILURE"
+        if "FAILURE" in statuses
+        else "SUCCESS"
+    )
     return {"status": status, "checks": checks}
 
 
-def _overall_status(datasets: dict[str, dict[str, Any]]) -> str:
-    statuses = {item.get("status", "ERROR") for item in datasets.values()}
-    return "ERROR" if "ERROR" in statuses else "FAILURE" if "FAILURE" in statuses else "SUCCESS"
-
-
-def write_report(
-    pipeline: str,
-    datasets: dict[str, dict[str, Any]],
-    *,
-    run_id: str | None = None,
-    root: str | None = None,
-    merge_latest: bool = False,
-) -> dict[str, Any]:
-    run_id = run_id or validation_run_id()
-    if merge_latest:
-        try:
-            previous = read_report(pipeline, root=root)
-            previous_datasets = previous.get("datasets", {}) if str(previous.get("run_id")) == str(run_id) else {}
-        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
-            previous_datasets = {}
-        datasets = {**previous_datasets, **datasets}
-    payload = {
-        "pipeline": pipeline,
-        "run_id": run_id,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "status": _overall_status(datasets),
-        "datasets": datasets,
-    }
-    root_value = root or validation_report_root()
-    _write_json(report_uri(pipeline, f"{run_id}.json", root=root_value), payload)
-    _write_json(report_uri(pipeline, root=root_value), payload)
-    return payload
-
-
-def validate_dp1_bronze(*, root: str | None = None, spark=None) -> dict[str, Any]:
+def validate_dp1_bronze(*, spark=None) -> dict[str, Any]:
     from functools import reduce
     from operator import or_
 
@@ -108,34 +53,56 @@ def validate_dp1_bronze(*, root: str | None = None, spark=None) -> dict[str, Any
     catalog = IcebergCatalogConfig()
     owns_spark = spark is None
     spark = spark or spark_session("recsys-dp1-validate-bronze-iceberg")
-    primary_keys = {contract.table_name: contract.primary_key for contract in SOURCE_TABLE_CONTRACTS}
+    primary_keys = {
+        contract.table_name: contract.primary_key for contract in SOURCE_TABLE_CONTRACTS
+    }
     with RuntimeLineageRecorder(
         "DP1",
         "validate_stage",
         inputs=set(BRONZE_URNS.values()),
-        upstream_jobs={"optimize_stage"},
     ) as lineage:
         datasets: dict[str, dict[str, Any]] = {}
         for table_name in RAW_GENERATOR_TABLES:
             try:
                 table = read_iceberg_table(spark, catalog.bronze_table(table_name))
-                required = set(primary_keys[table_name]) | {"source_run_id", "lakehouse_ingestion_ts"}
+                required = set(primary_keys[table_name]) | {
+                    "source_run_id",
+                    "lakehouse_ingestion_ts",
+                }
                 missing = sorted(required.difference(table.columns))
                 count = row_count(table)
                 null_count = (
-                    table.filter(reduce(or_, (F.col(name).isNull() for name in required))).count()
+                    table.filter(
+                        reduce(or_, (F.col(name).isNull() for name in required))
+                    ).count()
                     if not missing
                     else -1
                 )
                 checks = [
-                    check("row_count", "SUCCESS" if count > 0 else "FAILURE", "> 0", count),
-                    check("required_columns", "SUCCESS" if not missing else "FAILURE", sorted(required), {"missing": missing}),
-                    check("required_values_not_null", "SUCCESS" if null_count == 0 else "FAILURE", 0, null_count),
+                    check(
+                        "row_count", "SUCCESS" if count > 0 else "FAILURE", "> 0", count
+                    ),
+                    check(
+                        "required_columns",
+                        "SUCCESS" if not missing else "FAILURE",
+                        sorted(required),
+                        {"missing": missing},
+                    ),
+                    check(
+                        "required_values_not_null",
+                        "SUCCESS" if null_count == 0 else "FAILURE",
+                        0,
+                        null_count,
+                    ),
                 ]
             except Exception as exc:
-                checks = [check("table_read", "ERROR", "readable Bronze Iceberg table", str(exc))]
+                checks = [
+                    check(
+                        "table_read", "ERROR", "readable Bronze Iceberg table", str(exc)
+                    )
+                ]
             datasets[BRONZE_URNS[table_name]] = dataset_result(checks)
-        report = write_report("DP1", datasets, root=root)
+        report = publish_validation_results("DP1", datasets)
         if report["status"] == "SUCCESS":
             lineage.complete()
         else:
@@ -145,7 +112,7 @@ def validate_dp1_bronze(*, root: str | None = None, spark=None) -> dict[str, Any
         return report
 
 
-def validate_dp3_postgres(*, root: str | None = None) -> dict[str, Any]:
+def validate_dp3_postgres() -> dict[str, Any]:
     config = PostgresOfflineStoreConfig.from_env()
     primary_keys = {
         "user_sequence_features": "user_id",
@@ -163,7 +130,6 @@ def validate_dp3_postgres(*, root: str | None = None) -> dict[str, Any]:
         "DP3",
         "validate_stage",
         inputs=set(POSTGRES_FEATURE_URNS.values()),
-        upstream_jobs={"ingest_stage"},
     ) as lineage:
         datasets: dict[str, dict[str, Any]] = {}
         with config.connect() as conn:
@@ -187,7 +153,9 @@ def validate_dp3_postgres(*, root: str | None = None) -> dict[str, Any]:
                         key = primary_keys[table_name]
                         timestamp = timestamp_columns[table_name]
                         cur.execute(
-                            sql.SQL("SELECT COUNT(*) FROM {}.{} WHERE {} IS NULL OR {} IS NULL").format(
+                            sql.SQL(
+                                "SELECT COUNT(*) FROM {}.{} WHERE {} IS NULL OR {} IS NULL"
+                            ).format(
                                 sql.Identifier(config.schema),
                                 sql.Identifier(table_name),
                                 sql.Identifier(key),
@@ -196,8 +164,18 @@ def validate_dp3_postgres(*, root: str | None = None) -> dict[str, Any]:
                         )
                         null_key_or_timestamp = int(cur.fetchone()[0])
                         checks = [
-                            check("row_count", "SUCCESS" if row_count > 0 else "FAILURE", "> 0", row_count),
-                            check("required_columns", "SUCCESS" if not missing else "FAILURE", sorted(required), {"missing": missing}),
+                            check(
+                                "row_count",
+                                "SUCCESS" if row_count > 0 else "FAILURE",
+                                "> 0",
+                                row_count,
+                            ),
+                            check(
+                                "required_columns",
+                                "SUCCESS" if not missing else "FAILURE",
+                                sorted(required),
+                                {"missing": missing},
+                            ),
                             check(
                                 "key_and_timestamp_not_null",
                                 "SUCCESS" if null_key_or_timestamp == 0 else "FAILURE",
@@ -206,9 +184,16 @@ def validate_dp3_postgres(*, root: str | None = None) -> dict[str, Any]:
                             ),
                         ]
                     except Exception as exc:
-                        checks = [check("table_read", "ERROR", "readable PostgreSQL offline table", str(exc))]
+                        checks = [
+                            check(
+                                "table_read",
+                                "ERROR",
+                                "readable PostgreSQL offline table",
+                                str(exc),
+                            )
+                        ]
                     datasets[dataset_urn] = dataset_result(checks)
-        report = write_report("DP3", datasets, root=root, merge_latest=True)
+        report = publish_validation_results("DP3", datasets)
         if report["status"] == "SUCCESS":
             lineage.complete()
         else:
@@ -216,7 +201,7 @@ def validate_dp3_postgres(*, root: str | None = None) -> dict[str, Any]:
         return report
 
 
-def validate_streaming_redis(*, root: str | None = None) -> dict[str, Any]:
+def validate_streaming_redis() -> dict[str, Any]:
     import redis
 
     client = redis.Redis(
@@ -244,9 +229,13 @@ def validate_streaming_redis(*, root: str | None = None) -> dict[str, Any]:
                 ),
             ]
         except Exception as exc:
-            checks = [check("redis_read", "ERROR", f"readable keys matching {pattern}", str(exc))]
+            checks = [
+                check(
+                    "redis_read", "ERROR", f"readable keys matching {pattern}", str(exc)
+                )
+            ]
         datasets[REDIS_FEATURE_URNS[table_name]] = dataset_result(checks)
-    return write_report("STREAMING_FEATURES", datasets, root=root)
+    return publish_validation_results("STREAMING_FEATURES", datasets)
 
 
 def read_redis_payload(client: Any, key: str) -> Any:
@@ -261,16 +250,17 @@ def read_redis_payload(client: Any, key: str) -> Any:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate governed DP1/DP3 datasets and publish DataHub contract reports.")
+    parser = argparse.ArgumentParser(
+        description="Validate governed datasets and publish native DataHub assertion results."
+    )
     parser.add_argument("pipeline", choices=("dp1", "dp3-postgres", "streaming-redis"))
-    parser.add_argument("--report-root", default=None)
     args = parser.parse_args()
     if args.pipeline == "dp1":
-        report = validate_dp1_bronze(root=args.report_root)
+        report = validate_dp1_bronze()
     elif args.pipeline == "dp3-postgres":
-        report = validate_dp3_postgres(root=args.report_root)
+        report = validate_dp3_postgres()
     else:
-        report = validate_streaming_redis(root=args.report_root)
+        report = validate_streaming_redis()
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["status"] == "SUCCESS" else 1
 

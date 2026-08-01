@@ -6,10 +6,15 @@ from typing import Any
 
 from features.spark.build_silver_tables import build_silver_tables
 from features.spark.session import read_iceberg_table, row_count, spark_session
-from lakehouse.iceberg import IcebergCatalogConfig, SILVER_LAKEHOUSE_TABLES, create_spark_namespace
+from lakehouse.iceberg import (
+    IcebergCatalogConfig,
+    SILVER_LAKEHOUSE_TABLES,
+    create_spark_namespace,
+)
+from metadata.datahub_validation import publish_validation_results
 from metadata.governance_catalog import BRONZE_URNS, SILVER_URNS
 from metadata.runtime_lineage import RuntimeLineageRecorder
-from validate.governance_contracts import check, dataset_result, write_report
+from validate.governance_contracts import check, dataset_result
 
 
 def build_dp2_silver_gold() -> dict[str, int]:
@@ -34,7 +39,6 @@ def validate_dp2_silver_gold() -> dict[str, int]:
             "DP2",
             "validate_stage",
             inputs=set(SILVER_URNS.values()),
-            upstream_jobs={"optimize_stage"},
         ) as lineage:
             counts: dict[str, int] = {}
             datasets: dict[str, dict[str, Any]] = {}
@@ -43,23 +47,47 @@ def validate_dp2_silver_gold() -> dict[str, int]:
                 frame = read_iceberg_table(spark, full_name)
                 counts[table_name] = row_count(frame)
                 expected = ">= 0" if table_name == "rejected_behavior_events" else "> 0"
-                count_ok = counts[table_name] >= 0 if table_name == "rejected_behavior_events" else counts[table_name] > 0
-                checks = [check("row_count", "SUCCESS" if count_ok else "FAILURE", expected, counts[table_name])]
+                count_ok = (
+                    counts[table_name] >= 0
+                    if table_name == "rejected_behavior_events"
+                    else counts[table_name] > 0
+                )
+                checks = [
+                    check(
+                        "row_count",
+                        "SUCCESS" if count_ok else "FAILURE",
+                        expected,
+                        counts[table_name],
+                    )
+                ]
                 if table_name == "clean_behavior_events":
-                    duplicate_count = counts[table_name] - frame.select("event_id").distinct().count()
+                    duplicate_count = (
+                        counts[table_name] - frame.select("event_id").distinct().count()
+                    )
                     checks.extend(
                         [
                             check(
                                 "required_columns",
-                                "SUCCESS" if {"event_id", "event_timestamp", "ingestion_ts"}.issubset(frame.columns) else "FAILURE",
+                                "SUCCESS"
+                                if {
+                                    "event_id",
+                                    "event_timestamp",
+                                    "ingestion_ts",
+                                }.issubset(frame.columns)
+                                else "FAILURE",
                                 ["event_id", "event_timestamp", "ingestion_ts"],
                                 sorted(frame.columns),
                             ),
-                            check("duplicate_event_id", "SUCCESS" if duplicate_count == 0 else "FAILURE", 0, duplicate_count),
+                            check(
+                                "duplicate_event_id",
+                                "SUCCESS" if duplicate_count == 0 else "FAILURE",
+                                0,
+                                duplicate_count,
+                            ),
                         ]
                     )
                 datasets[SILVER_URNS[table_name]] = dataset_result(checks)
-            report = write_report("DP2", datasets)
+            report = publish_validation_results("DP2", datasets)
             if report["status"] != "SUCCESS":
                 lineage.fail(f"DP2 data contract status: {report['status']}")
                 raise AssertionError(f"DP2 validation failed: {report}")
@@ -69,7 +97,9 @@ def validate_dp2_silver_gold() -> dict[str, int]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run or validate the DP2 bronze-to-silver/gold Spark pipeline.")
+    parser = argparse.ArgumentParser(
+        description="Run or validate the DP2 bronze-to-silver/gold Spark pipeline."
+    )
     parser.add_argument("--action", choices=("ingest", "validate"), required=True)
     args = parser.parse_args()
 

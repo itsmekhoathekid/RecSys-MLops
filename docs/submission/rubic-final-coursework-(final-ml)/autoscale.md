@@ -387,7 +387,7 @@ metadata:
 
 Reference code: [values.yaml (line 20)](../../../infra/helm/recsys-serving/values.yaml#L20), [inferenceservice.yaml (line 9)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L9), [inferenceservice.yaml (line 12)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L12).
 
-`RawDeployment` avoids Knative Serving. `autoscalerClass=external` delegates replica ownership to the KEDA-created HPA instead of allowing KServe to compete for the same Deployment scale target.
+`RawDeployment` uses a standard Kubernetes Deployment. `autoscalerClass=external` delegates replica ownership to the KEDA-created HPA instead of allowing KServe to compete for the same Deployment scale target.
 
 #### Desired KEDA CPU Configuration
 

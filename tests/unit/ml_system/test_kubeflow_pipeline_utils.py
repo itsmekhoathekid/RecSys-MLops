@@ -11,7 +11,13 @@ from kubeflow.pipelines.compile_training_pipeline import compile_pipeline
 from kubeflow.upload_pipeline_package import upload_or_version_pipeline
 from kubeflow.verify_pipeline_upload import verify_uploaded_pipeline
 from kubeflow.validate_pipeline_package import validate_pipeline_package
-from cli.submit_ray_job import build_rayjob, container_spec, parse_toleration, pod_template, reusable_best_result
+from cli.submit_ray_job import (
+    build_rayjob,
+    container_spec,
+    parse_toleration,
+    pod_template,
+    reusable_best_result,
+)
 from training.ray_distributed_train_bst import ModelLifecycleService
 from training.ray_tune_train_bst import best_payload_from_trial_outputs
 
@@ -32,7 +38,6 @@ def test_secret_env_mapping_is_stable():
         "AWS_ACCESS_KEY_ID": "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY": "AWS_SECRET_ACCESS_KEY",
         "AWS_DEFAULT_REGION": "AWS_DEFAULT_REGION",
-        "ICEBERG_ENABLED": "ICEBERG_ENABLED",
         "ICEBERG_CATALOG_NAME": "ICEBERG_CATALOG_NAME",
         "ICEBERG_WAREHOUSE": "ICEBERG_WAREHOUSE",
         "HUDI_ENABLED": "HUDI_ENABLED",
@@ -84,7 +89,10 @@ def test_wire_runtime_mounts_pvc_secret_and_disables_caching(monkeypatch):
         (
             "use_secret_as_env",
             task,
-            {"secret_name": "runtime-secret", "secret_key_to_env": runtime.SECRET_KEY_TO_ENV},
+            {
+                "secret_name": "runtime-secret",
+                "secret_key_to_env": runtime.SECRET_KEY_TO_ENV,
+            },
         ),
     ]
 
@@ -109,7 +117,9 @@ def test_rayjob_container_spec_cpu_contract():
     }
     assert spec["envFrom"] == [{"secretRef": {"name": "runtime-secret"}}]
     assert {"name": "RAY_memory_usage_threshold", "value": "0.99"} in spec["env"]
-    assert spec["volumeMounts"] == [{"name": "recsys-workspace", "mountPath": "/workspace"}]
+    assert spec["volumeMounts"] == [
+        {"name": "recsys-workspace", "mountPath": "/workspace"}
+    ]
 
 
 def test_rayjob_gpu_worker_template_contract():
@@ -192,9 +202,15 @@ def test_build_rayjob_uses_refactored_training_module():
 
     rayjob = build_rayjob(args)
 
-    assert "python /opt/recsys/apps/ml-system/src/training/ray_tune_train_bst.py" in rayjob["spec"]["entrypoint"]
+    assert (
+        "python /opt/recsys/apps/ml-system/src/training/ray_tune_train_bst.py"
+        in rayjob["spec"]["entrypoint"]
+    )
     assert "pipelines.model_pipeline" not in rayjob["spec"]["entrypoint"]
-    assert rayjob["spec"]["rayClusterSpec"]["headGroupSpec"]["rayStartParams"]["memory"] == "1073741824"
+    assert (
+        rayjob["spec"]["rayClusterSpec"]["headGroupSpec"]["rayStartParams"]["memory"]
+        == "1073741824"
+    )
     submitter_spec = rayjob["spec"]["submitterPodTemplate"]["spec"]
     assert submitter_spec["restartPolicy"] == "Never"
     assert submitter_spec["containers"][0]["image"] == "recsys-training:test"
@@ -248,8 +264,14 @@ def test_build_rayjob_supports_distributed_training_mode():
 
     rayjob = build_rayjob(args)
 
-    assert "python /opt/recsys/apps/ml-system/src/training/ray_distributed_train_bst.py" in rayjob["spec"]["entrypoint"]
-    assert "--tune-result-path /workspace/recsys/data_platform/output/ml/ray/tune_result.json" in rayjob["spec"]["entrypoint"]
+    assert (
+        "python /opt/recsys/apps/ml-system/src/training/ray_distributed_train_bst.py"
+        in rayjob["spec"]["entrypoint"]
+    )
+    assert (
+        "--tune-result-path /workspace/recsys/data_platform/output/ml/ray/tune_result.json"
+        in rayjob["spec"]["entrypoint"]
+    )
     assert "--num-workers 2" in rayjob["spec"]["entrypoint"]
     assert rayjob["metadata"]["labels"]["recsys.ai/ray-job-mode"] == "distributed-train"
     assert rayjob["spec"]["rayClusterSpec"]["workerGroupSpecs"][0]["replicas"] == 2
@@ -258,7 +280,9 @@ def test_build_rayjob_supports_distributed_training_mode():
 def test_model_lifecycle_service_reports_ddp_proof_metrics():
     service = ModelLifecycleService({}, torch.device("cpu"), rank=1, world_size=2)
 
-    metrics = service.report_metrics({"val/ndcg@10": 0.42, "epoch": 0, "note": "ignored"})
+    metrics = service.report_metrics(
+        {"val/ndcg@10": 0.42, "epoch": 0, "note": "ignored"}
+    )
 
     assert metrics["val_ndcg_at_10"] == 0.42
     assert metrics["epoch"] == 0
@@ -300,7 +324,9 @@ def test_reusable_best_result_requires_matching_dataset_versions(tmp_path):
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
     best_result_path.write_text(json.dumps(best_result), encoding="utf-8")
 
-    assert reusable_best_result(str(best_result_path), str(metadata_path)) == best_result
+    assert (
+        reusable_best_result(str(best_result_path), str(metadata_path)) == best_result
+    )
 
     metadata["splits"]["train"]["snapshot_id"] = 12
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")

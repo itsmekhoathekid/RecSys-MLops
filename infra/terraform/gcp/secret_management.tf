@@ -39,7 +39,6 @@ locals {
       MODEL_STORE_BUCKET          = "recsys-model-store"
       MODEL_STORE_PREFIX          = "triton/bst"
       PROMOTION_MANIFEST_KEY      = "promotions/bst/latest.json"
-      ICEBERG_ENABLED             = "true"
       ICEBERG_CATALOG_NAME        = "recsys_features"
       ICEBERG_WAREHOUSE           = "s3a://recsys-offline-feature-store/warehouse"
       HUDI_ENABLED                = "true"

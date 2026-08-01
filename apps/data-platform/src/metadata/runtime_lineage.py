@@ -1,50 +1,44 @@
 from __future__ import annotations
 
-import json
+import logging
 import os
-import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Iterable
-from urllib.parse import urlparse
+from typing import Iterable
 
-import pyarrow.fs as pafs
+from openlineage.client import OpenLineageClient
+from openlineage.client.event_v2 import (
+    InputDataset,
+    Job,
+    OutputDataset,
+    Run,
+    RunEvent,
+    RunState,
+)
+from openlineage.client.facet_v2 import error_message_run, tags_run
+from openlineage.client.transport.http import (
+    ApiKeyTokenProvider,
+    HttpConfig,
+    HttpTransport,
+    TokenProvider,
+)
+
+from metadata.governance_catalog import ENV, dataset_urn_parts, openlineage_job_name
 
 
-DEFAULT_LINEAGE_ROOT = "s3a://recsys-lakehouse/governance/lineage"
-OPENLINEAGE_SCHEMA_URL = "https://openlineage.io/spec/2-0-2/OpenLineage.json"
-TAGS_RUN_FACET_SCHEMA_URL = "https://openlineage.io/spec/facets/1-0-0/TagsRunFacet.json"
-ERROR_RUN_FACET_SCHEMA_URL = "https://openlineage.io/spec/facets/1-0-0/ErrorMessageRunFacet.json"
 PRODUCER = "https://github.com/anhkhoa/RecSys-MLops"
 RUN_NAMESPACE = uuid.UUID("9d15fa8c-69b4-4cc7-8699-a6765ae98691")
+OPENLINEAGE_PATH = "/openapi/openlineage/api/v1/lineage"
+LOGGER = logging.getLogger(__name__)
 
 
-def _filesystem_and_path(uri: str) -> tuple[pafs.FileSystem, str]:
-    value = "s3://" + uri.removeprefix("s3a://") if uri.startswith("s3a://") else uri
-    parsed = urlparse(value)
-    if parsed.scheme == "s3":
-        endpoint_value = os.getenv("MINIO_ENDPOINT", os.getenv("DATA_PLATFORM_MINIO_ENDPOINT", "http://data-platform-minio:9000"))
-        endpoint_value = endpoint_value if "://" in endpoint_value else f"http://{endpoint_value}"
-        endpoint = urlparse(endpoint_value)
-        return (
-            pafs.S3FileSystem(
-                access_key=os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "minio")),
-                secret_key=os.getenv("AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minio123")),
-                region=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
-                scheme=endpoint.scheme,
-                endpoint_override=endpoint.netloc,
-            ),
-            f"{parsed.netloc}{parsed.path}",
-        )
-    if parsed.scheme:
-        raise ValueError(f"Unsupported runtime-lineage URI scheme: {parsed.scheme}")
-    return pafs.LocalFileSystem(), str(Path(value))
-
-
-def lineage_root() -> str:
-    return os.getenv("RUNTIME_LINEAGE_ROOT", DEFAULT_LINEAGE_ROOT).rstrip("/")
+def openlineage_endpoint() -> str:
+    explicit = os.getenv("DATAHUB_OPENLINEAGE_URL", "").strip()
+    if explicit:
+        return explicit
+    gms_url = os.getenv("DATAHUB_GMS_URL", "http://localhost:8088").rstrip("/")
+    return f"{gms_url}{OPENLINEAGE_PATH}"
 
 
 def lineage_run_id() -> str:
@@ -59,44 +53,14 @@ def runtime_run_uuid(pipeline: str, job_id: str, run_id: str) -> str:
     return str(uuid.uuid5(RUN_NAMESPACE, f"{pipeline}:{job_id}:{run_id}"))
 
 
-def _safe_path(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-") or "unknown"
-
-
-def event_uri(
-    pipeline: str,
-    job_id: str,
-    event_type: str,
-    *,
-    run_id: str,
-    root: str | None = None,
-) -> str:
-    return (
-        f"{(root or lineage_root()).rstrip('/')}/{_safe_path(pipeline.lower())}/runs/"
-        f"{_safe_path(run_id)}/{_safe_path(job_id)}/{event_type.lower()}.json"
-    )
-
-
-def latest_event_uri(pipeline: str, job_id: str, *, root: str | None = None) -> str:
-    return f"{(root or lineage_root()).rstrip('/')}/{_safe_path(pipeline.lower())}/jobs/{_safe_path(job_id)}/latest.json"
-
-
-def _write_json(uri: str, payload: dict[str, Any]) -> None:
-    filesystem, path = _filesystem_and_path(uri)
-    parent = path.rsplit("/", 1)[0]
-    filesystem.create_dir(parent, recursive=True)
-    with filesystem.open_output_stream(path) as stream:
-        stream.write(json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"))
-
-
-def _read_json(uri: str) -> dict[str, Any]:
-    filesystem, path = _filesystem_and_path(uri)
-    with filesystem.open_input_file(path) as stream:
-        return json.loads(stream.read().decode("utf-8"))
-
-
-def _dataset_ref(urn: str) -> dict[str, Any]:
-    return {"namespace": "datahub", "name": urn, "facets": {}}
+def _dataset_identity(urn: str) -> tuple[str, str]:
+    platform, name, env = dataset_urn_parts(urn)
+    if env != ENV:
+        raise ValueError(
+            f"Runtime lineage dataset environment {env!r} does not match "
+            f"DataHub OpenLineage environment {ENV!r}: {urn}"
+        )
+    return platform, name
 
 
 def build_event(
@@ -107,94 +71,109 @@ def build_event(
     event_type: str,
     inputs: Iterable[str] = (),
     outputs: Iterable[str] = (),
-    upstream_jobs: Iterable[str] = (),
     error: str | None = None,
     event_time: str | None = None,
-) -> dict[str, Any]:
+) -> RunEvent:
     event_type = event_type.upper()
     if event_type not in {"START", "COMPLETE", "FAIL"}:
         raise ValueError(f"Unsupported OpenLineage event type: {event_type}")
     nominal_run_id = str(run_id)
-    tags = [
-        {"key": "airflowRunId", "value": nominal_run_id, "source": "RUNTIME"},
-        {"key": "pipeline", "value": pipeline, "source": "RUNTIME"},
-        {"key": "jobId", "value": job_id, "source": "RUNTIME"},
-    ]
-    tags.extend(
-        {"key": "upstreamJob", "value": upstream_job, "source": "RUNTIME"}
-        for upstream_job in sorted(set(upstream_jobs))
-    )
-    facets: dict[str, Any] = {
-        "tags": {
-            "_producer": PRODUCER,
-            "_schemaURL": TAGS_RUN_FACET_SCHEMA_URL,
-            "tags": tags,
-        }
+    facets = {
+        "tags": tags_run.TagsRunFacet(
+            tags=[
+                tags_run.TagsRunFacetFields(
+                    key="airflowRunId", value=nominal_run_id, source="USER"
+                ),
+                tags_run.TagsRunFacetFields(
+                    key="pipeline", value=pipeline, source="USER"
+                ),
+                tags_run.TagsRunFacetFields(key="jobId", value=job_id, source="USER"),
+            ]
+        )
     }
     if error:
-        facets["errorMessage"] = {
-            "_producer": PRODUCER,
-            "_schemaURL": ERROR_RUN_FACET_SCHEMA_URL,
-            "message": error,
-            "programmingLanguage": "python",
-        }
-    return {
-        "eventType": event_type,
-        "eventTime": event_time or datetime.now(timezone.utc).isoformat(),
-        "run": {
-            "runId": runtime_run_uuid(pipeline, job_id, nominal_run_id),
-            "facets": facets,
-        },
-        "job": {
-            "namespace": "recsys-data-platform",
-            "name": f"{pipeline}.{job_id}",
-            "facets": {},
-        },
-        "inputs": [_dataset_ref(urn) for urn in sorted(set(inputs))],
-        "outputs": [_dataset_ref(urn) for urn in sorted(set(outputs))],
-        "producer": PRODUCER,
-        "schemaURL": OPENLINEAGE_SCHEMA_URL,
-    }
+        facets["errorMessage"] = error_message_run.ErrorMessageRunFacet(
+            message=error,
+            programmingLanguage="python",
+        )
+    return RunEvent(
+        eventType=RunState[event_type],
+        eventTime=event_time or datetime.now(timezone.utc).isoformat(),
+        run=Run(
+            runId=runtime_run_uuid(pipeline, job_id, nominal_run_id),
+            facets=facets,
+        ),
+        job=Job(
+            namespace=ENV,
+            name=openlineage_job_name(pipeline, job_id),
+            facets={},
+        ),
+        inputs=[
+            InputDataset(namespace=namespace, name=name, facets={})
+            for namespace, name in (
+                _dataset_identity(urn) for urn in sorted(set(inputs))
+            )
+        ],
+        outputs=[
+            OutputDataset(namespace=namespace, name=name, facets={})
+            for namespace, name in (
+                _dataset_identity(urn) for urn in sorted(set(outputs))
+            )
+        ],
+        producer=PRODUCER,
+    )
 
 
-def write_event(event: dict[str, Any], *, root: str | None = None) -> dict[str, Any]:
-    runtime = event_runtime(event)
-    pipeline = str(runtime["pipeline"])
-    job_id = str(runtime["jobId"])
-    run_id = str(runtime["airflowRunId"])
-    event_type = str(event["eventType"])
-    _write_json(event_uri(pipeline, job_id, event_type, run_id=run_id, root=root), event)
-    _write_json(latest_event_uri(pipeline, job_id, root=root), event)
+def _openlineage_client() -> OpenLineageClient:
+    attempts = max(1, int(os.getenv("RUNTIME_LINEAGE_MAX_ATTEMPTS", "3")))
+    timeout = max(0.1, float(os.getenv("RUNTIME_LINEAGE_HTTP_TIMEOUT_SECONDS", "5")))
+    retry_delay = max(
+        0.0, float(os.getenv("RUNTIME_LINEAGE_RETRY_DELAY_SECONDS", "0.5"))
+    )
+    token = (os.getenv("DATAHUB_TOKEN") or os.getenv("DATAHUB_GMS_TOKEN") or "").strip()
+    auth = ApiKeyTokenProvider({"apiKey": token}) if token else TokenProvider({})
+    config = HttpConfig(
+        url=openlineage_endpoint(),
+        endpoint="",
+        timeout=timeout,
+        auth=auth,
+        retry={
+            "total": attempts - 1,
+            "read": attempts - 1,
+            "connect": attempts - 1,
+            "backoff_factor": retry_delay,
+            "status_forcelist": [408, 425, 429, *range(500, 600)],
+            "allowed_methods": ["POST"],
+        },
+    )
+    return OpenLineageClient(transport=HttpTransport(config))
+
+
+def emit_event(event: RunEvent) -> RunEvent:
+    client = _openlineage_client()
+    try:
+        client.emit(event)
+    finally:
+        client.close()
     return event
 
 
-def read_latest_event(pipeline: str, job_id: str, *, root: str | None = None) -> dict[str, Any]:
-    return _read_json(latest_event_uri(pipeline, job_id, root=root))
-
-
-def event_dataset_urns(event: dict[str, Any], field_name: str) -> tuple[str, ...]:
-    return tuple(str(item["name"]) for item in event.get(field_name, []) if item.get("namespace") == "datahub")
-
-
-def event_runtime(event: dict[str, Any]) -> dict[str, Any]:
-    tags = event["run"]["facets"]["tags"]["tags"]
-    runtime: dict[str, Any] = {}
-    upstream_jobs: list[str] = []
-    for tag in tags:
-        if tag.get("key") == "upstreamJob":
-            upstream_jobs.append(str(tag.get("value", "")))
-        else:
-            runtime[str(tag["key"])] = tag.get("value")
-    runtime["upstreamJobs"] = upstream_jobs
-    return runtime
-
-
 def _lineage_enabled() -> bool:
-    return os.getenv("RUNTIME_LINEAGE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    return os.getenv("RUNTIME_LINEAGE_ENABLED", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _lineage_strict() -> bool:
-    return os.getenv("RUNTIME_LINEAGE_STRICT", "false").strip().lower() in {"1", "true", "yes", "on"}
+    return os.getenv("RUNTIME_LINEAGE_STRICT", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 @dataclass
@@ -203,12 +182,10 @@ class RuntimeLineageRecorder:
     job_id: str
     inputs: set[str] = field(default_factory=set)
     outputs: set[str] = field(default_factory=set)
-    upstream_jobs: set[str] = field(default_factory=set)
     run_id: str = field(default_factory=lineage_run_id)
-    root: str | None = None
     _finished: bool = field(default=False, init=False)
 
-    def _emit(self, event_type: str, error: str | None = None) -> dict[str, Any] | None:
+    def _emit(self, event_type: str, error: str | None = None) -> RunEvent | None:
         if not _lineage_enabled():
             return None
         event = build_event(
@@ -218,14 +195,20 @@ class RuntimeLineageRecorder:
             event_type=event_type,
             inputs=self.inputs,
             outputs=self.outputs,
-            upstream_jobs=self.upstream_jobs,
             error=error,
         )
         try:
-            return write_event(event, root=self.root)
-        except Exception:
+            return emit_event(event)
+        except Exception as exc:
             if _lineage_strict():
                 raise
+            LOGGER.warning(
+                "Unable to publish %s runtime lineage for %s.%s: %s",
+                event_type,
+                self.pipeline,
+                self.job_id,
+                exc,
+            )
             return None
 
     def add_inputs(self, *urns: str) -> None:
@@ -234,11 +217,11 @@ class RuntimeLineageRecorder:
     def add_outputs(self, *urns: str) -> None:
         self.outputs.update(urn for urn in urns if urn)
 
-    def complete(self) -> dict[str, Any] | None:
+    def complete(self) -> RunEvent | None:
         self._finished = True
         return self._emit("COMPLETE")
 
-    def fail(self, error: str) -> dict[str, Any] | None:
+    def fail(self, error: str) -> RunEvent | None:
         self._finished = True
         return self._emit("FAIL", error)
 

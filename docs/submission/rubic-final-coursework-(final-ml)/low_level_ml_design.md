@@ -69,7 +69,7 @@ class TrainingDataService:
 
 **Purpose:** sort the training dataframe by prediction time, produce train/validation/test splits, write JSONL files, and write dataset-version metadata.
 
-This class is important because BST is sequence/time based. Random splitting can leak future behavior into training. `SplitService` makes the temporal split explicit and records dataset versioning details for MLflow and Hudi/Iceberg proof.
+This class is important because BST is sequence/time based. Random splitting can leak future behavior into training. `SplitService` makes the temporal split explicit and records native Hudi dataset-version details for MLflow.
 
 ### Interface
 

@@ -6,7 +6,12 @@ from contextlib import nullcontext
 from typing import Any
 
 from features.spark.session import compact_iceberg_table, spark_session
-from lakehouse.iceberg import FEATURE_TABLES, RAW_GENERATOR_TABLES, SILVER_LAKEHOUSE_TABLES, IcebergCatalogConfig
+from lakehouse.iceberg import (
+    FEATURE_TABLES,
+    RAW_GENERATOR_TABLES,
+    SILVER_LAKEHOUSE_TABLES,
+    IcebergCatalogConfig,
+)
 from metadata.governance_catalog import BRONZE_URNS, ICEBERG_FEATURE_URNS, SILVER_URNS
 from metadata.runtime_lineage import RuntimeLineageRecorder
 
@@ -22,7 +27,11 @@ ZORDER_COLUMNS: dict[str, tuple[str, ...]] = {
     "bronze_order_items": ("order_id", "product_id", "created_ts"),
     "bronze_product_snapshots": ("product_id", "valid_from"),
     "silver_clean_behavior_events": ("user_id", "product_id", "event_timestamp"),
-    "silver_clean_impressions": ("user_id", "candidate_product_id", "impression_timestamp"),
+    "silver_clean_impressions": (
+        "user_id",
+        "candidate_product_id",
+        "impression_timestamp",
+    ),
     "user_sequence_features": ("user_id", "feature_timestamp"),
     "user_aggregate_features": ("user_id", "feature_timestamp"),
     "item_features": ("product_id", "feature_timestamp"),
@@ -36,7 +45,10 @@ def optimization_tables(scope: str, catalog: IcebergCatalogConfig) -> list[str]:
     if scope in {"bronze", "all"}:
         tables.extend(catalog.bronze_table(name) for name in RAW_GENERATOR_TABLES)
     if scope in {"silver", "all"}:
-        tables.extend(catalog.lakehouse_table(f"silver_{name}") for name in SILVER_LAKEHOUSE_TABLES)
+        tables.extend(
+            catalog.lakehouse_table(f"silver_{name}")
+            for name in SILVER_LAKEHOUSE_TABLES
+        )
     if scope in {"features", "all"}:
         tables.extend(catalog.feature_table(name) for name in FEATURE_TABLES.values())
     return tables
@@ -52,7 +64,12 @@ def _is_missing_table_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return any(
         marker in message
-        for marker in ("table_or_view_not_found", "no such table", "cannot find table", "does not exist")
+        for marker in (
+            "table_or_view_not_found",
+            "no such table",
+            "cannot find table",
+            "does not exist",
+        )
     )
 
 
@@ -115,8 +132,12 @@ def optimize_lakehouse(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compact and cluster the RecSys Iceberg lakehouse")
-    parser.add_argument("--scope", choices=("bronze", "silver", "features", "all"), default="all")
+    parser = argparse.ArgumentParser(
+        description="Compact and cluster the RecSys Iceberg lakehouse"
+    )
+    parser.add_argument(
+        "--scope", choices=("bronze", "silver", "features", "all"), default="all"
+    )
     parser.add_argument("--pipeline", choices=("DP1", "DP2", "DP3"))
     parser.add_argument("--strategy", choices=("binpack", "zorder"), default="binpack")
     parser.add_argument("--target-file-size-mb", type=int, default=128)
@@ -134,7 +155,6 @@ def main() -> int:
                 "optimize_stage",
                 inputs=urns,
                 outputs=urns,
-                upstream_jobs={"ingest_stage"},
             )
             if args.pipeline
             else nullcontext()

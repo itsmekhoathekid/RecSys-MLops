@@ -10,9 +10,10 @@ from typing import Any
 import requests
 
 from lakehouse.iceberg import RAW_GENERATOR_TABLES
+from metadata.datahub_validation import publish_validation_results
 from metadata.governance_catalog import KAFKA_TOPIC_URNS, SOURCE_POSTGRES_URNS
 from metadata.runtime_lineage import RuntimeLineageRecorder
-from validate.governance_contracts import check, dataset_result, write_report
+from validate.governance_contracts import check, dataset_result
 
 
 TABLE_INCLUDE_LIST = (
@@ -38,7 +39,9 @@ def debezium_config() -> dict[str, Any]:
         "plugin.name": "pgoutput",
         "slot.name": os.getenv("DEBEZIUM_SLOT_NAME", "recsys_slot"),
         "publication.autocreate.mode": "filtered",
-        "table.include.list": os.getenv("DEBEZIUM_TABLE_INCLUDE_LIST", TABLE_INCLUDE_LIST),
+        "table.include.list": os.getenv(
+            "DEBEZIUM_TABLE_INCLUDE_LIST", TABLE_INCLUDE_LIST
+        ),
         "tombstones.on.delete": "false",
         "include.schema.changes": "false",
         "transforms": "route",
@@ -135,10 +138,7 @@ def wait_for_connector_running(
             response.raise_for_status()
         status = response.json()
         connector_state = status.get("connector", {}).get("state")
-        task_states = [
-            task.get("state")
-            for task in status.get("tasks", [])
-        ]
+        task_states = [task.get("state") for task in status.get("tasks", [])]
         last_states = {
             "connector": connector_state,
             "tasks": task_states,
@@ -164,12 +164,16 @@ def remaining_seconds(deadline: float) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Register K8s data-platform Kafka Connect connectors.")
+    parser = argparse.ArgumentParser(
+        description="Register K8s data-platform Kafka Connect connectors."
+    )
     parser.add_argument("--connector", choices=sorted(CONNECTORS), required=True)
     parser.add_argument("--wait-timeout-seconds", type=int, default=180)
     args = parser.parse_args()
     name, config_factory = CONNECTORS[args.connector]
-    with RuntimeLineageRecorder("CDC_INGESTION", "register_debezium_connector") as lineage:
+    with RuntimeLineageRecorder(
+        "CDC_INGESTION", "register_debezium_connector"
+    ) as lineage:
         deadline = time.monotonic() + args.wait_timeout_seconds
         wait_for_connect(timeout_seconds=remaining_seconds(deadline))
         config = config_factory()
@@ -193,11 +197,21 @@ def main() -> int:
         datasets: dict[str, dict[str, Any]] = {}
         for table in RAW_GENERATOR_TABLES:
             status = "SUCCESS" if table in included_tables else "FAILURE"
-            source_check = check("connector_source_mapping", status, f"public.{table}", sorted(included_tables))
-            topic_check = check("connector_topic_mapping", status, f"cdc.{table}", f"cdc.{table}" if status == "SUCCESS" else None)
+            source_check = check(
+                "connector_source_mapping",
+                status,
+                f"public.{table}",
+                sorted(included_tables),
+            )
+            topic_check = check(
+                "connector_topic_mapping",
+                status,
+                f"cdc.{table}",
+                f"cdc.{table}" if status == "SUCCESS" else None,
+            )
             datasets[SOURCE_POSTGRES_URNS[table]] = dataset_result([source_check])
             datasets[KAFKA_TOPIC_URNS[table]] = dataset_result([topic_check])
-        report = write_report("CDC_INGESTION", datasets)
+        report = publish_validation_results("CDC_INGESTION", datasets)
         if report["status"] != "SUCCESS":
             lineage.fail(f"CDC connector data contract status: {report['status']}")
             raise RuntimeError(f"CDC connector contract failed: {report}")

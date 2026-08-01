@@ -71,7 +71,9 @@ FEAST_FEATURE_REFS = [
 ]
 
 
-def get_time_buckets(prediction_ts: datetime, history_timestamps: list[datetime]) -> list[int]:
+def get_time_buckets(
+    prediction_ts: datetime, history_timestamps: list[datetime]
+) -> list[int]:
     buckets: list[int] = []
     for timestamp in history_timestamps:
         delta_seconds = max(int((prediction_ts - timestamp).total_seconds()), 0)
@@ -123,17 +125,25 @@ def _canonical_entity_frame(frame: pd.DataFrame) -> pd.DataFrame:
     frame = frame.reset_index(drop=True)
     entity = pd.DataFrame()
     entity["row_id"] = range(len(frame))
-    entity["impression_id"] = frame.get("impression_id", pd.Series([""] * len(frame))).astype(str)
-    entity["request_id"] = frame.get("request_id", pd.Series([""] * len(frame))).astype(str)
+    entity["impression_id"] = frame.get(
+        "impression_id", pd.Series([""] * len(frame))
+    ).astype(str)
+    entity["request_id"] = frame.get("request_id", pd.Series([""] * len(frame))).astype(
+        str
+    )
     entity["user_id"] = frame["user_id"].astype(int)
     if "candidate_product_id" in frame.columns:
         entity["product_id"] = frame["candidate_product_id"].astype(int)
     elif "target_item_id" in frame.columns:
         entity["product_id"] = frame["target_item_id"].astype(int)
     else:
-        raise ValueError("Entity table must include candidate_product_id or target_item_id")
+        raise ValueError(
+            "Entity table must include candidate_product_id or target_item_id"
+        )
     entity["event_timestamp"] = _prediction_timestamps(frame)
-    entity["label"] = frame["label"].fillna(0).astype(int) if "label" in frame.columns else 0
+    entity["label"] = (
+        frame["label"].fillna(0).astype(int) if "label" in frame.columns else 0
+    )
     return entity
 
 
@@ -141,7 +151,9 @@ def _looks_like_table_identifier(value: str) -> bool:
     return "://" not in value and "/" not in value and value.count(".") >= 2
 
 
-def _read_iceberg_table_as_pandas(table_name: str, catalog_name: str, warehouse: str) -> pd.DataFrame:
+def _read_iceberg_table_as_pandas(
+    table_name: str, catalog_name: str, warehouse: str
+) -> pd.DataFrame:
     spark = _spark_session_for_offline_features(catalog_name, warehouse)
     try:
         return spark.table(table_name).toPandas()
@@ -169,8 +181,12 @@ def _read_postgres_table_as_pandas(table_uri: str) -> pd.DataFrame:
         host=parsed.hostname or os.getenv("FEAST_POSTGRES_HOST", "feature-postgres"),
         port=parsed.port or int(os.getenv("FEAST_POSTGRES_PORT", "5432")),
         dbname=database or os.getenv("FEAST_POSTGRES_DB", "feature_store"),
-        user=unquote(parsed.username) if parsed.username else os.getenv("FEAST_POSTGRES_USER", "feast"),
-        password=unquote(parsed.password) if parsed.password else os.getenv("FEAST_POSTGRES_PASSWORD", "feast"),
+        user=unquote(parsed.username)
+        if parsed.username
+        else os.getenv("FEAST_POSTGRES_USER", "feast"),
+        password=unquote(parsed.password)
+        if parsed.password
+        else os.getenv("FEAST_POSTGRES_PASSWORD", "feast"),
         sslmode=os.getenv("FEAST_POSTGRES_SSLMODE", "disable"),
     ) as conn:
         with conn.cursor() as cur:
@@ -193,11 +209,16 @@ def _read_postgres_table_as_pandas(table_uri: str) -> pd.DataFrame:
                 "event_time",
                 "label",
             ]
-            selected_columns = [column for column in entity_columns if column in table_columns]
+            selected_columns = [
+                column for column in entity_columns if column in table_columns
+            ]
             if {"user_id", "label"}.issubset(selected_columns) and (
-                "candidate_product_id" in selected_columns or "target_item_id" in selected_columns
+                "candidate_product_id" in selected_columns
+                or "target_item_id" in selected_columns
             ):
-                select_expr = sql.SQL(", ").join(sql.Identifier(column) for column in selected_columns)
+                select_expr = sql.SQL(", ").join(
+                    sql.Identifier(column) for column in selected_columns
+                )
             else:
                 select_expr = sql.SQL("*")
             query = sql.SQL("SELECT {} FROM {}.{}").format(
@@ -207,7 +228,9 @@ def _read_postgres_table_as_pandas(table_uri: str) -> pd.DataFrame:
             )
             params: tuple[Any, ...] = ()
             if "prediction_timestamp" in table_columns:
-                query += sql.SQL(" WHERE prediction_timestamp >= %s AND prediction_timestamp < %s")
+                query += sql.SQL(
+                    " WHERE prediction_timestamp >= %s AND prediction_timestamp < %s"
+                )
                 params = (
                     datetime(1970, 1, 1, tzinfo=timezone.utc),
                     datetime(2100, 1, 1, tzinfo=timezone.utc),
@@ -218,7 +241,9 @@ def _read_postgres_table_as_pandas(table_uri: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
-def _read_feature_table(path: str, *, iceberg_catalog_name: str, iceberg_warehouse: str) -> pd.DataFrame:
+def _read_feature_table(
+    path: str, *, iceberg_catalog_name: str, iceberg_warehouse: str
+) -> pd.DataFrame:
     if path.startswith(("postgresql://", "postgres://")):
         return _read_postgres_table_as_pandas(path)
     source = Path(path)
@@ -227,7 +252,9 @@ def _read_feature_table(path: str, *, iceberg_catalog_name: str, iceberg_warehou
     if source.exists():
         return pd.read_parquet(source)
     if _looks_like_table_identifier(path):
-        return _read_iceberg_table_as_pandas(path, iceberg_catalog_name, iceberg_warehouse)
+        return _read_iceberg_table_as_pandas(
+            path, iceberg_catalog_name, iceberg_warehouse
+        )
     raise FileNotFoundError(f"Feature table path does not exist: {path}")
 
 
@@ -250,7 +277,9 @@ def _feast_historical_to_bst_frame(
     if "row_id" not in historical.columns:
         historical = historical.copy()
         historical["row_id"] = range(len(historical))
-    feature_columns = [column for column in historical.columns if "__" in column or column == "row_id"]
+    feature_columns = [
+        column for column in historical.columns if "__" in column or column == "row_id"
+    ]
     joined = entities.merge(historical[feature_columns], on="row_id", how="left")
 
     rows: list[dict[str, Any]] = []
@@ -260,7 +289,9 @@ def _feast_historical_to_bst_frame(
     for _, row in joined.sort_values("event_timestamp").iterrows():
         prediction_ts = _row_timestamp(row["event_timestamp"])
         hist_timestamps = []
-        for value in _to_str_list(row.get(_feature_col(sequence_prefix, "hist_event_timestamps"))):
+        for value in _to_str_list(
+            row.get(_feature_col(sequence_prefix, "hist_event_timestamps"))
+        ):
             timestamp = _row_timestamp(value)
             if timestamp < prediction_ts:
                 hist_timestamps.append(timestamp.to_pydatetime())
@@ -281,17 +312,29 @@ def _feast_historical_to_bst_frame(
                 "hist_category": history_values("hist_category_ids"),
                 "hist_brand": history_values("hist_brand_ids"),
                 "hist_price_bucket": history_values("hist_price_bucket_ids"),
-                "hist_time": get_time_buckets(prediction_ts.to_pydatetime(), hist_timestamps),
+                "hist_time": get_time_buckets(
+                    prediction_ts.to_pydatetime(), hist_timestamps
+                ),
                 "target_item_id": _to_int(row.get("product_id")),
-                "target_category": _to_int(row.get(_feature_col(item_prefix, "category_id"))),
+                "target_category": _to_int(
+                    row.get(_feature_col(item_prefix, "category_id"))
+                ),
                 "target_brand": _to_int(row.get(_feature_col(item_prefix, "brand_id"))),
-                "target_price_bucket": _to_int(row.get(_feature_col(item_prefix, "price_bucket"))),
+                "target_price_bucket": _to_int(
+                    row.get(_feature_col(item_prefix, "price_bucket"))
+                ),
                 "event_time": int(prediction_ts.timestamp()),
                 "prediction_timestamp": prediction_ts,
                 "label": _to_int(row.get("label")),
-                "views_30m": _to_int(row.get(_feature_col(aggregate_prefix, "views_30m"))),
-                "carts_30m": _to_int(row.get(_feature_col(aggregate_prefix, "carts_30m"))),
-                "purchases_24h": _to_int(row.get(_feature_col(aggregate_prefix, "purchases_24h"))),
+                "views_30m": _to_int(
+                    row.get(_feature_col(aggregate_prefix, "views_30m"))
+                ),
+                "carts_30m": _to_int(
+                    row.get(_feature_col(aggregate_prefix, "carts_30m"))
+                ),
+                "purchases_24h": _to_int(
+                    row.get(_feature_col(aggregate_prefix, "purchases_24h"))
+                ),
             }
         )
     return pd.DataFrame(rows)
@@ -354,7 +397,9 @@ def build_bst_training_table_from_feast(
         features=features,
         full_feature_names=True,
     ).to_df()
-    return _feast_historical_to_bst_frame(entities, historical, max_history_len=max_history_len)
+    return _feast_historical_to_bst_frame(
+        entities, historical, max_history_len=max_history_len
+    )
 
 
 def _spark_session_for_offline_features(catalog_name: str, warehouse: str):
@@ -362,15 +407,28 @@ def _spark_session_for_offline_features(catalog_name: str, warehouse: str):
 
     return (
         SparkSession.builder.appName("recsys-read-offline-feature-store-for-bst")
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config(f"spark.sql.catalog.{catalog_name}", "org.apache.iceberg.spark.SparkCatalog")
+        .config(
+            "spark.sql.extensions",
+            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+        )
+        .config(
+            f"spark.sql.catalog.{catalog_name}", "org.apache.iceberg.spark.SparkCatalog"
+        )
         .config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
         .config(f"spark.sql.catalog.{catalog_name}.warehouse", warehouse)
-        .config("spark.hadoop.fs.s3a.endpoint", os.getenv("MINIO_ENDPOINT", "http://minio:9000"))
-        .config("spark.hadoop.fs.s3a.access.key", os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "minio")))
+        .config(
+            "spark.hadoop.fs.s3a.endpoint",
+            os.getenv("MINIO_ENDPOINT", "http://minio:9000"),
+        )
+        .config(
+            "spark.hadoop.fs.s3a.access.key",
+            os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "minio")),
+        )
         .config(
             "spark.hadoop.fs.s3a.secret.key",
-            os.getenv("AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minio123")),
+            os.getenv(
+                "AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minio123")
+            ),
         )
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
@@ -389,8 +447,12 @@ def build_bst_training_table_from_offline_feature_store(
         frame = spark.table(offline_feature_table)
         missing = [column for column in MODEL_COLUMNS if column not in frame.columns]
         if missing:
-            raise ValueError(f"Offline feature table {offline_feature_table} is missing BST columns: {missing}")
-        selected = frame.select(*MODEL_COLUMNS, "impression_id", "request_id", "prediction_timestamp")
+            raise ValueError(
+                f"Offline feature table {offline_feature_table} is missing BST columns: {missing}"
+            )
+        selected = frame.select(
+            *MODEL_COLUMNS, "impression_id", "request_id", "prediction_timestamp"
+        )
         return selected.toPandas()
     finally:
         spark.stop()
@@ -418,7 +480,9 @@ class TrainingDataService:
         self.iceberg_catalog_name = iceberg_catalog_name
         self.iceberg_warehouse = iceberg_warehouse
 
-    def read_training_table(self, source: str, *, entity_input_path: str) -> pd.DataFrame:
+    def read_training_table(
+        self, source: str, *, entity_input_path: str
+    ) -> pd.DataFrame:
         if source == "offline_feature_store":
             frame = self.read_from_offline_feature_store(self.offline_feature_table)
         elif source == "feast":
@@ -455,8 +519,12 @@ class TrainingDataService:
     def canonicalize_entities(self, df: pd.DataFrame) -> pd.DataFrame:
         return _canonical_entity_frame(df)
 
-    def build_bst_frame(self, entities: pd.DataFrame, historical: pd.DataFrame) -> pd.DataFrame:
-        frame = _feast_historical_to_bst_frame(entities, historical, max_history_len=self.max_history_len)
+    def build_bst_frame(
+        self, entities: pd.DataFrame, historical: pd.DataFrame
+    ) -> pd.DataFrame:
+        frame = _feast_historical_to_bst_frame(
+            entities, historical, max_history_len=self.max_history_len
+        )
         self.validate_schema(frame)
         return frame
 
@@ -528,7 +596,9 @@ def _registry_path(feast_repo_path: str | Path) -> str:
 def _write_json(path: str | Path, payload: dict[str, Any]) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    target.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8"
+    )
 
 
 def _dataset_metadata(
@@ -590,7 +660,13 @@ def _dataset_metadata(
 
 
 class SplitService:
-    def __init__(self, *, train_ratio: float = 0.8, val_ratio: float = 0.1, max_history_len: int = 50) -> None:
+    def __init__(
+        self,
+        *,
+        train_ratio: float = 0.8,
+        val_ratio: float = 0.1,
+        max_history_len: int = 50,
+    ) -> None:
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
         self.max_history_len = max_history_len
@@ -600,8 +676,12 @@ class SplitService:
             return df.sort_values("prediction_timestamp")
         return df.sort_values("event_time")
 
-    def normalize_row(self, row: pd.Series, max_history_len: int | None = None) -> dict[str, Any]:
-        return _normalize_row(row, max_history_len=max_history_len or self.max_history_len)
+    def normalize_row(
+        self, row: pd.Series, max_history_len: int | None = None
+    ) -> dict[str, Any]:
+        return _normalize_row(
+            row, max_history_len=max_history_len or self.max_history_len
+        )
 
     def get_split_boundaries(
         self,
@@ -609,11 +689,17 @@ class SplitService:
         train_ratio: float | None = None,
         val_ratio: float | None = None,
     ) -> dict[str, int]:
-        train_end = int(row_count * (self.train_ratio if train_ratio is None else train_ratio))
-        val_end = train_end + int(row_count * (self.val_ratio if val_ratio is None else val_ratio))
+        train_end = int(
+            row_count * (self.train_ratio if train_ratio is None else train_ratio)
+        )
+        val_end = train_end + int(
+            row_count * (self.val_ratio if val_ratio is None else val_ratio)
+        )
         return {"train_end": train_end, "val_end": val_end}
 
-    def split_by_time(self, rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    def split_by_time(
+        self, rows: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, Any]]]:
         boundaries = self.get_split_boundaries(len(rows))
         train_end = boundaries["train_end"]
         val_end = boundaries["val_end"]
@@ -623,7 +709,9 @@ class SplitService:
             "test": rows[val_end:],
         }
 
-    def write_jsonl_splits(self, splits: dict[str, list[dict[str, Any]]], output_dir: Path) -> None:
+    def write_jsonl_splits(
+        self, splits: dict[str, list[dict[str, Any]]], output_dir: Path
+    ) -> None:
         for split, split_rows in splits.items():
             _write_jsonl(split_rows, output_dir / f"{split}.jsonl")
 
@@ -651,13 +739,19 @@ class SplitService:
             feast_offline_root=feast_offline_root,
             feature_service_name=feature_service_name,
             processing_code=processing_code,
-            split_counts={split: len(split_rows) for split, split_rows in splits.items()},
+            split_counts={
+                split: len(split_rows) for split, split_rows in splits.items()
+            },
             hudi=hudi,
             max_history_len=self.max_history_len,
             feature_source=feature_source,
             offline_feature_table=offline_feature_table,
         )
-        dataset_meta_target = Path(dataset_metadata_path) if dataset_metadata_path else output_dir / "dataset_version_meta.json"
+        dataset_meta_target = (
+            Path(dataset_metadata_path)
+            if dataset_metadata_path
+            else output_dir / "dataset_version_meta.json"
+        )
         _write_json(dataset_meta_target, dataset_metadata)
         return dataset_metadata
 
@@ -678,7 +772,6 @@ def prepare_bst_jsonl_splits(
     hudi_warehouse: str = DEFAULT_WAREHOUSE,
     hudi_catalog_name: str = DEFAULT_CATALOG_NAME,
     hudi_table: str | None = None,
-    iceberg_enabled: bool | None = None,
     iceberg_catalog_name: str = DEFAULT_CATALOG_NAME,
     iceberg_warehouse: str = DEFAULT_WAREHOUSE,
     dataset_run_id: str | None = None,
@@ -695,8 +788,12 @@ def prepare_bst_jsonl_splits(
         iceberg_catalog_name=iceberg_catalog_name,
         iceberg_warehouse=iceberg_warehouse,
     )
-    split_service = SplitService(train_ratio=train_ratio, val_ratio=val_ratio, max_history_len=max_history_len)
-    frame = training_data.read_training_table(feature_source, entity_input_path=entity_input_path)
+    split_service = SplitService(
+        train_ratio=train_ratio, val_ratio=val_ratio, max_history_len=max_history_len
+    )
+    frame = training_data.read_training_table(
+        feature_source, entity_input_path=entity_input_path
+    )
     if frame.empty:
         raise ValueError(f"No rows found in BST training data from {entity_input_path}")
 
@@ -708,8 +805,7 @@ def prepare_bst_jsonl_splits(
     splits = split_service.split_by_time(rows)
     run_id = dataset_run_id or timestamp_run_id()
     processing_code = processing_code_version or resolve_processing_code_version()
-    versioning_enabled = hudi_enabled if iceberg_enabled is None else hudi_enabled or iceberg_enabled
-    if versioning_enabled:
+    if hudi_enabled:
         samples = to_versioned_samples(splits)
         hudi_metadata = commit_samples_to_hudi(
             samples=samples,
@@ -741,7 +837,11 @@ def prepare_bst_jsonl_splits(
         offline_feature_table=offline_feature_table,
         dataset_metadata_path=dataset_metadata_path,
     )
-    dataset_meta_target = Path(dataset_metadata_path) if dataset_metadata_path else output / "dataset_version_meta.json"
+    dataset_meta_target = (
+        Path(dataset_metadata_path)
+        if dataset_metadata_path
+        else output / "dataset_version_meta.json"
+    )
 
     metadata = {
         "entity_input_path": entity_input_path,
@@ -771,7 +871,9 @@ def prepare_bst_jsonl_splits(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prepare BST JSONL splits from the offline feature store")
+    parser = argparse.ArgumentParser(
+        description="Prepare BST JSONL splits from the offline feature store"
+    )
     parser.add_argument(
         "--entity-input-path",
         default="data_platform/output/ml/offline/ml_ranking_labels",
@@ -789,15 +891,33 @@ def main() -> int:
     parser.add_argument("--max-history-len", type=int, default=50)
     parser.add_argument("--metadata-path", default="")
     parser.add_argument("--feature-service-name", default=DEFAULT_FEATURE_SERVICE_NAME)
-    parser.add_argument("--feature-source", choices=["offline_feature_store", "feast"], default="offline_feature_store")
-    parser.add_argument("--offline-feature-table", default=os.getenv("OFFLINE_FEATURE_TABLE", DEFAULT_OFFLINE_FEATURE_TABLE))
-    parser.add_argument("--hudi-enabled", default=os.getenv("HUDI_ENABLED", os.getenv("ICEBERG_ENABLED", "false")))
-    parser.add_argument("--hudi-warehouse", default=os.getenv("HUDI_WAREHOUSE", DEFAULT_WAREHOUSE))
-    parser.add_argument("--hudi-catalog-name", default=os.getenv("HUDI_CATALOG_NAME", DEFAULT_CATALOG_NAME))
-    parser.add_argument("--hudi-table", default=os.getenv("HUDI_DATASET_TABLE", DATASET_TABLE))
-    parser.add_argument("--iceberg-enabled", default=None)
-    parser.add_argument("--iceberg-catalog-name", default=os.getenv("ICEBERG_CATALOG_NAME", DEFAULT_CATALOG_NAME))
-    parser.add_argument("--iceberg-warehouse", default=os.getenv("ICEBERG_WAREHOUSE", DEFAULT_WAREHOUSE))
+    parser.add_argument(
+        "--feature-source",
+        choices=["offline_feature_store", "feast"],
+        default="offline_feature_store",
+    )
+    parser.add_argument(
+        "--offline-feature-table",
+        default=os.getenv("OFFLINE_FEATURE_TABLE", DEFAULT_OFFLINE_FEATURE_TABLE),
+    )
+    parser.add_argument("--hudi-enabled", default=os.getenv("HUDI_ENABLED", "false"))
+    parser.add_argument(
+        "--hudi-warehouse", default=os.getenv("HUDI_WAREHOUSE", DEFAULT_WAREHOUSE)
+    )
+    parser.add_argument(
+        "--hudi-catalog-name",
+        default=os.getenv("HUDI_CATALOG_NAME", DEFAULT_CATALOG_NAME),
+    )
+    parser.add_argument(
+        "--hudi-table", default=os.getenv("HUDI_DATASET_TABLE", DATASET_TABLE)
+    )
+    parser.add_argument(
+        "--iceberg-catalog-name",
+        default=os.getenv("ICEBERG_CATALOG_NAME", DEFAULT_CATALOG_NAME),
+    )
+    parser.add_argument(
+        "--iceberg-warehouse", default=os.getenv("ICEBERG_WAREHOUSE", DEFAULT_WAREHOUSE)
+    )
     parser.add_argument("--dataset-run-id", default="")
     parser.add_argument("--dataset-metadata-path", default="")
     parser.add_argument("--processing-code-version", default="")
@@ -819,7 +939,6 @@ def main() -> int:
         hudi_warehouse=args.hudi_warehouse,
         hudi_catalog_name=args.hudi_catalog_name,
         hudi_table=args.hudi_table,
-        iceberg_enabled=_bool_flag(args.iceberg_enabled, default=False) if args.iceberg_enabled is not None else None,
         iceberg_catalog_name=args.iceberg_catalog_name,
         iceberg_warehouse=args.iceberg_warehouse,
         dataset_run_id=args.dataset_run_id or None,
