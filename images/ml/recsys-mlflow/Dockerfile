@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_CONCURRENT_BUILDS=8
 
 COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/
-RUN pip install --no-cache-dir uv==0.10.9 \
+RUN pip install --no-cache-dir uv==0.12.1 \
     && python -m venv /opt/venv
 
 RUN uv export \

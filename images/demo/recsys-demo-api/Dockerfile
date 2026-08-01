@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /opt/recsys-demo-api
 
-RUN pip install --no-cache-dir uv==0.10.9
+RUN pip install --no-cache-dir uv==0.12.1
 COPY apps/demo-web/backend/pyproject.toml apps/demo-web/backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --no-cache
 

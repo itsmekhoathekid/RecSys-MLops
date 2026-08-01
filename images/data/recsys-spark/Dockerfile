@@ -26,7 +26,7 @@ ENV UV_LINK_MODE=copy \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3-pip python3.10-venv \
     && rm -rf /var/lib/apt/lists/* \
-    && python3 -m pip install --no-cache-dir uv==0.10.9 \
+    && python3 -m pip install --no-cache-dir uv==0.12.1 \
     && python3 -m venv /opt/venv
 
 COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/

@@ -11,7 +11,7 @@ WORKDIR /opt/recsys/apps/api-serving
 
 COPY apps/api-serving/pyproject.toml apps/api-serving/uv.lock ./
 
-RUN pip install --no-cache-dir uv==0.10.9 \
+RUN pip install --no-cache-dir uv==0.12.1 \
     && UV_PROJECT_ENVIRONMENT=/opt/venv \
         uv sync --frozen --no-dev --no-install-project --no-cache
 
