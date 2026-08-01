@@ -20,6 +20,7 @@ from metadata.governance_catalog import (
     pipeline_flow_id,
 )
 from metadata.ingest_datahub_governance import (
+    _report_assertion_result,
     cdc_ingestion,
     dp1,
     dp2,
@@ -104,6 +105,42 @@ def test_governance_job_emission_leaves_lineage_to_native_openlineage():
     emit_job(Emitter(), flow_urn(product.flow_id), job)
     assert all(isinstance(item, MetadataChangeProposalWrapper) for item in proposals)
     assert {item.aspectName for item in proposals} == {"dataJobInfo", "globalTags"}
+
+
+def test_assertion_result_retries_until_async_mcp_is_visible(monkeypatch):
+    calls = []
+
+    class Emitter:
+        def graphql(self, query, variables):
+            calls.append((query, variables))
+            if len(calls) < 3:
+                raise RuntimeError("assertion does not exist or is not associated")
+            return {"reportAssertionResult": True}
+
+    monkeypatch.setenv("DATAHUB_ASSERTION_RESULT_MAX_ATTEMPTS", "3")
+    monkeypatch.setenv("DATAHUB_ASSERTION_RESULT_RETRY_DELAY_SECONDS", "0")
+
+    result = {"type": "SUCCESS", "timestampMillis": 1, "properties": []}
+    _report_assertion_result(Emitter(), "urn:li:assertion:test", result)
+
+    assert len(calls) == 3
+    assert calls[-1][1] == {"urn": "urn:li:assertion:test", "result": result}
+
+
+def test_assertion_result_raises_after_retry_budget(monkeypatch):
+    class Emitter:
+        def graphql(self, query, variables):
+            raise RuntimeError("assertion does not exist or is not associated")
+
+    monkeypatch.setenv("DATAHUB_ASSERTION_RESULT_MAX_ATTEMPTS", "2")
+    monkeypatch.setenv("DATAHUB_ASSERTION_RESULT_RETRY_DELAY_SECONDS", "0")
+
+    with pytest.raises(RuntimeError, match="does not exist"):
+        _report_assertion_result(
+            Emitter(),
+            "urn:li:assertion:test",
+            {"type": "ERROR", "timestampMillis": 1, "properties": []},
+        )
 
 
 def test_emit_event_posts_to_native_datahub_openlineage_endpoint(monkeypatch):

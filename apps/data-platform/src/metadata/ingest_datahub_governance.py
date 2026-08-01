@@ -496,6 +496,35 @@ def _assertion_status(
     )
 
 
+def _report_assertion_result(
+    emitter: GovernanceEmitter,
+    assertion: str,
+    result: dict[str, Any],
+) -> None:
+    """Report a result after DataHub's async MCP consumer exposes the assertion."""
+    attempts = max(
+        1, int(os.getenv("DATAHUB_ASSERTION_RESULT_MAX_ATTEMPTS", "12"))
+    )
+    retry_delay = max(
+        0.0, float(os.getenv("DATAHUB_ASSERTION_RESULT_RETRY_DELAY_SECONDS", "1"))
+    )
+    for attempt in range(1, attempts + 1):
+        try:
+            emitter.graphql(
+                """
+                mutation reportAssertionResult($urn: String!, $result: AssertionResultInput!) {
+                  reportAssertionResult(urn: $urn, result: $result)
+                }
+                """,
+                {"urn": assertion, "result": result},
+            )
+            return
+        except RuntimeError:
+            if attempt == attempts:
+                raise
+            time.sleep(retry_delay)
+
+
 def _emit_assertion(
     emitter: GovernanceEmitter,
     dataset: Dataset,
@@ -534,29 +563,23 @@ def _emit_assertion(
                 },
             },
         )["upsertCustomAssertion"]["urn"]
-    emitter.graphql(
-        """
-        mutation reportAssertionResult($urn: String!, $result: AssertionResultInput!) {
-          reportAssertionResult(urn: $urn, result: $result)
-        }
-        """,
+    _report_assertion_result(
+        emitter,
+        assertion,
         {
-            "urn": assertion,
-            "result": {
-                "type": status,
-                "timestampMillis": int(time.time() * 1000),
-                "properties": [
-                    {
-                        "key": "pipeline",
-                        "value": dataset.validation_pipeline or "unknown",
-                    },
-                    {"key": "run_id", "value": run_id},
-                    {
-                        "key": "observed_checks",
-                        "value": json.dumps(checks, sort_keys=True),
-                    },
-                ],
-            },
+            "type": status,
+            "timestampMillis": int(time.time() * 1000),
+            "properties": [
+                {
+                    "key": "pipeline",
+                    "value": dataset.validation_pipeline or "unknown",
+                },
+                {"key": "run_id", "value": run_id},
+                {
+                    "key": "observed_checks",
+                    "value": json.dumps(checks, sort_keys=True),
+                },
+            ],
         },
     )
     return assertion
