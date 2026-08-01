@@ -4,7 +4,7 @@ Tai lieu nay dien giai tung buoc trong flow:
 
 ```text
 Kubeflow Pipelines
-  -> Feature Engineering
+  -> Read DP3 Feature Snapshot
   -> Prepare Training Data
   -> Submit KubeRay RayJob
   -> Ray Tune + Training
@@ -23,15 +23,11 @@ Muc tieu la lam ro:
 ```text
 KFP pipeline
   |
-  |-- step 1: feature_engineering
+  |-- step 1: prepare_training_data
   |     component: KFP container pod
-  |     job: build feature tables va ml_bst_training
+  |     job: doc DP3 feature snapshot va convert thanh train/val/test JSONL
   |
-  |-- step 2: prepare_training_data
-  |     component: KFP container pod
-  |     job: convert training table thanh train/val/test JSONL
-  |
-  |-- step 3: submit_rayjob
+  |-- step 2: submit_rayjob
   |     component: KFP container pod + Kubernetes API
   |     job: tao RayJob CRD
   |
@@ -51,7 +47,7 @@ KFP pipeline
   |     component: tracking/artifact/registry stack
   |     job: luu params, metrics, model artifact, model config
   |
-  |-- step 4: evaluate_bst
+  |-- step 3: evaluate_bst
         component: KFP container pod
         job: evaluate best checkpoint tren test split
 ```
@@ -67,7 +63,7 @@ apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py
 Compiled pipeline:
 
 ```text
-infra/kubeflow/compiled/bst_training_pipeline.yaml
+pipelines/kubeflow/compiled/bst_training_pipeline.yaml
 ```
 
 Kubeflow Pipelines dam bao:
@@ -170,87 +166,16 @@ Nhiem vu:
 
 Neu thieu RBAC, step `submit_rayjob` se fail khi goi Kubernetes API.
 
-## 3. Step 1: Feature Engineering
+## 3. Upstream DP3 Feature Snapshot
 
-KFP component:
+Feature engineering khong con bi chay lap lai ben trong Kubeflow. Airflow DAG
+`recsys_dp3_offline_feature_table` chay
+`apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py` bang
+immutable `recsys-spark` digest va publish versioned Feast/Hudi feature snapshot.
+Kubeflow chi consume snapshot da publish, nen retry training khong vo tinh rebuild
+feature table.
 
-```text
-feature_engineering
-```
-
-Defined in:
-
-```text
-apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py
-```
-
-Command chay trong pod:
-
-```bash
-python -m recsys_model_pipeline.run_feature_engineering
-```
-
-Entrypoint:
-
-```text
-apps/ml-system/src/run_feature_engineering.py
-```
-
-File nay dam bao:
-
-- Load source config tu `configs/local/spark_batch.yaml`.
-- Rewrite runtime output path sang PVC path.
-- Goi local batch feature flow.
-- Ghi summary JSON neu duoc yeu cau.
-
-Nó gọi:
-
-```text
-apps/data-platform/src/local/run_batch_features.py
-```
-
-`run_batch_features.py` dam bao:
-
-- Doc raw/generated run path.
-- Build silver tables.
-- Build user sequence features.
-- Build user aggregate features.
-- Build item features.
-- Build ranking labels.
-- Build BST training table.
-- Ghi feature/offline/ml tables ra storage.
-
-Sub-components:
-
-```text
-apps/data-platform/src/feature_engineering/spark/build_silver_tables.py
-apps/data-platform/src/feature_engineering/spark/build_user_sequence_features.py
-apps/data-platform/src/feature_engineering/spark/build_user_aggregate_features.py
-apps/data-platform/src/feature_engineering/spark/build_item_features.py
-apps/data-platform/src/feature_engineering/spark/build_ranking_labels.py
-apps/data-platform/src/feature_engineering/spark/build_bst_training_table.py
-```
-
-Output chinh:
-
-```text
-/workspace/recsys/data_platform/output/silver/*
-/workspace/recsys/data_platform/output/feature_store/offline/*
-/workspace/recsys/data_platform/output/ml/offline/ml_ranking_labels
-/workspace/recsys/data_platform/output/ml/offline/ml_bst_training
-/workspace/recsys/data_platform/output/feature_summary.json
-```
-
-Important note:
-
-```text
-Hien tai step nay la KFP container component binh thuong.
-No chua dung Kubeflow Spark Operator.
-```
-
-Ten folder `feature_engineering/spark` the hien logic batch/Spark-style, nhung local/KFP smoke hien tai chay Python function truc tiep trong container.
-
-## 4. Step 2: Prepare Training Data
+## 4. Step 1: Prepare Training Data
 
 KFP component:
 
@@ -375,7 +300,7 @@ spec:
 Installed by:
 
 ```text
-make mlops-install-kuberay
+terraform -chdir=infra/terraform/gcp apply
 ```
 
 Operator deployment:

@@ -4,16 +4,16 @@ This folder stores historical Dockerfile baselines used for the Docker optimizat
 
 These files are intentionally not used by the active CI/CD pipeline. They are snapshots from git history so the optimized Dockerfiles in the main repo can be compared against a reproducible pre-optimization baseline.
 
-| Baseline file | Original path | Source commit |
+| Baseline file | Active source | Source commit |
 |---|---|---|
-| `Dockerfile.base-python.before` | `infra/docker/Dockerfile.base-python` | `4683a24` |
-| `Dockerfile.dataflow-cli.before` | `apps/data-platform/Dockerfile.dataflow-cli` | `4683a24` |
-| `Dockerfile.data-generator.before` | `apps/data-platform/data-generator/Dockerfile` | `4683a24` |
-| `Dockerfile.airflow.before` | `infra/docker/Dockerfile.airflow` | `4683a24` |
-| `Dockerfile.spark.before` | `apps/data-platform/Dockerfile.spark` | `c71b9a4` |
-| `Dockerfile.flink.before` | `apps/data-platform/Dockerfile.flink` | `c71b9a4` |
-| `Dockerfile.api-serving.before` | `apps/api-serving/Dockerfile` | `39450cb` |
-| `Dockerfile.mlops-training.before` | `apps/ml-system/Dockerfile.training` | `4683a24` |
-| `Dockerfile.mlops-spark.before` | `apps/ml-system/Dockerfile.spark` | `089a835` |
-| `Dockerfile.kafka-connect.before` | `infra/docker/Dockerfile.kafka-connect` | `4683a24` |
-| `Dockerfile.mlflow.before` | `infra/docker/Dockerfile.mlflow` | `089a835` |
+| [Dockerfile.base-python.before (line 1)](Dockerfile.base-python.before#L1), [Dockerfile.base-python.before (line 19)](Dockerfile.base-python.before#L19) | [Dockerfile.base-python (line 1)](../../../../infra/docker/Dockerfile.base-python#L1), [Dockerfile.base-python (line 19)](../../../../infra/docker/Dockerfile.base-python#L19) | `4683a24` |
+| [Dockerfile.dataflow-cli.before (line 1)](Dockerfile.dataflow-cli.before#L1), [Dockerfile.dataflow-cli.before (line 22)](Dockerfile.dataflow-cli.before#L22) | [Dockerfile.dataflow-cli (line 1)](../../../../apps/data-platform/Dockerfile.dataflow-cli#L1), [Dockerfile.dataflow-cli (line 49)](../../../../apps/data-platform/Dockerfile.dataflow-cli#L49) | `4683a24` |
+| [Dockerfile.data-generator.before (line 1)](Dockerfile.data-generator.before#L1), [Dockerfile.data-generator.before (line 12)](Dockerfile.data-generator.before#L12) | [Dockerfile (line 1)](../../../../apps/data-platform/data-generator/Dockerfile#L1), [Dockerfile (line 27)](../../../../apps/data-platform/data-generator/Dockerfile#L27) | `4683a24` |
+| [Dockerfile.airflow.before (line 1)](Dockerfile.airflow.before#L1), [Dockerfile.airflow.before (line 16)](Dockerfile.airflow.before#L16) | [Dockerfile.airflow (line 1)](../../../../infra/docker/Dockerfile.airflow#L1), [Dockerfile.airflow (line 34)](../../../../infra/docker/Dockerfile.airflow#L34) | `4683a24` |
+| [Dockerfile.spark.before (line 1)](Dockerfile.spark.before#L1), [Dockerfile.spark.before (line 16)](Dockerfile.spark.before#L16) | [Dockerfile.spark (line 1)](../../../../apps/data-platform/Dockerfile.spark#L1), [Dockerfile.spark (line 50)](../../../../apps/data-platform/Dockerfile.spark#L50) | `c71b9a4` |
+| [Dockerfile.flink.before (line 1)](Dockerfile.flink.before#L1), [Dockerfile.flink.before (line 49)](Dockerfile.flink.before#L49) | [Dockerfile.flink (line 1)](../../../../apps/data-platform/Dockerfile.flink#L1), [Dockerfile.flink (line 94)](../../../../apps/data-platform/Dockerfile.flink#L94) | `c71b9a4` |
+| [Dockerfile.api-serving.before (line 1)](Dockerfile.api-serving.before#L1), [Dockerfile.api-serving.before (line 19)](Dockerfile.api-serving.before#L19) | [Dockerfile (line 1)](../../../../apps/api-serving/Dockerfile#L1), [Dockerfile (line 46)](../../../../apps/api-serving/Dockerfile#L46) | `39450cb` |
+| [Dockerfile.mlops-training.before (line 1)](Dockerfile.mlops-training.before#L1), [Dockerfile.mlops-training.before (line 39)](Dockerfile.mlops-training.before#L39) | [Dockerfile.training (line 1)](../../../../apps/ml-system/Dockerfile.training#L1), [Dockerfile.training (line 61)](../../../../apps/ml-system/Dockerfile.training#L61) | `4683a24` |
+| [Dockerfile.mlops-spark.before (line 1)](Dockerfile.mlops-spark.before#L1), [Dockerfile.mlops-spark.before (line 7)](Dockerfile.mlops-spark.before#L7) | [Dockerfile.spark (line 1)](../../../../apps/ml-system/Dockerfile.spark#L1), [Dockerfile.spark (line 40)](../../../../apps/ml-system/Dockerfile.spark#L40) | `089a835` |
+| [Dockerfile.kafka-connect.before (line 1)](Dockerfile.kafka-connect.before#L1), [Dockerfile.kafka-connect.before (line 7)](Dockerfile.kafka-connect.before#L7) | [Dockerfile.kafka-connect (line 1)](../../../../infra/docker/Dockerfile.kafka-connect#L1), [Dockerfile.kafka-connect (line 23)](../../../../infra/docker/Dockerfile.kafka-connect#L23) | `4683a24` |
+| [Dockerfile.mlflow.before (line 1)](Dockerfile.mlflow.before#L1), [Dockerfile.mlflow.before (line 12)](Dockerfile.mlflow.before#L12) | [Dockerfile.mlflow (line 1)](../../../../infra/docker/Dockerfile.mlflow#L1), [Dockerfile.mlflow (line 30)](../../../../infra/docker/Dockerfile.mlflow#L30) | `089a835` |

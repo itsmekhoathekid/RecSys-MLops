@@ -4,12 +4,12 @@ This document is the schema-as-code view of the current RecSys data platform. It
 
 The diagrams intentionally show keys, relationship columns, and important timestamps rather than repeating every descriptive attribute. The complete physical column definitions remain in these source-of-truth files:
 
-- [apps/data-platform/data-generator/src/schemas.py](../../../apps/data-platform/data-generator/src/schemas.py): 10 Source/Bronze schemas.
-- [apps/data-platform/src/metadata/governance_schemas.py](../../../apps/data-platform/src/metadata/governance_schemas.py): Bronze audit columns, all 9 Silver schemas, Gold schemas, and PK metadata published to DataHub.
-- [apps/data-platform/src/features/spark](../../../apps/data-platform/src/features/spark): batch feature transformations and output columns.
-- [apps/data-platform/src/features/flink/iceberg_feature_sink.py](../../../apps/data-platform/src/features/flink/iceberg_feature_sink.py): 6 streaming Iceberg table DDLs.
-- [apps/data-platform/src/feature_store/postgres_offline_store.py](../../../apps/data-platform/src/feature_store/postgres_offline_store.py): 4 PostgreSQL offline-store schemas.
-- [apps/data-platform/feature-store/feature_repo/features.py](../../../apps/data-platform/feature-store/feature_repo/features.py): Feast entities, FeatureViews, event timestamps, and created timestamps.
+- [schemas.py (line 11)](../../../apps/data-platform/data-generator/src/schemas.py#L11), [schemas.py (line 201)](../../../apps/data-platform/data-generator/src/schemas.py#L201): 10 Source/Bronze schemas and partition fields.
+- [governance_schemas.py (line 21)](../../../apps/data-platform/src/metadata/governance_schemas.py#L21), [governance_schemas.py (line 307)](../../../apps/data-platform/src/metadata/governance_schemas.py#L307): Bronze audit columns, Silver/feature schemas, and PK metadata published to DataHub.
+- Batch feature transformations and output columns: [build_user_sequence_features.py (line 1)](../../../apps/data-platform/src/features/spark/build_user_sequence_features.py#L1), [build_user_sequence_features.py (line 63)](../../../apps/data-platform/src/features/spark/build_user_sequence_features.py#L63), [build_user_aggregate_features.py (line 1)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L1), [build_user_aggregate_features.py (line 46)](../../../apps/data-platform/src/features/spark/build_user_aggregate_features.py#L46), and [build_item_features.py (line 1)](../../../apps/data-platform/src/features/spark/build_item_features.py#L1), [build_item_features.py (line 69)](../../../apps/data-platform/src/features/spark/build_item_features.py#L69).
+- [sinks/iceberg.py](../../../apps/data-platform/src/features/flink/sinks/iceberg.py): 6 streaming Iceberg table DDLs, catalog setup, row mapping, and statement-set writes.
+- [postgres_offline_store.py (line 21)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L21), [postgres_offline_store.py (line 167)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L167), [postgres_offline_store.py (line 213)](../../../apps/data-platform/src/feature_store/postgres_offline_store.py#L213): PostgreSQL offline-store schemas and write helpers.
+- [recsys_feature_definitions.py](../../../apps/data-platform/feature-store/feature_repo/recsys_feature_definitions.py): Feast entities, PostgreSQL sources, FeatureViews, timestamps, and services.
 
 ## Complete Table Inventory
 
@@ -17,7 +17,7 @@ The diagrams intentionally show keys, relationship columns, and important timest
 |---|---:|---|
 | Source PostgreSQL | 10 | `users`, `user_preferences`, `products`, `product_snapshots`, `sessions`, `recommendation_requests`, `impressions`, `behavior_events`, `orders`, `order_items` |
 | CDC Kafka | 10 | `cdc.users`, `cdc.user_preferences`, `cdc.products`, `cdc.product_snapshots`, `cdc.sessions`, `cdc.recommendation_requests`, `cdc.impressions`, `cdc.behavior_events`, `cdc.orders`, `cdc.order_items` |
-| Bronze Parquet | 10 | `bronze_users`, `bronze_user_preferences`, `bronze_products`, `bronze_product_snapshots`, `bronze_sessions`, `bronze_recommendation_requests`, `bronze_impressions`, `bronze_behavior_events`, `bronze_orders`, `bronze_order_items` |
+| Bronze Iceberg | 10 | `bronze_users`, `bronze_user_preferences`, `bronze_products`, `bronze_product_snapshots`, `bronze_sessions`, `bronze_recommendation_requests`, `bronze_impressions`, `bronze_behavior_events`, `bronze_orders`, `bronze_order_items` |
 | Silver Iceberg | 9 | `silver_clean_behavior_events`, `silver_rejected_behavior_events`, `silver_clean_impressions`, `silver_clean_recommendation_requests`, `silver_order_facts`, `silver_product_scd`, `silver_users`, `silver_products`, `silver_user_preferences` |
 | Gold batch Iceberg | 5 | `user_sequence_features`, `user_aggregate_features`, `item_features`, `ml_ranking_labels`, `ml_bst_training` |
 | Gold streaming Iceberg | 6 | `stream_behavior_events`, `stream_user_sequence_features`, `stream_user_aggregate_features`, `stream_item_features`, `streaming_quality_windows`, `stream_late_events_dlq` |
@@ -32,7 +32,7 @@ Total data entities shown below: 57. PostgreSQL and Redis feature entities are p
 |---|---|---|
 | Source | Business table name | `users`, `behavior_events` |
 | CDC | `cdc.<source_table>` | `cdc.behavior_events` |
-| Bronze | `bronze_<source_table>` in DataHub; physical Parquet path uses `<namespace>/<table>` | `bronze_orders` |
+| Bronze | `recsys.lakehouse.bronze_<source_table>` in the Iceberg catalog and DataHub | `bronze_orders` |
 | Silver dimension | `silver_<entity>` or `silver_<entity>_scd` | `silver_users`, `silver_product_scd` |
 | Silver fact | `silver_<subject>_facts` | `silver_order_facts` |
 | Silver clean/reject | `silver_clean_<subject>`, `silver_rejected_<subject>` | `silver_clean_behavior_events` |
@@ -467,8 +467,8 @@ flowchart LR
 |---|---|---|
 | Every `cdc.<table>` | Matching Source PostgreSQL `<table>` | Debezium after-image of the same primary-keyed entity. |
 | Every `bronze_<table>` | Matching generated Source `<table>` | One-to-one raw schema plus `source_run_id` and `lakehouse_ingestion_ts`. |
-| `silver_clean_behavior_events` | `bronze_behavior_events` | Normalize timestamps, derive `event_type_id`, retain latest `event_id`. |
-| `silver_rejected_behavior_events` | `bronze_behavior_events` | Duplicate rows rejected by the same `event_id` window. |
+| `silver_clean_behavior_events` | `bronze_behavior_events` | Normalize timestamps, derive `event_type_id`, and apply `.dropDuplicates(["event_id"])`. |
+| `silver_rejected_behavior_events` | `bronze_behavior_events` | Quarantine rows with unsupported behavior-event schema versions. |
 | `silver_clean_impressions` | `bronze_impressions` | Timestamp normalization and `impression_id` deduplication. |
 | `silver_clean_recommendation_requests` | `bronze_recommendation_requests` | Timestamp normalization and `request_context` defaulting. |
 | `silver_order_facts` | `bronze_orders`, `bronze_order_items` | Fact join on `order_id`; derives `is_valid_purchase`. |
@@ -484,4 +484,3 @@ flowchart LR
 | All six streaming Iceberg tables | `cdc.behavior_events` | Flink event-time processing, quality windows, and late-event routing. |
 | Four PostgreSQL offline tables | Matching Iceberg batch table; three feature tables also receive streaming upserts | Feast historical retrieval and materialization source. |
 | Three Redis online keys | Matching PostgreSQL FeatureView or direct Flink feature update | Latest entity features for low-latency serving. |
-

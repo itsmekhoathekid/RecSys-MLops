@@ -18,20 +18,15 @@
 
 ## Required Proof
 
-- Web API unit tests use `TestClient`, pytest fixtures, and mocked Redis/Triton services.
-- EP/BVA cases are visible in pytest IDs containing `equivalence-*` and `boundary-*`.
-- Property-based idempotency uses Hypothesis in `tests/unit/api_serving/test_validation_verification.py`.
+- Web API unit tests use `TestClient`, pytest fixtures, and mocked Redis/Triton services ([test_validation_verification.py (line 18)](../../../../tests/unit/api_serving/test_validation_verification.py#L18), [test_validation_verification.py (line 73)](../../../../tests/unit/api_serving/test_validation_verification.py#L73)).
+- EP/BVA cases are visible in pytest IDs containing `equivalence-*` and `boundary-*` ([test_validation_verification.py (line 75)](../../../../tests/unit/api_serving/test_validation_verification.py#L75), [test_validation_verification.py (line 127)](../../../../tests/unit/api_serving/test_validation_verification.py#L127)).
+- Property-based idempotency uses Hypothesis ([test_validation_verification.py (line 341)](../../../../tests/unit/api_serving/test_validation_verification.py#L341), [test_validation_verification.py (line 378)](../../../../tests/unit/api_serving/test_validation_verification.py#L378)).
 - Mutation score: 90.74%.
-- Locust HTML SLA report: `locust-api.html` after `validation_load_test.sh` runs.
+- Locust HTML SLA report: archived `locust-api.html`.
 
-## Commands
-
-```bash
-COVERAGE_MIN=90 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/component_ci.sh api
-MUTATION_TARGETS='apps/api-serving/src/ranking.py apps/api-serving/src/online_features.py' MUTATION_MUTANT_NAMES='ranking.x_format_top_k* online_features.x_get_online_features*' UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_mutation.sh
-RECSYS_LOAD_HOST=http://127.0.0.1:8088 UV_CACHE_DIR=.uv-cache bash jenkins/scripts/validation_load_test.sh
-bash jenkins/scripts/validation_evidence.sh
-```
+The original one-off evidence, mutation and load runners were removed from the
+production Jenkins script tree. This directory preserves their immutable
+coursework output only.
 
 ## Screenshot Checklist
 

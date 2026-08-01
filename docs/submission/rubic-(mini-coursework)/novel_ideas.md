@@ -4,48 +4,88 @@
 
 The first novel idea is to treat data quality as a live production signal rather than a batch-only
 validation report. The realtime generator deliberately produces duplicates, late arrivals,
-out-of-order events, hot-product skew, and periodic bursts. Flink evaluates those events with
+and periodic bursts. Flink evaluates those events with
 event-time windows and exports counters and freshness gauges. Prometheus scrapes the live Flink
 metrics and Grafana turns them into an operational Data Platform dashboard.
 
 This gives the platform team one place to answer three questions: **Is data still arriving? Is it
 fresh? Is its quality changing?** The dashboard also relates quality problems to downstream Redis
-and Iceberg feature-store writes, so an operator can distinguish a source-data problem from a sink
+and PostgreSQL/Redis feature-store writes, so an operator can distinguish a source-data problem from a sink
 or processing problem.
 
 ### Mermaid workflow
 
 ```mermaid
 flowchart LR
-    GEN["Realtime data generator<br/>duplicates, late data,<br/>out-of-order data, bursts"]
+    GEN["Realtime data generator<br/>duplicates, late data, bursts"]
     PG[("PostgreSQL source tables")]
     CDC["Debezium / Kafka Connect<br/>CDC"]
     KAFKA[("Kafka<br/>cdc.behavior_events")]
     FLINK["Flink event-time pipeline<br/>watermark + dedup +<br/>quality windows"]
     DLQ[("Late-event DLQ")]
-    ICE[("Iceberg streaming tables")]
+    OFFLINE[("PostgreSQL offline features")]
     REDIS[("Redis online features")]
-    METRICS["Meshed producer live metrics<br/>throughput, late, duplicate,<br/>freshness, burst state"]
+    METRICS["Producer live metrics<br/>throughput, late, duplicate,<br/>freshness, burst state"]
     PUSH[("Prometheus Pushgateway")]
     PROM[("Prometheus")]
     GRAFANA["Grafana<br/>Data Pipeline Observability"]
 
     GEN --> PG --> CDC --> KAFKA --> FLINK
     FLINK --> DLQ
-    FLINK --> ICE
+    FLINK --> OFFLINE
     FLINK --> REDIS
-    FLINK --> METRICS --> PUSH --> PROM --> GRAFANA
+    GEN --> METRICS --> PUSH --> PROM --> GRAFANA
 ```
 
-### Code reference
+### Metric collection flow
 
-| Focus | Code reference |
-| --- | --- |
-| Source issue injection | [`run_realtime_postgres_producer.py`](../../../apps/data-platform/data-generator/src/scripts/run_realtime_postgres_producer.py) — duplicate, late, out-of-order, and burst controls. |
-| Event-time quality metrics | [`realtime_stream_job.py`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py) — quality windows, freshness, and structured reconciliation output. |
-| Metric publication | [`pushgateway.py`](../../../apps/data-platform/src/monitoring/pushgateway.py), [`prometheus.yaml`](../../../infra/helm/recsys-observability/templates/prometheus.yaml) — publish and scrape runtime signals. |
-| Dashboard | [`data-pipeline-observability.json`](../../../infra/helm/recsys-observability/dashboards/data-pipeline-observability.json) — PromQL and panels for data quality and sink health. |
-| Regression contract | [`test_observability_contracts.py`](../../../tests/contract/test_observability_contracts.py) — verifies live queries are not replaced by constant demo series. |
+```mermaid
+flowchart LR
+    K["Kafka event"] --> O["MarkEventTimeStatus"]
+    O --> C["LateArrivalMetricCounters"]
+    C --> R["TaskManager Metric Registry"]
+    R --> E["PrometheusReporter :9249/metrics"]
+    E --> P["Prometheus TSDB"]
+    P --> G["Grafana"]
+
+    SP["Stream producer"] --> PG["Pushgateway :9091"]
+    PG --> P
+```
+
+The two branches use different collection models. Flink registers
+`late_arrivals_total`, `accepted_late_events_total`, and
+`too_late_events_total` in the TaskManager metric registry. The
+`PrometheusReporter` exposes the registry at `:9249/metrics`; Prometheus then
+**pulls** that endpoint through Kubernetes pod discovery. The TaskManager does
+not push metrics to Prometheus. In the second branch, the short-lived stream
+producer explicitly sends an HTTP `PUT` to Pushgateway, and Prometheus scrapes
+the retained Pushgateway series. Grafana queries both branches from the same
+Prometheus datasource.
+
+> **Official implementation note:**
+>
+> 1. [realtime_stream_job.py (line 142)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L142) attaches `MarkEventTimeStatus` to the stream; [late_policy.py (line 13)](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L13) creates `LateArrivalMetricCounters`; and [event_time.py (line 27)](../../../apps/data-platform/src/features/flink/event_time.py#L27) registers those counters through `runtime_context.get_metrics_group()`. This follows the official [Flink Metrics API](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/ops/metrics/#registering-metrics).
+> 2. [Dockerfile.flink (line 74)](../../../apps/data-platform/Dockerfile.flink#L74) verifies that the Prometheus reporter plugin is present. [kafka-redis-flink.yaml (line 342)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L342) injects `PrometheusReporterFactory` through `FLINK_PROPERTIES`, [values.yaml (line 136)](../../../infra/helm/recsys-data-platform/values.yaml#L136) resolves the port to `9249`, and [kafka-redis-flink.yaml (line 353)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L353) declares that TaskManager container port. This implements the official [Flink PrometheusReporter](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/deployment/metric_reporters/#prometheus) pull endpoint at `:9249/metrics`.
+> 3. [kafka-redis-flink.yaml (line 302)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L302) annotates the TaskManager pod with the scrape path and port. [prometheus.yaml (line 94)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L94) uses official Prometheus [Kubernetes service discovery](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config) and [relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) to build the target and scrape it. This is a pull path: the TaskManager exposes metrics, while Prometheus initiates `GET http://<taskmanager-pod-ip>:9249/metrics`.
+
+### Code, Helm, and configuration reference by flow block
+
+| Flow block | Code / Helm / configuration | Runtime responsibility |
+| --- | --- | --- |
+| `K` — Kafka event | [source.py (line 132)](../../../apps/data-platform/src/features/flink/source.py#L132) builds `KafkaSource` with broker, topic, group, offsets, and fetch settings; [realtime_stream_job.py (line 123)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L123) attaches it to the Flink graph with the watermark strategy. | Continuously reads `cdc.behavior_events` and assigns event-time watermarks before classification. |
+| `O` — `MarkEventTimeStatus` | [realtime_stream_job.py (line 142)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L142) installs the keyed operator; [late_policy.py (line 9)](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L9) compares each event timestamp with the current watermark and allowed-lateness policy. | Classifies each record as on-time, accepted-late, or too-late. |
+| `C` — `LateArrivalMetricCounters` | [late_policy.py (line 13)](../../../apps/data-platform/src/features/flink/operators/late_policy.py#L13) creates the counters from the operator runtime context; [event_time.py (line 12)](../../../apps/data-platform/src/features/flink/event_time.py#L12) registers `late_arrivals_total`, `accepted_late_events_total`, and `too_late_events_total`; [event_time.py (line 30)](../../../apps/data-platform/src/features/flink/event_time.py#L30) increments the matching outcome. | Converts the event-time classification into Flink-native cumulative counters. |
+| `R` — TaskManager Metric Registry | [event_time.py (line 27)](../../../apps/data-platform/src/features/flink/event_time.py#L27) calls `runtime_context.get_metrics_group()`; [kafka-redis-flink.yaml (line 286)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L286) defines the TaskManager workload that owns the running operator/subtask. | Stores operator metrics inside the TaskManager metric registry; application code does not call Prometheus directly. |
+| `E` — `PrometheusReporter :9249/metrics` | [Dockerfile.flink (line 74)](../../../apps/data-platform/Dockerfile.flink#L74) verifies the Flink Prometheus reporter plugin JAR; [kafka-redis-flink.yaml (line 342)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L342) injects `PrometheusReporterFactory` and the reporter port through `FLINK_PROPERTIES`; [values.yaml (line 136)](../../../infra/helm/recsys-data-platform/values.yaml#L136) resolves that port to `9249`; [kafka-redis-flink.yaml (line 353)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L353) declares the TaskManager metrics container port. | Flink starts the bundled reporter, reads the TaskManager registry, and serves Prometheus text format at `/metrics` on port `9249`. |
+| `E -> P` — Prometheus pulls Flink metrics | [kafka-redis-flink.yaml (line 302)](../../../infra/helm/recsys-data-platform/templates/kafka-redis-flink.yaml#L302) annotates TaskManager pods with scrape path and port; [prometheus.yaml (line 94)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L94) discovers annotated Kubernetes pods and rewrites the scrape address to the annotated port. | Prometheus performs `GET http://<taskmanager-pod-ip>:9249/metrics`; the TaskManager does **not** push to Prometheus. |
+| `P` — Prometheus TSDB | [prometheus.yaml (line 40)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L40) sets the 15-second scrape interval; [prometheus.yaml (line 225)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L225) starts Prometheus with `/prometheus` as its TSDB path and mounts its data volume; [observability values.yaml (line 15)](../../../infra/helm/recsys-observability/values.yaml#L15) sets seven-day retention. | Scrapes and stores both Flink and Pushgateway time series for PromQL queries. |
+| `P -> G` — Grafana | [grafana.yaml (line 13)](../../../infra/helm/recsys-observability/templates/grafana.yaml#L13) provisions `http://recsys-prometheus:9090` as the default datasource; [data-pipeline-observability.json (line 18)](../../../infra/helm/recsys-observability/dashboards/data-pipeline-observability.json#L18) queries Flink throughput; [line 27](../../../infra/helm/recsys-observability/dashboards/data-pipeline-observability.json#L27) queries the producer late-event series. | Grafana reads Prometheus with PromQL; it does not scrape TaskManagers or Pushgateway itself. |
+| `SP` — Stream producer | [producer.py (line 64)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L64) publishes source totals for events, late events, duplicates, freshness, and burst state; [metrics.py (line 4)](../../../apps/data-platform/data-generator/src/streaming/metrics.py#L4) assigns job name `recsys_streaming_source_live` and grouping labels. | Emits source-side metrics from the short-lived producer process. These series are separate from Flink-native counters. |
+| `SP -> PG` — Pushgateway client configuration | [configmap.yaml (line 94)](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L94) injects `PUSHGATEWAY_URL`; [data-platform values.yaml (line 263)](../../../infra/helm/recsys-data-platform/values.yaml#L263) sets the in-cluster URL to port `9091`; [pushgateway.py (line 38)](../../../apps/data-platform/src/monitoring/pushgateway.py#L38) renders Prometheus samples and sends an HTTP `PUT`. | Pushes producer metrics to a persistent scrape target because the producer may terminate between Prometheus scrape intervals. |
+| `PG` — Pushgateway `:9091` | [pushgateway.yaml (line 1)](../../../infra/helm/recsys-observability/templates/pushgateway.yaml#L1) deploys Pushgateway; [pushgateway.yaml (line 23)](../../../infra/helm/recsys-observability/templates/pushgateway.yaml#L23) exposes its ClusterIP service on `9091`. | Retains the most recently pushed producer metric group until Prometheus collects it. |
+| `PG -> P` — Prometheus pulls Pushgateway | [prometheus.yaml (line 49)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L49) defines the static `recsys-pushgateway` scrape job with `honor_labels: true`. | Prometheus scrapes Pushgateway on `9091` and stores the producer series in the same TSDB as Flink metrics. |
+
+Supporting proof: [problem_pipeline.py (line 23)](../../../apps/data-platform/data-generator/src/streaming/problem_pipeline.py#L23) injects burst, late-arrival, and duplicate scenarios, while [test_observability_contracts.py (line 156)](../../../tests/contract/test_observability_contracts.py#L156) verifies that dashboard queries use live metrics rather than constant demo series.
 
 ### Image proof
 
@@ -63,8 +103,7 @@ clients, and offline drift scores.
 ![Grafana offline generator and data-quality evidence](../../pngs/grafana-offline-data-quality.png)
 
 **Figure 2 — Offline quality and volume evidence.** This continuation of the same dashboard shows
-generated row volume and cardinality together with duplicate, late-arrival, out-of-order, skew, and
-schema-evolution indicators.
+generated row volume and cardinality together with exact-duplicate, skew, and schema-evolution indicators.
 
 > **Note:** The panels distinguish defects deliberately injected before processing from the cleaned
 > result after deduplication. A zero post-deduplication value is therefore evidence of the correction,
@@ -75,7 +114,7 @@ schema-evolution indicators.
 - Open Grafana with `kubectl port-forward -n observability svc/recsys-grafana 3000:3000`, then select **RecSys / Data Pipeline Observability**.
 - The screenshots use the **Last 5 minutes** range and were captured after a controlled five-minute
   producer run with `40 events/tick`, `14%` duplicate probability, `28%` late-arrival probability,
-  `10%` out-of-order probability, and an `8x` burst every fifth tick.
+  and an `8x` burst every fifth tick.
 - The proof window is **2026-07-12 22:41:14–22:46:46 (Asia/Ho_Chi_Minh)**. Use this absolute range
   if the historical run needs to be inspected again after the live series expires.
 - A nearly horizontal line is valid only when the measured rate is stable. The proof should still show movement or spikes around burst ticks; a permanently constant value across unrelated panels is not sufficient evidence.
@@ -136,20 +175,45 @@ flowchart LR
     DEPLOY -. rolls out .-> SUPERSET
 ```
 
-### Code reference
+### Code, Helm, and configuration reference by flow block
 
-| Focus | Code reference |
-| --- | --- |
-| Silver isolation and lineage | [`sync_silver.py`](../../../apps/analytics/src/sync_silver.py) — snapshots operational Silver into the analytics catalog. |
-| Orchestration | [`analytics_dag.py`](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py) — orders Silver sync before dbt build/test. |
-| Gold semantics and tests | [`models/marts/`](../../../apps/analytics/models/marts), [`schema.yml`](../../../apps/analytics/models/schema.yml) — dimensions, facts, marts, grains, and quality tests. |
-| Read-only query boundary | [`trino-config.yaml`](../../../infra/helm/recsys-analytics/templates/trino-config.yaml) — shared catalog and restricted Superset access. |
-| BI provisioning | [`bootstrap_dashboards.py`](../../../apps/analytics/superset/bootstrap_dashboards.py), [`superset-dashboard-bootstrap.yaml`](../../../infra/helm/recsys-analytics/templates/superset-dashboard-bootstrap.yaml) — idempotent datasets, charts, and dashboard deployment. |
-| Main-flow change detection | [`Jenkinsfile`](../../../Jenkinsfile), [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py) — maps analytics application, tests, and Helm changes to `RUN_ANALYTICS=true` and enables component CI, build, and deploy stages. |
-| Analytics CI gates | [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh) — runs analytics unit/contract tests plus Helm lint and template validation. |
-| Image build and publish | [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh) — builds the analytics Spark, dbt, Superset, and shared Airflow images with an immutable commit tag. |
-| Deployment | [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) — upgrades the data-platform Airflow runtime and the `recsys-analytics` Helm release, then waits for its workloads. |
-| Jenkins analytics view | [`jenkins-init-configmap.yaml`](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml) — provisions `RecSys-Analytics-BI-CICD` under the `10 Analytics And BI` view with `FORCE_COMPONENTS=analytics`. |
+| Flow block | Code / Helm / configuration | Runtime responsibility |
+| --- | --- | --- |
+| `SILVER` — Operational Silver Iceberg | [sync_silver.py (line 21)](../../../apps/analytics/src/sync_silver.py#L21) defines the source Hadoop catalog and warehouse; [config.yaml (line 17)](../../../infra/helm/recsys-analytics/templates/config.yaml#L17) injects the operational catalog and warehouse into analytics jobs. | Keeps the operational Silver catalog as a source boundary; BI users do not query it directly. |
+| `SYNC` — Spark analytics sync | [sync_silver.py (line 61)](../../../apps/analytics/src/sync_silver.py#L61) configures source and target Iceberg catalogs; [sync_silver.py (line 97)](../../../apps/analytics/src/sync_silver.py#L97) reads each curated Silver table and performs `createOrReplace()` into analytics staging; [Dockerfile.spark](../../../apps/analytics/Dockerfile.spark) packages the sync runtime. | Creates reproducible analytics snapshots without coupling BI queries to operational Silver workloads. |
+| `STAGING` — Analytics staging Iceberg | [sync_silver.py (line 67)](../../../apps/analytics/src/sync_silver.py#L67) configures the isolated JDBC-backed target catalog; [secret.yaml (line 9)](../../../infra/helm/recsys-analytics/templates/secret.yaml#L9) provides JDBC credentials; [catalog-postgres.yaml (line 1)](../../../infra/helm/recsys-analytics/templates/catalog-postgres.yaml#L1) deploys the shared Iceberg catalog database; [values.yaml (line 21)](../../../infra/helm/recsys-analytics/values.yaml#L21) defines its database and warehouse. | Stores analytics metadata separately while keeping table data in the analytics Iceberg warehouse. |
+| `DBT` — dbt Core on Trino | [dbt_project.yml](../../../apps/analytics/dbt_project.yml) defines the project and model paths; [profiles.yml](../../../apps/analytics/profiles/profiles.yml) connects dbt to Trino; [analytics_dag.py (line 62)](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py#L62) runs `dbt build`; [Dockerfile.dbt](../../../apps/analytics/Dockerfile.dbt) packages dbt and its dependencies. | Executes staging, intermediate, mart models, and their data tests as one dependency-aware build. |
+| `CORE` — Gold dimensions and facts | [dim_product.sql](../../../apps/analytics/models/marts/core/dim_product.sql), [fct_order_items.sql](../../../apps/analytics/models/marts/core/fct_order_items.sql), and [fct_recommendation_impressions.sql](../../../apps/analytics/models/marts/core/fct_recommendation_impressions.sql) define reusable dimensions and facts; [schema.yml (line 1)](../../../apps/analytics/models/schema.yml#L1) defines grain and quality tests. | Produces governed Gold entities shared by downstream business marts. |
+| `MARTS` — Gold recommendation marts | [mart_recsys_funnel_daily.sql](../../../apps/analytics/models/marts/recsys/mart_recsys_funnel_daily.sql), [mart_product_performance_daily.sql](../../../apps/analytics/models/marts/recsys/mart_product_performance_daily.sql), and [mart_ab_experiment_daily.sql](../../../apps/analytics/models/marts/recsys/mart_ab_experiment_daily.sql) implement funnel, product, and experiment semantics; [schema.yml (line 50)](../../../apps/analytics/models/schema.yml#L50) tests mart keys and required measures. | Converts facts into dashboard-ready daily business metrics. |
+| `SUPERSET` — Read-only semantic datasets | [trino-config.yaml (line 24)](../../../infra/helm/recsys-analytics/templates/trino-config.yaml#L24) configures Trino's shared Iceberg JDBC catalog; [trino-config.yaml (line 45)](../../../infra/helm/recsys-analytics/templates/trino-config.yaml#L45) restricts the `superset` user to `SELECT` on `core` and `recsys`; [superset.yaml (line 33)](../../../infra/helm/recsys-analytics/templates/superset.yaml#L33) initializes Superset and registers the Trino database URI. | Enforces the read-only BI boundary between Superset and tested Gold models. |
+| `DASH` — RecSys Business Pulse | [bootstrap_dashboards.py (line 203)](../../../apps/analytics/superset/bootstrap_dashboards.py#L203) defines chart specifications; [bootstrap_dashboards.py (line 447)](../../../apps/analytics/superset/bootstrap_dashboards.py#L447) upserts the dashboard; [bootstrap_dashboards.py (line 473)](../../../apps/analytics/superset/bootstrap_dashboards.py#L473) upserts semantic datasets; [superset-dashboard-bootstrap.yaml (line 1)](../../../infra/helm/recsys-analytics/templates/superset-dashboard-bootstrap.yaml#L1) runs the idempotent bootstrap Job. | Reconciles three datasets and twelve charts into a reproducible published dashboard. |
+| `AIRFLOW` — Daily orchestration | [analytics_dag.py (line 28)](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py#L28) creates isolated Kubernetes tasks; [analytics_dag.py (line 49)](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py#L49) defines the daily DAG; [analytics_dag.py (line 68)](../../../apps/analytics/orchestration/airflow/dags/analytics_dag.py#L68) enforces `sync_silver >> dbt_build`; [config.yaml (line 21)](../../../infra/helm/recsys-analytics/templates/config.yaml#L21) injects the Helm-configured schedule. | Runs the Silver snapshot before dbt transformation and prevents overlapping DAG runs. |
+| `DATAHUB` — Runtime lineage | [sync_silver.py (line 107)](../../../apps/analytics/src/sync_silver.py#L107) wraps the sync in `RuntimeLineageRecorder`; [sync_silver.py (line 116)](../../../apps/analytics/src/sync_silver.py#L116) records Silver inputs and analytics staging outputs; [runtime_lineage.py](../../../apps/data-platform/src/metadata/runtime_lineage.py) publishes the runtime lineage event. | Records the actual cross-catalog copy executed by Spark, rather than only static model relationships. |
+| `GIT -> JENKINS -> DETECT` | [Jenkinsfile (line 1)](../../../Jenkinsfile#L1) defines the shared pipeline; [detector.py (line 420)](../../../jenkins/python/change_detection/detector.py#L420) maps analytics paths; [detector.py (line 507)](../../../jenkins/python/change_detection/detector.py#L507) emits component flags consumed by Jenkins. | Selects `RUN_ANALYTICS=true` only when analytics application, test, or Helm paths change. |
+| `CI` — Analytics validation | [component_ci.sh (line 209)](../../../jenkins/scripts/entrypoints/component_ci.sh#L209) runs analytics unit and contract tests; [component_ci.sh (line 214)](../../../jenkins/scripts/entrypoints/component_ci.sh#L214) validates the analytics Helm chart. | Blocks image publication when analytics logic, contracts, or Kubernetes manifests fail. |
+| `BUILD -> REGISTRY` | [component_build_publish.sh (line 189)](../../../jenkins/scripts/entrypoints/component_build_publish.sh#L189) selects analytics builds; [component_build_publish.sh (line 195)](../../../jenkins/scripts/entrypoints/component_build_publish.sh#L195) builds the Spark, dbt, Superset, and shared Airflow images; [component_build_publish.sh (line 262)](../../../jenkins/scripts/entrypoints/component_build_publish.sh#L262) publishes immutable commit-tagged images. | Produces traceable runtime artifacts and uploads them to GCP Artifact Registry. |
+| `DEPLOY` — Helm rollout | [component_deploy.sh (line 652)](../../../jenkins/scripts/entrypoints/component_deploy.sh#L652) upgrades the data-platform Airflow image/DAG runtime; [component_deploy.sh (line 690)](../../../jenkins/scripts/entrypoints/component_deploy.sh#L690) upgrades `recsys-analytics` and waits for its workloads. | Rolls the same tested image tags into Airflow, Trino, Spark/dbt tasks, Superset, and bootstrap resources after merge to `main`. |
+| `VIEW` — Jenkins proof view | [jenkins-init-configmap.yaml (line 391)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L391) provisions the analytics job; [jenkins-init-configmap.yaml (line 470)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L470) adds it to `10 Analytics And BI` with `FORCE_COMPONENTS=analytics`. | Provides a dedicated proof entry point while reusing the same shared Jenkinsfile and gates. |
+
+### Superset-to-Trino query reference
+
+During Superset initialization, Helm registers the read-only Trino connection defined in
+[superset.yaml (line 46)](../../../infra/helm/recsys-analytics/templates/superset.yaml#L46):
+
+```bash
+superset set-database-uri \
+  --database_name RecSysAnalytics \
+  --uri trino://superset@recsys-analytics-trino:8080/analytics/recsys
+```
+
+Here, `superset` is the restricted Trino user, `analytics` is the Iceberg catalog, and `recsys` is
+the default Gold schema. When a dashboard chart is opened or refreshed, Superset generates SQL from
+the semantic dataset and chart configuration, sends it to this Trino endpoint, and renders the result
+returned from the Iceberg-backed Gold marts. The bootstrap script stores those virtual-dataset SQL
+definitions in [bootstrap_dashboards.py (line 20)](../../../apps/analytics/superset/bootstrap_dashboards.py#L20)
+and reconciles the datasets through the Superset API in
+[bootstrap_dashboards.py (line 473)](../../../apps/analytics/superset/bootstrap_dashboards.py#L473);
+it does not copy or materialize the underlying analytics data.
 
 ### Image proof
 

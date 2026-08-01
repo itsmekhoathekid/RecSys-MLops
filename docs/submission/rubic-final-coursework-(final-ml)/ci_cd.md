@@ -18,7 +18,7 @@ for all component pipelines:
 - `Checkout`: Jenkins checks out the monorepo and fetches remote refs so path
   detection can compare against `HEAD~1` or the PR target branch.
 - `Detect Changed Components`: runs
-  `jenkins/scripts/detect_changed_components.py`, writes `.ci-components.env`,
+  `jenkins/python/change_detection/detector.py`, writes `.ci-components.env`,
   sets `RUN_<COMPONENT>` flags, and prints `CHANGED_COMPONENTS`.
 - `Python Env`: only runs when Python-backed components are enabled; it creates
   an isolated `uv` environment for tests and pipeline compilation.
@@ -27,7 +27,7 @@ for all component pipelines:
 - `Docker Login`: authenticates to GCP Artifact Registry with Jenkins
   credentials or the GKE node metadata token.
 - `Component Build And Publish`: builds component images, tags them with the Git
-  commit, pushes them to `asia-southeast1-docker.pkg.dev/fsds-coursework/recsys`,
+  commit, pushes them to `asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys`,
   and writes `.ci-image-manifest/<component>.env`.
 - `Component Deploy Or Update`: runs only for `main` or manual proof jobs with
   `FORCE_DEPLOY=true`; it applies Helm/Kubeflow/KServe updates, updates image
@@ -40,13 +40,13 @@ for all component pipelines:
 
 | Component | Triggered by changed paths |
 | --- | --- |
-| `materialize` | `apps/data-platform/src/feature_store/`, `apps/data-platform/src/local/`, data-platform metadata/config paths, `Dockerfile.dataflow-cli` |
+| `materialize` | `apps/data-platform/src/feature_store/`, Spark batch entrypoint, data-platform metadata/config paths, `Dockerfile.dataflow-cli` |
 | `training` | `apps/ml-system/`, `infra/kubeflow/`, `infra/helm/ray-cluster/`, `infra/helm/recsys-runtime/`, `infra/helm/mlflow-stack/`, `configs/local/bst*.yaml` |
 | `dp1` | `apps/data-platform/data-generator/`, `apps/data-platform/src/ingest/`, `raw_ingestion_dag.py`, `postgres_source.yaml`, `kafka_topics.yaml`, Kafka Connect/Debezium Docker paths |
 | `dp2` | Spark feature code, lakehouse paths, `batch_feature_pipeline_dag.py`, `apps/data-platform/Dockerfile.spark`, `configs/local/spark_batch*.yaml` |
 | `dp3` | Offline feature table and BST prep paths, `batch_feature_pipeline_dag.py`, Spark/dataflow runtime paths |
 | `api` | `apps/api-serving/`, serving chart paths, API unit tests, gateway/serving contract tests |
-| `kserve` | `infra/helm/recsys-serving/`, `jenkins/scripts/model_cd.py`, model promotion code/tests, serving contract tests |
+| `kserve` | `infra/helm/recsys-serving/`, `jenkins/python/model_cd/cli.py`, model promotion code/tests, serving contract tests |
 | `stream_offline` | Flink feature code, lakehouse/offline sink paths, `apps/data-platform/Dockerfile.flink`, `flink_streaming.yaml` |
 | `stream_online` | Flink feature code, online feature store paths, Redis online-store config, `apps/data-platform/Dockerfile.flink` |
 
@@ -69,13 +69,13 @@ from the promotion manifest instead of building a new serving image.
 
 | Responsibility | Code reference |
 | --- | --- |
-| Pipeline stages, parallel branches, and deploy gate | [`Jenkinsfile`](../../../Jenkinsfile) |
-| Path-to-component mapping | [`detect_changed_components.py`](../../../jenkins/scripts/detect_changed_components.py) |
-| Component tests and coverage | [`component_ci.sh`](../../../jenkins/scripts/component_ci.sh) |
-| Image build, tag, push, and manifest | [`component_build_publish.sh`](../../../jenkins/scripts/component_build_publish.sh) |
-| Helm/Kubernetes/Kubeflow deployment and readiness | [`component_deploy.sh`](../../../jenkins/scripts/component_deploy.sh) |
-| Promoted Triton model CD | [`model_cd.py`](../../../jenkins/scripts/model_cd.py) |
-| Jenkins jobs, webhook, and views | [`jenkins-init-configmap.yaml`](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml) |
+| Pipeline stages, parallel branches, and deploy gate | [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 336)](../../../Jenkinsfile#L336) |
+| Path-to-component mapping | [detector.py (line 420)](../../../jenkins/python/change_detection/detector.py#L420), [detector.py (line 507)](../../../jenkins/python/change_detection/detector.py#L507) |
+| Component tests and coverage | [component_ci.sh (line 1)](../../../jenkins/scripts/entrypoints/component_ci.sh#L1), [component_ci.sh (line 281)](../../../jenkins/scripts/entrypoints/component_ci.sh#L281) |
+| Image build, tag, push, and manifest | [component_build_publish.sh (line 1)](../../../jenkins/scripts/entrypoints/component_build_publish.sh#L1), [component_build_publish.sh (line 292)](../../../jenkins/scripts/entrypoints/component_build_publish.sh#L292) |
+| Helm/Kubernetes/Kubeflow deployment and readiness | [component_deploy.sh (line 1)](../../../jenkins/scripts/entrypoints/component_deploy.sh#L1), [component_deploy.sh (line 829)](../../../jenkins/scripts/entrypoints/component_deploy.sh#L829) |
+| Promoted Triton model CD | [model_cd.py (line 129)](../../../jenkins/python/model_cd/cli.py#L129), [model_cd.py (line 559)](../../../jenkins/python/model_cd/cli.py#L559) |
+| Jenkins jobs, webhook, and views | [jenkins-init-configmap.yaml (line 330)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L330), [jenkins-init-configmap.yaml (line 495)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L495) |
 
 
 ## CI/CD For Pipelines
@@ -147,12 +147,14 @@ successful rollout/readiness check.
 
 **Strategy:** run this CI/CD branch when materialization or Feast feature-store
 paths change, especially `apps/data-platform/src/feature_store/`,
-`apps/data-platform/src/local/`, feature-store repo/config files, data-platform
-metadata code, or shared dataflow CLI Docker/runtime files.
+`apps/data-platform/src/features/spark/spark_batch_entrypoint.py`, feature-store
+repo/config files, data-platform metadata code, or shared dataflow CLI
+Docker/runtime files.
 
 **Test:** `component_ci.sh materialize` runs data-platform unit tests,
 dataflow Docker contract tests, any matching integration suite that exists, and
-coverage for `feature_store.online_writer` and `local.run_batch_features`.
+coverage for `feature_store.online_writer` and
+`features.spark.spark_batch_entrypoint`.
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/cicd_materialize_test.png)
 
@@ -359,7 +361,7 @@ feature table runtime update.
 **Strategy:** run this CI/CD branch when Triton/KServe serving chart, model
 promotion, model CD script, or serving contract paths change, especially
 `infra/helm/recsys-serving/`, `apps/ml-system/src/registry/model_promotion.py`,
-`jenkins/scripts/model_cd.py`, `tests/unit/ml_system/test_model_promotion.py`,
+`jenkins/python/model_cd/cli.py`, `tests/unit/ml_system/test_model_promotion.py`,
 and `tests/contract/test_serving_contracts.py`.
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/kserve_cicd_ui.png)
@@ -423,7 +425,7 @@ Kubeflow training/retraining pipeline
   -> promote-bst-model
   -> Trigger KServe CD
   -> Jenkins RecSys-KServe-Model-CD
-  -> jenkins/scripts/model_cd.py --apply
+  -> jenkins/python/model_cd/cli.py --apply
   -> Helm upgrade recsys-serving
   -> KServe/Triton rolling update
 ```
@@ -437,14 +439,14 @@ release.
 
 **Code reference:**
 
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): defines the `trigger_kserve_model_cd` KFP component.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): sets the default promotion score threshold to `0.0`.
-- [apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py): wires `Trigger KServe CD` after `promote-bst-model`.
-- [apps/ml-system/src/cli/trigger_kserve_cd.py](../../../apps/ml-system/src/cli/trigger_kserve_cd.py): loads the promotion manifest, checks the metric gate, and triggers Jenkins.
-- [apps/ml-system/src/cli/trigger_kserve_cd.py](../../../apps/ml-system/src/cli/trigger_kserve_cd.py): posts the Jenkins build parameters for `RecSys-KServe-Model-CD`.
-- [jenkins/KServeModelCD.Jenkinsfile](../../../jenkins/KServeModelCD.Jenkinsfile): defines the dedicated post-promotion Jenkins CD job.
-- [jenkins/scripts/component_deploy.sh](../../../jenkins/scripts/component_deploy.sh): runs the production KServe model CD path with `model_cd.py --apply`.
-- [infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml): seeds the Jenkins job and the `06A KServe Model CD` view.
+- [bst_training_pipeline.py (line 246)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L246), [bst_training_pipeline.py (line 274)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L274): defines the `trigger_kserve_model_cd` KFP component.
+- [bst_training_pipeline.py (line 280)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L280), [bst_training_pipeline.py (line 327)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L327): sets the default promotion score threshold to `0.0`.
+- [bst_training_pipeline.py (line 442)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L442), [bst_training_pipeline.py (line 470)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L470): wires `Trigger KServe CD` after `promote-bst-model`.
+- [trigger_kserve_cd.py (line 299)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L299), [trigger_kserve_cd.py (line 382)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L382): loads the promotion manifest, checks the metric gate, and triggers Jenkins.
+- [trigger_kserve_cd.py (line 191)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L191), [trigger_kserve_cd.py (line 268)](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L268): posts the Jenkins build parameters for `RecSys-KServe-Model-CD`.
+- [KServeModelCD.Jenkinsfile (line 1)](../../../jenkins/KServeModelCD.Jenkinsfile#L1), [KServeModelCD.Jenkinsfile (line 137)](../../../jenkins/KServeModelCD.Jenkinsfile#L137): defines the dedicated post-promotion Jenkins CD job.
+- [component_deploy.sh (line 513)](../../../jenkins/scripts/entrypoints/component_deploy.sh#L513), [component_deploy.sh (line 568)](../../../jenkins/scripts/entrypoints/component_deploy.sh#L568): runs the production KServe model CD path with `model_cd.py --apply`.
+- [jenkins-init-configmap.yaml (line 373)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L373), [jenkins-init-configmap.yaml (line 495)](../../../infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml#L495): seeds the Jenkins job and the `06A KServe Model CD` view.
 
 
 

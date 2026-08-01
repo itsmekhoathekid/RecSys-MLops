@@ -4,6 +4,7 @@ The current Feast store is:
 
 | Layer | Backing system | Role |
 | --- | --- | --- |
+| Feast registry | SQL registry in the offline-store PostgreSQL database/schema `feature_store` | Shared metadata source for CI/CD, materialization, training, and online serving. |
 | Feast offline store | Dedicated PostgreSQL service `feature-postgres.recsys-dataflow.svc.cluster.local`, database/schema `feature_store` | Native Feast point-in-time retrieval and `materialize-incremental` source. |
 | Feast online store | Redis | Low-latency feature serving for API services and recommendation inference. |
 
@@ -17,12 +18,59 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 
 ## Airflow Data Pipeline For Incremental Materialize Offline -> Online Store
 
-### Code Reference
+The referenced Airflow object is the dedicated `recsys_feast_materialize` DAG,
+not the removed `k8s_data_platform_dag` DAG ID. Its source module retains the
+historical filename, but the deployed DAG contains only the materialization
+stages shown below.
 
-- [`k8s_data_platform_dag.py`](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py): separate batch refresh and `recsys_feast_materialize` DAGs.
-- [`spark_batch_entrypoint.py`](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py), [`postgres_offline_store.py`](../../../apps/data-platform/src/feature_store/postgres_offline_store.py): build and write Feast-compatible PostgreSQL tables.
-- [`feature_store.yaml`](../../../apps/data-platform/feature-store/feature_repo/feature_store.yaml), [`features.py`](../../../apps/data-platform/feature-store/feature_repo/features.py): PostgreSQL/Redis stores, FeatureViews, and `bst_ranking_v1`.
-- [`values.yaml`](../../../infra/helm/recsys-data-platform/values.yaml), [`configmap.yaml`](../../../infra/helm/recsys-data-platform/templates/configmap.yaml): materialization schedule wiring.
+```mermaid
+flowchart LR
+    C["Jenkins component transaction<br/>feast plan + feast apply"] --> S["PostgreSQL SQL registry"]
+    P["PostgreSQL Feast offline store"] --> M["1. Materialize incrementally<br/>up to current UTC time"]
+    S --> M
+    M --> R["Redis Feast online store"]
+    R --> V["2. Validate feature keys<br/>and non-empty payloads"]
+```
+
+### Materialize DAG Reference Code
+
+```python
+with DAG(
+    dag_id="recsys_feast_materialize",
+    start_date=datetime(2026, 1, 1),
+    schedule=env_schedule("FEAST_MATERIALIZE_DAG_SCHEDULE", "20 */2 * * *"),
+    catchup=False,
+    max_active_runs=1,
+    tags=["recsys", "feast", "materialize", "online-store"],
+) as recsys_feast_materialize:
+    materialize_incremental = pod_task(
+        "feast_materialize_incremental",
+        DATAFLOW_IMAGE,
+        FEAST_MATERIALIZE_INCREMENTAL_COMMAND,
+    )
+    validate_online_store = pod_task(
+        "verify_redis_online_store_updated",
+        DATAFLOW_IMAGE,
+        VERIFY_REDIS_ONLINE_STORE_COMMAND,
+    )
+
+    materialize_incremental >> validate_online_store
+```
+
+Source: [`recsys_feast_materialize` DAG definition](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L153) and [ordered dependencies](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py#L175).
+
+### DAG Stages
+
+| Stage | Task and command | Result | Code reference |
+| ---: | --- | --- | --- |
+| 1 | `feast_materialize_incremental`: `feast -c ... materialize-incremental <UTC time>` | Reads feature rows newer than the previous materialization boundary from PostgreSQL and writes the latest values to Redis. | [DAG source](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py), [FeatureViews](../../../apps/data-platform/feature-store/feature_repo/recsys_feature_definitions.py) |
+| 2 | `verify_redis_online_store_updated`: `python -m validate.governance_contracts streaming-redis` | Fails the DAG unless Redis contains non-empty user-sequence, user-aggregate, and item-feature keys. | [DAG source](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py), [Redis checks](../../../apps/data-platform/src/validate/governance_contracts.py) |
+
+`feast plan` and `feast apply` run before this DAG in the Jenkins materialize
+component transaction. Jenkins snapshots the current SQL registry project and
+restores it if apply, materialization, or validation fails.
+
+Every DAG stage uses the shared [`KubernetesPodOperator` factory](../../../apps/data-platform/src/orchestration/airflow/dags/k8s_data_platform_dag.py), imports the platform ConfigMap and Secret, streams logs, and deletes its temporary pod after completion.
 
 ### Image Proof Of Feast Incremental Materialize On Airflow Graph
 
@@ -30,10 +78,12 @@ Kafka CDC topic cdc.behavior_events -> Flink offline-store job -> PostgreSQL Fea
 
 **Note:** The `recsys_feast_materialize` DAG runs every 2 hours, at minute 20
 (`20 */2 * * *`). The DAG focuses only on moving features from the PostgreSQL
-Feast offline store into the Redis online store: `apply_feast_feature_repo` ->
+Feast offline store into the Redis online store:
 `feast_materialize_incremental` -> `verify_redis_online_store_updated`. The
-upstream offline-store refresh is handled by `recsys_batch_feature_pipeline`,
-and drift/retrain checks are handled by the separate
+upstream batch refresh is handled by
+[`recsys_dp3_offline_feature_table`](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py#L274),
+while the Flink offline-store job writes continuous updates. Drift/retrain
+checks are handled by the separate
 `recsys_feature_drift_monitoring` DAG.
 
 ### Commands To Capture Proof
@@ -60,8 +110,9 @@ kubectl exec -n recsys-dataflow deploy/feature-postgres -- \
 ```
 
 Expected proof: Airflow shows the dedicated `recsys_feast_materialize` DAG with
-`apply_feast_feature_repo`, `feast_materialize_incremental`, and
-`verify_redis_online_store_updated` all successful. PostgreSQL has the Feast
+`feast_materialize_incremental` and `verify_redis_online_store_updated`
+successful. Jenkins logs show `feast plan` and `feast apply` before the DAG.
+PostgreSQL has the Feast SQL registry plus
 offline feature tables in schema `feature_store`, and the materialize DAG
 verifies that Redis online-store keys exist after incremental materialization.
 
@@ -89,9 +140,73 @@ The jobs intentionally use separate consumer groups so both jobs receive the ful
 | `realtime-flink-online-store` | `cdc.behavior_events` | `recsys-flink-realtime-online` | `--continuous` | Redis keys `fs:user_sequence:*`, `fs:user_aggregate:*`, `fs:item:*` |
 | `realtime-flink-offline-store` | `cdc.behavior_events` | `recsys-flink-realtime-offline` | `--continuous` | PostgreSQL tables `feature_store.user_sequence_features`, `user_aggregate_features`, `item_features` |
 
+### Helm Values And Deployment Reference
+
+The Helm values enable two independent submitter Deployments from the same
+`realtimeFlinkConsumer` configuration. The deployment names and group suffixes
+separate the online and offline Kafka consumers, while the shared topic and base
+group keep their source contract explicit:
+
+```yaml
+realtimeFlinkConsumer:
+  enabled: true
+  replicas: 1
+  online:
+    enabled: true
+    name: realtime-flink-online-store
+    groupIdSuffix: online
+    startingOffsets: committed-offsets
+  offline:
+    enabled: true
+    name: realtime-flink-offline-store
+    groupIdSuffix: offline
+    startingOffsets: latest
+  topic: cdc.behavior_events
+  groupId: recsys-flink-realtime
+  checkpointIntervalSeconds: "30"
+  redisSinkMaxEventsPerSecond: "200"
+  postgresSinkMaxEventsPerSecond: "100"
+  offlineStoreEnabled: true
+  offlineStoreSink: postgres
+```
+
+Source: [streaming job enablement, names, groups, and topic](../../../infra/helm/recsys-data-platform/values.yaml#L162), [sink limits and PostgreSQL offline-sink selection](../../../infra/helm/recsys-data-platform/values.yaml#L186), [Redis service values](../../../infra/helm/recsys-data-platform/values.yaml#L117), and [Feast PostgreSQL target values](../../../infra/helm/recsys-data-platform/values.yaml#L39).
+
+The online deployment is rendered only when `online.enabled` is true. Its Flink
+command uses the online consumer group and explicitly disables the offline
+sink, leaving the Redis writer enabled:
+
+```text
+--group-id "$REALTIME_STREAM_ONLINE_GROUP_ID"
+--continuous
+--redis-sink-max-events-per-second "$REDIS_SINK_MAX_EVENTS_PER_SECOND"
+--disable-offline-store
+```
+
+Source: [online Deployment condition and name](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L3), [online Flink submission and consumer group](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L59), and [online-only sink selection](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L98). The Redis endpoint is rendered from Helm values into `REDIS_HOST` and `REDIS_PORT` by the [data-platform ConfigMap](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L81).
+
+The offline deployment is rendered only when `offline.enabled` is true. Its
+Flink command selects the PostgreSQL offline sink and explicitly disables the
+online writer:
+
+```text
+--group-id "$REALTIME_STREAM_OFFLINE_GROUP_ID"
+--continuous
+--offline-store-enabled
+--disable-online-store
+--offline-store-sink "$OFFLINE_STORE_SINK"
+--feast-postgres-host "$FEAST_POSTGRES_HOST"
+--feast-postgres-database "$FEAST_POSTGRES_DB"
+--feast-postgres-schema "$FEAST_POSTGRES_SCHEMA"
+```
+
+Source: [offline Deployment condition and name](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L119), [offline Flink submission and consumer group](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L176), and [PostgreSQL-only sink selection and connection arguments](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L215). Helm renders the PostgreSQL host, database, schema, and SSL mode into the [data-platform ConfigMap](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L24), while credentials come from the [data-platform Secret](../../../infra/helm/recsys-data-platform/templates/secret.yaml#L19).
+
 ### Image Proof Of Flink UI Job Running
 
-![Two Flink jobs running](../../pngs/2_flink_jobs.png)
+![Event-time online-store and offline-store Flink jobs running](../../pngs/flink_event_time_online_offline_jobs_running.png)
+
+**Figure: both continuous feature-store jobs are healthy.** Flink reports the online and offline jobs as `RUNNING`, with all nine tasks running in each job.
 
 ### Commands To Capture Proof
 
@@ -111,9 +226,9 @@ Expected proof: both submitter deployments are ready, Flink has two `RUNNING` jo
 
 ### Code Reference
 
-- [`realtime-flink-consumer.yaml`](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): offline-store Flink deployment and sink arguments.
-- [`realtime_stream_job.py`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py): `build_postgres_feast_rows()` and `PostgresFeastOfflineWriter`.
-- [`features.py`](../../../apps/data-platform/feature-store/feature_repo/features.py): `PostgreSQLSource` FeatureViews over the written tables.
+- [values.yaml (line 162)](../../../infra/helm/recsys-data-platform/values.yaml#L162), [realtime-flink-consumer.yaml (line 119)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L119), [realtime-flink-consumer.yaml (line 176)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L176), and [realtime-flink-consumer.yaml (line 215)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L215): offline-store Helm values, Deployment, Flink submission, and PostgreSQL sink arguments.
+- [row_mappers.py (line 110)](../../../apps/data-platform/src/features/flink/operators/row_mappers.py#L110), [row_mappers.py (line 183)](../../../apps/data-platform/src/features/flink/operators/row_mappers.py#L183), [feature_windows.py (line 346)](../../../apps/data-platform/src/features/flink/feature_windows.py#L346), and [postgres_async.py (line 63)](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py#L63): typed user/item PostgreSQL rows, event-time feature windows, and the async offline-store writer.
+- [recsys_feature_definitions.py](../../../apps/data-platform/feature-store/feature_repo/recsys_feature_definitions.py): `PostgreSQLSource` FeatureViews over the written tables.
 
 ### Commands To Capture Proof
 
@@ -138,16 +253,16 @@ Expected proof: logs show PostgreSQL offline writer activity and PostgreSQL row 
 
 ### Image Proof Of Streaming Features In Offline Store
 
-![Streaming features pushed to offline store](../../pngs/streaming_feats_to_offline.png)
+![Flink event-time offline-store graph with PostgreSQL writer](../../pngs/flink_event_time_offline_postgres_job_graph.png)
 
-![Streaming offline job tasks](../../pngs/stream_job_offline_tasks.png)
+**Figure: offline-store streaming path.** The graph shows separate user/item event-time panes, rolling-horizon operators, and `postgres-feast-offline-feature-writer` updating Feast-compatible PostgreSQL tables.
 
 ## Flink Streaming Job To Online Store
 
 ### Code Reference
 
-- [`realtime-flink-consumer.yaml`](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml): online-store Flink deployment.
-- [`online_writer.py`](../../../apps/data-platform/src/feature_store/online_writer.py), [`realtime_stream_job.py`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py): Redis keys, TTLs, and the online writer operator.
+- [values.yaml (line 162)](../../../infra/helm/recsys-data-platform/values.yaml#L162), [realtime-flink-consumer.yaml (line 3)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L3), [realtime-flink-consumer.yaml (line 59)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L59), and [realtime-flink-consumer.yaml (line 98)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L98): online-store Helm values, Deployment, Flink submission, and Redis-only sink selection.
+- [online_writer.py (line 16)](../../../apps/data-platform/src/feature_store/online_writer.py#L16), [online_writer.py (line 48)](../../../apps/data-platform/src/feature_store/online_writer.py#L48), [redis_async.py (line 12)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L12), and [realtime_stream_job.py (line 82)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L82): Redis serialization, keys, TTLs, writer implementation, and graph attachment.
 
 ### Commands To Capture Proof
 
@@ -166,17 +281,20 @@ Expected proof: each command prints at least one Redis online feature key create
 
 ### Image Proof Of Streaming Features In Online Store
 
-![Streaming features pushed to online store](../../pngs/streaming_feats_to_online.png)
+![Flink event-time online-store graph with Redis writer](../../pngs/flink_event_time_online_redis_job_graph.png)
 
-![Streaming online job tasks](../../pngs/stream_job_online_tasks.png)
+**Figure: online-store streaming path.** The graph shows separate user/item event-time panes, rolling-horizon operators, and `redis-online-feature-writer` publishing low-latency Redis features.
 
 ## TTL Definition & Reasons
 
 ### Code Reference
 
-- [`features.py`](../../../apps/data-platform/feature-store/feature_repo/features.py): Feast FeatureView TTLs.
-- [`realtime_stream_job.py`](../../../apps/data-platform/src/features/flink/realtime_stream_job.py), [`redis_online_store.yaml`](../../../configs/local/redis_online_store.yaml): Redis and Flink state TTL behavior.
-- [`values.yaml`](../../../infra/helm/recsys-data-platform/values.yaml): deployed TTL values.
+- [recsys_feature_definitions.py](../../../apps/data-platform/feature-store/feature_repo/recsys_feature_definitions.py): Feast FeatureView TTLs.
+- [redis_async.py (line 39)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L39), [redis_async.py (line 46)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L46), [redis_async.py (line 56)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L56): Redis TTLs for sequence, aggregate, and item features.
+- [source.py (line 104)](../../../apps/data-platform/src/features/flink/source.py#L104), [dedup.py (line 8)](../../../apps/data-platform/src/features/flink/operators/dedup.py#L8), and [feature_windows.py (line 285)](../../../apps/data-platform/src/features/flink/feature_windows.py#L285): applies TTL to bounded-limit, deduplication, and rolling user/item keyed state.
+- [runtime.py](../../../apps/data-platform/src/features/flink/runtime.py): builds and enables native Flink `StateTtlConfig`.
+- [redis_online_store.yaml (line 14)](../../../configs/local/redis_online_store.yaml#L14): configurable Redis TTL values.
+- [values.yaml (line 211)](../../../infra/helm/recsys-data-platform/values.yaml#L211), [values.yaml (line 222)](../../../infra/helm/recsys-data-platform/values.yaml#L222): deployed watermark and state-TTL values.
 
 ### TTL For Each Feature Table & Reason Why
 

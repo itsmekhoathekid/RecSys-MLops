@@ -4,12 +4,12 @@ This document records the final Infrastructure as Code setup deployed to Google 
 
 ## Target Project
 
-- GCP project: `fsds-coursework`
+- GCP project: `rec-sys-503309`
 - Project number: `455131526306`
 - Region: `asia-southeast1`
 - Zone: `asia-southeast1-b`
 - GKE cluster: `recsys-mlops-gke`
-- Artifact Registry: `asia-southeast1-docker.pkg.dev/fsds-coursework/recsys`
+- Artifact Registry: `asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys`
 
 ## IaC Layout
 
@@ -44,6 +44,28 @@ infra/
 
 Terraform provisions the cloud resources, installs required controllers, creates namespaces, and deploys local Helm charts. This makes the setup reproducible from IaC instead of relying on manual Kubernetes setup.
 
+### Component Configuration Reference
+
+| Component | Terraform deployment | Runtime configuration |
+| --- | --- | --- |
+| GCP APIs | [apis.tf (line 1)](../../../infra/terraform/gcp/apis.tf#L1) | Enables the Google APIs required by GKE, Artifact Registry, Cloud Build, networking, and storage. |
+| VPC and subnet | [network.tf (line 1)](../../../infra/terraform/gcp/network.tf#L1) | VPC, subnet, pod CIDR, and service CIDR are parameterized in [variables.tf (line 46)](../../../infra/terraform/gcp/variables.tf#L46). |
+| Artifact Registry and GCS | [registry_storage.tf (line 1)](../../../infra/terraform/gcp/registry_storage.tf#L1) | Stores container images plus lake and model backup objects. |
+| GKE cluster | [gke.tf (line 30)](../../../infra/terraform/gcp/gke.tf#L30) | Configures Workload Identity, IP allocation, HPA, persistent-disk CSI, logging, and monitoring. |
+| CPU node pool | [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97) | Uses the `cpu-services`/`data-platform` labels, autoscaling bounds, and machine type from Terraform variables. |
+| ML node pool | [gke.tf (line 142)](../../../infra/terraform/gcp/gke.tf#L142) | Uses the `ml-system` label and `recsys.ai/workload=ml-system:NoSchedule` taint. |
+| Kubernetes namespaces | [namespaces.tf (line 1)](../../../infra/terraform/gcp/namespaces.tf#L1) | Creates the observability, experiment-tracking, dataflow, DataHub, API-serving, and KServe runtime boundaries. |
+| Platform controllers | [dependencies.tf (line 18)](../../../infra/terraform/gcp/dependencies.tf#L18) | Installs cert-manager, KEDA, External Secrets, KubeRay, Istio, and NGINX Ingress. |
+| Kubeflow Pipelines and KServe | [dependencies.tf (line 165)](../../../infra/terraform/gcp/dependencies.tf#L165), [dependencies.tf (line 196)](../../../infra/terraform/gcp/dependencies.tf#L196) | Installs the KFP runtime and KServe controller after their dependencies are ready. |
+| Observability | [recsys_services.tf (line 1)](../../../infra/terraform/gcp/recsys_services.tf#L1) | [recsys-observability values](../../../infra/helm/recsys-observability/values.yaml#L1) configure Prometheus, Grafana, Loki, Tempo, Pushgateway, and exporters. |
+| MLflow, MinIO, and PostgreSQL | [recsys_services.tf (line 44)](../../../infra/terraform/gcp/recsys_services.tf#L44) | [mlflow-stack values](../../../infra/helm/mlflow-stack/values.yaml#L1) configure experiment tracking, model storage, and registry metadata. |
+| Kubeflow runtime resources | [recsys_services.tf (line 80)](../../../infra/terraform/gcp/recsys_services.tf#L80) | [recsys-runtime values](../../../infra/helm/recsys-runtime/values.yaml#L1) configure pipeline PVCs, runtime secrets, and supporting resources. |
+| Data platform | [recsys_services.tf (line 116)](../../../infra/terraform/gcp/recsys_services.tf#L116) | [recsys-data-platform values](../../../infra/helm/recsys-data-platform/values.yaml#L1) configure Kafka, Flink, Airflow, Redis, PostgreSQL, MinIO, and stream jobs. |
+| KServe and API serving | [recsys_services.tf (line 158)](../../../infra/terraform/gcp/recsys_services.tf#L158) | [recsys-serving values](../../../infra/helm/recsys-serving/values.yaml#L1) configure FastAPI, KServe/Triton, A/B routing, and autoscaling. |
+| Gateway | [recsys_services.tf (line 226)](../../../infra/terraform/gcp/recsys_services.tf#L226) | [recsys-gateway values](../../../infra/helm/recsys-gateway/values.yaml#L1) configure public hosts, internal backends, authentication, TLS, and rate limiting. |
+| Security mesh | [recsys_services.tf (line 309)](../../../infra/terraform/gcp/recsys_services.tf#L309) | [recsys-security values](../../../infra/helm/recsys-security/values.yaml#L1) configure External Secrets, Istio mTLS, and authorization policies. |
+| DataHub | [datahub.tf (line 64)](../../../infra/terraform/gcp/datahub.tf#L64), [datahub.tf (line 84)](../../../infra/terraform/gcp/datahub.tf#L84) | [prerequisite values](../../../infra/helm/datahub-local/prerequisites-values.yaml#L1) and [DataHub values](../../../infra/helm/datahub-local/datahub-values.yaml#L1) configure metadata storage, Kafka integration, and DataHub services. |
+
 ## Cloud Build Image Proof
 
 Images were built on GCP Cloud Build, not local Docker.
@@ -51,7 +73,7 @@ Images were built on GCP Cloud Build, not local Docker.
 ```bash
 gcloud builds submit \
   --config infra/cloudbuild/recsys-images.yaml \
-  --project fsds-coursework
+  --project rec-sys-503309
 ```
 
 Observed build:
@@ -85,7 +107,7 @@ recsys-flink:gcp            sha256:ca89c5f434828c619a37c79366943a0a49be98b38d8d3
 
 ## Terraform Proof
 
-Terraform was applied from `infra/terraform/gcp` against project `fsds-coursework`.
+Terraform was applied from `infra/terraform/gcp` against project `rec-sys-503309`.
 
 Validation:
 
@@ -155,9 +177,9 @@ by their pod `nodeSelector`/toleration policy.
 
 The placement is defined in Terraform/Helm:
 
-- [`gke.tf`](../../../infra/terraform/gcp/gke.tf): defines the `cpu-services` and tainted `ml-system` node pools.
-- [`locals.tf`](../../../infra/terraform/gcp/locals.tf): reusable ML node selectors and tolerations.
-- [`recsys_services.tf`](../../../infra/terraform/gcp/recsys_services.tf): applies ML placement to MLflow, APIs, and KServe/Triton releases.
+- [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97), [gke.tf (line 191)](../../../infra/terraform/gcp/gke.tf#L191): defines the `cpu-services` and tainted `ml-system` node pools.
+- [locals.tf (line 40)](../../../infra/terraform/gcp/locals.tf#L40), [locals.tf (line 85)](../../../infra/terraform/gcp/locals.tf#L85): reusable ML node selectors and tolerations for ML and serving workloads.
+- [recsys_services.tf (line 44)](../../../infra/terraform/gcp/recsys_services.tf#L44), [recsys_services.tf (line 111)](../../../infra/terraform/gcp/recsys_services.tf#L111), [recsys_services.tf (line 158)](../../../infra/terraform/gcp/recsys_services.tf#L158), [recsys_services.tf (line 223)](../../../infra/terraform/gcp/recsys_services.tf#L223): applies ML placement to MLflow, APIs, KServe/Triton, and Ray releases.
 
 The `ml-system` node pool has a taint:
 
@@ -237,7 +259,7 @@ recsys-security       recsys-security          deployed
 recsys-serving        kserve-triton-inference  deployed
 ```
 
-This proves the full coursework MLOps stack is installed through Terraform-managed Helm releases, including DataHub, data platform, observability, runtime, gateway, service mesh, API serving, and KServe/Triton.
+This proves the listed MLOps stack components are installed through Terraform-managed Helm releases, including DataHub, data platform, observability, runtime, gateway, service mesh, API serving, and KServe/Triton.
 
 ### Image Proof
 

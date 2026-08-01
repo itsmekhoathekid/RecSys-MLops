@@ -12,15 +12,33 @@ single NGINX LoadBalancer IP.
 | --- | --- | --- |
 | Web API Pull Data service | `api.recsys-mlops.site` | `recsys-online-feature-api.api-serving.svc.cluster.local:80` |
 | Metric service | `metrics.recsys-mlops.site` | `recsys-grafana.observability.svc.cluster.local:3000` |
-| Log service | `log.recsys-mlops.site` | `recsys-loki.observability.svc.cluster.local:3100` |
+| Log service | `logs.recsys-mlops.site` | `recsys-loki.observability.svc.cluster.local:3100` |
 | Trace service | `traces.recsys-mlops.site` | `recsys-tempo.observability.svc.cluster.local:3200` |
+
+### Gateway Configuration Reference
+
+| Gateway layer | Clickable configuration reference | Purpose |
+| --- | --- | --- |
+| NGINX Ingress Controller | [dependencies.tf (line 129)](../../../infra/terraform/gcp/dependencies.tf#L129) | Installs the cluster-wide `ingress-nginx` controller that receives public traffic. |
+| Gateway Helm release | [recsys_services.tf (line 226)](../../../infra/terraform/gcp/recsys_services.tf#L226), [host/backend overrides (line 236)](../../../infra/terraform/gcp/recsys_services.tf#L236) | Deploys `recsys-gateway` and injects public hosts plus internal Kubernetes upstreams. |
+| Shared gateway policy | [values.yaml: ingress class and domain](../../../infra/helm/recsys-gateway/values.yaml#L1), [Basic Auth](../../../infra/helm/recsys-gateway/values.yaml#L5), [TLS/cert-manager](../../../infra/helm/recsys-gateway/values.yaml#L16) | Centralizes the NGINX class, authentication secret, TLS issuer, certificates, and per-route rate limits. |
+| Web API Pull Data route | [feature API values](../../../infra/helm/recsys-gateway/values.yaml#L46), [feature-api-ingress.yaml](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L1) | Routes the public API host to `recsys-online-feature-api` and applies Basic Auth, throttling, and TLS. |
+| Metric route | [Grafana values](../../../infra/helm/recsys-gateway/values.yaml#L60), [grafana-ingress.yaml](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L1) | Routes the metric domain to the internal Grafana service. |
+| Log route | [Loki values](../../../infra/helm/recsys-gateway/values.yaml#L76), [logs-ingress.yaml](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L1), [root redirect](../../../infra/helm/recsys-gateway/templates/logs-root-redirect-ingress.yaml#L1) | Routes Loki API paths and optionally redirects the root path to the Grafana logs dashboard. |
+| Trace route | [Tempo values](../../../infra/helm/recsys-gateway/values.yaml#L93), [traces-ingress.yaml](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L1) | Routes the trace domain to the internal Tempo service. |
+| Gateway credentials | [auth-secrets.yaml](../../../infra/helm/recsys-gateway/templates/auth-secrets.yaml#L1) | Replicates the Basic Auth secret into namespaces that own the Ingress resources. |
+| TLS issuer | [clusterissuer.yaml](../../../infra/helm/recsys-gateway/templates/clusterissuer.yaml#L1) | Optionally renders the cert-manager issuer used by HTTPS routes. |
+
+The chart also contains a separate recommendation-serving route at [api-ingress.yaml](../../../infra/helm/recsys-gateway/templates/api-ingress.yaml#L1). It targets `recsys-api-serving`; the Web API Pull Data proof in this document targets `recsys-online-feature-api` through `feature-api-ingress.yaml`.
+
+The public names shown here are deployment values. The checked-in chart defaults use `.recsys.local`; [values-gcp.yaml](../../../infra/helm/recsys-gateway/values-gcp.yaml) contains the production host/TLS overlay, while Terraform derives the same hostnames from `gateway_domain`.
 
 ![Domain setup for gateway services](../../pngs/domain_setup.png)
 
 **Figure: Domain setup for all gateway services.** The DNS provider has four
 public `A` records: `api.recsys-mlops.site`, `metrics.recsys-mlops.site`,
-`log.recsys-mlops.site`, and `traces.recsys-mlops.site`. All records point to
-the NGINX Ingress Controller LoadBalancer IP `34.21.171.234`, proving that the
+`logs.recsys-mlops.site`, and `traces.recsys-mlops.site`. All records point to
+the NGINX Ingress Controller LoadBalancer IP `136.110.21.224`, proving that the
 public domains enter the platform through the same gateway.
 
 
@@ -29,7 +47,7 @@ public domains enter the platform through the same gateway.
 **Figure: NGINX gateway, domain, and HTTPS setup for all 4 services.** The
 proof shows the four public routes are configured on NGINX Ingress with their
 production domains: `api.recsys-mlops.site`, `metrics.recsys-mlops.site`,
-`log.recsys-mlops.site`, and `traces.recsys-mlops.site`. Each route is mapped
+`logs.recsys-mlops.site`, and `traces.recsys-mlops.site`. Each route is mapped
 to its internal Kubernetes service and has HTTPS/TLS enabled, proving that the
 gateway is the single secured entrypoint for the Web API, metrics, logs, and
 traces services.
@@ -41,8 +59,8 @@ The metric service is Grafana behind the NGINX gateway. The production host is
 
 ### Code Reference
 
-- [`values.yaml`](../../../infra/helm/recsys-gateway/values.yaml): Grafana host, TLS, authentication, and rate-limit values.
-- [`grafana-ingress.yaml`](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml): renders the NGINX `Ingress` and security annotations.
+- [values.yaml (line 1)](../../../infra/helm/recsys-gateway/values.yaml#L1), [values.yaml (line 30)](../../../infra/helm/recsys-gateway/values.yaml#L30), [values.yaml (line 60)](../../../infra/helm/recsys-gateway/values.yaml#L60), [values.yaml (line 74)](../../../infra/helm/recsys-gateway/values.yaml#L74): gateway, TLS, authentication, Grafana host, and rate-limit values.
+- [grafana-ingress.yaml (line 1)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L1), [grafana-ingress.yaml (line 47)](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L47): renders the NGINX `Ingress` and security annotations.
 
 ### Basic Auth & Rate Limit Proof
 
@@ -76,8 +94,8 @@ The trace service is Tempo behind the NGINX gateway. The production host is
 
 ### Code Reference
 
-- [`values.yaml`](../../../infra/helm/recsys-gateway/values.yaml): Tempo host, TLS, authentication, and rate-limit values.
-- [`traces-ingress.yaml`](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml): renders the trace route and security annotations.
+- [values.yaml (line 1)](../../../infra/helm/recsys-gateway/values.yaml#L1), [values.yaml (line 30)](../../../infra/helm/recsys-gateway/values.yaml#L30), [values.yaml (line 93)](../../../infra/helm/recsys-gateway/values.yaml#L93), [values.yaml (line 105)](../../../infra/helm/recsys-gateway/values.yaml#L105): TLS/authentication plus Tempo host and rate-limit values.
+- [traces-ingress.yaml (line 1)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L1), [traces-ingress.yaml (line 45)](../../../infra/helm/recsys-gateway/templates/traces-ingress.yaml#L45): renders the trace route and security annotations.
 
 ### Basic Auth & Rate Limit Proof
 
@@ -106,19 +124,19 @@ gateway route.
 ## Log Service
 
 The log service is Loki behind the NGINX gateway. The production host is
-`https://log.recsys-mlops.site`.
+`https://logs.recsys-mlops.site`.
 
 ### Code Reference
 
-- [`values.yaml`](../../../infra/helm/recsys-gateway/values.yaml): Loki host, TLS, authentication, and rate-limit values.
-- [`logs-ingress.yaml`](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml): renders the log route and security annotations.
+- [values.yaml (line 1)](../../../infra/helm/recsys-gateway/values.yaml#L1), [values.yaml (line 30)](../../../infra/helm/recsys-gateway/values.yaml#L30), [values.yaml (line 76)](../../../infra/helm/recsys-gateway/values.yaml#L76), [values.yaml (line 91)](../../../infra/helm/recsys-gateway/values.yaml#L91): TLS/authentication plus Loki host, redirect, and rate-limit values.
+- [logs-ingress.yaml (line 1)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L1), [logs-ingress.yaml (line 70)](../../../infra/helm/recsys-gateway/templates/logs-ingress.yaml#L70): renders log routes, redirect, and security annotations.
 
 ### Basic Auth & Rate Limit Proof
 
 ![Basic auth challenge proof](../../pngs/logs_auth_proof.png)
 
 **Figure: Basic auth proof for log service.** Accessing
-`https://log.recsys-mlops.site` without valid gateway credentials returns a
+`https://logs.recsys-mlops.site` without valid gateway credentials returns a
 Basic Auth challenge or `401 Unauthorized`, proving Loki is not publicly exposed
 without gateway authentication.
 
@@ -126,7 +144,7 @@ without gateway authentication.
 
 **Figure: Rate limit proof for log service.** The CLI proof shows the Loki
 ingress rate-limit annotations and/or burst-test result for
-`https://log.recsys-mlops.site`; excess requests are throttled by NGINX with
+`https://logs.recsys-mlops.site`; excess requests are throttled by NGINX with
 HTTP `429`.
 
 ### Image Proof Enable HTTPS
@@ -134,7 +152,7 @@ HTTP `429`.
 ![Log service HTTPS proof](../../pngs/logs_https_proof.png)
 
 **Figure: Log service HTTPS proof.** The log endpoint is reached through
-`https://log.recsys-mlops.site`, proving HTTPS is enabled on the public log
+`https://logs.recsys-mlops.site`, proving HTTPS is enabled on the public log
 gateway route.
 
 
@@ -145,9 +163,9 @@ gateway. The production host is `https://api.recsys-mlops.site`.
 
 ### Code Reference
 
-- [`feature_api.py`](../../../apps/api-serving/src/feature_api.py): `RecSys Online Feature API` and `POST /online-features`.
-- [`feature-api-ingress.yaml`](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml): route, Basic Auth, rate limit, and TLS annotations.
-- [`values.yaml`](../../../infra/helm/recsys-gateway/values.yaml), [`recsys_services.tf`](../../../infra/terraform/gcp/recsys_services.tf): enable the route and derive its host from `gateway_domain`.
+- [feature_api.py (line 13)](../../../apps/api-serving/src/feature_api.py#L13), [feature_api.py (line 77)](../../../apps/api-serving/src/feature_api.py#L77): `RecSys Online Feature API` and POST/GET online-feature routes.
+- [feature-api-ingress.yaml (line 1)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L1), [feature-api-ingress.yaml (line 45)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L45): route, Basic Auth, rate limit, and TLS annotations.
+- [values.yaml (line 46)](../../../infra/helm/recsys-gateway/values.yaml#L46), [values.yaml (line 58)](../../../infra/helm/recsys-gateway/values.yaml#L58), [recsys_services.tf (line 226)](../../../infra/terraform/gcp/recsys_services.tf#L226), [recsys_services.tf (line 299)](../../../infra/terraform/gcp/recsys_services.tf#L299): enable the route and derive its host from `gateway_domain`.
 
 ### Basic Auth & Rate Limit Proof
 

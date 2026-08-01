@@ -31,8 +31,8 @@ Code moi da them:
 
 Target flow:
 
-1. `feature_engineering`: chay `apps/data-platform/src/local/run_batch_features.py` de tao silver tables, Feast offline features, labels va `ml_bst_training`.
-2. `prepare_training_data`: convert `ml_bst_training` parquet sang JSONL split cho `apps/ml-system/src/models/dataset.py`.
+1. Airflow DP3 chay `apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py` bang `recsys-spark` de tao Feast offline features, labels va `ml_bst_training`.
+2. Kubeflow `prepare_training_data` dung cung `recsys-spark` digest de doc feature snapshot va tao JSONL split cho `apps/ml-system/src/models/dataset.py`.
 3. `submit_rayjob`: submit KubeRay `RayJob`; Ray Tune chay HPO va Ray workers train BST trials.
 4. `evaluate_bst`: evaluate best Ray checkpoint tren test split, log test metrics vao MLflow run.
 5. Artifact/config:
@@ -54,9 +54,9 @@ Charts moi:
 Build images:
 
 ```bash
-docker build -f infra/docker/Dockerfile.base-python -t recsys-base-python:local .
-docker build -f apps/ml-system/Dockerfile.training -t recsys-mlops-training:local .
-docker build -f infra/docker/Dockerfile.mlflow -t recsys-mlflow:local .
+docker build -f images/base/recsys-base-python/Dockerfile -t registry.example.invalid/recsys/recsys-base-python:required .
+docker build -f images/ml/recsys-mlops-training/Dockerfile -t registry.example.invalid/recsys/recsys-mlops-training:required .
+docker build -f images/ml/recsys-mlflow/Dockerfile -t registry.example.invalid/recsys/recsys-mlflow:required .
 ```
 
 Install KubeRay operator:
@@ -88,11 +88,11 @@ helm upgrade --install recsys-runtime infra/helm/recsys-runtime \
 Compile KFP pipeline:
 
 ```bash
-RECSYS_PIPELINE_IMAGE=recsys-mlops-training:local \
+RECSYS_PIPELINE_IMAGE=registry.example.invalid/recsys/recsys-mlops-training:required \
 uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py
 ```
 
-Submit `infra/kubeflow/compiled/bst_training_pipeline.yaml` in Kubeflow Pipelines UI.
+Submit `pipelines/kubeflow/compiled/bst_training_pipeline.yaml` in Kubeflow Pipelines UI.
 
 ## Retraining Triggers
 

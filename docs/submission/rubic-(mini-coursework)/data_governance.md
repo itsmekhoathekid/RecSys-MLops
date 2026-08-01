@@ -4,35 +4,188 @@ DataHub governs the three rubric batch pipelines as `DP1`, `DP2`, and `DP3`. CDC
 
 The governed flows are:
 
-- `DP1`: Data Generator batch ingestion -> Bronze Parquet lakehouse.
-- `DP2`: Bronze Parquet -> PySpark -> curated Silver Iceberg.
+- `DP1`: Data Generator batch ingestion -> Bronze Iceberg lakehouse.
+- `DP2`: Bronze Iceberg -> PySpark -> curated Silver Iceberg.
 - `DP3`: Silver Iceberg -> PySpark features -> Iceberg feature tables -> PostgreSQL Feast offline store.
 - `CDC_INGESTION`: source PostgreSQL -> Debezium -> `cdc.*` Kafka topics.
-- `STREAMING_FEATURES`: `cdc.behavior_events` -> two continuously running Flink jobs -> configured Iceberg/PostgreSQL offline features and Redis online features.
+- `STREAMING_FEATURES`: `cdc.behavior_events` -> two continuously running Flink jobs -> PostgreSQL offline features and Redis online features.
 
-Each rubric flow has an `ingest_stage` followed by a `validate_stage`. The validation stage writes a run-scoped JSON report and `latest.json` under `s3a://recsys-lakehouse/governance/validation/<pipeline>/`. DataHub reads that report and maps runtime results to `SUCCESS`, `FAILURE`, or `ERROR`; it never reports unconditional success.
+## End-To-End Governance Flow
 
-Lineage is no longer declared as input/output tuples in the DataHub catalog. Each running PyArrow, Spark, Debezium, or Flink job emits OpenLineage-compatible `START`, `COMPLETE`, or `FAIL` events under `s3a://recsys-lakehouse/governance/lineage/`. The event contains the Airflow run ID, deterministic runtime UUID, event time, upstream jobs, and the datasets observed by that execution. DataHub clears the old direct dataset edges and rebuilds `DataJobInputOutput` exclusively from the latest runtime events.
+```mermaid
+flowchart TD
+  Airflow["Airflow DAG"] --> DP1["DP1: Generator → Bronze"]
+  DP1 --> DP2["DP2: Bronze → Silver"]
+  DP2 --> DP3["DP3: Silver → Iceberg Features → PostgreSQL"]
 
-Before DataHub ingestion, `verify_governance_coverage` fails the Airflow run unless every governed job has a runtime event, every one of the 51 datasets appears in runtime lineage, and every dataset has a schema, contract description, validation pipeline, and validation result. This prevents an incomplete but visually plausible lineage graph from being published.
+  Airflow --> CDC["CDC: PostgreSQL → Debezium → Kafka"]
+  CDC --> Flink["Streaming: Kafka → Flink → PostgreSQL / Redis"]
 
-Common code:
+  DP1 --> LE["Runtime lineage events"]
+  DP2 --> LE
+  DP3 --> LE
+  CDC --> LE
+  Flink --> LE
 
-- [apps/data-platform/src/metadata/runtime_lineage.py](../../../apps/data-platform/src/metadata/runtime_lineage.py): records run-scoped OpenLineage events from actual executions.
-- [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): clears old static edges, verifies complete coverage, and emits only runtime-observed job lineage.
-- [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): maps the latest runtime validation report to a DataHub assertion result.
-- [apps/data-platform/src/metadata/ingest_datahub_governance.py](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py): attaches native schema and data-quality assertions to an active Data Contract.
-- [apps/data-platform/src/validate/governance_contracts.py](../../../apps/data-platform/src/validate/governance_contracts.py): writes and reads the shared validation-report format.
+  DP1 --> VR["Validation reports"]
+  DP2 --> VR
+  DP3 --> VR
+  CDC --> VR
+  Flink --> VR
+
+  LE --> Gate["verify_governance_coverage"]
+  VR --> Gate
+  Gate --> Ingest["datahub_ingest"]
+
+  Ingest --> GMS["DataHub GMS"]
+  GMS --> UI["Catalog / Lineage / Contracts UI"]
+```
+
+The mechanism has a **data plane**, which creates and moves real data, and a **governance plane**, which records what happened and publishes that evidence to DataHub.
+
+### 1. Define The Governed Catalog
+
+The repository first declares the expected governance model through `dp1()`, `dp2()`, `dp3()`, `cdc_ingestion()`, and `streaming_features()`. Together these definitions describe five Data Products, 51 datasets, five DataFlows, and eleven DataJobs, along with each dataset's schema, primary key, contract description, and validation pipeline. DP1 and DP2 each contribute an additional `optimize_stage` job. These definitions are the expected catalog model; they do not prove that a runtime job actually produced the data.
+
+The component definitions are assembled and published by [`emit_products`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L978-L1007).
+
+### 2. Run The Data Plane
+
+Airflow starts the batch and real-time branches. The batch branch runs DP1, DP2, and DP3 in order; the real-time branch registers Debezium and verifies the continuously running Flink jobs.
+
+```text
+DP1: Data Generator -> Bronze Iceberg -> optimize -> validate
+DP2: Bronze Iceberg -> Silver Iceberg -> optimize -> validate
+DP3: Silver Iceberg -> Iceberg features -> PostgreSQL Feast
+
+CDC: source PostgreSQL -> Debezium -> Kafka
+Streaming offline: Kafka -> Flink -> PostgreSQL Feast
+Streaming online: Kafka -> Flink -> Redis
+```
+
+These jobs create the real Iceberg, PostgreSQL, Kafka, and Redis data. Parquet is only the ephemeral exchange format inside the DP1 pod. DataHub does not process or copy these rows.
+
+### 3. Record Runtime Lineage
+
+Each processing or validation job uses [`RuntimeLineageRecorder`](../../../apps/data-platform/src/metadata/runtime_lineage.py#L201-L255). Entering the context emits `START`; a successful exit emits `COMPLETE`; an exception emits `FAIL`. The event contains the pipeline and job identity, Airflow run ID, deterministic runtime UUID, event time, upstream jobs, and the dataset URNs observed as inputs and outputs.
+
+```text
+DP1.ingest_stage: no catalog input -> 10 Bronze outputs
+DP1.optimize_stage: 10 Bronze inputs -> the same 10 optimized Bronze outputs
+DP2.ingest_stage: 10 Bronze inputs -> 9 Silver outputs
+DP2.optimize_stage: 9 Silver inputs -> the same 9 optimized Silver outputs
+DP3.ingest_stage: 9 Silver inputs -> 5 Iceberg + 4 PostgreSQL outputs
+CDC connector job: 10 source PostgreSQL inputs -> 10 Kafka outputs
+Flink offline job: cdc.behavior_events -> 3 PostgreSQL outputs
+Flink online job: cdc.behavior_events -> 3 Redis outputs
+```
+
+[`write_event`](../../../apps/data-platform/src/metadata/runtime_lineage.py#L160-L168) stores both a run-scoped event and a job-level latest event:
+
+```text
+s3a://recsys-lakehouse/governance/lineage/<pipeline>/runs/<run-id>/<job>/<event>.json
+s3a://recsys-lakehouse/governance/lineage/<pipeline>/jobs/<job>/latest.json
+```
+
+### 4. Execute Data Validation
+
+After data processing, the validators read the real storage systems and produce dataset-level checks. DP1 verifies readable, non-empty Bronze tables and required key/audit columns. DP2 verifies Silver row counts, required clean-event columns, and unique `event_id`. DP3 verifies non-empty Iceberg/PostgreSQL features, required schemas, and non-null entity keys and timestamps. CDC verifies the accepted source-table/topic mappings. Streaming verifies that the governed Redis key families and sampled hashes are non-empty.
+
+[`write_report`](../../../apps/data-platform/src/validate/governance_contracts.py#L73-L99) aggregates individual checks into `SUCCESS`, `FAILURE`, or `ERROR` and writes:
+
+```text
+s3a://recsys-lakehouse/governance/validation/<pipeline>/<run-id>.json
+s3a://recsys-lakehouse/governance/validation/<pipeline>/latest.json
+```
+
+The detailed check logic and direct code references appear in each component section below.
+
+### 5. Verify Governance Coverage
+
+Before publishing to DataHub, [`verify_governance_coverage`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L896-L975) loads the runtime events and validation reports and verifies that:
+
+- every governed DataJob has a runtime event;
+- all 51 governed datasets appear in runtime lineage;
+- runtime events contain no unknown dataset URNs;
+- pipeline, job, run, and event identities are valid;
+- every dataset has a schema, contract description, and validation pipeline;
+- every Data Product has a validation report containing all expected datasets.
+
+The gate fails before DataHub publication when any required evidence is missing, preventing a complete-looking catalog from being built from incomplete runtime observations.
+
+### 6. Ingest Governance Metadata Into DataHub
+
+When coverage succeeds, `datahub_ingest` calls `emit_products()`. For each component, the emitter creates or updates the Domain, Data Product, Dataset, schema, DataFlow, DataJob, tags, assertions, and Data Contract. This is metadata ingestion only; no business data is copied into DataHub.
+
+[`emit_flow`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L556-L574) creates the parent DataFlow. [`emit_job`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L577-L611) converts the latest runtime event into `DataJobInfo` and `DataJobInputOutput`:
+
+```text
+runtime inputs        -> inputDatasets  (SDK term: inlets)
+runtime outputs       -> outputDatasets (SDK term: outlets)
+runtime upstream jobs -> inputDatajobs
+```
+
+DataHub can then render dataset -> job -> dataset lineage and downstream impact paths.
+
+### 7. Publish Assertions And Data Contracts
+
+For each dataset with a validation pipeline, `emit_dataset()` calls `emit_dataset_contract()`. The latest validation report is converted into a schema assertion result and a data-quality assertion result. [`_emit_assertion`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L457-L514) calls `reportAssertionResult` with the dataset's `SUCCESS`, `FAILURE`, or `ERROR` status and includes the pipeline, run ID, and observed checks.
+
+[`emit_dataset_contract`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L517-L553) then calls `upsertDataContract` to attach both assertion URNs to an active contract:
+
+```text
+Data Contract
+|- Schema assertion
+`- Data-quality assertion
+```
+
+The contract is `PASSING` when its latest assertion results succeed and `FAILING` when a linked assertion reports failure or error.
+
+### 8. Render The Governance UI
+
+DataHub GMS persists and indexes the metadata for the frontend. A governed dataset page can then show its description, schema, primary keys, Data Product, upstream and downstream lineage, producing and consuming DataJobs, assertion history, and current Data Contract status. DataHub provides catalog, lineage, contract, and impact visibility; Airflow and the runtime validators remain responsible for pipeline execution and enforcement.
+
+### Failure Path
+
+The validator writes its failure report before returning a non-zero exit code or raising an exception. Airflow then marks that validation task as failed and normally skips the downstream governance ingest task. As a result, DataHub may continue displaying the previous successful assertion result even though the newest report contains a failure. Publishing every failure would require a final governance-ingest task with an `all_done`-style trigger after the report has been written.
+
+## How The Components Reach DataHub
+
+DataHub's high-level SDK documentation calls a job's dataset dependencies `inlets` and `outlets`. This repository emits the equivalent low-level `DataJobInputOutput` aspect: `inputDatasets` are the inlets and `outputDatasets` are the outlets. The mapping is implemented by [`emit_job`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L577-L611), while [`emit_flow`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L556-L574) creates the parent `DataFlow`. This follows the official [DataHub DataFlow and DataJob model](https://docs.datahub.com/docs/api/tutorials/dataflow-datajob).
+
+Every governed component enters the same publication path:
+
+```mermaid
+flowchart LR
+  Component["DP1 / DP2 / DP3 / CDC / Streaming runtime"] --> Runtime["Runtime lineage event"]
+  Component --> Validation["Validation report"]
+  Catalog["dp1() / dp2() / dp3() / cdc_ingestion() / streaming_features()"] --> Products["emit_products()"]
+  Runtime --> Products
+  Validation --> Contracts["emit_dataset_contract()"]
+  Products --> Flow["emit_flow(): DataFlow"]
+  Products --> Job["emit_job(): DataJobInputOutput"]
+  Products --> Dataset["emit_dataset()"]
+  Dataset --> Contracts
+  Contracts --> Assertion["_emit_assertion()"]
+  Assertion --> Result["reportAssertionResult"]
+  Contracts --> Contract["upsertDataContract"]
+  Flow --> GMS["DataHub GMS"]
+  Job --> GMS
+  Result --> GMS
+  Contract --> GMS
+```
+
+The orchestration loop is visible in [`emit_products`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L978-L1007): it emits each component's datasets, `DataFlow`, and `DataJob` entities. For every dataset with a validation pipeline, [`emit_dataset`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L317-L343) calls `emit_dataset_contract`. The assertion path then calls [`reportAssertionResult`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L457-L514) with `SUCCESS`, `FAILURE`, or `ERROR`, following DataHub's official [Custom Assertions result-reporting pattern](https://docs.datahub.com/docs/api/tutorials/custom-assertions). Finally, [`upsertDataContract`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L517-L553) bundles the schema and data-quality assertion URNs into an active contract, following the official [Data Contracts API](https://docs.datahub.com/docs/api/tutorials/data-contracts).
 
 ## DP1 Linked With Related Tables
 
-`recsys_dp1_raw_to_bronze` runs the Data Generator inside the batch task and ingests its ephemeral output directly into Bronze Parquet lakehouse tables. There is no separate MinIO data-lake stage or raw-S3 dataset in the governed lineage. MinIO is only the S3-compatible object-storage backend underneath the lakehouse. `validate_stage` checks table readability, `row_count > 0`, source key columns, `source_run_id`, and `lakehouse_ingestion_ts`.
+`recsys_dp1_raw_to_bronze` runs the Data Generator inside the batch task and commits its ephemeral Parquet fragments directly into Bronze Iceberg tables. There is no separate MinIO data-lake stage or governed Parquet dataset in the lineage. MinIO is only the S3-compatible object-storage backend underneath Iceberg. `optimize_stage` rewrites the Bronze physical layout before `validate_stage` checks table readability, `row_count > 0`, source key columns, `source_run_id`, and `lakehouse_ingestion_ts`.
 
 ### DP1 Lineage Image Proof
 
 ![DataHub lineage from the DP1 batch-ingestion jobs through Bronze tables into the downstream DP2 flow](../../pngs/dp1_lineage.png)
 
-**Figure 1 — DP1 batch ingestion and downstream handoff.** DataHub shows the DP1 `Ingest Stage - Data Generator Batch Ingestion` and `Validate Stage`, the ten governed `recsys.lakehouse.bronze_*` Parquet outputs, and their downstream consumption by DP2. No raw-S3 dataset appears between the DP1 task and Bronze, confirming that DP1 writes directly to the governed Bronze lakehouse layer. The DP2 nodes on the right are downstream context, not DP1-owned outputs.
+**Figure 1 — DP1 batch ingestion and downstream handoff.** DataHub shows the DP1 ingestion and validation jobs, the ten governed `recsys.lakehouse.bronze_*` Iceberg outputs, and their downstream consumption by DP2. This historical capture predates the separate `optimize_stage` node; current runtime lineage records optimization between ingestion and validation. No raw-S3 or governed Parquet dataset appears between the DP1 task and Bronze.
 
 ### DP1 Validation And Data Contract Image Proof
 
@@ -40,21 +193,21 @@ Common code:
 
 **Figure 2 — DP1 schema and data-quality contract.** The `recsys.lakehouse.bronze_behavior_events` contract is passing, its Columns badge reports 30 fields, and the Schema table exposes field names and normalized types. The green data-quality assertion, `DP1` Data Product association, and `DataContract`/`NativePipeline` tags demonstrate that the Bronze table is governed by both structural and runtime-quality checks.
 
-### Code Reference
+### Execution And Governance Steps
 
-- [`batch_lakehouse_ingestion.py`](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py): DP1 Bronze output lineage.
-- [`governance_contracts.py`](../../../apps/data-platform/src/validate/governance_contracts.py): `validate_dp1_bronze()` and report publication.
-- [`rubric_data_pipeline_dags.py`](../../../apps/data-platform/src/orchestration/airflow/dags/rubric_data_pipeline_dags.py): `ingest_stage >> validate_stage` orchestration.
+1. **Data lineage:** [`load_generator_run_to_lakehouse`](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L69-L99) opens the `DP1.ingest_stage` runtime recorder, commits the generator output to ten Bronze Iceberg tables, and records them as the observed outputs. The later validation job records those Bronze datasets as inputs and `optimize_stage` as its upstream job.
+2. **Data contract:** [`dp1`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L640-L678) defines one contract-bearing dataset for each Bronze table. Each definition supplies the full Bronze schema, the source primary key prefixed by `source_run_id`, the DP1 validation pipeline, and the required ingestion-audit columns.
+3. **Data validation:** [`validate_dp1_bronze`](../../../apps/data-platform/src/validate/governance_contracts.py#L102-L145) opens every Bronze Iceberg table, checks `row_count > 0`, and verifies the source primary-key columns plus `source_run_id` and `lakehouse_ingestion_ts` are present and non-null. It writes the DP1 report and marks the validation lineage event `COMPLETE` only when every dataset succeeds.
 
 ## DP2 Linked With Related Tables
 
-`recsys_dp2_bronze_to_silver_gold` reads the DP1 Bronze Parquet tables and writes nine curated `silver_*` Iceberg tables. `clean_behavior_events` is normalized and deduplicated by `event_id`; rejected duplicate rows are kept in `silver_rejected_behavior_events` and may legitimately be empty.
+`recsys_dp2_bronze_to_silver_gold` reads the DP1 Bronze Iceberg tables and writes nine curated `silver_*` Iceberg tables. `clean_behavior_events` is normalized and deduplicated with `.dropDuplicates(["event_id"])`; `silver_rejected_behavior_events` contains unsupported-schema rows and may legitimately be empty. The Silver tables are optimized before validation.
 
 ### DP2 Lineage Image Proof
 
 ![Expanded DataHub lineage from DP1 Bronze tables through the DP2 PySpark jobs to Silver Iceberg tables](../../pngs/dp2_datahub_lineage.png)
 
-**Figure 3 — DP2 Bronze-to-Silver transformation.** The expanded graph centers the DP2 `Ingest Stage` and `Validate Stage`, with ten DP1 Bronze inputs on the left and nine curated `iceberg.recsys.lakehouse.silver_*` outputs on the right. The additional DP3 feature nodes are downstream impact context; the DP2 evidence is the Bronze → PySpark tasks → Silver path.
+**Figure 3 — DP2 Bronze-to-Silver transformation.** The expanded historical graph centers the DP2 ingestion and validation endpoints, with ten DP1 Bronze inputs on the left and nine curated `iceberg.recsys.lakehouse.silver_*` outputs on the right. Current lineage inserts `Optimize Stage` between those endpoints. The additional DP3 feature nodes are downstream impact context; the DP2 evidence is the Bronze -> PySpark -> optimized Silver path.
 
 ### DP2 Validation And Data Contract Image Proof
 
@@ -62,10 +215,11 @@ Common code:
 
 **Figure 4 — DP2 curated-table contract.** The `iceberg.recsys.lakehouse.silver_clean_behavior_events` dataset is associated with DP2 and has a passing active contract. Its 31-column schema is rendered alongside the successful data-quality assertion, proving that the curated Silver output has both registered structure and runtime validation.
 
-### Code Reference
+### Execution And Governance Steps
 
-- [`dp2_silver_gold_entrypoint.py`](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py): DP2 runtime lineage plus Silver validation/report publication.
-- [`build_silver_tables.py`](../../../apps/data-platform/src/features/spark/build_silver_tables.py): normalization, deduplication, rejected rows, and Iceberg writes.
+1. **Data lineage:** [`build_dp2_silver_gold`](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L15-L24) records all ten DP1 Bronze datasets as inputs and the nine Silver Iceberg tables actually returned by the Spark transformation as outputs of `DP2.ingest_stage`.
+2. **Data contract:** [`dp2`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L681-L719) defines one contract-bearing dataset for each Silver table, including its schema and primary key. `silver_clean_behavior_events` additionally requires `event_id`, `event_timestamp`, and `ingestion_ts`, and its contract states that `event_id` must be unique.
+3. **Data validation:** [`validate_dp2_silver_gold`](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L29-L66) reads every Silver table and checks its row count. All normal tables require `row_count > 0`; `silver_rejected_behavior_events` may be empty. For `silver_clean_behavior_events`, it also checks the three required columns and requires `duplicate_event_id == 0`. A failure writes the report, emits failed lineage, and raises an exception.
 
 ## DP3 Linked With Related Tables
 
@@ -83,10 +237,11 @@ Common code:
 
 **Figure 6 — DP3 PostgreSQL Feast-table contract.** The final `postgres.feature_store.ml_ranking_labels` dataset is attached to DP3 and its active contract is passing. DataHub renders all 15 schema fields and a successful data-quality assertion, proving that governance continues across the Iceberg-to-PostgreSQL export boundary.
 
-### Code Reference
+### Execution And Governance Steps
 
-- [`spark_batch_entrypoint.py`](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py): DP3 Silver inputs, Iceberg/PostgreSQL outputs, and Iceberg validation report.
-- [`governance_contracts.py`](../../../apps/data-platform/src/validate/governance_contracts.py): `validate_dp3_postgres()` for Feast offline-store contracts.
+1. **Data lineage:** [`run_pyspark_batch`](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L178-L201) records the nine DP2 Silver tables as inputs, the five Iceberg feature tables as batch outputs, and the four PostgreSQL Feast tables returned by the export step as additional outputs of `DP3.ingest_stage`.
+2. **Data contract:** [`dp3`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L722-L781) defines contracts for five Iceberg feature datasets and four PostgreSQL Feast datasets. Each requires a non-empty dataset, the appropriate entity key, the feature or prediction timestamp, and non-null key/timestamp values.
+3. **Data validation:** the Spark stage first runs the [Iceberg output checks](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L116-L149): `row_count > 0`, required key/timestamp columns present, and zero null key/timestamp rows. The following [`validate_dp3_postgres`](../../../apps/data-platform/src/validate/governance_contracts.py#L148-L216) checks the four exported PostgreSQL tables for a complete configured schema, `row_count > 0`, and zero null entity-key/timestamp rows. Both parts merge into the DP3 validation report for the same run.
 
 ## CDC Ingestion
 
@@ -96,13 +251,19 @@ Common code:
 
 **Figure 7 — CDC ingestion lineage.** Ten source PostgreSQL tables feed the `Register Debezium Connector` task and map to ten `cdc.*` Kafka topics. The connector is represented as the processing node between the source tables and topics, and the dedicated `CDC PostgreSQL To Kafka` flow keeps this real-time ingestion path separate from rubric DP1.
 
-Code reference: [apps/data-platform/src/ingest/register_k8s_connectors.py](../../../apps/data-platform/src/ingest/register_k8s_connectors.py). The accepted connector configuration determines the runtime source-table and Kafka-topic observations.
+The accepted connector configuration determines the runtime source-table and Kafka-topic observations.
+
+### Execution And Governance Steps
+
+1. **Data lineage:** the [connector registration runtime](../../../apps/data-platform/src/ingest/register_k8s_connectors.py#L89-L100) reads the accepted Debezium `table.include.list`, records the included source PostgreSQL tables as inputs, and records their canonical `cdc.*` Kafka topics as outputs of `CDC_INGESTION.register_debezium_connector`.
+2. **Data contract:** [`cdc_ingestion`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L784-L826) defines contracts for ten source PostgreSQL datasets and ten Kafka topic datasets. Source contracts carry the source schema and primary key; topic contracts carry the Debezium envelope schema and expected source-to-topic mapping.
+3. **Data validation:** the [CDC mapping validator](../../../apps/data-platform/src/ingest/register_k8s_connectors.py#L101-L111) requires each expected source table to be present in the submitted connector configuration and maps it to `cdc.<table>`. This validates the accepted connector configuration, not the later existence of Kafka messages; any missing mapping fails the report and connector task.
 
 ## Streaming Features
 
 `recsys_flink_stream_features` contains two distinct jobs:
 
-- `Run Flink Stream To Offline Store`: `cdc.behavior_events` -> the Iceberg or PostgreSQL sink enabled for that execution.
+- `Run Flink Stream To Offline Store`: `cdc.behavior_events` -> PostgreSQL Feast offline feature tables.
 - `Run Flink Stream To Online Store`: `cdc.behavior_events` -> Redis feature keys.
 
 The PostgreSQL datasets remain owned by DP3 and are only referenced by the streaming flow. This avoids duplicate Data Product ownership while retaining cross-flow lineage.
@@ -111,7 +272,13 @@ The PostgreSQL datasets remain owned by DP3 and are only referenced by the strea
 
 **Figure 8 — Streaming feature-store processing.** The `cdc.behavior_events` topic branches into distinct `Run Flink Stream To Online Store` and `Run Flink Stream To Offline Store` jobs. The expanded offline branch shows the three PostgreSQL feature tables; the Redis children of the online-store job are collapsed in this capture. The two job nodes still make the online and offline processing responsibilities explicit.
 
-Code reference: [apps/data-platform/src/features/flink/realtime_stream_job.py](../../../apps/data-platform/src/features/flink/realtime_stream_job.py). The event reports PostgreSQL or Iceberg offline outputs according to the sink actually enabled, and reports Redis outputs only when the online sink is enabled.
+The event reports the PostgreSQL offline outputs for the offline-store job and the Redis outputs for the online-store job.
+
+### Execution And Governance Steps
+
+1. **Data lineage:** the [Flink entrypoint](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L174) creates two runtime recorders with the same `cdc.behavior_events` input. The offline job records the three PostgreSQL Feast feature tables as outputs, while the online job records the three Redis feature datasets. A continuously running job remains at `START`; termination records `COMPLETE` or `FAIL`.
+2. **Data contract:** [`streaming_features`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L829-L866) owns contracts only for the three Redis datasets because the PostgreSQL offline tables remain owned by DP3. Each Redis contract declares the entity key, feature schema, and intended TTL semantics.
+3. **Data validation:** [`validate_streaming_redis`](../../../apps/data-platform/src/validate/governance_contracts.py#L219-L249) scans `fs:user_sequence:*`, `fs:user_aggregate:*`, and `fs:item:*`. Each contract passes only when at least one matching key exists and a sampled Redis hash has a non-empty payload. The current validator does not yet verify TTL, and PostgreSQL outputs are validated under DP3 rather than duplicated under Streaming.
 
 ## Runtime Governance Verification
 

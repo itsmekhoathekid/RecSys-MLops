@@ -26,39 +26,60 @@ Set `gpu_min_nodes = 0` for dev cost saving, or `gpu_spot = true` for interrupti
 3. GPU quota in `var.zone` for `var.gpu_accelerator_type`.
 4. Docker images pushed to Artifact Registry before app workloads roll out.
 
-Build and push the expected images after `terraform apply` creates Artifact Registry, or create the repository first with a targeted apply:
+Create Artifact Registry before the first Jenkins image publication:
 
 ```bash
 cd infra/terraform/gcp
 terraform init
 terraform apply -target=google_artifact_registry_repository.docker
-
-PROJECT_ID=your-gcp-project-id
-REGION=asia-southeast1
-REPO="${REGION}-docker.pkg.dev/${PROJECT_ID}/recsys"
-TAG=gcp
-
-gcloud auth configure-docker "${REGION}-docker.pkg.dev"
-
-docker build -f ../../../infra/docker/Dockerfile.base-python -t recsys-base-python:local ../../..
-docker build --build-arg RECSYS_BASE_IMAGE=recsys-base-python:local -f ../../../apps/data-platform/Dockerfile.dataflow-cli -t "${REPO}/recsys-dataflow-cli:${TAG}" ../../..
-docker build -f ../../../apps/data-platform/Dockerfile.spark -t "${REPO}/recsys-spark:${TAG}" ../../..
-docker build -f ../../../apps/data-platform/Dockerfile.flink -t "${REPO}/recsys-flink:${TAG}" ../../..
-docker build -f ../../../infra/docker/Dockerfile.kafka-connect -t "${REPO}/recsys-kafka-connect:${TAG}" ../../..
-docker build -f ../../../infra/docker/Dockerfile.airflow -t "${REPO}/recsys-airflow:${TAG}" ../../..
-docker build -f ../../../infra/docker/Dockerfile.mlflow -t "${REPO}/recsys-mlflow:${TAG}" ../../..
-docker build -f ../../../apps/api-serving/Dockerfile -t "${REPO}/recsys-api-serving:${TAG}" ../../..
-docker build -f ../../../apps/ml-system/Dockerfile.training -t "${REPO}/recsys-mlops-training:${TAG}" ../../..
-
-docker push "${REPO}/recsys-dataflow-cli:${TAG}"
-docker push "${REPO}/recsys-spark:${TAG}"
-docker push "${REPO}/recsys-flink:${TAG}"
-docker push "${REPO}/recsys-kafka-connect:${TAG}"
-docker push "${REPO}/recsys-airflow:${TAG}"
-docker push "${REPO}/recsys-mlflow:${TAG}"
-docker push "${REPO}/recsys-api-serving:${TAG}"
-docker push "${REPO}/recsys-mlops-training:${TAG}"
 ```
+
+Terraform bootstraps the application Helm releases once. Their
+`lifecycle.ignore_changes = all` handoff makes Jenkins the only runtime release
+operator, so a later infrastructure apply cannot roll image digests back.
+Terraform remains the owner of namespaces, operators, the central secret
+payloads and the `recsys-security` ExternalSecret release.
+
+Jenkins validates `images/catalog.json`, builds the 15-image dependency graph,
+pushes immutable references, and deploys only catalog-owned artifacts.
+
+## One-time hard-cut migration
+
+The old `recsys-data-platform` Helm release cannot be upgraded in place into
+multiple release owners. Before the first apply of this refactor, schedule a
+maintenance window and:
+
+1. Back up the Terraform state, the old Helm values/manifest, and all
+   production databases/object storage.
+2. Back up `recsys-data-platform-secret` to a mode-`0600` file outside the
+   repository. The old release may delete its copy during uninstall; the
+   ExternalSecret must recreate it before workloads resume.
+3. Remove only the retired Terraform state address:
+   `terraform state rm helm_release.recsys_data_platform`.
+4. Uninstall the old release:
+   `helm uninstall recsys-data-platform -n recsys-dataflow`.
+   StatefulSet volume-claim templates retain their PVCs, but workloads are
+   unavailable until the next step finishes.
+5. Run `terraform plan` and verify that it creates the eight
+   `recsys-data-*`/`recsys-airflow` releases without replacing persistent
+   disks or PVCs, then apply the reviewed plan.
+6. Wait for `ExternalSecret/recsys-data-platform-secret` to become Ready and
+   confirm the target Secret exists. Securely delete the temporary backup only
+   after the live validation succeeds.
+7. Run `ops/validation/verify_gcp_stack.sh live` before Jenkins deployment is
+   re-enabled.
+
+The split application releases deliberately stay in Terraform state as
+bootstrap records, but Terraform ignores their runtime mutations. Do not remove
+the split release state addresses and do not run `terraform import` after
+Jenkins upgrades them.
+
+Cloud Build retirement is also a two-apply operation against the pre-refactor
+state: first change only the Cloud Build API instance to
+`disable_on_destroy = true` and apply; then use this final configuration, which
+removes the API entry and Cloud Build IAM resources, and apply again. Do not
+skip the reviewed intermediate apply if the API must be disabled rather than
+merely unmanaged.
 
 ## Deploy
 
@@ -71,6 +92,14 @@ terraform init
 terraform plan -out=tfplan
 terraform apply tfplan
 ```
+
+After apply, prove that Terraform will not revert Jenkins-owned runtime values:
+
+```bash
+terraform plan -detailed-exitcode
+```
+
+Review any exit code `2`; application image-only drift must not appear.
 
 ## Hibernate And Resume Without Deleting PVC Data
 
@@ -91,7 +120,7 @@ make gcp-services-status
 The down command records the live node-pool sizes in `.gcp-services-power-state.env` and the up command restores from that file. Override the defaults only if the cluster was created with different names:
 
 ```bash
-GCP_PROJECT_ID=fsds-coursework \
+GCP_PROJECT_ID=rec-sys-503309 \
 GKE_ZONE=asia-southeast1-b \
 GKE_CLUSTER=recsys-mlops-gke \
 make gcp-services-up
@@ -99,9 +128,9 @@ make gcp-services-up
 
 For the coursework-sized GKE cluster, `make gcp-services-up` also normalizes runtime settings so the full data and ML platform comes back in the same proof-ready shape:
 
-- KEDA HTTP add-on `external-scaler` and `interceptor` default to `1` replica each. The services stay enabled, but this leaves enough CPU request headroom for KFP component pods and the Ray retrain launcher.
+- KEDA HTTP add-on `external-scaler` and `interceptor` default to `1` replica each. Its three control-plane deployments use the coursework request profile (`25m` CPU and `20Mi` memory each). The services stay enabled, but this leaves enough schedulable headroom for Airflow, KFP component pods and the Ray retrain launcher on the fixed two-node cluster.
 - Airflow data-platform config is restored to `REALTIME_E2E_ENABLED=true` and `RETRAIN_PSI_THRESHOLD=0.15`, so a forced-drift proof run does not leave the cluster in forced mode.
-- The smoke phase checks the recommendation API, A/B split, Flink streaming job, Jenkins UI, Airflow UI, DataHub UI/GMS, Prometheus, Grafana, and a temporary `500m` CPU Ray-launcher scheduling pod.
+- The smoke phase checks the recommendation API, Flink streaming job, Jenkins UI, Airflow UI, DataHub UI/GMS, Prometheus, Grafana, and a temporary `500m` CPU Ray-launcher scheduling pod. A/B split is checked when A/B is enabled; set `GCP_SERVICES_REQUIRE_AB_TEST=1` to require an active candidate deployment.
 - Smoke port-forwards use non-default local ports to avoid clashing with proof UIs already open locally: Jenkins `28090`, Airflow `28080`, DataHub GMS `28088`, DataHub frontend `29002`, Prometheus `29090`, and Grafana `23000`.
 
 If you specifically need KEDA HTTP add-on HA for an autoscaling demo, override the replica count:
@@ -115,15 +144,14 @@ GCP_SERVICES_KEDA_HTTP_REPLICAS=3 make gcp-services-up
 Static verification from the repo:
 
 ```bash
-infra/terraform/gcp/scripts/verify_gcp_stack.sh static
+ops/validation/verify_gcp_stack.sh static
 ```
 
 Live verification after apply:
 
 ```bash
-cd infra/terraform/gcp
 terraform output -raw kubectl_get_credentials_command | bash
-./scripts/verify_gcp_stack.sh live
+ops/validation/verify_gcp_stack.sh live
 ```
 
 The live check confirms GPU node presence, core rollouts, KServe/Triton objects, API service, KEDA scaled objects, and the RayJob.
