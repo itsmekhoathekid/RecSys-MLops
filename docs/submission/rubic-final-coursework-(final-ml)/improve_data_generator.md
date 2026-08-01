@@ -6,7 +6,7 @@ This is an offline historical-generator scenario. It simulates a gradual increas
 
 ```mermaid
 flowchart LR
-    A["data_generator_drift.yaml<br/>enabled + dates + multiplier"] --> B["CLI generate<br/>load_config"]
+    A["configs/data-platform/generator/drift.yaml<br/>enabled + dates + multiplier"] --> B["CLI generate<br/>load_config"]
     B --> C["HistoricalDataPipeline"]
     C --> D["RecsysSimulation"]
     D --> E["DriftController<br/>phase + factor by simulated date"]
@@ -20,7 +20,7 @@ flowchart LR
 
 ### Implementation and trigger
 
-1. [`data_generator_drift.yaml`](../../../configs/local/data_generator_drift.yaml#L27) enables `user_purchase_frequency` drift, defines `drift_start_date=2025-07-30`, selects gradual mode, raises the purchase-probability multiplier to `1.50`, and uses a 30-day ramp. The baseline is `2025-06-30..2025-07-29`.
+1. [drift.yaml](../../../configs/data-platform/generator/drift.yaml) enables `user_purchase_frequency` drift, defines `drift_start_date=2025-07-30`, selects gradual mode, raises the purchase-probability multiplier to `1.50`, and uses a 30-day ramp. The baseline is `2025-06-30..2025-07-29`.
 2. [`cli.py`](../../../apps/data-platform/data-generator/src/cli.py#L31) loads that configuration. The `generate` subcommand starts [`HistoricalDataPipeline.run()`](../../../apps/data-platform/data-generator/src/cli.py#L33).
 3. [`HistoricalDataPipeline`](../../../apps/data-platform/data-generator/src/offline/historical_pipeline.py#L25) constructs `RecsysSimulation` and generates the complete 150-day historical dataset in one run.
 4. [`DriftController.get_factor()`](../../../apps/data-platform/data-generator/src/drift/controller.py#L16) returns `1.0` before the drift date. In gradual mode it linearly ramps from `1.0` to `1.50` over 30 simulated days; [`get_phase()`](../../../apps/data-platform/data-generator/src/drift/controller.py#L31) labels each timestamp as `pre_drift`, `baseline`, or `post_drift`.
@@ -59,7 +59,7 @@ monitoring/feature_drift_alerts.parquet
 
 Code reference:
 
-- [data_generator_drift.yaml (line 27)](../../../configs/local/data_generator_drift.yaml#L27), [data_generator_drift.yaml (line 35)](../../../configs/local/data_generator_drift.yaml#L35): enables drift and defines the baseline/post-drift boundary.
+- [drift.yaml](../../../configs/data-platform/generator/drift.yaml), [drift.yaml](../../../configs/data-platform/generator/drift.yaml): enables drift and defines the baseline/post-drift boundary.
 - [controller.py (line 8)](../../../apps/data-platform/data-generator/src/drift/controller.py#L8), [controller.py (line 48)](../../../apps/data-platform/data-generator/src/drift/controller.py#L48), [reporting.py (line 71)](../../../apps/data-platform/data-generator/src/drift/reporting.py#L71), [reporting.py (line 197)](../../../apps/data-platform/data-generator/src/drift/reporting.py#L197): drift phase/factor, artifacts, health metrics, and alerts.
 - [summarize_drift_label_merge.py (line 75)](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#L75), [summarize_drift_label_merge.py (line 206)](../../../apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py#L206): configuration and drift-health proof tables.
 
@@ -69,10 +69,10 @@ Running command:
 cd /Users/KHOAI/anhkhoa/RecSys-MLops
 
 UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/cli.py generate \
-  --config configs/local/data_generator_drift.yaml
+  --config configs/data-platform/generator/drift.yaml
 
 UV_CACHE_DIR=.uv-cache PYTHONPATH=apps/data-platform/data-generator/src uv run python apps/data-platform/data-generator/src/scripts/summarize_drift_label_merge.py \
-  --config configs/local/data_generator_drift.yaml \
+  --config configs/data-platform/generator/drift.yaml \
   | awk '
       /^## Generator Configuration/ {show=1}
       /^## Label Table/ {show=0}
@@ -147,8 +147,13 @@ for table_name in OFFLINE_STORE_TABLES:
 Code reference:
 
 - [`build_ranking_labels.py`](../../../apps/data-platform/src/features/spark/build_ranking_labels.py#L6) joins impressions to later `cart`/`purchase` events in the 24-hour label window and emits `label` at [line 56](../../../apps/data-platform/src/features/spark/build_ranking_labels.py#L56).
-- [`spark_batch_entrypoint.py`](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L64) builds `ml_ranking_labels`; its PostgreSQL export loop creates and inserts every offline-store table at [line 102](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L102).
-- [`spark_batch.yaml`](../../../configs/local/spark_batch.yaml#L18) enables PostgreSQL export to database/schema `feature_store`, and [line 29](../../../configs/local/spark_batch.yaml#L29) configures the 24-hour label window.
+- [`dp3_offline_feature_entrypoint.py`](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L54)
+  builds `ml_ranking_labels`; its PostgreSQL export path creates, truncates,
+  and inserts all current offline-store tables in
+  [`_write_postgres_tables()`](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L109).
+- [`dp3.yaml`](../../../configs/data-platform/spark/dp3.yaml) enables PostgreSQL
+  export to database/schema `feature_store` and configures the 24-hour label
+  window.
 
 ### PostgreSQL proof command
 

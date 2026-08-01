@@ -128,11 +128,17 @@ The jobs intentionally use separate consumer groups so both jobs receive the ful
 - Base group: `realtimeFlinkConsumer.groupId: recsys-flink-realtime`
 - Offline sink: `realtimeFlinkConsumer.offlineStoreSink: postgres`
 - Checkpoint interval: `30` seconds
-- Watermark delay: `60` minutes
+- Watermark delay: `5` minutes
+- GCP proof allowed-lateness window: `3600` seconds
 - Feature state TTL: `604800` seconds
 - Dedup state TTL: `86400` seconds
 - PostgreSQL Feast target: `FEAST_POSTGRES_HOST=feature-postgres.recsys-dataflow.svc.cluster.local`, `FEAST_POSTGRES_DB=feature_store`, `FEAST_POSTGRES_SCHEMA=feature_store`, `FEAST_POSTGRES_SSLMODE=disable`
-- Stability tuning after proof run: `KAFKA_FETCH_MAX_BYTES=1048576`, `KAFKA_MAX_PARTITION_FETCH_BYTES=262144`, `KAFKA_MAX_POLL_RECORDS=100`, plus TaskManager memory `process=2560m`, `task.heap=1024m`, `managed=256m`. This avoids Java heap OOM from large Kafka fetch buffers while both continuous jobs share the TaskManager.
+- Stability tuning: `KAFKA_FETCH_MAX_BYTES=1048576`,
+  `KAFKA_MAX_PARTITION_FETCH_BYTES=262144`,
+  `KAFKA_MAX_POLL_RECORDS=100`; the GCP TaskManager profile is
+  `process=4096m`, `task.heap=2048m`, `managed=512m`, and
+  `jvm-overhead-max=1024m`. This bounds Kafka fetch memory while the two
+  continuous jobs run on isolated TaskManager slots.
 
 | Job | Kafka topic | Consumer group | Continuous mode | Sink |
 | --- | --- | --- | --- | --- |
@@ -169,7 +175,7 @@ realtimeFlinkConsumer:
   offlineStoreSink: postgres
 ```
 
-Source: [streaming job enablement, names, groups, and topic](../../../infra/helm/recsys-data-platform/values.yaml#L162), [sink limits and PostgreSQL offline-sink selection](../../../infra/helm/recsys-data-platform/values.yaml#L186), [Redis service values](../../../infra/helm/recsys-data-platform/values.yaml#L117), and [Feast PostgreSQL target values](../../../infra/helm/recsys-data-platform/values.yaml#L39).
+Source: [streaming job enablement, names, groups, topic, and sink limits](../../../infra/helm/recsys-streaming/values.yaml#L43), [GCP streaming overrides](../../../infra/helm/recsys-streaming/values-gcp.yaml), [Redis service values](../../../infra/helm/recsys-feature-store/values.yaml), and [Feast PostgreSQL target/config values](../../../infra/helm/recsys-data-config/values.yaml).
 
 The online deployment is rendered only when `online.enabled` is true. Its Flink
 command uses the online consumer group and explicitly disables the offline
@@ -182,7 +188,7 @@ sink, leaving the Redis writer enabled:
 --disable-offline-store
 ```
 
-Source: [online Deployment condition and name](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L3), [online Flink submission and consumer group](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L59), and [online-only sink selection](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L98). The Redis endpoint is rendered from Helm values into `REDIS_HOST` and `REDIS_PORT` by the [data-platform ConfigMap](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L81).
+Source: [online Deployment and Flink submission](../../../infra/helm/recsys-streaming/templates/realtime-flink-consumer.yaml#L1). The Redis endpoint is rendered into `REDIS_HOST` and `REDIS_PORT` by the [shared data ConfigMap](../../../infra/helm/recsys-data-config/templates/configmap.yaml).
 
 The offline deployment is rendered only when `offline.enabled` is true. Its
 Flink command selects the PostgreSQL offline sink and explicitly disables the
@@ -199,7 +205,7 @@ online writer:
 --feast-postgres-schema "$FEAST_POSTGRES_SCHEMA"
 ```
 
-Source: [offline Deployment condition and name](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L119), [offline Flink submission and consumer group](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L176), and [PostgreSQL-only sink selection and connection arguments](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L215). Helm renders the PostgreSQL host, database, schema, and SSL mode into the [data-platform ConfigMap](../../../infra/helm/recsys-data-platform/templates/configmap.yaml#L24), while credentials come from the [data-platform Secret](../../../infra/helm/recsys-data-platform/templates/secret.yaml#L19).
+Source: [offline Flink submission and PostgreSQL-only sink arguments](../../../infra/helm/recsys-streaming/templates/realtime-flink-consumer.yaml#L177). Helm renders the PostgreSQL host, database, schema, and SSL mode into the [shared data ConfigMap](../../../infra/helm/recsys-data-config/templates/configmap.yaml), while credentials are synchronized into `recsys-data-platform-secret` by the [security chart](../../../infra/helm/recsys-security/).
 
 ### Image Proof Of Flink UI Job Running
 
@@ -225,7 +231,7 @@ Expected proof: both submitter deployments are ready, Flink has two `RUNNING` jo
 
 ### Code Reference
 
-- [values.yaml (line 162)](../../../infra/helm/recsys-data-platform/values.yaml#L162), [realtime-flink-consumer.yaml (line 119)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L119), [realtime-flink-consumer.yaml (line 176)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L176), and [realtime-flink-consumer.yaml (line 215)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L215): offline-store Helm values, Deployment, Flink submission, and PostgreSQL sink arguments.
+- [streaming values](../../../infra/helm/recsys-streaming/values.yaml#L43) and [realtime Flink consumer template](../../../infra/helm/recsys-streaming/templates/realtime-flink-consumer.yaml#L118): offline-store enablement, Deployment, consumer group, Flink submission, and PostgreSQL sink arguments.
 - [row_mappers.py (line 110)](../../../apps/data-platform/src/features/flink/operators/row_mappers.py#L110), [row_mappers.py (line 183)](../../../apps/data-platform/src/features/flink/operators/row_mappers.py#L183), [feature_windows.py (line 346)](../../../apps/data-platform/src/features/flink/feature_windows.py#L346), and [postgres_async.py (line 63)](../../../apps/data-platform/src/features/flink/sinks/postgres_async.py#L63): typed user/item PostgreSQL rows, event-time feature windows, and the async offline-store writer.
 - [recsys_feature_definitions.py](../../../apps/data-platform/feature-store/feature_repo/recsys_feature_definitions.py): `PostgreSQLSource` FeatureViews over the written tables.
 
@@ -260,7 +266,7 @@ Expected proof: logs show PostgreSQL offline writer activity and PostgreSQL row 
 
 ### Code Reference
 
-- [values.yaml (line 162)](../../../infra/helm/recsys-data-platform/values.yaml#L162), [realtime-flink-consumer.yaml (line 3)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L3), [realtime-flink-consumer.yaml (line 59)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L59), and [realtime-flink-consumer.yaml (line 98)](../../../infra/helm/recsys-data-platform/templates/realtime-flink-consumer.yaml#L98): online-store Helm values, Deployment, Flink submission, and Redis-only sink selection.
+- [streaming values](../../../infra/helm/recsys-streaming/values.yaml#L43) and [realtime Flink consumer template](../../../infra/helm/recsys-streaming/templates/realtime-flink-consumer.yaml#L1): online-store enablement, Deployment, consumer group, Flink submission, and Redis-only sink selection.
 - [online_writer.py (line 16)](../../../apps/data-platform/src/feature_store/online_writer.py#L16), [online_writer.py (line 48)](../../../apps/data-platform/src/feature_store/online_writer.py#L48), [redis_async.py (line 12)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L12), and [realtime_stream_job.py (line 82)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L82): Redis serialization, keys, TTLs, writer implementation, and graph attachment.
 
 ### Commands To Capture Proof
@@ -292,8 +298,7 @@ Expected proof: each command prints at least one Redis online feature key create
 - [redis_async.py (line 39)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L39), [redis_async.py (line 46)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L46), [redis_async.py (line 56)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L56): Redis TTLs for sequence, aggregate, and item features.
 - [source.py (line 104)](../../../apps/data-platform/src/features/flink/source.py#L104), [dedup.py (line 8)](../../../apps/data-platform/src/features/flink/operators/dedup.py#L8), and [feature_windows.py (line 285)](../../../apps/data-platform/src/features/flink/feature_windows.py#L285): applies TTL to bounded-limit, deduplication, and rolling user/item keyed state.
 - [runtime.py](../../../apps/data-platform/src/features/flink/runtime.py): builds and enables native Flink `StateTtlConfig`.
-- [redis_online_store.yaml (line 14)](../../../configs/local/redis_online_store.yaml#L14): configurable Redis TTL values.
-- [values.yaml (line 211)](../../../infra/helm/recsys-data-platform/values.yaml#L211), [values.yaml (line 222)](../../../infra/helm/recsys-data-platform/values.yaml#L222): deployed watermark and state-TTL values.
+- [stream parser defaults](../../../apps/data-platform/src/features/flink/stream_config.py#L248) and [deployed data-config values](../../../infra/helm/recsys-data-config/values.yaml#L249): watermark, allowed-lateness, feature-state TTL, and dedup-state TTL.
 
 ### TTL For Each Feature Table & Reason Why
 

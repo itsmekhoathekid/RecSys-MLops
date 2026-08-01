@@ -239,9 +239,9 @@ The orchestration loop is visible in [`emit_products`](../../../apps/data-platfo
 
 ### Execution And Governance Steps
 
-1. **Data lineage:** [`run_pyspark_batch`](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L178-L201) records the nine DP2 Silver tables as inputs, the five Iceberg feature tables as batch outputs, and the four PostgreSQL Feast tables returned by the export step as additional outputs of `DP3.ingest_stage`.
+1. **Data lineage:** [`run_dp3_offline_features`](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L159) records the nine DP2 Silver tables as inputs, the five Iceberg feature tables as batch outputs, and the four PostgreSQL Feast tables returned by the export step as additional outputs of `DP3.ingest_stage`.
 2. **Data contract:** [`dp3`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L722-L781) defines contracts for five Iceberg feature datasets and four PostgreSQL Feast datasets. Each requires a non-empty dataset, the appropriate entity key, the feature or prediction timestamp, and non-null key/timestamp values.
-3. **Data validation:** the Spark stage first runs the [Iceberg output checks](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L116-L149): `row_count > 0`, required key/timestamp columns present, and zero null key/timestamp rows. The following [`validate_dp3_postgres`](../../../apps/data-platform/src/validate/governance_contracts.py#L148-L216) checks the four exported PostgreSQL tables for a complete configured schema, `row_count > 0`, and zero null entity-key/timestamp rows. Both parts merge into the DP3 validation report for the same run.
+3. **Data validation:** the Spark stage first runs the [Iceberg output checks](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L123): `row_count > 0`, required key/timestamp columns present, and zero null key/timestamp rows. The following [`validate_dp3_postgres`](../../../apps/data-platform/src/validate/governance_contracts.py#L148-L216) checks the four exported PostgreSQL tables for a complete configured schema, `row_count > 0`, and zero null entity-key/timestamp rows. Both parts merge into the DP3 validation report for the same run.
 
 ## CDC Ingestion
 

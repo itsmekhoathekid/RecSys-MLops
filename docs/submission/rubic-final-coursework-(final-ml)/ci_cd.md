@@ -566,10 +566,13 @@ verification that the uploaded pipeline/version exists
 
 **Strategy:** run this CI/CD branch when raw ingestion, synthetic data
 generation, source Postgres/CDC, Kafka topic, Debezium, Kafka Connect, or raw
-Airflow paths change, especially `apps/data-platform/data-generator/`,
-`apps/data-platform/src/ingest/`, `raw_ingestion_dag.py`,
-`configs/local/data_generator*.yaml`, `configs/local/postgres_source.yaml`, and
-`configs/local/kafka_topics.yaml`.
+Airflow paths change. The authoritative rules include
+`apps/data-platform/data-generator/`, `apps/data-platform/src/ingest/`, the
+split data-lakehouse/source-store charts, the four
+`configs/data-platform/generator/*.yaml` scenarios,
+`configs/data-platform/spark/dp1.yaml`, and
+`recsys_dp1_raw_to_bronze.py`
+([component mapping](../../../jenkins/config/components.json)).
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp1_cicd_ui.png)
 
@@ -583,17 +586,25 @@ suite that exists, and coverage for `ingest.debezium` and
 **Figure: DP1 Test proof.** Capture Jenkins `Component CI > DP1 Raw To Bronze`
 showing generator/ingest tests and coverage.
 
-**Build:** `component_build_publish.sh dp1` builds and pushes
-`recsys-data-generator`, `recsys-dataflow-cli`, `recsys-airflow`, and
-`recsys-kafka-connect`.
+**Build:** the release plan requests `recsys-spark`,
+`recsys-data-ingestion`, `recsys-kafka-connect`, and `recsys-airflow`; the
+catalog adds `recsys-base-python` before its dependent. Each image is built,
+scanned, and optionally published once
+([component mapping](../../../jenkins/config/components.json),
+[build entrypoint](../../../jenkins/scripts/entrypoints/release_build_publish.sh)).
 
 ![DP1 Build Jenkins UI proof](../../pngs/cicd_dp1_build.png)
 
 **Figure: DP1 Build proof.** Capture Jenkins
-`Component Build And Publish > DP1 Raw To Bronze` with all DP1 images pushed.
+`Component Build And Publish` with the DP1 image order, scan result, and digest
+manifest.
 
-**Deploy:** `component_deploy.sh dp1` upgrades `recsys-data-platform` and updates
-the dataflow CLI, Airflow, and Kafka Connect images.
+**Deploy:** the plan selects the split data-config, lakehouse, source-store,
+event-stream, Kafka Connect, streaming, and Airflow units required by component
+ownership and image consumers. Each Helm unit receives digest-pinned images and
+is upgraded atomically in dependency order
+([deploy-unit graph](../../../jenkins/config/deploy-units.json),
+[deploy entrypoint](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh)).
 
 ![DP1 Deploy Jenkins UI proof](../../pngs/cicd_dp1_deploy.png)
 
@@ -609,9 +620,11 @@ source ingestion and CDC runtimes.
 
 **Strategy:** run this CI/CD branch when Spark silver/gold transforms, batch
 feature DAGs, Spark batch config, lakehouse code, or Spark runtime image paths
-change, especially `apps/data-platform/src/features/spark/`,
-`batch_feature_pipeline_dag.py`, `apps/data-platform/src/lakehouse/`,
-`apps/data-platform/Dockerfile.spark`, and `configs/local/spark_batch*.yaml`.
+change, especially `dp2_silver_gold_entrypoint.py`,
+`build_silver_tables.py`, `recsys_dp2_bronze_to_silver_gold.py`,
+`configs/data-platform/spark/dp2.yaml`, lakehouse/shared Spark utilities, and
+their tests
+([component mapping](../../../jenkins/config/components.json)).
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp2_cicd_ui.png)
 
@@ -625,8 +638,8 @@ contract tests, any matching integration suite that exists, and coverage for
 `Component CI > DP2 Bronze To Silver Gold` showing Spark/lakehouse tests and
 coverage.
 
-**Build:** `component_build_publish.sh dp2` builds and pushes `recsys-spark` and
-`recsys-airflow`.
+**Build:** the release plan requests `recsys-spark` and `recsys-airflow`. The
+catalog/build engine builds, scans, and optionally publishes each once.
 
 ![DP2 Build Jenkins UI proof](../../pngs/cicd_dp2_build.png)
 
@@ -634,8 +647,9 @@ coverage.
 `Component Build And Publish > DP2 Bronze To Silver Gold` with Spark and Airflow
 images pushed.
 
-**Deploy:** `component_deploy.sh dp2` upgrades `recsys-data-platform` and updates
-the Spark and Airflow images.
+**Deploy:** image consumers select the independently owned data-config and
+Airflow units as needed; Jenkins applies digest-pinned values with atomic Helm
+upgrades and verifies only the DP2 registration/health contract.
 
 ![DP2 Deploy Jenkins UI proof](../../pngs/cicd_dp2_deploy.png)
 
@@ -655,7 +669,8 @@ offline feature table config changes, especially
 `apps/data-platform/src/feature_store/`, `apps/data-platform/src/features/spark/`,
 `apps/ml-system/src/cli/prepare_bst_training_data.py`,
 `tests/unit/ml_system/test_prepare_bst_training_data.py`, and
-`batch_feature_pipeline_dag.py`.
+`recsys_dp3_offline_feature_table.py`. Exact inclusions/exclusions live in
+[`components.json`](../../../jenkins/config/components.json).
 
 ![Materialize Pipeline Test Jenkins UI proof](../../pngs/dp3_cicd_ui.png)
 
@@ -669,17 +684,19 @@ coverage for `lakehouse.iceberg` and `feature_store.online_writer`.
 `Component CI > DP3 Offline Feature Table` showing offline feature table and BST
 training-data tests.
 
-**Build:** `component_build_publish.sh dp3` builds and pushes `recsys-spark`,
-`recsys-dataflow-cli`, and `recsys-airflow`.
+**Build:** the release plan requests `recsys-spark`,
+`recsys-feature-store`, and `recsys-airflow`; the catalog adds the shared
+Python base where required. Every image is built/scanned/published once.
 
 ![DP3 Build Jenkins UI proof](../../pngs/cicd_dp3_build.png)
 
 **Figure: DP3 Build proof.** Capture Jenkins
-`Component Build And Publish > DP3 Offline Feature Table` with Spark, dataflow
-CLI, and Airflow images pushed.
+`Component Build And Publish` with Spark, feature-store, and Airflow image
+digests.
 
-**Deploy:** `component_deploy.sh dp3` upgrades `recsys-data-platform` and updates
-the Spark, dataflow CLI, and Airflow images.
+**Deploy:** the release graph selects feature-store/data-config/Airflow
+consumers as required, applies them in dependency layers, then verifies the DP3
+DAG registration. Deployment verification does not start a production DP3 run.
 
 ![DP3 Deploy Jenkins UI proof](../../pngs/cicd_dp3_deploy.png)
 
@@ -718,8 +735,9 @@ tests, any matching integration suite that exists, and coverage for `model_cd`.
 `Component CI > KServe Inference Engine` showing promotion and serving contract
 tests.
 
-**Build:** `component_build_publish.sh kserve` does not build an API image. The
-artifact is the promoted Triton model repository plus promotion manifest.
+**Build:** `kserve` has no container-image or compiled-artifact build in the
+path-based release plan. Its model repository and promotion manifest are
+produced by the ML pipeline/model lifecycle, not by this component CI stage.
 
 ![Triton Inference Engine Build Jenkins UI proof](../../pngs/cicd_kserve_build.png)
 
@@ -727,9 +745,11 @@ artifact is the promoted Triton model repository plus promotion manifest.
 `Component Build And Publish > KServe Inference Engine` showing that KServe uses
 the Triton runtime and promoted model artifacts instead of a custom app image.
 
-**Deploy:** `component_deploy.sh kserve` runs `model_cd.py`, validates the model
-repository, applies `recsys-serving` Helm values, waits for
-`recsys-bst-triton`, and enables KServe resource autoscaling after readiness.
+**Deploy:** the `serving` unit invokes the current model-CD module through
+[`deploy_kserve()`](../../../jenkins/scripts/deploy/serving.sh#L28), validates
+the model repository, renders the serving values, and verifies KServe/Triton
+readiness
+([deploy-unit mapping](../../../jenkins/config/deploy-units.json)).
 
 ![Triton Inference Engine Deploy Jenkins UI proof](../../pngs/cicd_kserve_deploy.png)
 
@@ -833,17 +853,19 @@ online feature API, ranking, A/B, and Triton client modules.
 **Figure: FastAPI Test proof.** Capture Jenkins `Component CI > FastAPI Web API`
 showing API unit/contract tests and coverage above the threshold.
 
-**Build:** `component_build_publish.sh api` builds and pushes
-`recsys-api-serving:<git_commit>`.
+**Build:** the release plan builds, scans, and optionally publishes
+`recsys-api-serving:<git_commit>`, then resolves its immutable digest.
 
 ![FastAPI Build Jenkins UI proof](../../pngs/cicd_api_build.png)
 
 **Figure: FastAPI Build proof.** Capture Jenkins
 `Component Build And Publish > FastAPI Web API` showing Docker build/push and
-`.ci-image-manifest/api.env`.
+the release image manifest.
 
-**Deploy:** `component_deploy.sh api` upgrades `recsys-serving`, updates both
-`api.image` and `featureApi.image`, then waits for
+**Deploy:** the `serving` deploy unit calls
+[`deploy_api()`](../../../jenkins/scripts/deploy/serving.sh#L3), upgrades
+`recsys-serving` atomically, updates both `api.image` and
+`featureApi.image` with the resolved digest, then waits for
 `recsys-api-serving` and `recsys-online-feature-api` rollouts.
 
 ![FastAPI Deploy Jenkins UI proof](../../pngs/cicd_api_deploy.png)
@@ -863,8 +885,10 @@ rollout status for both FastAPI services.
 **Strategy:** run this CI/CD branch when Flink streaming jobs, Kafka realtime
 processing code, offline feature sink logic, Flink Dockerfile, or streaming DAG
 paths change, especially `apps/data-platform/src/features/flink/`,
-`apps/data-platform/src/lakehouse/`, `apps/data-platform/Dockerfile.flink`,
-`streaming_feature_pipeline_dag.py`, and `configs/local/flink_streaming.yaml`.
+`apps/data-platform/src/feature_store/`,
+`apps/data-platform/flink-runtime-pom.xml`, shared lakehouse code, and the
+split streaming/feature-store releases
+([component mapping](../../../jenkins/config/components.json)).
 
 ![FastAPI Deploy Jenkins UI proof](../../pngs/job1_cicd_ui.png)
 
@@ -878,8 +902,8 @@ coverage for the Flink job modules plus the offline sink/lakehouse code.
 `Component CI > Stream Features To Offline Store` showing Flink/offline sink
 tests and coverage.
 
-**Build:** `component_build_publish.sh stream_offline` builds and pushes
-`recsys-flink:<git_commit>`.
+**Build:** the release plan builds, scans, and optionally publishes
+`recsys-flink:<git_commit>` once, then resolves its digest.
 
 ![Stream Offline Build Jenkins UI proof](../../pngs/cicd_stream_offline_build.png)
 
@@ -887,9 +911,11 @@ tests and coverage.
 `Component Build And Publish > Stream Features To Offline Store` showing Flink
 image build/push.
 
-**Deploy:** `component_deploy.sh stream_offline` upgrades
-`recsys-data-platform` and updates `images.flink`, which rolls the continuous
-Flink offline-store job.
+**Deploy:** the selected `streaming` unit upgrades
+`recsys-streaming`, injects the `images.flink` digest, and rolls the continuous
+offline and online Flink submitter workloads together because both jobs share
+one image and one Helm release. Verification requires both jobs to be running
+([stream verification](../../../jenkins/scripts/test/data_platform.sh#L52)).
 
 ![Stream Offline Deploy Jenkins UI proof](../../pngs/cicd_stream_offline_deploy.png)
 
@@ -908,9 +934,9 @@ writer logic, online feature sink code, realtime API interaction, Flink
 Dockerfile, or Redis online-store config changes, especially
 `apps/data-platform/src/features/flink/`,
 `apps/data-platform/src/feature_store/online_writer.py`,
-`apps/data-platform/Dockerfile.dataflow-cli`,
-`apps/data-platform/Dockerfile.flink`, `configs/local/flink_streaming.yaml`, and
-`configs/local/redis_online_store.yaml`.
+`apps/data-platform/flink-runtime-pom.xml`, and the shared
+streaming/feature-store release groups
+([component mapping](../../../jenkins/config/components.json)).
 
 ![FastAPI Deploy Jenkins UI proof](../../pngs/job2_cicd_ui.png)
 
@@ -925,18 +951,19 @@ that exists, and coverage for Flink job modules plus
 `Component CI > Stream Features To Online Store` showing Flink/Redis online
 writer tests and coverage.
 
-**Build:** `component_build_publish.sh stream_online` builds and pushes
-`recsys-flink:<git_commit>` and `recsys-dataflow-cli:<git_commit>`.
+**Build:** the release plan builds, scans, and optionally publishes only
+`recsys-flink:<git_commit>`; the retired `recsys-dataflow-cli` image is not part
+of the 15-image catalog.
 
 ![Stream Online Build Jenkins UI proof](../../pngs/cicd_stream_online_build.png)
 
 **Figure: Stream Online Build proof.** Capture Jenkins
-`Component Build And Publish > Stream Features To Online Store` showing Flink
-and dataflow CLI image build/push.
+`Component Build And Publish` showing the Flink image scan, publication, and
+resolved digest.
 
-**Deploy:** `component_deploy.sh stream_online` upgrades
-`recsys-data-platform`, updates `images.flink` and `images.dataflowCli`, and
-rolls the continuous Flink online-store job and online writer runtime.
+**Deploy:** the same split `recsys-streaming` release receives the Flink digest
+and rolls both continuous submitters. The component-specific verification
+checks Debezium, two running Flink jobs, Redis, and Feast PostgreSQL health.
 
 ![Stream Online Deploy Jenkins UI proof](../../pngs/cicd_stream_online_deploy.png)
 

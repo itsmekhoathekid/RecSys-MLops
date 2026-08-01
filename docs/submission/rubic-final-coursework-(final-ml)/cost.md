@@ -8,8 +8,8 @@
 | GKE node-pool autoscaling and `pd-balanced` boot disks | [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97), [gke.tf (line 220)](../../../infra/terraform/gcp/gke.tf#L220) |
 | Optional ingress controller uses a public `LoadBalancer` | [dependencies.tf (line 126)](../../../infra/terraform/gcp/dependencies.tf#L126), [dependencies.tf (line 145)](../../../infra/terraform/gcp/dependencies.tf#L145) |
 | Optional RecSys gateway release and routes | [recsys_services.tf (line 226)](../../../infra/terraform/gcp/recsys_services.tf#L226), [recsys_services.tf (line 299)](../../../infra/terraform/gcp/recsys_services.tf#L299) |
-| `make gcp-services-down` entry point | [Makefile (line 188)](../../../Makefile#L188), [Makefile (line 194)](../../../Makefile#L194) |
-| Down operation preserves PVC/PV objects and scales all node pools to zero | [gcp_services_power.sh (line 827)](../../../infra/terraform/gcp/scripts/gcp_services_power.sh#L827), [gcp_services_power.sh (line 836)](../../../infra/terraform/gcp/scripts/gcp_services_power.sh#L836) |
+| `make gcp-services-down` entry point | [Makefile target](../../../Makefile#L88) |
+| Down operation preserves PVC/PV objects and scales all node pools to zero | [`hibernate_down()`](../../../ops/gcp/services_power.sh#L981) |
 
 The monetary figures below are estimates; the links above prove the local deployment shape that the estimate is based on.
 
@@ -26,7 +26,7 @@ The monetary figures below are estimates; the links above prove the local deploy
 
 - **Gateway/load balancer:** khoang **$0.025-0.04/gio** neu ingress LoadBalancer con forwarding rule. Google co charge forwarding rule, vi du first 5 global forwarding rules **$0.025/hour**; regional co the khac chut theo region. Reference: Google Cloud VPC network pricing.
 
-- **Logging/Monitoring/Artifact Registry/Cloud Build:** tuy traffic/build, tam cong **$0.02-0.10/gio** neu log nhieu hoac vua build image.
+- **Logging/Monitoring/Artifact Registry:** tuy traffic/build, tam cong **$0.02-0.10/gio** neu log nhieu hoac vua build image.
 
 **Tong thuc te luc up:** khoang **$0.65-0.80/gio**, tuc **$15-19/ngay** neu de 24/7. Neu free tier GKE offset duoc cluster fee thi con khoang **$0.55-0.70/gio**.
 

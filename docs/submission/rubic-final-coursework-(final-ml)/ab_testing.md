@@ -45,17 +45,24 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
 2. Render serving values for the desired stage.
 
-   [model_cd.py (line 420)](../../../jenkins/python/model_cd/cli.py#L420), [model_cd.py (line 439)](../../../jenkins/python/model_cd/cli.py#L439) accepts these stages:
+   The [model-CD CLI stage contract](../../../jenkins/python/model_cd/cli.py#L37)
+   accepts these stages:
 
    | Stage | Purpose | Resulting A/B state |
    |---|---|---|
    | `deploy` | Deploy the stable production model only. | A/B disabled, candidate weight `0`. |
+   | `shadow-start` | Deploy the candidate for mirrored traffic without returning its result. | Shadow enabled, user-visible A/B disabled. |
    | `ab-start` | Start an experiment with control and candidate manifests. | A/B enabled if candidate exists and weight > 0. |
    | `ab-step` | Continue or increase/decrease candidate exposure. | A/B enabled with the requested candidate weight. |
+   | `evaluate` | Query current Prometheus samples and choose the next A/B step or rollback. | Writes a gate decision before changing exposure. |
    | `promote` | Make the candidate model the new stable serving model after gates pass. | Candidate becomes stable, A/B disabled, candidate weight `0`. |
    | `rollback` | Return to stable-only serving. | A/B disabled, candidate weight `0`. |
 
-   The stage logic is implemented in `write_values()`: A/B is enabled only for `ab-start` and `ab-step` when a candidate manifest exists and `candidate_weight_percent > 0`. For `deploy`, `promote`, and `rollback`, the rendered values disable A/B routing.
+   The stage logic is implemented in
+   [`write_values()`](../../../jenkins/python/model_cd/config.py#L6): A/B is
+   enabled only for `ab-start` and `ab-step` when a candidate manifest exists
+   and `candidate_weight_percent > 0`; shadow is enabled only for
+   `shadow-start`.
 
 3. Deploy two KServe/Triton inference services during A/B.
 
@@ -85,11 +92,16 @@ The current implementation supports the full A/B lifecycle, but this proof docum
 
 7. Decide promote or rollback.
 
-   [model_cd.py (line 129)](../../../jenkins/python/model_cd/cli.py#L129), [model_cd.py (line 231)](../../../jenkins/python/model_cd/cli.py#L231) implements promotion gates in `assert_promote_gates()`:
+   [`evaluate_candidate_gates()`](../../../jenkins/python/model_cd/promotion_gates.py#L27)
+   and
+   [`assert_promote_gates()`](../../../jenkins/python/model_cd/promotion_gates.py#L107)
+   implement the promotion gates:
 
    - Promote is allowed when candidate error rate is not more than `0.02` above control error rate.
    - Promote is allowed when candidate p95 latency is not more than `1.5x` control p95 latency.
-   - If either gate fails, `model_cd.py --stage promote` raises an error before updating the production manifest.
+   - Candidate confidence must remain at least `0.95x` the control confidence.
+   - Both variants need the configured minimum fresh sample count.
+   - A failed gate raises before the production manifest is updated.
 
    If the candidate passes and `--apply` is used, `promote` copies the candidate Triton repository into the stable serving URI, uploads the new production manifest, then renders a stable-only deploy with A/B disabled. If the candidate fails or the operator chooses not to continue, `rollback` renders stable-only values and sets candidate weight back to `0`.
 

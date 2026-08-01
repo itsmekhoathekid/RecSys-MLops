@@ -1,5 +1,9 @@
 # Versioning
 
+Commit-pinned GitHub links preserve evidence manifests that no longer exist in
+the current checkout. Relative links identify current production code; see the
+[submission reference guide](../README.md).
+
 ## Model Versioning
 
 ### Versioning flow
@@ -303,15 +307,23 @@ mlflow.log_dict(metadata, "datasets/dataset_version_meta.json")
 - [dataset_versioning.py](../../../apps/ml-system/src/lineage/dataset_versioning.py): validates composite keys, computes delete tombstones, configures native upsert/OCC, resolves the completed Timeline instant and performs time-travel export.
 - [mlflow_dataset_lineage.py (line 8)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L8), [mlflow_dataset_lineage.py (line 48)](../../../apps/ml-system/src/lineage/mlflow_dataset_lineage.py#L48): logs dataset version fields and the full manifest to MLflow.
 - [create_hudi_savepoint.py](../../../apps/ml-system/src/cli/create_hudi_savepoint.py): creates and verifies the idempotent promotion savepoint.
-- [hudi-cli-data-versioning-proof.yaml (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L130): reproducible Hudi CLI inspection pod.
+- [hudi-cli-data-versioning-proof.yaml (line 1)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/2a09b548927d78a0ddb8c00c2a7959f820c8df7b/infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/2a09b548927d78a0ddb8c00c2a7959f820c8df7b/infra/k8s/hudi-cli-data-versioning-proof.yaml#L130): reproducible Hudi CLI inspection pod.
 
 Hudi proof is captured with Hudi CLI by connecting directly to the table path and showing the active commit timeline. `desc` verifies the Copy-on-Write table and key fields; `commits show` and `show fsview all` expose the commit instants and versioned Parquet file slices produced by the upserts.
 
-**Proof pod note:** the Hudi CLI proof is reproducible from the reusable Kubernetes manifest [hudi-cli-data-versioning-proof.yaml (line 1)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L1), [hudi-cli-data-versioning-proof.yaml (line 130)](../../../infra/k8s/hudi-cli-data-versioning-proof.yaml#L130). Point the proof pod at `s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_samples_native_v2`; it prints `desc`, `commits show`, and `show fsview all` to pod logs.
+**Proof pod note:** the Hudi CLI manifest is archived at commit
+[`2a09b548`](https://github.com/itsmekhoathekid/RecSys-MLops/blob/2a09b548927d78a0ddb8c00c2a7959f820c8df7b/infra/k8s/hudi-cli-data-versioning-proof.yaml#L1);
+it is historical proof, not a path in the current production checkout. Extract
+that exact revision before applying it. The pod points at
+`s3a://recsys-offline-feature-store/warehouse/recsys_features/ml/bst_samples_native_v2`
+and prints `desc`, `commits show`, and `show fsview all` to its logs.
 
 ```bash
+git show \
+  2a09b548927d78a0ddb8c00c2a7959f820c8df7b:infra/k8s/hudi-cli-data-versioning-proof.yaml \
+  > /tmp/hudi-cli-data-versioning-proof.yaml
 kubectl delete pod -n recsys-dataflow hudi-cli-data-versioning-proof --ignore-not-found
-kubectl apply -f infra/k8s/hudi-cli-data-versioning-proof.yaml
+kubectl apply -f /tmp/hudi-cli-data-versioning-proof.yaml
 kubectl logs -n recsys-dataflow hudi-cli-data-versioning-proof | less -S
 ```
 
@@ -334,4 +346,3 @@ In Hudi, a **file slice** is the concrete data-file version for a Hudi file grou
 ![Apache Hudi native-v2 commit and file slices](../../pngs/hudi_native_v2_commit_file_slices.png)
 
 **Figure 7 - One completed Hudi dataset version and its file slices.** `CommitTime=20260727093340615` is the canonical dataset version used by the downstream Ray and MLflow runs. Hudi atomically committed `96,225` records across three partitions, wrote `15.2 MB`, added three files and reported zero write errors. `Total Files Updated=0` and `Total Update Records Written=0` are expected because this is the initial commit to the new native-v2 table path; subsequent upserts can update these file groups. The lower `show fsview all` output maps `split=val`, `split=test` and `split=train` to separate `FileId` values, but every row has the same `Base-Instant=20260727093340615`. This is storage-level proof that all three dataset splits belong to one atomic Hudi version rather than three independently versioned tables.
-

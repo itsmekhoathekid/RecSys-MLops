@@ -21,11 +21,12 @@ apps/
   data-platform/               Airflow, Spark, Flink, Feast feature store, ingestion, validation
   ml-system/                   BST model, Kubeflow pipeline, Ray Tune/DDP training, MLflow, promotion
 infra/
-  helm/                        Helm charts for serving, data platform, observability, security, gateway, CI
+  helm/                        Independently owned runtime and platform Helm charts
   terraform/gcp/               GCP/GKE infrastructure as code
-  kubeflow/                    Compiled Kubeflow pipeline packages
+images/                        Production Dockerfiles plus the 15-image catalog
 jenkins/
-  scripts/                     Shared path-based CI/CD scripts
+  config/                      CI components and deploy-unit ownership
+  scripts/                     Generic build, publish, test, and deploy entrypoints
 tests/
   unit/                        Fast isolated tests by component
   contract/                    Manifest/chart/pipeline contract tests
@@ -45,10 +46,10 @@ The GCP Terraform layout follows the same separation of concerns.
 | `network.tf` | VPC, subnet, secondary IP ranges. |
 | `gke.tf` | GKE cluster and node pools. |
 | `registry_storage.tf` | Artifact Registry and model/data storage buckets. |
-| `cloudbuild.tf` | Cloud Build permissions and build integration. |
 | `namespaces.tf` | Kubernetes namespaces and mesh injection labels. |
 | `dependencies.tf` | Shared operators: cert-manager, KEDA, KServe, Istio, External Secrets. |
 | `recsys_services.tf` | RecSys Helm releases. |
+| `datahub.tf` | DataHub platform release and prerequisites. |
 | `secret_management.tf` | Central source secrets for External Secrets Operator. |
 
 ### Code Reference
@@ -56,7 +57,7 @@ The GCP Terraform layout follows the same separation of concerns.
 - [README.md](../../../README.md): top-level repository structure and navigation.
 - [gke.tf (line 1)](../../../infra/terraform/gcp/gke.tf#L1), [gke.tf (line 245)](../../../infra/terraform/gcp/gke.tf#L245): GKE cluster and node-pool infrastructure boundary.
 - [api-deployment.yaml (line 1)](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L1), [api-deployment.yaml (line 85)](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L85): API serving deployment boundary.
-- [airflow.yaml (line 1)](../../../infra/helm/recsys-data-platform/templates/airflow.yaml#L1), [airflow.yaml (line 138)](../../../infra/helm/recsys-data-platform/templates/airflow.yaml#L138): data platform orchestration boundary.
+- [recsys-airflow chart](../../../infra/helm/recsys-airflow/) and [Airflow workloads](../../../infra/helm/recsys-airflow/templates/airflow.yaml): independently owned data-platform orchestration boundary.
 - [istio-authorization.yaml (line 1)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L1), [istio-authorization.yaml (line 235)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L235): security policy boundary.
 
 ### Image Proof

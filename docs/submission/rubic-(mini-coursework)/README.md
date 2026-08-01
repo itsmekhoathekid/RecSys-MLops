@@ -2,10 +2,13 @@
 
 This folder contains the proof documents for the mini-coursework rubric in `docs/xlsx/Coursework Tracking (Public).xlsx`, sheet `rubic (mini-coursework)`.
 
+Reference semantics, current production entrypoints, and retired paths are
+documented in the [submission reference guide](../README.md).
+
 | Rubric area | Proof document | What to capture/check |
 |---|---|---|
 | README and high-level deployable diagram | [README.md](../../../README.md) | Business domain, repo structure, table of contents, deployable-unit diagrams. |
-| Docker and Docker Compose | [docker.md](docker.md) | Dockerfile optimization notes, Cloud Build/compose commands, image proof. |
+| Docker packaging and deployment | [docker.md](docker.md) | Production image catalog, optimization notes, Jenkins build/publish flow, and historical before/after proof. |
 | Data generator | [data_generator.md](data_generator.md) | Skew, high cardinality, schema evolution, duplicates, burst, late arrival, config, stored raw data. |
 | Processing jobs | [processing_jobs.md](processing_jobs.md) | Spark baseline/optimized, Flink baseline/optimized, Spark UI/Flink UI, Airflow integration. |
 | Data storage optimization | [data_storage.md](data_storage.md) | DP1 Bronze and DP2 Silver Iceberg compaction, clustering, write properties, manifests, and before/after evidence. |

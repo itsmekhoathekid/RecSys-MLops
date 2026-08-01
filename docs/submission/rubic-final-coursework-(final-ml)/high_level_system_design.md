@@ -206,7 +206,7 @@ flowchart LR
     Tests["Unit + Integration Tests"]
     Coverage{"Coverage > 90%?"}
     CIFail["Fail CI"]
-    Build["Build Versioned Docker Images<br/>Jenkins + Cloud Build"]
+    Build["Build Versioned Docker Images<br/>Jenkins + Artifact Registry"]
     Registry[("GCP Artifact Registry")]
     AppCD["Application CD<br/>helm upgrade --install"]
     Platform["Infrastructure: Terraform<br/>GKE, security, secrets, autoscaling"]
@@ -690,7 +690,7 @@ flowchart LR
 ```mermaid
 flowchart TB
   Developer["Developer / Git change"]
-  CI["Jenkins CI + Cloud Build<br/>path-based test, build, security scan"]
+  CI["Jenkins CI/CD<br/>path-based test, build, Trivy scan, publish"]
   Registry[("GCP Artifact Registry<br/>versioned container images")]
   Terraform["Terraform GCP<br/>network, GKE, node pools, buckets, IAM"]
   Helm["Helm Releases<br/>data platform, runtime, serving,<br/>observability, analytics, CI, security"]
@@ -752,11 +752,11 @@ flowchart TB
 | Architecture area | Primary repository locations |
 | --- | --- |
 | Data generation and source simulation | [historical_pipeline.py (line 21)](../../../apps/data-platform/data-generator/src/offline/historical_pipeline.py#L21), [producer.py (line 19)](../../../apps/data-platform/data-generator/src/streaming/producer.py#L19) |
-| Ingestion, CDC, Spark, Flink, Feast, data quality | [spark_batch_entrypoint.py (line 47)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L47), [spark_batch_entrypoint.py (line 218)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L218), [redis_async.py (line 12)](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L12), [realtime_stream_job.py (line 112)](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L112) |
+| Ingestion, CDC, Spark, Flink, Feast, data quality | [`dp2_silver_gold_entrypoint.py`](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py), [`dp3_offline_feature_entrypoint.py`](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py), [Redis async sink](../../../apps/data-platform/src/features/flink/sinks/redis_async.py#L12), and [realtime Flink graph](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L112) |
 | Analytics, dbt, Trino-facing models, Superset bootstrap | [sync_silver.py (line 21)](../../../apps/analytics/src/sync_silver.py#L21), [sync_silver.py (line 127)](../../../apps/analytics/src/sync_silver.py#L127), [schema.yml (line 1)](../../../apps/analytics/models/schema.yml#L1), [schema.yml (line 70)](../../../apps/analytics/models/schema.yml#L70) |
-| Kubeflow, KubeRay, BST training, evaluation, promotion | [bst_training_pipeline.py (line 280)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L280), [bst_training_pipeline.py (line 470)](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L470) |
+| Kubeflow, KubeRay, BST training, evaluation, promotion | [`recsys_bst_pipeline`](../../../apps/ml-system/src/kubeflow/pipelines/bst_training_pipeline.py#L276) and its final dependency wiring near the end of the same file |
 | Online feature and recommendation APIs | [feature_api.py (line 13)](../../../apps/api-serving/src/feature_api.py#L13), [feature_api.py (line 77)](../../../apps/api-serving/src/feature_api.py#L77), [inference_api.py (line 18)](../../../apps/api-serving/src/inference_api.py#L18), [inference_api.py (line 123)](../../../apps/api-serving/src/inference_api.py#L123) |
 | React recommendation UI and event-writing demo API | [App.tsx (line 1)](../../../apps/demo-web/frontend/src/App.tsx#L1), [App.tsx (line 300)](../../../apps/demo-web/frontend/src/App.tsx#L300), [main.py (line 1)](../../../apps/demo-web/backend/app/main.py#L1), [main.py (line 261)](../../../apps/demo-web/backend/app/main.py#L261) |
-| Helm, Terraform, Kubernetes, Cloud Build | [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97), [gke.tf (line 220)](../../../infra/terraform/gcp/gke.tf#L220), [recsys_services.tf (line 44)](../../../infra/terraform/gcp/recsys_services.tf#L44), [recsys_services.tf (line 299)](../../../infra/terraform/gcp/recsys_services.tf#L299) |
-| Jenkins CI/CD and controlled model rollout | [Jenkinsfile (line 1)](../../../Jenkinsfile#L1), [Jenkinsfile (line 336)](../../../Jenkinsfile#L336), [`jenkins/`](../../../jenkins/) |
+| Helm, Terraform, and Kubernetes | [`gke.tf`](../../../infra/terraform/gcp/gke.tf), [`recsys_services.tf`](../../../infra/terraform/gcp/recsys_services.tf), and [`infra/helm/`](../../../infra/helm/) |
+| Jenkins CI/CD and controlled model rollout | [`Jenkinsfile`](../../../Jenkinsfile), [`KServeModelCD.Jenkinsfile`](../../../jenkins/KServeModelCD.Jenkinsfile), and [`jenkins/`](../../../jenkins/) |
 | Unit, contract, integration, E2E, and load verification | [test_validation_verification.py (line 60)](../../../tests/unit/api_serving/test_validation_verification.py#L60), [test_validation_verification.py (line 378)](../../../tests/unit/api_serving/test_validation_verification.py#L378), [locustfile_serving.py (line 1)](../../../tests/load/locustfile_serving.py#L1), [locustfile_serving.py (line 128)](../../../tests/load/locustfile_serving.py#L128) |

@@ -136,13 +136,16 @@ Silver Iceberg
 
 ### Step 1: Ingest Stage
 
-1. Submit `spark_batch_entrypoint.py` through Spark on Kubernetes.
+1. Submit `dp3_offline_feature_entrypoint.py` through Spark on Kubernetes.
 2. Read the existing DP2 `silver_*` Iceberg tables; DP3 does not rebuild Silver.
 3. Compute user-sequence, user-aggregate, item, ranking-label, and training outputs.
 4. Commit the Iceberg feature tables.
 5. Export the four Feast source tables to PostgreSQL.
 
-References: [recsys_dp3_offline_feature_table.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp3_offline_feature_table.py#L14), [spark_batch_entrypoint.py (line 152)](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L152), [line 181](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L181), and [line 197](../../../apps/data-platform/src/features/spark/spark_batch_entrypoint.py#L197).
+References:
+[`recsys_dp3_offline_feature_table.py`](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp3_offline_feature_table.py#L14)
+and
+[`dp3_offline_feature_entrypoint.py`](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L159).
 
 ### Step 2: Validate Stage
 
@@ -160,19 +163,17 @@ The DAG and dependency are defined in [recsys_dp3_offline_feature_table.py](../.
 
 ## End-To-End Ordering
 
-The deployment-level coordinator triggers the data-product DAGs serially:
+The data dependency order is:
 
 ```text
 DP1 success -> DP2 success -> DP3 success -> feature-store verification
 ```
 
-`cluster_data_setup.sh` reads the ordered DAG list, unpauses each DAG, creates a deterministic run ID, waits for terminal success, and stops immediately on failure or timeout. See [cluster_data_setup.sh (line 8)](../../../infra/k8s/scripts/cluster_data_setup.sh#L8) and [line 80](../../../infra/k8s/scripts/cluster_data_setup.sh#L80).
-
-Run the complete data setup with:
-
-```bash
-make cluster-data-setup
-```
+Production deployment deliberately does not trigger this workflow. Jenkins
+deploys and verifies registrations/resources only; it never starts Airflow
+DAGs, Spark jobs, or synthetic events. Operators trigger the data products
+manually or let their configured schedules run. The CI/CD verification contract
+is documented in [`jenkins/README.md`](../../../jenkins/README.md).
 
 ## Run And Check Airflow
 
@@ -196,6 +197,7 @@ Task logs are streamed by `KubernetesPodOperator`; Spark tasks additionally wait
 - Generator or Bronze commit failure stops DP1 before optimization.
 - Missing tables or a failed Iceberg rewrite stop DP1/DP2 before validation.
 - A contract failure writes its governance report, exits non-zero, and fails the validation task.
-- The E2E coordinator never triggers DP2 before DP1 succeeds or DP3 before DP2 succeeds.
+- Operators must preserve `DP1 -> DP2 -> DP3 -> materialize`; deployment
+  verification does not execute production data workflows.
 - `catchup=False` and `max_active_runs=1` prevent backfill storms and overlapping runs of the same DAG.
 - Spark completion waiting prevents a submitted-but-failed driver from being reported as an Airflow success.
