@@ -31,6 +31,32 @@ spec:
   portLevelMtls:
     9000:
       mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-dataflow-feature-postgres-permissive
+  namespace: recsys-dataflow
+spec:
+  selector:
+    matchLabels:
+      app: feature-postgres
+  portLevelMtls:
+    5432:
+      mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-dataflow-redis-permissive
+  namespace: recsys-dataflow
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  portLevelMtls:
+    6379:
+      mode: PERMISSIVE
 {{- end }}
 {{- if has "kubeflow" .Values.istio.namespaces }}
 ---

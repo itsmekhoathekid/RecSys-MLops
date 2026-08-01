@@ -57,7 +57,7 @@ resource "kubernetes_service_v1" "datahub_kafka_alias" {
 
   depends_on = [
     kubernetes_namespace.datahub,
-    helm_release.recsys_data_platform,
+    helm_release.recsys_event_stream,
   ]
 }
 
@@ -72,7 +72,7 @@ resource "helm_release" "datahub_prerequisites" {
   timeout    = 1200
 
   values = [
-    file("${local.helm_dir}/datahub-local/prerequisites-values.yaml"),
+    file("${local.helm_dir}/datahub-stack/prerequisites-values.yaml"),
   ]
 
   depends_on = [
@@ -92,13 +92,13 @@ resource "helm_release" "datahub" {
   timeout    = 1200
 
   values = [
-    file("${local.helm_dir}/datahub-local/datahub-values.yaml"),
+    file("${local.helm_dir}/datahub-stack/datahub-values.yaml"),
   ]
 
   depends_on = [
     helm_release.datahub_prerequisites,
     kubernetes_secret.datahub_encryption,
     kubernetes_service_v1.datahub_kafka_alias,
-    helm_release.recsys_data_platform,
+    helm_release.recsys_event_stream,
   ]
 }

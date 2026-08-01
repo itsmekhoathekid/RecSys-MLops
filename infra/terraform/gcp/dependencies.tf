@@ -86,6 +86,122 @@ resource "helm_release" "kuberay_operator" {
   depends_on = [google_container_node_pool.cpu]
 }
 
+resource "helm_release" "prometheus_operator" {
+  name             = "recsys-prometheus-operator"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  version          = "87.19.2"
+  namespace        = "observability"
+  create_namespace = false
+  atomic           = true
+  cleanup_on_fail  = true
+  wait             = true
+  wait_for_jobs    = true
+  timeout          = 900
+  max_history      = 10
+
+  set {
+    name  = "defaultRules.create"
+    value = "false"
+  }
+
+  set {
+    name  = "alertmanager.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "grafana.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeApiServer.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubelet.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeControllerManager.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "coreDns.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeDns.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeEtcd.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeScheduler.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeProxy.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeStateMetrics.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "nodeExporter.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheus.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheusOperator.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "prometheusOperator.admissionWebhooks.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheusOperator.tls.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheusOperator.serviceMonitor.selfMonitor"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheusOperator.podAnnotations.sidecar\\.istio\\.io/inject"
+    value = "false"
+    type  = "string"
+  }
+
+  depends_on = [
+    google_container_node_pool.cpu,
+    kubernetes_namespace.observability,
+  ]
+}
+
 resource "helm_release" "istio_base" {
   count = var.deploy_service_mesh ? 1 : 0
 
@@ -159,7 +275,13 @@ resource "helm_release" "ingress_nginx" {
     value = "429"
   }
 
-  depends_on = [google_container_node_pool.cpu]
+  # The controller pod requests sidecar injection when the service mesh is
+  # enabled. Wait for the injector webhook; otherwise Helm can create the pod
+  # before istiod exists and leave NGINX unable to reach STRICT-mTLS upstreams.
+  depends_on = [
+    google_container_node_pool.cpu,
+    helm_release.istiod,
+  ]
 }
 
 resource "null_resource" "kubeflow_pipelines" {

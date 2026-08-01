@@ -42,6 +42,36 @@ spec:
     - to:
         - operation:
             ports: ["9000"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-dataflow-feature-postgres-allow
+  namespace: recsys-dataflow
+spec:
+  selector:
+    matchLabels:
+      app: feature-postgres
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["5432"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-dataflow-redis-allow
+  namespace: recsys-dataflow
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["6379"]
 {{- end }}
 ---
 apiVersion: security.istio.io/v1beta1

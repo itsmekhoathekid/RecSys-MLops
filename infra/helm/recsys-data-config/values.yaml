@@ -1,0 +1,282 @@
+namespace:
+  create: true
+  name: recsys-dataflow
+
+images:
+  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  featureStore: registry.example.invalid/recsys/recsys-feature-store:required
+  driftRetrain: registry.example.invalid/recsys/recsys-drift-retrain:required
+  spark: registry.example.invalid/recsys/recsys-spark:required
+  flink: registry.example.invalid/recsys/recsys-flink:required
+  minio: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+  minioClient: minio/mc:RELEASE.2025-04-16T18-13-26Z
+  postgres: postgres:16
+  redis: redis:latest
+  zookeeper: confluentinc/cp-zookeeper:7.5.0
+  kafka: confluentinc/cp-kafka:7.5.0
+  kafkaConnect: registry.example.invalid/recsys/recsys-kafka-connect:required
+  airflow: registry.example.invalid/recsys/recsys-airflow:required
+  analyticsDbt: registry.example.invalid/recsys/recsys-analytics-dbt:required
+  pullPolicy: IfNotPresent
+
+storageClassName: ""
+
+sourcePostgres:
+  name: source-postgres
+  database: recsys
+  user: recsys
+  password: recsys
+  storage: 20Gi
+  istioInject: "false"
+
+airflowPostgres:
+  name: airflow-postgres
+  database: airflow
+  user: airflow
+  password: airflow
+  storage: 5Gi
+  istioInject: "false"
+
+featurePostgres:
+  name: feature-postgres
+  database: feature_store
+  schema: feature_store
+  user: feast
+  password: feast
+  storage: 1Gi
+  sslmode: disable
+  istioInject: "false"
+
+minio:
+  name: data-platform-minio
+  endpoint: http://data-platform-minio:9000
+  rootUser: minio
+  rootPassword: ""
+  lakeBucket: recsys-lakehouse
+  offlineFeatureBucket: recsys-offline-feature-store
+  storage: 20Gi
+  service:
+    apiPort: 9000
+    consolePort: 9001
+
+lakehouse:
+  catalog: recsys
+  lakehouseNamespace: lakehouse
+  offlineFeatureCatalog: recsys_features
+  featureNamespace: feature_store
+  optimizationStrategy: binpack
+  targetFileSizeMb: "128"
+  compactionMinInputFiles: "2"
+
+dataSetup:
+  generatorConfig: configs/data-platform/generator/e2e-1k.yaml
+  generatorRunId: test_1k_seed42
+  dp3Config: configs/data-platform/spark/dp3-e2e-1k.yaml
+  realtimeLimitPerTable: "200"
+
+e2e:
+  realtimeEnabled: "true"
+  datahubIngestEnabled: "false"
+
+spark:
+  k8sMaster: k8s://https://kubernetes.default.svc
+  serviceAccountName: default
+  driverMemory: 768m
+  driverMemoryOverhead: 128m
+  driverCores: "1"
+  driverRequestCores: 100m
+  executorInstances: "1"
+  executorMemory: 768m
+  executorMemoryOverhead: 128m
+  executorCores: "1"
+  executorRequestCores: 100m
+  icebergVectorizationEnabled: false
+  dynamicAllocation:
+    enabled: false
+    shuffleTrackingEnabled: true
+    minExecutors: "1"
+    initialExecutors: "1"
+    maxExecutors: "4"
+    executorIdleTimeout: 60s
+    schedulerBacklogTimeout: 1s
+    sustainedSchedulerBacklogTimeout: 1s
+  sqlShufflePartitions: "4"
+  advisoryPartitionSizeBytes: "134217728"
+  connectionTimeout: "60000"
+  requestTimeout: "180000"
+
+kafka:
+  name: kafka
+  bootstrapServers: kafka:29092
+  topicPartitions: 4
+
+kafkaConnect:
+  name: kafka-connect
+  port: 8083
+  istioInject: "false"
+
+redis:
+  name: redis
+  port: 6379
+  istioInject: "false"
+
+flinkTaskManager:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 300m
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 8Gi
+
+flink:
+  checkpointStorageUri: s3a://recsys-lakehouse/flink-checkpoints
+  istioInject: "false"
+  scheduler: adaptive
+  metricsPort: 9249
+  # Keep the online/offline jobs on separate TaskManagers at parallelism 1.
+  taskSlots: "1"
+  taskManagerProcessMemory: "6144m"
+  taskManagerTaskHeapMemory: "2048m"
+  taskManagerManagedMemory: "2048m"
+  taskManagerJvmOverheadMax: "2048m"
+  stateBackend: rocksdb
+  stateBackendIncremental: "true"
+  managedConsumerWeights: "OPERATOR:70,STATE_BACKEND:30,PYTHON:70"
+  pythonManagedMemory: "true"
+  pythonBundleSize: "1000"
+  pythonBundleTimeMs: "200"
+  # PyFlink/Beam uses many native threads; glibc is more stable than the image's
+  # default jemalloc preload during concurrent task cancellation.
+  disableJemalloc: true
+  javaOpens: "--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
+
+realtimeProducer:
+  enabled: true
+  name: realtime-event-producer
+  replicas: 1
+  rollout:
+    maxSurge: 0
+    maxUnavailable: 1
+
+realtimeFlinkConsumer:
+  enabled: true
+  replicas: 1
+  istioInject: ""
+  online:
+    enabled: true
+    name: realtime-flink-online-store
+    groupIdSuffix: online
+    startingOffsets: committed-offsets
+    restorePath: ""
+  offline:
+    enabled: true
+    name: realtime-flink-offline-store
+    groupIdSuffix: offline
+    startingOffsets: latest
+    restorePath: ""
+  topic: cdc.behavior_events
+  groupId: recsys-flink-realtime
+  minEvents: "0"
+  maxEvents: "0"
+  # Initial parallelism remains one; the Flink autoscaler may rescale sustained load.
+  parallelism: "1"
+  maxHistoryLength: "50"
+  progressLogEvents: "100"
+  checkpointIntervalSeconds: "30"
+  kafkaFetchMaxBytes: "1048576"
+  kafkaMaxPartitionFetchBytes: "262144"
+  kafkaMaxPollRecords: "100"
+  redisSinkMaxEventsPerSecond: "200"
+  postgresSinkMaxEventsPerSecond: "100"
+  sinkRateLimitBurstEvents: "25"
+  asyncIoCapacity: "64"
+  asyncIoTimeoutSeconds: "120"
+  postgresAsyncPoolSize: "16"
+  offlineStoreEnabled: true
+  offlineStoreSink: postgres
+
+flinkAutoscaler:
+  enabled: true
+  version: "1.15.0"
+  scalingEnabled: true
+  stabilizationInterval: 1m
+  metricsWindow: 3m
+  targetUtilization: "0.65"
+  utilizationMin: "0.50"
+  utilizationMax: "0.80"
+  catchUpDuration: 5m
+  restartTime: 2m
+  pipelineMaxParallelism: "120"
+  vertexMinParallelism: "1"
+  vertexMaxParallelism: "4"
+  taskManagerHpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCpuUtilization: 65
+    scaleDownStabilizationSeconds: 300
+
+realtimeCdcConnector:
+  enabled: true
+  tableIncludeList: public.users,public.user_preferences,public.products,public.product_snapshots,public.sessions,public.recommendation_requests,public.impressions,public.behavior_events,public.orders,public.order_items
+  snapshotMode: no_data
+  slotName: recsys_slot_e2e
+  waitTimeoutSeconds: 480
+  activeDeadlineSeconds: 540
+
+airflow:
+  dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
+  dp1Schedule: "@daily"
+  dp2Schedule: "0 1 * * *"
+  dp3Schedule: "30 1 * * *"
+  feastMaterializeSchedule: "20 */2 * * *"
+  featureDriftSchedule: "30 3 * * *"
+  lakehouseMaintenanceSchedule: "0 4 * * 0"
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+  tolerations: []
+
+drift:
+  currentRoot: "s3a://recsys-offline-feature-store/monitoring/offline_feature_drift/current_snapshot"
+  baselinePath: "s3://recsys-offline-feature-store/monitoring/offline_feature_drift/reference_baseline"
+  currentDays: "7"
+  sampleRows: "1000"
+  featureTables: "user_aggregate_features,item_features,ml_bst_training"
+  bootstrapBaseline: "true"
+
+streaming:
+  watermarkDelayMinutes: 5
+  allowedLatenessSeconds: 300
+  watermarkIdlenessSeconds: 120
+  watermarkAlignmentEnabled: "true"
+  watermarkAlignmentGroup: recsys-cdc
+  watermarkAlignmentMaxDriftSeconds: 60
+  watermarkAlignmentUpdateIntervalSeconds: 5
+  qualityWindowSeconds: 60
+  featureWindowSeconds: 60
+  featureEarlyFireSeconds: 5
+  burstThresholdEventCount: 200
+  dropLateEvents: "true"
+  enableLateEventDlq: "true"
+  stateTtlSeconds: 604800
+  dedupStateTtlSeconds: 86400
+  checkpointMinPauseSeconds: 10
+  checkpointTimeoutSeconds: 300
+  tolerableCheckpointFailures: 2
+  unalignedCheckpointsEnabled: "true"
+
+observability:
+  enabled: true
+  pushgatewayUrl: http://recsys-pushgateway.observability.svc.cluster.local:9091
+  otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317
+  kfpEndpoint: http://ml-pipeline.kubeflow.svc.cluster.local:8888
+  kfpExperimentName: recsys-observability-retrain
+  kfpPipelineName: recsys-bst-feature-train-evaluate
+  kfpPipelineVersionId: ""
+  retrainOnDrift: "true"
+  retrainPsiThreshold: "0.15"
+
+secret:
+  create: false

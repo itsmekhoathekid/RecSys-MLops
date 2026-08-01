@@ -28,6 +28,12 @@ secret:
   hudiEnabled: "true"
   hudiCatalogName: recsys_features
   hudiWarehouse: s3a://recsys-offline-feature-store/warehouse
+  hudiDatasetTable: ml.bst_samples_native_v2
+  hudiCleanHoursRetained: "2160"
+  hudiZookeeperUrl: zookeeper.recsys-dataflow.svc.cluster.local
+  hudiZookeeperPort: "2181"
+  hudiZookeeperBasePath: /hudi/locks/bst_samples_native_v2
+  hudiZookeeperLockKey: bst_samples_native_v2
 
 rbac:
   create: true

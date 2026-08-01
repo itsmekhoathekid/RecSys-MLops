@@ -4,7 +4,9 @@ locals {
   image_repo    = "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_registry_repository}"
 
   images = {
-    dataflow_cli        = lookup(var.image_overrides, "dataflow_cli", "") != "" ? lookup(var.image_overrides, "dataflow_cli", "") : "${local.image_repo}/recsys-dataflow-cli:${var.image_tag}"
+    data_ingestion      = lookup(var.image_overrides, "data_ingestion", "") != "" ? lookup(var.image_overrides, "data_ingestion", "") : "${local.image_repo}/recsys-data-ingestion:${var.image_tag}"
+    feature_store       = lookup(var.image_overrides, "feature_store", "") != "" ? lookup(var.image_overrides, "feature_store", "") : "${local.image_repo}/recsys-feature-store:${var.image_tag}"
+    drift_retrain       = lookup(var.image_overrides, "drift_retrain", "") != "" ? lookup(var.image_overrides, "drift_retrain", "") : "${local.image_repo}/recsys-drift-retrain:${var.image_tag}"
     spark               = lookup(var.image_overrides, "spark", "") != "" ? lookup(var.image_overrides, "spark", "") : "${local.image_repo}/recsys-spark:${var.image_tag}"
     flink               = lookup(var.image_overrides, "flink", "") != "" ? lookup(var.image_overrides, "flink", "") : "${local.image_repo}/recsys-flink:${var.image_tag}"
     kafka_connect       = lookup(var.image_overrides, "kafka_connect", "") != "" ? lookup(var.image_overrides, "kafka_connect", "") : "${local.image_repo}/recsys-kafka-connect:${var.image_tag}"
@@ -14,15 +16,13 @@ locals {
     training_repository = lookup(var.image_overrides, "training_repository", "") != "" ? lookup(var.image_overrides, "training_repository", "") : "${local.image_repo}/recsys-mlops-training"
   }
 
-  data_platform_sets = {
-    "chartRevision"        = sha1(join("", [for path in ["configmap.yaml", "airflow.yaml", "realtime-flink-consumer.yaml"] : filemd5("${local.helm_dir}/recsys-data-platform/templates/${path}")]))
-    "namespace.create"     = "false"
-    "images.dataflowCli"   = local.images.dataflow_cli
+  data_config_sets = {
+    "images.dataIngestion" = local.images.data_ingestion
+    "images.featureStore"  = local.images.feature_store
+    "images.driftRetrain"  = local.images.drift_retrain
     "images.spark"         = local.images.spark
     "images.flink"         = local.images.flink
-    "images.kafkaConnect"  = local.images.kafka_connect
-    "images.airflow"       = local.images.airflow
-    "secret.create"        = "true"
+    "secret.create"        = "false"
     "minio.rootUser"       = "minio"
     "sourcePostgres.user"  = "recsys"
     "airflowPostgres.user" = "airflow"
@@ -31,7 +31,7 @@ locals {
   mlflow_sets = {
     "namespace.create"  = "false"
     "mlflow.image"      = local.images.mlflow
-    "secret.create"     = "true"
+    "secret.create"     = "false"
     "minio.rootUser"    = "minio"
     "postgres.user"     = "mlflow"
     "postgres.database" = "mlflow"
@@ -47,7 +47,7 @@ locals {
 
   runtime_sets = {
     "namespace.create"     = "false"
-    "secret.create"        = "true"
+    "secret.create"        = "false"
     "secret.name"          = "recsys-mlops-runtime"
     "secret.minioRootUser" = "minio"
   }
@@ -57,7 +57,7 @@ locals {
     "api.image"                                    = local.images.api
     "featureApi.image"                             = local.images.api
     "kserve.namespace.create"                      = "false"
-    "kserve.secret.create"                         = "true"
+    "kserve.secret.create"                         = "false"
     "kserve.secret.accessKeyId"                    = "minio"
     "kserve.secret.minioEndpoint"                  = "minio.experiment-tracking.svc.cluster.local:9000"
     "api.nodeSelector.recsys\\.ai/workload"        = "ml-system"
@@ -95,6 +95,7 @@ locals {
 
   service_mesh_sets = merge(
     {
+      "chartRevision"                                        = sha1(join("", [for path in ["externalsecrets.yaml", "secretstore.yaml"] : filemd5("${local.helm_dir}/recsys-security/templates/${path}")]))
       "secretStore.enabled"                                  = "true"
       "secretStore.provider"                                 = "kubernetes"
       "secretStore.name"                                     = "recsys-central-secrets"
@@ -103,7 +104,8 @@ locals {
       "secretStore.kubernetes.auth.serviceAccount.namespace" = "external-secrets"
       "externalSecrets.enabled"                              = "true"
       "externalSecrets.creationPolicy"                       = "Owner"
-      "istio.enabled"                                        = "true"
+      "externalSecrets.runtime.additionalVaultPaths[0]"      = "jenkins-runtime"
+      "istio.enabled"                                        = tostring(var.deploy_service_mesh)
     },
     {
       for index, namespace in local.service_mesh_namespaces :

@@ -185,7 +185,7 @@ variable "image_tag" {
 }
 
 variable "image_overrides" {
-  description = "Optional full image overrides. Keys: dataflow_cli, spark, flink, kafka_connect, airflow, mlflow, api, training_repository."
+  description = "Optional full image overrides. Keys: data_ingestion, feature_store, drift_retrain, spark, flink, kafka_connect, airflow, mlflow, api, training_repository."
   type        = map(string)
   default     = {}
 }
@@ -253,7 +253,19 @@ variable "deploy_service_mesh" {
 variable "gateway_domain" {
   description = "Domain used by the optional gateway chart."
   type        = string
-  default     = "recsys.local"
+  default     = "example.invalid"
+}
+
+variable "gateway_tls_enabled" {
+  description = "Enable HTTPS and cert-manager certificates for public gateway routes."
+  type        = bool
+  default     = false
+}
+
+variable "gateway_tls_cluster_issuer" {
+  description = "Existing cert-manager ClusterIssuer used by public gateway routes."
+  type        = string
+  default     = "letsencrypt-prod"
 }
 
 variable "gateway_htpasswd" {

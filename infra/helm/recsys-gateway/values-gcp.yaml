@@ -1,0 +1,35 @@
+gateway:
+  domain: recsys-mlops.site
+
+# The production public API documented for the coursework is the online
+# feature API. Keep the recommendation inference API internal to avoid two
+# Ingress resources claiming the same host and path.
+api:
+  enabled: false
+
+featureApi:
+  enabled: true
+  host: api.recsys-mlops.site
+  rootRedirect:
+    enabled: true
+    path: /docs
+
+grafana:
+  host: metrics.recsys-mlops.site
+
+logs:
+  host: logs.recsys-mlops.site
+
+traces:
+  host: traces.recsys-mlops.site
+
+tls:
+  enabled: true
+  clusterIssuerName: letsencrypt-prod
+  issuer:
+    create: false
+
+# recsys-security/ExternalSecrets owns the replicated htpasswd secrets in the
+# api-serving and observability namespaces on GCP.
+auth:
+  createSecret: false
