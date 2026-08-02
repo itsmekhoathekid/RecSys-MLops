@@ -45,8 +45,6 @@ assert \"ray\" not in runtime_packages
 assert pyspark.__version__ == \"3.5.8\"
 "
 
-/opt/venv/bin/pip check >/dev/null
-
 python /opt/recsys/apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py \
   --help >/dev/null
 python /opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py \
@@ -54,13 +52,17 @@ python /opt/recsys/apps/ml-system/src/cli/prepare_bst_training_data.py \
 
 for jar in \
   iceberg-spark-runtime-3.5_2.12-1.7.1.jar \
-  hudi-spark3.5-bundle_2.12-1.0.2.jar \
+  hudi-spark3.5-bundle_2.12-1.2.0.jar \
   hadoop-aws-3.3.4.jar \
   aws-java-sdk-bundle-1.12.262.jar \
-  postgresql-42.7.7.jar
+  netty-codec-http2-4.1.136.Final.jar \
+  postgresql-42.7.12.jar
 do
   test -f "/opt/spark/jars/${jar}"
 done
+
+test ! -e /opt/spark/jars/netty-codec-http2-4.1.96.Final.jar
+test ! -e /opt/venv/bin/pip
 
 test "${PYSPARK_PYTHON}" = /opt/venv/bin/python
 test "${PYSPARK_DRIVER_PYTHON}" = /opt/venv/bin/python
