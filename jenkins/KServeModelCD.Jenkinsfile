@@ -132,6 +132,7 @@ pipeline {
     stage('Verify Champion Only') {
       when {
         anyOf {
+          expression { params.ROLLOUT_STAGE == 'promote' }
           expression { params.ROLLOUT_STAGE == 'rollback' }
           expression { params.ROLLOUT_STAGE == 'evaluate' && fileExists('.model-cd/rollback-required') }
         }

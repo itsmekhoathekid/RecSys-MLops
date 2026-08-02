@@ -1152,3 +1152,18 @@ def test_kserve_component_cicd_validates_only_and_cd_job_applies_model_deploy():
     assert "deploy_kserve_model_cd" in model_cd_entrypoint
     assert "model_cd_deploy.sh" in model_cd_pipeline
     assert not (ROOT / "jenkins/scripts/deploy/dispatch.sh").exists()
+
+
+def test_model_cd_verifies_champion_only_after_promote():
+    model_cd_pipeline = (ROOT / "jenkins/KServeModelCD.Jenkinsfile").read_text(
+        encoding="utf-8"
+    )
+    verify_stage = re.search(
+        r"stage\('Verify Champion Only'\) \{(?P<body>.*?)\n    \}",
+        model_cd_pipeline,
+        flags=re.S,
+    )
+
+    assert verify_stage is not None
+    assert "params.ROLLOUT_STAGE == 'promote'" in verify_stage.group("body")
+    assert "bash jenkins/scripts/test/champion_only.sh" in verify_stage.group("body")

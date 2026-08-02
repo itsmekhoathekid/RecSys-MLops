@@ -10,7 +10,10 @@ SPAWN_RATE="${LOCUST_SPAWN_RATE:-60}"
 DURATION="${LOCUST_DURATION:-4m}"
 CANDIDATE_COUNT="${RECSYS_CANDIDATE_COUNT:-200}"
 TOP_K="${RECSYS_TOP_K:-10}"
-USER_ID="${RECSYS_USER_ID:-4}"
+# Default to a stable user for repeatable autoscaling checks, but preserve an
+# explicitly empty value so A/B validation can exercise sticky assignments
+# across the generated user-id range.
+USER_ID="${RECSYS_USER_ID-4}"
 PORT_FORWARD_LOG="${PORT_FORWARD_LOG:-/tmp/recsys-serving-autoscale-port-forward.log}"
 
 cleanup() {
