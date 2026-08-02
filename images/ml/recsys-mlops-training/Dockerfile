@@ -49,9 +49,11 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     s3fs==2024.10.0 \
     scikit-learn==1.9.0 \
     tqdm==4.69.0 \
-    setuptools==83.0.0 \
+    setuptools==81.0.0 \
     wheel==0.46.2 \
     jaraco.context==6.1.0
+RUN /opt/venv/bin/python -m pip uninstall -y pip \
+    && /opt/venv/bin/python -c "import kfp, mlflow, ray, torch"
 
 FROM python:3.11-slim AS runtime
 
