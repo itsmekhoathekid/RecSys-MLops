@@ -164,7 +164,11 @@ def test_unified_spark_contains_all_three_domain_capabilities():
     assert "generator_config" in smoke
     assert "cli.prepare_bst_training_data" in smoke
     assert "sync_silver" in smoke
-    assert "postgresql-42.7.7.jar" in smoke
+    assert "hudi-spark3.5-bundle_2.12-1.2.0.jar" in smoke
+    assert "netty-codec-http2-4.1.136.Final.jar" in smoke
+    assert "postgresql-42.7.12.jar" in smoke
+    assert "hudi-spark3.5-bundle_2.12-1.0.2.jar" not in smoke
+    assert "postgresql-42.7.7.jar" not in smoke
 
 
 def test_feature_store_image_matches_feast_sqlalchemy_registry_driver():
