@@ -98,6 +98,20 @@ def test_resource_ownership_matches_release_boundaries():
     assert "name: airflow-scheduler" in rendered["recsys-airflow"]
 
 
+def test_kafka_connect_replaces_the_vulnerable_vendor_http2_jar():
+    dockerfile = (ROOT / "images/data/recsys-kafka-connect/Dockerfile").read_text()
+    assert "ARG NETTY_VERSION=4.1.136.Final" in dockerfile
+    assert "netty-codec-http2-${NETTY_VERSION}.jar" in dockerfile
+    assert (
+        "rm /usr/share/java/kafka-serde-tools/netty-codec-http2-4.1.133.Final.jar"
+        in dockerfile
+    )
+    assert (
+        "test ! -e /usr/share/java/kafka-serde-tools/netty-codec-http2-4.1.133.Final.jar"
+        in dockerfile
+    )
+
+
 def test_airflow_runtime_is_pinned_to_the_stable_2_9_control_plane():
     dockerfile = (ROOT / "images/data/recsys-airflow/Dockerfile").read_text()
     rendered_airflow = render("recsys-airflow")
