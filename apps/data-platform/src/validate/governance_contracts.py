@@ -238,6 +238,51 @@ def validate_streaming_redis() -> dict[str, Any]:
     return publish_validation_results("STREAMING_FEATURES", datasets)
 
 
+def validate_feast_online_store() -> dict[str, Any]:
+    from feast import FeatureStore
+
+    config = PostgresOfflineStoreConfig.from_env()
+    repo_path = "/opt/recsys/apps/data-platform/feature-store/feature_repo"
+    feature_refs = {
+        "user_sequence_features": ("user_id", "hist_length"),
+        "user_aggregate_features": ("user_id", "views_30m"),
+        "item_features": ("product_id", "category_id"),
+    }
+    store = FeatureStore(repo_path=repo_path)
+    datasets: dict[str, dict[str, Any]] = {}
+    with config.connect() as conn:
+        with conn.cursor() as cur:
+            for table_name, (entity_name, feature_name) in feature_refs.items():
+                try:
+                    cur.execute(
+                        sql.SQL("SELECT {} FROM {}.{} ORDER BY feature_timestamp DESC LIMIT 1").format(
+                            sql.Identifier(entity_name),
+                            sql.Identifier(config.schema),
+                            sql.Identifier(table_name),
+                        )
+                    )
+                    entity_value = cur.fetchone()[0]
+                    result = store.get_online_features(
+                        features=[f"{table_name}:{feature_name}"],
+                        entity_rows=[{entity_name: entity_value}],
+                    ).to_dict()
+                    observed = result.get(feature_name, [None])[0]
+                    checks = [
+                        check(
+                            "native_feast_lookup",
+                            "SUCCESS" if observed is not None else "FAILURE",
+                            "non-null online feature",
+                            observed,
+                        )
+                    ]
+                except Exception as exc:
+                    checks = [
+                        check("native_feast_lookup", "ERROR", "readable online feature", str(exc))
+                    ]
+                datasets[REDIS_FEATURE_URNS[table_name]] = dataset_result(checks)
+    return publish_validation_results("FEAST_ONLINE_STORE", datasets)
+
+
 def read_redis_payload(client: Any, key: str) -> Any:
     key_type = client.type(key)
     if isinstance(key_type, bytes):
@@ -253,14 +298,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate governed datasets and publish native DataHub assertion results."
     )
-    parser.add_argument("pipeline", choices=("dp1", "dp3-postgres", "streaming-redis"))
+    parser.add_argument(
+        "pipeline",
+        choices=("dp1", "dp3-postgres", "streaming-redis", "feast-online"),
+    )
     args = parser.parse_args()
     if args.pipeline == "dp1":
         report = validate_dp1_bronze()
     elif args.pipeline == "dp3-postgres":
         report = validate_dp3_postgres()
-    else:
+    elif args.pipeline == "streaming-redis":
         report = validate_streaming_redis()
+    else:
+        report = validate_feast_online_store()
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["status"] == "SUCCESS" else 1
 

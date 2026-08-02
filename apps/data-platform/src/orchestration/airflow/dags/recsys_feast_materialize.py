@@ -27,7 +27,7 @@ feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo \
 """.strip()
 
 VERIFY_REDIS_ONLINE_STORE_COMMAND = (
-    "python -m validate.governance_contracts streaming-redis"
+    f"{FEAST_ENV_EXPORTS}\npython -m validate.governance_contracts feast-online"
 )
 
 
