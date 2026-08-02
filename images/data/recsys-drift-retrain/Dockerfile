@@ -23,9 +23,11 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         kfp==2.16.1 \
         pandas==2.3.3 \
         pyarrow==25.0.0 \
-        setuptools==83.0.0 \
+        setuptools==81.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0
+RUN /opt/venv/bin/python -m pip uninstall -y pip \
+    && /opt/venv/bin/python -c "import kfp, pandas, pyarrow"
 
 FROM python:3.11-slim AS runtime
 
