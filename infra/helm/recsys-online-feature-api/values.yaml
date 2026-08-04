@@ -15,7 +15,7 @@ config:
   redisHost: redis.recsys-dataflow.svc.cluster.local
   redisPort: "6379"
   feastRepoPath: /opt/recsys/apps/data-platform/feature-store/feature_repo
-  feastRuntimeRepoPath: /opt/recsys/recsys-feast-feature-repo
+  feastRuntimeRepoPath: /tmp/recsys-feast-feature-repo
   feastApplyOnStartup: "0"
   feastPostgresHost: feature-postgres.recsys-dataflow.svc.cluster.local
   feastPostgresPort: "5432"

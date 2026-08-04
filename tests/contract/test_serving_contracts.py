@@ -162,6 +162,15 @@ def test_serving_chart_renders_expected_namespaces():
     feature_api_container = feature_api_deployment["spec"]["template"]["spec"][
         "containers"
     ][0]
+    assert feature_api_container["command"] == ["uvicorn"]
+    assert feature_api_container["args"] == [
+        "recsys_online_feature_api.app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+        "--no-access-log",
+    ]
     assert feature_api_container["envFrom"] == [
         {"configMapRef": {"name": "recsys-online-feature-api"}},
         {"secretRef": {"name": "recsys-online-feature-api-registry"}},
@@ -172,6 +181,10 @@ def test_serving_chart_renders_expected_namespaces():
     feature_api_config = by_kind_name[("ConfigMap", "recsys-online-feature-api")]
     feature_api_secret = by_kind_name[("Secret", "recsys-online-feature-api-registry")]
     assert feature_api_config["data"]["FEAST_APPLY_ON_STARTUP"] == "0"
+    assert (
+        feature_api_config["data"]["FEAST_RUNTIME_REPO_PATH"]
+        == "/tmp/recsys-feast-feature-repo"
+    )
     assert feature_api_config["data"]["FEAST_POSTGRES_DB"] == "feature_store"
     assert feature_api_config["data"]["FEAST_POSTGRES_SCHEMA"] == "feature_store"
     assert feature_api_secret["stringData"]["FEAST_POSTGRES_USER"] == "feast"

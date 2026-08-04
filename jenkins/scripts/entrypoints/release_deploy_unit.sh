@@ -131,6 +131,7 @@ deploy_helm_unit() {
   local image_index image_reference
   local helm_args=()
   local helm_failure_args=(--atomic --cleanup-on-fail)
+  local deployed_revision_count=0
   local sensitive_values_file=""
   [[ -n "${unit_chart}" ]] || {
     recsys_error "Helm deploy unit ${unit_name} has no chart"
@@ -147,8 +148,11 @@ deploy_helm_unit() {
     # if any later object fails admission. Keep the initial ownership transfer
     # non-destructive; maxUnavailable=0 preserves the serving pod, and every
     # subsequent upgrade returns to atomic rollback semantics.
-    if ! helm history "${unit_release}" -n "${unit_namespace}" -o json 2>/dev/null \
-        | python3 -c 'import json, sys; payload = sys.stdin.read(); revisions = json.loads(payload) if payload else []; raise SystemExit(0 if any(item.get("status") == "deployed" for item in revisions) else 1)' \
+    deployed_revision_count="$(
+      helm history "${unit_release}" -n "${unit_namespace}" -o json 2>/dev/null \
+        | python3 -c 'import json, sys; payload = sys.stdin.read(); revisions = json.loads(payload) if payload else []; print(sum(item.get("status") == "deployed" for item in revisions))'
+    )" || deployed_revision_count=0
+    if [[ "${deployed_revision_count}" == "0" ]] \
       && kubectl -n "${unit_namespace}" get deployment "${unit_release}" >/dev/null 2>&1; then
       helm_failure_args=()
       recsys_log DEPLOY "using non-destructive initial ownership transfer for ${unit_release}"
