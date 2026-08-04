@@ -25,7 +25,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     --constraint /tmp/ml-constraints.txt \
     boto3==1.35.36 \
     jaraco.context==6.1.0 \
-    mlflow \
+    mlflow==3.15.1 \
     psycopg2-binary==2.9.12 \
     setuptools==81.0.0 \
     wheel==0.46.2

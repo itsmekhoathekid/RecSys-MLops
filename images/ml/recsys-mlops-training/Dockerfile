@@ -37,7 +37,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     kfp==2.16.1 \
     kfp-kubernetes==2.16.1 \
     kubernetes==30.1.0 \
-    mlflow \
+    mlflow==3.15.1 \
     numpy==2.4.6 \
     onnx==1.22.0 \
     onnxscript==0.7.1 \

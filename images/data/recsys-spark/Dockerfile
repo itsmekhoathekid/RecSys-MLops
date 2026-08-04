@@ -63,7 +63,7 @@ RUN uv export \
         --constraint /tmp/ml-constraints.txt \
         acryl-datahub==1.6.0.17 \
         boto3==1.35.36 \
-        cryptography \
+        cryptography==49.0.0 \
         evidently==0.7.21 \
         "feast[redis]==0.64.0" \
         flask==3.1.3 \
@@ -72,7 +72,7 @@ RUN uv export \
         kfp-kubernetes==2.16.1 \
         kubernetes==30.1.0 \
         jaraco.context==6.1.0 \
-        mlflow \
+        mlflow==3.15.1 \
         numpy==2.2.6 \
         onnx==1.22.0 \
         onnxscript==0.7.1 \
