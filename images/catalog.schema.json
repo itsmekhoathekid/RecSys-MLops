@@ -11,8 +11,8 @@
     },
     "images": {
       "type": "object",
-      "minProperties": 15,
-      "maxProperties": 15,
+      "minProperties": 16,
+      "maxProperties": 16,
       "additionalProperties": {
         "$ref": "#/$defs/image"
       }

@@ -84,11 +84,11 @@ feast_registry_apply() {
   feast_registry_start_pod "${image_reference}" || return
   kubectl exec -n "${namespace_data}" "${FEAST_REGISTRY_POD}" -- bash -lc '
     set -euo pipefail
-    export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m feature_store.sql_registry_state url)"
+    export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m recsys_feature_store_runtime.sql_registry_state url)"
     /opt/venv/bin/feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo plan
     /opt/venv/bin/feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo \
       apply --no-progress
-    /opt/venv/bin/python -m feature_store.sql_registry_state verify --project recsys
+    /opt/venv/bin/python -m recsys_feature_store_runtime.sql_registry_state verify --project recsys
   ' 2>&1 | tee "${log_path}" || status=${PIPESTATUS[0]}
   feast_registry_stop_pod
   [[ "${status}" == "0" ]] || {

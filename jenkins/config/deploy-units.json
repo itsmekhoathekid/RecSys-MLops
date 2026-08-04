@@ -248,7 +248,43 @@
       ]
     },
     {
-      "name": "serving",
+      "name": "online-feature-api",
+      "kind": "helm",
+      "release": "recsys-online-feature-api",
+      "namespace": "api-serving",
+      "chart": "infra/helm/recsys-online-feature-api",
+      "components": [
+        "online_feature_api"
+      ],
+      "consumesImages": [
+        "recsys-online-feature-api"
+      ],
+      "imageValues": {
+        "recsys-online-feature-api": "image"
+      },
+      "consumesArtifacts": [],
+      "dependsOn": []
+    },
+    {
+      "name": "inference-api",
+      "kind": "helm",
+      "release": "recsys-inference-api",
+      "namespace": "api-serving",
+      "chart": "infra/helm/recsys-inference-api",
+      "components": [
+        "inference_api"
+      ],
+      "consumesImages": [
+        "recsys-inference-api"
+      ],
+      "imageValues": {
+        "recsys-inference-api": "image"
+      },
+      "consumesArtifacts": [],
+      "dependsOn": []
+    },
+    {
+      "name": "kserve",
       "kind": "helm",
       "release": "recsys-serving",
       "namespace": "kserve-triton-inference",
@@ -256,9 +292,7 @@
       "components": [
         "kserve"
       ],
-      "consumesImages": [
-        "recsys-api-serving"
-      ],
+      "consumesImages": [],
       "consumesArtifacts": [],
       "dependsOn": []
     },
@@ -275,7 +309,7 @@
       ],
       "consumesArtifacts": [],
       "dependsOn": [
-        "serving"
+        "kserve"
       ]
     },
     {
@@ -291,7 +325,7 @@
       ],
       "consumesArtifacts": [],
       "dependsOn": [
-        "serving"
+        "inference-api"
       ]
     }
   ]

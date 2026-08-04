@@ -8,6 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/
 COPY apps/data-platform/pyproject.toml /opt/recsys/apps/data-platform/pyproject.toml
+COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
 RUN pip install --no-cache-dir uv==0.12.1 \
     && python -m venv /opt/venv
 

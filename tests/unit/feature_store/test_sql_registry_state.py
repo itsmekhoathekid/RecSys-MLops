@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import create_engine, select
 
 from feast.infra.registry.sql import metadata as feast_registry_metadata
-from feature_store.sql_registry_state import (
+from recsys_feature_store_runtime.sql_registry_state import (
     build_parser,
     build_registry_url,
     configure_registry_url,

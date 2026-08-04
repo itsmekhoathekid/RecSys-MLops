@@ -27,6 +27,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "ray[default,train,tune]==2.56.1",
     "recsys-data-platform",
+    "recsys-feature-store-runtime",
     "s3fs==2024.10.0",
     "setuptools==81.0.0",
     "torch>=2.11.0",
@@ -37,6 +38,7 @@ dependencies = [
 
 [tool.uv.sources]
 recsys-data-platform = { path = "../data-platform", editable = true }
+recsys-feature-store-runtime = { path = "../../packages/recsys-feature-store-runtime", editable = true }
 
 [dependency-groups]
 dev = [

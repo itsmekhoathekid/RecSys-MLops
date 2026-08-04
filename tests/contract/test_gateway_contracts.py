@@ -39,10 +39,7 @@ def _backend(ingress: dict) -> dict:
 
 
 def _paths(ingress: dict) -> dict[str, dict]:
-    return {
-        path["path"]: path
-        for path in ingress["spec"]["rules"][0]["http"]["paths"]
-    }
+    return {path["path"]: path for path in ingress["spec"]["rules"][0]["http"]["paths"]}
 
 
 def test_gateway_chart_renders_auth_rate_limits_and_backends_with_tls_disabled_by_default():
@@ -54,7 +51,8 @@ def test_gateway_chart_renders_auth_rate_limits_and_backends_with_tls_disabled_b
     secret_namespaces = {
         doc["metadata"]["namespace"]
         for doc in docs
-        if doc["kind"] == "Secret" and doc["metadata"]["name"] == "recsys-gateway-basic-auth"
+        if doc["kind"] == "Secret"
+        and doc["metadata"]["name"] == "recsys-gateway-basic-auth"
     }
     assert secret_namespaces == {"api-serving", "observability"}
 
@@ -63,11 +61,14 @@ def test_gateway_chart_renders_auth_rate_limits_and_backends_with_tls_disabled_b
     assert api["spec"]["ingressClassName"] == "nginx"
     assert api["spec"]["rules"][0]["host"] == "api.example.invalid"
     assert "tls" not in api["spec"]
-    assert _backend(api) == {"name": "recsys-api-serving", "port": {"number": 80}}
+    assert _backend(api) == {"name": "recsys-inference-api", "port": {"number": 80}}
 
     annotations = api["metadata"]["annotations"]
     assert annotations["nginx.ingress.kubernetes.io/auth-type"] == "basic"
-    assert annotations["nginx.ingress.kubernetes.io/auth-secret"] == "recsys-gateway-basic-auth"
+    assert (
+        annotations["nginx.ingress.kubernetes.io/auth-secret"]
+        == "recsys-gateway-basic-auth"
+    )
     assert annotations["nginx.ingress.kubernetes.io/auth-realm"] == "RecSys Gateway"
     assert annotations["nginx.ingress.kubernetes.io/limit-rps"] == "5"
     assert annotations["nginx.ingress.kubernetes.io/limit-rpm"] == "120"
@@ -116,7 +117,10 @@ def test_gateway_chart_renders_auth_rate_limits_and_backends_with_tls_disabled_b
     assert grafana_annotations["nginx.ingress.kubernetes.io/limit-rps"] == "5"
     assert grafana_annotations["nginx.ingress.kubernetes.io/limit-rpm"] == "120"
     assert grafana_annotations["nginx.ingress.kubernetes.io/limit-connections"] == "10"
-    assert grafana_annotations["nginx.ingress.kubernetes.io/limit-req-status-code"] == "429"
+    assert (
+        grafana_annotations["nginx.ingress.kubernetes.io/limit-req-status-code"]
+        == "429"
+    )
 
     grafana_service_entry = by_kind_name[
         ("ServiceEntry", "recsys-grafana-gateway-service-entry")
@@ -173,7 +177,9 @@ def test_gateway_chart_renders_auth_rate_limits_and_backends_with_tls_disabled_b
     assert logs_annotations["nginx.ingress.kubernetes.io/limit-rps"] == "5"
     assert logs_annotations["nginx.ingress.kubernetes.io/limit-rpm"] == "120"
     assert logs_annotations["nginx.ingress.kubernetes.io/limit-connections"] == "10"
-    assert logs_annotations["nginx.ingress.kubernetes.io/limit-req-status-code"] == "429"
+    assert (
+        logs_annotations["nginx.ingress.kubernetes.io/limit-req-status-code"] == "429"
+    )
 
     logs_root_redirect = by_kind_name[("Ingress", "recsys-logs-root-redirect")]
     assert logs_root_redirect["metadata"]["namespace"] == "observability"
@@ -198,7 +204,9 @@ def test_gateway_chart_renders_auth_rate_limits_and_backends_with_tls_disabled_b
     assert traces_annotations["nginx.ingress.kubernetes.io/limit-rps"] == "5"
     assert traces_annotations["nginx.ingress.kubernetes.io/limit-rpm"] == "120"
     assert traces_annotations["nginx.ingress.kubernetes.io/limit-connections"] == "10"
-    assert traces_annotations["nginx.ingress.kubernetes.io/limit-req-status-code"] == "429"
+    assert (
+        traces_annotations["nginx.ingress.kubernetes.io/limit-req-status-code"] == "429"
+    )
 
 
 def test_gateway_chart_can_create_cert_manager_cluster_issuer():
@@ -258,10 +266,17 @@ def test_gateway_auth_secret_is_created_for_distinct_backend_namespaces():
     secret_namespaces = {
         doc["metadata"]["namespace"]
         for doc in docs
-        if doc["kind"] == "Secret" and doc["metadata"]["name"] == "recsys-gateway-basic-auth"
+        if doc["kind"] == "Secret"
+        and doc["metadata"]["name"] == "recsys-gateway-basic-auth"
     }
 
-    assert secret_namespaces == {"api-serving", "feature-ns", "observability", "logs-ns", "traces-ns"}
+    assert secret_namespaces == {
+        "api-serving",
+        "feature-ns",
+        "observability",
+        "logs-ns",
+        "traces-ns",
+    }
 
 
 def test_gateway_grafana_upstream_host_can_be_overridden_when_needed():
@@ -269,9 +284,7 @@ def test_gateway_grafana_upstream_host_can_be_overridden_when_needed():
     grafana = _by_kind_name(docs)[("Ingress", "recsys-grafana-gateway")]
 
     assert (
-        grafana["metadata"]["annotations"][
-            "nginx.ingress.kubernetes.io/upstream-vhost"
-        ]
+        grafana["metadata"]["annotations"]["nginx.ingress.kubernetes.io/upstream-vhost"]
         == "grafana.internal.example"
     )
 

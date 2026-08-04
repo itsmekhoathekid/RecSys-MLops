@@ -14,9 +14,7 @@ from jenkins.python.container_scan_policy import evaluate  # noqa: E402
 
 
 def test_base_python_refreshes_os_security_packages_before_tooling_install():
-    dockerfile = (
-        ROOT / "images/base/recsys-base-python/Dockerfile"
-    ).read_text()
+    dockerfile = (ROOT / "images/base/recsys-base-python/Dockerfile").read_text()
     assert "apt-get update" in dockerfile
     assert "apt-get upgrade -y --no-install-recommends" in dockerfile
     assert dockerfile.index("apt-get upgrade") < dockerfile.index("apt-get install")
@@ -79,7 +77,7 @@ def test_vendor_java_baseline_is_bounded_and_expiring():
 
 def test_unlisted_images_cannot_use_vendor_exception():
     rejected, accepted = evaluate(
-        "recsys-api-serving",
+        "recsys-inference-api",
         report("jar", "CRITICAL"),
         policy(),
         today=dt.date(2026, 7, 27),

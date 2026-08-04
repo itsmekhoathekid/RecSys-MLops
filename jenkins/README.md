@@ -43,7 +43,8 @@ The Helm chart exposes only `/github-webhook/` through the ingress controller.
 | `dp1` | raw ingestion, data generator, source CDC config | `recsys-data-ingestion`, `recsys-spark`, `recsys-airflow`, `recsys-kafka-connect` |
 | `dp2` | silver/gold Spark transforms and DAG/config | `recsys-spark`, `recsys-airflow` |
 | `dp3` | offline feature builders and feature store config | `recsys-spark`, `recsys-feature-store`, `recsys-airflow` |
-| `api` | `apps/api-serving/`, API tests, serving chart | `recsys-api-serving` |
+| `online_feature_api` | shared/Feature source, Feature chart and contract tests | `recsys-online-feature-api` |
+| `inference_api` | shared/Inference source, gateway and recommendation tests | `recsys-inference-api` |
 | `kserve` | `infra/helm/recsys-serving/`, `model_cd.py`, model promotion serving code | production model manifest update |
 | `rollout` | rollout controller, Model-CD pipeline/script, watcher Helm resource, rollout load test, serving/observability contracts | immutable `recsys-mlops-training` watcher image and updated watcher Deployment |
 | `drift` | `validate/`, `mlops/`, drift DAG and observability manifests | `recsys-drift-retrain`, `recsys-airflow` |
@@ -150,7 +151,7 @@ Run the root Jenkins job with `FORCE_DEPLOY=true` and the complete component
 list in `FORCE_COMPONENTS`:
 
 ```text
-materialize,training,dp1,dp2,dp3,api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,ci_config
+materialize,training,dp1,dp2,dp3,online_feature_api,inference_api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,ci_config
 ```
 
 The root pipeline keeps a compact Stage View: Declarative checkout, Checkout,

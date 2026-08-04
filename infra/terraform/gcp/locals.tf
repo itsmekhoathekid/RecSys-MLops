@@ -12,7 +12,8 @@ locals {
     kafka_connect       = lookup(var.image_overrides, "kafka_connect", "") != "" ? lookup(var.image_overrides, "kafka_connect", "") : "${local.image_repo}/recsys-kafka-connect:${var.image_tag}"
     airflow             = lookup(var.image_overrides, "airflow", "") != "" ? lookup(var.image_overrides, "airflow", "") : "${local.image_repo}/recsys-airflow:${var.image_tag}"
     mlflow              = lookup(var.image_overrides, "mlflow", "") != "" ? lookup(var.image_overrides, "mlflow", "") : "${local.image_repo}/recsys-mlflow:${var.image_tag}"
-    api                 = lookup(var.image_overrides, "api", "") != "" ? lookup(var.image_overrides, "api", "") : "${local.image_repo}/recsys-api-serving:${var.image_tag}"
+    online_feature_api  = lookup(var.image_overrides, "online_feature_api", "") != "" ? lookup(var.image_overrides, "online_feature_api", "") : "${local.image_repo}/recsys-online-feature-api:${var.image_tag}"
+    inference_api       = lookup(var.image_overrides, "inference_api", "") != "" ? lookup(var.image_overrides, "inference_api", "") : "${local.image_repo}/recsys-inference-api:${var.image_tag}"
     training_repository = lookup(var.image_overrides, "training_repository", "") != "" ? lookup(var.image_overrides, "training_repository", "") : "${local.image_repo}/recsys-mlops-training"
   }
 
@@ -53,36 +54,24 @@ locals {
   }
 
   serving_sets = {
-    "api.namespace.create"                         = "false"
-    "api.image"                                    = local.images.api
-    "featureApi.image"                             = local.images.api
-    "kserve.namespace.create"                      = "false"
-    "kserve.secret.create"                         = "false"
-    "kserve.secret.accessKeyId"                    = "minio"
-    "kserve.secret.minioEndpoint"                  = "minio.experiment-tracking.svc.cluster.local:9000"
-    "api.nodeSelector.recsys\\.ai/workload"        = "ml-system"
-    "api.tolerations[0].key"                       = "recsys.ai/workload"
-    "api.tolerations[0].operator"                  = "Equal"
-    "api.tolerations[0].value"                     = "ml-system"
-    "api.tolerations[0].effect"                    = "NoSchedule"
-    "featureApi.nodeSelector.recsys\\.ai/workload" = "ml-system"
-    "featureApi.tolerations[0].key"                = "recsys.ai/workload"
-    "featureApi.tolerations[0].operator"           = "Equal"
-    "featureApi.tolerations[0].value"              = "ml-system"
-    "featureApi.tolerations[0].effect"             = "NoSchedule"
-    "kserve.nodeSelector.recsys\\.ai/workload"     = "ml-system"
-    "kserve.tolerations[0].key"                    = "recsys.ai/workload"
-    "kserve.tolerations[0].operator"               = "Equal"
-    "kserve.tolerations[0].value"                  = "ml-system"
-    "kserve.tolerations[0].effect"                 = "NoSchedule"
-    "observability.serviceMonitor.enabled"         = "false"
-    "abTest.enabled"                               = "true"
-    "abTest.experimentId"                          = "bst-stable-vs-candidate-20260630"
-    "abTest.candidateWeightPercent"                = "20"
-    "abTest.controlModelVersion"                   = "stable-001"
-    "abTest.candidateModelVersion"                 = "candidate-001"
-    "kserve.inferenceService.candidateStorageUri"  = "s3://recsys-model-store/triton/bst/latest"
+    "kserve.namespace.create"                  = "false"
+    "kserve.secret.create"                     = "false"
+    "kserve.secret.accessKeyId"                = "minio"
+    "kserve.secret.minioEndpoint"              = "minio.experiment-tracking.svc.cluster.local:9000"
+    "kserve.nodeSelector.recsys\\.ai/workload" = "ml-system"
+    "kserve.tolerations[0].key"                = "recsys.ai/workload"
+    "kserve.tolerations[0].operator"           = "Equal"
+    "kserve.tolerations[0].value"              = "ml-system"
+    "kserve.tolerations[0].effect"             = "NoSchedule"
   }
+
+  online_feature_api_sets = merge(local.ml_system_sets, {
+    image = local.images.online_feature_api
+  })
+
+  inference_api_sets = merge(local.ml_system_sets, {
+    image = local.images.inference_api
+  })
 
   service_mesh_namespaces = [
     "kubeflow",

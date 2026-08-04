@@ -34,6 +34,7 @@ RUN apt-get update \
 
 COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/
 COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock /opt/recsys/apps/data-platform/
+COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
 
 # Spark owns PySpark and its JARs. Distributed Ray training remains in the
 # dedicated training image. This image installs the locked ML/data runtime
@@ -113,6 +114,7 @@ COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
 COPY apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
 COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
 COPY apps/ml-system/src /opt/recsys/apps/ml-system/src
+COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
 COPY apps/analytics/src /opt/recsys/apps/analytics/src
 
 ENV PATH=/opt/venv/bin:${PATH} \

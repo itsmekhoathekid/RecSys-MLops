@@ -36,9 +36,9 @@ def render(chart_name: str, *, set_values: tuple[str, ...] = ()) -> str:
     ).stdout
 
 
-def test_image_catalog_has_fifteen_images_and_one_spark():
+def test_image_catalog_has_sixteen_images_and_one_spark():
     catalog = json.loads((ROOT / "images/catalog.json").read_text())
-    assert len(catalog["images"]) == 15
+    assert len(catalog["images"]) == 16
     assert {name for name in catalog["images"] if name.endswith("-spark")} == {
         "recsys-spark"
     }
@@ -80,9 +80,9 @@ def test_split_charts_have_unique_kubernetes_resource_owners():
                 str(metadata.get("namespace", "recsys-dataflow")),
                 str(metadata.get("name")),
             )
-            assert key not in owners, (
-                f"{key} owned by {owners.get(key)} and {chart_name}"
-            )
+            assert (
+                key not in owners
+            ), f"{key} owned by {owners.get(key)} and {chart_name}"
             owners[key] = chart_name
 
 
@@ -188,9 +188,12 @@ def test_unified_spark_contains_all_three_domain_capabilities():
 def test_feature_store_image_matches_feast_sqlalchemy_registry_driver():
     dockerfile = (ROOT / "images/data/recsys-feature-store/Dockerfile").read_text()
     registry = (
-        ROOT / "apps/data-platform/src/feature_store/sql_registry_state.py"
+        ROOT
+        / "packages/recsys-feature-store-runtime/src/recsys_feature_store_runtime/sql_registry_state.py"
     ).read_text()
-    serving_project = (ROOT / "apps/api-serving/pyproject.toml").read_text()
+    serving_project = (
+        ROOT / "apps/api-serving/online-feature-api/pyproject.toml"
+    ).read_text()
     assert "psycopg2-binary" in dockerfile
     assert "psycopg2-binary" in serving_project
     assert 'drivername="postgresql+psycopg2"' in registry
@@ -293,7 +296,11 @@ def test_terraform_bootstraps_split_releases_but_jenkins_owns_runtime_updates():
     ):
         assert f'resource "helm_release" "{resource}"' in terraform
     assert 'resource "helm_release" "recsys_data_platform"' not in terraform
+    assert 'resource "helm_release" "recsys_online_feature_api"' in terraform
+    assert 'resource "helm_release" "recsys_inference_api"' in terraform
     assert terraform.count("ignore_changes = all") >= 10
     locals_source = (ROOT / "infra/terraform/gcp/locals.tf").read_text()
     assert '"secret.create"        = "false"' in locals_source
-    assert '"kserve.secret.create"                         = "false"' in locals_source
+    assert '"kserve.secret.create"' in locals_source
+    assert "local.images.online_feature_api" in locals_source
+    assert "local.images.inference_api" in locals_source

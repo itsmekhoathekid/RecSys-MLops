@@ -9,7 +9,7 @@ from typing import Any, Iterable
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATH = ROOT / "images" / "catalog.json"
 COMPONENTS_PATH = ROOT / "jenkins" / "config" / "components.json"
-EXPECTED_IMAGE_COUNT = 15
+EXPECTED_IMAGE_COUNT = 16
 FORBIDDEN_IMAGES = {"recsys-mlops-spark", "recsys-analytics-spark"}
 REQUIRED_IMAGE_FIELDS = {"dockerfile", "context", "dependencies"}
 REQUIRED_DEPENDENCY_FIELDS = {"image", "buildArg"}

@@ -17,7 +17,7 @@ export FEAST_POSTGRES_SCHEMA=${FEAST_POSTGRES_SCHEMA:-feature_store}
 export FEAST_POSTGRES_USER=${FEAST_POSTGRES_USER:-feast}
 export FEAST_POSTGRES_PASSWORD=${FEAST_POSTGRES_PASSWORD:-feast}
 export FEAST_POSTGRES_SSLMODE=${FEAST_POSTGRES_SSLMODE:-disable}
-export FEAST_SQL_REGISTRY_URL="$(python -m feature_store.sql_registry_state url)"
+export FEAST_SQL_REGISTRY_URL="$(python -m recsys_feature_store_runtime.sql_registry_state url)"
 """.strip()
 
 FEAST_MATERIALIZE_INCREMENTAL_COMMAND = f"""

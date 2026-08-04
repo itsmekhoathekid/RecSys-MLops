@@ -36,4 +36,4 @@ def test_demo_security_and_gateway_contracts_include_the_demo_component() -> Non
 
     assert security.component_names == ("demo_web",)
     assert security.flags["RUN_CI_CONFIG"] is True
-    assert gateway.component_names == ("api", "demo_web")
+    assert gateway.component_names == ("inference_api", "demo_web")

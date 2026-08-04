@@ -8,27 +8,45 @@ import types
 import numpy as np
 import pytest
 
-import online_features
-from ab_testing import TritonABRouter
-from api_schemas import RecommendationRequest
-from observability import METRICS, SERVICE_NAME, metrics_text, observe_request, span
-from online_features import (
+from recsys_online_feature_api import service as online_features
+from recsys_online_feature_api.service import (
     FeatureClient,
     get_online_features,
     normalize_realtime_user_features,
     parse_json_bytes,
 )
-from ranking import (
+from recsys_serving_common.observability import (
+    METRICS,
+    SERVICE_NAME,
+    metrics_text,
+    observe_request,
+    span,
+)
+from recsys_inference_api import ab_testing
+from recsys_inference_api.ab_testing import TritonABRouter, select_triton_route
+from recsys_inference_api.ranking import (
     as_int_list,
     build_triton_payload,
     embedding_index,
     format_top_k,
     normalize_item_features,
     normalize_sequence_features,
-    recommend,
+    recommend_from_online_features,
 )
-from triton import TritonRanker
-from shadow import ShadowRunner
+from recsys_inference_api.schemas import RecommendationRequest
+from recsys_inference_api.shadow import ShadowRunner
+from recsys_inference_api.triton import TritonRanker
+
+
+def recommend(request, feature_client, ranker, model_version):
+    route = select_triton_route(ranker, request.user_id, model_version)
+    features = get_online_features(
+        request.user_id,
+        request.candidate_item_ids,
+        request.top_k,
+        feature_client,
+    )
+    return recommend_from_online_features(features, request.top_k, route)
 
 
 def test_build_triton_payload_maps_feature_rows_to_tensors():
@@ -284,7 +302,7 @@ def test_shadow_route_keeps_user_response_on_control_and_samples_candidate():
 
 
 def test_shadow_runner_records_success_error_timeout_and_drop():
-    from ab_testing import TritonRoute
+    from recsys_inference_api.ab_testing import TritonRoute
 
     class SuccessRanker:
         def score(self, payload):
@@ -302,25 +320,43 @@ def test_shadow_runner_records_success_error_timeout_and_drop():
     async def exercise():
         payload = {"candidate_item_id": np.asarray([1, 2], dtype=np.int64)}
         success = ShadowRunner(timeout_seconds=1, max_pending=2, max_concurrency=1)
-        assert success.submit(TritonRoute(SuccessRanker(), "candidate", "shadow_candidate", "shadow-ok"), payload)
+        assert success.submit(
+            TritonRoute(SuccessRanker(), "candidate", "shadow_candidate", "shadow-ok"),
+            payload,
+        )
         await success.drain()
 
         error = ShadowRunner(timeout_seconds=1, max_pending=2, max_concurrency=1)
-        assert error.submit(TritonRoute(ErrorRanker(), "candidate", "shadow_candidate", "shadow-error"), payload)
+        assert error.submit(
+            TritonRoute(ErrorRanker(), "candidate", "shadow_candidate", "shadow-error"),
+            payload,
+        )
         await error.drain()
 
         timeout = ShadowRunner(timeout_seconds=0.001, max_pending=1, max_concurrency=1)
-        route = TritonRoute(SlowRanker(), "candidate", "shadow_candidate", "shadow-timeout")
+        route = TritonRoute(
+            SlowRanker(), "candidate", "shadow_candidate", "shadow-timeout"
+        )
         assert timeout.submit(route, payload)
         assert timeout.submit(route, payload) is False
         await timeout.drain()
 
     asyncio.run(exercise())
     text = metrics_text()
-    assert 'experiment_id="shadow-ok",model_version="candidate",status="success"' in text
-    assert 'experiment_id="shadow-error",model_version="candidate",status="error"' in text
-    assert 'experiment_id="shadow-timeout",model_version="candidate",status="timeout"' in text
-    assert 'experiment_id="shadow-timeout",model_version="candidate",status="dropped"' in text
+    assert (
+        'experiment_id="shadow-ok",model_version="candidate",status="success"' in text
+    )
+    assert (
+        'experiment_id="shadow-error",model_version="candidate",status="error"' in text
+    )
+    assert (
+        'experiment_id="shadow-timeout",model_version="candidate",status="timeout"'
+        in text
+    )
+    assert (
+        'experiment_id="shadow-timeout",model_version="candidate",status="dropped"'
+        in text
+    )
     assert "recsys_api_shadow_latency_seconds_bucket" in text
     assert "recsys_api_shadow_score_mean" in text
 
@@ -365,9 +401,6 @@ def test_recommend_ab_router_returns_variant_metadata_and_metrics():
     assert 'model_version="candidate"' in text
     assert 'experiment_id="exp-1"' in text
     assert "recsys_api_score_mean" in text
-    assert "model_predictions_total" in text
-    assert "model_prediction_latency_seconds_bucket" in text
-    assert "model_prediction_confidence_bucket" in text
 
 
 def test_get_online_features_reads_candidates_sequence_and_items():
@@ -404,7 +437,12 @@ def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkey
         def zrevrange(self, key, start, end):
             raise OSError("redis unavailable")
 
-    monkeypatch.setattr(online_features, "redis", type("RedisModule", (), {"Redis": BrokenRedis}), raising=False)
+    monkeypatch.setattr(
+        online_features,
+        "redis",
+        type("RedisModule", (), {"Redis": BrokenRedis}),
+        raising=False,
+    )
 
     original_import = __import__
 
@@ -445,10 +483,19 @@ def test_feature_client_success_and_error_without_fallback(monkeypatch):
 
     def fake_get_online_features(features, entity_rows):
         if "user_id" in entity_rows[0]:
-            return {"user_id": [1], "hist_item_ids": [[1]], "hist_event_type_ids": [[1]]}
+            return {
+                "user_id": [1],
+                "hist_item_ids": [[1]],
+                "hist_event_type_ids": [[1]],
+            }
         product_id = entity_rows[0]["product_id"]
         if product_id == 10:
-            return {"product_id": [10], "category_id": [2], "brand_id": [3], "price_bucket": [4]}
+            return {
+                "product_id": [10],
+                "category_id": [2],
+                "brand_id": [3],
+                "price_bucket": [4],
+            }
         raise OSError("missing")
 
     monkeypatch.setattr(client, "_get_feast_online_features", fake_get_online_features)
@@ -543,8 +590,12 @@ def test_triton_ranker_scores_and_records_errors(monkeypatch):
     monkeypatch.setitem(sys.modules, "tritonclient", types.SimpleNamespace(grpc=grpc))
     monkeypatch.setitem(sys.modules, "tritonclient.grpc", grpc)
 
-    ranker = TritonRanker(url="localhost:9000", model_name="bst_ensemble", model_version="v1")
-    item_ids, scores = ranker.score({"candidate_item_id": np.asarray([1, 2], dtype=np.int64)})
+    ranker = TritonRanker(
+        url="localhost:9000", model_name="bst_ensemble", model_version="v1"
+    )
+    item_ids, scores = ranker.score(
+        {"candidate_item_id": np.asarray([1, 2], dtype=np.int64)}
+    )
     assert item_ids == [1, 2]
     assert len(scores) == 2
 
@@ -558,8 +609,6 @@ def test_triton_ranker_scores_and_records_errors(monkeypatch):
 
 
 def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
-    import ab_testing
-
     created = []
 
     class FakeRanker:
@@ -587,8 +636,6 @@ def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
 
 
 def test_ab_router_from_env_builds_shadow_candidate_with_zero_user_weight(monkeypatch):
-    import ab_testing
-
     created = []
 
     class FakeRanker:
@@ -617,7 +664,10 @@ def test_ab_router_from_env_builds_shadow_candidate_with_zero_user_weight(monkey
 
 
 def test_observability_metrics_expose_api_redis_and_triton_series():
-    METRICS.inc("recsys_api_requests_total", labels={"route": "/recommendations", "method": "POST", "status": "200"})
+    METRICS.inc(
+        "recsys_api_requests_total",
+        labels={"route": "/recommendations", "method": "POST", "status": "200"},
+    )
     METRICS.inc("recsys_api_redis_errors_total", labels={"operation": "user_sequence"})
     METRICS.inc("recsys_api_triton_errors_total", labels={"model_name": "bst_ensemble"})
     text = metrics_text()

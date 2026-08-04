@@ -8,7 +8,7 @@ The current FastAPI autoscaling path uses KEDA `ScaledObject` resources with Pro
 
 | Workload | Namespace | HPA | Min | Max | Scaling signal |
 |---|---|---|---:|---:|---|
-| `recsys-api-serving` | `api-serving` | `keda-hpa-recsys-api-serving` | 1 | 3 | `/recommendations` req/s and p95 latency |
+| `recsys-inference-api` | `api-serving` | `keda-hpa-recsys-inference-api` | 1 | 3 | `/recommendations` req/s and p95 latency |
 | `recsys-online-feature-api` | `api-serving` | `keda-hpa-recsys-online-feature-api` | 1 | 3 | `/online-features` req/s and p95 latency |
 | `recsys-bst-triton-predictor` | `kserve-triton-inference` | `recsys-bst-triton-predictor` | 1 | 3 | CPU utilization, 15% proof target |
 
@@ -27,7 +27,7 @@ kubectl get hpa -n api-serving -w
 ```
 
 ```bash
-kubectl get deploy -n api-serving recsys-api-serving recsys-online-feature-api -w
+kubectl get deploy -n api-serving recsys-inference-api recsys-online-feature-api -w
 ```
 
 ```bash
@@ -41,7 +41,7 @@ kubectl get deploy -n kserve-triton-inference recsys-bst-triton-predictor -w
 Optional pod monitors:
 
 ```bash
-kubectl get pods -n api-serving -l app.kubernetes.io/name=recsys-api-serving -w
+kubectl get pods -n api-serving -l app.kubernetes.io/name=recsys-inference-api -w
 ```
 
 ```bash
@@ -59,14 +59,14 @@ kubectl get hpa -n kserve-triton-inference
 Expected objects:
 
 ```text
-recsys-api-serving-prometheus           True   False   1   3
+recsys-inference-api                    True   False   1   3
 recsys-online-feature-api-prometheus    True   False   1   3
 ```
 
 Describe the FastAPI scalers:
 
 ```bash
-kubectl describe scaledobject -n api-serving recsys-api-serving-prometheus
+kubectl describe scaledobject -n api-serving recsys-inference-api
 kubectl describe scaledobject -n api-serving recsys-online-feature-api-prometheus
 ```
 
@@ -79,13 +79,13 @@ FastAPI recommendation API -> online feature API -> Feast Redis online store -> 
 ```
 
 ```bash
-kubectl -n api-serving exec deploy/recsys-api-serving -c api -- \
+kubectl -n api-serving exec deploy/recsys-inference-api -c api -- \
   python -c 'import requests, json; r=requests.post("http://127.0.0.1:8080/recommendations", json={"user_id":4,"candidate_item_ids":[1,2,3,4,5],"top_k":3}, timeout=30); print(r.status_code); print(json.dumps(r.json(), indent=2)[:2000]); r.raise_for_status()'
 ```
 
 ## 4. Run Locust To Trigger API And Online Feature API Scaling
 
-This command port-forwards `svc/recsys-api-serving`, runs Locust against `/recommendations`, then prints the HPA and Deployment state before and after the test.
+This command port-forwards `svc/recsys-inference-api`, runs Locust against `/recommendations`, then prints the HPA and Deployment state before and after the test.
 
 ```bash
 LOCUST_USERS=30 \
@@ -101,7 +101,7 @@ make serving-autoscale-load-test
 The `/recommendations` endpoint calls the online feature API internally, so this single run should scale both:
 
 ```text
-recsys-api-serving: 1/1 -> 3/3
+recsys-inference-api: 1/1 -> 3/3
 recsys-online-feature-api: 1/1 -> 3/3
 ```
 
@@ -169,7 +169,7 @@ Use these commands during and after the load test.
 ```bash
 kubectl get hpa -n api-serving
 kubectl get scaledobject -n api-serving
-kubectl get deploy -n api-serving recsys-api-serving recsys-online-feature-api -o wide
+kubectl get deploy -n api-serving recsys-inference-api recsys-online-feature-api -o wide
 kubectl get pods -n api-serving -o wide
 ```
 
@@ -182,7 +182,7 @@ Good screenshots to capture:
 
 1. Locust summary.
 2. FastAPI HPA targets above the request-rate or latency threshold.
-3. `recsys-api-serving` at `3/3`.
+3. `recsys-inference-api` at `3/3`.
 4. `recsys-online-feature-api` at `3/3`.
 5. HPA target back to low values after cooldown.
 

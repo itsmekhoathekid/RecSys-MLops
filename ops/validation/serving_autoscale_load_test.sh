@@ -2,7 +2,7 @@
 set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-api-serving}"
-SERVICE="${SERVICE:-recsys-api-serving}"
+SERVICE="${SERVICE:-recsys-inference-api}"
 LOCAL_PORT="${LOCAL_PORT:-18088}"
 LOAD_TARGET="${RECSYS_LOAD_TARGET:-api}"
 USERS="${LOCUST_USERS:-180}"
@@ -31,7 +31,7 @@ echo "Initial autoscale state"
 kubectl get hpa -n api-serving
 kubectl get hpa -n kserve-triton-inference || true
 kubectl get scaledobject -n api-serving
-kubectl get deploy -n api-serving recsys-api-serving recsys-online-feature-api
+kubectl get deploy -n api-serving recsys-inference-api recsys-online-feature-api
 kubectl get deploy -n kserve-triton-inference recsys-bst-triton-predictor || true
 
 RECSYS_LOAD_TARGET="${LOAD_TARGET}" \
@@ -51,5 +51,5 @@ echo "Autoscale state after load"
 kubectl get hpa -n api-serving
 kubectl get hpa -n kserve-triton-inference || true
 kubectl get scaledobject -n api-serving
-kubectl get deploy -n api-serving recsys-api-serving recsys-online-feature-api
+kubectl get deploy -n api-serving recsys-inference-api recsys-online-feature-api
 kubectl get deploy -n kserve-triton-inference recsys-bst-triton-predictor || true

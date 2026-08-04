@@ -23,15 +23,27 @@ def _documents(rendered: str) -> list[dict]:
     return [doc for doc in yaml.safe_load_all(rendered) if isinstance(doc, dict)]
 
 
-def test_api_serving_image_includes_feast_postgres_driver():
-    dockerfile = (ROOT / "images/serving/recsys-api-serving/Dockerfile").read_text(
-        encoding="utf-8"
-    )
-    project = (ROOT / "apps/api-serving/pyproject.toml").read_text(encoding="utf-8")
-    assert "uv sync --frozen" in dockerfile
-    assert "feast[redis]" in project
-    assert "psycopg[binary]" in project
-    assert "psycopg-pool" in project
+def test_split_api_images_enforce_dependency_boundaries():
+    feature_dockerfile = (
+        ROOT / "images/serving/recsys-online-feature-api/Dockerfile"
+    ).read_text(encoding="utf-8")
+    inference_dockerfile = (
+        ROOT / "images/serving/recsys-inference-api/Dockerfile"
+    ).read_text(encoding="utf-8")
+    feature_project = (
+        ROOT / "apps/api-serving/online-feature-api/pyproject.toml"
+    ).read_text(encoding="utf-8")
+    inference_project = (
+        ROOT / "apps/api-serving/inference-api/pyproject.toml"
+    ).read_text(encoding="utf-8")
+    assert "uv sync --frozen" in feature_dockerfile
+    assert "uv sync --frozen" in inference_dockerfile
+    assert "feast[redis]" in feature_project
+    assert "psycopg[binary]" in feature_project
+    assert "tritonclient" not in feature_project
+    assert "tritonclient" in inference_project
+    assert "feast" not in inference_project
+    assert "apps/data-platform" not in inference_dockerfile
 
 
 def test_serving_chart_renders_expected_namespaces():
@@ -48,11 +60,24 @@ def test_serving_chart_renders_expected_namespaces():
         ],
         text=True,
     )
+    rendered += subprocess.check_output(
+        ["helm", "template", "recsys-inference-api", "infra/helm/recsys-inference-api"],
+        text=True,
+    )
+    rendered += subprocess.check_output(
+        [
+            "helm",
+            "template",
+            "recsys-online-feature-api",
+            "infra/helm/recsys-online-feature-api",
+        ],
+        text=True,
+    )
     docs = _documents(rendered)
     by_kind_name = {(doc["kind"], doc["metadata"]["name"]): doc for doc in docs}
 
     assert ("Namespace", "kserve-triton-inference") in by_kind_name
-    assert ("Namespace", "api-serving") in by_kind_name
+    assert ("Namespace", "api-serving") not in by_kind_name
     inference_service = by_kind_name[("InferenceService", "recsys-bst-triton")]
     assert inference_service["metadata"]["namespace"] == "kserve-triton-inference"
     assert (
@@ -82,7 +107,7 @@ def test_serving_chart_renders_expected_namespaces():
         "path": "/v2/health/live",
         "port": "h2c",
     }
-    api_deployment = by_kind_name[("Deployment", "recsys-api-serving")]
+    api_deployment = by_kind_name[("Deployment", "recsys-inference-api")]
     assert api_deployment["metadata"]["namespace"] == "api-serving"
     assert "replicas" not in api_deployment["spec"]
     assert api_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
@@ -98,27 +123,25 @@ def test_serving_chart_renders_expected_namespaces():
     assert api_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     assert api_container["readinessProbe"]["httpGet"]["path"] == "/ready"
     assert api_container["livenessProbe"]["httpGet"]["path"] == "/healthz"
-    api_config = by_kind_name[("ConfigMap", "recsys-api-serving")]
+    api_config = by_kind_name[("ConfigMap", "recsys-inference-api")]
     assert api_config["data"]["FORCE_NOT_READY"] == "0"
-    assert api_config["data"]["ALLOW_FEATURE_FALLBACK"] == "0"
     assert api_config["data"]["RECSYS_JSON_LOGS"] == "1"
-    assert api_config["data"]["OTEL_SERVICE_NAME"] == "recsys-api-serving"
+    assert api_config["data"]["OTEL_SERVICE_NAME"] == "recsys-inference-api"
     assert api_config["data"]["AB_SHADOW_ENABLED"] == "0"
     assert api_config["data"]["AB_SHADOW_SAMPLE_PERCENT"] == "100"
-    assert ("ServiceMonitor", "recsys-api-serving") in by_kind_name
-    assert ("HTTPScaledObject", "recsys-api-serving-http") not in by_kind_name
-    api_scaledobject = by_kind_name[("ScaledObject", "recsys-api-serving-prometheus")]
+    assert ("ServiceMonitor", "recsys-inference-api") in by_kind_name
+    api_scaledobject = by_kind_name[("ScaledObject", "recsys-inference-api")]
     assert api_scaledobject["metadata"]["namespace"] == "api-serving"
     assert api_scaledobject["spec"]["scaleTargetRef"] == {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
-        "name": "recsys-api-serving",
+        "name": "recsys-inference-api",
     }
     assert api_scaledobject["spec"]["minReplicaCount"] == 1
     assert api_scaledobject["spec"]["maxReplicaCount"] == 3
     assert (
         api_scaledobject["spec"]["advanced"]["horizontalPodAutoscalerConfig"]["name"]
-        == "recsys-api-serving"
+        == "recsys-inference-api"
     )
     assert [trigger["type"] for trigger in api_scaledobject["spec"]["triggers"]] == [
         "prometheus",
@@ -141,7 +164,7 @@ def test_serving_chart_renders_expected_namespaces():
         {"secretRef": {"name": "recsys-online-feature-api-registry"}},
     ]
     feature_api_scaledobject = by_kind_name[
-        ("ScaledObject", "recsys-online-feature-api-prometheus")
+        ("ScaledObject", "recsys-online-feature-api")
     ]
     feature_api_config = by_kind_name[("ConfigMap", "recsys-online-feature-api")]
     feature_api_secret = by_kind_name[("Secret", "recsys-online-feature-api-registry")]
@@ -198,7 +221,7 @@ def test_serving_chart_renders_expected_namespaces():
     ]
 
 
-def test_serving_chart_can_render_api_only_for_rollout_demo():
+def test_kserve_chart_does_not_render_api_resources():
     if shutil.which("helm") is None:
         pytest.skip("helm is not installed")
     rendered = subprocess.check_output(
@@ -217,32 +240,20 @@ def test_serving_chart_can_render_api_only_for_rollout_demo():
     docs = _documents(rendered)
     by_kind_name = {(doc["kind"], doc["metadata"]["name"]): doc for doc in docs}
 
-    assert ("Deployment", "recsys-api-serving") in by_kind_name
-    assert ("Service", "recsys-api-serving") in by_kind_name
-    assert ("HTTPScaledObject", "recsys-api-serving-http") not in by_kind_name
-    assert ("ScaledObject", "recsys-api-serving-prometheus") in by_kind_name
-    assert ("ScaledObject", "recsys-online-feature-api-prometheus") in by_kind_name
-    assert ("HTTPScaledObject", "recsys-bst-triton-http") not in by_kind_name
-    assert ("ScaledObject", "recsys-bst-triton-resource") in by_kind_name
-    assert ("InferenceService", "recsys-bst-triton") not in by_kind_name
-    assert ("ClusterServingRuntime", "kserve-tritonserver") not in by_kind_name
+    assert by_kind_name == {}
 
 
-def test_api_component_deploy_does_not_disable_kserve_autoscaling():
-    deploy_script = (ROOT / "jenkins/scripts/deploy/serving.sh").read_text(
-        encoding="utf-8"
+def test_api_deploy_units_own_one_release_and_image_each():
+    payload = json.loads(
+        (ROOT / "jenkins/config/deploy-units.json").read_text(encoding="utf-8")
     )
-    api_deploy = re.search(
-        r"deploy_api\(\) \{(?P<body>.*?)\n\}", deploy_script, re.DOTALL
-    )
-
-    assert api_deploy is not None
-    assert "kserve.enabled=false" not in api_deploy.group("body")
-    assert "autoscaling.kserveResource.enabled=false" not in api_deploy.group("body")
-    assert "--wait" in api_deploy.group("body")
-    assert "verify_and_wait_workload deployment recsys-api-serving" in api_deploy.group(
-        "body"
-    )
+    units = {unit["name"]: unit for unit in payload["units"]}
+    assert units["online-feature-api"]["consumesImages"] == [
+        "recsys-online-feature-api"
+    ]
+    assert units["inference-api"]["consumesImages"] == ["recsys-inference-api"]
+    assert units["kserve"]["consumesImages"] == []
+    assert units["inference-api"]["dependsOn"] == []
 
 
 def test_serving_deploy_uses_jenkins_lock_instead_of_file_lock():
@@ -289,6 +300,8 @@ def test_serving_chart_renders_candidate_for_ab_testing():
             "abTest.candidateModelVersion=candidate-001",
             "--set",
             "kserve.inferenceService.candidateStorageUri=s3://recsys-model-store/triton/bst/candidate-001",
+            "--set",
+            "kserve.inferenceService.retainCandidate=true",
         ],
         text=True,
     )
@@ -316,11 +329,6 @@ def test_serving_chart_renders_candidate_for_ab_testing():
         candidate_scaledobject["spec"]["scaleTargetRef"]["name"]
         == "recsys-bst-triton-candidate-predictor"
     )
-    api_config = by_kind_name[("ConfigMap", "recsys-api-serving")]
-    assert api_config["data"]["AB_TEST_ENABLED"] == "1"
-    assert api_config["data"]["AB_CANDIDATE_WEIGHT_PERCENT"] == "10"
-    assert api_config["data"]["AB_CONTROL_MODEL_VERSION"] == "stable-001"
-    assert api_config["data"]["AB_CANDIDATE_MODEL_VERSION"] == "candidate-001"
 
 
 def test_serving_chart_renders_candidate_for_shadow_with_zero_ab_weight():
@@ -342,6 +350,8 @@ def test_serving_chart_renders_candidate_for_shadow_with_zero_ab_weight():
             "abTest.candidateWeightPercent=0",
             "--set",
             "kserve.inferenceService.candidateStorageUri=s3://recsys-model-store/triton/bst/shadow-001",
+            "--set",
+            "kserve.inferenceService.retainCandidate=true",
         ],
         text=True,
     )
@@ -350,10 +360,6 @@ def test_serving_chart_renders_candidate_for_shadow_with_zero_ab_weight():
 
     assert ("InferenceService", "recsys-bst-triton-candidate") in by_kind_name
     assert ("Service", "recsys-bst-triton-candidate-grpc") in by_kind_name
-    api_config = by_kind_name[("ConfigMap", "recsys-api-serving")]
-    assert api_config["data"]["AB_SHADOW_ENABLED"] == "1"
-    assert api_config["data"]["AB_TEST_ENABLED"] == "0"
-    assert api_config["data"]["AB_CANDIDATE_WEIGHT_PERCENT"] == "0"
 
 
 def test_model_cd_writes_shadow_and_explicit_rollback_values(tmp_path):
@@ -377,10 +383,15 @@ def test_model_cd_writes_shadow_and_explicit_rollback_values(tmp_path):
         candidate_weight_percent=0,
         experiment_id="exp-shadow",
     )
-    shadow_values = json.loads(shadow_path.read_text(encoding="utf-8"))
+    shadow_kserve_values = json.loads(shadow_path.read_text(encoding="utf-8"))
+    shadow_values = json.loads(
+        (shadow_path.parent / "recsys-inference-api-values.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert shadow_values["shadow"]["enabled"] is True
-    assert shadow_values["kserve"]["enabled"] is True
-    assert shadow_values["kserve"]["secret"]["create"] is False
+    assert shadow_kserve_values["kserve"]["enabled"] is True
+    assert shadow_kserve_values["kserve"]["secret"]["create"] is False
     assert shadow_values["abTest"]["enabled"] is False
     assert shadow_values["abTest"]["candidateWeightPercent"] == 0
     assert shadow_values["abTest"]["candidateTritonUrl"].startswith(
@@ -390,12 +401,12 @@ def test_model_cd_writes_shadow_and_explicit_rollback_values(tmp_path):
         "recsys-bst-triton-predictor."
     )
     assert (
-        shadow_values["kserve"]["inferenceService"]["candidateStorageUri"]
+        shadow_kserve_values["kserve"]["inferenceService"]["candidateStorageUri"]
         == "/candidate"
     )
-    assert shadow_values["api"]["rollout"]["maxUnavailable"] == 0
-    assert shadow_values["api"]["rollout"]["maxSurge"] == 1
-    assert shadow_values["autoscaling"]["prometheus"]["api"]["minReplicas"] == 2
+    assert shadow_values["rollout"]["maxUnavailable"] == 0
+    assert shadow_values["rollout"]["maxSurge"] == 1
+    assert shadow_values["autoscaling"]["minReplicas"] == 2
 
     rollback_path = config.write_values(
         control,
@@ -404,14 +415,22 @@ def test_model_cd_writes_shadow_and_explicit_rollback_values(tmp_path):
         candidate_weight_percent=50,
         experiment_id="exp-shadow",
     )
-    rollback_values = json.loads(rollback_path.read_text(encoding="utf-8"))
+    rollback_kserve_values = json.loads(rollback_path.read_text(encoding="utf-8"))
+    rollback_values = json.loads(
+        (rollback_path.parent / "recsys-inference-api-values.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert rollback_values["shadow"]["enabled"] is False
-    assert rollback_values["kserve"]["enabled"] is True
-    assert rollback_values["kserve"]["secret"]["create"] is False
+    assert rollback_kserve_values["kserve"]["enabled"] is True
+    assert rollback_kserve_values["kserve"]["secret"]["create"] is False
     assert rollback_values["abTest"]["enabled"] is False
     assert rollback_values["abTest"]["candidateWeightPercent"] == 0
     assert rollback_values["abTest"]["candidateTritonUrl"] == ""
-    assert rollback_values["kserve"]["inferenceService"]["candidateStorageUri"] == ""
+    assert (
+        rollback_kserve_values["kserve"]["inferenceService"]["candidateStorageUri"]
+        == ""
+    )
 
     if shutil.which("helm") is not None:
         shadow_rendered = subprocess.check_output(
@@ -466,8 +485,13 @@ def test_model_cd_can_retain_candidate_while_switching_api_to_promoted_stable(tm
         retain_candidate=True,
     )
     values = json.loads(values_path.read_text(encoding="utf-8"))
+    inference_values = json.loads(
+        (values_path.parent / "recsys-inference-api-values.json").read_text(
+            encoding="utf-8"
+        )
+    )
 
-    assert values["abTest"]["enabled"] is False
+    assert inference_values["abTest"]["enabled"] is False
     assert values["kserve"]["inferenceService"]["retainCandidate"] is True
     rendered = subprocess.check_output(
         [
@@ -550,8 +574,11 @@ def test_model_cd_evaluate_writes_decision_and_auto_renders_rollback(
 
     assert model_cd_cli.main() == 0
     decision = json.loads((output_dir / "ab-decision.json").read_text(encoding="utf-8"))
+    kserve_values = json.loads(
+        (output_dir / "recsys-kserve-values.json").read_text(encoding="utf-8")
+    )
     values = json.loads(
-        (output_dir / "recsys-serving-values.json").read_text(encoding="utf-8")
+        (output_dir / "recsys-inference-api-values.json").read_text(encoding="utf-8")
     )
     deployed = json.loads(
         (output_dir / "deployed-model.json").read_text(encoding="utf-8")
@@ -559,7 +586,7 @@ def test_model_cd_evaluate_writes_decision_and_auto_renders_rollback(
     assert decision["decision"] == "rollback"
     assert values["abTest"]["candidateWeightPercent"] == 0
     assert values["shadow"]["enabled"] is False
-    assert values["kserve"]["inferenceService"]["candidateStorageUri"] == ""
+    assert kserve_values["kserve"]["inferenceService"]["candidateStorageUri"] == ""
     assert deployed["stage"] == "rollback"
 
 
@@ -594,13 +621,16 @@ def test_model_cd_validates_local_manifest_and_writes_values(tmp_path, monkeypat
     )
 
     assert model_cd_cli.main() == 0
-    values = json.loads(
-        (output_dir / "recsys-serving-values.json").read_text(encoding="utf-8")
+    kserve_values = json.loads(
+        (output_dir / "recsys-kserve-values.json").read_text(encoding="utf-8")
     )
-    assert values["kserve"]["namespace"]["name"] == "kserve-triton-inference"
-    assert values["api"]["namespace"]["name"] == "api-serving"
-    assert values["api"]["config"]["modelVersion"] == "trial-001"
-    assert values["abTest"]["enabled"] is False
+    inference_values = json.loads(
+        (output_dir / "recsys-inference-api-values.json").read_text(encoding="utf-8")
+    )
+    assert kserve_values["kserve"]["namespace"]["name"] == "kserve-triton-inference"
+    assert inference_values["namespace"] == "api-serving"
+    assert inference_values["config"]["modelVersion"] == "trial-001"
+    assert inference_values["abTest"]["enabled"] is False
 
 
 def test_model_cd_writes_ab_start_values(tmp_path, monkeypatch):
@@ -657,18 +687,21 @@ def test_model_cd_writes_ab_start_values(tmp_path, monkeypatch):
 
     assert model_cd_cli.main() == 0
     values = json.loads(
-        (output_dir / "recsys-serving-values.json").read_text(encoding="utf-8")
+        (output_dir / "recsys-kserve-values.json").read_text(encoding="utf-8")
+    )
+    inference_values = json.loads(
+        (output_dir / "recsys-inference-api-values.json").read_text(encoding="utf-8")
     )
 
     assert values["kserve"]["inferenceService"]["storageUri"] == str(control_repo)
     assert values["kserve"]["inferenceService"]["candidateStorageUri"] == str(
         candidate_repo
     )
-    assert values["abTest"]["enabled"] is True
-    assert values["abTest"]["candidateWeightPercent"] == 10
-    assert values["abTest"]["experimentId"] == "exp-1"
-    assert values["abTest"]["controlModelVersion"] == "stable-001"
-    assert values["abTest"]["candidateModelVersion"] == "candidate-001"
+    assert inference_values["abTest"]["enabled"] is True
+    assert inference_values["abTest"]["candidateWeightPercent"] == 10
+    assert inference_values["abTest"]["experimentId"] == "exp-1"
+    assert inference_values["abTest"]["controlModelVersion"] == "stable-001"
+    assert inference_values["abTest"]["candidateModelVersion"] == "candidate-001"
 
 
 def test_model_cd_rollback_disables_ab_values(tmp_path, monkeypatch):
@@ -705,7 +738,7 @@ def test_model_cd_rollback_disables_ab_values(tmp_path, monkeypatch):
 
     assert model_cd_cli.main() == 0
     values = json.loads(
-        (output_dir / "recsys-serving-values.json").read_text(encoding="utf-8")
+        (output_dir / "recsys-inference-api-values.json").read_text(encoding="utf-8")
     )
 
     assert values["abTest"]["enabled"] is False
@@ -765,12 +798,15 @@ def test_model_cd_promote_dry_run_renders_candidate_as_stable(tmp_path, monkeypa
 
     assert model_cd_cli.main() == 0
     values = json.loads(
-        (output_dir / "recsys-serving-values.json").read_text(encoding="utf-8")
+        (output_dir / "recsys-kserve-values.json").read_text(encoding="utf-8")
+    )
+    inference_values = json.loads(
+        (output_dir / "recsys-inference-api-values.json").read_text(encoding="utf-8")
     )
 
     assert values["kserve"]["inferenceService"]["storageUri"] == str(latest_repo)
-    assert values["api"]["config"]["modelVersion"] == "candidate-001"
-    assert values["abTest"]["enabled"] is False
+    assert inference_values["config"]["modelVersion"] == "candidate-001"
+    assert inference_values["abTest"]["enabled"] is False
 
 
 def test_model_cd_deploy_uses_atomic_helm_upgrade(monkeypatch, tmp_path):
@@ -781,21 +817,27 @@ def test_model_cd_deploy_uses_atomic_helm_upgrade(monkeypatch, tmp_path):
 
     monkeypatch.setattr(helm_release, "run", fake_run)
     monkeypatch.setattr(helm_release, "crd_exists", lambda _: True)
+    monkeypatch.setattr(helm_release, "_archive_values", lambda *_: False)
     values_path = tmp_path / "values.json"
     values_path.write_text("{}", encoding="utf-8")
+    (tmp_path / "recsys-inference-api-values.json").write_text("{}", encoding="utf-8")
 
     helm_release.deploy(values_path, timeout="90s")
 
-    helm_upgrade = commands[1]
-    final_helm_upgrade = commands[-1]
-    assert helm_upgrade[:4] == ["helm", "upgrade", "--install", "recsys-serving"]
-    assert "--atomic" in helm_upgrade
-    assert helm_upgrade[helm_upgrade.index("--timeout") + 1] == "90s"
-    assert "autoscaling.kserveResource.enabled=false" in helm_upgrade
-    assert "autoscaling.kserveResource.enabled=true" in final_helm_upgrade
+    upgrades = [
+        command
+        for command in commands
+        if command[:3] == ["helm", "upgrade", "--install"]
+    ]
+    assert upgrades[0][3] == "recsys-serving"
+    assert upgrades[-1][3] == "recsys-inference-api"
+    assert all("--atomic" in command for command in upgrades)
+    assert upgrades[0][upgrades[0].index("--timeout") + 1] == "90s"
+    assert "autoscaling.kserveResource.enabled=false" in upgrades[0]
+    assert "autoscaling.kserveResource.enabled=true" in upgrades[1]
 
 
-def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_path):
+def test_model_cd_deploy_can_disable_atomic(monkeypatch, tmp_path):
     commands = []
 
     def fake_run(command: list[str]) -> None:
@@ -804,17 +846,21 @@ def test_model_cd_deploy_can_disable_atomic_and_servicemonitor(monkeypatch, tmp_
     monkeypatch.setenv("RECSYS_MODEL_CD_ATOMIC", "0")
     monkeypatch.setattr(helm_release, "run", fake_run)
     monkeypatch.setattr(helm_release, "crd_exists", lambda _: False)
+    monkeypatch.setattr(helm_release, "_archive_values", lambda *_: False)
     values_path = tmp_path / "values.json"
     values_path.write_text("{}", encoding="utf-8")
+    (tmp_path / "recsys-inference-api-values.json").write_text("{}", encoding="utf-8")
 
     helm_release.deploy(values_path, timeout="90s")
 
-    helm_upgrade = commands[1]
-    final_helm_upgrade = commands[-1]
-    assert "--atomic" not in helm_upgrade
-    assert "observability.serviceMonitor.enabled=false" in helm_upgrade
-    assert "autoscaling.kserveResource.enabled=true" in final_helm_upgrade
-    assert "observability.serviceMonitor.enabled=false" in final_helm_upgrade
+    upgrades = [
+        command
+        for command in commands
+        if command[:3] == ["helm", "upgrade", "--install"]
+    ]
+    assert all("--atomic" not in command for command in upgrades)
+    assert all("--reuse-values" in command for command in upgrades)
+    assert "autoscaling.kserveResource.enabled=true" in upgrades[1]
 
 
 def test_model_cd_deploy_waits_for_shadow_candidate(monkeypatch, tmp_path):
@@ -822,12 +868,16 @@ def test_model_cd_deploy_waits_for_shadow_candidate(monkeypatch, tmp_path):
 
     monkeypatch.setattr(helm_release, "run", lambda command: commands.append(command))
     monkeypatch.setattr(helm_release, "crd_exists", lambda _: True)
+    monkeypatch.setattr(helm_release, "_archive_values", lambda *_: False)
     values_path = tmp_path / "values.json"
     values_path.write_text(
         json.dumps(
             {
                 "kserve": {
-                    "inferenceService": {"candidateStorageUri": "s3://store/candidate"}
+                    "inferenceService": {
+                        "candidateStorageUri": "s3://store/candidate",
+                        "retainCandidate": True,
+                    }
                 },
                 "abTest": {"enabled": False},
                 "shadow": {"enabled": True},
@@ -835,6 +885,7 @@ def test_model_cd_deploy_waits_for_shadow_candidate(monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
+    (tmp_path / "recsys-inference-api-values.json").write_text("{}", encoding="utf-8")
 
     helm_release.deploy(values_path, timeout="90s")
 
@@ -853,6 +904,7 @@ def test_model_cd_deploy_waits_for_retained_candidate(monkeypatch, tmp_path):
     commands = []
     monkeypatch.setattr(helm_release, "run", lambda command: commands.append(command))
     monkeypatch.setattr(helm_release, "crd_exists", lambda _: True)
+    monkeypatch.setattr(helm_release, "_archive_values", lambda *_: False)
     values_path = tmp_path / "values.json"
     values_path.write_text(
         json.dumps(
@@ -869,6 +921,7 @@ def test_model_cd_deploy_waits_for_retained_candidate(monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
+    (tmp_path / "recsys-inference-api-values.json").write_text("{}", encoding="utf-8")
 
     helm_release.deploy(values_path, timeout="90s")
 

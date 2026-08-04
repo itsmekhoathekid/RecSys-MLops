@@ -35,15 +35,31 @@ def stage_manifests(args: argparse.Namespace) -> tuple[dict, dict | None]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Deploy promoted RecSys Triton model to KServe")
-    parser.add_argument("--manifest-uri", default=os.getenv("PROMOTION_MANIFEST_URI", "s3://recsys-model-store/promotions/bst/latest.json"))
+    parser = argparse.ArgumentParser(
+        description="Deploy promoted RecSys Triton model to KServe"
+    )
+    parser.add_argument(
+        "--manifest-uri",
+        default=os.getenv(
+            "PROMOTION_MANIFEST_URI",
+            "s3://recsys-model-store/promotions/bst/latest.json",
+        ),
+    )
     parser.add_argument("--control-manifest-uri", default="")
     parser.add_argument("--candidate-manifest-uri", default="")
     parser.add_argument("--candidate-weight-percent", type=int, default=10)
     parser.add_argument("--experiment-id", default="")
     parser.add_argument(
         "--stage",
-        choices=["deploy", "shadow-start", "ab-start", "ab-step", "evaluate", "promote", "rollback"],
+        choices=[
+            "deploy",
+            "shadow-start",
+            "ab-start",
+            "ab-step",
+            "evaluate",
+            "promote",
+            "rollback",
+        ],
         default="deploy",
     )
     parser.add_argument("--prometheus-url", default="")
@@ -56,6 +72,7 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--timeout", default="300s")
     args = parser.parse_args()
+    requested_stage = args.stage
 
     manifest, candidate_manifest = stage_manifests(args)
     output_dir = Path(args.output_dir)
@@ -151,15 +168,18 @@ def main() -> int:
                     if candidate_manifest and not retain_candidate
                     else 0
                 ),
-                "experiment_id": experiment_id if candidate_manifest and not retain_candidate else "",
+                "experiment_id": (
+                    experiment_id if candidate_manifest and not retain_candidate else ""
+                ),
             },
             indent=2,
             sort_keys=True,
         ),
         encoding="utf-8",
     )
-    if args.apply:
-        deploy(values_path, args.timeout)
+    apply_changes = args.apply and requested_stage != "evaluate"
+    if apply_changes:
+        deploy(values_path, args.timeout, stage=args.stage)
         if cleanup_candidate_after_deploy:
             cleanup_values_path = write_values(
                 manifest,
@@ -169,8 +189,9 @@ def main() -> int:
                 candidate_weight_percent=0,
                 experiment_id=experiment_id,
             )
-            deploy(cleanup_values_path, args.timeout)
+            deploy(cleanup_values_path, args.timeout, stage="deploy")
     print(values_path)
+    print(output_dir / "recsys-inference-api-values.json")
     return 0
 
 

@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 
-ci_api() {
+ci_online_feature_api() {
+  tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py)
+  append_integration_dir online_feature_api
+  cov_paths=(recsys_online_feature_api recsys_serving_common)
+  run_configured_component_tests "${component}" "apps/api-serving/online-feature-api/src:apps/api-serving/inference-api/src:apps/api-serving/shared/src:packages/recsys-feature-store-runtime/src"
+}
+
+ci_inference_api() {
   tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)
-  append_integration_dir api
-  cov_paths=(ab_testing api_runtime api_schemas feature_api feature_service_client inference_api online_features ranking serving_utils shadow triton)
-  run_configured_component_tests "${component}" "apps/api-serving/src"
+  append_integration_dir inference_api
+  cov_paths=(recsys_inference_api recsys_serving_common)
+  run_configured_component_tests "${component}" "apps/api-serving/inference-api/src:apps/api-serving/online-feature-api/src:apps/api-serving/shared/src:packages/recsys-feature-store-runtime/src"
 }
 
 ci_kserve() {

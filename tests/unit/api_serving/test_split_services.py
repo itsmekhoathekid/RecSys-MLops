@@ -1,18 +1,24 @@
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 from fastapi.testclient import TestClient
 
-import feature_api
-import inference_api
-from ab_testing import TritonABRouter
-from api_schemas import OnlineFeaturesResponse, RecommendationRequest
-from shadow import ShadowRunner
+from recsys_online_feature_api.app import create_app as create_feature_app
+from recsys_online_feature_api.settings import FeatureApiSettings
+from recsys_inference_api.ab_testing import TritonABRouter, TritonRoute
+from recsys_inference_api.app import create_app as create_inference_app
+from recsys_inference_api.settings import InferenceApiSettings
+from recsys_inference_api.shadow import ShadowRunner
+from recsys_serving_common.contracts import OnlineFeaturesResponse
 
 
 class DeterministicFeatureClient:
+    def _feature_store(self):
+        return "store"
+
+    def close(self):
+        pass
+
     def candidates(self, user_id: int, limit: int) -> list[int]:
         return [101, 102, 103][:limit]
 
@@ -20,7 +26,11 @@ class DeterministicFeatureClient:
         return {"hist_item_ids": [1, 2], "hist_event_type_ids": [1, 2]}
 
     def item_features(self, item_id: int) -> dict[str, int]:
-        return {"category_id": item_id % 30, "brand_id": item_id % 740, "price_bucket": item_id % 10}
+        return {
+            "category_id": item_id % 30,
+            "brand_id": item_id % 740,
+            "price_bucket": item_id % 10,
+        }
 
 
 class DeterministicRanker:
@@ -30,8 +40,6 @@ class DeterministicRanker:
 
 class DeterministicRouter:
     def route(self, user_id: int):
-        from ab_testing import TritonRoute
-
         return TritonRoute(
             ranker=DeterministicRanker(),
             model_version="split-test",
@@ -48,33 +56,32 @@ class DeterministicFeatureService:
             candidate_item_ids=candidates,
             user_sequence={"hist_item_ids": [1, 2], "hist_event_type_ids": [1, 2]},
             item_features={
-                str(item_id): {"category_id": item_id % 30, "brand_id": item_id % 740, "price_bucket": item_id % 10}
+                str(item_id): {
+                    "category_id": item_id % 30,
+                    "brand_id": item_id % 740,
+                    "price_bucket": item_id % 10,
+                }
                 for item_id in candidates
             },
         )
 
 
-@pytest.fixture(autouse=True)
-def reset_singletons(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(feature_api, "_feature_client", None)
-    monkeypatch.setattr(inference_api, "_feature_service_client", None)
-    monkeypatch.setattr(inference_api, "_ranker", None)
-    monkeypatch.setattr(inference_api, "_shadow_runner", None)
+def inference_settings(model_version: str = "split-test") -> InferenceApiSettings:
+    return InferenceApiSettings("http://feature-api", 1.0, model_version, 1.0, 4, 1)
 
 
-def test_feature_api_exposes_online_features_with_pydantic_validation(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(feature_api, "feature_client", lambda: DeterministicFeatureClient())
-    client = TestClient(feature_api.app)
+def test_feature_api_exposes_online_features_with_pydantic_validation() -> None:
+    app = create_feature_app(FeatureApiSettings(False), DeterministicFeatureClient())
+    with TestClient(app) as client:
+        health = client.get("/healthz")
+        assert health.status_code == 200
+        invalid = client.post("/online-features", json={"user_id": 0, "top_k": 1})
+        assert invalid.status_code == 422
 
-    health = client.get("/healthz")
-    assert health.status_code == 200
-    invalid = client.post("/online-features", json={"user_id": 0, "top_k": 1})
-    assert invalid.status_code == 422
-
-    response = client.post(
-        "/online-features",
-        json={"user_id": 42, "candidate_item_ids": [101, 102], "top_k": 2},
-    )
+        response = client.post(
+            "/online-features",
+            json={"user_id": 42, "candidate_item_ids": [101, 102], "top_k": 2},
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -83,12 +90,17 @@ def test_feature_api_exposes_online_features_with_pydantic_validation(monkeypatc
     assert body["item_features"]["101"]["category_id"] == 11
 
 
-def test_inference_api_calls_feature_service_then_ranks(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(inference_api, "feature_service_client", lambda: DeterministicFeatureService())
-    monkeypatch.setattr(inference_api, "ranker", lambda: DeterministicRouter())
-    client = TestClient(inference_api.app)
-
-    response = client.post("/recommendations", json={"user_id": 42, "candidate_item_ids": [101, 102, 103], "top_k": 2})
+def test_inference_api_calls_feature_service_then_ranks() -> None:
+    app = create_inference_app(
+        inference_settings(),
+        feature_service=DeterministicFeatureService(),
+        router=DeterministicRouter(),
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/recommendations",
+            json={"user_id": 42, "candidate_item_ids": [101, 102, 103], "top_k": 2},
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -97,7 +109,7 @@ def test_inference_api_calls_feature_service_then_ranks(monkeypatch: pytest.Monk
     assert [item["item_id"] for item in body["items"]] == [102, 103]
 
 
-def test_inference_api_returns_control_while_shadow_candidate_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_inference_api_returns_control_while_shadow_candidate_runs() -> None:
     class CountingRanker:
         def __init__(self, scores):
             self.scores = scores
@@ -119,21 +131,20 @@ def test_inference_api_returns_control_while_shadow_candidate_runs(monkeypatch: 
         experiment_id="shadow-split",
     )
     runner = ShadowRunner(timeout_seconds=1, max_pending=4, max_concurrency=1)
-    monkeypatch.setattr(inference_api, "feature_service_client", lambda: DeterministicFeatureService())
-    monkeypatch.setattr(inference_api, "ranker", lambda: router)
-    monkeypatch.setattr(inference_api, "shadow_runner", lambda: runner)
-
-    async def exercise():
-        response = await inference_api.recommendations(
-            RecommendationRequest(user_id=42, candidate_item_ids=[101, 102, 103], top_k=2)
+    app = create_inference_app(
+        inference_settings("stable-v1"),
+        feature_service=DeterministicFeatureService(),
+        router=router,
+        shadow_runner=runner,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/recommendations",
+            json={"user_id": 42, "candidate_item_ids": [101, 102, 103], "top_k": 2},
         )
-        await runner.drain()
-        return response
 
-    response = asyncio.run(exercise())
-
-    assert response.model_version == "stable-v1"
-    assert response.ab_variant == "control"
-    assert [item.item_id for item in response.items] == [102, 103]
+    assert response.json()["model_version"] == "stable-v1"
+    assert response.json()["ab_variant"] == "control"
+    assert [item["item_id"] for item in response.json()["items"]] == [102, 103]
     assert control.calls == 1
     assert candidate.calls == 1

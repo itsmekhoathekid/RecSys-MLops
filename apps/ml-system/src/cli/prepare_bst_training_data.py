@@ -181,12 +181,16 @@ def _read_postgres_table_as_pandas(table_uri: str) -> pd.DataFrame:
         host=parsed.hostname or os.getenv("FEAST_POSTGRES_HOST", "feature-postgres"),
         port=parsed.port or int(os.getenv("FEAST_POSTGRES_PORT", "5432")),
         dbname=database or os.getenv("FEAST_POSTGRES_DB", "feature_store"),
-        user=unquote(parsed.username)
-        if parsed.username
-        else os.getenv("FEAST_POSTGRES_USER", "feast"),
-        password=unquote(parsed.password)
-        if parsed.password
-        else os.getenv("FEAST_POSTGRES_PASSWORD", "feast"),
+        user=(
+            unquote(parsed.username)
+            if parsed.username
+            else os.getenv("FEAST_POSTGRES_USER", "feast")
+        ),
+        password=(
+            unquote(parsed.password)
+            if parsed.password
+            else os.getenv("FEAST_POSTGRES_PASSWORD", "feast")
+        ),
         sslmode=os.getenv("FEAST_POSTGRES_SSLMODE", "disable"),
     ) as conn:
         with conn.cursor() as cur:
@@ -341,8 +345,8 @@ def _feast_historical_to_bst_frame(
 
 
 def _apply_feast_repo(repo_path: str | Path) -> None:
-    from feature_store.feast_registry import apply_feature_repo
-    from feature_store.sql_registry_state import configure_registry_url
+    from recsys_feature_store_runtime.feast_registry import apply_feature_repo
+    from recsys_feature_store_runtime.sql_registry_state import configure_registry_url
 
     configure_registry_url()
     try:
@@ -368,7 +372,7 @@ def build_bst_training_table_from_feast(
 ) -> pd.DataFrame:
     if feast_offline_root:
         os.environ["FEAST_OFFLINE_ROOT"] = feast_offline_root
-    from feature_store.sql_registry_state import configure_registry_url
+    from recsys_feature_store_runtime.sql_registry_state import configure_registry_url
 
     configure_registry_url()
     if apply_feast_repo:

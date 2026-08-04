@@ -8,7 +8,7 @@ ci_materialize() {
     tests/contract/test_docker_dataflow_contracts.py
   )
   append_integration_dir materialize
-  cov_paths=(feature_store.online_writer feature_store.sql_registry_state)
+  cov_paths=(feature_store.online_writer recsys_feature_store_runtime.sql_registry_state)
   run_configured_component_tests "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src"
 
   local data_platform_src="${PWD}/apps/data-platform/src"
@@ -25,7 +25,7 @@ ci_materialize() {
     MPLCONFIGDIR="${CI_TMP_ROOT}/matplotlib" \
       "${ci_environment}/bin/feast" -c "${feast_repo}" \
         apply --skip-source-validation --no-progress
-    "${ci_python}" -m feature_store.sql_registry_state verify --project recsys
+    "${ci_python}" -m recsys_feature_store_runtime.sql_registry_state verify --project recsys
   ) 2>&1 | tee "${feast_log}"
 }
 
@@ -70,5 +70,5 @@ ci_stream_online() {
   tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_flink_event_time.py tests/unit/api_serving/test_serving.py tests/contract/test_docker_dataflow_contracts.py)
   append_integration_dir stream_online
   cov_paths=(features.flink.features.candidate_pool features.flink.features.item features.flink.features.user_aggregate features.flink.features.user_sequence features.flink.time_utils feature_store.online_writer)
-  run_configured_component_tests "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/src"
+  run_configured_component_tests "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/shared/src:apps/api-serving/online-feature-api/src:packages/recsys-feature-store-runtime/src"
 }

@@ -11,9 +11,14 @@
       "lockFile": "apps/ml-system/uv.lock",
       "pythonVersion": "3.11"
     },
-    "serving": {
-      "projectPath": "apps/api-serving",
-      "lockFile": "apps/api-serving/uv.lock",
+    "online-feature-api": {
+      "projectPath": "apps/api-serving/online-feature-api",
+      "lockFile": "apps/api-serving/online-feature-api/uv.lock",
+      "pythonVersion": "3.11"
+    },
+    "inference-api": {
+      "projectPath": "apps/api-serving/inference-api",
+      "lockFile": "apps/api-serving/inference-api/uv.lock",
       "pythonVersion": "3.11"
     },
     "demo": {

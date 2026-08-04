@@ -137,6 +137,7 @@
           "spark-utils"
         ],
         "prefixes": [
+          "packages/recsys-feature-store-runtime/",
           "apps/data-platform/feature-store/",
           "apps/data-platform/src/feature_store/",
           "apps/data-platform/src/metadata/",
@@ -169,6 +170,7 @@
           "jenkins-shared-runtime"
         ],
         "prefixes": [
+          "packages/recsys-feature-store-runtime/",
           "apps/ml-system/",
           "configs/ml-system/",
           "infra/helm/mlflow-stack/",
@@ -322,18 +324,52 @@
       "migrationPolicy": "expand-only"
     },
     {
-      "name": "api",
-      "flag": "RUN_API",
-      "label": "FastAPI Web API",
-      "ciProfile": "serving",
+      "name": "online_feature_api",
+      "flag": "RUN_ONLINE_FEATURE_API",
+      "label": "Online Feature API",
+      "ciProfile": "online-feature-api",
       "changeDetection": {
         "groups": [
           "python-common",
           "jenkins-shared-runtime"
         ],
         "prefixes": [
-          "apps/api-serving/",
-          "infra/helm/recsys-serving/",
+          "apps/api-serving/shared/",
+          "apps/api-serving/online-feature-api/",
+          "packages/recsys-feature-store-runtime/",
+          "infra/helm/recsys-online-feature-api/",
+          "tests/unit/api_serving/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/serving.sh",
+          "jenkins/scripts/deploy/serving.sh",
+          "jenkins/scripts/test/serving.sh",
+          "tests/contract/test_serving_contracts.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-online-feature-api"
+      ],
+      "buildArtifacts": [],
+      "verifyDependsOn": [
+        "materialize"
+      ],
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "inference_api",
+      "flag": "RUN_INFERENCE_API",
+      "label": "Inference API",
+      "ciProfile": "inference-api",
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime"
+        ],
+        "prefixes": [
+          "apps/api-serving/shared/",
+          "apps/api-serving/inference-api/",
+          "infra/helm/recsys-inference-api/",
           "infra/helm/recsys-gateway/",
           "tests/e2e/",
           "tests/unit/api_serving/"
@@ -348,12 +384,10 @@
         ]
       },
       "buildImages": [
-        "recsys-api-serving"
+        "recsys-inference-api"
       ],
       "buildArtifacts": [],
-      "verifyDependsOn": [
-        "materialize"
-      ],
+      "verifyDependsOn": [],
       "migrationPolicy": "none"
     },
     {
@@ -586,7 +620,7 @@
       ],
       "buildArtifacts": [],
       "verifyDependsOn": [
-        "api"
+        "inference_api"
       ],
       "migrationPolicy": "expand-only"
     }

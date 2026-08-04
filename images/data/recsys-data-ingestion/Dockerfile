@@ -3,6 +3,7 @@ FROM ${RECSYS_BASE_IMAGE} AS deps
 
 WORKDIR /opt/recsys
 COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock /opt/recsys/apps/data-platform/
+COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
 ENV UV_LINK_MODE=copy \
     UV_CONCURRENT_DOWNLOADS=8 \
     UV_CONCURRENT_BUILDS=8
@@ -55,6 +56,7 @@ WORKDIR /opt/recsys
 COPY --from=deps /opt/venv /opt/venv
 COPY configs /opt/recsys/configs
 COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
 COPY apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
 
 CMD ["python", "/opt/recsys/apps/data-platform/data-generator/src/cli.py", "--help"]

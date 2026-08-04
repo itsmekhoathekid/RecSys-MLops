@@ -26,7 +26,8 @@ image_tag                    = "gcp"
 
 # Optional: point specific services to already-built images.
 # image_overrides = {
-#   api                 = "asia-southeast1-docker.pkg.dev/your-gcp-project-id/recsys/recsys-api-serving:gcp"
+#   online_feature_api  = "asia-southeast1-docker.pkg.dev/your-gcp-project-id/recsys/recsys-online-feature-api:gcp"
+#   inference_api       = "asia-southeast1-docker.pkg.dev/your-gcp-project-id/recsys/recsys-inference-api:gcp"
 #   training_repository = "asia-southeast1-docker.pkg.dev/your-gcp-project-id/recsys/recsys-mlops-training"
 # }
 

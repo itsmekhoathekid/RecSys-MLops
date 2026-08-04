@@ -80,7 +80,10 @@ dependencies = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [
-    "apps/api-serving/src",
+    "apps/api-serving/shared/src",
+    "apps/api-serving/online-feature-api/src",
+    "apps/api-serving/inference-api/src",
+    "packages/recsys-feature-store-runtime/src",
     "apps/ml-system/src",
     "apps/data-platform/data-generator/src",
     "apps/data-platform/src",

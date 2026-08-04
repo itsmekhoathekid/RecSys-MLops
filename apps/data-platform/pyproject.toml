@@ -26,12 +26,16 @@ dependencies = [
     "pyspark==3.5.8",
     "pyyaml>=6.0.3",
     "redis>=5.0.0",
+    "recsys-feature-store-runtime",
     "requests>=2.32.0",
     "s3fs==2024.10.0",
     "setuptools==81.0.0",
     "sqlalchemy==1.4.54",
     "wheel==0.46.2",
 ]
+
+[tool.uv.sources]
+recsys-feature-store-runtime = { path = "../../packages/recsys-feature-store-runtime", editable = true }
 
 [dependency-groups]
 dev = [

@@ -1,30 +1,5 @@
 #!/usr/bin/env bash
 
-deploy_api() {
-  local helm_args=(
-    upgrade --install recsys-serving infra/helm/recsys-serving
-    --namespace "${namespace_kserve}" --create-namespace --reuse-values
-    --atomic --cleanup-on-fail --wait --wait-for-jobs
-    --history-max "${HELM_HISTORY_MAX:-10}" --timeout "${timeout}"
-    --set "api.namespace.name=${namespace_api}"
-    --set "api.image=$(resolve_release_image recsys-api-serving)"
-    --set "api.imagePullPolicy=Always"
-    --set "featureApi.image=$(resolve_release_image recsys-api-serving)"
-    --set "featureApi.imagePullPolicy=Always"
-    --set "kserve.secret.create=false"
-    --set "shadow.enabled=false"
-    --set "shadow.samplePercent=100"
-    --set "shadow.timeoutMs=1000"
-    --set "shadow.queueSize=100"
-    --set "shadow.maxConcurrency=4"
-  )
-  [[ -n "${API_ROLLOUT_MAX_SURGE:-}" ]] && helm_args+=(--set "api.rollout.maxSurge=${API_ROLLOUT_MAX_SURGE}")
-  [[ -n "${API_ROLLOUT_MAX_UNAVAILABLE:-}" ]] && helm_args+=(--set "api.rollout.maxUnavailable=${API_ROLLOUT_MAX_UNAVAILABLE}")
-  helm "${helm_args[@]}"
-  verify_and_wait_workload deployment recsys-online-feature-api "${namespace_api}" "$(resolve_release_image recsys-api-serving)"
-  verify_and_wait_workload deployment recsys-api-serving "${namespace_api}" "$(resolve_release_image recsys-api-serving)"
-}
-
 deploy_kserve() {
   load_secret_env_if_unset "${namespace_kubeflow}" "${MLOPS_RUNTIME_SECRET_NAME:-recsys-mlops-runtime}" \
     AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION MINIO_ENDPOINT \

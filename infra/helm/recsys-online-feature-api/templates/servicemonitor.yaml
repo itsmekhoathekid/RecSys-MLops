@@ -1,0 +1,14 @@
+{{- if .Values.observability.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels: {app.kubernetes.io/name: {{ .Values.name }}}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: {{ .Values.name }}}
+  namespaceSelector: {matchNames: [{{ .Values.namespace }}]}
+  endpoints:
+    - {port: http, path: /metrics, interval: {{ .Values.observability.serviceMonitor.interval }}}
+{{- end }}

@@ -1,85 +1,16 @@
 kserve:
   resources:
-    requests:
-      cpu: "1"
-      memory: 4Gi
-      nvidia.com/gpu: "1"
-    limits:
-      cpu: "3"
-      memory: 8Gi
-      nvidia.com/gpu: "1"
-  nodeSelector:
-    cloud.google.com/gke-accelerator: nvidia-tesla-t4
+    requests: {cpu: "1", memory: 4Gi, nvidia.com/gpu: "1"}
+    limits: {cpu: "3", memory: 8Gi, nvidia.com/gpu: "1"}
+  nodeSelector: {cloud.google.com/gke-accelerator: nvidia-tesla-t4}
   tolerations:
-    - key: nvidia.com/gpu
-      operator: Exists
-      effect: NoSchedule
-  sharedMemory:
-    sizeLimit: 1Gi
-
-api:
-  replicas: 2
-  imagePullPolicy: IfNotPresent
-  resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      cpu: "1"
-      memory: 1Gi
-
-featureApi:
-  replicas: 1
-  imagePullPolicy: IfNotPresent
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
+    - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+  sharedMemory: {sizeLimit: 1Gi}
 autoscaling:
-  http:
-    api:
-      enabled: false
-      minReplicas: 2
-      maxReplicas: 3
-      requestRate:
-        targetValue: 10
-        window: 30s
-        granularity: 1s
-  prometheus:
-    enabled: true
-    api:
-      minReplicas: 1
-      maxReplicas: 3
-      requestRate:
-        targetValue: "4"
-        activationThreshold: "1"
-        window: 1m
-      latency:
-        targetValue: "0.15"
-        activationThreshold: "0.04"
-        window: 1m
-    featureApi:
-      minReplicas: 1
-      maxReplicas: 3
-      requestRate:
-        targetValue: "4"
-        activationThreshold: "1"
-        window: 1m
-      latency:
-        targetValue: "0.08"
-        activationThreshold: "0.03"
-        window: 1m
   kserveResource:
     enabled: true
     minReplicas: 1
     maxReplicas: 3
     pollingInterval: 15
     cooldownPeriod: 240
-    cpu:
-      enabled: true
-      metricType: Utilization
-      value: "35"
+    cpu: {enabled: true, metricType: Utilization, value: "35"}

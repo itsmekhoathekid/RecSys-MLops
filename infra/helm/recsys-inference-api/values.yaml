@@ -1,0 +1,60 @@
+namespace: api-serving
+name: recsys-inference-api
+image: registry.example.invalid/recsys/recsys-inference-api:required
+imagePullPolicy: IfNotPresent
+replicas: 2
+rollout:
+  maxSurge: 1
+  maxUnavailable: 0
+  minReadySeconds: 10
+  progressDeadlineSeconds: 120
+service: {port: 80, targetPort: 8080}
+config:
+  tritonUrl: recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
+  tritonModelName: bst_ensemble
+  featureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
+  featureApiTimeoutSeconds: "20"
+  defaultTopK: "10"
+  modelVersion: latest
+  forceNotReady: "0"
+  modelItemNum: "22700"
+  modelCategoryNum: "30"
+  modelBrandNum: "740"
+  modelPriceBucketNum: "10"
+  modelEventTypeNum: "3"
+  modelTimeBucketNum: "9"
+  jsonLogs: "1"
+  otelEnabled: "1"
+  otelServiceName: recsys-inference-api
+  otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317
+abTest:
+  enabled: false
+  experimentId: ""
+  candidateWeightPercent: 0
+  controlModelVersion: latest
+  candidateModelVersion: ""
+  controlTritonUrl: recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
+  candidateTritonUrl: recsys-bst-triton-candidate-predictor.kserve-triton-inference.svc.cluster.local:9000
+shadow: {enabled: false, samplePercent: 100, timeoutMs: 1000, queueSize: 100, maxConcurrency: 4}
+resources:
+  requests: {cpu: 100m, memory: 512Mi}
+  limits: {cpu: 500m, memory: 1Gi}
+istio: {proxyCPU: 50m, proxyMemory: 64Mi}
+nodeSelector: {}
+tolerations: []
+observability:
+  serviceMonitor: {enabled: true, interval: 15s}
+autoscaling:
+  enabled: true
+  serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
+  pollingInterval: 10
+  cooldownPeriod: 120
+  restoreToOriginalReplicaCount: true
+  hpaName: recsys-inference-api
+  minReplicas: 1
+  maxReplicas: 3
+  serviceLabel: recsys-inference-api
+  route: /recommendations
+  method: POST
+  requestRate: {targetValue: "5", activationThreshold: "1", window: 1m}
+  latency: {targetValue: "0.20", activationThreshold: "0.05", window: 1m}

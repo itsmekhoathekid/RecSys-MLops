@@ -32,7 +32,7 @@ backend:
     postgresDb: recsys
     postgresPoolMinSize: "1"
     postgresPoolMaxSize: "8"
-    inferenceApiUrl: http://recsys-api-serving.api-serving.svc.cluster.local
+    inferenceApiUrl: http://recsys-inference-api.api-serving.svc.cluster.local
     featureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
     otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317
     otelInsecure: "true"

@@ -127,6 +127,12 @@ deploy_helm_unit() {
     return 2
   }
   [[ -f "${values_file}" ]] && helm_args+=(-f "${values_file}")
+  if [[ "${unit_name}" == "online-feature-api" ]]; then
+    # The first split-service release adopts the existing Feature API objects
+    # after the legacy recsys-serving revision marks them as keep. Helm 4 keeps
+    # this flag safe and idempotent for later upgrades of the same release.
+    helm_args+=(--take-ownership)
+  fi
   for image_index in "${!unit_image_names[@]}"; do
     image_reference="$(resolve_unit_image \
       "${unit_image_names[image_index]}" "${unit_image_paths[image_index]}")"
@@ -168,7 +174,7 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
 }
 
 case "${unit_name}" in
-  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow)
+  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api)
     deploy_helm_unit
     ;;
   feature-registry)
@@ -187,13 +193,8 @@ case "${unit_name}" in
   analytics)
     deploy_analytics
     ;;
-  serving)
-    if has_selected_component api; then
-      deploy_api
-    fi
-    if has_selected_component kserve; then
-      deploy_kserve
-    fi
+  kserve)
+    deploy_kserve
     ;;
   rollout)
     deploy_rollout_watcher "${unit_namespace}"

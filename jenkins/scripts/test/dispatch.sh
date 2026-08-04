@@ -15,7 +15,8 @@ run_component_verification() {
     dp2) test_dp2 ;;
     dp1) test_dp1 ;;
     dp3) test_dp3 ;;
-    api) test_api ;;
+    online_feature_api) test_online_feature_api ;;
+    inference_api) test_inference_api ;;
     kserve|kserve_model_cd) test_kserve ;;
     rollout) test_rollout ;;
     drift) test_drift ;;
@@ -29,6 +30,8 @@ run_component_verification() {
       test_dp3
       test_stream_features
       test_training
+      test_online_feature_api
+      test_inference_api
       test_kserve
       test_rollout
       test_analytics

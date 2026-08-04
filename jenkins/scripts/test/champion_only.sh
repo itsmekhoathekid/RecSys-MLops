@@ -2,8 +2,8 @@
 set -euo pipefail
 
 namespace="${API_NAMESPACE:-api-serving}"
-deployment="${API_DEPLOYMENT:-recsys-api-serving}"
-configmap="${API_CONFIGMAP:-recsys-api-serving}"
+deployment="${API_DEPLOYMENT:-recsys-inference-api}"
+configmap="${API_CONFIGMAP:-recsys-inference-api}"
 rollout_timeout="${API_ROLLOUT_TIMEOUT:-300s}"
 
 weight="$(kubectl get configmap "${configmap}" -n "${namespace}" -o jsonpath='{.data.AB_CANDIDATE_WEIGHT_PERCENT}')"

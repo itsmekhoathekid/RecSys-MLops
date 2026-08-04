@@ -71,8 +71,13 @@
       "context": ".",
       "dependencies": []
     },
-    "recsys-api-serving": {
-      "dockerfile": "images/serving/recsys-api-serving/Dockerfile",
+    "recsys-online-feature-api": {
+      "dockerfile": "images/serving/recsys-online-feature-api/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-inference-api": {
+      "dockerfile": "images/serving/recsys-inference-api/Dockerfile",
       "context": ".",
       "dependencies": []
     },

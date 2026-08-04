@@ -1,4 +1,4 @@
-{{- if .Values.autoscaling.kserveResource.enabled }}
+{{- if and .Values.kserve.enabled .Values.autoscaling.kserveResource.enabled }}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -35,7 +35,7 @@ spec:
       metadata:
         value: {{ .Values.autoscaling.kserveResource.memory.value | quote }}
 {{- end }}
-{{- if and (or .Values.abTest.enabled .Values.shadow.enabled .Values.kserve.inferenceService.retainCandidate) .Values.kserve.inferenceService.candidateStorageUri }}
+{{- if and .Values.kserve.inferenceService.retainCandidate .Values.kserve.inferenceService.candidateStorageUri }}
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject

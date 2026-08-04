@@ -236,7 +236,7 @@ def test_coverage_gate_requires_every_governance_definition_and_contract():
     products = _products()
     coverage = verify_governance_coverage(products)
     assert coverage["verified"] is True
-    assert coverage["datasets"] == 51
+    assert coverage["datasets"] == sum(len(product.datasets) for product in products)
     assert coverage["jobs"] == sum(len(product.jobs) for product in products)
     assert coverage["validation"] == {
         "mode": "datahub-custom-assertion-writeback",

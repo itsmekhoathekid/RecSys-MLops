@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recsys-online-feature-api"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "feast[redis]==0.64.0",
+  "jaraco.context==6.1.0",
+  "psycopg[binary]>=3.3.4,<4",
+  "psycopg-pool>=3.3.1,<4",
+  "psycopg2-binary>=2.9.10,<3",
+  "recsys-feature-store-runtime",
+  "recsys-serving-common",
+  "redis>=5,<8",
+  "setuptools==83.0.0",
+  "uvicorn>=0.34,<1",
+  "wheel==0.46.2",
+]
+
+[tool.uv.sources]
+recsys-feature-store-runtime = { path = "../../../packages/recsys-feature-store-runtime", editable = true }
+recsys-serving-common = { path = "../shared", editable = true }
+
+[dependency-groups]
+dev = [
+  "hypothesis>=6.155.7,<7",
+  "httpx>=0.28.1,<1",
+  "pytest>=9,<10",
+  "pytest-cov>=7,<8",
+  "pyyaml>=6,<7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

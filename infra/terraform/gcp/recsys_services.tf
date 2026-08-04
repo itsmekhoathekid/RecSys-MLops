@@ -316,6 +316,66 @@ resource "helm_release" "recsys_airflow" {
   ]
 }
 
+resource "helm_release" "recsys_online_feature_api" {
+  count = var.deploy_serving ? 1 : 0
+
+  name             = "recsys-online-feature-api"
+  chart            = "${local.helm_dir}/recsys-online-feature-api"
+  namespace        = "api-serving"
+  create_namespace = false
+  wait             = true
+  timeout          = 600
+  values           = [file("${local.helm_dir}/recsys-online-feature-api/values-gcp.yaml")]
+
+  dynamic "set" {
+    for_each = local.online_feature_api_sets
+    content {
+      name  = set.key
+      value = set.value
+    }
+  }
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [
+    null_resource.recsys_external_secrets_ready,
+    helm_release.recsys_feature_store,
+    kubernetes_namespace.api_serving,
+  ]
+}
+
+resource "helm_release" "recsys_inference_api" {
+  count = var.deploy_serving ? 1 : 0
+
+  name             = "recsys-inference-api"
+  chart            = "${local.helm_dir}/recsys-inference-api"
+  namespace        = "api-serving"
+  create_namespace = false
+  wait             = true
+  timeout          = 600
+  values           = [file("${local.helm_dir}/recsys-inference-api/values-gcp.yaml")]
+
+  dynamic "set" {
+    for_each = local.inference_api_sets
+    content {
+      name  = set.key
+      value = set.value
+    }
+  }
+
+  lifecycle {
+    ignore_changes = all
+  }
+
+  depends_on = [
+    null_resource.kserve,
+    google_container_node_pool.ml_system,
+    kubernetes_namespace.api_serving,
+  ]
+}
+
 resource "helm_release" "recsys_serving" {
   count = var.deploy_serving ? 1 : 0
 

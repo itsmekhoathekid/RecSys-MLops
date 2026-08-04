@@ -32,7 +32,8 @@ EXPECTED_LABELS = [
     "DP1 Raw To Bronze",
     "DP2 Bronze To Silver Gold",
     "DP3 Offline Feature Table",
-    "FastAPI Web API",
+    "Online Feature API",
+    "Inference API",
     "KServe Inference Engine",
     "Progressive Model Rollout",
     "Realtime Drift Detection",
@@ -113,14 +114,23 @@ def test_stream_components_share_one_production_verification():
 
 
 def test_rollout_deploy_uses_release_plan_namespace():
-    entrypoint = (ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh").read_text(
-        encoding="utf-8"
-    )
+    entrypoint = (
+        ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh"
+    ).read_text(encoding="utf-8")
     rollout = (ROOT / "jenkins/scripts/deploy/rollout.sh").read_text(encoding="utf-8")
 
     assert 'deploy_rollout_watcher "${unit_namespace}"' in entrypoint
     assert 'local namespace="$1"' in rollout
     assert "namespace_ci" not in rollout
+
+
+def test_online_feature_deploy_takes_ownership_from_legacy_release():
+    entrypoint = (
+        ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh"
+    ).read_text(encoding="utf-8")
+
+    assert '[[ "${unit_name}" == "online-feature-api" ]]' in entrypoint
+    assert "helm_args+=(--take-ownership)" in entrypoint
 
 
 def test_registry_push_refreshes_login_and_retries_once(tmp_path):
@@ -131,7 +141,7 @@ def test_registry_push_refreshes_login_and_retries_once(tmp_path):
         [
             "bash",
             "-c",
-            r'''
+            r"""
 set -euo pipefail
 source jenkins/scripts/lib/common.sh
 source jenkins/scripts/build/engine.sh
@@ -160,7 +170,7 @@ push_built_image example/image:tag "${push_log}"
 printf 'attempts=%s logins=%s\n' \
   "$(<"${attempt_path}")" \
   "$(wc -l <"${login_path}" | tr -d ' ')"
-''',
+""",
             "registry-push-test",
             str(attempt_path),
             str(login_path),
@@ -182,6 +192,8 @@ def test_full_jenkins_trigger_reuses_crumb_session_cookie():
     assert '--cookie-jar "${cookie_file}"' in trigger
     assert '--cookie "${cookie_file}"' in trigger
     assert 'rm -f "${headers_file}" "${cookie_file}"' in trigger
+    assert "online_feature_api,inference_api" in trigger
+    assert ",api," not in trigger
 
 
 def test_api_verification_uses_metric_available_before_live_traffic():
@@ -200,8 +212,9 @@ def test_production_verification_is_fail_fast_and_kfp_check_is_read_only():
 
     assert "set -euo pipefail\n    run_component_verification" in runtime
     assert "component_ci_python training" in ml_platform
-    assert '"${training_python}" apps/ml-system/src/kubeflow/verify_pipeline_upload.py' in (
-        ml_platform
+    assert (
+        '"${training_python}" apps/ml-system/src/kubeflow/verify_pipeline_upload.py'
+        in (ml_platform)
     )
     assert "submit_pipeline_run.py" not in ml_platform
     assert "create_run_from_pipeline_package" not in ml_platform
@@ -312,7 +325,7 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     build_entrypoint = (
         ROOT / "jenkins/scripts/entrypoints/release_build_publish.sh"
     ).read_text(encoding="utf-8")
-    assert '[BUILD] Build image ${image_index}/${image_total}' in build_entrypoint
+    assert "[BUILD] Build image ${image_index}/${image_total}" in build_entrypoint
 
 
 def test_gcp_production_target_is_strict_and_self_consistent():
@@ -332,8 +345,16 @@ def test_component_ci_profiles_use_repo_locks():
     components = {
         component["name"]: component for component in configuration.load_components()
     }
-    assert set(profiles) == {"data", "ml", "serving", "demo", "analytics"}
-    assert components["api"]["ciProfile"] == "serving"
+    assert set(profiles) == {
+        "data",
+        "ml",
+        "online-feature-api",
+        "inference-api",
+        "demo",
+        "analytics",
+    }
+    assert components["online_feature_api"]["ciProfile"] == "online-feature-api"
+    assert components["inference_api"]["ciProfile"] == "inference-api"
     assert components["kserve"]["ciProfile"] == "ml"
     for profile in profiles.values():
         assert profile["lockFile"].endswith("/uv.lock")
@@ -410,10 +431,10 @@ def test_catalog_contains_only_supported_migration_policies():
     }
 
 
-def test_catalog_driven_builder_owns_exactly_fifteen_images():
+def test_catalog_driven_builder_owns_exactly_sixteen_images():
     catalog = json.loads((ROOT / "images/catalog.json").read_text(encoding="utf-8"))
     assert catalog["version"] == 1
-    assert len(catalog["images"]) == 15
+    assert len(catalog["images"]) == 16
     assert {name for name in catalog["images"] if name.endswith("-spark")} == {
         "recsys-spark"
     }

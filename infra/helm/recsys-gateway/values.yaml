@@ -34,7 +34,7 @@ api:
   namespace: api-serving
   host: api.example.invalid
   service:
-    name: recsys-api-serving
+    name: recsys-inference-api
     port: 80
   rateLimit:
     enabled: true

@@ -160,6 +160,46 @@ def test_chart_change_selects_its_exact_deploy_unit():
     assert "data-lakehouse" not in plan["deployUnits"]
 
 
+def test_feature_only_change_builds_and_deploys_only_feature_api():
+    result = detect(
+        ["apps/api-serving/online-feature-api/src/recsys_online_feature_api/app.py"]
+    )
+
+    assert result.component_names == ("online_feature_api",)
+    assert result.release_plan["buildImages"] == ["recsys-online-feature-api"]
+    assert result.release_plan["deployUnits"] == ["online-feature-api"]
+
+
+def test_inference_only_change_builds_and_deploys_only_inference_api():
+    result = detect(["apps/api-serving/inference-api/src/recsys_inference_api/app.py"])
+
+    assert result.component_names == ("inference_api",)
+    assert result.release_plan["buildImages"] == ["recsys-inference-api"]
+    assert result.release_plan["deployUnits"] == ["inference-api"]
+
+
+def test_shared_serving_change_builds_and_deploys_both_apis():
+    result = detect(["apps/api-serving/shared/src/recsys_serving_common/contracts.py"])
+
+    assert result.component_names == ("online_feature_api", "inference_api")
+    assert result.release_plan["buildImages"] == [
+        "recsys-online-feature-api",
+        "recsys-inference-api",
+    ]
+    assert result.release_plan["deployUnits"] == [
+        "online-feature-api",
+        "inference-api",
+    ]
+
+
+def test_kserve_only_change_builds_no_api_image():
+    result = detect(["infra/helm/recsys-serving/templates/inferenceservice.yaml"])
+
+    assert result.component_names == ("kserve",)
+    assert result.release_plan["buildImages"] == []
+    assert result.release_plan["deployUnits"] == ["kserve"]
+
+
 def test_chart_only_change_deploys_exact_release_without_fake_component():
     result = detect(["infra/helm/recsys-data-config/values.yaml"])
 
@@ -216,12 +256,12 @@ def test_changed_files_falls_back_to_current_commit(monkeypatch):
         if args[0] == "diff":
             raise subprocess.CalledProcessError(128, ["git", *args])
         if args[0] == "diff-tree":
-            return [ChangedFile("M", "apps/api-serving/src/main.py")]
+            return [ChangedFile("M", "apps/api-serving/shared/src/main.py")]
         return []
 
     monkeypatch.setattr(detector, "_git_name_status", fake_git_name_status)
     assert changed_files("missing") == [
-        ChangedFile("M", "apps/api-serving/src/main.py")
+        ChangedFile("M", "apps/api-serving/shared/src/main.py")
     ]
 
 
@@ -233,14 +273,14 @@ def test_deleted_unmapped_legacy_path_is_diagnostic_only():
 
 def test_rename_is_classified_as_delete_and_add():
     changes = detector._parse_name_status(
-        b"R100\0legacy/old.py\0apps/api-serving/src/new.py\0"
+        b"R100\0legacy/old.py\0apps/api-serving/shared/src/new.py\0"
     )
     assert changes == [
         ChangedFile("D", "legacy/old.py"),
-        ChangedFile("A", "apps/api-serving/src/new.py"),
+        ChangedFile("A", "apps/api-serving/shared/src/new.py"),
     ]
     result = detect_changed_components(changes)
-    assert result.component_names == ("api",)
+    assert result.component_names == ("online_feature_api", "inference_api")
     assert result.deleted_unmapped_paths == ("legacy/old.py",)
 
 

@@ -122,7 +122,7 @@ def _tracked_paths() -> frozenset[str]:
             str(path.relative_to(ROOT)) for path in ROOT.rglob("*") if path.is_file()
         )
     completed = subprocess.run(
-        ["git", "ls-files", "-z"],
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=ROOT,
         check=True,
         capture_output=True,

@@ -86,7 +86,7 @@ live_verify() {
   kubectl rollout status deploy/redis -n recsys-dataflow --timeout=300s
   kubectl rollout status deploy/airflow-webserver -n recsys-dataflow --timeout=300s
   kubectl rollout status deploy/recsys-online-feature-api -n api-serving --timeout=300s
-  kubectl rollout status deploy/recsys-api-serving -n api-serving --timeout=300s
+  kubectl rollout status deploy/recsys-inference-api -n api-serving --timeout=300s
   kubectl rollout status deploy/recsys-prometheus -n observability --timeout=300s
   kubectl rollout status deploy/recsys-grafana -n observability --timeout=300s
 
@@ -111,7 +111,7 @@ live_verify() {
     --rm -i --restart=Never \
     --image=curlimages/curl:8.10.1 \
     --namespace api-serving \
-    --command -- curl -fsS http://recsys-api-serving.api-serving.svc.cluster.local/healthz
+    --command -- curl -fsS http://recsys-inference-api.api-serving.svc.cluster.local/healthz
 
   section "Live verification passed"
 }

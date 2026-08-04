@@ -5748,6 +5748,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pyspark" },
     { name = "pyyaml" },
+    { name = "recsys-feature-store-runtime" },
     { name = "redis" },
     { name = "requests", version = "2.33.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' and python_full_version < '3.14'" },
     { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or python_full_version >= '3.14'" },
@@ -5777,6 +5778,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=18.0.0" },
     { name = "pyspark", specifier = "==3.5.8" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "recsys-feature-store-runtime", editable = "../../packages/recsys-feature-store-runtime" },
     { name = "redis", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "s3fs", specifier = "==2024.10.0" },
@@ -5796,6 +5798,23 @@ dev = [
     { name = "pytest", specifier = ">=9,<10" },
     { name = "pytest-cov", specifier = ">=7,<8" },
     { name = "tritonclient", extras = ["grpc"], specifier = ">=2.54.0,<3" },
+]
+
+[[package]]
+name = "recsys-feature-store-runtime"
+version = "0.1.0"
+source = { editable = "../../packages/recsys-feature-store-runtime" }
+dependencies = [
+    { name = "feast", extra = ["redis"] },
+    { name = "psycopg2-binary" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "feast", extras = ["redis"], specifier = "==0.64.0" },
+    { name = "psycopg2-binary", specifier = ">=2.9.10,<3" },
+    { name = "sqlalchemy", specifier = "==1.4.54" },
 ]
 
 [[package]]
@@ -5827,6 +5846,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "ray", extra = ["default", "train", "tune"] },
     { name = "recsys-data-platform" },
+    { name = "recsys-feature-store-runtime" },
     { name = "s3fs" },
     { name = "setuptools" },
     { name = "torch" },
@@ -5864,6 +5884,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ray", extras = ["default", "train", "tune"], specifier = "==2.56.1" },
     { name = "recsys-data-platform", editable = "../data-platform" },
+    { name = "recsys-feature-store-runtime", editable = "../../packages/recsys-feature-store-runtime" },
     { name = "s3fs", specifier = "==2024.10.0" },
     { name = "setuptools", specifier = "==81.0.0" },
     { name = "torch", specifier = ">=2.11.0" },

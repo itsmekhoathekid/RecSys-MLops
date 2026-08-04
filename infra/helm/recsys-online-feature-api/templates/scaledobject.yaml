@@ -1,0 +1,31 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ .Values.name }}}
+  minReplicaCount: {{ .Values.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
+  pollingInterval: {{ .Values.autoscaling.pollingInterval }}
+  cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod }}
+  advanced:
+    restoreToOriginalReplicaCount: {{ .Values.autoscaling.restoreToOriginalReplicaCount }}
+    horizontalPodAutoscalerConfig: {name: {{ .Values.autoscaling.hpaName }}}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.autoscaling.serverAddress | quote }}
+        metricName: recsys_online_feature_api_requests_per_second
+        threshold: {{ .Values.autoscaling.requestRate.targetValue | quote }}
+        activationThreshold: {{ .Values.autoscaling.requestRate.activationThreshold | quote }}
+        query: {{ printf "sum(rate(recsys_api_requests_total{service=\"%s\",route=\"%s\",method=\"%s\"}[%s]))" .Values.autoscaling.serviceLabel .Values.autoscaling.route .Values.autoscaling.method .Values.autoscaling.requestRate.window | quote }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.autoscaling.serverAddress | quote }}
+        metricName: recsys_online_feature_api_latency_seconds
+        threshold: {{ .Values.autoscaling.latency.targetValue | quote }}
+        activationThreshold: {{ .Values.autoscaling.latency.activationThreshold | quote }}
+        query: {{ printf "sum(rate(recsys_api_request_duration_seconds_sum{service=\"%s\",route=\"%s\",method=\"%s\"}[%s])) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count{service=\"%s\",route=\"%s\",method=\"%s\"}[%s])), 0.001)" .Values.autoscaling.serviceLabel .Values.autoscaling.route .Values.autoscaling.method .Values.autoscaling.latency.window .Values.autoscaling.serviceLabel .Values.autoscaling.route .Values.autoscaling.method .Values.autoscaling.latency.window | quote }}
+{{- end }}

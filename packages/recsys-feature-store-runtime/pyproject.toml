@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recsys-feature-store-runtime"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "feast[redis]==0.64.0",
+  "psycopg2-binary>=2.9.10,<3",
+  "sqlalchemy==1.4.54",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

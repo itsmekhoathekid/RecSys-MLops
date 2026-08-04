@@ -876,16 +876,16 @@ smoke_after_up() {
       python -c 'import json, urllib.request; body={"user_id":1001,"candidate_item_ids":[1,2,3,4,5],"top_k":5}; data=json.dumps(body).encode(); req=urllib.request.Request("http://127.0.0.1:8080/online-features", data=data, headers={"Content-Type":"application/json"}, method="POST"); r=urllib.request.urlopen(req, timeout=30); print(r.status); print(r.read().decode()[:500])'
   fi
 
-  if kubectl get deploy -n api-serving recsys-api-serving >/dev/null 2>&1; then
+  if kubectl get deploy -n api-serving recsys-inference-api >/dev/null 2>&1; then
     echo "== Smoke: recommendation API =="
-    kubectl exec -n api-serving deploy/recsys-api-serving -c api -- \
+    kubectl exec -n api-serving deploy/recsys-inference-api -c api -- \
       python -c 'import json, urllib.request; body={"user_id":1001,"candidate_item_ids":[1,2,3,4,5,6,7,8,9,10],"top_k":5}; data=json.dumps(body).encode(); req=urllib.request.Request("http://127.0.0.1:8080/recommendations", data=data, headers={"Content-Type":"application/json"}, method="POST"); r=urllib.request.urlopen(req, timeout=30); print(r.status); print(r.read().decode()[:500])'
 
     echo "== Smoke: A/B traffic split =="
     local ab_enabled
-    ab_enabled="$(kubectl get configmap -n api-serving recsys-api-serving -o jsonpath='{.data.AB_TEST_ENABLED}' 2>/dev/null || true)"
+    ab_enabled="$(kubectl get configmap -n api-serving recsys-inference-api -o jsonpath='{.data.AB_TEST_ENABLED}' 2>/dev/null || true)"
     if [[ "${ab_enabled}" == "1" ]]; then
-      kubectl exec -i -n api-serving deploy/recsys-api-serving -c api -- python - <<'PY'
+      kubectl exec -i -n api-serving deploy/recsys-inference-api -c api -- python - <<'PY'
 import collections
 import json
 import time

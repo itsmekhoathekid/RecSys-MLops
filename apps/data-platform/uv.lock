@@ -4291,6 +4291,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pyspark" },
     { name = "pyyaml" },
+    { name = "recsys-feature-store-runtime" },
     { name = "redis" },
     { name = "requests" },
     { name = "s3fs" },
@@ -4332,6 +4333,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=18.0.0" },
     { name = "pyspark", specifier = "==3.5.8" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "recsys-feature-store-runtime", editable = "../../packages/recsys-feature-store-runtime" },
     { name = "redis", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "s3fs", specifier = "==2024.10.0" },
@@ -4351,6 +4353,23 @@ dev = [
     { name = "pytest", specifier = ">=9,<10" },
     { name = "pytest-cov", specifier = ">=7,<8" },
     { name = "tritonclient", extras = ["grpc"], specifier = ">=2.54.0,<3" },
+]
+
+[[package]]
+name = "recsys-feature-store-runtime"
+version = "0.1.0"
+source = { editable = "../../packages/recsys-feature-store-runtime" }
+dependencies = [
+    { name = "feast", extra = ["redis"] },
+    { name = "psycopg2-binary" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "feast", extras = ["redis"], specifier = "==0.64.0" },
+    { name = "psycopg2-binary", specifier = ">=2.9.10,<3" },
+    { name = "sqlalchemy", specifier = "==1.4.54" },
 ]
 
 [[package]]

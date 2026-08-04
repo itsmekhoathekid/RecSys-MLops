@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels: {app.kubernetes.io/name: {{ .Values.name }}}
+spec:
+  selector: {app.kubernetes.io/name: {{ .Values.name }}, app.kubernetes.io/component: inference-api}
+  ports:
+    - {name: http, port: {{ .Values.service.port }}, targetPort: http}
