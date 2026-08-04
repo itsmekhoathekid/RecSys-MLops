@@ -18,7 +18,8 @@ spec:
   minReadySeconds: {{ .Values.rollout.minReadySeconds }}
   progressDeadlineSeconds: {{ .Values.rollout.progressDeadlineSeconds }}
   selector:
-    matchLabels: *labels
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
   template:
     metadata:
       labels: *labels

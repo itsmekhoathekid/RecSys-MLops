@@ -156,6 +156,9 @@ def test_serving_chart_renders_expected_namespaces():
     )
     feature_api_deployment = by_kind_name[("Deployment", "recsys-online-feature-api")]
     assert "replicas" not in feature_api_deployment["spec"]
+    assert feature_api_deployment["spec"]["selector"]["matchLabels"] == {
+        "app.kubernetes.io/name": "recsys-online-feature-api"
+    }
     feature_api_container = feature_api_deployment["spec"]["template"]["spec"][
         "containers"
     ][0]
