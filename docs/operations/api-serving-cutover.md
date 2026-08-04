@@ -14,10 +14,11 @@
    the six Feature API resources; the legacy Inference resources remain removable:
 
    ```bash
+   helm plugin install "$PWD/ops/migrations/helm-feature-api-keep"
    helm upgrade recsys-serving "$LEGACY_RECSYS_SERVING_CHART" \
      --namespace kserve-triton-inference \
      --reuse-values \
-     --post-renderer "$PWD/ops/migrations/feature_api_keep_post_renderer.py" \
+     --post-renderer recsys-feature-api-keep \
      --atomic
    helm get manifest recsys-serving -n kserve-triton-inference | \
      rg -n 'recsys-online-feature-api|helm.sh/resource-policy'

@@ -8,8 +8,11 @@ POST_RENDERER = (
     Path(__file__).parents[2]
     / "ops"
     / "migrations"
-    / "feature_api_keep_post_renderer.py"
+    / "helm-feature-api-keep"
+    / "render.py"
 )
+
+PLUGIN_MANIFEST = POST_RENDERER.with_name("plugin.yaml")
 
 
 def _render(source: str):
@@ -57,3 +60,14 @@ metadata:
 
 def test_post_renderer_preserves_unknown_and_empty_documents():
     assert _render("plain text\n---\n") == ["plain text", None]
+
+
+def test_helm4_post_renderer_plugin_is_versioned():
+    manifest = yaml.safe_load(PLUGIN_MANIFEST.read_text(encoding="utf-8"))
+
+    assert manifest["apiVersion"] == "v1"
+    assert manifest["type"] == "postrenderer/v1"
+    assert manifest["name"] == "recsys-feature-api-keep"
+    assert manifest["runtimeConfig"]["platformCommand"] == [
+        {"command": "${HELM_PLUGIN_DIR}/render.py"}
+    ]

@@ -1,0 +1,9 @@
+apiVersion: v1
+type: postrenderer/v1
+name: recsys-feature-api-keep
+version: 0.1.0
+runtime: subprocess
+sourceURL: https://github.com/itsmekhoathekid/RecSys-MLops
+runtimeConfig:
+  platformCommand:
+    - command: ${HELM_PLUGIN_DIR}/render.py

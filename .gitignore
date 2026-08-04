@@ -40,6 +40,7 @@ graphify-out/
 AGENTS.md
 .uv-cache/
 .ci-image-manifest/
+.deploy-evidence/
 .hypothesis/
 /data_platform/
 output
