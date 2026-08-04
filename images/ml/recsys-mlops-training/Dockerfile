@@ -32,6 +32,7 @@ RUN torch_version="$(sed -n 's/^torch==\([^ ;]*\).*$/\1/p' /tmp/ml-constraints.t
 
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
     --constraint /tmp/ml-constraints.txt \
+    aiohttp==3.14.3 \
     boto3==1.35.36 \
     "feast[redis]==0.64.0" \
     kfp==2.16.1 \
@@ -53,6 +54,16 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
     setuptools==81.0.0 \
     wheel==0.46.2 \
     jaraco.context==6.1.0
+RUN site_packages="$(/opt/venv/bin/python -c 'import site; print(site.getsitepackages()[0])')" \
+    && ray_thirdparty="${site_packages}/ray/_private/runtime_env/agent/thirdparty_files" \
+    && test -d "${ray_thirdparty}/aiohttp" \
+    && test -d "${site_packages}/aiohttp-3.14.3.dist-info" \
+    && rm -rf "${ray_thirdparty}/aiohttp" "${ray_thirdparty}"/aiohttp-*.dist-info \
+    && cp -a "${site_packages}/aiohttp" "${ray_thirdparty}/aiohttp" \
+    && cp -a "${site_packages}/aiohttp-3.14.3.dist-info" \
+        "${ray_thirdparty}/aiohttp-3.14.3.dist-info" \
+    && grep -Fxq "Version: 3.14.3" \
+        "${ray_thirdparty}/aiohttp-3.14.3.dist-info/METADATA"
 RUN /opt/venv/bin/python -m pip uninstall -y pip \
     && /opt/venv/bin/python -c "import kfp, mlflow, ray, torch"
 

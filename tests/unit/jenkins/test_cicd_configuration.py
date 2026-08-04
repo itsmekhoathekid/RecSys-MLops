@@ -505,6 +505,14 @@ def test_locked_ml_images_match_exported_dependency_versions():
         assert "mlflow==3.14.0" not in dockerfile
         assert "cryptography==48.0.1" not in dockerfile
 
+    training = (ROOT / "images/ml/recsys-mlops-training/Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert "aiohttp==3.14.3" in training
+    assert "ray_thirdparty" in training
+    assert '"${ray_thirdparty}"/aiohttp-*.dist-info' in training
+    assert '"${ray_thirdparty}/aiohttp-3.14.3.dist-info"' in training
+
     airflow = (ROOT / "images/data/recsys-airflow/Dockerfile").read_text(
         encoding="utf-8"
     )
