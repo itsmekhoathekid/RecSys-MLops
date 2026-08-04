@@ -1,1 +1,8 @@
 namespace: api-serving
+nodeSelector:
+  recsys.ai/workload: ml-system
+tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+    effect: NoSchedule

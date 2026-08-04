@@ -164,7 +164,7 @@ def test_serving_chart_renders_expected_namespaces():
         {"secretRef": {"name": "recsys-online-feature-api-registry"}},
     ]
     feature_api_scaledobject = by_kind_name[
-        ("ScaledObject", "recsys-online-feature-api")
+        ("ScaledObject", "recsys-online-feature-api-prometheus")
     ]
     feature_api_config = by_kind_name[("ConfigMap", "recsys-online-feature-api")]
     feature_api_secret = by_kind_name[("Secret", "recsys-online-feature-api-registry")]

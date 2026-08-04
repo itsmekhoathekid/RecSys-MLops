@@ -130,6 +130,7 @@ deploy_helm_unit() {
   local values_file="${unit_chart}/values-gcp.yaml"
   local image_index image_reference
   local helm_args=()
+  local helm_failure_args=(--atomic --cleanup-on-fail)
   local sensitive_values_file=""
   [[ -n "${unit_chart}" ]] || {
     recsys_error "Helm deploy unit ${unit_name} has no chart"
@@ -141,6 +142,16 @@ deploy_helm_unit() {
     # after the legacy recsys-serving revision marks them as keep. Helm 4 keeps
     # this flag safe and idempotent for later upgrades of the same release.
     helm_args+=(--take-ownership)
+
+    # An atomic first install uninstalls resources that Helm has just adopted
+    # if any later object fails admission. Keep the initial ownership transfer
+    # non-destructive; maxUnavailable=0 preserves the serving pod, and every
+    # subsequent upgrade returns to atomic rollback semantics.
+    if ! helm status "${unit_release}" -n "${unit_namespace}" >/dev/null 2>&1 \
+      && kubectl -n "${unit_namespace}" get deployment "${unit_release}" >/dev/null 2>&1; then
+      helm_failure_args=()
+      recsys_log DEPLOY "using non-destructive initial ownership transfer for ${unit_release}"
+    fi
 
     # The registry credential is canonical in recsys-data-platform-secret.
     # Materialize it into a mode-0600 values file so --reset-values cannot
@@ -212,8 +223,7 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
     --namespace "${unit_namespace}" \
     --create-namespace \
     --reset-values \
-    --atomic \
-    --cleanup-on-fail \
+    "${helm_failure_args[@]}" \
     --wait \
     --wait-for-jobs \
     --history-max "${HELM_HISTORY_MAX:-10}" \

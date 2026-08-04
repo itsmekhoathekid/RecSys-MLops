@@ -50,6 +50,7 @@ dependencies = [
     "uvicorn>=0.30.6,<=0.34.0",
 
     # ML, distributed training, and model packaging.
+    "gitpython==3.1.57",
     "mlflow>=3.0.0",
     "numpy>=2.2.6",
     "onnx>=1.17.0",

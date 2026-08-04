@@ -139,6 +139,17 @@ def test_online_feature_deploy_takes_ownership_from_legacy_release():
 
     assert '[[ "${unit_name}" == "online-feature-api" ]]' in entrypoint
     assert "helm_args+=(--take-ownership)" in entrypoint
+    assert "helm_failure_args=()" in entrypoint
+    assert "using non-destructive initial ownership transfer" in entrypoint
+
+
+def test_split_api_gcp_values_preserve_the_legacy_ml_node_placement():
+    for chart in ("recsys-online-feature-api", "recsys-inference-api"):
+        values = (ROOT / "infra/helm" / chart / "values-gcp.yaml").read_text(
+            encoding="utf-8"
+        )
+        assert "recsys.ai/workload: ml-system" in values
+        assert "effect: NoSchedule" in values
 
 
 def test_online_feature_deploy_uses_canonical_registry_secret_without_cli_leakage():
@@ -469,6 +480,17 @@ def test_catalog_driven_builder_owns_exactly_sixteen_images():
 
 
 def test_locked_ml_images_match_exported_dependency_versions():
+    root_project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    root_lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    ml_project = (ROOT / "apps/ml-system/pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+    ml_lock = (ROOT / "apps/ml-system/uv.lock").read_text(encoding="utf-8")
+    assert '"gitpython==3.1.57"' in root_project
+    assert 'name = "gitpython"\nversion = "3.1.57"' in root_lock
+    assert '"gitpython==3.1.57"' in ml_project
+    assert 'name = "gitpython"\nversion = "3.1.57"' in ml_lock
+
     for relative_path in (
         "images/data/recsys-spark/Dockerfile",
         "images/ml/recsys-mlops-training/Dockerfile",
