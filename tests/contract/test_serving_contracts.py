@@ -863,6 +863,79 @@ def test_model_cd_deploy_can_disable_atomic(monkeypatch, tmp_path):
     assert "autoscaling.kserveResource.enabled=true" in upgrades[1]
 
 
+def test_model_cd_archives_release_values_and_probes_crd(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[:3] == ["helm", "get", "values"]:
+            return type(
+                "Completed",
+                (),
+                {"returncode": 0, "stdout": '{"image":"registry/image@sha256:abc"}'},
+            )()
+        return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+    monkeypatch.setattr(helm_release.subprocess, "run", fake_run)
+    archive = tmp_path / "pre-change" / "values.json"
+
+    assert helm_release._archive_values("release", "namespace", archive) is True
+    assert json.loads(archive.read_text(encoding="utf-8"))["image"].endswith(
+        "sha256:abc"
+    )
+    assert helm_release.crd_exists("inferenceservices.serving.kserve.io") is True
+    assert calls[-1][0] == [
+        "kubectl",
+        "get",
+        "crd",
+        "inferenceservices.serving.kserve.io",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("stage", "expected"),
+    [
+        ("ab-step", ["wait-candidate", "deploy-inference"]),
+        ("rollback", ["deploy-inference", "deploy-kserve:False"]),
+    ],
+)
+def test_model_cd_deploy_preserves_stage_order(monkeypatch, tmp_path, stage, expected):
+    values_path = tmp_path / "recsys-kserve-values.json"
+    inference_path = tmp_path / "recsys-inference-api-values.json"
+    values_path.write_text(
+        json.dumps({"modelCd": {"stage": stage}}), encoding="utf-8"
+    )
+    inference_path.write_text("{}", encoding="utf-8")
+    calls = []
+
+    monkeypatch.setattr(helm_release, "_archive_values", lambda *_: False)
+    monkeypatch.setattr(
+        helm_release, "_wait_candidate", lambda _timeout: calls.append("wait-candidate")
+    )
+    monkeypatch.setattr(
+        helm_release,
+        "_deploy_inference",
+        lambda _path, _timeout: calls.append("deploy-inference"),
+    )
+    monkeypatch.setattr(
+        helm_release,
+        "_deploy_kserve",
+        lambda _path, _timeout, candidate: calls.append(f"deploy-kserve:{candidate}"),
+    )
+
+    helm_release.deploy(values_path, timeout="90s")
+
+    assert calls == expected
+
+
+def test_model_cd_deploy_requires_inference_values(tmp_path):
+    values_path = tmp_path / "recsys-kserve-values.json"
+    values_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="missing inference values"):
+        helm_release.deploy(values_path, timeout="90s")
+
+
 def test_model_cd_deploy_waits_for_shadow_candidate(monkeypatch, tmp_path):
     commands = []
 
