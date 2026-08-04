@@ -86,7 +86,7 @@ def test_unlisted_images_cannot_use_vendor_exception():
     assert accepted == {"HIGH": 0, "CRITICAL": 0}
 
 
-def test_latest_cryptography_waiver_is_exact_and_short_lived():
+def test_mlflow_constrained_cryptography_waiver_is_exact_and_short_lived():
     scan_report = {
         "Results": [
             {

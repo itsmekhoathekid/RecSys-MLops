@@ -508,8 +508,10 @@ def test_locked_ml_images_match_exported_dependency_versions():
     airflow = (ROOT / "images/data/recsys-airflow/Dockerfile").read_text(
         encoding="utf-8"
     )
-    assert '"cryptography==49.0.0"' in airflow
-    assert '"cryptography==48.0.1"' not in airflow
+    assert '"aiohttp==3.14.3"' in airflow
+    assert '"cryptography==50.0.0"' in airflow
+    assert '"aiohttp==3.13.3"' not in airflow
+    assert '"cryptography==49.0.0"' not in airflow
 
 
 def test_kubeflow_release_package_is_compiled_once_then_uploaded() -> None:
