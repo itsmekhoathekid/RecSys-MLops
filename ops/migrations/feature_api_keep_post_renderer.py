@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """Protect legacy Feature API objects during the Helm ownership transfer."""
 
 from __future__ import annotations
