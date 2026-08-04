@@ -14,6 +14,7 @@ RUN uv export \
         --frozen \
         --no-dev \
         --no-emit-project \
+        --no-emit-local \
         --no-hashes \
         --format requirements-txt \
         --output-file /tmp/data-constraints.txt

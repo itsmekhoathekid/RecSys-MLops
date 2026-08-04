@@ -4,6 +4,9 @@
   "exceptions": {
     "recsys-spark": {
       "types": ["jar"],
+      "acceptedVulnerabilities": [
+        {"id": "CVE-2026-69247", "package": "cryptography", "type": "python-pkg"}
+      ],
       "maxHigh": 147,
       "maxCritical": 24,
       "expiresOn": "2026-08-31",
@@ -42,11 +45,58 @@
     },
     "recsys-mlops-training": {
       "types": ["jar"],
-      "maxHigh": 3,
+      "acceptedVulnerabilities": [
+        {"id": "CVE-2026-69247", "package": "cryptography", "type": "python-pkg"}
+      ],
+      "maxHigh": 4,
       "maxCritical": 0,
       "expiresOn": "2026-08-31",
       "owner": "ml-platform",
-      "reason": "Ray 2.56.1 vendor ray_dist.jar still embeds Jackson 2.18.6; upgrade when the upstream Ray bundle is remediated."
+      "reason": "Ray 2.56.1 vendor ray_dist.jar still embeds Jackson 2.18.6; cryptography is pinned to latest 49.0.0 while CVE-2026-69247 requires unreleased 50.0.0."
+    },
+    "recsys-data-ingestion": {
+      "types": [],
+      "acceptedVulnerabilities": [
+        {"id": "CVE-2026-69247", "package": "cryptography", "type": "python-pkg"}
+      ],
+      "maxHigh": 1,
+      "maxCritical": 0,
+      "expiresOn": "2026-08-14",
+      "owner": "data-platform",
+      "reason": "Pinned to latest cryptography 49.0.0; Trivy marks CVE-2026-69247 fixed only in unreleased 50.0.0."
+    },
+    "recsys-feature-store": {
+      "types": [],
+      "acceptedVulnerabilities": [
+        {"id": "CVE-2026-69247", "package": "cryptography", "type": "python-pkg"}
+      ],
+      "maxHigh": 1,
+      "maxCritical": 0,
+      "expiresOn": "2026-08-14",
+      "owner": "data-platform",
+      "reason": "Pinned to latest cryptography 49.0.0; Trivy marks CVE-2026-69247 fixed only in unreleased 50.0.0."
+    },
+    "recsys-drift-retrain": {
+      "types": [],
+      "acceptedVulnerabilities": [
+        {"id": "CVE-2026-69247", "package": "cryptography", "type": "python-pkg"}
+      ],
+      "maxHigh": 1,
+      "maxCritical": 0,
+      "expiresOn": "2026-08-14",
+      "owner": "data-platform",
+      "reason": "Pinned to latest cryptography 49.0.0; Trivy marks CVE-2026-69247 fixed only in unreleased 50.0.0."
+    },
+    "recsys-mlflow": {
+      "types": [],
+      "acceptedVulnerabilities": [
+        {"id": "CVE-2026-69247", "package": "cryptography", "type": "python-pkg"}
+      ],
+      "maxHigh": 1,
+      "maxCritical": 0,
+      "expiresOn": "2026-08-14",
+      "owner": "ml-platform",
+      "reason": "Pinned to latest cryptography 49.0.0 through MLflow 3.15.1; Trivy marks CVE-2026-69247 fixed only in unreleased 50.0.0."
     },
     "recsys-flink": {
       "types": ["jar"],

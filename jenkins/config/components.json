@@ -117,7 +117,8 @@
         "Jenkinsfile",
         "Makefile",
         "infra/__init__.py",
-        "tests/contract/test_repository_layout_contracts.py"
+        "tests/contract/test_repository_layout_contracts.py",
+        "tests/unit/test_feature_api_keep_post_renderer.py"
       ]
     }
   },

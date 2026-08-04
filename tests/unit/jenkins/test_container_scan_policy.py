@@ -86,6 +86,46 @@ def test_unlisted_images_cannot_use_vendor_exception():
     assert accepted == {"HIGH": 0, "CRITICAL": 0}
 
 
+def test_latest_cryptography_waiver_is_exact_and_short_lived():
+    scan_report = {
+        "Results": [
+            {
+                "Target": "Python",
+                "Type": "python-pkg",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2026-69247",
+                        "PkgName": "cryptography",
+                        "Severity": "HIGH",
+                    },
+                    {
+                        "VulnerabilityID": "CVE-unrelated",
+                        "PkgName": "cryptography",
+                        "Severity": "HIGH",
+                    },
+                ],
+            }
+        ]
+    }
+
+    rejected, accepted = evaluate(
+        "recsys-drift-retrain",
+        scan_report,
+        policy(),
+        today=dt.date(2026, 8, 4),
+    )
+    assert [item["id"] for item in rejected] == ["CVE-unrelated"]
+    assert accepted == {"HIGH": 1, "CRITICAL": 0}
+
+    with pytest.raises(ValueError, match="expired"):
+        evaluate(
+            "recsys-drift-retrain",
+            scan_report,
+            policy(),
+            today=dt.date(2026, 8, 15),
+        )
+
+
 def test_airflow_rollback_exception_is_exact_and_short_lived():
     scan_report = {
         "Results": [
@@ -226,7 +266,7 @@ def test_training_ray_jar_baseline_is_bounded():
     with pytest.raises(ValueError, match="baseline exceeded"):
         evaluate(
             "recsys-mlops-training",
-            report("jar", "HIGH", "HIGH", "HIGH", "HIGH"),
+            report("jar", "HIGH", "HIGH", "HIGH", "HIGH", "HIGH"),
             policy(),
             today=dt.date(2026, 7, 28),
         )
