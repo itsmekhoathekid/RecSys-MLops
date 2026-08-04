@@ -147,7 +147,8 @@ deploy_helm_unit() {
     # if any later object fails admission. Keep the initial ownership transfer
     # non-destructive; maxUnavailable=0 preserves the serving pod, and every
     # subsequent upgrade returns to atomic rollback semantics.
-    if ! helm status "${unit_release}" -n "${unit_namespace}" >/dev/null 2>&1 \
+    if ! helm history "${unit_release}" -n "${unit_namespace}" -o json 2>/dev/null \
+        | python3 -c 'import json, sys; payload = sys.stdin.read(); revisions = json.loads(payload) if payload else []; raise SystemExit(0 if any(item.get("status") == "deployed" for item in revisions) else 1)' \
       && kubectl -n "${unit_namespace}" get deployment "${unit_release}" >/dev/null 2>&1; then
       helm_failure_args=()
       recsys_log DEPLOY "using non-destructive initial ownership transfer for ${unit_release}"

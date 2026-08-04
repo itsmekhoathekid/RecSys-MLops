@@ -139,6 +139,8 @@ def test_online_feature_deploy_takes_ownership_from_legacy_release():
 
     assert '[[ "${unit_name}" == "online-feature-api" ]]' in entrypoint
     assert "helm_args+=(--take-ownership)" in entrypoint
+    assert 'helm history "${unit_release}"' in entrypoint
+    assert 'item.get("status") == "deployed"' in entrypoint
     assert "helm_failure_args=()" in entrypoint
     assert "using non-destructive initial ownership transfer" in entrypoint
 
