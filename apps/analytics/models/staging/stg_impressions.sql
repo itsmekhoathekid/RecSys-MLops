@@ -12,5 +12,4 @@ select
     surface,
     coalesce(is_clicked, false) as source_is_clicked,
     analytics_synced_at
-from {{ source('silver', 'clean_impressions') }}
-
+from {{ source('lakehouse', 'clean_impressions') }}

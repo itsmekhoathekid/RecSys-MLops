@@ -8,7 +8,7 @@ This note captures the source-code and runtime evidence for the rubric item:
 - API handlers are async.
 - The service exposes Kubernetes health checks.
 - The service is deployed to Kubernetes with Helm `RollingUpdate`.
-- Failed rollout fallback is handled by Helm `--atomic`.
+- The CI/CD component deployment uses Helm `--atomic`; its rollback boundary is one `recsys-serving` Helm upgrade and does not include post-Helm verification or runtime request failures.
 
 ## 1. Runtime Design
 
@@ -212,16 +212,28 @@ Fields to capture:
 
 ![Online feature API rolling update proof](../../pngs/web_api_pull_data_rolling_update.png)
 
-## 9. Helm Auto Fallback With `--atomic`
+## 9. Helm Atomic Rollback Boundary
 
-Auto fallback is handled at the Helm release level. The service is part of the `recsys-serving` release. When CI/CD deploys this release with `helm upgrade --install --atomic`, Helm automatically rolls the release back if the new rollout fails.
+The online-feature API is part of the `recsys-serving` release. The CI/CD
+component deployment updates `recsys-online-feature-api` and
+`recsys-api-serving` in one Helm upgrade. That command uses `--atomic`,
+`--cleanup-on-fail`, and `--wait`. If Helm detects a rollout failure before the
+command completes, it restores the previous successful release revision and
+cleans up resources created by the failed upgrade.
+
+This atomic boundary is the individual Helm command. It does not cover the
+`verify_and_wait_workload` checks that run after Helm has returned successfully,
+and it does not provide transaction rollback for online-feature requests. The
+Deployment `RollingUpdate` strategy and readiness probes protect availability
+during rollout, but they are not independent rollback mechanisms.
 
 Code reference:
-[`deploy()`](../../../jenkins/python/model_cd/helm_release.py#L24) lints the
-chart, enables `--atomic` by default, performs the bootstrap/final serving
-upgrades, and waits for stable plus optional candidate readiness. The normal
-component release path applies the same atomic policy in
-[`deploy_api()`](../../../jenkins/scripts/deploy/serving.sh#L3).
+
+- [`deploy_api()`](../../../jenkins/scripts/deploy/serving.sh#L3) constructs the shared component release upgrade.
+- [`--atomic`, `--cleanup-on-fail`, and `--wait`](../../../jenkins/scripts/deploy/serving.sh#L7) define the Helm rollback boundary.
+- [Prediction and online-feature API image updates](../../../jenkins/scripts/deploy/serving.sh#L10) are applied by the same Helm command.
+- [Post-Helm workload verification](../../../jenkins/scripts/deploy/serving.sh#L24) runs outside that atomic boundary.
+- [Online-feature API `RollingUpdate`](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L14) and [readiness probe](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L75) gate traffic to new pods.
 
 Runtime command:
 
@@ -229,7 +241,3 @@ Runtime command:
 helm history recsys-serving -n kserve-triton-inference
 helm status recsys-serving -n kserve-triton-inference
 ```
-
-### Image Proof
-
-![Helm atomic fallback proof](../../pngs/atomic-auto-fall-back.png)

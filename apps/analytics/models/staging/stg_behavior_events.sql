@@ -16,5 +16,4 @@ select
     campaign_id,
     order_id,
     analytics_synced_at
-from {{ source('silver', 'clean_behavior_events') }}
-
+from {{ source('lakehouse', 'clean_behavior_events') }}

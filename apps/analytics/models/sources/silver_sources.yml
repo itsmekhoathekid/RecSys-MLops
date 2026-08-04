@@ -1,8 +1,8 @@
 version: 2
 
 sources:
-  - name: silver
-    description: Curated Silver Iceberg snapshots copied into the isolated analytics JDBC catalog.
+  - name: lakehouse
+    description: Governed Silver tables plus Bronze order inputs copied into the isolated analytics JDBC catalog.
     database: "{{ env_var('DBT_TRINO_CATALOG', 'analytics') }}"
     schema: staging
     loaded_at_field: analytics_synced_at
@@ -13,8 +13,8 @@ sources:
       - name: clean_behavior_events
       - name: clean_impressions
       - name: clean_recommendation_requests
-      - name: order_facts
+      - name: orders
+      - name: order_items
       - name: product_scd
       - name: users
       - name: products
-

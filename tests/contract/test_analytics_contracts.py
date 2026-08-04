@@ -70,6 +70,29 @@ def test_helm_stack_uses_separate_catalog_and_superset_databases():
     assert "local:///opt/recsys/apps/analytics/src/init_catalog.py" in rendered
 
 
+def test_lakehouse_thrift_endpoint_exposes_all_iceberg_layers_internally():
+    rendered = render_chart()
+
+    assert "name: recsys-lakehouse-thrift" in rendered
+    assert "type: ClusterIP" in rendered
+    assert "containerPort: 10000" in rendered
+    assert "org.apache.spark.sql.hive.thriftserver.HiveThriftServer2" in rendered
+    assert "spark.sql.catalog.recsys.type=hadoop" in rendered
+    assert "spark.sql.catalog.recsys_features.type=hadoop" in rendered
+    assert "spark.sql.catalog.analytics.type=jdbc" in rendered
+    assert "spark.sql.catalog.analytics.jdbc.password=\"$ANALYTICS_CATALOG_PASSWORD\"" in rendered
+    assert "name: recsys-lakehouse-thrift-bootstrap" in rendered
+    assert "/opt/spark/bin/beeline" in rendered
+    assert "CREATE OR REPLACE GLOBAL TEMP VIEW bronze_orders" in rendered
+    assert "CREATE OR REPLACE GLOBAL TEMP VIEW silver_product_scd" in rendered
+    assert "CREATE OR REPLACE GLOBAL TEMP VIEW gold_ml_bst_training" in rendered
+    assert "silver_order_facts" not in rendered
+
+    deploy = (ROOT / "jenkins" / "scripts" / "deploy" / "analytics.sh").read_text()
+    assert 'images.spark=$(resolve_release_image recsys-spark)' in deploy
+    assert "wait_rollout_if_exists deployment recsys-lakehouse-thrift" in deploy
+
+
 def test_superset_is_restricted_to_gold_schemas_through_trino_access_control():
     rendered = render_chart()
 

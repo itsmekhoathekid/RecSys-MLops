@@ -36,33 +36,33 @@ pipeline {
   }
 
   stages {
-    stage('Checkout Rollout Source') {
+    stage('Checkout Rollout Source') { // Check out the exact rollout code and fail early if the Model CD CLI or serving chart is missing.
       steps {
         checkout scm
-        sh 'test -f jenkins/python/model_cd/cli.py && test -d infra/helm/recsys-serving'
+        sh 'test -f jenkins/python/model_cd/cli.py && test -d infra/helm/recsys-serving' // Prove both the rollout controller and its Helm deployment target are available.
       }
     }
 
-    stage('Deploy Champion') {
+    stage('Deploy Champion') { // Reconcile KServe and the API to a stable champion-only configuration.
       when { expression { params.ROLLOUT_STAGE == 'deploy' } }
       steps {
-        lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
-          sh 'MODEL_CD_STAGE=deploy jenkins/scripts/entrypoints/model_cd_deploy.sh'
+        lock(resource: 'helm:kserve-triton-inference:recsys-serving') { // Serialize all jobs that mutate the shared recsys-serving Helm release.
+          sh 'MODEL_CD_STAGE=deploy jenkins/scripts/entrypoints/model_cd_deploy.sh' // Validate the production manifest, render champion-only values and apply them through Helm.
         }
       }
     }
 
-    stage('Deploy Shadow Candidate') {
+    stage('Deploy Shadow Candidate') { // Deploy the candidate and mirror payloads to it without returning candidate responses to users.
       when { expression { params.ROLLOUT_STAGE == 'shadow-start' } }
       steps {
         echo "Starting shadow inference for ${params.CANDIDATE_MANIFEST_URI}; user traffic remains on champion."
         lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
-          sh 'MODEL_CD_STAGE=shadow-start jenkins/scripts/entrypoints/model_cd_deploy.sh'
+          sh 'MODEL_CD_STAGE=shadow-start jenkins/scripts/entrypoints/model_cd_deploy.sh' // Enable asynchronous shadow inference while live traffic remains on the champion.
         }
       }
     }
 
-    stage('Observe Shadow Candidate') {
+    stage('Observe Shadow Candidate') { // Prove the shadow flags in the live API ConfigMap and identify the Grafana metric to observe.
       when { expression { params.ROLLOUT_STAGE == 'shadow-start' } }
       steps {
         sh '''
@@ -78,26 +78,26 @@ pipeline {
       }
     }
 
-    stage('Start Or Step A/B') {
+    stage('Start Or Step A/B') { // Start or change the deterministic percentage of user traffic routed to the candidate.
       when { expression { params.ROLLOUT_STAGE in ['ab-start', 'ab-step'] } }
       steps {
         echo "Applying ${params.ROLLOUT_STAGE} at candidate weight ${params.AB_CANDIDATE_WEIGHT_PERCENT}%"
         lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
-          sh 'jenkins/scripts/entrypoints/model_cd_deploy.sh'
+          sh 'jenkins/scripts/entrypoints/model_cd_deploy.sh' // Render the requested candidate weight and atomically update the shared serving release.
         }
       }
     }
 
-    stage('Evaluate Candidate') {
+    stage('Evaluate Candidate') { // Compare control/candidate samples, errors, p95 latency and quality without applying a new rollout state.
       when { expression { params.ROLLOUT_STAGE == 'evaluate' } }
       steps {
         lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
           sh '''
             set -euo pipefail
-            MODEL_CD_STAGE=evaluate MODEL_CD_APPLY=0 jenkins/scripts/entrypoints/model_cd_deploy.sh
-            rm -f .model-cd/rollback-required
-            if grep -q '"decision": "rollback"' .model-cd/ab-decision.json; then
-              touch .model-cd/rollback-required
+            MODEL_CD_STAGE=evaluate MODEL_CD_APPLY=0 jenkins/scripts/entrypoints/model_cd_deploy.sh # Write ab-decision.json in decision-only mode; do not apply Helm values.
+            rm -f .model-cd/rollback-required # Remove any marker left by an earlier workspace run before reading this build's decision.
+            if grep -q '"decision": "rollback"' .model-cd/ab-decision.json; then # Convert the JSON gate result into a Jenkins-readable conditional marker.
+              touch .model-cd/rollback-required # Cause the later Rollback Candidate and Verify Champion Only stages to run in this build.
             fi
             python3 -m json.tool .model-cd/ab-decision.json
           '''
@@ -105,31 +105,31 @@ pipeline {
       }
     }
 
-    stage('Promote Candidate') {
+    stage('Promote Candidate') { // Recheck gates, move the candidate into the stable model location and restore champion-only routing.
       when { expression { params.ROLLOUT_STAGE == 'promote' } }
       steps {
         lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
-          sh 'MODEL_CD_STAGE=promote jenkins/scripts/entrypoints/model_cd_deploy.sh'
+          sh 'MODEL_CD_STAGE=promote jenkins/scripts/entrypoints/model_cd_deploy.sh' // Keep the ready candidate during cutover, then clean it up after stable serving is ready.
         }
       }
     }
 
-    stage('Rollback Candidate') {
+    stage('Rollback Candidate') { // Forward-deploy champion-only values after an explicit rollback or failed evaluation gate.
       when {
         anyOf {
           expression { params.ROLLOUT_STAGE == 'rollback' }
-          expression { params.ROLLOUT_STAGE == 'evaluate' && fileExists('.model-cd/rollback-required') }
+          expression { params.ROLLOUT_STAGE == 'evaluate' && fileExists('.model-cd/rollback-required') } // Auto-enter rollback only when this evaluation produced the marker.
         }
       }
       steps {
         echo 'Candidate gate failed or rollback was requested; restoring champion-only traffic.'
         lock(resource: 'helm:kserve-triton-inference:recsys-serving') {
-          sh 'MODEL_CD_STAGE=rollback AB_CANDIDATE_WEIGHT_PERCENT=0 jenkins/scripts/entrypoints/model_cd_deploy.sh'
+          sh 'MODEL_CD_STAGE=rollback AB_CANDIDATE_WEIGHT_PERCENT=0 jenkins/scripts/entrypoints/model_cd_deploy.sh' // Disable A/B and shadow routing and remove the candidate from desired Helm state.
         }
       }
     }
 
-    stage('Verify Champion Only') {
+    stage('Verify Champion Only') { // Prove that configuration and live recommendation responses contain no candidate traffic.
       when {
         anyOf {
           expression { params.ROLLOUT_STAGE == 'promote' }
@@ -138,14 +138,14 @@ pipeline {
         }
       }
       steps {
-        sh 'bash jenkins/scripts/test/champion_only.sh'
+        sh 'bash jenkins/scripts/test/champion_only.sh' // Check weight/shadow flags, API rollout, 40 responses and the active champion version.
       }
     }
   }
 
-  post {
+  post { // Preserve rendered values and gate/deployment decisions even when rollout execution fails.
     always {
-      archiveArtifacts allowEmptyArchive: true, artifacts: '.model-cd/*'
+      archiveArtifacts allowEmptyArchive: true, artifacts: '.model-cd/*' // Make ab-decision.json, deployed-model.json and rendered values downloadable from Jenkins.
     }
   }
 }

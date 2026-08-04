@@ -179,7 +179,7 @@ def spark_native_submit(
         "--conf spark.driver.cores=${SPARK_K8S_DRIVER_CORES:-1} "
         "--conf spark.kubernetes.driver.request.cores=${SPARK_K8S_DRIVER_REQUEST_CORES:-500m} "
         "--conf spark.executor.instances=${SPARK_K8S_EXECUTOR_INSTANCES:-1} "
-        "--conf spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-false} "
+        "--conf spark.dynamicAllocation.enabled=${SPARK_DYNAMIC_ALLOCATION_ENABLED:-true} "
         "--conf spark.dynamicAllocation.shuffleTracking.enabled=${SPARK_DYNAMIC_ALLOCATION_SHUFFLE_TRACKING_ENABLED:-true} "
         "--conf spark.dynamicAllocation.minExecutors=${SPARK_DYNAMIC_ALLOCATION_MIN_EXECUTORS:-1} "
         "--conf spark.dynamicAllocation.initialExecutors=${SPARK_DYNAMIC_ALLOCATION_INITIAL_EXECUTORS:-1} "

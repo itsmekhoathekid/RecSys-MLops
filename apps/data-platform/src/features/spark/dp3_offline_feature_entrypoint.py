@@ -154,7 +154,7 @@ def _write_postgres_tables(
         POSTGRES_FEATURE_URNS[table_name] for table_name in OFFLINE_STORE_TABLES
     )
 
-
+# DP3 validates non-empty Iceberg features with required, non-null entity keys and timestamps.
 def _publish_dp3_iceberg_validation(
     outputs: dict[str, Any], *, catalog: IcebergCatalogConfig
 ) -> dict[str, Any]:
@@ -184,19 +184,19 @@ def _publish_dp3_iceberg_validation(
                 )
             null_keys = frame.filter(null_expression).count()
         checks = [
-            check(
+            check(  # row_count: every Iceberg feature output must contain at least one row.
                 "row_count",
                 "SUCCESS" if observed_rows > 0 else "FAILURE",
                 "> 0",
                 observed_rows,
             ),
-            check(
+            check(  # required_columns: each feature table needs its entity key and feature time.
                 "required_columns",
                 "SUCCESS" if not missing else "FAILURE",
                 sorted(required),
                 {"missing": missing},
             ),
-            check(
+            check(  # key_and_timestamp_not_null: required entity/time values cannot be null.
                 "key_and_timestamp_not_null",
                 "ERROR"
                 if null_keys is None

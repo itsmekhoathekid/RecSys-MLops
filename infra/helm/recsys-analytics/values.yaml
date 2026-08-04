@@ -47,10 +47,20 @@ airflow:
   serviceAccount: default
   schedule: "30 2 * * *"
 
+lakehouseThrift:
+  enabled: true
+  name: recsys-lakehouse-thrift
+  port: 10000
+  localThreads: 2
+  driverMemory: 2g
+
 nodeSelector:
   recsys.ai/pool: cpu-services
 
 resources:
+  lakehouseThrift:
+    requests: {cpu: 250m, memory: 1Gi}
+    limits: {cpu: "2", memory: 3Gi}
   trino:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {cpu: "2", memory: 3Gi}

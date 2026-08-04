@@ -6,15 +6,17 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 
-SOURCE_TABLES = (
+SILVER_SOURCE_TABLES = (
     "clean_behavior_events",
     "clean_impressions",
     "clean_recommendation_requests",
-    "order_facts",
     "product_scd",
     "users",
     "products",
 )
+
+BRONZE_SOURCE_TABLES = ("orders", "order_items")
+SOURCE_TABLES = SILVER_SOURCE_TABLES + BRONZE_SOURCE_TABLES
 
 
 @dataclass(frozen=True)
@@ -52,7 +54,8 @@ class AnalyticsSyncConfig:
         )
 
     def source_table(self, name: str) -> str:
-        return f"{self.source_catalog}.{self.source_namespace}.silver_{name}"
+        layer = "bronze" if name in BRONZE_SOURCE_TABLES else "silver"
+        return f"{self.source_catalog}.{self.source_namespace}.{layer}_{name}"
 
     def target_table(self, name: str) -> str:
         return f"{self.target_catalog}.{self.target_namespace}.{name}"
@@ -94,6 +97,14 @@ def analytics_dataset_urn(table: str) -> str:
     return dataset_urn("iceberg", f"analytics.staging.{table}")
 
 
+def redacted_config(config: AnalyticsSyncConfig) -> dict[str, str]:
+    """Return log-safe sync settings without object-store or catalog credentials."""
+    payload = asdict(config)
+    for key in ("jdbc_password", "s3_access_key", "s3_secret_key"):
+        payload[key] = "***"
+    return payload
+
+
 def sync_table(spark: Any, config: AnalyticsSyncConfig, table: str) -> int:
     from pyspark.sql import functions as F
 
@@ -105,7 +116,7 @@ def sync_table(spark: Any, config: AnalyticsSyncConfig, table: str) -> int:
 
 
 def run(config: AnalyticsSyncConfig | None = None) -> dict[str, Any]:
-    from metadata.governance_catalog import SILVER_URNS
+    from metadata.governance_catalog import BRONZE_URNS, SILVER_URNS
     from metadata.runtime_lineage import RuntimeLineageRecorder
 
     config = config or AnalyticsSyncConfig.from_env()
@@ -113,12 +124,13 @@ def run(config: AnalyticsSyncConfig | None = None) -> dict[str, Any]:
     counts: dict[str, int] = {}
     try:
         spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {config.target_catalog}.{config.target_namespace}")
-        with RuntimeLineageRecorder("ANALYTICS", "sync_silver_to_shared_catalog") as lineage:
-            lineage.add_inputs(*(SILVER_URNS[name] for name in SOURCE_TABLES))
+        with RuntimeLineageRecorder("ANALYTICS", "sync_lakehouse_to_shared_catalog") as lineage:
+            lineage.add_inputs(*(SILVER_URNS[name] for name in SILVER_SOURCE_TABLES))
+            lineage.add_inputs(*(BRONZE_URNS[name] for name in BRONZE_SOURCE_TABLES))
             lineage.add_outputs(*(analytics_dataset_urn(name) for name in SOURCE_TABLES))
             for table in SOURCE_TABLES:
                 counts[table] = sync_table(spark, config, table)
-        return {"status": "ok", "tables": counts, "config": asdict(config) | {"jdbc_password": "***"}}
+        return {"status": "ok", "tables": counts, "config": redacted_config(config)}
     finally:
         spark.stop()
 

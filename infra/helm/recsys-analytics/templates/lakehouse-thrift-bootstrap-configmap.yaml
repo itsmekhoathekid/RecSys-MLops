@@ -1,0 +1,39 @@
+{{- if .Values.lakehouseThrift.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.lakehouseThrift.name }}-bootstrap
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.lakehouseThrift.name }}
+data:
+  bootstrap.sql: |
+    -- Spark's HiveServer2 metadata API does not enumerate V2 Iceberg catalogs.
+    -- These read-only global views make the live Bronze, Silver, and Gold
+    -- schemas discoverable in DBeaver without copying any table data.
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_users AS SELECT * FROM recsys.lakehouse.bronze_users;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_user_preferences AS SELECT * FROM recsys.lakehouse.bronze_user_preferences;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_products AS SELECT * FROM recsys.lakehouse.bronze_products;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_product_snapshots AS SELECT * FROM recsys.lakehouse.bronze_product_snapshots;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_sessions AS SELECT * FROM recsys.lakehouse.bronze_sessions;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_recommendation_requests AS SELECT * FROM recsys.lakehouse.bronze_recommendation_requests;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_impressions AS SELECT * FROM recsys.lakehouse.bronze_impressions;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_behavior_events AS SELECT * FROM recsys.lakehouse.bronze_behavior_events;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_orders AS SELECT * FROM recsys.lakehouse.bronze_orders;
+    CREATE OR REPLACE GLOBAL TEMP VIEW bronze_order_items AS SELECT * FROM recsys.lakehouse.bronze_order_items;
+
+    CREATE OR REPLACE GLOBAL TEMP VIEW silver_clean_behavior_events AS SELECT * FROM recsys.lakehouse.silver_clean_behavior_events;
+    CREATE OR REPLACE GLOBAL TEMP VIEW silver_rejected_behavior_events AS SELECT * FROM recsys.lakehouse.silver_rejected_behavior_events;
+    CREATE OR REPLACE GLOBAL TEMP VIEW silver_clean_impressions AS SELECT * FROM recsys.lakehouse.silver_clean_impressions;
+    CREATE OR REPLACE GLOBAL TEMP VIEW silver_clean_recommendation_requests AS SELECT * FROM recsys.lakehouse.silver_clean_recommendation_requests;
+    CREATE OR REPLACE GLOBAL TEMP VIEW silver_product_scd AS SELECT * FROM recsys.lakehouse.silver_product_scd;
+    CREATE OR REPLACE GLOBAL TEMP VIEW silver_users AS SELECT * FROM recsys.lakehouse.silver_users;
+    CREATE OR REPLACE GLOBAL TEMP VIEW silver_products AS SELECT * FROM recsys.lakehouse.silver_products;
+    CREATE OR REPLACE GLOBAL TEMP VIEW silver_user_preferences AS SELECT * FROM recsys.lakehouse.silver_user_preferences;
+
+    CREATE OR REPLACE GLOBAL TEMP VIEW gold_user_sequence_features AS SELECT * FROM recsys_features.feature_store.user_sequence_features;
+    CREATE OR REPLACE GLOBAL TEMP VIEW gold_user_aggregate_features AS SELECT * FROM recsys_features.feature_store.user_aggregate_features;
+    CREATE OR REPLACE GLOBAL TEMP VIEW gold_item_features AS SELECT * FROM recsys_features.feature_store.item_features;
+    CREATE OR REPLACE GLOBAL TEMP VIEW gold_ml_ranking_labels AS SELECT * FROM recsys_features.feature_store.ml_ranking_labels;
+    CREATE OR REPLACE GLOBAL TEMP VIEW gold_ml_bst_training AS SELECT * FROM recsys_features.feature_store.ml_bst_training;
+{{- end }}

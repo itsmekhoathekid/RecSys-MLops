@@ -361,7 +361,7 @@ def _spark_safe_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
         record["_hoodie_is_deleted"] = bool(record.get("_hoodie_is_deleted", False))
         records.append(record)
     return records
-
+# apache hudi
 
 def _hudi_options(
     table_name: str,

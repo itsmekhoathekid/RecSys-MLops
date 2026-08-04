@@ -4,7 +4,7 @@ This module owns BI-facing analytical models. It does not replace the operationa
 
 ## Flow
 
-1. `sync_silver.py` reads curated `recsys.lakehouse.silver_*` tables and snapshots them into the isolated `analytics.staging` JDBC Iceberg catalog.
+1. `sync_silver.py` reads curated `recsys.lakehouse.silver_*` tables plus `bronze_orders` and `bronze_order_items`, then snapshots them into the isolated `analytics.staging` JDBC Iceberg catalog. dbt performs the order header/item join so DP2 does not persist a redundant Silver fact table.
 2. dbt on Trino builds `intermediate`, `core`, and `recsys` Gold schemas.
 3. Superset receives a read-only Trino connection and should expose only `core` and `recsys` datasets.
 4. `recsys_analytics_daily` runs the sync and dbt build once per day through Airflow.

@@ -100,7 +100,7 @@ def test_compaction_rejects_unsafe_identifiers(table_name, sort_columns):
 def test_repo_optimization_scope_covers_dp1_dp2_and_feature_iceberg_tables():
     tables = optimization_tables("all", IcebergCatalogConfig())
 
-    assert len(tables) == 29
+    assert len(tables) == 28
     assert "recsys.lakehouse.bronze_behavior_events" in tables
     assert "recsys.lakehouse.silver_clean_behavior_events" in tables
     assert "recsys_features.feature_store.user_sequence_features" in tables

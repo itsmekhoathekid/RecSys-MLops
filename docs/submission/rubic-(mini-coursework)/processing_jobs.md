@@ -45,132 +45,162 @@ Code reference:
 - [`_build_feature_outputs()`](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L54) and [Silver input selection](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L185): select or build Silver inputs and construct the offline feature outputs.
 - [PostgreSQL export configuration](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L100) and [`_write_postgres_tables()`](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L109): configure the Feast export and write each batch feature table.
 
-#### Skew Problems
+#### Data Skew
 
-**Spark UI navigation**
+##### Normal Spark
 
-1. Open `SQL / DataFrame`.
-2. Open `DP3 HEAVY SQL - skewed category_id aggregation with 32 shuffle tasks`.
-3. Use the description as the stable lookup key. The numeric SQL id changes every rerun.
-4. Capture the SQL DAG where `Generate`, `Expand`, `Exchange`, and `HashAggregate` are visible.
-5. Open the associated job/stage from that SQL execution.
-6. Capture the stage `Event Timeline`, `Summary Metrics`, and task table. Focus on `Shuffle Read Size / Records`, `Shuffle Write Size / Records`, and the difference between median and max task duration.
+![Normal Spark jobs overview](../../pngs/spark-normal-jobs-overview.png)
 
-![Spark baseline skew problem](../../pngs/spark_baseline_skew_problem.png)
+**Note:** the `proof-mainbase-dp2-normal-spark` application completed `23` jobs in FIFO mode with no failed jobs. The timeline establishes the baseline application and shows the build and validation actions completing between approximately `13:33:21` and `13:33:45`.
 
-**Figure: Spark stage-level skew proof.** This screenshot shows the skew proof stage with `32 completed tasks`, `Shuffle Read Size / Records = 1856.9 KiB / 30751`, and `Shuffle Write Size / Records = 1593.3 KiB / 51752`. The important part is the task-level comparison: the stage is no longer a tiny single-task check, so the reviewer can compare task duration and shuffle records across 32 tasks. In this capture, max task duration is `0.2 s` while the median is `28 ms`, which is the kind of imbalance Spark UI exposes when a hot key creates uneven work.
+![Normal Spark build jobs and validation start](../../pngs/spark-normal-jobs-build-validation-start.png)
 
-Reference Spark SQL code here:
+**Note:** Jobs `0-11` belong to `DP2-SILVER-BUILD`, and Jobs `12-14` show the beginning of `DP2-VALIDATION`. Job `0` was submitted at `13:33:21` and took approximately `10 s`; all visible jobs succeeded, and Spark reports the skipped stage separately rather than as a failure.
 
-[spark-baseline-ui-job.yaml (line 67)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L67), [spark-baseline-ui-job.yaml (line 74)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L74), [spark-baseline-ui-job.yaml (line 161)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L161), [spark-baseline-ui-job.yaml (line 189)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L189), [spark-baseline-ui-job.yaml (line 212)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L212) defines the baseline Spark settings, both heavy SQL queries, and their UI actions. The core skew line is the `CASE WHEN category_id = 1 THEN 24 ELSE 2 END` multiplier: rows from the hot category are expanded 24 times, while other categories are expanded only 2 times. This keeps the proof deterministic and makes the skew obvious in one SQL execution with 32 shuffle tasks.
+![Normal Spark validation end](../../pngs/spark-normal-jobs-validation-end.png)
 
-```sql
-WITH amplified AS (
-  SELECT
-    category_id,
-    product_id,
-    event_id,
-    user_id,
-    CAST(price AS DOUBLE) AS price,
-    repeat_id
-  FROM clean_behavior_events_proof
-  LATERAL VIEW explode(
-    sequence(
-      1,
-      CASE WHEN category_id = 1 THEN 24 ELSE 2 END
-    )
-  ) repeat_view AS repeat_id
-)
-SELECT
-  category_id,
-  COUNT(*) AS amplified_event_rows,
-  COUNT(DISTINCT event_id) AS source_event_count,
-  COUNT(DISTINCT product_id) AS product_cardinality_inside_category,
-  SUM(price) AS amplified_price_sum
-FROM amplified
-GROUP BY category_id
-ORDER BY amplified_event_rows DESC
-LIMIT 20
-```
+**Note:** Jobs `14-22` complete the Silver validation group. Job `22`, the final scheduler job, was submitted at `13:33:45`, completed all `18/18` tasks, and provides the visible end boundary for the baseline run.
 
-**Spark SQL note:** the generator config creates the real hot category distribution, then this proof query amplifies that hot key so the Spark UI shows a visible heavy aggregation. The `GROUP BY category_id` forces a category-key aggregation, and the proof wrapper runs it with `spark.sql.shuffle.partitions=32` and AQE disabled so Spark exposes multiple comparable tasks instead of coalescing them away.
+![Normal Spark Stage 0 input and shuffle](../../pngs/spark-normal-stage-0-input-shuffle.png)
 
-![Spark baseline skew problem](../../pngs/skew_spark_sql_ui.png)
+**Note:** Job `0`, Stage `0` executed one task for `5 s`, reading `203.8 KiB / 2,008 records` and writing `630.0 KiB / 1,972 shuffle records`. This is the baseline input and shuffle-volume reference used to verify that the optimized run processed the same source workload.
 
-**Figure: Spark SQL DAG proof for skew amplification.** This screenshot shows the SQL DAG path used by the skew proof: `Generate` outputs `736,572` rows, `Expand` outputs `2,209,716` rows, then `HashAggregate` groups the expanded data and reports `51,752` output rows. The `HashAggregate` node also shows aggregation build time and peak memory, which proves this is a real Spark SQL aggregation path rather than a simple printed log.
+![Normal Spark final validation stage](../../pngs/spark-normal-stage-40-final-validation.png)
 
-**What to point out in the screenshots:** the Spark SQL DAG proves the query shape (`Generate -> Expand -> HashAggregate`), while the Spark stage screenshot proves that Spark executed it as a multi-task shuffle/aggregation stage. The CLI summary can be captured separately to show the business-level hot key: `category_id=1` has the largest `amplified_event_rows`, so the Spark UI evidence can be tied back to a concrete skewed category.
+**Note:** Job `22`, Stage `40` is the final validation stage. Its single task completed in `7 ms`, read `944 B / 16 shuffle records`, and reported no GC time or errors. Together with the first and last REST timestamps, the baseline end-to-end compute span is `24.249 s`.
 
-**Analysis:** this is the baseline data-skew proof for the lakehouse-to-offline-store Spark path. The data generator creates the skew through `top_category_ratio=0.99`, and the heavy SQL query makes that skew visible in Spark UI by expanding the dominant category and grouping by `category_id`. The proof is stronger than the old count-only query because one SQL execution now has enough rows and enough shuffle tasks to compare task-level behavior.
+##### Data Skew
 
-Code reference:
+![Data-skew check in Normal Spark Job 3 Stage 7](../../pngs/spark-data-skew-check-job-3-stage-7.png)
 
-- [e2e-1k.yaml](../../../configs/data-platform/generator/e2e-1k.yaml), [e2e-1k.yaml](../../../configs/data-platform/generator/e2e-1k.yaml): skewed category and city distribution config.
-- [spark-baseline-ui-job.yaml (line 161)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L161), [spark-baseline-ui-job.yaml (line 173)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L173), [spark-baseline-ui-job.yaml (line 212)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L212): heavy skew SQL, hot-category amplification, and the Spark UI action that executes it.
+**Note:** Job `3`, Stage `7` is the multi-task stage used to inspect partition balance in the normal application. It executed `16` tasks, read `646.7 KiB / 3,901 shuffle records`, and wrote `279.3 KiB / 3,901 records`. The median task duration was `47 ms`, while the UI-rounded maximum was `0.1 s` (approximately `2.1x` the median). A max task duration noticeably above the median is a **data-skew/straggler warning signal** because it shows that one task remained active longer than the typical task. Spark's Web UI exposes task-duration distributions together with shuffle records, spill, GC, and scheduler delay specifically so the slow task can be investigated. In this capture, however, each task processed approximately `243-244` records, so the duration gap is evidence of task-time imbalance but is not sufficient on its own to attribute the delay conclusively to an oversized data partition.
+
+Official Spark references:
+
+- [Spark 3.5.8 Web UI: Stage detail and task summary metrics](https://spark.apache.org/docs/3.5.8/web-ui.html) documents duration, shuffle read/write, GC, spill, scheduler delay, and task-level details as the metrics used to investigate stage imbalance.
+- [Spark SQL performance tuning: Optimizing Skew Join](https://spark.apache.org/docs/3.5.5/sql-performance-tuning.html#optimizing-skew-join) defines Spark's default automatic skew criterion by partition size: a partition must be larger than `5x` the median and larger than `256 MiB`. Therefore, a `2.1x` duration ratio is a useful warning signal, not proof that Spark's AQE skew threshold was met.
+
+##### Data Skew Handling
+
+**Technique:** the skew-handling branch enables Spark SQL Adaptive Query Execution (AQE). Adaptive partition coalescing is enabled with `parallelismFirst=false` and a `128 MiB` advisory partition size. Spark 3.5 also reports `spark.sql.adaptive.skewJoin.enabled=true` when AQE is active, allowing an eligible skewed sort-merge-join partition to be split at runtime. DP2 applies these settings while cleaning, deduplicating, joining, and writing the Silver Iceberg tables.
+
+Reference code:
+
+- [session.py (line 21)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/session.py#L21) — **Note:** enables Spark SQL Adaptive Query Execution, which allows Spark to revise the physical plan using runtime statistics.
+- [session.py (line 22)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/session.py#L22) — **Note:** enables adaptive shuffle-partition coalescing so Spark can merge undersized post-shuffle partitions.
+- [session.py (line 23)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/session.py#L23) — **Note:** sets `parallelismFirst=false`, making the configured advisory partition size the primary coalescing target.
+- [session.py (line 26)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/session.py#L26) — **Note:** configures the AQE advisory partition-size property; the following line supplies the environment override or `128 MiB` default.
+- [build_silver_tables.py (line 69)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_silver_tables.py#L69) — **Note:** performs the `order_items` to `orders` join on `order_id`, the DP2 join path on which eligible runtime skew handling can be applied.
+- [build_silver_tables.py (line 117)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_silver_tables.py#L117) — **Note:** writes every constructed Silver DataFrame to Iceberg under the AQE-enabled Spark session.
+- [e2e-1k.yaml (line 33)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/configs/data-platform/generator/e2e-1k.yaml#L33) — **Note:** begins the generator's skew-problem configuration used to produce an intentionally imbalanced input distribution.
+- [e2e-1k.yaml (line 35)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/configs/data-platform/generator/e2e-1k.yaml#L35) — **Note:** assigns `96%` of generated city values to the top city, creating the controlled hot-key distribution.
+
+##### Data Skew Handling Proof
+
+![Skew-handling Spark jobs overview](../../pngs/spark-skew-handling-jobs-overview.png)
+
+**Note:** the `proof-mainbase-dp2-skew-only` application completed `40` jobs successfully. The denser timeline reflects AQE query-stage materialization and adaptive replanning; the additional scheduler jobs are not additional business transformations.
+
+![Skew-handling build jobs](../../pngs/spark-skew-handling-jobs-build.png)
+
+**Note:** Jobs `0-15` are the AQE-enabled `DP2-SILVER-BUILD` group. Job `0` began at `13:35:08` and took approximately `6 s`; later jobs are shorter, and the skipped stages shown for some jobs are expected when AQE replaces an initial plan with an adaptive final plan.
+
+![Skew-handling validation jobs](../../pngs/spark-skew-handling-jobs-validation-middle.png)
+
+**Note:** this capture shows the middle of the `DP2-VALIDATION` group, including Jobs `17-32`. The visible actions complete successfully in roughly `35-200 ms`; skipped stages are AQE plan substitutions and do not represent failed validation.
+
+![Skew-handling final validation jobs](../../pngs/spark-skew-handling-jobs-validation-end.png)
+
+**Note:** Jobs `33-39` finish the validation group. Job `39`, the final scheduler job, was submitted at `13:35:29`; the application reports all `40` jobs completed and no failed jobs.
+
+![Skew-handling Stage 0 input and shuffle](../../pngs/spark-skew-handling-stage-0-input-shuffle.png)
+
+**Note:** the AQE-enabled Stage `0` processed the same `203.8 KiB / 2,008` input records and wrote the same `630.0 KiB / 1,972` shuffle records as the baseline Stage `0`. Its one executed task took `5 s`, supporting an input-equivalent comparison while not, by itself, proving that a skewed partition was split.
+
+![Skew-handling last Job 39, Stage 61](../../pngs/spark-skew-handling-last-job-39-stage-61.png)
+
+**Note:** this is the terminal-stage proof for the skew-handling run. Stage `61` is associated with the final Job `39`; its single task succeeded in `8 ms`, read `59 B / 1 shuffle record`, and launched at `20:35:29` in the browser's ICT display. That timestamp corresponds to `13:35:29 UTC/GMT` in the Jobs list and Spark REST data, confirming the end boundary used in the `21.157 s` latency calculation.
+
+**Total-duration comparison:**
+
+| DP2 variant | First submitted job | Final submitted job | Total execution duration |
+|---|---:|---:|---:|
+| Normal Spark | `13:33:21` | `13:33:45` | **`24.249 s`** |
+| Data-skew handling | `13:35:08` | `13:35:29` | **`21.157 s`** |
+
+The data-skew-handling run was `3.092 s` faster, an observed reduction of `12.75%` against the Normal Spark total duration.
+
+**Note:** the AQE-enabled DP2 run completed `40` scheduler jobs: build jobs `0-15` and validation jobs `16-39`. Stage 0 processed the same `203.8 KiB / 2,008` input records and produced the same `630.0 KiB / 1,972` shuffle records, supporting an input-equivalent comparison. The extra scheduler jobs are AQE query-stage/materialization work and should not be interpreted as more business processing. The separate Normal Spark Job `3` / Stage `7` capture exposes a possible task-duration imbalance (`0.1 s` max versus `47 ms` median), which is a reason to enable and evaluate skew handling. Because the skew-handling Stage 0 capture itself has only one executed task, this evidence proves the AQE/skew-handling configuration and successful output-equivalent execution, but it does not by itself prove that Spark split a skewed partition. The total-duration reduction is therefore reported as an observed single-run result rather than a causal benchmark.
 
 #### High Cardinality
 
-**Spark UI navigation**
+##### Before Optimization: SQL/DataFrame Proof
 
-1. Open `SQL / DataFrame`.
-2. Open `DP3 HEAVY SQL - high-cardinality product_event_key aggregation with 32 shuffle tasks`.
-3. Use the description as the stable lookup key. The numeric SQL id changes every rerun.
-4. Capture the SQL DAG where `Generate`, `Expand`, `Exchange`, and `HashAggregate` are visible.
-5. Open the associated job/stage from that SQL execution.
-6. Capture the stage `Event Timeline`, `Summary Metrics`, and task table. Focus on `Shuffle Read Size / Records`, the number of completed tasks, and task duration spread.
+![Before optimization: array_distinct in the DP3 SQL physical plan](../../pngs/dp3-high-cardinality-before-array-distinct-plan.png)
 
-![Spark high cardinality runtime proof](../../pngs/high_cardinality_metrics.png)
+**Note:** in the `feats/skew_problem_only` DP3 application, SQL execution `5` builds `feature_store.user_aggregate_features`. Its Window operator first evaluates `collect_list(category_id)` over each user's seven-day window. The following Project evaluates `size(array_distinct(...)) AS distinct_categories_7d`. This plan materializes the category values before removing duplicates, so the aggregation state grows with the number of events and distinct categories in the window. The screenshot proves the high-cardinality-sensitive implementation; the small proof input (`1,972` rows) did not spill, so it should not be presented as a production-scale memory failure.
 
-**Figure: Spark stage-level high-cardinality proof.** This screenshot shows the high-cardinality proof stage with `32 completed tasks`, `Shuffle Read Size / Records = 1792.1 KiB / 30751`, and associated job `53`. The stage view is useful because it proves the query ran as a real multi-task Spark shuffle stage, not as a small driver-only count. The task timeline and summary metrics let the reviewer compare how many records Spark had to shuffle and how evenly those records were processed across tasks.
+##### After Optimization Proof
 
-Reference Spark SQL code here:
+![After optimization: approx_count_distinct in the DP3 SQL physical plan](../../pngs/dp3-high-cardinality-after-approx-count-distinct-plan.png)
 
-[spark-baseline-ui-job.yaml (line 189)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L189), [spark-baseline-ui-job.yaml (line 196)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L196), [spark-baseline-ui-job.yaml (line 203)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L203), [spark-baseline-ui-job.yaml (line 204)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L204), [spark-baseline-ui-job.yaml (line 216)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L216) defines the heavy high-cardinality SQL, composite key, exact/approximate measures, and UI action. The important field is `product_event_key`, which combines `product_id`, `event_id`, and `repeat_id` so Spark has to aggregate many near-unique keys.
+**Note:** in the `feats/skew_and_high_card` DP3 application, the matching SQL execution `5` computes `distinct_categories_7d` directly with `approx_count_distinct(category_id, 0.05)` over the same user-partitioned seven-day Window. The physical plan no longer contains the `collect_list -> array_distinct -> size` chain. This is execution-plan proof that the optimized branch uses an approximate distinct-count state instead of materializing the complete category array.
 
-```sql
-WITH amplified AS (
-  SELECT
-    product_id,
-    event_id,
-    user_id,
-    category_id,
-    repeat_id,
-    CONCAT(
-      CAST(product_id AS STRING),
-      ':',
-      event_id,
-      ':',
-      CAST(repeat_id AS STRING)
-    ) AS product_event_key
-  FROM clean_behavior_events_proof
-  LATERAL VIEW explode(sequence(1, 8)) repeat_view AS repeat_id
-)
-SELECT
-  product_id,
-  COUNT(*) AS amplified_rows,
-  COUNT(DISTINCT product_event_key) AS exact_high_cardinality_keys,
-  approx_count_distinct(product_event_key, 0.05) AS approx_high_cardinality_keys,
-  COUNT(DISTINCT user_id) AS user_cardinality_per_product
-FROM amplified
-GROUP BY product_id
-ORDER BY exact_high_cardinality_keys DESC, product_id ASC
-LIMIT 100
+##### High Cardinality Handling Technique
+
+**Technique:** replace the exact rolling distinct implementation with Spark's approximate distinct aggregate. The baseline collects every `category_id` in the window and then deduplicates the resulting array. The optimized implementation uses HyperLogLog++ through `approx_count_distinct` with a configured relative standard deviation of `0.05`. This bounds aggregation-state growth at the cost of an explicitly accepted approximate result while preserving the output field `distinct_categories_7d` and the same seven-day event-time window.
+
+Before optimization (`feats/skew_problem_only`):
+
+```python
+F.size(
+    F.array_distinct(
+        F.collect_list(F.col("category_id")).over(w7d)
+    )
+).alias("distinct_categories_7d")
 ```
 
-**Spark SQL note:** the generator config already creates a large entity space with `20,000` products and `8,000` users. This proof query makes the high-cardinality pressure obvious in Spark UI by expanding each behavior event 8 times and creating a near-unique `product_event_key`. The `GROUP BY product_id` plus `COUNT(DISTINCT product_event_key)` forces Spark to maintain many distinct keys, while `approx_count_distinct(product_event_key, 0.05)` shows the approximate estimator that can be used when exact cardinality is too expensive.
+After optimization (`feats/skew_and_high_card` and `main`):
 
-![Spark high cardinality runtime proof](../../pngs/high_cardinality_spark_sql.png)
+```python
+CATEGORY_CARDINALITY_RSD = 0.05
 
-**Figure: Spark SQL DAG proof for high cardinality.** This screenshot shows the DAG generated by the heavy high-cardinality SQL. `Generate` outputs `246,008` rows, `Expand` outputs `738,024` rows, and the downstream `HashAggregate` reports `289,053` output rows. The same `HashAggregate` node shows aggregation build time, peak memory, and hash probe metrics, which are the Spark UI signals that this query is doing substantial distinct-key aggregation work.
+F.approx_count_distinct("category_id", CATEGORY_CARDINALITY_RSD) \
+    .over(w7d) \
+    .alias("distinct_categories_7d")
+```
 
-**What to point out in the screenshots:** the SQL DAG proves the query shape (`Generate -> Expand -> HashAggregate`) and the large output-row counts produced by distinct-key aggregation. The stage screenshot proves Spark executed the query with 32 tasks and shuffle metrics. Together, they show high cardinality as a physical Spark workload: many unique keys flow through an aggregation and shuffle boundary, instead of only being described in text.
+Reference code:
 
-**Analysis:** high cardinality means Spark must process many distinct business keys. The stress generator creates the raw entity space, then the heavy SQL makes the pressure visible by creating `product_event_key` values that are close to unique per event expansion. The exact `COUNT(DISTINCT product_event_key)` is the baseline pressure point, while `approx_count_distinct(product_event_key, 0.05)` is the lightweight estimator proof when the pipeline needs a cardinality signal without fully materializing every distinct key.
+- [build_user_aggregate_features.py (line 6)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_user_aggregate_features.py#L6) — **Note:** sets the accepted relative standard deviation to `0.05`, controlling the accuracy and state-size trade-off of the approximate estimator.
+- [build_user_aggregate_features.py (line 21)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_user_aggregate_features.py#L21) — **Note:** partitions the ordered Window by `user_id`, keeping each user's rolling feature history logically separate.
+- [build_user_aggregate_features.py (line 24)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_user_aggregate_features.py#L24) — **Note:** defines the seven-day range used to calculate `distinct_categories_7d`.
+- [build_user_aggregate_features.py (line 36)](https://file+.vscode-resource.vscode-cdn.net/Users/KHOAI/anhkhoa/RecSys-MLops/apps/data-platform/src/features/spark/build_user_aggregate_features.py#L36) — **Note:** applies `approx_count_distinct` directly to `category_id`, replacing the materialized `collect_list -> array_distinct` implementation.
 
-Code reference:
+##### Latency Drop
 
-- [e2e-1k.yaml](../../../configs/data-platform/generator/e2e-1k.yaml), [e2e-1k.yaml](../../../configs/data-platform/generator/e2e-1k.yaml): high-cardinality entity counts and preferences per user.
-- [spark-baseline-ui-job.yaml (line 196)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L196), [spark-baseline-ui-job.yaml (line 203)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L203), [spark-baseline-ui-job.yaml (line 204)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6cdcc35b31116f739fb4ee43b526bbc67a7ad686/infra/k8s/processing-baseline/spark-baseline-ui-job.yaml#L204): composite key, exact distinct count, and `approx_count_distinct(..., 0.05)`.
+![Optimized DP3 jobs overview](../../pngs/dp3-high-cardinality-after-jobs-overview.png)
+
+**Note:** the `proof-dp3-skew-high-card` application completed all `125` jobs successfully. The Job `0` tooltip shows the first scheduler job beginning at `17:43:28`; this identifies the start of the optimized compute span and confirms that the captured timeline belongs to the high-cardinality-handling branch.
+
+![Before optimization: final DP3 job timestamp](../../pngs/dp3-high-cardinality-before-last-job.png)
+
+**Note:** the `proof-dp3-skew-only` application completed `125` jobs. Job `124`, the final scheduler job, completed at `17:41:55`. The Spark REST timestamps provide millisecond precision: first submission `17:41:08.608`, final completion `17:41:55.060`, giving an observed end-to-end compute span of `46.452 s`.
+
+![After optimization: first DP3 job timestamp](../../pngs/dp3-high-cardinality-after-first-job.png)
+
+**Note:** Job `0` of `proof-dp3-skew-high-card` was submitted at `17:43:28` and completed at `17:43:33`. The corresponding REST submission timestamp used for the duration calculation is `17:43:28.779`.
+
+![After optimization: final DP3 job timestamp](../../pngs/dp3-high-cardinality-after-last-job.png)
+
+**Note:** Job `124` completed at `17:44:11`. The corresponding REST completion timestamp is `17:44:11.476`, giving an optimized end-to-end compute span of `42.697 s`.
+
+| DP3 run | First job submission | Last job completion | Observed compute span |
+|---|---:|---:|---:|
+| Data-skew handling only; exact cardinality | `17:41:08.608` | `17:41:55.060` | **`46.452 s`** |
+| Data-skew plus high-cardinality handling | `17:43:28.779` | `17:44:11.476` | **`42.697 s`** |
+
+The optimized run was `3.755 s` faster end to end, an observed reduction of **`8.08%`**. The SQL executions whose plans contain `distinct_categories_7d` (`5`, `13`, `15`, and `19`) decreased in aggregate from `4.065 s` to `3.993 s`, a smaller reduction of `72 ms` or **`1.77%`**. SQL execution `5`, the primary `user_aggregate_features` materialization, changed from `1.980 s` to `2.008 s`; therefore the full end-to-end reduction must not be attributed solely to `approx_count_distinct`. This is a controlled single-run observation on a small input, while the stronger high-cardinality evidence is the physical-plan change from an unbounded collected array to bounded approximate aggregation state.
 
 #### Schema Evolution
 
@@ -291,38 +321,6 @@ Current comparison report:
 - [spark_offline_optimization_comparison.json (line 1)](spark_offline_optimization_comparison.json#L1): baseline vs optimized comparison output from the latest run.
 
 **Result explanation from the artifact:** skew salting reduced max partition rows from `30,698` to `11,601`, so the hottest partition pressure dropped by `62.21%`. The partition skew ratio moved from `7.9862` to `3.018`, matching the more balanced Spark UI task distribution below. For high cardinality, exact `product_id` distinct count was `10,109`; the optimized `approx_count_distinct(product_id, 0.05)` estimate was `9,977`, only `1.31%` away from exact while avoiding a full exact distinct materialization for monitoring. Schema handling quarantined all `6,774` unsupported v3 rows before the feature path. Duplicate handling removed `19,428` extra duplicate rows, leaving `0` duplicate extras after dedup.
-
-#### Skew Problems
-
-**Spark UI navigation**
-
-1. Open `SQL / DataFrame`.
-2. Open `DP3 OPTIMIZED - salted category_id partition load after skew handling`.
-3. Click the associated job/stage.
-4. Capture `Event Timeline` and `Summary Metrics`.
-5. Compare with the baseline `DP3 CHECK - category_id partition load before skew salting` screenshot.
-
-![Spark skew handled proof](../../pngs/data_skew_optimized.png)
-
-**Figure: Spark skew minimized proof.** The optimized stage shows `4` completed tasks with very similar task durations: min `73 ms`, median `74 ms`, and max `75 ms`. The shuffle-read distribution is also tightly grouped: min `317.5 KiB / 7,550 records`, median `324.6 KiB / 7,739 records`, and max `327.1 KiB / 7,787 records`.
-
-**Analysis:** this captured controlled comparison is the post-salting proof. Instead of one partition carrying most of the hot `category_id` work, the salted aggregation distributes the workload across partitions. The UI evidence is the narrow spread in both duration and shuffle-read records across tasks; the companion JSON confirms the skew ratio reduction from `7.9862` to `3.018`. This is retained as optimization evidence; the current production implementation uses AQE/coalescing and does not claim a custom salting algorithm.
-
-#### High Cardinality
-
-**Spark UI navigation**
-
-1. Open `SQL / DataFrame`.
-2. Open the optimized cardinality query, currently shown as `collect at /tmp/compare_spark_offline_optimizations.py`.
-3. Scroll below the DAG and expand **Physical Plan > Details**.
-4. Capture the `HashAggregate` physical plan line that contains `partial_approx_count_distinct(product_id..., 0.05...)`.
-5. Pair it with the comparison artifact above, which shows exact distinct vs approximate distinct error.
-
-![Spark high cardinality handled proof](../../pngs/high_cardinality_optimized_sql.png)
-
-**Figure: Spark high-cardinality minimized proof.** The screenshot is from Spark SQL physical plan details. It highlights `partial_approx_count_distinct(product_id#268L, 0.05, 0, 0)` inside `HashAggregate`, proving that the optimized path estimates product cardinality using Spark's approximate distinct-count aggregate instead of materializing the full exact distinct set.
-
-**Analysis:** the baseline exact distinct check must shuffle and materialize unique product ids. The optimized proof replaces that with an approximate cardinality estimator for the monitoring/check path. The comparison artifact reports exact `10,109` vs approximate `9,977`, a `1.31%` relative error, which is accurate enough for a data-quality signal while reducing pressure from exact high-cardinality distinct computation.
 
 ## Flink Job To Handle Streaming Data Problems
 
@@ -690,11 +688,20 @@ These captures show the deployed event-time window build (`flink-2.2-event-windo
 
 ![Flink r3 late and accepted-late counters](../../pngs/flink_r3_late_accepted_metrics.png)
 
-**Figure: r3 continues classifying accepted-late events.** `late_arrivals_total` and `accepted_late_events_total` rise together during the injected late-event burst, proving that events still inside the allowed-lateness boundary are accepted while the job remains live.
+**Figure: r3 continues classifying accepted-late events.** `late_arrivals_total` and `accepted_late_events_total` rise together during the injected late-event burst, proving that the classifier continues to identify events that are late relative to the watermark but still inside the configured cleanup boundary. The counter is classification evidence; the event-time pane/revision path below is the implementation evidence that those eligible events are actually applied to feature state.
 
 ![Flink r3 exact late-counter invariant](../../pngs/flink_r3_late_counter_invariant.png)
 
 **Figure: the late-event invariant is exact.** The same-instant Numeric cards report `10,982` late arrivals, `1,728` accepted-late events, and `9,254` too-late events: `10,982 = 1,728 + 9,254`. Accepted-late share is about `15.7%`; the classifier table shows `39,269` records received, so the cumulative too-late/input ratio is about `23.6%`, versus roughly `20%` in the baseline capture. These images validate classification correctness, but do not prove that r3 reduces lateness.
+
+> **Watermark/configuration comparison note:** do not claim that optimization increased the accepted-late ratio from these captures. The unoptimized baseline proof used a `15-minute` bounded-out-of-orderness delay and a `3,600-second` allowed-lateness boundary, while the optimized GCP proof used a `5-minute` delay with the same `3,600-second` GCP proof override. The current production base default is `5 minutes / 300 seconds`, but [`values-gcp.yaml`](../../../infra/helm/recsys-data-config/values-gcp.yaml#L92) overrides allowed lateness to `3,600` seconds for the controlled late-event workload. Because the baseline and optimized proof watermarks advance under different delays, their `accepted_late_events_total / late_arrivals_total` and `too_late_events_total / numRecordsIn` ratios are not causal before/after optimization metrics. The optimized Numeric capture gives an exact accepted-late share of `1,728 / 10,982 = 15.7%`; the baseline chart is only approximately `16-17%` and was not captured as same-instant Numeric cards. The defensible improvement is correct event-time pane revision plus lower classifier pressure/mailbox latency, not a higher accepted-late classification rate.
+
+Configuration references:
+
+- [Baseline proof manifest (line 110)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6f25ad7/infra/k8s/processing-baseline/flink-baseline-ui-job.yaml#L110): fixes the unoptimized proof watermark delay at `15` minutes.
+- [Baseline GCP proof values (line 71)](https://github.com/itsmekhoathekid/RecSys-MLops/blob/6f25ad7/infra/helm/recsys-data-platform/values-gcp.yaml#L71): overrides allowed lateness to `3,600` seconds.
+- [Current base streaming values (line 249)](../../../infra/helm/recsys-data-config/values.yaml#L249): define the production defaults of a `5-minute` watermark delay and `300-second` allowed lateness.
+- [Current GCP proof override (line 92)](../../../infra/helm/recsys-data-config/values-gcp.yaml#L92): changes only allowed lateness to `3,600` seconds for the injected `45-180` minute late-event workload.
 
 
 ### Window Processing
@@ -844,10 +851,12 @@ Implementation reference: [recsys_dp3_offline_feature_table.py](../../../apps/da
 
 #### Spark Resource Profile On GCP
 
-The current GCP coursework profile intentionally uses one fixed executor and
-disables dynamic allocation. Shuffle tracking remains configured so dynamic
-allocation can be enabled later without an external shuffle service, but it is
-not an active scaling claim. The values are defined in
+The current GCP coursework profile enables Spark dynamic allocation with one
+initial/minimum executor and a maximum of four executors. Shuffle tracking lets
+Spark safely remove idle executors without requiring an external shuffle
+service. When scheduler backlog persists, the application can request more
+executor pods up to the configured maximum; idle executors are released after
+the configured timeout. The values are defined in
 [values-gcp.yaml](../../../infra/helm/recsys-data-config/values-gcp.yaml#L29),
 rendered by
 [configmap.yaml](../../../infra/helm/recsys-data-config/templates/configmap.yaml#L51),
@@ -856,25 +865,27 @@ and passed to each native Airflow Spark application by
 
 | Setting | GCP value | Behavior |
 |---|---:|---|
-| `spark.dynamicAllocation.enabled` | `false` | Keeps the coursework workload deterministic and within the reserved CPU pool. |
-| `spark.dynamicAllocation.minExecutors` | `1` | Keeps one executor available while the Spark application is active. |
+| `spark.dynamicAllocation.enabled` | `true` | Enables application-level executor autoscaling. |
+| `spark.dynamicAllocation.minExecutors` | `1` | Keeps at least one executor available while the Spark application is active. |
 | `spark.dynamicAllocation.initialExecutors` | `1` | Starts each application with one executor. |
-| `spark.dynamicAllocation.maxExecutors` | `1` | Prevents application-level horizontal executor scaling in this profile. |
+| `spark.dynamicAllocation.maxExecutors` | `4` | Allows Spark to scale out to at most four executor pods when work is backlogged. |
+| `spark.dynamicAllocation.shuffleTracking.enabled` | `true` | Preserves shuffle dependencies while executors are dynamically removed, avoiding a required external shuffle service. |
 | Driver | `1` core, `1g` heap, `512m` overhead | Fits the production-like proof workload on the coursework cluster. |
-| Executor | `1` core, `1g` heap, `512m` overhead | Runs one executor pod per application. |
-| `spark.sql.shuffle.partitions` | `16` | Preserves useful task-level parallelism inside the fixed executor. |
+| Executor | `1` core, `1g` heap, `512m` overhead | Applies to each dynamically allocated executor pod. |
+| `spark.sql.shuffle.partitions` | `16` | Provides enough independent shuffle tasks for multiple executors to process concurrently. |
 
 Spark executor allocation and GKE node autoscaling are separate controls. The
-current application stays at one executor, while the GKE Cluster Autoscaler can
-still add a node when other workloads make the `cpu-services` pool
-unschedulable. Node-pool autoscaling therefore supplies cluster capacity; it
-does not increase this Spark application's configured executor count. See
+Spark application now scales between one and four executor pods. If those pods
+cannot be scheduled on existing nodes, the GKE Cluster Autoscaler can add a
+node to the `cpu-services` pool. Dynamic allocation controls executor demand,
+while node-pool autoscaling supplies the required cluster capacity. See
 [gke.tf](../../../infra/terraform/gcp/gke.tf#L97) and the node-pool bounds in
 [variables.tf](../../../infra/terraform/gcp/variables.tf#L79).
 
 Each rubric DAG uses `max_active_runs=1`, and its stage dependencies remain
-sequential. The fixed executor policy does not create overlapping Airflow runs
-or bypass optimization/validation ordering. See
+sequential. Dynamic executor allocation changes only the parallel capacity
+inside each Spark application; it does not create overlapping Airflow runs or
+bypass optimization/validation ordering. See
 [DP2](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py)
 and
 [DP3](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp3_offline_feature_table.py).

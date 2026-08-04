@@ -98,7 +98,7 @@ def test_governance_verifier_checks_native_definitions_without_minio_reports():
     products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
     coverage = verify_governance_coverage(products)
     assert coverage["verified"] is True
-    assert coverage["datasets"] == 51
+    assert coverage["datasets"] == 50
     assert coverage["jobs"] == sum(len(product.jobs) for product in products)
     assert coverage["runtime_lineage"]["mode"] == "native-openlineage"
     assert coverage["validation"]["intermediate_reports"] is False
@@ -135,7 +135,7 @@ def test_data_product_resources_are_replaced_with_exact_canonical_assets():
 def test_every_governed_dataset_has_schema_and_valid_primary_keys():
     products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
     datasets = [dataset for product in products for dataset in product.datasets]
-    assert len(datasets) == 51
+    assert len(datasets) == 50
     assert all(dataset.schema for dataset in datasets)
     assert all(dataset.validation_pipeline for dataset in datasets)
     assert all(dataset.custom_properties.get("contract") for dataset in datasets)

@@ -38,6 +38,198 @@ flowchart LR
 | Authentication | Istio `PeerAuthentication` in `STRICT` mode | Source and destination Envoy sidecars establish mutually authenticated TLS. |
 | Authorization | Default-deny plus explicit `AuthorizationPolicy` resources | Destination Envoy validates source workload identity and destination port before forwarding traffic. |
 
+## Effective Production Security Setup
+
+Security is bootstrapped before the application releases that depend on it. The
+effective GCP configuration differs from the reusable chart defaults in two
+important ways: the central secret backend is Kubernetes, not Vault, and
+Terraform expands the mesh policy scope to six runtime namespaces.
+
+### Bootstrap Order And Ownership
+
+```mermaid
+flowchart TD
+    GKE["Terraform creates GKE<br/>with Workload Identity"]
+    NS["Terraform creates and labels<br/>runtime namespaces"]
+    Operators["Terraform installs Istio,<br/>External Secrets and cert-manager"]
+    Source["Terraform generates credentials and writes<br/>central source Secrets in external-secrets"]
+    Security["Terraform installs recsys-security"]
+    Store["ClusterSecretStore<br/>Kubernetes provider"]
+    Sync["ExternalSecrets create<br/>namespace-local Secrets"]
+    Mesh["STRICT mTLS, default deny,<br/>explicit ALLOW policies"]
+    Wait["Terraform waits for every required<br/>ExternalSecret and target Secret"]
+    Apps["Application charts start with<br/>secret.create=false"]
+    Jenkins["Jenkins later updates application images<br/>without owning central secrets"]
+
+    GKE --> NS --> Operators
+    Operators --> Source --> Security
+    Security --> Store --> Sync --> Wait --> Apps --> Jenkins
+    Security --> Mesh --> Apps
+```
+
+| Layer | Current implementation and owner |
+| --- | --- |
+| GCP identity | Terraform enables the GKE Workload Identity pool. Node VMs use `recsys-mlops-nodes`; the `ci/recsys-jenkins` Kubernetes service account receives direct Artifact Registry writer IAM through its Workload Identity principal. |
+| Kubernetes identity | Kubernetes service accounts identify workloads to the API server and become Istio SPIFFE principals such as `cluster.local/ns/api-serving/sa/default`. |
+| Secret source | Terraform-generated or supplied values are stored as five source Kubernetes Secrets in the `external-secrets` namespace: `data-platform`, `mlflow`, `runtime`, `kserve-minio`, and `gateway`. |
+| Secret distribution | The Terraform-owned `recsys-security` release creates one Kubernetes-backed `ClusterSecretStore` and namespace-local `ExternalSecret` objects. External Secrets Operator owns the generated target Secrets. |
+| East-west transport | Istio sidecars provide workload certificates and mTLS. Destination-side `AuthorizationPolicy` resources enforce source principal and port allow lists. |
+| Network segmentation | Two NetworkPolicy templates select MinIO, feature Postgres, and Redis. They describe namespace/port boundaries, subject to the GKE network-policy enforcement caveat below. |
+| North-south access | NGINX terminates TLS and applies shared Basic Auth and rate limits before its Envoy sidecar sends mTLS traffic to API and observability workloads. |
+| Release ownership | Terraform owns the central secret payloads, `recsys-security`, Istio/operator releases, and gateway. Jenkins owns application image releases and reads already-synced runtime Secrets; it does not receive plaintext secrets through Helm arguments. |
+
+The effective overrides are assembled in
+[locals.tf](../../../infra/terraform/gcp/locals.tf), the source payloads and
+readiness gate are in
+[secret_management.tf](../../../infra/terraform/gcp/secret_management.tf), and
+the security release dependency chain is in
+[recsys_services.tf](../../../infra/terraform/gcp/recsys_services.tf#L486).
+
+### Effective Secret Backend
+
+The chart supports Vault as a reusable default, but production Terraform sets:
+
+```text
+secretStore.provider = kubernetes
+secretStore.name = recsys-central-secrets
+secretStore.kubernetes.remoteNamespace = external-secrets
+secretStore.kubernetes.auth.serviceAccount = external-secrets/external-secrets
+externalSecrets.creationPolicy = Owner
+```
+
+Therefore the current design is centralized **inside the GKE cluster**. It is
+not currently backed by HashiCorp Vault, Google Secret Manager, or Cloud KMS.
+The `ClusterSecretStore` uses the External Secrets service account to read the
+source Kubernetes Secrets and materialize only the requested group in each
+target namespace.
+
+The target Secret is owned by its `ExternalSecret`, so deleting the
+`ExternalSecret` can also delete the generated Secret under `creationPolicy:
+Owner`. Terraform's `recsys_external_secrets_ready` gate waits for each
+`ExternalSecret` to report Ready and verifies that its target Secret exists
+before MLflow, data-platform, serving, observability, or gateway workloads are
+allowed to roll out.
+
+### Effective Mesh Enforcement Scope
+
+Terraform supplies the following namespace list to the security chart rather
+than relying on the shorter chart default:
+
+| Namespace | Sidecar injection | STRICT mTLS and default deny | Main explicit access |
+| --- | --- | --- | --- |
+| `api-serving` | Enabled | Enforced | NGINX, Prometheus, API-internal calls, and dataflow callers to ports `80/8080`. |
+| `kserve-triton-inference` | Enabled | Enforced | API and Prometheus identities to KServe/Triton ports `80/8080/9000`. |
+| `recsys-dataflow` | Enabled | Enforced | Dataflow, Kubeflow, DataHub, Prometheus, and selected API access to data/platform ports. |
+| `kubeflow` | Enabled | Enforced | Kubeflow-local traffic plus dataflow and Prometheus on the configured KFP/Ray/artifact ports. |
+| `experiment-tracking` | Enabled | Enforced | Kubeflow, KServe, and Prometheus to MLflow/Postgres/MinIO ports. |
+| `observability` | Enabled | Enforced | API, dataflow, Kubeflow, Prometheus, Promtail, and NGINX to Grafana/Loki/Tempo/PushGateway/exporter ports. |
+| `datahub` | Enabled by the namespace resource | **Not included** in the security chart's STRICT/default-deny list | Its sidecar can originate and receive mesh traffic, but this chart does not enforce a DataHub namespace baseline. |
+| `ingress-nginx` | Enabled for the controller | **Not included** in the STRICT/default-deny list | Its service-account principal is allowed by destination API/observability policies. |
+| `ci` | Explicitly disabled on Jenkins/watcher pods | Not enforced | Jenkins uses Kubernetes RBAC, Workload Identity, and Kubernetes Secrets instead of this mesh policy set. |
+| `analytics` | Not configured by this security chart | Not enforced | Analytics is outside the current mesh authorization boundary. |
+
+A namespace label only causes sidecar injection; it does not by itself create a
+STRICT `PeerAuthentication` or default-deny `AuthorizationPolicy`. This is why
+DataHub sidecar presence is proof of mesh participation, but not proof that the
+same namespace-level deny baseline is enforced there.
+
+### Service-To-Service Allow Matrix
+
+The main runtime paths opened after default deny are:
+
+| Caller identity | Destination | Ports and purpose |
+| --- | --- | --- |
+| `api-serving/default` | `recsys-dataflow` | `5432/6379` for Feast/Postgres and Redis features. |
+| `api-serving/default` | `kserve-triton-inference` | `80/8080/9000` for KServe HTTP and Triton gRPC inference. |
+| `ingress-nginx/ingress-nginx` | `api-serving` | `80/8080` for public feature API and demo routes. |
+| `ingress-nginx/ingress-nginx` | `observability` | `3000/3100/3200` for public Grafana, Loki, and Tempo query routes. |
+| `recsys-dataflow/default` | `kubeflow` | KFP API and workflow-related ports for drift-triggered retraining. |
+| Kubeflow pipeline service accounts | `experiment-tracking` | `5000/5432/9000` for MLflow, registry Postgres, and artifact MinIO. |
+| `observability/recsys-prometheus` | Runtime namespaces | Metrics/exporter ports required by Prometheus scraping. |
+| `observability/recsys-promtail` | Loki | `3100` for log ingestion. |
+
+Public gateway authentication and TLS are an additional north-south layer; they
+do not replace mesh identity. The full NGINX, DNS, certificate, Basic Auth, and
+rate-limit setup is documented in
+[Routing & Gateway](routing_gateway.md#setup-and-configuration-flow).
+
+### GCP IAM And Jenkins Deployment Identity
+
+GKE disables legacy ABAC and client certificates and enables Workload Identity.
+The Jenkins pod runs as Kubernetes service account `ci/recsys-jenkins`; Terraform
+grants that workload principal `roles/artifactregistry.writer`, so Jenkins can
+push immutable build artifacts without mounting a static Google service-account
+JSON key. Jenkins preflight verifies the production project, cluster context,
+registry, identity, and upload permission before deployment.
+
+Inside Kubernetes, however, the Jenkins service account is bound to the
+`recsys-ci-runner` ClusterRole with wildcard API groups, resources, and verbs.
+This is effectively cluster-admin-equivalent access and is what allows the
+pipeline to upgrade releases across namespaces. The controller also runs a
+privileged Docker-in-Docker sidecar with an unauthenticated pod-local Docker API
+on port `2375`; compromise of the Jenkins container therefore has a large
+cluster and node-runtime blast radius. These are current implementation facts,
+not least-privilege targets.
+
+### Workload Hardening Present In Selected Charts
+
+The serving runtime, demo frontend/backend, and model rollout watcher explicitly
+run as non-root and/or disable privilege escalation. Triton and demo containers
+drop Linux capabilities, and demo pods use the runtime-default seccomp profile.
+These controls are workload-specific: there is no namespace Pod Security
+Admission label enforcing them platform-wide, and several other charts rely on
+their image defaults.
+
+## Current Security Boundaries And Gaps
+
+The controls above are real, but their current boundary should not be
+overstated:
+
+- **Terraform state contains secret material.** Generated passwords and the
+  centralized Kubernetes Secret payloads are present in the local Terraform
+  state. The state and `terraform.tfvars` are ignored by Git, but there is no
+  remote encrypted backend, locking, centralized access policy, or state audit
+  trail.
+- **The secret backend is cluster-local.** Compromise of the cluster or the
+  External Secrets service account can expose the source and replicated
+  Secrets. Google Secret Manager or Vault would create a stronger external
+  trust boundary.
+- **Kubernetes NetworkPolicy is not enforced by the current GKE cluster.** The
+  state reports `network_policy.enabled=false` and no Dataplane V2 provider.
+  The MinIO/Postgres/Redis NetworkPolicy objects can be rendered and applied but
+  do not isolate traffic until GKE network-policy enforcement is enabled.
+- **The control plane is public.** Private nodes/endpoints are disabled and no
+  `master_authorized_networks_config` is set. GKE authentication still applies,
+  but the Kubernetes API endpoint is internet-reachable rather than restricted
+  to an approved CIDR/VPN path.
+- **Mesh coverage is partial.** `datahub`, `analytics`, `ci`, and
+  `ingress-nginx` do not receive this chart's namespace STRICT/default-deny
+  baseline. Several compatibility policies intentionally use `PERMISSIVE`, and
+  selected workload policies omit a source constraint, allowing any source that
+  can reach the selected port.
+- **Jenkins is highly privileged.** Wildcard cluster RBAC, root startup tasks,
+  privileged Docker-in-Docker, and a TLS-disabled Docker socket are acceptable
+  only if the Jenkins namespace and webhook are treated as a high-trust
+  administration boundary.
+- **The shared GKE node identity can publish images.** The node service account
+  currently has both Artifact Registry reader and writer roles. Workload
+  Identity gives Jenkins its own writer principal, so the node-level writer
+  grant is broader than required for normal image pulls and weakens workload
+  isolation.
+- **Gateway auth is shared Basic Auth.** It protects public API and
+  observability routes, but it is not per-user OAuth/OIDC, short-lived identity,
+  or application-level authorization. The production ClusterIssuer is also an
+  external prerequisite rather than a Terraform-owned object.
+- **Rotation requires workload action.** External Secrets refreshes targets
+  hourly, but pods using environment variables retain their previous values
+  until restarted. No automatic reloader is installed.
+- **Supply-chain enforcement is incomplete.** Jenkins deploys immutable image
+  digests and performs vulnerability scanning, but GKE Binary Authorization and
+  admission-time signature verification are not configured.
+- **Destruction protection is off.** The current cluster has Terraform/GKE
+  deletion protection disabled, increasing the impact of an accidental
+  infrastructure destroy.
+
 ## Centralized Secret Management
 
 The security setup keeps source credentials centralized and lets workloads consume namespace-local synced secrets. This avoids copying secret manifests into every service chart while still giving each namespace only the secret it needs.
@@ -243,7 +435,12 @@ The `InferenceService` runs with the credential-bearing KServe service account i
 
 The namespace baseline remains `STRICT`, with targeted `PERMISSIVE` overrides for integrations that must also accept non-mesh traffic. Current exceptions include the data-platform MinIO S3 port, selected Kubeflow services, Prometheus access for KEDA, Loki ingestion, and Tempo OTLP ports. These overrides are scoped with workload selectors and ports in [istio-mtls.yaml (line 20)](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L20).
 
-MinIO S3 ingress is additionally constrained at the Kubernetes network layer to the dataflow, Kubeflow, DataHub, and observability namespaces on port `9000` through [minio-network-policy.yaml (line 1)](../../../infra/helm/recsys-security/templates/minio-network-policy.yaml#L1).
+The MinIO S3 NetworkPolicy manifest selects the dataflow, Kubeflow, DataHub, and
+observability namespaces on port `9000` through
+[minio-network-policy.yaml (line 1)](../../../infra/helm/recsys-security/templates/minio-network-policy.yaml#L1).
+The current GKE cluster does not enable Kubernetes NetworkPolicy enforcement,
+so this object documents the intended layer-3/4 boundary but does not currently
+enforce it; Istio authorization remains the active runtime control.
 
 ### Mesh-Enabled Namespaces
 
@@ -300,7 +497,11 @@ The sidecar screenshots are UI proof that important runtime services are actuall
 
 ![DataHub sidecar example](../../pngs/datahub_sc_example.png)
 
-**Figure: DataHub service mesh example.** This k9s view shows the DataHub namespace with mesh-managed pods and operational state. It supports the security proof by showing the governance stack participates in the same runtime security model as the API and observability services.
+**Figure: DataHub service mesh example.** This k9s view shows the DataHub
+namespace with sidecar-injected pods and operational state. It proves that
+DataHub participates in mesh transport; the current `recsys-security` namespace
+list does not give DataHub its own STRICT/default-deny baseline, as documented
+in the effective coverage table above.
 
 ![Observability sidecar proof](../../pngs/observe_sidecar.png)
 

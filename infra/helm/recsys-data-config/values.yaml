@@ -92,7 +92,7 @@ spark:
   executorRequestCores: 100m
   icebergVectorizationEnabled: false
   dynamicAllocation:
-    enabled: false
+    enabled: true
     shuffleTrackingEnabled: true
     minExecutors: "1"
     initialExecutors: "1"

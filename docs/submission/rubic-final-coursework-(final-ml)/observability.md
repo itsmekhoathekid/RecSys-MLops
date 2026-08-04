@@ -42,8 +42,154 @@ Main observability services:
 | `recsys-promtail` | Log shipper DaemonSet that tails Kubernetes pod logs and sends them to Loki. |
 | Redis/Postgres exporters | Export Redis/Postgres health and runtime metrics into Prometheus. |
 
+### 0.1 End-To-End Collection Flow
+
+The platform uses three metric collection patterns. Long-running application
+pods expose an HTTP `/metrics` endpoint and are pulled by Prometheus. Kubernetes
+runtime telemetry is pulled from kubelet and cAdvisor through the Kubernetes API
+server. Short-lived jobs cannot reliably be scraped while they are alive, so
+they push their final samples to PushGateway; Prometheus then scrapes the stored
+PushGateway snapshot.
+
+```mermaid
+flowchart LR
+    subgraph Producers["Metric and telemetry producers"]
+        API["Recommendation API<br/>/metrics"]
+        Feature["Online Feature API<br/>/metrics"]
+        Demo["Demo API<br/>/metrics"]
+        Flink["Flink JobManager and TaskManager<br/>/metrics"]
+        Nodes["GKE kubelet and cAdvisor"]
+        Redis["Redis exporter"]
+        Postgres["Source and warehouse<br/>Postgres exporters"]
+        Batch["Streaming source, Airflow drift/retrain,<br/>and DataHub ingestion jobs"]
+        Logs["Container stdout/stderr"]
+        Spans["FastAPI OTLP spans"]
+    end
+
+    Batch -->|"HTTP PUT /metrics/job/..."| Push["PushGateway"]
+    API -->|"15 s pull"| Prom["Prometheus"]
+    Feature -->|"15 s pull"| Prom
+    Demo -->|"15 s pull"| Prom
+    Flink -->|"15 s pull"| Prom
+    Nodes -->|"API-server proxy pull"| Prom
+    Redis -->|"static target pull"| Prom
+    Postgres -->|"static target pull"| Prom
+    Push -->|"15 s pull; honor_labels=true"| Prom
+
+    Prom --> Grafana["Grafana dashboards"]
+    Prom --> Rules["Prometheus alert rules"]
+    Prom --> KEDA["KEDA API autoscaling"]
+    Prom --> Rollout["Jenkins/model rollout gates"]
+
+    Logs --> Promtail["Promtail DaemonSet"] --> Loki["Loki"] --> Grafana
+    Spans -->|"OTLP gRPC :4317"| Tempo["Tempo"] --> Grafana
+```
+
+The concrete Prometheus behavior is defined in
+[prometheus.yaml](../../../infra/helm/recsys-observability/templates/prometheus.yaml):
+
+1. The global scrape interval and rule evaluation interval are both 15 seconds.
+2. `recsys-kubernetes-pods` discovers pods only in `api-serving`,
+   `recsys-dataflow`, `kserve-triton-inference`, `experiment-tracking`, and
+   `kubeflow`. It keeps only pods annotated with
+   `prometheus.io/scrape: "true"`, then derives the metrics path and port from
+   the pod annotations. The resulting series receive `namespace` and `pod`
+   labels.
+3. `kubernetes-cadvisor` and `kubernetes-kubelet` discover every GKE node and
+   access node metrics through `kubernetes.default.svc:443`. This is the source
+   of cluster-wide container CPU, memory, network, start-time, and last-seen
+   series.
+4. Redis, source Postgres, warehouse Postgres, and PushGateway are explicit
+   static targets. `honor_labels: true` on the PushGateway job preserves the
+   producer's `job` and grouping labels instead of replacing them with the
+   Prometheus scrape-job label.
+5. API services are intentionally scraped once per annotated pod. The custom
+   `recsys-prometheus` deployment does not discover `ServiceMonitor` objects;
+   service-level scraping in addition to pod scraping would duplicate counters.
+
+### 0.2 Metric Flow By Platform Component
+
+| Component | Producer and collection path | Main metrics | Consumers |
+| --- | --- | --- | --- |
+| Recommendation API | FastAPI middleware and ranking/Triton hooks update an in-process metrics store. The pod exposes Prometheus text at `/metrics`; pod annotations provide path and port to `recsys-kubernetes-pods`. | `recsys_api_requests_total`, `recsys_api_failures_total`, `recsys_api_request_duration_seconds`, Redis/Triton duration and error series, recommendation size/score series, `model_predictions_total`, model latency/confidence histograms, A/B and shadow metrics. | Web API, Model Serving Promotion, Model A/B Testing, and Traces Overview dashboards; API alerts; KEDA; rollout promotion gates. |
+| Online Feature API | The same FastAPI middleware records route/status/latency, while Feast/Redis access records empty-feature and Redis operation telemetry. `/metrics` is scraped from each annotated pod. | Shared `recsys_api_*` families distinguished by `service="recsys-online-feature-api"`; `recsys_api_empty_feature_total`. | Web API and Model Serving Promotion dashboards; feature-API KEDA ScaledObject. |
+| Demo API | `prometheus_client` counters and histograms are exposed at `/metrics`. The GCP chart annotates backend pods in `api-serving`; its `PodMonitoring` also supports Google Managed Prometheus, but the in-repo Prometheus uses the annotations. | `recsys_demo_api_requests_total`, `recsys_demo_api_request_duration_seconds`. | Available for direct PromQL; not currently used by a version-controlled Grafana panel. |
+| Flink streaming runtime | The Flink Prometheus reporter binds the configured metrics port on JobManager and TaskManager. Both pod templates carry scrape annotations. | Flink task/job/operator metrics, including `flink_taskmanager_job_task_numRecordsOutPerSecond`. | Data Pipeline Observability dashboard, especially source throughput. |
+| Synthetic/live event source | The long-running producer periodically sends a `PUT` to PushGateway job `recsys_streaming_source_live`, grouped by `pipeline_role="online"` and Kafka source topic. Prometheus scrapes the latest stored values. | `recsys_streaming_events_total`, late/duplicate totals, last-event timestamp, maximum lateness, burst-window flag. | Data Pipeline Observability rate, quality, and freshness panels. |
+| Redis | `redis-exporter` connects to the feature-store Redis service and exposes port `9121`; Prometheus uses a static target. | `redis_commands_processed_total`, `redis_connected_clients`, exporter health series. | Data Pipeline Observability and compute/exporter checks. |
+| Source and warehouse Postgres | Two `postgres-exporter` deployments obtain credentials from `recsys-data-platform-secret`, connect to their respective databases, and expose port `9187`; Prometheus scrapes both static targets. | Standard `pg_*` exporter families and target `up`. | Direct PromQL and exporter health checks; the current dashboards do not provide detailed Postgres panels. |
+| GKE workloads | Prometheus reads kubelet/cAdvisor endpoints through the API server; applications do not need a metrics library for this path. | `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, network RX/TX, container start and last-seen series. | Compute Telemetry dashboard and the compute sections of A/B and DataHub dashboards. |
+| Offline feature drift | The Airflow pod calculates PSI and pushes to job `recsys_offline_feature_drift`, grouped by `run_id`; the following DAG task pushes report availability to `recsys_offline_feature_drift_report`. | PSI/pass state, reference/current row counts, run/report timestamps. | ML Drift and Retrain dashboard, Data Pipeline dashboard, `RecSysFeatureDriftDetected` rule, and the retrain decision task. |
+| Kubeflow retrain trigger | After evaluating the drift report, the trigger task pushes one result snapshot to job `recsys_kubeflow_retrain`, grouped by drift `run_id`. | `recsys_ml_retrain_triggered_total`, `recsys_ml_retrain_trigger_failed_total` with a reason label. Despite the `_total` suffix these are emitted as gauges with value 0 or 1 per grouped run. | ML Drift and Retrain dashboard. Kubeflow and Ray execution status itself is proved through their APIs/UI and pod state, not a dedicated custom Prometheus metric family. |
+| DataHub governance ingestion | The metadata ingestion command pushes a summary to job `recsys_datahub_governance`, grouped by sanitized GMS URL. | Ingestion success/timestamp and dataset, job, data-product counts/presence. | DataHub Governance dashboard. |
+| Model rollout and Jenkins CD | These components are metric consumers. The rollout watcher and Jenkins promotion gate call Prometheus `/api/v1/query` for candidate/control sample count, error rate, p95 latency, and confidence proxy. | Reads `model_predictions_total`, `model_prediction_latency_seconds_*`, and `model_prediction_confidence_*`. | Decides hold, promote, or rollback; the same series feed A/B alert rules and dashboards. |
+
+The application metrics implementation is in
+[observability.py](../../../apps/api-serving/src/observability.py), the pod
+discovery annotations are in
+[api-deployment.yaml](../../../infra/helm/recsys-serving/templates/api-deployment.yaml)
+and
+[feature-api-deployment.yaml](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml),
+and the generic batch push transport is in
+[pushgateway.py](../../../apps/data-platform/src/monitoring/pushgateway.py).
+
+### 0.3 Prometheus Consumers And Control Loops
+
+Prometheus is not only a Grafana datasource. Two production control loops query
+the same stored time series:
+
+- The FastAPI KEDA ScaledObjects query one-minute request rate and average
+  latency for each `service`, `route`, and `method`. The recommendation API and
+  feature API scale independently within their configured replica bounds. See
+  [fastapi-prometheus-scaledobjects.yaml](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml).
+- The rollout watcher waits for enough candidate and control predictions, while
+  Jenkins evaluates candidate error delta, p95 latency ratio, and confidence
+  ratio. Missing samples cause a hold instead of an automatic promotion. See
+  [model_rollout_controller.py](../../../apps/ml-system/src/cli/model_rollout_controller.py)
+  and
+  [promotion_gates.py](../../../jenkins/python/model_cd/promotion_gates.py).
+
+Prometheus evaluates seven in-repo alert rules: API failure, feature drift,
+data-quality failure, and four candidate-model regression/missing-traffic
+conditions. The chart currently installs no Alertmanager and defines no Slack,
+email, or PagerDuty receiver. Consequently, these rules produce Prometheus
+alert state for UI/query inspection but do not send external notifications.
+
+### 0.4 Storage, Restart Semantics, And Current Coverage Boundaries
+
+- Prometheus is configured for seven-day retention, but the current GCP values
+  leave `persistence.prometheus.enabled=false`, so its TSDB uses `emptyDir` and
+  is lost when the Prometheus pod is replaced. API metric counters also live in
+  process memory and restart from zero when an API pod restarts.
+- PushGateway retains the latest series for each job/grouping-key combination.
+  Producers use `PUT`, so rerunning the same grouping replaces its payload; the
+  helper currently does not delete obsolete grouping keys. Dashboards that need
+  the latest drift run join against PushGateway's `push_time_seconds`.
+- Tempo stores traces on its container filesystem under `/tmp/tempo/traces` and
+  compacts them with a 24-hour retention setting. Loki uses its image's local
+  configuration. Neither backend has a PVC in the current template, so logs and
+  traces are also restart-ephemeral.
+- Grafana dashboards and datasource definitions are durable because Helm
+  provisions them from version-controlled ConfigMaps. Grafana itself does not
+  need a persistent UI database for these provisioned dashboards.
+- Pod-metric and Promtail scopes omit the `analytics`, `ci`, and `datahub`
+  namespaces. For example, Trino carries scrape annotations in `analytics`, but
+  `recsys-kubernetes-pods` never discovers that namespace; Jenkins logs are not
+  shipped by the current Promtail configuration. cAdvisor still provides basic
+  cluster-wide container resource series for those pods.
+- The Data Pipeline dashboard queries `recsys_data_quality_metric`, and the
+  rules query `recsys_data_quality_passed`, but no production emitter for those
+  metric names exists in the current repository. Those panels/rules remain
+  `NO DATA` until a data-quality job publishes the contract to PushGateway or
+  exposes it through a scraped endpoint.
+- There is no `kube-state-metrics` deployment. Compute views therefore use
+  kubelet/cAdvisor container series rather than the richer desired-vs-ready
+  Kubernetes object metrics normally provided by kube-state-metrics.
+
 Dashboard access is through the NGINX/GCP LoadBalancer gateway and the RecSys
-Grafana folder.
+Grafana folder. Public DNS, TLS, Basic Auth, rate limiting, host/path routing,
+and the NGINX-to-Istio service flow are documented in
+[Routing & Gateway](routing_gateway.md#setup-and-configuration-flow).
 
 ### Image Proof
 

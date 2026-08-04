@@ -9,4 +9,4 @@ select
     user_lifecycle_state,
     is_active,
     analytics_synced_at
-from {{ source('silver', 'users') }}
+from {{ source('lakehouse', 'users') }}

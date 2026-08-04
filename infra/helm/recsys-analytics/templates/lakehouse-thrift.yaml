@@ -1,0 +1,116 @@
+{{- if .Values.lakehouseThrift.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.lakehouseThrift.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.lakehouseThrift.name }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.lakehouseThrift.name }}
+  ports:
+    - name: hive-jdbc
+      port: {{ .Values.lakehouseThrift.port }}
+      targetPort: hive-jdbc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.lakehouseThrift.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.lakehouseThrift.name }}
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.lakehouseThrift.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.lakehouseThrift.name }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+        checksum/bootstrap: {{ include (print $.Template.BasePath "/lakehouse-thrift-bootstrap-configmap.yaml") . | sha256sum }}
+    spec:
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      containers:
+        - name: spark-thrift-server
+          image: {{ .Values.images.spark | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              /opt/spark/bin/spark-submit \
+                --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2 \
+                --master 'local[{{ .Values.lakehouseThrift.localThreads }}]' \
+                --driver-memory {{ .Values.lakehouseThrift.driverMemory | quote }} \
+                --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
+                --conf spark.sql.defaultCatalog=recsys \
+                --conf spark.sql.catalog.recsys=org.apache.iceberg.spark.SparkCatalog \
+                --conf spark.sql.catalog.recsys.type=hadoop \
+                --conf spark.sql.catalog.recsys.warehouse="$LAKEHOUSE_WAREHOUSE" \
+                --conf spark.sql.catalog.recsys_features=org.apache.iceberg.spark.SparkCatalog \
+                --conf spark.sql.catalog.recsys_features.type=hadoop \
+                --conf spark.sql.catalog.recsys_features.warehouse=s3a://recsys-offline-feature-store/warehouse \
+                --conf spark.sql.catalog.analytics=org.apache.iceberg.spark.SparkCatalog \
+                --conf spark.sql.catalog.analytics.type=jdbc \
+                --conf spark.sql.catalog.analytics.uri="$ANALYTICS_CATALOG_JDBC_URI" \
+                --conf spark.sql.catalog.analytics.warehouse="$ANALYTICS_WAREHOUSE" \
+                --conf spark.sql.catalog.analytics.jdbc.user="$ANALYTICS_CATALOG_USER" \
+                --conf spark.sql.catalog.analytics.jdbc.password="$ANALYTICS_CATALOG_PASSWORD" \
+                --conf spark.sql.catalog.analytics.jdbc.schema-version=V1 \
+                --conf spark.hadoop.fs.s3a.endpoint="$MINIO_ENDPOINT" \
+                --conf spark.hadoop.fs.s3a.access.key="$AWS_ACCESS_KEY_ID" \
+                --conf spark.hadoop.fs.s3a.secret.key="$AWS_SECRET_ACCESS_KEY" \
+                --conf spark.hadoop.fs.s3a.path.style.access=true \
+                --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false \
+                --hiveconf hive.server2.thrift.bind.host=0.0.0.0 \
+                --hiveconf hive.server2.thrift.port={{ .Values.lakehouseThrift.port }} &
+              thrift_pid=$!
+              until (echo > /dev/tcp/127.0.0.1/{{ .Values.lakehouseThrift.port }}) 2>/dev/null; do
+                if ! kill -0 "$thrift_pid" 2>/dev/null; then
+                  wait "$thrift_pid"
+                fi
+                sleep 2
+              done
+              /opt/spark/bin/beeline \
+                -u 'jdbc:hive2://127.0.0.1:{{ .Values.lakehouseThrift.port }}/lakehouse' \
+                -n dbeaver \
+                -f /opt/recsys/lakehouse-thrift/bootstrap.sql
+              wait "$thrift_pid"
+          envFrom:
+            - configMapRef:
+                name: recsys-analytics-config
+            - secretRef:
+                name: recsys-analytics-secret
+          ports:
+            - name: hive-jdbc
+              containerPort: {{ .Values.lakehouseThrift.port }}
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /opt/recsys/lakehouse-thrift
+              readOnly: true
+          resources: {{ toYaml .Values.resources.lakehouseThrift | nindent 12 }}
+          readinessProbe:
+            tcpSocket:
+              port: hive-jdbc
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: hive-jdbc
+            initialDelaySeconds: 60
+            periodSeconds: 20
+      volumes:
+        - name: bootstrap
+          configMap:
+            name: {{ .Values.lakehouseThrift.name }}-bootstrap
+{{- end }}

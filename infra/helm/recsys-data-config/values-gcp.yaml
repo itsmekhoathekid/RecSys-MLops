@@ -37,11 +37,11 @@ spark:
   executorCores: "1"
   executorRequestCores: 100m
   dynamicAllocation:
-    enabled: false
+    enabled: true
     shuffleTrackingEnabled: true
     minExecutors: "1"
     initialExecutors: "1"
-    maxExecutors: "1"
+    maxExecutors: "4"
     executorIdleTimeout: 60s
     schedulerBacklogTimeout: 1s
     sustainedSchedulerBacklogTimeout: 1s

@@ -43,7 +43,7 @@ def dataset_result(checks: list[dict[str, Any]]) -> dict[str, Any]:
     )
     return {"status": status, "checks": checks}
 
-
+# DP1 validates readable, non-empty Bronze tables with source/audit keys present and non-null.
 def validate_dp1_bronze(*, spark=None) -> dict[str, Any]:
     from functools import reduce
     from operator import or_
@@ -79,16 +79,16 @@ def validate_dp1_bronze(*, spark=None) -> dict[str, Any]:
                     else -1
                 )
                 checks = [
-                    check(
+                    check(  # row_count: every Bronze table must contain at least one row.
                         "row_count", "SUCCESS" if count > 0 else "FAILURE", "> 0", count
                     ),
-                    check(
+                    check(  # required_columns: source PK and Bronze audit fields must exist.
                         "required_columns",
                         "SUCCESS" if not missing else "FAILURE",
                         sorted(required),
                         {"missing": missing},
                     ),
-                    check(
+                    check(  # required_values_not_null: required fields cannot be null.
                         "required_values_not_null",
                         "SUCCESS" if null_count == 0 else "FAILURE",
                         0,
@@ -97,7 +97,7 @@ def validate_dp1_bronze(*, spark=None) -> dict[str, Any]:
                 ]
             except Exception as exc:
                 checks = [
-                    check(
+                    check(  # table_read: the Bronze Iceberg table must be readable.
                         "table_read", "ERROR", "readable Bronze Iceberg table", str(exc)
                     )
                 ]
@@ -111,7 +111,7 @@ def validate_dp1_bronze(*, spark=None) -> dict[str, Any]:
             spark.stop()
         return report
 
-
+# DP3 validates complete, non-empty PostgreSQL tables with non-null entity keys and timestamps.
 def validate_dp3_postgres() -> dict[str, Any]:
     config = PostgresOfflineStoreConfig.from_env()
     primary_keys = {
@@ -164,19 +164,19 @@ def validate_dp3_postgres() -> dict[str, Any]:
                         )
                         null_key_or_timestamp = int(cur.fetchone()[0])
                         checks = [
-                            check(
+                            check(  # row_count: every PostgreSQL offline table must be non-empty.
                                 "row_count",
                                 "SUCCESS" if row_count > 0 else "FAILURE",
                                 "> 0",
                                 row_count,
                             ),
-                            check(
+                            check(  # required_columns: configured schema columns must exist.
                                 "required_columns",
                                 "SUCCESS" if not missing else "FAILURE",
                                 sorted(required),
                                 {"missing": missing},
                             ),
-                            check(
+                            check(  # key_and_timestamp_not_null: key/time values cannot be null.
                                 "key_and_timestamp_not_null",
                                 "SUCCESS" if null_key_or_timestamp == 0 else "FAILURE",
                                 0,
@@ -185,7 +185,7 @@ def validate_dp3_postgres() -> dict[str, Any]:
                         ]
                     except Exception as exc:
                         checks = [
-                            check(
+                            check(  # table_read: the PostgreSQL offline table must be queryable.
                                 "table_read",
                                 "ERROR",
                                 "readable PostgreSQL offline table",

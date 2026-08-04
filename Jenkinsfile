@@ -23,23 +23,23 @@ pipeline {
   }
 
   stages {
-    stage('Checkout') {
+    stage('Checkout') { // Resolve the exact source revision and load shared pipeline orchestration helpers.
       steps {
-        sh 'timeout 30s git fetch --no-tags origin +refs/heads/*:refs/remotes/origin/* || true'
+        sh 'timeout 30s git fetch --no-tags origin +refs/heads/*:refs/remotes/origin/* || true' // Refresh diff refs, but keep the checked-out revision usable if the remote fetch times out.
         script {
           env.GIT_COMMIT = sh(
             returnStdout: true,
             script: 'git rev-parse HEAD'
           ).trim()
-          componentPipeline = load 'jenkins/pipeline/component_pipeline.groovy'
+          componentPipeline = load 'jenkins/pipeline/component_pipeline.groovy' // Load diff-base, parallel-CI, deploy-order and deploy-eligibility helpers.
         }
       }
     }
 
-    stage('Detect Changed Components') {
+    stage('Detect Changed Components') { // Convert the Git diff into component flags and an ordered CI/build/deploy release plan.
       steps {
         script {
-          sh 'python3 jenkins/python/configuration.py validate'
+          sh 'python3 jenkins/python/configuration.py validate' // Fail early when component, image or deploy-unit configuration is inconsistent.
           env.IMAGE_PUSH_REGISTRY = sh(
             returnStdout: true,
             script: 'python3 jenkins/python/configuration.py gcp imageRegistry'
@@ -50,7 +50,7 @@ pipeline {
           echo "Changed-path range: ${baseRef ?: '<current commit>'}...HEAD"
           def baseArgument = baseRef ? "--base-ref '${baseRef}'" : ''
           withEnv(["FORCE_COMPONENTS_VALUE=${params.FORCE_COMPONENTS ?: ''}"]) {
-            sh "python3 -m jenkins.python.change_detection.detector ${baseArgument} --force-components \"\${FORCE_COMPONENTS_VALUE}\" --commit '${env.GIT_COMMIT}' --plan-output .ci-release-plan.json > .ci-components.env"
+            sh "python3 -m jenkins.python.change_detection.detector ${baseArgument} --force-components \"\${FORCE_COMPONENTS_VALUE}\" --commit '${env.GIT_COMMIT}' --plan-output .ci-release-plan.json > .ci-components.env" // Write the machine-readable release plan and shell-style RUN_* flags used by later stages.
           }
           readFile('.ci-components.env').split('\\n').each { line ->
             if (line.trim() && line.contains('=')) {
@@ -59,7 +59,7 @@ pipeline {
             }
           }
           echo "Selected components: ${env.CHANGED_COMPONENTS}"
-          env.SHOULD_DEPLOY_RELEASE = componentPipeline.shouldDeployRelease() ? 'true' : 'false'
+          env.SHOULD_DEPLOY_RELEASE = componentPipeline.shouldDeployRelease() ? 'true' : 'false' // Deploy only published component changes from main, unless FORCE_DEPLOY explicitly overrides the branch gate.
           // ML test environments can exceed the GKE node's ephemeral-storage
           // eviction threshold. Keep disposable CI data on the existing
           // Jenkins PVC; the post action removes this build-scoped directory.
@@ -67,22 +67,22 @@ pipeline {
           env.UV_CACHE_DIR = "${env.CI_TMP_ROOT}/uv-cache"
           echo "Using CI temp root: ${env.CI_TMP_ROOT}"
         }
-        sh 'rm -rf reports .ci-image-manifest .ci-deploy pipelines/kubeflow/compiled/*.yaml && mkdir -p reports/junit reports/coverage .ci-image-manifest'
+        sh 'rm -rf reports .ci-image-manifest .ci-deploy pipelines/kubeflow/compiled/*.yaml && mkdir -p reports/junit reports/coverage .ci-image-manifest' // Start this build with clean reports, manifests and deployment-preflight state.
       }
     }
 
-    stage('Python Env') {
+    stage('Python Env') { // Materialize locked, profile-specific Python environments for the selected components.
       when { expression { env.RUN_PYTHON == 'true' } }
       steps {
         sh '''
           set -euo pipefail
           mkdir -p "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"
-          jenkins/scripts/entrypoints/prepare_component_ci_envs.sh
+          jenkins/scripts/entrypoints/prepare_component_ci_envs.sh # Reuse each prepared environment across component test branches with the same CI profile.
         '''
       }
     }
 
-    stage('Component CI') {
+    stage('Component CI') { // Run configuration contracts plus selected component tests, coverage and migration-policy checks.
       when {
         expression {
           env.RUN_CI_CONFIG == 'true' || env.RUN_COMPONENT_CI == 'true'
@@ -90,7 +90,7 @@ pipeline {
       }
       steps {
         script {
-          if (env.RUN_CI_CONFIG == 'true') {
+          if (env.RUN_CI_CONFIG == 'true') { // Validate Jenkins Python, shell syntax and every Helm chart before component-specific tests.
             echo '[CI] Contract checks'
             sh '''
               set -euo pipefail
@@ -121,13 +121,13 @@ pipeline {
               done
             '''
           }
-          if (env.RUN_COMPONENT_CI == 'true') {
+          if (env.RUN_COMPONENT_CI == 'true') { // Execute only diff-selected components, in bounded parallel batches.
             echo '[CI] Selected component branches'
             def maxParallel = params.COMPONENT_CI_MAX_PARALLEL?.trim()?.toInteger()
             if (maxParallel < 1 || maxParallel > 13) {
               error 'COMPONENT_CI_MAX_PARALLEL must be between 1 and 13'
             }
-            componentPipeline.runSelectedComponentCi(
+            componentPipeline.runSelectedComponentCi( // Each branch calls component_ci.sh and publishes its own JUnit/coverage files.
               'jenkins/scripts/entrypoints/component_ci.sh',
               "COVERAGE_MIN='${params.COVERAGE_MIN}'",
               maxParallel
@@ -137,7 +137,7 @@ pipeline {
       }
     }
 
-    stage('Docker Login') {
+    stage('Docker Login') { // Authenticate to GCP Artifact Registry only when selected images will be published.
       when { expression { env.RUN_COMPONENT_BUILD == 'true' && params.PUBLISH_IMAGES } }
       steps {
         sh '''#!/usr/bin/env bash
@@ -146,14 +146,14 @@ pipeline {
           . jenkins/scripts/lib/common.sh
           . jenkins/scripts/deploy/preflight/gcp.sh
           . jenkins/scripts/lib/registry.sh
-          gcp_verify_registry_publish_target
+          gcp_verify_registry_publish_target # Confirm the configured registry is the approved production publish target.
           registry_verify_gcp_upload_permission
-          registry_login_gcp "${IMAGE_PUSH_REGISTRY}"
+          registry_login_gcp "${IMAGE_PUSH_REGISTRY}" # Create the Docker credential used by the following image pushes.
         '''
       }
     }
 
-    stage('Component Build And Publish') {
+    stage('Component Build And Publish') { // Build, scan and optionally publish only the images/artifacts listed in the release plan.
       when { expression { env.RUN_COMPONENT_BUILD == 'true' } }
       steps {
         echo '[BUILD] Build, scan and publish catalog images'
@@ -162,45 +162,45 @@ pipeline {
           IMAGE_TAG='${env.GIT_COMMIT ?: ''}' \
           PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' \
           REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES ? '1' : '0'}' \
-          jenkins/scripts/entrypoints/release_build_publish.sh .ci-release-plan.json
+          jenkins/scripts/entrypoints/release_build_publish.sh .ci-release-plan.json # Produce immutable image references in .ci-image-manifest for deployment.
         """
         echo '[PACKAGE] Compile Kubeflow package'
         sh """
           IMAGE_PUSH_REGISTRY='${env.IMAGE_PUSH_REGISTRY}' \
           IMAGE_TAG='${env.GIT_COMMIT ?: ''}' \
           PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' \
-          jenkins/scripts/entrypoints/release_package_artifacts.sh .ci-release-plan.json
+          jenkins/scripts/entrypoints/release_package_artifacts.sh .ci-release-plan.json # Compile non-image release artifacts such as selected Kubeflow packages.
         """
       }
     }
 
-    stage('Component Deploy Or Update') {
+    stage('Component Deploy Or Update') { // Preflight, deploy dependency-ordered production units, then run component smoke verification.
       when { expression { env.SHOULD_DEPLOY_RELEASE == 'true' } }
       steps {
         echo '[DEPLOY] Production preflight'
-        sh "IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' jenkins/scripts/entrypoints/release_deploy_preflight.sh .ci-release-plan.json"
+        sh "IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' jenkins/scripts/entrypoints/release_deploy_preflight.sh .ci-release-plan.json" // Bind the approved GCP target and current commit before any production mutation.
         script {
           echo '[DEPLOY] Deploy release'
-          env.DEPLOY_STARTED = 'true'
+          env.DEPLOY_STARTED = 'true' // Mark that the build crossed from validation into production-changing work.
           def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}'"
-          componentPipeline.deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json')
+          componentPipeline.deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json') // Respect dependency layers and serialize units sharing the same Jenkins lock.
           echo '[VERIFY] Verify release'
           if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
             withCredentials([usernamePassword(credentialsId: params.GATEWAY_SMOKE_CREDENTIALS_ID, usernameVariable: 'GATEWAY_SMOKE_USER', passwordVariable: 'GATEWAY_SMOKE_PASSWORD')]) {
-              sh "${commandEnv} jenkins/scripts/entrypoints/release_verify.sh .ci-release-plan.json"
+              sh "${commandEnv} jenkins/scripts/entrypoints/release_verify.sh .ci-release-plan.json" // Run authenticated smoke checks when the demo gateway requires credentials.
             }
           } else {
-            sh "${commandEnv} jenkins/scripts/entrypoints/release_verify.sh .ci-release-plan.json"
+            sh "${commandEnv} jenkins/scripts/entrypoints/release_verify.sh .ci-release-plan.json" // Verify health, readiness, versions and runtime behavior after deployment; this is outside Helm atomic rollback.
           }
         }
       }
     }
   }
 
-  post {
+  post { // Publish evidence and clean build-scoped resources whether the pipeline succeeds or fails.
     always {
-      junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
-      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.model-cd/*,.demo-web/**/*'
+      junit allowEmptyResults: true, testResults: 'reports/junit/*.xml' // Render component and production-smoke results in the Jenkins test UI.
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.model-cd/*,.demo-web/**/*' // Preserve the release plan, exact images, coverage, validation and deployment diagnostics as build proof.
       sh '''
         set +e
         if [ -n "${CI_TMP_ROOT:-}" ] && [ -d "${CI_TMP_ROOT}" ]; then

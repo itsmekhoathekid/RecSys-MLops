@@ -10,4 +10,4 @@ select
     cast(price_bucket as integer) as price_bucket,
     is_active,
     analytics_synced_at
-from {{ source('silver', 'product_scd') }}
+from {{ source('lakehouse', 'product_scd') }}

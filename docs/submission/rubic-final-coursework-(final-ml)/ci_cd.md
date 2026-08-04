@@ -100,6 +100,54 @@ This is the single planning pass for the whole release:
 `FORCE_COMPONENTS` follows the same path: the detector validates the tokens and
 creates the plan directly; Groovy does not rebuild it.
 
+#### Exact configuration-loading and environment hand-off
+
+The detector does not discover components from folder names at runtime. Its
+inputs and hand-off are explicit:
+
+| Input | Where it is loaded | What it controls |
+| --- | --- | --- |
+| `jenkins/config/components.json` | `load_component_config()` reads from the fixed `jenkins/config` directory | global excludes, reusable path groups, `RUN_CI_CONFIG`, component names/flags/labels, `ciProfile`, path rules, images, artifacts and verification dependencies |
+| `images/catalog.json` | `load_catalog()` inside the detector and release planner | Dockerfile ownership, internal image dependencies and topological image build order |
+| `jenkins/config/deploy-units.json` | `load_deploy_config()` inside `create_release_plan()` | deploy-unit selection, image consumers, artifact consumers, chart/release/namespace and unit dependencies |
+| `jenkins/config/gcp-production.json` | `configuration.py gcp imageRegistry` | approved GCP Artifact Registry used by build, push and deploy |
+
+The exact data flow is:
+
+1. `configuration.py validate` loads and validates the component, GCP, CI
+   environment, image catalog and deploy-unit JSON contracts before diff
+   detection starts.
+2. `detector.py` calls `load_component_config()` and reads
+   `components` plus `pathGroups`; each changed path is checked against
+   `globalExcludes`, `ciConfiguration.changeDetection`, image ownership and
+   every component's `changeDetection` rule.
+3. For each selected component, the detector turns the configured `flag` into
+   `true`, for example `dp2 -> RUN_DP2=true`. It separately derives the routing
+   flags `RUN_PYTHON`, `RUN_COMPONENT_CI`, `RUN_COMPONENT_BUILD` and
+   `RUN_COMPONENT_DEPLOY` from the completed release plan.
+4. `render_jenkins_environment()` serializes both the flags and
+   `CHANGED_COMPONENTS=<comma-separated component names>` to standard output.
+   The Jenkins shell redirect writes that output to `.ci-components.env`.
+5. Jenkins reads `.ci-components.env` line by line, splits each line on the
+   first `=`, and calls `env.setProperty(key, value)`. This is the precise point
+   at which `CHANGED_COMPONENTS` and all `RUN_*` values become Jenkins
+   environment variables for later stages.
+
+`CHANGED_COMPONENTS` and `RUN_*` have different jobs. `CHANGED_COMPONENTS` is
+the compact list consumed by Python-environment preparation. Component CI
+selection uses the individual `RUN_<COMPONENT>` flags. Build and deploy consume
+the immutable `.ci-release-plan.json`; they do not recalculate the diff.
+
+Reference code:
+[`configuration root and JSON reader`](../../../jenkins/python/configuration.py#L12-L45),
+[`component JSON loader and validation`](../../../jenkins/python/configuration.py#L135-L248),
+[`full configuration validation command`](../../../jenkins/python/configuration.py#L358-L367),
+[`detector config load and path matching`](../../../jenkins/python/change_detection/detector.py#L162-L240),
+[`flag and release-plan derivation`](../../../jenkins/python/change_detection/detector.py#L241-L270),
+[`CHANGED_COMPONENTS rendering`](../../../jenkins/python/change_detection/detector.py#L273-L290),
+[`plan file write`](../../../jenkins/python/change_detection/detector.py#L293-L337), and
+[`Jenkins environment import`](../../../Jenkinsfile#L42-L62).
+
 Code:
 [`Jenkinsfile`, lines 39-71](../../../Jenkinsfile#L39-L71),
 [`detector.py`, lines 162-270](../../../jenkins/python/change_detection/detector.py#L162-L270),
@@ -137,6 +185,41 @@ This column is skipped when no Python component was selected. Otherwise:
 Code:
 [`Jenkinsfile`, lines 74-83](../../../Jenkinsfile#L74-L83) and
 [`prepare_component_ci_envs.sh`, lines 6-32](../../../jenkins/scripts/entrypoints/prepare_component_ci_envs.sh#L6-L32).
+
+#### How Jenkins chooses a CI profile
+
+The selection is configuration-driven, not inferred from test paths:
+
+1. `prepare_component_ci_envs.sh` reads the already-imported
+   `CHANGED_COMPONENTS` value and passes it to
+   `configuration.py ci-profiles --components ...`.
+2. The CLI reloads `components.json`, finds each requested component and reads
+   its `ciProfile` field.
+3. It converts the requested profiles to a set, which deduplicates shared
+   environments, then reloads `ci-environments.json` and prints one TSV row per
+   required profile: `profile`, `projectPath`, `lockFile`, `pythonVersion`.
+4. The shell loop creates `${CI_TMP_ROOT}/envs/<profile>` and executes the
+   locked `uv sync` using that row. A later component branch asks
+   `configuration.py component-profile <component>` for the same profile and
+   fails if its prepared Python executable is absent.
+
+Current profile mapping:
+
+| CI profile | Components using it | Project and lock source |
+| --- | --- | --- |
+| `data` | `materialize`, `dp1`, `dp2`, `dp3`, `drift`, `stream_offline`, `stream_online` | `apps/data-platform/pyproject.toml` and `apps/data-platform/uv.lock` |
+| `ml` | `training`, `kserve`, `rollout` | `apps/ml-system/pyproject.toml` and `apps/ml-system/uv.lock` |
+| `serving` | `api` | `apps/api-serving/pyproject.toml` and `apps/api-serving/uv.lock` |
+| `analytics` | `analytics` | `apps/analytics/pyproject.toml` and `apps/analytics/uv.lock` |
+| `demo` | `demo_web` | `apps/demo-web/backend/pyproject.toml` and its `uv.lock` |
+
+Reference code:
+[`CHANGED_COMPONENTS consumption and locked environment sync`](../../../jenkins/scripts/entrypoints/prepare_component_ci_envs.sh#L6-L32),
+[`ci-profiles resolution`](../../../jenkins/python/configuration.py#L372-L397),
+[`component-profile lookup`](../../../jenkins/python/configuration.py#L398-L402),
+[`CI environment JSON loader`](../../../jenkins/python/configuration.py#L306-L339),
+[`profile specifications`](../../../jenkins/config/ci-environments.json#L1-L30), and
+[`component ciProfile declarations`](../../../jenkins/config/components.json#L124-L520).
 
 ### 5. `Component CI`
 
@@ -176,6 +259,33 @@ Code:
 [`component_ci.sh`, lines 6-34](../../../jenkins/scripts/entrypoints/component_ci.sh#L6-L34), and
 [`CI dispatcher`, lines 3-22](../../../jenkins/scripts/ci/dispatch.sh#L3-L22).
 
+The precise component-loading boundary is worth distinguishing from Python
+environment preparation. `runSelectedComponentCi()` calls
+`configuration.py components-tsv`, which emits configured
+`flag<TAB>name<TAB>label` rows. Groovy keeps only rows whose imported Jenkins
+environment flag is `true`; it does **not** parse `CHANGED_COMPONENTS` here.
+Each resulting parallel branch passes the component name to
+`component_ci.sh`. That script reloads the component's `ciProfile`, activates
+the prepared environment, then `dispatch.sh` maps the name to exactly one
+`ci_<component>` function.
+
+For the two serving branches specifically:
+
+- `api` runs API-serving unit tests, serving and gateway contract tests, the
+  optional `tests/integration/api` directory, and coverage over inference API,
+  Feature API, feature client, ranking, Triton, A/B, shadow and shared serving
+  modules.
+- `kserve` runs model-promotion and serving-contract tests, the optional
+  `tests/integration/kserve` directory, and coverage over model-CD CLI, config,
+  Helm-release, manifest and promotion-gate modules.
+
+Reference code:
+[`components-tsv output`](../../../jenkins/python/configuration.py#L368-L371),
+[`RUN_* filtering and parallel branch construction`](../../../jenkins/pipeline/component_pipeline.groovy#L36-L59),
+[`per-branch profile activation`](../../../jenkins/scripts/entrypoints/component_ci.sh#L6-L29),
+[`component dispatcher`](../../../jenkins/scripts/ci/dispatch.sh#L3-L22), and
+[`API and KServe suites`](../../../jenkins/scripts/ci/serving.sh#L3-L20).
+
 Important execution boundary:
 
 - `materialize` CI tests Feast configuration against a temporary SQLite
@@ -204,6 +314,21 @@ Code:
 [`Jenkinsfile`, lines 140-154](../../../Jenkinsfile#L140-L154) and
 [`engine.sh`, lines 63-94](../../../jenkins/scripts/build/engine.sh#L63-L94).
 
+The registry value is loaded earlier by
+`configuration.py gcp imageRegistry`, which reads the `imageRegistry` field in
+`gcp-production.json`; Jenkins assigns it to both `IMAGE_PUSH_REGISTRY` and
+`IMAGE_PULL_REGISTRY`. Login extracts the registry host, obtains an OAuth
+access token from GCP metadata/Workload Identity or `gcloud`, then pipes it to
+`docker login ... --username oauth2accesstoken --password-stdin`. The actual
+push is not performed in this stage; it happens inside the next stage's image
+loop.
+
+Reference code:
+[`registry config import`](../../../Jenkinsfile#L42-L47),
+[`production registry value`](../../../jenkins/config/gcp-production.json#L1-L8),
+[`GCP token and Docker login`](../../../jenkins/scripts/lib/registry.sh#L18-L44), and
+[`upload-permission check`](../../../jenkins/scripts/lib/registry.sh#L107-L115).
+
 ### 7. `Component Build And Publish`
 
 This single Stage View column contains both image production and artifact
@@ -228,6 +353,41 @@ Code:
 [`engine.sh`, lines 96-162](../../../jenkins/scripts/build/engine.sh#L96-L162),
 [`image catalog`](../../../images/catalog.json), and
 [`image manifest`, lines 7-48](../../../jenkins/scripts/lib/image_manifest.sh#L7-L48).
+
+The push call chain is
+`Jenkinsfile -> release_build_publish.sh -> build_scan_publish_image() ->
+push_built_image() -> docker push`. The remote tag is
+`${IMAGE_PUSH_REGISTRY}/<image>:${GIT_COMMIT}`. After the push, Jenkins extracts
+or inspects the registry digest and records
+`${IMAGE_PUSH_REGISTRY}/<image>@sha256:...`; deploy code prefers this immutable
+manifest value over any tag.
+
+Reference code:
+[`build-stage arguments`](../../../Jenkinsfile#L156-L166),
+[`release-plan image loop`](../../../jenkins/scripts/entrypoints/release_build_publish.sh#L17-L40),
+[`catalog build, scan, push and digest record`](../../../jenkins/scripts/build/engine.sh#L96-L162), and
+[`docker push with one auth-refresh retry`](../../../jenkins/scripts/build/engine.sh#L78-L94).
+
+#### API image boundary: API and Feature API share one artifact
+
+The `api` component declares only `recsys-api-serving`. Its catalog entry points
+to one Dockerfile, which copies the complete `apps/api-serving/src` tree. The
+same image digest is then assigned to two different Kubernetes Deployments:
+
+- `recsys-api-serving` starts `inference_api:app`;
+- `recsys-online-feature-api` starts `feature_api:app`.
+
+Therefore the image is combined, but the runtime workloads are not: they have
+separate Deployments, commands, configuration, probes and scaling. Releasing
+either API source change rebuilds one artifact and the serving Helm upgrade
+rolls both workloads to the same immutable digest.
+
+Reference code:
+[`api component image mapping`](../../../jenkins/config/components.json#L325-L357),
+[`image catalog entry`](../../../images/catalog.json#L74-L77),
+[`combined source copy and default command`](../../../images/serving/recsys-api-serving/Dockerfile#L25-L35),
+[`API and Feature API values`](../../../infra/helm/recsys-serving/values.yaml#L55-L113), and
+[`both digest assignments during deploy`](../../../jenkins/scripts/deploy/serving.sh#L3-L25).
 
 #### `[PACKAGE] Compile Kubeflow package`
 
@@ -287,6 +447,112 @@ Code:
 [`release_deploy_unit.sh`, lines 49-119](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L49-L119),
 [`Helm deploy`, lines 121-168](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L121-L168), and
 [`deploy dispatch`, lines 170-208](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L170-L208).
+
+##### How a detected component becomes a deploy unit
+
+A detected component is **not** passed directly to `helm upgrade`. The release
+planner selects a deploy unit when at least one of these is true:
+
+1. the unit's `components` intersects the detected components;
+2. the unit consumes an image in the selected component's image dependency
+   closure;
+3. the unit consumes a selected build artifact; or
+4. a changed path is inside that unit's chart directory.
+
+It then writes only the ordered unit names to `deployUnits`. At deploy time,
+`plan-units` computes dependency depths. Groovy runs units in the same depth in
+parallel, but a lock named `kind:namespace:release` prevents two builds from
+mutating the same release concurrently.
+
+For one directly selected component at a time, the current configuration
+produces this deploy-unit plan (image dependencies and artifact consumers are
+already expanded):
+
+| Detected component | Current selected deploy units |
+| --- | --- |
+| `materialize` | `data-config`, `feature-store`, `feature-registry`, `airflow` |
+| `training` | `mlflow`, `kubeflow-bst-package`, `data-config`, `airflow`, `rollout` |
+| `dp1` | `kubeflow-bst-package`, `data-config`, `data-lakehouse`, `source-store`, `event-stream`, `kafka-connect`, `streaming`, `airflow` |
+| `dp2` | `kubeflow-bst-package`, `data-config`, `airflow` |
+| `dp3` | `kubeflow-bst-package`, `data-config`, `feature-store`, `feature-registry`, `airflow` |
+| `api` | `serving` |
+| `kserve` | `serving` |
+| `rollout` | `kubeflow-bst-package`, `rollout` |
+| `drift` | `data-config`, `airflow` |
+| `stream_offline` | `data-config`, `streaming` |
+| `stream_online` | `data-config`, `streaming` |
+| `analytics` | `kubeflow-bst-package`, `data-config`, `airflow`, `analytics` |
+| `demo_web` | `demo-web` |
+
+The apparently broad DP plans are intentional consequences of image closure.
+For example, changing DP2 rebuilds the unified Spark image; the KFP package,
+data config and Airflow all consume that image, so they enter the same release
+plan. If several components are selected together, the planner unions and
+deduplicates their images, artifacts and deploy units before ordering them.
+
+Reference code:
+[`component image/artifact declarations`](../../../jenkins/config/components.json#L124-L520),
+[`deploy-unit consumer graph`](../../../jenkins/config/deploy-units.json#L1-L298),
+[`unit selection rules`](../../../jenkins/python/release_plan.py#L174-L250),
+[`dependency layers and lock names`](../../../jenkins/python/release_plan.py#L369-L390), and
+[`parallel layer execution with Jenkins locks`](../../../jenkins/pipeline/component_pipeline.groovy#L61-L83).
+
+##### Exactly how each selected unit is upgraded
+
+`release_deploy_unit.sh` first asks `release_plan.py deploy-context` for the
+unit's `kind`, Helm release, namespace, chart, image-to-values mappings and all
+selected components. This prevents shell code from independently rereading and
+reinterpreting the JSON graph.
+
+For generic Helm units, every configured image is resolved in this priority:
+
+1. immutable digest from `.ci-image-manifest/release-plan.env` if built in this
+   run;
+2. current installed Helm value when the image was not rebuilt;
+3. `${IMAGE_PULL_REGISTRY}/<image>:${GIT_COMMIT}` as a final fallback.
+
+On GCP production, any remaining tag is resolved to `@sha256:` before Helm is
+called. The script turns each `imageValues` entry into
+`--set-string <values.path>=<digest>` and runs:
+
+```text
+helm upgrade --install <release> <chart>
+  --namespace <namespace> --create-namespace
+  --reset-values -f <chart>/values-gcp.yaml
+  --atomic --cleanup-on-fail --wait --wait-for-jobs
+```
+
+The deploy dispatch is:
+
+| Unit(s) | Upgrade/action implementation |
+| --- | --- |
+| `data-config`, `data-lakehouse`, `source-store`, `event-stream`, `feature-store`, `kafka-connect`, `streaming`, `airflow` | Generic `deploy_helm_unit()`: `values-gcp.yaml`, `--reset-values`, and digest overrides from each unit's `imageValues` map. |
+| `mlflow` | `deploy_mlflow()`: atomic Helm upgrade with `--reuse-values`, immutable `recsys-mlflow`, production scheduling/resources, then workload rollout checks. |
+| `analytics` | `deploy_analytics()`: atomic Helm upgrade with `--reuse-values`, immutable DBT and Superset images, secret mode, then Deployment/StatefulSet checks. |
+| `serving` when `api` is selected | `deploy_api()`: atomic Helm upgrade of `recsys-serving` with `--reuse-values`; sets both `api.image` and `featureApi.image` to the same immutable `recsys-api-serving` digest, then waits for both Deployments. |
+| `serving` when `kserve` is selected | `deploy_kserve()`: runs the model-CD CLI using the promotion manifest. It is selected by the same serving unit, but this branch is not a direct `helm upgrade` in `release_deploy_unit.sh`. If both `api` and `kserve` are selected, both branches run sequentially inside the locked serving unit. |
+| `demo-web` | `deploy_demo_web()`: atomic Helm upgrade with `values-gcp.yaml`, immutable frontend/backend images, then Deployment, ExternalSecret, certificate and ingress checks. |
+| `feature-registry` | Not Helm: starts a temporary pod from the immutable Feast image, executes `feast plan`, `feast apply` and registry verification, then removes the pod. |
+| `kubeflow-bst-package` | Not Helm: uploads the compiled KFP YAML and records the returned pipeline/version metadata. |
+| `rollout` | Not Helm: invokes the rollout-watcher Jenkins action. |
+
+`--atomic` covers failures that occur during a Helm command. The later global
+`[VERIFY] Verify release` block runs after all deploy units and is outside that
+Helm transaction; a verification failure makes Jenkins fail but does not by
+itself trigger Helm's automatic rollback.
+
+Reference code:
+[`deploy-context loading`](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L42-L75),
+[`preflight checkpoint and deploy-unit authorization`](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L81-L89),
+[`image resolution priority`](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L91-L119),
+[`generic Helm argument construction`](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L121-L168),
+[`unit dispatch`](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L170-L208),
+[`shared atomic Helm helper`](../../../jenkins/scripts/lib/helm.sh#L3-L18),
+[`MLflow upgrade`](../../../jenkins/scripts/deploy/ml_platform.sh#L3-L23),
+[`analytics upgrade`](../../../jenkins/scripts/deploy/analytics.sh#L3-L26),
+[`API/KServe deploy split`](../../../jenkins/scripts/deploy/serving.sh#L3-L39),
+[`demo upgrade`](../../../jenkins/scripts/deploy/demo.sh#L3-L16), and
+[`Feast registry action`](../../../jenkins/scripts/deploy/feast.sh#L77-L98).
 
 Uploading the KFP package creates/updates the pipeline package/version. It does
 **not** create a workflow run

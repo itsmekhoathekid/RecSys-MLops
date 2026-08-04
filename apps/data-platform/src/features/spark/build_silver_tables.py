@@ -63,15 +63,6 @@ def build_clean_recommendation_requests(requests: Any) -> Any:
     return frame.withColumn("request_timestamp", F.to_timestamp("request_timestamp"))
 
 
-def build_order_facts(orders: Any, order_items: Any) -> Any:
-    from pyspark.sql import functions as F
-
-    facts = order_items.join(orders, on="order_id", how="left")
-    if "status" in facts.columns:
-        return facts.withColumn("is_valid_purchase", ~F.col("status").isin("cancelled", "refunded"))
-    return facts.withColumn("is_valid_purchase", F.lit(True))
-
-
 def build_product_scd(product_snapshots: Any, products: Any) -> Any:
     from pyspark.sql import functions as F
 
@@ -107,7 +98,6 @@ def build_silver_tables_from_raw(raw: dict[str, Any], catalog: IcebergCatalogCon
         "rejected_behavior_events": rejected_events,
         "clean_impressions": build_clean_impressions(raw["impressions"]),
         "clean_recommendation_requests": build_clean_recommendation_requests(raw["recommendation_requests"]),
-        "order_facts": build_order_facts(raw["orders"], raw["order_items"]),
         "product_scd": build_product_scd(raw["product_snapshots"], raw["products"]),
         "users": raw["users"],
         "products": raw["products"],

@@ -30,7 +30,7 @@ def build_dp2_silver_gold() -> dict[str, int]:
     finally:
         spark.stop()
 
-
+# DP2 validates Silver row counts plus required clean-event columns and unique event_id values.
 def validate_dp2_silver_gold() -> dict[str, int]:
     spark = spark_session("recsys-dp2-validate-silver-gold")
     catalog = IcebergCatalogConfig()
@@ -53,7 +53,7 @@ def validate_dp2_silver_gold() -> dict[str, int]:
                     else counts[table_name] > 0
                 )
                 checks = [
-                    check(
+                    check(  # row_count: Silver outputs need rows; rejected output may be empty.
                         "row_count",
                         "SUCCESS" if count_ok else "FAILURE",
                         expected,
@@ -66,7 +66,7 @@ def validate_dp2_silver_gold() -> dict[str, int]:
                     )
                     checks.extend(
                         [
-                            check(
+                            check(  # required_columns: clean events need ID and event/ingestion times.
                                 "required_columns",
                                 "SUCCESS"
                                 if {
@@ -78,7 +78,7 @@ def validate_dp2_silver_gold() -> dict[str, int]:
                                 ["event_id", "event_timestamp", "ingestion_ts"],
                                 sorted(frame.columns),
                             ),
-                            check(
+                            check(  # duplicate_event_id: every clean event_id must be unique.
                                 "duplicate_event_id",
                                 "SUCCESS" if duplicate_count == 0 else "FAILURE",
                                 0,

@@ -64,38 +64,245 @@ flowchart TD
 
 ### Workflow Explanation
 
-1. Kubeflow registers a model version and writes a versioned promotion
-   manifest. The operator selects that exact registry version by setting its
-   MLflow tag to `candidate=test`.
-2. The `recsys-model-rollout-watcher` polls MLflow. It changes the tag to
-   `testing`, assigns the MLflow `candidate` alias, and triggers the Jenkins
-   `RecSys-KServe-Model-CD` job with `ROLLOUT_STAGE=shadow-start`.
-3. Jenkins deploys a temporary candidate KServe/Triton `InferenceService`.
-   FastAPI keeps `AB_CANDIDATE_WEIGHT_PERCENT=0`, returns the control result to
-   the user, and calls the candidate asynchronously for telemetry only.
-4. After a successful shadow deployment, the watcher records
-   `candidate=tested` and automatically opens A/B at 10%. The watcher owns the
-   complete online lifecycle: 10%, 25%, 50%, and final promotion.
-5. Locust only generates real requests with varying user IDs so sticky routing
-   produces samples for both variants. For every weight, the watcher queries
-   `model_predictions_total` in Prometheus for the same `experiment_id` and
-   stage start time. It does not call Jenkins until both control and candidate
-   have at least 100 fresh samples. Jenkins then evaluates:
+The implementation has two cooperating control loops:
 
-   - `hold` when either variant has fewer than 100 samples;
-   - `rollback` when candidate error rate is more than `0.02` above control,
-     candidate p95 latency is more than `1.5x` control, or its confidence proxy
-     is below `0.95x` control;
-   - `promote` when the current gate passes. At 10% and 25%, the watcher
-     advances automatically. After the 50% gate, it promotes automatically.
+- the rollout watcher decides **when** to start shadow, open or increase A/B,
+  evaluate a stage, promote, or stop; and
+- Jenkins Model CD validates and applies the requested state to the shared
+  `recsys-serving` Helm release, KServe/Triton, and the FastAPI router.
 
-6. `hold` keeps the current weight and resets the stage sample window; the
-   watcher waits for another fresh sample batch while Locust continues. A
-   failed gate invokes the Jenkins rollback stage in the same build. A
-   successful final promotion replaces the stable model. Both terminal paths
-   disable A/B and shadow routing, set candidate weight to zero, and remove the
-   temporary candidate inference service. Therefore the old Triton candidate
-   is not kept after the experiment.
+The following steps trace one candidate through the complete runtime path.
+
+#### Step 1 — Kubeflow produces an immutable candidate
+
+The model-promotion component converts the selected checkpoint into a versioned
+Triton repository, builds a manifest containing the model version, metric,
+tensor schema, versioned `triton_storage_uri`, and
+`promotion_manifest_uri`, then uploads the repository and manifest. It also
+creates a new MLflow model-registry version and copies the immutable model and
+manifest identifiers into its tags. At this point the stable `latest` model has
+not been changed.
+
+**State after this step:** one versioned candidate repository and one MLflow
+registry version exist; the current champion remains live.
+
+**Code reference:** [`build_manifest()`](../../../apps/ml-system/src/registry/model_promotion.py#L471), [`register_mlflow_model_version()`](../../../apps/ml-system/src/registry/model_promotion.py#L511), and [`promote_best_model()`](../../../apps/ml-system/src/registry/model_promotion.py#L563).
+
+#### Step 2 — The candidate is handed to the rollout watcher
+
+After the offline score threshold passes, the Kubeflow handoff checks whether a
+stable promotion manifest already exists. For an existing production champion,
+it does not deploy the candidate directly. Instead, it idempotently sets the
+new MLflow version to `candidate=test` and `rollout_status=pending`. This is the
+normal progressive-rollout trigger. The controller's `mark` command provides
+the same state transition for an explicitly selected version. Only a cold-start
+with no stable manifest uses the separate direct `ROLLOUT_STAGE=deploy` path.
+
+**State after this step:** MLflow is the durable queue; `candidate=test` means
+the version is ready for the watcher to claim.
+
+**Code reference:** [`queue_registry_candidate()`](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L145), [existing-champion handoff](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L329), and [manual-equivalent `mark` transition](../../../apps/ml-system/src/cli/model_rollout_controller.py#L560).
+
+#### Step 3 — The watcher claims exactly one pending version
+
+On each poll, the watcher searches MLflow for `candidate=test`, chooses the
+newest registry version, verifies that its `promotion_manifest_uri` exists in
+the tags, changes the candidate state to `testing`, sets
+`rollout_status=shadow_deploying`, and assigns the MLflow `candidate` alias. If
+the manifest tag is missing, the version becomes `invalid`; if shadow Jenkins
+execution fails, the alias is removed and the version becomes `failed` with
+`rollout_status=shadow_failed`.
+
+**State after this step:** only the claimed MLflow version owns the `candidate`
+alias and is eligible to enter online serving.
+
+**Code reference:** [`pending_candidates()`](../../../apps/ml-system/src/cli/model_rollout_controller.py#L116), [`process_candidate()`](../../../apps/ml-system/src/cli/model_rollout_controller.py#L318), and [`watch_once()`](../../../apps/ml-system/src/cli/model_rollout_controller.py#L505).
+
+#### Step 4 — The watcher creates one correlated Jenkins request
+
+The watcher derives a stable `AB_EXPERIMENT_ID` from the immutable model
+version and sends Jenkins the stable manifest, control manifest, candidate
+manifest, experiment ID, requested weight, Prometheus endpoint, gate window,
+minimum sample count, and `TRIGGER_SOURCE=mlflow-candidate-watcher`. It calls
+the Jenkins `buildWithParameters` endpoint, waits for the queued item to become
+a build, waits for `SUCCESS`, and stores the resulting experiment ID and build
+number back on the MLflow version.
+
+**State after this step:** MLflow, Jenkins, API metrics, Prometheus, and Grafana
+can all be joined by the same experiment ID and Jenkins build number.
+
+**Code reference:** [`rollout_params()`](../../../apps/ml-system/src/cli/model_rollout_controller.py#L188), [`trigger_stage()`](../../../apps/ml-system/src/cli/model_rollout_controller.py#L217), and [`trigger_jenkins_cd()`](../../../apps/ml-system/src/cli/trigger_kserve_cd.py#L221).
+
+#### Step 5 — Jenkins deploys the candidate in shadow mode
+
+For `ROLLOUT_STAGE=shadow-start`, only the Jenkins `Deploy Shadow Candidate`
+and `Observe Shadow Candidate` stages run. A release-scoped Jenkins lock
+serializes mutations to `recsys-serving`. Model CD reads both manifests and
+renders a state with the stable model as control, the versioned model as
+candidate, A/B disabled, candidate user weight `0`, and shadow enabled. The
+candidate KServe `InferenceService` is rendered only because a candidate URI
+and shadow mode are present. Helm applies the values and waits for both stable
+and candidate KServe/Triton predictors to become Ready.
+
+**Runtime state:** `AB_TEST_ENABLED=0`, `AB_SHADOW_ENABLED=1`,
+`AB_CANDIDATE_WEIGHT_PERCENT=0`; both Triton services exist, but user responses
+still come only from control.
+
+**Code reference:** [Jenkins shadow stages](../../../jenkins/KServeModelCD.Jenkinsfile#L55), [`stage_manifests()`](../../../jenkins/python/model_cd/cli.py#L25), [`write_values()` shadow/A/B state](../../../jenkins/python/model_cd/config.py#L17), [candidate `InferenceService` condition](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L43), and [Helm plus KServe readiness waits](../../../jenkins/python/model_cd/helm_release.py#L24).
+
+#### Step 6 — FastAPI mirrors inference without affecting the response
+
+The Helm-generated ConfigMap exposes the control/candidate endpoints, model
+versions, experiment ID, shadow flag, queue limit, concurrency limit, and
+timeout to the API. Because A/B is disabled, the synchronous route remains
+control. The router separately returns a `shadow_candidate` route, and the
+recommendation handler submits the already-built Triton payload to a bounded
+asynchronous `ShadowRunner`. Queue overflow, timeout, or candidate errors are
+recorded as shadow telemetry and never replace or block the control response.
+
+**Runtime state:** the user receives the champion result; the candidate only
+produces shadow count, latency, error/timeout, queue-depth, and score-shape
+metrics.
+
+**Code reference:** [API rollout ConfigMap](../../../infra/helm/recsys-serving/templates/api-configmap.yaml#L14), [`TritonABRouter.shadow_route()`](../../../apps/api-serving/src/ab_testing.py#L109), [request-to-shadow submission](../../../apps/api-serving/src/inference_api.py#L75), and [`ShadowRunner`](../../../apps/api-serving/src/shadow.py#L13).
+
+#### Step 7 — Successful shadow automatically opens A/B at 10%
+
+When the shadow Jenkins build succeeds, the watcher changes the MLflow version
+to `candidate=tested` and `rollout_status=shadow_ready`. On the next poll,
+`reconcile_progressive_candidate()` sees `shadow_ready` and triggers
+`ROLLOUT_STAGE=ab-start` at the first configured progressive weight, `10` by
+default. After Jenkins succeeds, the watcher records `rollout_status=ab_10`,
+the stage start timestamp, weight, pending decision, and zeroed sample counters.
+Jenkins applies A/B enabled, shadow disabled, and candidate weight `10`.
+
+**Runtime state:** the experiment moves from `0/1/0` shadow configuration to
+`1/0/10` A/B configuration.
+
+**Code reference:** [default `10,25,50` rollout configuration](../../../apps/ml-system/src/cli/model_rollout_controller.py#L33), [post-Jenkins MLflow state updates](../../../apps/ml-system/src/cli/model_rollout_controller.py#L248), [automatic `shadow_ready` transition](../../../apps/ml-system/src/cli/model_rollout_controller.py#L405), [Jenkins A/B stage](../../../jenkins/KServeModelCD.Jenkinsfile#L81), and [A/B Helm values](../../../jenkins/python/model_cd/config.py#L48).
+
+#### Step 8 — Sticky routing creates comparable control and candidate cohorts
+
+For each request, FastAPI hashes `experiment_id:user_id` with SHA-256 and maps
+the result to a bucket from `0` to `99`. A bucket lower than the candidate
+weight routes to candidate; every other bucket routes to control. The same user
+therefore remains on the same variant for one experiment, while increasing the
+weight from 10 to 25 to 50 expands the candidate cohort without reshuffling the
+existing assignments. The response and metrics carry `ab_variant`, model
+version, and experiment ID.
+
+**Runtime state:** real user responses now come from both variants, but routing
+is deterministic and traceable.
+
+**Code reference:** [sticky bucket and assignment](../../../apps/api-serving/src/ab_testing.py#L91), [control/candidate route construction](../../../apps/api-serving/src/ab_testing.py#L121), and [recommendation route selection](../../../apps/api-serving/src/inference_api.py#L75).
+
+#### Step 9 — Every A/B response emits gate metrics
+
+The API increments `model_predictions_total` with model version, response
+status, A/B variant, and experiment ID. It also records
+`model_prediction_latency_seconds` and, when a score exists,
+`model_prediction_confidence`. Locust only supplies requests with varied user
+IDs; it does not change rollout state. Prometheus scraping turns those API
+metrics into the sample, error-rate, p95-latency, and confidence-proxy inputs
+used by the gate.
+
+**State after this step:** Prometheus has variant-specific online observations
+for the exact experiment; shadow telemetry is evidence for shadow safety, while
+promotion gates use the live A/B prediction metrics.
+
+**Code reference:** [request observation](../../../apps/api-serving/src/inference_api.py#L107) and [`observe_model_prediction()`](../../../apps/api-serving/src/observability.py#L227).
+
+#### Step 10 — The watcher waits for a fresh sample window
+
+For every weight, the watcher measures from `rollout_stage_started_at`, first
+allows the configured warm-up period, and then queries the increase in
+`model_predictions_total` for the same experiment and elapsed window. Both
+candidate and control must independently reach `AB_MIN_SAMPLES`, default `100`.
+Until then it updates MLflow sample counters and returns healthy
+`decision=WAIT`; no evaluate Jenkins build is triggered. A new weight or a
+`hold` decision starts a fresh sample window so observations are not reused
+across gates.
+
+**State while waiting:** A/B weight stays unchanged and production continues
+serving normally.
+
+**Code reference:** [`stage_sample_counts()`](../../../apps/ml-system/src/cli/model_rollout_controller.py#L361) and [sample-window reconciliation](../../../apps/ml-system/src/cli/model_rollout_controller.py#L427).
+
+#### Step 11 — Jenkins evaluates the current online gate
+
+Once both variants are ready, the watcher triggers `ROLLOUT_STAGE=evaluate`
+with a gate window equal to the current stage's observed duration. Jenkins runs
+Model CD with `MODEL_CD_APPLY=0`, so evaluation does not mutate Helm state. The
+CLI queries Prometheus and writes `.model-cd/ab-decision.json`. The gate returns:
+
+- `hold` if either variant is below the minimum sample count;
+- `rollback` if candidate error rate exceeds control by more than `0.02`,
+  candidate p95 latency exceeds `1.5x` control, or candidate confidence proxy
+  falls below `0.95x` control; or
+- `promote` when the **current weight's gate** passes.
+
+At 10% and 25%, `promote` means “this stage passed”; it does not yet mean that
+the candidate becomes champion.
+
+**Code reference:** [watcher evaluate trigger](../../../apps/ml-system/src/cli/model_rollout_controller.py#L461), [Jenkins decision-only evaluation](../../../jenkins/KServeModelCD.Jenkinsfile#L91), [CLI decision artifact](../../../jenkins/python/model_cd/cli.py#L67), and [`evaluate_candidate_gates()`](../../../jenkins/python/model_cd/promotion_gates.py#L27).
+
+#### Step 12 — The gate result selects HOLD, ROLLBACK, or the next weight
+
+The watcher reads the final `hold|promote|rollback` value from the completed
+Jenkins console and persists it in MLflow.
+
+- **HOLD:** keep the current weight, set `rollout_status=hold_<weight>`, reset
+  the timestamp and counters, and wait for another fresh batch.
+- **ROLLBACK:** Jenkins detects the rollback decision artifact in the same
+  evaluate build, enters `Rollback Candidate`, forces weight `0`, and
+  forward-deploys champion-only values. The watcher removes the candidate alias
+  and records `candidate=rolled_back`, `rollout_status=rolled_back`.
+- **PASS at 10% or 25%:** record `gate_passed_<weight>`; on the next poll,
+  trigger `ab-step` with the next configured weight and reset the sample window.
+- **PASS at 50%:** there is no next weight, so the watcher triggers the explicit
+  `promote` stage.
+
+**Code reference:** [Jenkins decision extraction and MLflow transitions](../../../apps/ml-system/src/cli/model_rollout_controller.py#L258), [Jenkins automatic rollback branch](../../../jenkins/KServeModelCD.Jenkinsfile#L117), and [next-weight/final-promotion selection](../../../apps/ml-system/src/cli/model_rollout_controller.py#L479).
+
+#### Step 13 — Final promotion replaces the stable model safely
+
+The explicit Jenkins `Promote Candidate` stage re-runs the online gates before
+mutation. Model CD copies the versioned candidate repository to the stable
+serving URI, updates the stable promotion manifest, and deploys the new model as
+the stable KServe service. It temporarily retains the already-Ready candidate
+during the stable/API cutover to avoid a DNS or readiness gap, then performs a
+second champion-only deploy that removes the temporary candidate. Finally, the
+watcher moves the former champion to MLflow alias `previous`, assigns
+`champion` to the promoted version, removes the `candidate` alias, and records
+`candidate=promoted`, `rollout_status=champion`.
+
+**Terminal state:** A/B disabled, shadow disabled, weight `0`, one stable Triton
+service, and the new model serving all users.
+
+**Code reference:** [Jenkins promotion stage](../../../jenkins/KServeModelCD.Jenkinsfile#L108), [gate recheck and stable-manifest update](../../../jenkins/python/model_cd/cli.py#L87), [two-phase candidate retention and cleanup](../../../jenkins/python/model_cd/cli.py#L111), and [MLflow alias promotion](../../../apps/ml-system/src/cli/model_rollout_controller.py#L303).
+
+#### Step 14 — Both terminal branches prove champion-only serving
+
+After promotion or rollback, Jenkins runs `Verify Champion Only`. The script
+asserts candidate weight `0` and shadow `0`, waits for the API rollout, sends 40
+recommendation requests with different user IDs, rejects any candidate response,
+and verifies that every response reports the configured control/champion model
+version. Jenkins always archives `.model-cd/*`, including the rendered values,
+gate decision, and deployed-model record.
+
+**Terminal-state difference:** rollback keeps the old champion; promotion makes
+the candidate the new champion. Both remove live candidate routing and the
+temporary candidate `InferenceService`.
+
+**Code reference:** [Jenkins terminal verification](../../../jenkins/KServeModelCD.Jenkinsfile#L132), [`champion_only.sh`](../../../jenkins/scripts/test/champion_only.sh#L1), and [Model CD artifact archival](../../../jenkins/KServeModelCD.Jenkinsfile#L146).
+
+| Phase | A/B enabled | Shadow enabled | Candidate weight | Candidate Triton | User-visible model |
+|---|---:|---:|---:|---|---|
+| Champion baseline | `0` | `0` | `0` | absent | old champion |
+| Shadow | `0` | `1` | `0` | Ready | old champion only |
+| Progressive A/B | `1` | `0` | `10 → 25 → 50` | Ready | sticky control/candidate cohort |
+| Rollback terminal | `0` | `0` | `0` | removed | old champion only |
+| Promotion terminal | `0` | `0` | `0` | removed after cutover | new champion only |
 
 ### CI/CD Integration - Implemented
 

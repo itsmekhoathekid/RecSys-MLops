@@ -10,5 +10,4 @@ select
     nullif(json_extract_scalar(try(json_parse(request_context)), '$.experiment_id'), '') as experiment_id,
     nullif(json_extract_scalar(try(json_parse(request_context)), '$.variant'), '') as variant,
     analytics_synced_at
-from {{ source('silver', 'clean_recommendation_requests') }}
-
+from {{ source('lakehouse', 'clean_recommendation_requests') }}

@@ -70,7 +70,6 @@ SILVER_LAKEHOUSE_TABLES = (
     "rejected_behavior_events",
     "clean_impressions",
     "clean_recommendation_requests",
-    "order_facts",
     "product_scd",
     "users",
     "products",
