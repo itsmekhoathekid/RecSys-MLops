@@ -468,6 +468,24 @@ def test_catalog_driven_builder_owns_exactly_sixteen_images():
     assert "container_scan_policy.py" in engine
 
 
+def test_locked_ml_images_do_not_override_exported_dependency_versions():
+    for relative_path in (
+        "images/data/recsys-spark/Dockerfile",
+        "images/ml/recsys-mlops-training/Dockerfile",
+        "images/ml/recsys-mlflow/Dockerfile",
+    ):
+        dockerfile = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "--constraint /tmp/ml-constraints.txt" in dockerfile
+        assert "mlflow==" not in dockerfile
+        assert "cryptography==48.0.1" not in dockerfile
+
+    airflow = (ROOT / "images/data/recsys-airflow/Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert '"cryptography==49.0.0"' in airflow
+    assert '"cryptography==48.0.1"' not in airflow
+
+
 def test_kubeflow_release_package_is_compiled_once_then_uploaded() -> None:
     package_entrypoint = (
         ROOT / "jenkins/scripts/entrypoints/release_package_artifacts.sh"
