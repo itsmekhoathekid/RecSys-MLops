@@ -15,7 +15,7 @@ locals {
       AIRFLOW_POSTGRES_USER             = "airflow"
       AIRFLOW_POSTGRES_PASSWORD         = random_password.airflow_postgres.result
       FEAST_POSTGRES_USER               = "feast"
-      FEAST_POSTGRES_PASSWORD           = "feast"
+      FEAST_POSTGRES_PASSWORD           = random_password.feast_postgres.result
     }
     mlflow = {
       MINIO_ROOT_USER     = "minio"

@@ -8,6 +8,11 @@ resource "random_password" "source_postgres" {
   special = false
 }
 
+resource "random_password" "feast_postgres" {
+  length  = 32
+  special = false
+}
+
 resource "random_password" "airflow_postgres" {
   length  = 32
   special = false

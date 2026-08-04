@@ -342,6 +342,7 @@
           "tests/unit/api_serving/"
         ],
         "files": [
+          "tests/contract/test_stream_online_serving_contract.py",
           "jenkins/scripts/ci/serving.sh",
           "jenkins/scripts/deploy/serving.sh",
           "jenkins/scripts/test/serving.sh",
@@ -544,7 +545,8 @@
           "apps/data-platform/src/feature_store/"
         ],
         "files": [
-          "apps/data-platform/flink-runtime-pom.xml"
+          "apps/data-platform/flink-runtime-pom.xml",
+          "tests/contract/test_stream_online_serving_contract.py"
         ]
       },
       "buildImages": [

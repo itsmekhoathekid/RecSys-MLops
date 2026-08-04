@@ -37,7 +37,15 @@ timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
 kfp_port_forward_pids=()
 kfp_upload_endpoint_result=""
 local_model_store_endpoint_result=""
-trap stop_runtime_port_forwards EXIT
+sensitive_helm_values_files=()
+cleanup_release_runtime() {
+  stop_runtime_port_forwards
+  local sensitive_file
+  for sensitive_file in "${sensitive_helm_values_files[@]}"; do
+    [[ -n "${sensitive_file}" ]] && rm -f -- "${sensitive_file}"
+  done
+}
+trap cleanup_release_runtime EXIT
 
 unit_kind=""
 unit_release=""
@@ -122,6 +130,7 @@ deploy_helm_unit() {
   local values_file="${unit_chart}/values-gcp.yaml"
   local image_index image_reference
   local helm_args=()
+  local sensitive_values_file=""
   [[ -n "${unit_chart}" ]] || {
     recsys_error "Helm deploy unit ${unit_name} has no chart"
     return 2
@@ -132,6 +141,45 @@ deploy_helm_unit() {
     # after the legacy recsys-serving revision marks them as keep. Helm 4 keeps
     # this flag safe and idempotent for later upgrades of the same release.
     helm_args+=(--take-ownership)
+
+    # The registry credential is canonical in recsys-data-platform-secret.
+    # Materialize it into a mode-0600 values file so --reset-values cannot
+    # restore the chart's development default and the secret never appears in
+    # the process arguments or Jenkins console output.
+    sensitive_values_file="$(mktemp)"
+    sensitive_helm_values_files+=("${sensitive_values_file}")
+    chmod 600 "${sensitive_values_file}"
+    python3 - "${namespace_data}" "${sensitive_values_file}" <<'PY'
+import base64
+import json
+import subprocess
+import sys
+
+namespace, output_path = sys.argv[1:]
+payload = json.loads(
+    subprocess.check_output(
+        ["kubectl", "-n", namespace, "get", "secret", "recsys-data-platform-secret", "-o", "json"],
+        text=True,
+    )
+)
+data = payload.get("data", {})
+try:
+    username = base64.b64decode(data["FEAST_POSTGRES_USER"]).decode("utf-8")
+    password = base64.b64decode(data["FEAST_POSTGRES_PASSWORD"]).decode("utf-8")
+except (KeyError, UnicodeDecodeError, ValueError) as exc:
+    raise SystemExit(f"canonical Feast registry credential is invalid: {exc}") from exc
+if not username or not password:
+    raise SystemExit("canonical Feast registry credential is empty")
+
+def yaml_scalar(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+with open(output_path, "w", encoding="utf-8") as stream:
+    stream.write("config:\n")
+    stream.write(f"  feastPostgresUser: {yaml_scalar(username)}\n")
+    stream.write(f"  feastPostgresPassword: {yaml_scalar(password)}\n")
+PY
+    helm_args+=(-f "${sensitive_values_file}")
   fi
   for image_index in "${!unit_image_names[@]}"; do
     image_reference="$(resolve_unit_image \
@@ -171,6 +219,9 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
     --history-max "${HELM_HISTORY_MAX:-10}" \
     --timeout "${timeout}" \
     "${helm_args[@]}"
+  if [[ -n "${sensitive_values_file}" ]]; then
+    rm -f -- "${sensitive_values_file}"
+  fi
 }
 
 case "${unit_name}" in

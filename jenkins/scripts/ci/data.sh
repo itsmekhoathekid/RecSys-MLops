@@ -67,7 +67,7 @@ ci_stream_offline() {
 }
 
 ci_stream_online() {
-  tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_flink_event_time.py tests/unit/api_serving/test_serving.py tests/contract/test_docker_dataflow_contracts.py)
+  tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_flink_event_time.py tests/contract/test_stream_online_serving_contract.py tests/contract/test_docker_dataflow_contracts.py)
   append_integration_dir stream_online
   cov_paths=(features.flink.features.candidate_pool features.flink.features.item features.flink.features.user_aggregate features.flink.features.user_sequence features.flink.time_utils feature_store.online_writer)
   run_configured_component_tests "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/shared/src:apps/api-serving/online-feature-api/src:packages/recsys-feature-store-runtime/src"

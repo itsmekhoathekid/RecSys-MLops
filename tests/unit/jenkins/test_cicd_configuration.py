@@ -113,6 +113,14 @@ def test_stream_components_share_one_production_verification():
     assert completed.stdout.splitlines() == ["stream_features", "stream_features"]
 
 
+def test_stream_online_runs_only_the_cross_boundary_contract():
+    data_ci = (ROOT / "jenkins/scripts/ci/data.sh").read_text(encoding="utf-8")
+    stream_online = data_ci.split("ci_stream_online()", 1)[1].split("\n}", 1)[0]
+
+    assert "test_stream_online_serving_contract.py" in stream_online
+    assert "tests/unit/api_serving/test_serving.py" not in stream_online
+
+
 def test_rollout_deploy_uses_release_plan_namespace():
     entrypoint = (
         ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh"
@@ -131,6 +139,17 @@ def test_online_feature_deploy_takes_ownership_from_legacy_release():
 
     assert '[[ "${unit_name}" == "online-feature-api" ]]' in entrypoint
     assert "helm_args+=(--take-ownership)" in entrypoint
+
+
+def test_online_feature_deploy_uses_canonical_registry_secret_without_cli_leakage():
+    entrypoint = (
+        ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh"
+    ).read_text(encoding="utf-8")
+
+    assert '"recsys-data-platform-secret", "-o", "json"' in entrypoint
+    assert 'chmod 600 "${sensitive_values_file}"' in entrypoint
+    assert 'helm_args+=(-f "${sensitive_values_file}")' in entrypoint
+    assert '--set-string "config.feastPostgresPassword=' not in entrypoint
 
 
 def test_registry_push_refreshes_login_and_retries_once(tmp_path):

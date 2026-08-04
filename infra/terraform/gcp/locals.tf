@@ -66,7 +66,9 @@ locals {
   }
 
   online_feature_api_sets = merge(local.ml_system_sets, {
-    image = local.images.online_feature_api
+    image                          = local.images.online_feature_api
+    "config.feastPostgresUser"     = "feast"
+    "config.feastPostgresPassword" = random_password.feast_postgres.result
   })
 
   inference_api_sets = merge(local.ml_system_sets, {
