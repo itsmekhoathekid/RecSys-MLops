@@ -21,9 +21,12 @@ jenkins:
   runtimeCredentialsSecret:
     enabled: true
   dind:
-    useJenkinsHomePvc: false
+    # Reuse the existing 200Gi Jenkins home disk for Docker graph data. A
+    # second 200Gi regional PD cannot bind while this project is over its SSD
+    # quota, and would make every idempotent services-up attempt hang.
+    useJenkinsHomePvc: true
     pvc:
-      enabled: true
+      enabled: false
       storage: 200Gi
       storageClassName: standard-rwo
   runtimeTools:

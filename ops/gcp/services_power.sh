@@ -19,11 +19,14 @@ CLUSTER="$(python3 jenkins/python/configuration.py gcp cluster)"
   exit 2
 }
 STATE_FILE="${GCP_POWER_STATE_FILE:-.gcp-services-power-state.env}"
+PVC_STATE_FILE="${GCP_POWER_PVC_STATE_FILE:-${STATE_FILE}.pvcs}"
 WAIT_TIMEOUT="${GCP_SERVICES_WAIT_TIMEOUT:-900s}"
 SKIP_SMOKE="${GCP_SERVICES_SKIP_SMOKE:-0}"
 REQUIRE_AB_TEST="${GCP_SERVICES_REQUIRE_AB_TEST:-0}"
 INSTALL_CI="${GCP_SERVICES_INSTALL_CI:-1}"
 KEDA_HTTP_REPLICAS="${GCP_SERVICES_KEDA_HTTP_REPLICAS:-1}"
+ISTIOD_CPU_REQUEST="${GCP_SERVICES_ISTIOD_CPU_REQUEST:-50m}"
+ISTIOD_MEMORY_REQUEST="${GCP_SERVICES_ISTIOD_MEMORY_REQUEST:-256Mi}"
 RESTORE_DATA_PLATFORM_CONFIG="${GCP_SERVICES_RESTORE_DATA_PLATFORM_CONFIG:-1}"
 REALTIME_E2E_ENABLED="${GCP_SERVICES_REALTIME_E2E_ENABLED:-true}"
 RETRAIN_PSI_THRESHOLD="${GCP_SERVICES_RETRAIN_PSI_THRESHOLD:-0.15}"
@@ -69,10 +72,14 @@ Environment overrides:
   GCP_SERVICES_SKIP_SMOKE=${SKIP_SMOKE}
   GCP_SERVICES_INSTALL_CI=${INSTALL_CI}
   GCP_SERVICES_KEDA_HTTP_REPLICAS=${KEDA_HTTP_REPLICAS}
+  GCP_SERVICES_ISTIOD_CPU_REQUEST=${ISTIOD_CPU_REQUEST}
+  GCP_SERVICES_ISTIOD_MEMORY_REQUEST=${ISTIOD_MEMORY_REQUEST}
   GCP_SERVICES_RESTORE_DATA_PLATFORM_CONFIG=${RESTORE_DATA_PLATFORM_CONFIG}
 
 State file:
   ${STATE_FILE}
+PVC identity snapshot:
+  ${PVC_STATE_FILE}
 USAGE
 }
 
@@ -142,10 +149,26 @@ get_credentials() {
 
 pool_exists() {
   local pool="$1"
-  gcloud container node-pools describe "${pool}" \
-    --cluster "${CLUSTER}" \
-    --zone "${ZONE}" \
-    --project "${PROJECT_ID}" >/dev/null 2>&1
+  local output rc
+
+  if output="$(
+    gcloud container node-pools describe "${pool}" \
+      --cluster "${CLUSTER}" \
+      --zone "${ZONE}" \
+      --project "${PROJECT_ID}" 2>&1
+  )"; then
+    return 0
+  else
+    rc=$?
+  fi
+
+  if grep -Eqi '(NOT_FOUND|not found|does not exist)' <<<"${output}"; then
+    return 1
+  fi
+
+  echo "Failed to inspect GKE node pool ${pool}; refusing to treat an API/auth/billing error as a missing pool." >&2
+  printf '%s\n' "${output}" >&2
+  exit "${rc}"
 }
 
 pool_value() {
@@ -155,7 +178,7 @@ pool_value() {
     --cluster "${CLUSTER}" \
     --zone "${ZONE}" \
     --project "${PROJECT_ID}" \
-    --format="value(${expr})" 2>/dev/null || true
+    --format="value(${expr})"
 }
 
 safe_int() {
@@ -203,14 +226,73 @@ record_pool_state() {
 
 write_state() {
   {
-    printf 'PROJECT_ID=%q\n' "${PROJECT_ID}"
-    printf 'ZONE=%q\n' "${ZONE}"
-    printf 'CLUSTER=%q\n' "${CLUSTER}"
+    # Keep snapshot metadata separate from the configured production target.
+    # load_state_or_defaults intentionally restores only node-pool fields.
+    printf 'STATE_PROJECT_ID=%q\n' "${PROJECT_ID}"
+    printf 'STATE_ZONE=%q\n' "${ZONE}"
+    printf 'STATE_CLUSTER=%q\n' "${CLUSTER}"
     printf 'RECORDED_AT=%q\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"${STATE_FILE}"
   record_pool_state CPU "${CPU_NODE_POOL}" "${DEFAULT_CPU_NODES}" "${DEFAULT_CPU_MIN_NODES}" "${DEFAULT_CPU_MAX_NODES}"
   record_pool_state ML "${ML_NODE_POOL}" "${DEFAULT_ML_NODES}" "${DEFAULT_ML_MIN_NODES}" "${DEFAULT_ML_MAX_NODES}"
   record_pool_state GPU "${GPU_NODE_POOL}" "${DEFAULT_GPU_NODES}" "${DEFAULT_GPU_MIN_NODES}" "${DEFAULT_GPU_MAX_NODES}"
+}
+
+validate_state_target() {
+  [[ -f "${STATE_FILE}" ]] || return 0
+
+  local saved_target saved_project saved_zone saved_cluster
+  saved_target="$(
+    (
+      # shellcheck disable=SC1090
+      source "${STATE_FILE}"
+      printf '%s\037%s\037%s' \
+        "${STATE_PROJECT_ID:-${PROJECT_ID:-}}" \
+        "${STATE_ZONE:-${ZONE:-}}" \
+        "${STATE_CLUSTER:-${CLUSTER:-}}"
+    )
+  )"
+  IFS=$'\x1f' read -r saved_project saved_zone saved_cluster <<<"${saved_target}"
+
+  if [[ "${saved_project}" != "${PROJECT_ID}" || "${saved_zone}" != "${ZONE}" || "${saved_cluster}" != "${CLUSTER}" ]]; then
+    echo "Power snapshot target mismatch; refusing to apply node sizes to a different cluster." >&2
+    echo "  snapshot: ${saved_project}/${saved_zone}/${saved_cluster}" >&2
+    echo "  configured: ${PROJECT_ID}/${ZONE}/${CLUSTER}" >&2
+    return 2
+  fi
+}
+
+record_pvc_state() {
+  local temporary="${PVC_STATE_FILE}.tmp.$$"
+
+  echo "Recording PVC identities and PV bindings to ${PVC_STATE_FILE}"
+  kubectl get pvc -A -o json \
+    | jq -r '.items[] | [.metadata.namespace, .metadata.name, .metadata.uid, (.spec.volumeName // "")] | @tsv' \
+    | LC_ALL=C sort >"${temporary}"
+  mv "${temporary}" "${PVC_STATE_FILE}"
+}
+
+verify_pvc_state() {
+  if [[ ! -f "${PVC_STATE_FILE}" ]]; then
+    echo "No ${PVC_STATE_FILE} found; PVC identity comparison is unavailable for this legacy snapshot."
+    return 0
+  fi
+
+  local current="${PVC_STATE_FILE}.current.$$"
+  kubectl get pvc -A -o json \
+    | jq -r '.items[] | [.metadata.namespace, .metadata.name, .metadata.uid, (.spec.volumeName // "")] | @tsv' \
+    | LC_ALL=C sort >"${current}"
+
+  if cmp -s "${PVC_STATE_FILE}" "${current}"; then
+    rm -f "${current}"
+    echo "PVC identity check: OK (names, UIDs, and PV bindings are unchanged)."
+    return 0
+  fi
+
+  echo "PVC identity check failed: PVCs or PV bindings changed across hibernation." >&2
+  diff -u "${PVC_STATE_FILE}" "${current}" >&2 || true
+  rm -f "${current}"
+  return 1
 }
 
 state_hibernating() {
@@ -279,11 +361,16 @@ scale_pool_down() {
     return 0
   fi
 
-  local max
+  local min max
+  min="$(safe_int "$(pool_value "${pool}" "autoscaling.minNodeCount")" "1")"
   max="$(safe_int "$(pool_value "${pool}" "autoscaling.maxNodeCount")" "1")"
-  echo "Hibernate ${label}: ${pool} -> autoscaling=off, nodes=0 (recorded max=${max})"
+  echo "Hibernate ${label}: ${pool} -> autoscaling=off, nodes=0 (recorded min=${min}, max=${max})"
   disable_pool_autoscaling "${pool}"
-  resize_pool "${pool}" 0
+  if ! resize_pool "${pool}" 0; then
+    echo "Hibernate ${label} failed; restoring autoscaling min=${min}, max=${max}." >&2
+    set_pool_autoscaling "${pool}" "${min}" "${max}" || true
+    return 1
+  fi
 }
 
 pool_node_count() {
@@ -340,6 +427,13 @@ scale_pool_up() {
 
   echo "Resume ${label}: ${pool} -> min=${min}, max=${max}, nodes=${nodes}"
   set_pool_autoscaling "${pool}" "${min}" "${max}"
+  local current fallback_current
+  fallback_current="$(safe_int "$(pool_node_count "${pool}")" "0")"
+  current="$(safe_int "$(pool_value "${pool}" "currentNodeCount")" "${fallback_current}")"
+  if (( current == nodes )); then
+    echo "Resume ${label}: ${pool} already has ${nodes} node(s); skip no-op resize."
+    return 0
+  fi
   resize_pool "${pool}" "${nodes}"
 }
 
@@ -363,13 +457,37 @@ load_state_or_defaults() {
   GPU_MAX="${DEFAULT_GPU_MAX_NODES}"
 
   if [[ -f "${STATE_FILE}" ]]; then
-    # shellcheck disable=SC1090
-    source "${STATE_FILE}"
+    validate_state_target
+    local assignments
+    assignments="$(
+      (
+        # Source in a subprocess, then emit only the whitelisted pool fields.
+        # A legacy snapshot may contain PROJECT_ID/ZONE/CLUSTER, but those
+        # values can never escape this subprocess and override repo config.
+        # shellcheck disable=SC1090
+        source "${STATE_FILE}"
+        local key
+        for key in \
+          CPU_EXISTS CPU_POOL CPU_NODES CPU_MIN CPU_MAX \
+          ML_EXISTS ML_POOL ML_NODES ML_MIN ML_MAX \
+          GPU_EXISTS GPU_POOL GPU_NODES GPU_MIN GPU_MAX; do
+          printf '%s=%q\n' "${key}" "${!key}"
+        done
+      )
+    )"
+    eval "${assignments}"
   fi
 }
 
 print_status() {
   get_credentials
+  echo "== Saved power state =="
+  if [[ -f "${STATE_FILE}" ]]; then
+    grep -E '^(STATE_PROJECT_ID|STATE_ZONE|STATE_CLUSTER|PROJECT_ID|ZONE|CLUSTER|RECORDED_AT|HIBERNATING|CPU_(POOL|NODES|MIN|MAX)|ML_(POOL|NODES|MIN|MAX)|GPU_(POOL|NODES|MIN|MAX))=' "${STATE_FILE}" || true
+  else
+    echo "No ${STATE_FILE} found."
+  fi
+  echo
   echo "== Node pools =="
   gcloud container node-pools list \
     --cluster "${CLUSTER}" \
@@ -382,8 +500,12 @@ print_status() {
   echo
   echo "== PVCs kept =="
   kubectl get pvc -A || true
+  verify_pvc_state
   echo
-  echo "== Pods not Running/Succeeded =="
+  echo "== Workload readiness =="
+  kubectl get deployment,statefulset,daemonset -A || true
+  echo
+  echo "== Pods not Running/Succeeded (includes retained batch/workflow history) =="
   kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded || true
 }
 
@@ -445,6 +567,43 @@ wait_rollout_all() {
       kubectl rollout status -n "${namespace}" --timeout="${WAIT_TIMEOUT}" ${resources}
     fi
   done
+}
+
+wait_rollout_all_namespaces() {
+  local namespace
+  while IFS= read -r namespace; do
+    [[ -z "${namespace}" ]] && continue
+    wait_rollout_all "${namespace}"
+  done < <(
+    kubectl get deployment,statefulset,daemonset -A -o json 2>/dev/null \
+      | jq -r '.items[].metadata.namespace' \
+      | LC_ALL=C sort -u
+  )
+}
+
+verify_all_workloads_ready() {
+  local not_ready
+  not_ready="$(
+    kubectl get deployment,statefulset,daemonset -A -o json \
+      | jq -r '
+          .items[]
+          | if .kind == "DaemonSet" then
+              {kind, namespace: .metadata.namespace, name: .metadata.name,
+               desired: (.status.desiredNumberScheduled // 0), ready: (.status.numberReady // 0)}
+            else
+              {kind, namespace: .metadata.namespace, name: .metadata.name,
+               desired: (.spec.replicas // 0), ready: (.status.readyReplicas // 0)}
+            end
+          | select(.ready != .desired)
+          | "\(.kind)\t\(.namespace)/\(.name)\tready=\(.ready)/\(.desired)"'
+  )"
+
+  if [[ -n "${not_ready}" ]]; then
+    echo "Workload readiness check failed:" >&2
+    printf '%s\n' "${not_ready}" >&2
+    return 1
+  fi
+  echo "All Deployments, StatefulSets, and DaemonSets are at their desired ready count."
 }
 
 wait_endpoint_address() {
@@ -547,6 +706,21 @@ normalize_keda_http_addon() {
   scale_deploy_if_exists keda keda-add-ons-http-interceptor "${KEDA_HTTP_REPLICAS}"
 }
 
+normalize_istiod_control_plane() {
+  if ! kubectl get deploy -n istio-system istiod >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Normalize istio-system/istiod: requests cpu=${ISTIOD_CPU_REQUEST},memory=${ISTIOD_MEMORY_REQUEST}"
+  kubectl set resources deployment/istiod -n istio-system \
+    --requests="cpu=${ISTIOD_CPU_REQUEST},memory=${ISTIOD_MEMORY_REQUEST}" \
+    --limits="cpu=500m,memory=1Gi"
+  # The HPA can retain a second replica for its scale-down stabilization window
+  # after the request change. The proof cluster baseline is one control-plane
+  # replica; actual CPU is single-digit millicores and the HPA remains enabled.
+  scale_deploy_if_exists istio-system istiod 1
+}
+
 restore_data_platform_runtime_config() {
   if [[ "${RESTORE_DATA_PLATFORM_CONFIG}" != "1" ]]; then
     return 0
@@ -561,6 +735,7 @@ restore_data_platform_runtime_config() {
 }
 
 normalize_gcp_runtime() {
+  normalize_istiod_control_plane
   normalize_keda_http_addon
   restore_data_platform_runtime_config
 }
@@ -784,6 +959,10 @@ wait_ready_after_up() {
     wait_rollout_all "${namespace}"
   done
 
+  # Cover add-ons and application namespaces introduced after this script was
+  # written, while retaining the ordered waits above for webhook dependencies.
+  wait_rollout_all_namespaces
+
   ensure_realtime_kafka_topic
   ensure_realtime_flink_running
 
@@ -854,21 +1033,25 @@ smoke_after_up() {
 
   trap cleanup_port_forwards EXIT
 
-  echo "== Smoke: no Pending/Failed pods =="
+  echo "== Smoke: no unhealthy service pods =="
   local non_running
   non_running="$(
-    kubectl get pods -A \
-      --field-selector=status.phase!=Running,status.phase!=Succeeded \
-      --no-headers \
-      --show-labels 2>/dev/null \
-      | awk '$NF !~ /(^|,)workflows.argoproj.io\/completed=true(,|$)/ {print}' \
-      || true
+    kubectl get pods -A -o json \
+      | jq -r '
+          .items[]
+          | select(.status.phase != "Running" and .status.phase != "Succeeded")
+          | select(any(.metadata.ownerReferences[]?;
+              .kind == "ReplicaSet" or .kind == "StatefulSet" or .kind == "DaemonSet"))
+          | [.metadata.namespace, .metadata.name, .status.phase,
+             ((.metadata.ownerReferences // []) | map(.kind + ":" + .name) | join(","))]
+          | @tsv'
   )"
   if [[ -n "${non_running}" ]]; then
     printf '%s\n' "${non_running}"
     return 1
   fi
-  echo "All service pods are Running or Succeeded; completed Argo/KFP workflow artifacts are ignored."
+  echo "All controller-owned service pods are Running or Succeeded; retained batch/workflow pods are reported by status but do not block resume."
+  verify_all_workloads_ready
 
   if kubectl get deploy -n api-serving recsys-online-feature-api >/dev/null 2>&1; then
     echo "== Smoke: online feature API =="
@@ -978,32 +1161,76 @@ PY
   fi
 }
 
+rollback_failed_hibernate() {
+  echo "Rolling node pools back to the pre-hibernate snapshot." >&2
+  load_state_or_defaults
+
+  local rollback_failed=0
+  if [[ "${CPU_EXISTS:-1}" == "1" ]] \
+    && ! scale_pool_up CPU "${CPU_POOL}" "${CPU_NODES}" "${CPU_MIN}" "${CPU_MAX}"; then
+    rollback_failed=1
+  fi
+  if [[ "${ML_EXISTS:-1}" == "1" ]] \
+    && ! scale_pool_up ML "${ML_POOL}" "${ML_NODES}" "${ML_MIN}" "${ML_MAX}"; then
+    rollback_failed=1
+  fi
+  if [[ "${GPU_EXISTS:-1}" == "1" ]] \
+    && ! scale_pool_up GPU "${GPU_POOL}" "${GPU_NODES}" "${GPU_MIN}" "${GPU_MAX}"; then
+    rollback_failed=1
+  fi
+  restore_pdbs_after_hibernate || rollback_failed=1
+
+  if (( rollback_failed == 0 )); then
+    set_hibernating_state 0
+    echo "Hibernate rollback complete; cluster power state is UP." >&2
+    return 0
+  fi
+
+  echo "Hibernate rollback was incomplete; keeping HIBERNATING=1 so a later services-up retries the original snapshot." >&2
+  return 1
+}
+
 hibernate_down() {
   get_credentials
+  validate_state_target
   if state_hibernating; then
     echo "Keeping the existing pre-hibernate node-pool snapshot in ${STATE_FILE}."
+    if [[ ! -f "${PVC_STATE_FILE}" ]]; then
+      record_pvc_state
+    fi
   else
     echo "Recording live node-pool state to ${STATE_FILE}"
     write_state
+    record_pvc_state
+    # Mark the snapshot before the first resize. If a cloud operation fails
+    # halfway through, a retry must keep the original pre-hibernate sizes.
+    set_hibernating_state 1
   fi
   echo "PVC/PV data will be kept. This command does not delete namespaces, Helm releases, PVCs, or PVs."
   kubectl get pvc -A || true
   relax_pdbs_for_hibernate
-  scale_pool_down CPU "${CPU_NODE_POOL}"
-  scale_pool_down ML "${ML_NODE_POOL}"
-  scale_pool_down GPU "${GPU_NODE_POOL}"
+  if ! scale_pool_down CPU "${CPU_NODE_POOL}" \
+    || ! scale_pool_down ML "${ML_NODE_POOL}" \
+    || ! scale_pool_down GPU "${GPU_NODE_POOL}"; then
+    echo "Hibernate failed before all pools reached zero." >&2
+    rollback_failed_hibernate || true
+    return 1
+  fi
   ensure_pool_down CPU "${CPU_NODE_POOL}"
   ensure_pool_down ML "${ML_NODE_POOL}"
   ensure_pool_down GPU "${GPU_NODE_POOL}"
-  set_hibernating_state 1
   echo "GCP services are hibernating. Run '$0 up' to restore node pools and wait services Ready."
 }
 
 resume_up() {
   get_credentials
+  validate_state_target
   if [[ ! -f "${STATE_FILE}" ]]; then
     echo "No ${STATE_FILE} found; recording current node-pool state before idempotent resume."
     write_state
+  fi
+  if [[ ! -f "${PVC_STATE_FILE}" ]]; then
+    record_pvc_state
   fi
   load_state_or_defaults
 
@@ -1019,6 +1246,7 @@ resume_up() {
 
   restore_pdbs_after_hibernate
   wait_ready_after_up
+  verify_pvc_state
   smoke_after_up
   set_hibernating_state 0
   echo "GCP services are back up and PVC-backed data was preserved."

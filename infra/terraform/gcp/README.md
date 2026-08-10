@@ -117,7 +117,7 @@ make gcp-services-up
 make gcp-services-status
 ```
 
-The down command records the live node-pool sizes in `.gcp-services-power-state.env` and the up command restores from that file. Override the defaults only if the cluster was created with different names:
+The down command records the live node-pool sizes in `.gcp-services-power-state.env` and snapshots every PVC name, UID, and PV binding in `.gcp-services-power-state.env.pvcs`. The up command restores the node pools, verifies that the PVC identities and bindings are unchanged, waits for Deployments, StatefulSets, and DaemonSets in every namespace, and then runs service smoke checks. A failed or interrupted down keeps the original pre-hibernate snapshot, so rerunning the command is safe. Override the defaults only if the cluster was created with different names:
 
 ```bash
 GCP_PROJECT_ID=rec-sys-503309 \
@@ -129,8 +129,10 @@ make gcp-services-up
 For the coursework-sized GKE cluster, `make gcp-services-up` also normalizes runtime settings so the full data and ML platform comes back in the same proof-ready shape:
 
 - KEDA HTTP add-on `external-scaler` and `interceptor` default to `1` replica each. Its three control-plane deployments use the coursework request profile (`25m` CPU and `20Mi` memory each). The services stay enabled, but this leaves enough schedulable headroom for Airflow, KFP component pods and the Ray retrain launcher on the fixed two-node cluster.
+- Istiod uses the proof-cluster request profile (`50m` CPU and `256Mi` memory, with `500m`/`1Gi` limits) instead of reserving the chart default `500m` CPU and `2Gi` memory. This keeps STRICT mTLS and authorization enforcement enabled while retaining `500m` schedulable headroom for a KFP/Ray launcher.
 - Airflow data-platform config is restored to `REALTIME_E2E_ENABLED=true` and `RETRAIN_PSI_THRESHOLD=0.15`, so a forced-drift proof run does not leave the cluster in forced mode.
 - The smoke phase checks the recommendation API, Flink streaming job, Jenkins UI, Airflow UI, DataHub UI/GMS, Prometheus, Grafana, and a temporary `500m` CPU Ray-launcher scheduling pod. A/B split is checked when A/B is enabled; set `GCP_SERVICES_REQUIRE_AB_TEST=1` to require an active candidate deployment.
+- Service readiness covers controller-owned pods and every Deployment, StatefulSet, and DaemonSet. Retained Airflow/KFP/Argo batch pods from historical runs remain visible in `make gcp-services-status`, but their terminal `Error` or `Pending` state does not falsely mark the long-running services as unavailable.
 - Smoke port-forwards use non-default local ports to avoid clashing with proof UIs already open locally: Jenkins `28090`, Airflow `28080`, DataHub GMS `28088`, DataHub frontend `29002`, Prometheus `29090`, and Grafana `23000`.
 
 If you specifically need KEDA HTTP add-on HA for an autoscaling demo, override the replica count:

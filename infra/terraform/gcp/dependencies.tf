@@ -234,6 +234,29 @@ resource "helm_release" "istiod" {
     value = "false"
   }
 
+  # The two-node proof cluster needs control-plane headroom for KFP/Ray
+  # launchers. Live usage is single-digit millicores, so this retains a wide
+  # safety margin without reserving the chart default 500m CPU and 2Gi RAM.
+  set {
+    name  = "pilot.resources.requests.cpu"
+    value = "50m"
+  }
+
+  set {
+    name  = "pilot.resources.requests.memory"
+    value = "256Mi"
+  }
+
+  set {
+    name  = "pilot.resources.limits.cpu"
+    value = "500m"
+  }
+
+  set {
+    name  = "pilot.resources.limits.memory"
+    value = "1Gi"
+  }
+
   depends_on = [
     helm_release.istio_base,
   ]

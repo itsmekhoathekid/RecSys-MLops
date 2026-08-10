@@ -37,6 +37,7 @@ graphify-out/
 .model-cd/
 .gateway-auth/
 .gcp-services-power-state.env
+.gcp-services-power-state.env.pvcs
 AGENTS.md
 .uv-cache/
 .ci-image-manifest/
