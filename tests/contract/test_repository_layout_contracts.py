@@ -125,8 +125,15 @@ def test_runtime_has_no_retired_spark_names_or_local_tag() -> None:
             assert ":local" not in text, path
 
 
-def test_stateful_gke_node_pools_upgrade_without_delete_first_downtime() -> None:
+def test_gke_node_pool_upgrade_strategy_matches_quota_and_availability_needs() -> None:
     gke = (ROOT / "infra/terraform/gcp/gke.tf").read_text(encoding="utf-8")
-    assert gke.count("max_surge       = 1") == 2
-    assert gke.count("max_unavailable = 0") == 2
-    assert "max_surge       = 0" not in gke
+    cpu = gke.split('resource "google_container_node_pool" "cpu"', 1)[1].split(
+        'resource "google_container_node_pool" "llm_cpu"', 1
+    )[0]
+    llm_cpu = gke.split(
+        'resource "google_container_node_pool" "llm_cpu"', 1
+    )[1].split('resource "google_container_node_pool" "ml_system"', 1)[0]
+    assert "max_surge       = 0" in cpu
+    assert "max_unavailable = 1" in cpu
+    assert "max_surge       = 0" in llm_cpu
+    assert "max_unavailable = 1" in llm_cpu

@@ -1,0 +1,4 @@
+# Optimized treatment: Terraform pairs this identical llama.cpp runtime with
+# the llm-d inflight-load producer and token-load scorer. Prefix-aware routing
+# is intentionally excluded because this model server is llama.cpp, not vLLM.
+optimizationProfile: load-aware

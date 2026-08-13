@@ -65,7 +65,7 @@ externalSecret:
   enabled: true
   name: recsys-demo-web-db
   refreshInterval: 1h
-  secretStoreName: recsys-central-secrets
+  secretStoreName: recsys-vault
   remoteKey: data-platform
 
 ingress:

@@ -1,0 +1,111 @@
+apiVersion: v1
+data:
+  latest: 'analyze: true
+
+    endpoint_url: http://qwen35-gguf.llm-inference.svc.cluster.local:8000
+
+    experiment_ids:
+
+    - inference-perf-override-1786551181-lnqxn8
+
+    harness: inference-perf
+
+    hostname: MacBook-Pro-cua-NGUYEN.local
+
+    model: qwen3.5-0.8b
+
+    namespace: llm-inference
+
+    output: local
+
+    parallelism: 1
+
+    pvc_name: workload-pvc
+
+    pvc_results_paths:
+
+    - /requests/inference-perf-override-1786551181-lnqxn8_1
+
+    pvc_results_prefix: /requests
+
+    timestamp: 20260812T161736Z
+
+    user: KHOAI
+
+    workload: sanity_random.yaml
+
+    '
+  run-20260812T122358Z: 'analyze: true
+
+    endpoint_url: http://qwen35-gguf.llm-inference.svc.cluster.local:8000
+
+    experiment_ids:
+
+    - inference-perf-override-1786537238-2f1xw3
+
+    harness: inference-perf
+
+    hostname: MacBook-Pro-cua-NGUYEN.local
+
+    model: qwen3.5-0.8b
+
+    namespace: llm-inference
+
+    output: local
+
+    parallelism: 1
+
+    pvc_name: workload-pvc
+
+    pvc_results_paths:
+
+    - /requests/inference-perf-override-1786537238-2f1xw3_1
+
+    pvc_results_prefix: /requests
+
+    timestamp: 20260812T122358Z
+
+    user: KHOAI
+
+    workload: sanity_random.yaml
+
+    '
+  run-20260812T161736Z: 'analyze: true
+
+    endpoint_url: http://qwen35-gguf.llm-inference.svc.cluster.local:8000
+
+    experiment_ids:
+
+    - inference-perf-override-1786551181-lnqxn8
+
+    harness: inference-perf
+
+    hostname: MacBook-Pro-cua-NGUYEN.local
+
+    model: qwen3.5-0.8b
+
+    namespace: llm-inference
+
+    output: local
+
+    parallelism: 1
+
+    pvc_name: workload-pvc
+
+    pvc_results_paths:
+
+    - /requests/inference-perf-override-1786551181-lnqxn8_1
+
+    pvc_results_prefix: /requests
+
+    timestamp: 20260812T161736Z
+
+    user: KHOAI
+
+    workload: sanity_random.yaml
+
+    '
+kind: ConfigMap
+metadata:
+  name: llm-d-benchmark-run-parameters
+  namespace: llm-inference

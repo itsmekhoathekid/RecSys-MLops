@@ -1,0 +1,102 @@
+api:
+  type: completion
+  streaming: true
+  headers: null
+  slo_unit: null
+  slo_tpot_header: null
+  slo_ttft_header: null
+  response_format: null
+  session_id_header_key: null
+data:
+  type: random
+  path: null
+  corpus_file_path: null
+  input_distribution:
+    min: 256
+    max: 512
+    mean: 384.0
+    std_dev: 10.0
+    total_count: 100
+    type: normal
+    variance: null
+    skew: 0.0
+  output_distribution:
+    min: 10
+    max: 100
+    mean: 50.0
+    std_dev: 10.0
+    total_count: 100
+    type: normal
+    variance: null
+    skew: 0.0
+  shared_prefix: null
+  multimodal: null
+  trace: null
+  otel_trace_replay: null
+  weka_trace_replay: null
+  conversation_replay: null
+  visionarena: null
+load:
+  type: constant
+  interval: 1.0
+  stages:
+  - rate: 0.25
+    duration: 120
+    num_requests: null
+    concurrency_level: null
+  sweep: null
+  num_workers: 1
+  worker_max_concurrency: 100
+  worker_max_tcp_connections: 2500
+  trace: null
+  circuit_breakers: []
+  request_timeout: 30.0
+  lora_traffic_split: null
+  base_seed: 1786551186113
+metrics: null
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+    per_adapter: true
+    per_adapter_stage: false
+    percentiles:
+    - 0.1
+    - 1.0
+    - 5.0
+    - 10.0
+    - 25.0
+    - 50.0
+    - 75.0
+    - 90.0
+    - 95.0
+    - 99.0
+    - 99.9
+  prometheus:
+    summary: true
+    per_stage: false
+  session_lifecycle:
+    summary: true
+    per_stage: true
+    per_session: false
+  goodput: null
+storage:
+  local_storage:
+    path: /requests/inference-perf-override-1786551181-lnqxn8_1
+    report_file_prefix: null
+  google_cloud_storage: null
+  simple_storage_service: null
+server:
+  type: vllm
+  model_name: qwen3.5-0.8b
+  base_url: http://qwen35-gguf.llm-inference.svc.cluster.local:8000
+  ignore_eos: true
+  api_key: null
+  cert_path: null
+  key_path: null
+tokenizer:
+  pretrained_model_name_or_path: Qwen/Qwen3.5-0.8B
+  trust_remote_code: null
+  token: null
+circuit_breakers: null

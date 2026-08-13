@@ -14,6 +14,17 @@ cpu_min_nodes    = 2
 cpu_max_nodes    = 5
 cpu_spot         = false
 
+# Dedicated CPU-only LLM serving pool. This is isolated from stateful data
+# services so benchmarks and agent traffic cannot starve Kafka/Airflow/Spark.
+llm_cpu_machine_type = "n2-standard-4"
+llm_cpu_min_nodes    = 1
+llm_cpu_max_nodes    = 2
+llm_cpu_disk_size_gb = 30
+llm_cpu_disk_type    = "pd-standard"
+llm_cpu_spot         = false
+llm_node_pool_mode   = "dedicated"
+llm_optimization_profile = "baseline"
+
 gpu_machine_type      = "n1-standard-8"
 gpu_accelerator_type  = "nvidia-tesla-t4"
 gpu_accelerator_count = 1
@@ -32,8 +43,15 @@ image_tag                    = "gcp"
 # }
 
 deploy_ray_job = true
+deploy_llm_inference = false
 deploy_gateway = false
 deploy_service_mesh = true
+deploy_vault = false
+
+# Vault migration is intentionally two-phase. Set deploy_vault=true, bootstrap
+# and verify the Vault-backed ExternalSecrets, then set this to false to remove
+# the legacy source Kubernetes Secrets from external-secrets.
+vault_legacy_source_secrets_enabled = true
 
 # Public gateway example. Create the A records first and point them at the
 # ingress-nginx LoadBalancer IP before enabling production certificates.
@@ -41,6 +59,8 @@ deploy_service_mesh = true
 # gateway_domain             = "recsys-mlops.site"
 # gateway_tls_enabled        = true
 # gateway_tls_cluster_issuer = "letsencrypt-prod"
+# gateway_tls_issuer_create  = true
+# gateway_tls_issuer_email   = "platform@example.com"
 
 # Recommended if you use the public GKE API endpoint:
 # master_authorized_cidr_blocks = [

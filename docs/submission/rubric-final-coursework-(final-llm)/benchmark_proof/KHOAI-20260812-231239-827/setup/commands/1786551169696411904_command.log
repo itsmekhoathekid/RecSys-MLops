@@ -1,0 +1,1 @@
+---> will execute: "kubectl get nodes -o jsonpath={.items[0].metadata.labels}"

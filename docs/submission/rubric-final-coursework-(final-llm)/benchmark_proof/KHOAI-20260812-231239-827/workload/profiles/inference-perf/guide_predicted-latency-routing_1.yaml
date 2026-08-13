@@ -1,0 +1,61 @@
+load:
+  type: concurrent
+  num_workers: 6
+  request_timeout: 300.0
+  stages:
+    - num_requests: 192
+      concurrency_level: 32
+api:
+  type: completion
+  streaming: true
+server:
+  type: vllm
+  model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+  base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+  data:
+    type: conversation_replay
+    conversation_replay:
+      seed: ${CONCURRENCY}         # unique seed per concurrency level
+      num_conversations: ${CONCURRENCY}   # equals concurrency_level above
+      shared_system_prompt_len: 3000
+      dynamic_system_prompt_len:
+        type: uniform
+        min: 15000
+        max: 100000
+        mean: 55000
+        std_dev: 25000
+      turns_per_conversation:
+        type: normal
+        min: 2
+        max: 20
+        mean: 6
+        std_dev: 3.5
+      input_tokens_per_turn:
+        type: lognormal
+        min: 100
+        max: 10000
+        mean: 1500
+        std_dev: 1200
+      output_tokens_per_turn:
+        type: lognormal
+        min: 50
+        max: 4000
+        mean: 800
+        std_dev: 600
+      tool_call_latency_sec:
+        type: normal
+        min: 0
+        max: 0
+        mean: 0
+        std_dev: 0
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+storage:
+  local_storage:
+    path: /workspace

@@ -4,6 +4,8 @@ export UV_CACHE_DIR
 
 GCP_POWER_SCRIPT := ops/gcp/services_power.sh
 GCP_VERIFY_SCRIPT := ops/validation/verify_gcp_stack.sh
+LLM_SMOKE_SCRIPT := ops/validation/llm_inference_smoke.sh
+LLM_BENCHMARK_SCRIPT := ops/validation/llm_inference_benchmark.sh
 KFP_PACKAGE := pipelines/kubeflow/compiled/bst_training_pipeline.yaml
 
 .PHONY: help
@@ -24,6 +26,8 @@ help:
 	@echo "  make gcp-services-up          Restore GCP services and run smoke checks"
 	@echo "  make gcp-services-status      Show GCP service and node-pool status"
 	@echo "  make serving-autoscale-load-test  Run production serving load validation"
+	@echo "  make llm-inference-smoke          Validate Qwen vLLM CPU, llm-d, and agentgateway"
+	@echo "  make llm-inference-benchmark      Benchmark the deployed gateway endpoint"
 	@echo "  make jenkins-full             Trigger the full production Jenkins CI/CD job"
 
 .PHONY: validate
@@ -100,6 +104,14 @@ gcp-services-status:
 .PHONY: serving-autoscale-load-test
 serving-autoscale-load-test:
 	@bash ops/validation/serving_autoscale_load_test.sh
+
+.PHONY: llm-inference-smoke
+llm-inference-smoke:
+	@bash "$(LLM_SMOKE_SCRIPT)"
+
+.PHONY: llm-inference-benchmark
+llm-inference-benchmark:
+	@bash "$(LLM_BENCHMARK_SCRIPT)"
 
 .PHONY: jenkins-full
 jenkins-full:

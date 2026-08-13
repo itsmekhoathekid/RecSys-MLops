@@ -1,0 +1,1 @@
+---> will execute: "kubectl --kubeconfig /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/environment/context.ctx --context gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke delete pods -l llm-d-benchmark/ephemeral=true --field-selector=status.phase=Succeeded --namespace llm-inference"

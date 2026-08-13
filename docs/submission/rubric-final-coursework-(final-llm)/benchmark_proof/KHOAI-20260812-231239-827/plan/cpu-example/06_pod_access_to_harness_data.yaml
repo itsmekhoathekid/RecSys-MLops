@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: access-to-harness-data-workload-pvc
+  labels:
+    app: llm-d-benchmark-harness
+    role: llm-d-benchmark-data-access
+  namespace: llm-inference
+spec:
+  containers:
+  - name: rsync
+    image: ghcr.io/llm-d/llm-d-benchmark:v0.7.0
+    imagePullPolicy: Always
+    # Keep-alive so the framework can `kubectl cp` results off the PVC (tar-based,
+    # not rsync). Slim benchmark images may not ship rsync, so fall back to idling.
+    command: ["sh", "-c", "command -v rsync >/dev/null 2>&1 && exec rsync --daemon --no-detach --port=20873 --log-file=/dev/stdout || exec sleep infinity"]
+    volumeMounts:
+    - name: requests
+      mountPath: /requests
+  nodeSelector:
+    recsys.ai/pool: "ml-system"
+  tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: "ml-system"
+    effect: NoSchedule
+  volumes:
+  - name: requests
+    persistentVolumeClaim:
+      claimName: workload-pvc

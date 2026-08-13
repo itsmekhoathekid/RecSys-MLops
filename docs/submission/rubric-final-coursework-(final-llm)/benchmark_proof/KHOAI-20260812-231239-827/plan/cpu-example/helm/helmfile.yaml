@@ -1,0 +1,34 @@
+helmDefaults:
+  createNamespace: false
+---
+
+
+repositories:
+  - name: llm-d-modelservice
+    url: https://llm-d-incubation.github.io/llm-d-modelservice/
+  - name: llm-d-infra
+    url: https://llm-d-incubation.github.io/llm-d-infra/
+
+releases:
+
+  - name: qwen3-5--5a687092-3-5-0-8b-ms
+    namespace: llm-inference
+    chart: llm-d-modelservice/llm-d-modelservice
+    version: v0.4.15
+    installed: true
+    needs:
+      - llm-inference/qwen3-5--5a687092-3-5-0-8b-router
+    values:
+      - ms-values.yaml
+    labels:
+      kind: inference-stack
+
+  - name: qwen3-5--5a687092-3-5-0-8b-router
+    namespace: llm-inference
+    chart: oci://ghcr.io/llm-d/charts/llm-d-router-standalone
+    version: v0.9.0
+    installed: true
+    values:
+      - router-values.yaml
+    labels:
+      kind: inference-stack

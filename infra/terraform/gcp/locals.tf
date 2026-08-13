@@ -11,6 +11,7 @@ locals {
     flink               = lookup(var.image_overrides, "flink", "") != "" ? lookup(var.image_overrides, "flink", "") : "${local.image_repo}/recsys-flink:${var.image_tag}"
     kafka_connect       = lookup(var.image_overrides, "kafka_connect", "") != "" ? lookup(var.image_overrides, "kafka_connect", "") : "${local.image_repo}/recsys-kafka-connect:${var.image_tag}"
     airflow             = lookup(var.image_overrides, "airflow", "") != "" ? lookup(var.image_overrides, "airflow", "") : "${local.image_repo}/recsys-airflow:${var.image_tag}"
+    analytics_dbt       = lookup(var.image_overrides, "analytics_dbt", "") != "" ? lookup(var.image_overrides, "analytics_dbt", "") : "${local.image_repo}/recsys-analytics-dbt:${var.image_tag}"
     mlflow              = lookup(var.image_overrides, "mlflow", "") != "" ? lookup(var.image_overrides, "mlflow", "") : "${local.image_repo}/recsys-mlflow:${var.image_tag}"
     online_feature_api  = lookup(var.image_overrides, "online_feature_api", "") != "" ? lookup(var.image_overrides, "online_feature_api", "") : "${local.image_repo}/recsys-online-feature-api:${var.image_tag}"
     inference_api       = lookup(var.image_overrides, "inference_api", "") != "" ? lookup(var.image_overrides, "inference_api", "") : "${local.image_repo}/recsys-inference-api:${var.image_tag}"
@@ -23,6 +24,7 @@ locals {
     "images.driftRetrain"  = local.images.drift_retrain
     "images.spark"         = local.images.spark
     "images.flink"         = local.images.flink
+    "images.analyticsDbt"  = local.images.analytics_dbt
     "secret.create"        = "false"
     "minio.rootUser"       = "minio"
     "sourcePostgres.user"  = "recsys"
@@ -88,11 +90,17 @@ locals {
     {
       "chartRevision"                                        = sha1(join("", [for path in ["externalsecrets.yaml", "secretstore.yaml"] : filemd5("${local.helm_dir}/recsys-security/templates/${path}")]))
       "secretStore.enabled"                                  = "true"
-      "secretStore.provider"                                 = "kubernetes"
-      "secretStore.name"                                     = "recsys-central-secrets"
+      "secretStore.provider"                                 = var.deploy_vault ? "vault" : "kubernetes"
+      "secretStore.name"                                     = var.deploy_vault ? "recsys-vault" : "recsys-central-secrets"
       "secretStore.kubernetes.remoteNamespace"               = "external-secrets"
       "secretStore.kubernetes.auth.serviceAccount.name"      = "external-secrets"
       "secretStore.kubernetes.auth.serviceAccount.namespace" = "external-secrets"
+      "vault.server"                                         = "http://vault.vault.svc.cluster.local:8200"
+      "vault.mountPath"                                      = "recsys"
+      "vault.auth.mountPath"                                 = "kubernetes"
+      "vault.auth.role"                                      = "recsys-external-secrets"
+      "vault.auth.serviceAccount.name"                       = "external-secrets"
+      "vault.auth.serviceAccount.namespace"                  = "external-secrets"
       "externalSecrets.enabled"                              = "true"
       "externalSecrets.creationPolicy"                       = "Owner"
       "externalSecrets.runtime.additionalVaultPaths[0]"      = "jenkins-runtime"

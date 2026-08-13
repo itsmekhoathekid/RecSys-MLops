@@ -1,0 +1,16 @@
+{{- if .Values.podMonitoring.enabled }}
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "recsys-llm-serving.name" . }}
+  labels:
+    {{- include "recsys-llm-serving.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "recsys-llm-serving.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.podMonitoring.interval }}
+{{- end }}

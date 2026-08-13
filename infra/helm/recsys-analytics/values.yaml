@@ -5,7 +5,7 @@ secrets:
 
 externalSecret:
   enabled: false
-  storeName: recsys-central-secrets
+  storeName: recsys-vault
   remoteKey: analytics
   refreshInterval: 1h
 

@@ -7,7 +7,7 @@ registry:
   cache_mode: sync
   sqlalchemy_config_kwargs:
     pool_pre_ping: true
-entity_key_serialization_version: 2
+entity_key_serialization_version: 3
 
 # Feast core offline store for point-in-time historical retrieval.
 # Feast stores feature values in PostgreSQL and Redis; lakehouse tables are upstream only.
@@ -18,7 +18,7 @@ offline_store:
   database: feature_store
   db_schema: feature_store
   user: feast
-  password: feast
+  password: ${FEAST_POSTGRES_PASSWORD}
   sslmode: disable
 
 online_store:

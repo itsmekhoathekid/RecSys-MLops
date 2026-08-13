@@ -1,0 +1,107 @@
+global:
+  enabled: true
+  tlsDisable: true
+
+injector:
+  enabled: false
+
+server:
+  image:
+    repository: hashicorp/vault
+    tag: "2.0.3"
+    pullPolicy: IfNotPresent
+
+  updateStrategyType: OnDelete
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+  # The current zonal GKE cluster has two nodes. Prefer spreading replicas,
+  # but do not make a third Vault replica unschedulable when only two nodes
+  # are available.
+  affinity: ""
+
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
+
+  serviceAccount:
+    create: true
+    name: vault
+    createSecret: false
+    annotations:
+      iam.gke.io/gcp-service-account: ${vault_gcp_service_account}
+
+  dataStorage:
+    enabled: true
+    size: ${vault_storage_size}
+    # pd-standard avoids the project's exhausted SSD_TOTAL_GB quota.
+    storageClass: standard
+    accessMode: ReadWriteOnce
+
+  auditStorage:
+    enabled: false
+
+  standalone:
+    enabled: false
+
+  ha:
+    enabled: true
+    replicas: ${vault_replicas}
+    disruptionBudget:
+      enabled: true
+      maxUnavailable: 1
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |-
+        ui = true
+        disable_mlock = true
+        default_lease_ttl = "1h"
+        max_lease_ttl = "8760h"
+
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+          telemetry {
+            unauthenticated_metrics_access = "true"
+          }
+        }
+
+        storage "raft" {
+          path = "/vault/data"
+          retry_join {
+            leader_api_addr = "http://vault-0.vault-internal:8200"
+          }
+        }
+
+        seal "gcpckms" {
+          project = "${gcp_project_id}"
+          region = "${vault_kms_location}"
+          key_ring = "${vault_kms_key_ring}"
+          crypto_key = "${vault_kms_crypto_key}"
+        }
+
+        service_registration "kubernetes" {}
+
+        telemetry {
+          prometheus_retention_time = "30s"
+          disable_hostname = true
+        }
+
+ui:
+  enabled: true
+  serviceType: ClusterIP
+  activeVaultPodOnly: true
+
+serverTelemetry:
+  serviceMonitor:
+    enabled: false

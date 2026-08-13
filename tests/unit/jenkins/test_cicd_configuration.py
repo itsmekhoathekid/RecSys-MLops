@@ -364,12 +364,12 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
 def test_gcp_production_target_is_strict_and_self_consistent():
     target = configuration.load_gcp_production()
     assert target == {
-        "projectId": "rec-sys-503309",
+        "projectId": "recsys-mlops",
         "region": "asia-southeast1",
         "zone": "asia-southeast1-b",
         "cluster": "recsys-mlops-gke",
-        "context": "gke_rec-sys-503309_asia-southeast1-b_recsys-mlops-gke",
-        "imageRegistry": "asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys",
+        "context": "gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke",
+        "imageRegistry": "asia-southeast1-docker.pkg.dev/recsys-mlops/recsys",
     }
 
 

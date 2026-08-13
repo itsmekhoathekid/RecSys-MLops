@@ -120,7 +120,7 @@ make gcp-services-status
 The down command records the live node-pool sizes in `.gcp-services-power-state.env` and snapshots every PVC name, UID, and PV binding in `.gcp-services-power-state.env.pvcs`. The up command restores the node pools, verifies that the PVC identities and bindings are unchanged, waits for Deployments, StatefulSets, and DaemonSets in every namespace, and then runs service smoke checks. A failed or interrupted down keeps the original pre-hibernate snapshot, so rerunning the command is safe. Override the defaults only if the cluster was created with different names:
 
 ```bash
-GCP_PROJECT_ID=rec-sys-503309 \
+GCP_PROJECT_ID=recsys-mlops \
 GKE_ZONE=asia-southeast1-b \
 GKE_CLUSTER=recsys-mlops-gke \
 make gcp-services-up

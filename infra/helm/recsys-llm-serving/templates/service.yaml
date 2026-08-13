@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "recsys-llm-serving.name" . }}
+  labels:
+    {{- include "recsys-llm-serving.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "recsys-llm-serving.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP

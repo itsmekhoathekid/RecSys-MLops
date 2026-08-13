@@ -303,6 +303,11 @@ resource "helm_release" "recsys_airflow" {
     value = local.images.spark
   }
 
+  set {
+    name  = "images.analyticsDbt"
+    value = local.images.analytics_dbt
+  }
+
   lifecycle {
     ignore_changes = all
   }
@@ -522,7 +527,27 @@ resource "helm_release" "recsys_gateway" {
 
   set {
     name  = "tls.issuer.create"
-    value = "false"
+    value = tostring(var.gateway_tls_issuer_create)
+  }
+
+  set {
+    name  = "tls.issuer.name"
+    value = var.gateway_tls_cluster_issuer
+  }
+
+  set {
+    name  = "tls.issuer.email"
+    value = var.gateway_tls_issuer_email
+  }
+
+  set {
+    name  = "tls.issuer.server"
+    value = var.gateway_tls_issuer_server
+  }
+
+  set {
+    name  = "tls.issuer.privateKeySecretName"
+    value = "${var.gateway_tls_cluster_issuer}-account-key"
   }
 
   set {
@@ -564,6 +589,7 @@ resource "helm_release" "recsys_security" {
   depends_on = [
     helm_release.external_secrets,
     helm_release.istiod,
+    helm_release.vault,
     kubernetes_secret_v1.centralized_recsys,
     null_resource.kubeflow_pipelines,
     kubernetes_namespace.experiment_tracking,

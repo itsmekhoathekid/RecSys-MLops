@@ -1,0 +1,1019 @@
+_anchors:
+  agentgateway_version: v1.3.1
+  app_label: llm-d-benchmark-harness
+  block_size: 64
+  container_home: /tmp
+  cpu_16: '16'
+  cpu_32: '32'
+  cpu_4: '4'
+  ext_proc_port: 9002
+  gaie_version: v1.5.0
+  gpu_label_key: nvidia.com/gpu.product
+  gpu_label_value: auto
+  gpu_memory_util: 0.95
+  hf_home: /tmp/huggingface
+  inference_serving_label: 'true'
+  istio_version: 1.29.2
+  kv_connector: NixlConnector
+  kv_role: kv_both
+  llm-d-benchmark_version: v0.7.0
+  llm-d-cuda_version: v0.8.1
+  llm-d-inference-sim_version: v0.10.2
+  llm-d-router-endpoint-picker_version: v0.9.0
+  llm-d-routing-sidecar_version: v0.9.0
+  llm-d-uds-tokenizer_version: v0.26.0
+  logging_level: INFO
+  lws_version: 0.9.0
+  max_model_len: 16384
+  memory_128gi: 128Gi
+  memory_16gi: 16Gi
+  memory_256gi: 256Gi
+  memory_40gi: 40Gi
+  memory_4gi: 4Gi
+  memory_64gi: 64Gi
+  model_cache_base: /model-cache
+  model_name: facebook/opt-125m
+  model_path: models/facebook/opt-125m
+  model_short_name: facebook-opt-125m
+  parallelism_4gpu:
+    data: 1
+    dataLocal: 1
+    tensor: 4
+    workers: 4
+  parallelism_8gpu:
+    data: 1
+    dataLocal: 1
+    tensor: 8
+    workers: 8
+  parallelism_single:
+    data: 1
+    dataLocal: 1
+    tensor: 1
+    workers: 1
+  preprocess_script: /bin/true
+  probe_liveness:
+    failureThreshold: 3
+    periodSeconds: 5
+  probe_readiness:
+    failureThreshold: 3
+    path: /health
+    periodSeconds: 5
+  probe_startup:
+    failureThreshold: 60
+    initialDelaySeconds: 30
+    path: /health
+    periodSeconds: 30
+    timeoutSeconds: 5
+  pull_always: Always
+  pull_if_not_present: IfNotPresent
+  router_chart_version: v0.9.0
+  rsync_port: 20873
+  shm_16gi: 16Gi
+  shm_32gi: 32Gi
+  shm_64gi: 64Gi
+  storage_class: auto
+  vllm-openai_version: v0.26.0
+  vllm_port: 8200
+  vllm_service_port: 8000
+  worker_method: spawn
+  zmq_port: 5557
+accelerator:
+  count: 0
+  resource: nvidia.com/gpu
+  type: nvidia
+acceleratorType:
+  labelKey: kubernetes.io/os
+  labelValue: linux
+affinity:
+  enabled: true
+  nodeSelector:
+    kubernetes.io/os: linux
+  podAffinity: {}
+  podAntiAffinity: {}
+annotations:
+  common: {}
+  decode:
+    container: {}
+    pod: {}
+  prefill:
+    container: {}
+    pod: {}
+chartVersions:
+  agentgateway: v1.3.1
+  inferencePool: v1.5.0
+  istioBase: 1.29.2
+  istiod: 1.29.2
+  llmDInfra: v1.4.0
+  llmDModelservice: v0.4.15
+  llmDRouter: v0.9.0
+  lws: 0.9.0
+common: {}
+control:
+  contextSecretName: llmdbench-context
+  ignoreFailedValidation: true
+  waitPeriod: 10
+  waitTimeout: 900
+dataAccess:
+  nodeSelector:
+    recsys.ai/pool: ml-system
+  rsyncPort: 20873
+  runAsUser: null
+  tolerations:
+  - effect: NoSchedule
+    key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+decode:
+  acceleratorType:
+    labelKey: kubernetes.io/os
+    labelValue: linux
+  additionalVolumeMounts: []
+  additionalVolumes: []
+  autoscaling:
+    enabled: false
+  enabled: true
+  extraContainerConfig: {}
+  extraEnvVars: []
+  extraPodConfig: {}
+  initContainers: []
+  monitoring:
+    podmonitor:
+      annotations: {}
+      enabled: false
+      interval: 30s
+      labels: {}
+      metricRelabelings: []
+      path: /metrics
+      portName: metrics
+      relabelings: []
+  mountModelVolume: true
+  networkNr: ''
+  networkResource: ''
+  nodeSelector: {}
+  parallelism:
+    data: 1
+    dataLocal: 1
+    tensor: 1
+    workers: 1
+  probes:
+    liveness:
+      failureThreshold: 10
+      periodSeconds: 5
+      timeoutSeconds: 15
+    readiness:
+      failureThreshold: 10
+      path: /health
+      periodSeconds: 5
+      timeoutSeconds: 15
+    startup:
+      failureThreshold: 60
+      initialDelaySeconds: 30
+      path: /health
+      periodSeconds: 30
+      timeoutSeconds: 5
+  replicas: 2
+  resources:
+    limits:
+      cpu: '8'
+      memory: 32Gi
+    requests:
+      cpu: '8'
+      memory: 32Gi
+  shm:
+    size: 16Gi
+  vllm:
+    additionalFlags: []
+    customCommand: null
+    customPreprocessCommand: null
+    imagePullPolicy: IfNotPresent
+    loggingLevel: INFO
+    port: 8200
+    servicePort: 8000
+    workerMultiprocMethod: spawn
+description:
+  keywords: []
+  text: ''
+downloadJob:
+  backoffLimit: 3
+  mountPath: /cache
+  name: download-model
+dra:
+  enabled: false
+  type: nvidia
+eppKedaSaturation:
+  enabled: false
+  epp:
+    metricsPort: 9090
+    metricsPortName: http-metrics
+    poolName: ''
+    prometheusServiceAccount: thanos-querier
+    prometheusServiceAccountNamespace: openshift-monitoring
+    serviceLabelSelector: {}
+  namespace: ''
+  prometheus:
+    baseUrl: https://thanos-querier.openshift-monitoring.svc.cluster.local
+    port: 9091
+  scaledObject:
+    behavior:
+      scaleDown:
+        policies:
+        - periodSeconds: 300
+          type: Pods
+          value: 1
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        policies:
+        - periodSeconds: 180
+          type: Pods
+          value: 1
+        stabilizationWindowSeconds: 0
+    maxReplicas: 10
+    minReplicas: 1
+    pollingInterval: 15
+    triggers:
+    - activationThreshold: '0'
+      name: pool-saturation
+      query: max(llm_d_epp_flow_control_pool_saturation{inference_pool="${poolName}"})
+      threshold: '0.7'
+    - activationThreshold: '0'
+      name: running-requests
+      query: sum(llm_d_epp_request_running{model_name="${modelName}"})
+      threshold: '16'
+    unsafeSsl: true
+experiment:
+  analyzeLocally: false
+  datasetDir: ''
+  datasetUrl: ''
+  resultsDir: /requests
+  workspaceDir: /workspace
+extraObjects: []
+fma:
+  chart:
+    url: oci://ghcr.io/llm-d-incubation/llm-d-fast-model-actuation/charts/fma-controllers
+    version: 0.6.4
+  crds:
+    inferenceServerConfig: https://raw.githubusercontent.com/llm-d-incubation/llm-d-fast-model-actuation/v0.6.4/config/crd/fma.llm-d.ai_inferenceserverconfigs.yaml
+    launcherConfig: https://raw.githubusercontent.com/llm-d-incubation/llm-d-fast-model-actuation/v0.6.4/config/crd/fma.llm-d.ai_launcherconfigs.yaml
+    launcherPopulatorConfig: https://raw.githubusercontent.com/llm-d-incubation/llm-d-fast-model-actuation/v0.6.4/config/crd/fma.llm-d.ai_launcherpopulationpolicies.yaml
+  deployment:
+    name: null
+  dualPod:
+    debugAcceleratorMemory: false
+    sleeperLimit: 2
+  enabled: false
+  image:
+    pullPolicy: IfNotPresent
+    repository: ghcr.io/llm-d-incubation/llm-d-fast-model-actuation
+    tag: v0.6.4
+  iterations: 1
+  labels:
+    stood-up-by: auto
+    stood-up-from: llm-d-benchmark
+    stood-up-via: fma
+  launcher:
+    customPreprocessCommands: []
+    image:
+      pullPolicy: IfNotPresent
+      repository: ghcr.io/llm-d-incubation/llm-d-fast-model-actuation/launcher
+      tag: v0.6.4
+    maxInstances: 4
+    podTemplate:
+      metadata:
+        annotations: {}
+        labels:
+          stood-up-by: auto
+          stood-up-from: llm-d-benchmark
+          stood-up-via: fma
+    runtimeClassName: nvidia-legacy
+  launcherConfigurator:
+    port: 8001
+  launcherNodeSelection:
+    enabled: false
+    nodeLabel: fma-hotstart
+  launcherPopulatorConfigurator:
+    limitsCPU: 2
+    limitsMemory: 2Gi
+    requestsCPU: 100m
+    requestsMemory: 128Mi
+  modelMountPath: /model-cache
+  modelPvcName: model-pvc
+  mountModelVolume: true
+  requester:
+    image:
+      pullPolicy: IfNotPresent
+      repository: ghcr.io/llm-d-incubation/llm-d-fast-model-actuation/requester
+      tag: v0.6.4
+    limitsCPU: 1
+    limitsGPU: 1
+    limitsMemory: 250Mi
+    probePort: 8080
+    readinessProbeInitialDelay: 5
+    readinessProbePeriod: 10
+    spiPort: 8081
+gateway:
+  className: epponly
+  logLevel: error
+  name: infra-llmdbench-inference-gateway
+  namespace: llm-inference
+  providerNamespace: istio-system
+  resources:
+    limits:
+      cpu: '16'
+      memory: 16Gi
+    requests:
+      cpu: '4'
+      memory: 4Gi
+  service:
+    type: NodePort
+gatewayApiCrd:
+  crdUrlTemplate: github.com/kubernetes-sigs/gateway-api/config/crd?ref={revision}
+  inferenceExtensionRevision: v1.5.0
+  inferenceExtensionUrlTemplate: https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/{revision}/manifests.yaml
+  revision: v1.5.1
+gatewayProviders:
+  agentgateway:
+    helmRepository: oci://cr.agentgateway.dev/charts/
+    namespace: agentgateway-system
+harness:
+  condaEnvName: inference-perf-env
+  debug: false
+  executable: llm-d-benchmark.sh
+  experimentProfile: sanity_random.yaml
+  inferencePerf:
+    rayonNumThreads: 1
+  loadParallelism: 1
+  name: inference-perf
+  namespace: llm-inference
+  nodeSelector:
+    recsys.ai/pool: ml-system
+  output: local
+  podLabel: llmdbench-harness-launcher
+  profile: sanity_random.yaml
+  resources:
+    cpu: 500m
+    memory: 2Gi
+  tolerations:
+  - effect: NoSchedule
+    key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+  waitTimeout: 3600
+helmRepositories:
+  agentgateway:
+    name: agentgateway
+    sourceRepo: https://github.com/agentgateway/agentgateway
+    url: oci://cr.agentgateway.dev/charts/
+  gaie:
+    sourceRepo: https://github.com/kubernetes-sigs/gateway-api-inference-extension
+  inferencePool:
+    sourceRepo: https://github.com/kubernetes-sigs/gateway-api-inference-extension
+  istio:
+    sourceRepo: https://github.com/istio/istio
+    url: https://istio-release.storage.googleapis.com/charts
+  llmDInfra:
+    sourceRepo: https://github.com/llm-d-incubation/llm-d-infra
+    url: https://llm-d-incubation.github.io/llm-d-infra/
+  llmDModelservice:
+    sourceRepo: https://github.com/llm-d-incubation/llm-d-modelservice
+    url: https://llm-d-incubation.github.io/llm-d-modelservice/
+  llmDRouter:
+    sourceRepo: https://github.com/llm-d/llm-d-router
+  lws:
+    sourceRepo: https://github.com/kubernetes-sigs/lws
+httpRoute:
+  backendRequestTimeout: 0s
+  requestTimeout: 300s
+huggingface:
+  enabled: false
+  secretName: llm-d-hf-token
+  token: ''
+  tokenBase64: ''
+  tokenKey: HF_TOKEN
+idleCleanup:
+  dryRun: false
+  enabled: false
+  idleWindow: 24h
+  image: ''
+  prometheusUrl: ''
+  schedule: 0 * * * *
+images:
+  benchmark:
+    pullPolicy: Always
+    repository: ghcr.io/llm-d/llm-d-benchmark
+    sourceRepo: https://github.com/llm-d/llm-d-benchmark
+    tag: v0.7.0
+  python:
+    repository: python
+    sourceRepo: https://hub.docker.com/_/python
+    tag: '3.10'
+  routerEndpointPicker:
+    pullPolicy: Always
+    repository: ghcr.io/llm-d/llm-d-router-endpoint-picker
+    sourceRepo: https://github.com/llm-d/llm-d-router
+    tag: v0.9.0
+  routingSidecar:
+    pullPolicy: IfNotPresent
+    repository: ghcr.io/llm-d/llm-d-router-disagg-sidecar
+    sourceRepo: https://github.com/llm-d/llm-d-router
+    tag: v0.9.0
+  udsTokenizer:
+    pullPolicy: Always
+    repository: docker.io/vllm/vllm-openai
+    sourceRepo: https://github.com/vllm-project/vllm
+    tag: v0.26.0
+  vllm:
+    pullPolicy: Always
+    repository: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo
+    sourceRepo: https://github.com/vllm-project/vllm
+    tag: v0.26.0
+  vllmOpenai:
+    pullPolicy: Always
+    repository: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo
+    sourceRepo: https://github.com/vllm-project/vllm
+    tag: v0.26.0
+keda:
+  prometheus:
+    authMode: none
+    baseUrl: http://prometheus
+    port: 9090
+    secretName: ''
+    unsafeSsl: false
+  scaledObjects: []
+kustomize:
+  enabled: false
+labels:
+  app: llm-d-benchmark-harness
+  inferenceServing: 'true'
+lws:
+  helmRepository: oci://registry.k8s.io/lws/charts/
+  namespace: lws-system
+model:
+  blockSize: 64
+  cacheBase: /model-cache
+  gpuMemoryUtilization: 0
+  huggingfaceId: qwen3.5-0.8b
+  idLabel: qwen3-5--5a687092-3-5-0-8b
+  maxModelLen: 1024
+  name: qwen3.5-0.8b
+  path: models/qwen3.5-0.8b
+  shortName: qwen3-5--5a687092-3-5-0-8b
+  size: 1Ti
+modelArtifacts:
+  extraLabels: {}
+  mountPath: /model-cache
+model_id_label: qwen3-5--5a687092-3-5-0-8b
+modelservice:
+  enabled: true
+  uriProtocol: pvc
+monitoring:
+  embedTimeSeries: true
+  enableUserWorkload: true
+  enabled: true
+  installPrometheusCrds: false
+  metricsPath: /metrics
+  metricsScrapeEnabled: false
+  podmonitor:
+    enabled: true
+  prometheusCrdUrls:
+  - https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
+  - https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+  scrapeInterval: 30s
+  timeSeriesMaxPoints: 256
+  timeSeriesMetrics:
+  - vllm:kv_cache_usage_perc
+  - vllm:gpu_cache_usage_perc
+  - vllm:cpu_cache_usage_perc
+  - vllm:gpu_memory_usage_bytes
+  - vllm:cpu_memory_usage_bytes
+  - container_memory_usage_bytes
+  - DCGM_FI_DEV_GPU_UTIL
+  - DCGM_FI_DEV_POWER_USAGE
+  - vllm:num_requests_running
+  - vllm:num_requests_waiting
+  - vllm:prefix_cache_hits_total
+  - vllm:prefix_cache_queries_total
+  - vllm:external_prefix_cache_hits_total
+  - vllm:external_prefix_cache_queries_total
+  - vllm:prefix_cache_hit_rate
+  - vllm:external_prefix_cache_hit_rate
+  - vllm:nixl_xfer_time_seconds_sum
+  - vllm:nixl_xfer_time_seconds_count
+  - vllm:nixl_bytes_transferred_sum
+  - vllm:nixl_bytes_transferred_count
+  - vllm:num_preemptions_total
+  - vllm:prompt_tokens_total
+  - vllm:generation_tokens_total
+  - inference_pool_average_kv_cache_utilization
+  - inference_pool_average_queue_size
+  - inference_pool_average_running_requests
+  - inference_pool_ready_pods
+  - llm_d_epp_flow_control_pool_saturation
+  - llm_d_epp_flow_control_queue_size
+  - llm_d_epp_request_running
+multinode:
+  enabled: false
+namespace:
+  labels:
+    podSecurity:
+      audit: privileged
+      warn: privileged
+  name: llm-inference
+nok8s:
+  enabled: false
+  envoy:
+    adminPort: 19000
+    configMountPath: /etc/envoy/envoy.yaml
+    image: docker.io/envoyproxy/envoy
+    listenPort: 8081
+    tag: distroless-v1.33.2
+  epp:
+    configMountDir: /etc/epp
+    grpcHealthPort: 9003
+    grpcPort: 9002
+    image: ghcr.io/llm-d/llm-d-router-endpoint-picker
+    metricsPort: 9090
+    poolName: file-discovery
+    poolNamespace: default
+    tag: v0.9.0
+  hfTokenEnv: HUGGING_FACE_HUB_TOKEN
+  nameSuffix: ''
+  runtime: docker
+  vllm:
+    accelerator: nvidia
+    containerPort: 8000
+    deviceArgs: []
+    extraArgs: []
+    gpus: all
+    hfCacheDir: ~/.cache/huggingface
+    hostPort: 8000
+    image: docker.io/vllm/vllm-openai
+    replicas: 1
+    shmSize: 20g
+    tag: v0.26.0
+    tensorParallel: 1
+  workspaceHostDir: ~/.llmdbench/nok8s
+openshiftMonitoring:
+  userWorkloadMonitoringNamespace: openshift-user-workload-monitoring
+prefill:
+  acceleratorType:
+    labelKey: kubernetes.io/os
+    labelValue: linux
+  additionalVolumeMounts: []
+  additionalVolumes: []
+  autoscaling:
+    enabled: false
+  enabled: false
+  extraContainerConfig: {}
+  extraEnvVars: []
+  extraPodConfig: {}
+  initContainers: []
+  monitoring:
+    podmonitor:
+      annotations: {}
+      enabled: false
+      interval: 30s
+      labels: {}
+      metricRelabelings: []
+      path: /metrics
+      portName: metrics
+      relabelings: []
+  mountModelVolume: true
+  networkNr: ''
+  networkResource: ''
+  nodeSelector: {}
+  parallelism:
+    data: 1
+    dataLocal: 1
+    tensor: 1
+    workers: 1
+  probes:
+    liveness:
+      failureThreshold: 3
+      periodSeconds: 5
+    readiness:
+      failureThreshold: 3
+      path: /health
+      periodSeconds: 5
+    startup:
+      failureThreshold: 60
+      initialDelaySeconds: 30
+      path: /health
+      periodSeconds: 30
+      timeoutSeconds: 5
+  replicas: 0
+  resources:
+    limits:
+      cpu: '4'
+      memory: 40Gi
+    requests:
+      cpu: '4'
+      memory: 40Gi
+  vllm:
+    additionalFlags: []
+    customCommand: null
+    customPreprocessCommand: null
+    imagePullPolicy: IfNotPresent
+    loggingLevel: INFO
+    port: 8200
+    servicePort: 8000
+    workerMultiprocMethod: spawn
+release: llmdbench
+resourcePresets:
+  large:
+    decode:
+      parallelism:
+        data: 1
+        dataLocal: 1
+        tensor: 4
+        workers: 4
+      resources:
+        limits:
+          cpu: '32'
+          memory: 256Gi
+        requests:
+          cpu: '32'
+          memory: 256Gi
+      shm:
+        size: 64Gi
+    prefill:
+      parallelism:
+        data: 1
+        dataLocal: 1
+        tensor: 4
+        workers: 4
+      resources:
+        limits:
+          cpu: '32'
+          memory: 256Gi
+        requests:
+          cpu: '32'
+          memory: 256Gi
+  medium:
+    decode:
+      parallelism:
+        data: 1
+        dataLocal: 1
+        tensor: 1
+        workers: 1
+      resources:
+        limits:
+          cpu: '16'
+          memory: 64Gi
+        requests:
+          cpu: '16'
+          memory: 64Gi
+      shm:
+        size: 16Gi
+    prefill:
+      parallelism:
+        data: 1
+        dataLocal: 1
+        tensor: 1
+        workers: 1
+      resources:
+        limits:
+          cpu: '16'
+          memory: 64Gi
+        requests:
+          cpu: '16'
+          memory: 64Gi
+  small:
+    decode:
+      parallelism:
+        data: 1
+        dataLocal: 1
+        tensor: 1
+        workers: 1
+      resources:
+        limits:
+          cpu: '4'
+          memory: 40Gi
+        requests:
+          cpu: '4'
+          memory: 40Gi
+      shm:
+        size: 16Gi
+    prefill:
+      parallelism:
+        data: 1
+        dataLocal: 1
+        tensor: 1
+        workers: 1
+      resources:
+        limits:
+          cpu: '4'
+          memory: 40Gi
+        requests:
+          cpu: '4'
+          memory: 40Gi
+  xlarge:
+    decode:
+      parallelism:
+        data: 1
+        dataLocal: 1
+        tensor: 8
+        workers: 8
+      resources:
+        limits:
+          cpu: '32'
+          memory: 256Gi
+        requests:
+          cpu: '32'
+          memory: 256Gi
+      shm:
+        size: 64Gi
+    prefill:
+      parallelism:
+        data: 1
+        dataLocal: 1
+        tensor: 8
+        workers: 8
+      resources:
+        limits:
+          cpu: '32'
+          memory: 256Gi
+        requests:
+          cpu: '32'
+          memory: 256Gi
+router:
+  epp:
+    extProcPort: 9002
+    extraContainerPorts:
+    - containerPort: 5557
+      name: zmq
+      protocol: TCP
+    flags:
+      v: '1'
+    image:
+      pullPolicy: Always
+      registry: ghcr.io/llm-d
+      repository: llm-d-router-endpoint-picker
+      tag: v0.9.0
+    pluginsConfigFile: default-plugins.yaml
+    pluginsCustomConfig: {}
+    replicas: 1
+    volumeMounts: []
+    volumes: []
+  extraServicePorts:
+  - name: zmq
+    port: 5557
+    protocol: TCP
+    targetPort: 5557
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8081
+  inferencePool:
+    failureMode: FailOpen
+  modelServers:
+    matchLabels:
+      llm-d.ai/inferenceServing: 'true'
+      llm-d.ai/model: qwen3-5--5a687092-3-5-0-8b
+    targetPorts:
+    - number: 8000
+  monitoring:
+    interval: 10s
+    prometheus:
+      auth:
+        enabled: true
+        secretName: inference-gateway-sa-metrics-reader-secret
+      enabled: true
+    secretName: inference-gateway-sa-metrics-reader-secret
+  tokenizer:
+    enabled: false
+routing:
+  connector: nixlv2
+  debugLevel: 3
+  proxy:
+    enabled: true
+    imagePullPolicy: Always
+    targetPort: 8200
+    zapEncoder: json
+    zapLogLevel: debug
+  secure: false
+  servicePort: 8000
+scenarioName: cpu
+schedulerName: default-scheduler
+serviceAccount:
+  name: inference-perf-runner
+serviceAccountOverride: ''
+sharedInfraStackIndex: 1
+siblingStacks:
+- modelName: facebook/opt-125m
+  name: cpu-example
+  standalone: false
+stackIndex: 1
+standalone:
+  acceleratorType:
+    labelKey: kubernetes.io/os
+    labelValue: linux
+  additionalVolumeMounts: []
+  additionalVolumes: []
+  deployment:
+    name: null
+  enabled: false
+  extraContainerConfig: {}
+  extraEnvVars: []
+  extraPodConfig: {}
+  extraPodLabels: {}
+  image:
+    pullPolicy: Always
+    repository: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo
+    tag: v0.26.0
+  initContainers: []
+  labels:
+    stood-up-by: auto
+    stood-up-from: llm-d-benchmark
+    stood-up-via: standalone
+  launcher:
+    args: null
+    customPreprocessCommand: null
+    enabled: false
+    image:
+      repository: null
+      tag: null
+    imagePullPolicy: Always
+    port: 8001
+    vllmPort: 8002
+  modelMountPath: /model-cache
+  modelPvcName: model-pvc
+  mountModelVolume: true
+  networkNr: ''
+  networkResource: ''
+  nodeSelector: {}
+  parallelism:
+    tensor: 1
+  podAnnotations: {}
+  probes:
+    liveness:
+      failureThreshold: 3
+      periodSeconds: 5
+    readiness:
+      failureThreshold: 3
+      periodSeconds: 5
+    startup:
+      failureThreshold: 60
+      initialDelaySeconds: 30
+      periodSeconds: 30
+      timeoutSeconds: 5
+  replicas: 1
+  resources:
+    limits:
+      cpu: '8'
+      memory: 32Gi
+    requests:
+      cpu: '8'
+      memory: 32Gi
+  role: both
+  schedulerName: default-scheduler
+  service:
+    additionalPorts: []
+    annotations: {}
+    name: null
+    port: 80
+    type: ClusterIP
+  vllm:
+    additionalFlags: []
+    args: []
+    customCommand: null
+    customPreprocessCommand: null
+    enablePrefixCaching: false
+    loadFormat: auto
+    loggingLevel: INFO
+    modelCommand: custom
+    modelLoaderExtraConfig: '{}'
+    port: 8000
+    preprocessCommand: /bin/true
+    workerMultiprocMethod: spawn
+storage:
+  downloadMaxRetries: 2
+  downloadTimeout: 2400
+  extraPvc:
+    accessModes:
+    - ReadWriteMany
+    name: ''
+    size: 10Gi
+    storageClassName: auto
+    volumeMode: Filesystem
+  hostPath:
+    capacity: 300Gi
+    daemonSetName: download-model-ds
+    daemonSetTimeout: 3600
+    enabled: false
+    nodeSelector: {}
+    path: /mnt/models
+    storageClassName: hostpath
+    tolerations: []
+  modelPvc:
+    accessModes:
+    - ReadWriteMany
+    name: model-pvc
+    size: 300Gi
+    storageClassName: auto
+  workloadPvc:
+    accessModes:
+    - ReadWriteOnce
+    name: workload-pvc
+    size: 10Gi
+    storageClassName: standard
+vllmCommon:
+  containerHome: /tmp
+  ephemeralStorage: ''
+  ephemeralStorageResource: ephemeral-storage
+  flags:
+    allowLongMaxModelLen: '1'
+    disableLogRequests: true
+    disableUvicornAccessLog: true
+    enforceEager: false
+    noPrefixCaching: true
+    serverDevMode: '1'
+  hfHome: /tmp/huggingface
+  host: 0.0.0.0
+  inferencePort: 8000
+  kvEvents:
+    enabled: false
+    port: 5557
+    publisher: zmq
+    topicPrefix: kv
+  kvTransfer:
+    connector: NixlConnector
+    enabled: false
+    role: kv_both
+  networkNr: ''
+  networkResource: ''
+  nixlSideChannelPort: '5557'
+  preprocessScript: python3 /setup/preprocess/set_llmdbench_environment.py && . $HOME/llmdbench_env.sh
+  priorityClassName: ''
+  pullSecret: ''
+  shell: /bin/bash
+  shmMemory: 16Gi
+  ucxSockaddrTlsPriority: tcp
+  ucxTls: sm,cuda_ipc,cuda_copy,tcp
+  volumeMounts:
+  - mountPath: /dev/shm
+    name: dshm
+  - mountPath: /setup/preprocess
+    name: preprocesses
+  - mountPath: /etc/kubeconfig
+    name: k8s-llmdbench-context
+    readOnly: true
+  volumes:
+  - emptyDir:
+      medium: Memory
+      sizeLimit: 16Gi
+    name: dshm
+    type: emptyDir
+  - configMap:
+      defaultMode: 320
+      name: llm-d-benchmark-preprocesses
+    name: preprocesses
+    type: configMap
+  - name: k8s-llmdbench-context
+    secret:
+      secretName: llmdbench-context
+    type: secret
+workDir: ~/data/cpu
+wva:
+  controller:
+    enabled: true
+  enabled: false
+  hpa:
+    behavior:
+      scaleDown:
+        policies:
+        - periodSeconds: 15
+          type: Percent
+          value: 100
+        stabilizationWindowSeconds: 120
+      scaleUp:
+        policies:
+        - periodSeconds: 15
+          type: Percent
+          value: 100
+        stabilizationWindowSeconds: 120
+    enabled: true
+    maxReplicas: 16
+    minReplicas: 1
+    targetAvgValue: 1
+  image:
+    repository: ghcr.io/llm-d/llm-d-workload-variant-autoscaler
+    tag: verify-a3c779
+  metrics:
+    enabled: true
+    port: 8443
+    secure: true
+  namespace: llm-inference
+  namespaceScoped: true
+  prometheus:
+    baseUrl: https://thanos-querier.openshift-monitoring.svc.cluster.local
+    port: 9091
+  replicaCount: 1
+  variantAutoscaling:
+    variantCost: '10.0'
+  vllmService:
+    enabled: true
+    interval: 15s
+    nodePortMax: 32767
+    nodePortMin: 30000
+    scheme: http
+  wellLitPath: inference-scheduling

@@ -1,0 +1,36 @@
+provider:
+  name: agentgateway
+
+httpRoute:
+  create: true
+  inferenceGatewayName: llm-d-inference-gateway
+
+router:
+  epp:
+    replicas: 1
+    flags:
+      v: 2
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    pluginsConfigFile: unoptimized-baseline-plugins.yaml
+    pluginsCustomConfig:
+      unoptimized-baseline-plugins.yaml: |
+        apiVersion: llm-d.ai/v1alpha1
+        kind: EndpointPickerConfig
+        plugins:
+          - type: random-picker
+        schedulingProfiles:
+          - name: default
+            plugins:
+              - pluginRef: random-picker
+  inferencePool:
+    failureMode: FailOpen
+  modelServers:
+    protocol: http
+    matchLabels:
+      llm-d.ai/guide: optimized-baseline

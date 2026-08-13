@@ -54,7 +54,7 @@ realtimeFlinkConsumer:
     enabled: true
     name: realtime-flink-offline-store
     groupIdSuffix: offline
-    startingOffsets: latest
+    startingOffsets: committed-offsets
     restorePath: ""
   topic: cdc.behavior_events
   groupId: recsys-flink-realtime

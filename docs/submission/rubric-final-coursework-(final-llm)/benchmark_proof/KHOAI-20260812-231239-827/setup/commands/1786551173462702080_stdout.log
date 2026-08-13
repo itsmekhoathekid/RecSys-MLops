@@ -1,0 +1,2071 @@
+apiVersion: v1
+data:
+  benchmark_nixl.py: |
+    from __future__ import annotations
+
+    import argparse
+    import sys
+    import time
+    from typing import List
+    import traceback
+    import zmq
+    import io
+    import torch
+
+    try:
+        from nixl._api import nixl_agent, nixl_agent_config
+    except ImportError:
+        sys.stderr.write("Failed to import NIXL\n")
+        raise
+
+    listen_port = 9000
+
+
+    def create_dataset(role, size, num_kvblocks, device, gpu_idx=0):
+        """
+        Create a dataset of tensors whose total size is at least size in bytes.
+        """
+        dtype = torch.float32 if size >= 4 else torch.uint8
+        value = 0 if "server" in role else 1
+
+        element_size = torch.tensor([], dtype=dtype).element_size()
+        n_elems_per_block = size // (element_size * num_kvblocks)
+        if n_elems_per_block == 0:
+            n_elems_per_block = 1
+
+        dataset = []
+        if device == "gpu":
+            dev = f"cuda:{gpu_idx}"
+        else:
+            dev = "cpu"
+        for _ in range(num_kvblocks):
+            block = torch.full((n_elems_per_block,), value, device=dev, dtype=dtype)
+            dataset.append(block)
+
+        # If total size is less than requested, add more elements to the last block
+        total_bytes = sum(t.numel() * t.element_size() for t in dataset)
+        if total_bytes < size:
+            extra_elems = (size - total_bytes) // element_size
+            if extra_elems > 0:
+                extra_block = torch.full((extra_elems,), value, device=device, dtype=dtype)
+                dataset.append(extra_block)
+
+        return dataset
+
+
+    def cleanup_agent(
+        agent: nixl_agent,
+    ):
+        if agent is None:
+            return
+        peer = "server" if agent.name == "client" else "client"
+        agent.remove_remote_agent(peer)
+
+
+    def cleanup_transfer(
+        agent: nixl_agent,
+        transfer_handle,
+        register_descs,
+    ):
+        if agent is None:
+            return
+        # Cleanup the transfer handle and registered descriptors
+        if transfer_handle is not None:
+            agent.release_xfer_handle(transfer_handle)
+        if register_descs is not None:
+            agent.deregister_memory(register_descs)
+
+
+    def create_nixl_agent_mc(role: str, dataset, zmq_socket, device_idx, backend):
+        """
+        Create Nixl agents based on the role with Mooncake/UCCL backend
+        """
+        backend_name = (
+            "Mooncake"
+            if backend == "mooncake"
+            else ("UCCL" if backend == "uccl" else backend.upper())
+        )
+        config = nixl_agent_config(backends=[backend_name])
+        agent = nixl_agent(role, config)
+        descs = agent.get_reg_descs(dataset)
+        register_descs = agent.register_memory(descs)
+        local_meta = agent.get_agent_metadata()
+
+        if "client" in role:
+            zmq_socket.send(local_meta)
+            remote_meta = zmq_socket.recv()
+            agent.add_remote_agent(remote_meta).decode("utf-8")
+        elif "server" in role:
+            remote_meta = zmq_socket.recv()
+            zmq_socket.send(local_meta)
+            agent.add_remote_agent(remote_meta).decode("utf-8")
+
+        return agent, register_descs
+
+
+    def create_nixl_agent_ucx(role: str, dataset):
+        """
+        Create Nixl agents based on the role.
+        """
+        port = listen_port
+        if role == "client":
+            port = 0
+        config = nixl_agent_config(True, True, port)
+        agent = nixl_agent(role, config)
+        descs = agent.get_reg_descs(dataset)
+        register_descs = agent.register_memory(descs)
+        return agent, register_descs
+
+
+    def init_zmq(host, port, role):
+        """
+        Initialize the ZMQ socket for communication.
+        """
+        context = zmq.Context()
+        zmq_socket = context.socket(zmq.PAIR)
+        if "server" in role:
+            zmq_socket.bind(f"tcp://{host}:{port}")
+        else:
+            zmq_socket.connect(f"tcp://{host}:{port}")
+            # Ensure the socket is ready to receive messages
+            zmq_socket.setsockopt(zmq.LINGER, 0)
+
+        return zmq_socket
+
+
+    def init_transfer_metadata_mc(
+        role: str, operation: str, agent: nixl_agent, register_descs, zmq_socket
+    ):
+        """
+        Initialize transfer metadata with zmq sockets for Mooncake
+        """
+        local_xfer_descs = register_descs.trim()
+        remote_xfer_descs = None
+        transfer_handle = None
+
+        if "server" in role:
+            # Wait until there is a message from the creator
+            msg = zmq_socket.recv().decode("utf-8")
+            if msg == "START":
+                pass
+            else:
+                print(f"{role} received unexpected message: {msg}")
+                zmq_socket.close()
+                exit(0)
+
+            # send the xfer descs to the peer
+            zmq_socket.send(agent.get_serialized_descs(local_xfer_descs))
+
+        elif "client" in role:
+            zmq_socket.send("START".encode("utf-8"))
+
+            # Wait until there is a message from the peer
+            msg = zmq_socket.recv()
+            remote_xfer_descs = agent.deserialize_descs(msg)
+
+            uid = "TRANSFER"  # noqa: F841
+            transfer_handle = agent.initialize_xfer(
+                operation, local_xfer_descs, remote_xfer_descs, "server"
+            )
+
+        return transfer_handle
+
+
+    def init_transfer_metadata_ucx(
+        role: str,
+        operation: str,
+        agent: nixl_agent,
+        register_descs,
+        server_ip,
+        server_port,
+    ):
+        """
+        Initialize transfer metadata.
+        """
+
+        local_xfer_descs = register_descs.trim()
+        remote_xfer_descs = None
+        transfer_handle = None
+
+        if "server" in role:
+            # Wait until there is a message from the creator
+            while not agent.check_remote_metadata("client"):
+                continue
+
+            # send the xfer descs to the peer
+            desc = agent.get_serialized_descs(local_xfer_descs)
+            agent.send_notif("client", desc)
+
+        elif "client" in role:
+            agent.fetch_remote_metadata("server", server_ip, server_port)
+            agent.send_local_metadata(server_ip, server_port)
+
+            # Wait until there is a message from the peer
+            notifs = agent.get_new_notifs()
+            while len(notifs) == 0:
+                notifs = agent.get_new_notifs()
+
+            remote_xfer_descs = agent.deserialize_descs(notifs["server"][0])
+            while not agent.check_remote_metadata("server"):
+                continue
+
+            uid = "TRANSFER"
+            transfer_handle = agent.initialize_xfer(
+                operation, local_xfer_descs, remote_xfer_descs, "server", uid
+            )
+
+        return transfer_handle
+
+
+    def do_transfer_mc(
+        role: str, agent: nixl_agent, transfer_handle, zmq_socket, uid="TRANSFER"
+    ):
+        if "client" in role:
+            state = agent.transfer(transfer_handle)
+            assert state != "ERR", "Error in transfer"
+            while True:
+                state = agent.check_xfer_state(transfer_handle)
+                assert state != "ERR", "Error in transfer"
+                if state == "DONE":
+                    zmq_socket.send(uid.encode("utf-8"))
+                    break
+        else:
+            while True:
+                transfer_done = zmq_socket.recv()
+                if transfer_done.decode("utf-8") == uid:
+                    break
+
+
+    def do_transfer_ucx(role: str, agent: nixl_agent, transfer_handle, uid="TRANSFER"):
+        if "client" in role:
+            state = agent.transfer(transfer_handle)
+            assert state != "ERR", "Error in transfer"
+            while True:
+                state = agent.check_xfer_state(transfer_handle)
+                assert state != "ERR", "Error in transfer"
+                if state == "DONE":
+                    break
+        else:
+            uid = "TRANSFER"
+            while not agent.check_remote_xfer_done("client", uid.encode("utf-8")):
+                continue
+
+
+    def start_transfer(size, num_kvblocks, args):
+        op = "WRITE" if args.op_type == "write" else "READ"
+        zmq_socket = None
+
+        if args.backend == "mooncake" or args.backend == "uccl":
+            zmq_socket = init_zmq(args.remote_ip, listen_port, args.role)
+        try:
+            dataset = create_dataset(
+                args.role, size, num_kvblocks, args.device, args.local_gpu_idx
+            )
+
+            agent = None
+            transfer_handle = None
+            register_descs = None
+
+            # Suppress stdout for better output during agent setup
+            old_stdout = sys.stdout
+            sys.stdout = io.StringIO()
+            if args.backend == "mooncake" or args.backend == "uccl":
+                agent, register_descs = create_nixl_agent_mc(
+                    args.role, dataset, zmq_socket, args.local_gpu_idx, args.backend
+                )
+            else:
+                agent, register_descs = create_nixl_agent_ucx(args.role, dataset)
+            sys.stdout = old_stdout
+
+            total_size = 0
+            total_transfer_time = 0.0
+            warmup = 1 if args.iters > 1 else 0
+
+            for iter_idx in range(args.iters):
+                if args.backend == "mooncake" or args.backend == "uccl":
+                    transfer_handle = init_transfer_metadata_mc(
+                        args.role, op, agent, register_descs, zmq_socket
+                    )
+                else:
+                    transfer_handle = init_transfer_metadata_ucx(
+                        args.role,
+                        op,
+                        agent,
+                        register_descs,
+                        args.remote_ip,
+                        listen_port,
+                    )
+                start = time.perf_counter()
+                if args.backend == "mooncake" or args.backend == "uccl":
+                    do_transfer_mc(args.role, agent, transfer_handle, zmq_socket)
+                else:
+                    do_transfer_ucx(args.role, agent, transfer_handle)
+
+                end = time.perf_counter()
+                transfer_time = end - start
+                if iter_idx >= warmup:
+                    total_transfer_time += transfer_time
+                    total_size += size
+
+                # [PERF LOG] Per-iteration bandwidth
+                iter_bw = size / transfer_time / 1e9
+                print(
+                    f"[PERF] Iteration {iter_idx}: {transfer_time * 1000:.2f} ms, {iter_bw:.2f} GB/s",
+                    flush=True,
+                )
+
+            effective_iters = max(args.iters - warmup, 1)
+            if total_transfer_time == 0:
+                total_transfer_time = transfer_time
+                total_size = size
+            avg_transfer_time = total_transfer_time / effective_iters
+            gbps = (total_size * 8) / total_transfer_time / 1e9  # bits per second → Gbps
+            gb_sec = total_size / total_transfer_time / 1e9  # bytes per second → GB/s
+            lat = avg_transfer_time  # Average latency per transfer
+
+            print(
+                f"[{args.role}] {_pretty_size(size):>8} : {gbps:6.2f} Gbps | {gb_sec:6.2f} GB/s | {lat:6.6f} s"
+            )
+            if "server" in args.role:
+                for i, block in enumerate(dataset):
+                    assert torch.mean(block) - 1 < 1e-8, f"Block {i} not equal to 1"
+
+        except KeyboardInterrupt:
+            return 0.0
+        except Exception:
+            print(f"Error in agent pair {args.role}: {traceback.format_exc()}")
+            return 0.0
+        finally:
+            cleanup_transfer(
+                agent,
+                transfer_handle,
+                register_descs,
+            )
+            cleanup_agent(agent)
+            if args.backend == "mooncake" or args.backend == "uccl":
+                zmq_socket.close()
+
+
+    def create_nixl_agent_ucx_dual(role: str, send_dataset, recv_dataset):
+        """
+        Create Nixl agents based on the role.
+        """
+        port = listen_port
+        config = nixl_agent_config(True, True, port)
+        agent = nixl_agent(role, config)
+        send_descs = agent.get_reg_descs(send_dataset)
+        recv_descs = agent.get_reg_descs(recv_dataset)
+        send_register_descs = agent.register_memory(send_descs)
+        recv_register_descs = agent.register_memory(recv_descs)
+        return agent, send_register_descs, recv_register_descs
+
+
+    def init_transfer_metadata_ucx_dual(
+        role: str,
+        agent: nixl_agent,
+        send_register_descs,
+        recv_register_descs,
+        remote_ip,
+        remote_port,
+    ):
+        """
+        Initialize transfer metadata for dual WRITE operations.
+        Both endpoints will write to each other simultaneously.
+        Both endpoints do symmetric operations: establish connection, exchange descriptors, create transfer handles.
+        """
+        send_local_xfer_descs = send_register_descs.trim()
+        recv_local_xfer_descs = recv_register_descs.trim()
+        remote_peer = "server" if "client" in role else "client"
+
+        # Both endpoints establish metadata connection (client connects, server waits)
+        if "client" in role:
+            agent.send_local_metadata(remote_ip, remote_port)
+            agent.fetch_remote_metadata(remote_peer, remote_ip, remote_port)
+            while not agent.check_remote_metadata(remote_peer):
+                continue
+        else:
+            while not agent.check_remote_metadata(remote_peer):
+                continue
+            agent.send_local_metadata(remote_ip, remote_port)
+            agent.fetch_remote_metadata(remote_peer, remote_ip, remote_port)
+
+        # Both endpoints send their descriptors to peer
+        recv_desc = agent.get_serialized_descs(recv_local_xfer_descs)
+        agent.send_notif(remote_peer, recv_desc)
+
+        # Both endpoints wait for peer descriptors
+        notifs = agent.get_new_notifs()
+        while len(notifs) == 0:
+            notifs = agent.get_new_notifs()
+
+        # Both endpoints parse remote descriptors
+        remote_recv_xfer_descs = agent.deserialize_descs(
+            notifs[remote_peer][0]
+        )  # What we write to
+
+        # Why twice? TBH, I do not know.
+        while not agent.check_remote_metadata(remote_peer):
+            continue
+
+        # Both endpoints initialize transfer handles
+        transfer_handle = agent.initialize_xfer(
+            "WRITE",
+            send_local_xfer_descs,
+            remote_recv_xfer_descs,
+            remote_peer,
+            "TRANSFER",
+        )
+
+        return transfer_handle
+
+
+    def do_transfer_ucx_dual(role: str, agent: nixl_agent, transfer_handle):
+        """
+        Execute dual WRITE transfers where both endpoints simultaneously write to each other.
+        Both endpoints do the same operations: initiate transfers and wait for remote completion.
+        """
+        # Both endpoints initiate their outbound transfers
+        state = agent.transfer(transfer_handle)
+        assert state != "ERR", "Error in transfer initiation"
+
+        # Poll our outbound transfer and wait for remote inbound transfer to complete
+        done = False
+        remote_peer = "server" if "client" in role else "client"
+        recv_uid = "TRANSFER"
+
+        while not done or not agent.check_remote_xfer_done(
+            remote_peer, recv_uid.encode("utf-8")
+        ):
+            # Check our outbound transfer
+            if not done:
+                state = agent.check_xfer_state(transfer_handle)
+                assert state != "ERR", "Error in send transfer"
+                done = state == "DONE"
+
+
+    def start_transfer_dual(size, num_kvblocks, args):
+        """
+        Dual direction transfer where both client and server simultaneously perform WRITE operations.
+        Each endpoint writes data to the other endpoint concurrently.
+        """
+        assert args.backend == "ucx", (
+            "Dual direction transfer only supported with UCX backend"
+        )
+
+        try:
+            # Create datasets for both sending and receiving
+            # Dataset for sending (writing to remote)
+            send_dataset = create_dataset(
+                args.role, size, num_kvblocks, args.device, args.local_gpu_idx
+            )
+            # Dataset for receiving (where remote will write to)
+            recv_dataset = create_dataset(
+                (
+                    "server" if "client" in args.role else "client"
+                ),  # opposite role for recv buffer
+                size,
+                num_kvblocks,
+                args.device,
+                args.local_gpu_idx,
+            )
+
+            agent = None
+            transfer_handle = None
+            send_register_descs = None
+            recv_register_descs = None
+
+            # Suppress stdout for better output
+            old_stdout = sys.stdout
+            sys.stdout = io.StringIO()
+
+            # Create agents and register memory for both send and receive datasets
+            agent, send_register_descs, recv_register_descs = create_nixl_agent_ucx_dual(
+                args.role, send_dataset, recv_dataset
+            )
+
+            # Initialize dual transfer handles for bidirectional WRITE operations
+            transfer_handle = init_transfer_metadata_ucx_dual(
+                args.role,
+                agent,
+                send_register_descs,
+                recv_register_descs,
+                args.remote_ip,
+                listen_port,
+            )
+
+            sys.stdout = old_stdout
+
+            total_size = 0
+            start = time.perf_counter()
+
+            # Perform dual direction WRITE transfers for specified iterations
+            for _ in range(args.iters):
+                # Both endpoints perform WRITE operations simultaneously using dual function
+                do_transfer_ucx_dual(args.role, agent, transfer_handle)
+                total_size += size
+
+            end = time.perf_counter()
+
+            transfer_time = end - start
+            gbps = (total_size * 8) / transfer_time / 1e9  # bits per second → Gbps
+            gb_sec = total_size / transfer_time / 1e9  # bytes per second → GB/s
+            lat = transfer_time / args.iters
+
+            print(
+                f"[{args.role}] DUAL-WRITE {_pretty_size(size):>8} : {gbps:6.2f} Gbps | {gb_sec:6.2f} GB/s | {lat:6.6f} s"
+            )
+
+            # Verify received data (should be opposite of what we sent)
+            expected_value = 0 if "client" in args.role else 1
+            for i, block in enumerate(recv_dataset):
+                block_mean = torch.mean(block).item()
+                assert abs(block_mean - expected_value) < 1e-6, (
+                    f"Block {i} received value {block_mean}, expected {expected_value}"
+                )
+
+        except KeyboardInterrupt:
+            return 0.0
+        except Exception:
+            print(f"Error in dual write transfer {args.role}: {traceback.format_exc()}")
+            return 0.0
+        finally:
+            # Cleanup transfer handles and registered descriptors
+            cleanup_transfer(agent, transfer_handle, send_register_descs)
+            cleanup_transfer(agent, None, recv_register_descs)
+            cleanup_agent(agent)
+
+
+    def start_transfer_local(size, num_kvblocks, args):
+        """
+        Single-process local transfer test: one NIXL agent writes from src buffer
+        to dst buffer on the same node via the IPC (NVLink/PCIe) path.
+        This exercises the supportsLocal() code path in the UCCL backend.
+        """
+        op = "WRITE" if args.op_type == "write" else "READ"
+
+        try:
+            # src buffers filled with 1s, dst buffers filled with 0s
+            src_device = args.device
+            dst_device = args.dst_device if args.dst_device else args.device
+            src_dataset = create_dataset(
+                "client", size, num_kvblocks, src_device, args.local_gpu_idx
+            )
+            dst_gpu = args.dst_gpu_idx if args.dst_gpu_idx >= 0 else args.local_gpu_idx
+            dst_dataset = create_dataset("server", size, num_kvblocks, dst_device, dst_gpu)
+
+            backend_name = "UCCL" if args.backend == "uccl" else args.backend.upper()
+            config = nixl_agent_config(backends=[backend_name])
+            agent = nixl_agent("local_agent", config)
+
+            src_descs = agent.get_reg_descs(src_dataset)
+            dst_descs = agent.get_reg_descs(dst_dataset)
+            src_reg = agent.register_memory(src_descs)
+            dst_reg = agent.register_memory(dst_descs)
+
+            src_xfer = src_reg.trim()
+            dst_xfer = dst_reg.trim()
+
+            # initialize_xfer with own agent name triggers the local (IPC) path
+            if op == "READ":
+                transfer_handle = agent.initialize_xfer(
+                    op, dst_xfer, src_xfer, "local_agent"
+                )
+            else:
+                transfer_handle = agent.initialize_xfer(
+                    op, src_xfer, dst_xfer, "local_agent"
+                )
+
+            total_size = 0
+            total_transfer_time = 0.0
+            warmup = 1 if args.iters > 1 else 0
+
+            for iter_idx in range(args.iters):
+                state = agent.transfer(transfer_handle)
+                assert state != "ERR", "Transfer initiation failed"
+
+                t0 = time.perf_counter()
+                while True:
+                    state = agent.check_xfer_state(transfer_handle)
+                    assert state != "ERR", "Transfer failed"
+                    if state == "DONE":
+                        break
+                t1 = time.perf_counter()
+
+                transfer_time = t1 - t0
+                if iter_idx >= warmup:
+                    total_transfer_time += transfer_time
+                    total_size += size
+
+                iter_bw = size / transfer_time / 1e9  # noqa: F841
+
+            # Verify dst buffers contain the src value (1.0)
+            for i, block in enumerate(dst_dataset):
+                assert abs(torch.mean(block.float()).item() - 1.0) < 1e-6, (
+                    f"Block {i}: expected 1.0 got {torch.mean(block.float()).item()}"
+                )
+
+            effective_iters = max(args.iters - warmup, 1)
+            avg_lat = total_transfer_time / effective_iters
+            gb_sec = total_size / total_transfer_time / 1e9
+            gbps = gb_sec * 8
+
+            src_dev = f"cuda:{args.local_gpu_idx}" if src_device == "gpu" else "cpu"
+            dst_dev = f"cuda:{dst_gpu}" if dst_device == "gpu" else "cpu"
+            print(
+                f"[local {src_dev}->{dst_dev}] {_pretty_size(size):>8} : "
+                f"{gbps:6.2f} Gbps | {gb_sec:6.2f} GB/s | {avg_lat:.6f} s"
+            )
+
+            agent.release_xfer_handle(transfer_handle)
+            agent.deregister_memory(src_reg)
+            agent.deregister_memory(dst_reg)
+
+        except Exception:
+            import traceback
+
+            print(f"Error in local transfer: {traceback.format_exc()}")
+
+
+    def _pretty_size(num_bytes: int) -> str:
+        units = ["B", "KB", "MB", "GB"]
+        val = float(num_bytes)
+        for u in units:
+            if val < 1024 or u == units[-1]:
+                return f"{val:.0f} {u}" if u == "B" else f"{val:.1f} {u}"
+            val /= 1024
+        return f"{num_bytes} B"  # fallback
+
+
+    def parse_size_list(val: str) -> List[int]:
+        try:
+            return [int(s) for s in val.split(",") if s]
+        except ValueError:
+            raise argparse.ArgumentTypeError("sizes must be comma-separated integers")
+
+
+    def main():
+        p = argparse.ArgumentParser(description="Benchmark NIXL/UCX bandwidth")
+        p.add_argument(
+            "--role",
+            choices=["server", "client"],
+            required=True,
+            help="Run as server (receiver) or client (sender)",
+        )
+        p.add_argument(
+            "--remote-ip",
+            default="0.0.0.0",
+            help="Server IP address (client only)",
+        )
+        p.add_argument(
+            "--local-gpu-idx",
+            type=int,
+            default=0,
+            help="Local GPU index to bind buffers",
+        )
+        p.add_argument(
+            "--device",
+            choices=["cpu", "gpu"],
+            default="gpu",
+            help="Buffer location (cpu or gpu)",
+        )
+        p.add_argument(
+            "--sizes",
+            type=parse_size_list,
+            default=[
+                1048576,
+                10485760,
+                16777216,
+                104857600,
+                404857600,
+            ],
+            help="Comma separated list of message sizes in bytes",
+        )
+        p.add_argument(
+            "--iters",
+            type=int,
+            default=10,
+            help="Iterations per message size (excluding 1 warm-up)",
+        )
+        p.add_argument(
+            "--num-kvblocks",
+            type=int,
+            default=1,
+            help="Number of key-value blocks to send/recv in a single call",
+        )
+        p.add_argument(
+            "--backend",
+            choices=["ucx", "mooncake", "uccl"],
+            default="ucx",
+            help="Backend that nixl will use for the data transfer",
+        )
+        p.add_argument(
+            "--op-type",
+            choices=["write", "read"],
+            default="write",
+            help="Operation that nixl will use for the data transfer",
+        )
+        p.add_argument(
+            "--dual",
+            action="store_true",
+            help="Run the benchmark on two directions",
+        )
+        p.add_argument(
+            "--local",
+            action="store_true",
+            help="Single-process local transfer test (IPC path via supportsLocal)",
+        )
+        p.add_argument(
+            "--dst-gpu-idx",
+            type=int,
+            default=-1,
+            help="Destination GPU index for local transfers (-1 = same as --local-gpu-idx)",
+        )
+        p.add_argument(
+            "--dst-device",
+            choices=["cpu", "gpu"],
+            default=None,
+            help="Destination buffer location for local transfers (default: same as --device)",
+        )
+        args = p.parse_args()
+
+        assert not (args.dual and args.backend == "mooncake"), (
+            "We do not support dual direction with Mooncake backend"
+        )
+        assert not (args.dual and args.remote_ip == "0.0.0.0"), (
+            "Remote IP must be set for dual direction transfer"
+        )
+
+        print("NIXL P2P Benchmark — role:", args.role)
+        print("Message sizes:", ", ".join(_pretty_size(s) for s in args.sizes))
+        print("Number of key-value blocks per message:", args.num_kvblocks)
+        print(
+            f"Device: {args.device} | Local GPU idx: {args.local_gpu_idx} | Iterations: {args.iters}"
+        )
+        if args.local:
+            if args.dst_device is None:
+                args.dst_device = args.device
+            assert args.backend == "uccl" or args.backend == "ucx", (
+                "Local mode only supported with --backend uccl/ucx"
+            )
+            dst = args.dst_gpu_idx if args.dst_gpu_idx >= 0 else args.local_gpu_idx
+            src_dev = f"cuda:{args.local_gpu_idx}" if args.device == "gpu" else "cpu"
+            dst_dev = f"cuda:{dst}" if args.dst_device == "gpu" else "cpu"
+            print(f"Local IPC transfer: {src_dev} \u2192 {dst_dev}")
+            for size in args.sizes:
+                start_transfer_local(size, args.num_kvblocks, args)
+        elif args.dual:
+            for size in args.sizes:
+                start_transfer_dual(size, args.num_kvblocks, args)
+        else:
+            for size in args.sizes:
+                start_transfer(size, args.num_kvblocks, args)
+
+
+    if __name__ == "__main__":
+        try:
+            main()
+        except KeyboardInterrupt:
+            print("\n[Interrupted] Benchmark aborted by user.")
+            sys.exit(1)
+  gemini-arp-fix.sh: |
+    #!/bin/bash
+    # "Sledgehammer" Fix v3: Robust MAC detection
+
+    # 1. Gather all local IPs and MACs for net1-* devices
+    declare -A ip_map
+    declare -A mac_map
+
+    # Get list of devices, stripping the @suffix
+    devs=$(ip -o link show | awk -F': ' '{print $2}' | cut -d@ -f1 | grep '^net1-')
+
+    echo "Gathering local details..."
+    for dev in $devs; do
+        # Extract IP (assuming one IPv4 per interface)
+        ip=$(ip -o -4 addr show dev $dev | awk '{print $4}' | cut -d/ -f1)
+
+        # FIX: Robust MAC extraction. Look for "link/ether", print the next field.
+        mac=$(ip -o link show dev $dev | awk '{for(i=1;i<=NF;i++) if($i=="link/ether") print $(i+1)}')
+
+        if [[ -n "$ip" && -n "$mac" ]]; then
+            ip_map[$dev]=$ip
+            mac_map[$dev]=$mac
+            echo "  Found $dev: IP=$ip MAC=$mac"
+        else
+            echo "  Warning: Could not parse details for $dev"
+        fi
+    done
+
+    echo "------------------------------------------------"
+    echo "Cross-populating ARP tables..."
+
+    # 2. Loop through every device (Source)
+    for src_dev in "${!ip_map[@]}"; do
+        # Loop through every other device (Destination)
+        for dst_dev in "${!ip_map[@]}"; do
+            if [[ "$src_dev" != "$dst_dev" ]]; then
+                dst_ip=${ip_map[$dst_dev]}
+                dst_mac=${mac_map[$dst_dev]}
+
+                # 3. Add the static neighbor entry
+                # "nud permanent" stops the kernel from asking the switch
+                ip neigh replace $dst_ip lladdr $dst_mac dev $src_dev nud permanent
+            fi
+        done
+    done
+
+    echo "Done. Please check 'ip neigh show' to verify correct MACs."
+  install_nsys.sh: |-
+    #!/usr/bin/env bash
+
+    apt-get update
+
+    NSIGHT_SYSTEMS_VER=$(apt-cache policy nsight-systems-* | grep ^nsight | grep -v target | tail -1 | sed 's^:^^g')
+    NSIGHT_COMPUTE_VER=$(apt-cache policy nsight-compute-* | grep ^nsight | grep -v target | tail -1 | sed 's^:^^g')
+    apt install -y $NSIGHT_SYSTEMS_VER $NSIGHT_COMPUTE_VER
+  set_llmdbench_environment.py: |
+    #!/usr/bin/env python3
+
+    import subprocess
+    import ipaddress
+    import os
+    import json
+    import time
+    import shutil
+
+    from pathlib import Path
+    from optparse import OptionParser
+
+    ip_address_info = {}
+    ip_route_info = {}
+    device_to_network = {}
+    hcadev_to_gid = {}
+    gid_to_device = {}
+    curr_if = ""
+    multi_if_net = None
+    hca_info = {}
+    nccl_list = []
+    nixl_list = []
+    is_infiniband = False
+
+    hcaids_down = []
+    hcaids_wrong_gid = []
+    hcaids_excluded = os.getenv("NCCL_EXCLUDE_IB_HCA", "").split(",")
+    ucx_tls = os.getenv("UCX_TLS", "").split(",")
+    executables_path = "/usr/local/bin"
+
+    ips_for_fping = []
+    curr_hca = ""
+
+    init_container_commands = []
+
+    deps_to_copy = []
+    deps_present = {}
+    deps_present["ip"] = False
+    deps_present["ibstat"] = False
+    deps_present["show_gids.sh"] = False
+    deps_present["gemini-arp-fix.sh"] = False
+
+    nvshmem_remote_transport = "ibgda"
+    nvshmem_ib_enable_ibgda = "true"
+    nvshmem_enable_nic_pe_mapping = 1
+    nvshmem_ib_addr_range = os.getenv("NVSHMEM_IB_ADDR_RANGE", None)
+
+    disable_acs = os.getenv("NCCL_ACS_DISABLE", "0")
+
+    pod_name = os.uname()[1]
+    pod_namespace = os.environ.get("LLMDBENCH_POD_NS", "default")
+    pod_labels = os.environ.get("LLMDBENCH_POD_LABELS", "")
+    kubeconfig_path = os.environ.get("KUBECONFIG", "")
+
+    lws_leader_address = os.environ.get("LWS_LEADER_ADDRESS", None)
+
+    usage = """usage: %prog [options] [command]
+    """
+    _parser = OptionParser(usage)
+
+    _parser.add_option(
+        "-d",
+        "--debug",
+        action="store_true",
+        dest="debug",
+        default=False,
+        help="Display messages describing the output of discovery process on this pod",
+    )
+
+    _parser.add_option(
+        "-e",
+        "--envfile",
+        dest="envfile",
+        default=f"{Path.home()}/llmdbench_env.sh",
+        help="name of the environment file generated (on user's home directory",
+    )
+
+    _parser.add_option(
+        "-i",
+        "--initcontainermode",
+        action="store_true",
+        dest="initcontainermode",
+        default=False,
+        help="if executed from an initContainer, just dump all commands to envfile for further execution",
+    )
+
+    _parser.add_option(
+        "-o",
+        "--omitenvvars",
+        dest="omitenvvars",
+        default="",
+        help="List of environment variables which should be ommitted",
+    )
+
+    _parser.set_defaults()
+    (options, _args) = _parser.parse_args()
+
+    options.envdir = options.envfile.replace("/llmdbench_env.sh", "")
+
+    options.omitenvvars = options.omitenvvars.split(",")
+
+    if options.initcontainermode:
+        print(
+            f'DEBUG: "initContainer mode" detected. Will write commands to {options.envfile}, instead of executing those'
+        )
+
+    if os.getenv("FLEX_DEVICE", "PF") == "VF":
+        env_file_name = f"{Path.home()}/.senlib.json"
+        if Path(env_file_name).is_file():
+            print(
+                f'INFO: Environment variable "FLEX_DEVICE" detected, will modify "{env_file_name}"'
+            )
+            with open(env_file_name, "r", encoding="utf-8") as senlib_file:
+                senlib_contents = json.load(senlib_file)
+            senlib_contents["RISCV"]["DOOM"]["enable"] = True
+            with open(env_file_name, "w") as senlib_file:
+                json.dump(senlib_contents, senlib_file, indent=4)
+    result = None
+    for dep in deps_present.keys():
+        try:
+            result = subprocess.run(
+                ["which", dep], capture_output=True, text=True, check=True
+            )
+            deps_present[dep] = True
+            executable_found_path = result.stdout.split("\n")[0]
+            executable_found_name = executable_found_path.split("/")[-1]
+            if dep.count(".sh"):
+                shutil.copy2(
+                    executable_found_path, f"{options.envdir}/{executable_found_name}"
+                )
+                if dep not in deps_to_copy:
+                    deps_to_copy.append(dep)
+        except subprocess.CalledProcessError as e:
+            if os.access(executables_path, os.W_OK):
+                print(
+                    f'WARNING: Dependency "{dep}" not available on the image: {e.cmd} returned {e.returncode}. Trying to obtain externally...'
+                )
+                tool_cfgmap_fn = f"/setup/preprocess/{dep}.sh"
+                if Path(tool_cfgmap_fn).is_file():
+                    tool_image_fn = f"{executables_path}/{dep}"
+                    if dep.count(".sh"):
+                        shutil.copy2(tool_cfgmap_fn, tool_image_fn)
+                        if dep not in deps_to_copy:
+                            deps_to_copy.append(dep)
+                    os.chmod(tool_image_fn, 0o755)
+        try:
+            result = subprocess.run(
+                ["which", dep], capture_output=True, text=True, check=True
+            )
+            deps_present[dep] = True
+            executable_found_path = result.stdout.split("\n")[0]
+            executable_found_name = executable_found_path.split("/")[-1]
+            if dep.count(".sh"):
+                shutil.copy2(
+                    executable_found_path, f"{options.envdir}/{executable_found_name}"
+                )
+                if dep not in deps_to_copy:
+                    deps_to_copy.append(dep)
+        except subprocess.CalledProcessError as e:
+            print(
+                f'WARNING: Dependency "{dep}" neither available on the image nor on the config map: {e.cmd} returned {e.returncode}.'
+            )
+
+    if deps_present["ip"]:
+        ip_address_list_command_output = subprocess.run(
+            ["ip", "-o", "address", "list"], capture_output=True, text=True, check=True
+        )
+        for line in ip_address_list_command_output.stdout.split("\n"):
+            if line.count("inet "):
+                curr_if = line.split()[1]
+                curr_ipv4 = line.split()[3]
+            if line.count("inet6"):
+                curr_ipv6 = line.split()[3]
+                curr_last_octect = curr_ipv6.split(":")[-1].split("/")[0]
+                ip_address_info[curr_last_octect] = {}
+                ip_address_info[curr_last_octect]["interface_name"] = curr_if
+                ip_address_info[curr_last_octect]["ipv4"] = curr_ipv4
+                ip_address_info[curr_last_octect]["ipv6"] = curr_ipv6
+
+        file_name = f"{Path.home()}/.ip_address_info.json"
+        with open(file_name, "w") as fh:
+            json.dump(ip_address_info, fh)
+
+        default_interface = None
+        ip_route_list_command_output = subprocess.run(
+            ["ip", "route", "list"], capture_output=True, text=True, check=True
+        )
+        for line in ip_route_list_command_output.stdout.split("\n"):
+            if line and line.count("default") and not default_interface:
+                pre_dev, post_dev = line.split("dev")
+                default_interface = post_dev.split()[0]
+                break
+
+        for line in ip_route_list_command_output.stdout.split("\n"):
+            if line and not line.count(default_interface):
+                network = line.split()[0]
+                device = line.split()[2]
+
+                if network not in ip_route_info:
+                    ip_route_info[network] = []
+
+                if device not in ip_route_info[network]:
+                    ip_route_info[network].append(device)
+
+                if device not in device_to_network:
+                    device_to_network[device] = network
+
+        file_name = f"{Path.home()}/.ip_route_info.json"
+        with open(file_name, "w") as fh:
+            json.dump(ip_route_info, fh)
+
+        file_name = f"{Path.home()}/.device_to_network.json"
+        with open(file_name, "w") as fh:
+            json.dump(ip_route_info, fh)
+
+    if deps_present["show_gids.sh"]:
+        file_name = f"{Path.home()}/.gid_to_device.json"
+        if Path(file_name).is_file():
+            with open(file_name, "r") as fh:
+                gid_to_device = json.load(fh)
+
+        file_name = f"{Path.home()}/.hcadev_to_gid.json"
+        if Path(file_name).is_file():
+            with open(file_name, "r") as fh:
+                hcadev_to_gid = json.load(fh)
+
+        if not gid_to_device and not hcadev_to_gid:
+            show_gids_command_output = subprocess.run(
+                ["show_gids.sh"], capture_output=True, text=True, check=True
+            )
+            for line in show_gids_command_output.stdout.split("\n")[2:]:
+                if len(line.split("\t")) == 7:
+                    hcadev, _, gidnum, gid, ipv4, _, netdev = line.split("\t")
+                    if gidnum not in gid_to_device:
+                        gid_to_device[gidnum] = []
+
+                    if hcadev not in hcadev_to_gid:
+                        hcadev_to_gid[hcadev] = []
+
+                    if hcadev not in gid_to_device[gidnum]:
+                        gid_to_device[gidnum].append(hcadev)
+
+                    if gidnum not in hcadev_to_gid[hcadev]:
+                        hcadev_to_gid[hcadev].append(gidnum)
+
+            file_name = f"{Path.home()}/.gid_to_device.json"
+            with open(file_name, "w") as fh:
+                json.dump(gid_to_device, fh)
+
+            file_name = f"{Path.home()}/.hcadev_to_gid.json"
+            with open(file_name, "w") as fh:
+                json.dump(hcadev_to_gid, fh)
+
+    s_gid_len = 0
+    s_gid = []
+    for gidnum in gid_to_device.keys():
+        if len(gid_to_device[gidnum]) >= s_gid_len:
+            s_gid_len = len(gid_to_device[gidnum])
+
+    for gidnum in gid_to_device.keys():
+        if len(gid_to_device[gidnum]) == s_gid_len:
+            if gidnum not in s_gid:
+                s_gid.append(gidnum)
+
+    if options.debug:
+        print(f"{'-' * 20} ip_info {'-' * 20}")
+        print(json.dumps(ip_address_info, sort_keys=True, indent=4))
+        print(f"{'-' * 20} ip_info {'-' * 20}")
+
+        print(f"{'-' * 20} ip_route_info {'-' * 20}")
+        print(json.dumps(ip_route_info, sort_keys=True, indent=4))
+        print(f"{'-' * 20} ip_route_info {'-' * 20}")
+
+        print(f"{'-' * 20} gid_to_device {'-' * 20}")
+        print(json.dumps(gid_to_device, sort_keys=True, indent=4))
+        print(f"{'-' * 20} gid_to_device {'-' * 20}")
+
+        print(f"{'-' * 20} hcadev_to_gid {'-' * 20}")
+        print(json.dumps(hcadev_to_gid, sort_keys=True, indent=4))
+        print(f"{'-' * 20} hcadev_to_gid {'-' * 20}")
+
+        print(f"{'-' * 20} device_to_network {'-' * 20}")
+        print(json.dumps(device_to_network, sort_keys=True, indent=4))
+        print(f"{'-' * 20} device_to_network {'-' * 20}")
+
+        print(f"{'-' * 20} selected gids: {s_gid}  {'-' * 20}")
+
+    if deps_present["ibstat"]:
+        ibstat_command_output = subprocess.run(
+            ["ibstat"], capture_output=True, text=True, check=True
+        )
+        for line in ibstat_command_output.stdout.split("\n"):
+            if line.count("CA '"):
+                curr_hca = line.split("'")[1].strip()
+                hca_info[curr_hca] = {}
+                hca_info[curr_hca]["hca_id"] = curr_hca
+            if line.count("Port ") and not line.count("GUID"):
+                hca_info[curr_hca]["port"] = line.split("Port ")[-1].split(":")[0].strip()
+            if line.count("Node GUID"):
+                hca_info[curr_hca]["node_guid"] = line.split(":")[-1].strip()
+                hca_info[curr_hca]["node_guid"] = str(
+                    ipaddress.IPv6Address(int(hca_info[curr_hca]["node_guid"], 16))
+                )
+                hca_info[curr_hca]["last_octect"] = hca_info[curr_hca]["node_guid"].split(
+                    ":"
+                )[-1]
+            if line.count("State"):
+                hca_info[curr_hca]["status"] = (
+                    line.split(":")[-1]
+                    .strip()
+                    .replace("Active", "UP")
+                    .replace("Down", "DOWN")
+                )
+
+            if curr_hca in hca_info:
+                hca_info[curr_hca]["gids"] = []
+                if curr_hca in hcadev_to_gid:
+                    hca_info[curr_hca]["gids"] = hcadev_to_gid[curr_hca]
+
+        file_name = f"{Path.home()}/.hca_info.json"
+        with open(file_name, "w") as fh:
+            json.dump(hca_info, fh)
+
+        c1 = "mlx name"
+        c2 = "node guid"
+        c3 = "port"
+        c4 = "state"
+        c5 = "if name"
+        c6 = "ipv4"
+        c7 = "ipv6"
+
+        if options.debug:
+            print(
+                f"{c1.ljust(10)} {c2.ljust(25)} {c3.ljust(5)} {c4.ljust(5)} {c5.ljust(10)} {c6.ljust(20)} {c7}"
+            )
+
+        for entry in hca_info.keys():
+            hcaid = hca_info[entry]["hca_id"]
+            lo = hca_info[entry]["last_octect"]
+            stat = hca_info[entry]["status"]
+            node_guid = hca_info[entry]["node_guid"]
+            port = hca_info[entry]["port"]
+            status = hca_info[entry]["status"]
+            if_name = "N/A"
+            ipv4 = "N/A"
+            ipv6 = "N/A"
+
+            if status == "DOWN":
+                if hcaid not in hcaids_down:
+                    hcaids_down.append(hcaid)
+
+            # For multi-nic with RoCE/GDR, we match the mlx_name with if name by the last octet of the IPv6 address
+            if lo in ip_address_info:
+                if_name = ip_address_info[lo]["interface_name"]
+                ipv4 = ip_address_info[lo]["ipv4"]
+                ipv6 = ip_address_info[lo]["ipv6"]
+                if status == "UP":
+                    if s_gid == hcadev_to_gid[hcaid]:
+                        if hcaid not in hcaids_excluded:
+                            hca_info[entry]["ipv4"] = ipv4
+                            ips_for_fping.append(ipv4.split("/")[0])
+                            nccl_list.append(f"{entry}")
+                            nixl_list.append(f"{if_name}")
+                    else:
+                        if hcaid not in hcaids_wrong_gid:
+                            hcaids_wrong_gid.append(hcaid)
+
+            # For infiniband, we only check the status of the ibpX device.
+            if hcaid.count("ibp"):
+                is_infiniband = True
+                if status == "UP":
+                    nccl_list.append(f"{entry}")
+
+            if options.debug:
+                print(
+                    f"{entry.ljust(10)} {node_guid.ljust(25)} {port.ljust(5)} {stat.ljust(5)} {if_name.ljust(10)} {ipv4.ljust(20)} {ipv6}"
+                )
+
+        if not nixl_list and nccl_list:
+            for entry in ip_address_info.keys():
+                if ip_address_info[entry]["interface_name"].count("eth"):
+                    nixl_list.append(ip_address_info[entry]["interface_name"])
+
+    create_multiple_routing_tables = False
+    for entry in ip_route_info.keys():
+        if len(ip_route_info[entry]) > 1:
+            nvshmem_ib_addr_range = entry
+            multi_if_net = entry
+            create_multiple_routing_tables = True
+
+    if not nvshmem_ib_addr_range and multi_if_net:
+        nvshmem_ib_addr_range = entry
+
+    i = 0
+    if create_multiple_routing_tables:
+        rtdir = None
+        for rtdir in ["/etc/iproute2", "/usr/share/iproute2"]:
+            rt_tables_path = Path(f"{rtdir}/rt_tables")
+            if rt_tables_path.is_file():
+                break
+
+        if rtdir:
+            print(
+                "INFO: one or more interfaces have IPs on the same subnet, will create multiple routing tables"
+            )
+            with open(f"{rt_tables_path}", "r") as file:
+                rt_tables_content = file.read().split("\n")
+
+            for entry in ip_address_info:
+                if (
+                    ip_address_info[entry]["interface_name"] != default_interface
+                    and ip_address_info[entry]["interface_name"] != "lo"
+                ):
+                    table = f"table{i}"
+                    new_routing_table_entry_found = False
+                    for line in rt_tables_content:
+                        if line.count(f" table{i} "):
+                            new_routing_table_entry_found = True
+                            break
+                    if not new_routing_table_entry_found:
+                        new_routing_table_entry = f"{100 + i} {table} "
+                        with open(f"{rt_tables_path}", "a") as file:
+                            file.write(new_routing_table_entry + "\n")
+                        time.sleep(1)
+
+                    interface = ip_address_info[entry]["interface_name"]
+                    network = device_to_network[interface]
+                    ip = ip_address_info[entry]["ipv4"].split("/")[0]
+
+                    new_routing_table_populated = False
+                    try:
+                        table_output = subprocess.run(
+                            ["ip", "route", "list", "table", table],
+                            capture_output=True,
+                            text=True,
+                            check=True,
+                        )
+                        for line in table_output.stdout.split("\n"):
+                            if line.count(f"{network} dev {interface} scope link src {ip}"):
+                                new_routing_table_populated = True
+                                break
+                    except subprocess.CalledProcessError as e:
+                        print(f'WARNING: Command "{e.cmd}" returned {e.returncode}.')
+
+                    if not new_routing_table_populated:
+                        if options.initcontainermode:
+                            init_container_commands.append(
+                                f'echo "{new_routing_table_entry}" >> {rt_tables_path}'
+                            )
+                            init_container_commands.append(
+                                f"ip route add {network} dev {interface} src {ip} table {table}"
+                            )
+                            init_container_commands.append(
+                                f"ip rule add from {ip} lookup {table}"
+                            )
+                        else:
+                            try:
+                                subprocess.run(
+                                    [
+                                        "ip",
+                                        "route",
+                                        "add",
+                                        network,
+                                        "dev",
+                                        interface,
+                                        "src",
+                                        ip,
+                                        "table",
+                                        table,
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                    check=True,
+                                )
+                            except subprocess.CalledProcessError as e:
+                                print(
+                                    f'WARNING: Command "{e.cmd}" returned {e.returncode}.'
+                                )
+
+                            try:
+                                subprocess.run(
+                                    ["ip", "rule", "add", "from", ip, "lookup", table],
+                                    capture_output=True,
+                                    text=True,
+                                    check=True,
+                                )
+                            except subprocess.CalledProcessError as e:
+                                print(
+                                    f'WARNING: Command "{e.cmd}" returned {e.returncode}.'
+                                )
+
+                    i = i + 1
+
+        if deps_present["gemini-arp-fix.sh"]:
+            if options.initcontainermode:
+                init_container_commands.append(f"{options.envdir}/gemini-arp-fix.sh")
+            else:
+                try:
+                    subprocess.run(
+                        ["gemini-arp-fix.sh"], capture_output=True, text=True, check=True
+                    )
+                except subprocess.CalledProcessError as e:
+                    print(f'WARNING: Command "{e.cmd}" returned {e.returncode}.')
+
+        else:
+            print('WARNING: unable to find a directory for the file "rt_tables"')
+
+    env_file_contents = []
+    env_file_name = f"{options.envfile}"
+    env_file_contents.append("#!/usr/bin/env bash")
+
+    env_file_contents.append(". /etc/os-release")
+    env_file_contents.append("which ip")
+    env_file_contents.append('if [[ $? -ne 0 && $ID == "ubuntu" ]]; then')
+    env_file_contents.append("  apt-get update && apt install -y iproute2")
+    env_file_contents.append("fi")
+
+    if nccl_list:
+        env_file_contents.append("which ibstat")
+        env_file_contents.append('if [[ $? -ne 0 && $ID == "ubuntu" ]]; then')
+        env_file_contents.append("  apt-get update && apt install -y infiniband-diags")
+        env_file_contents.append("fi")
+
+    if options.initcontainermode:
+        for dep in deps_to_copy:
+            env_file_contents.append(f"cp -f {options.envdir}/{dep} /usr/local/bin/{dep}")
+
+    print(f"INFO: HCA IDs selected: {nccl_list}")
+    print(f"INFO: HCA IDs marked as down: {hcaids_down}")
+    print(f"INFO: HCA IDs with wrong gid: {hcaids_wrong_gid}")
+    print(f"INFO: HCA IDs excluded: {hcaids_excluded}")
+
+    if nixl_list:
+        nccl_list.sort(key=len)
+        nixl_list.sort(key=len)
+        hcaids_down.sort(key=len)
+        hcaids_excluded.sort(key=len)
+
+        env_vars = ["UCX_NET_DEVICES", "NCCL_IB_HCA"]
+        nvshmem_debug = os.getenv("NVSHMEM_DEBUG", "none")
+        if nvshmem_debug != "none":
+            env_vars.append("NVSHMEM_HCA_LIST")
+
+        print(f"INFO: Adding environment variables {env_vars} to {env_file_name}")
+        print()
+        first_device = nccl_list[0]
+        if first_device in hca_info:
+            if "ipv4" in hca_info[first_device]:
+                first_octect = hca_info[first_device]["ipv4"].split(".")[0]
+        nccl_list = ",".join(nccl_list)
+        nixl_list = ",".join(nixl_list)
+        ips_for_fping = " ".join(ips_for_fping)
+        if "SMOKETEST_IPS" not in options.omitenvvars:
+            env_file_contents.append(f'export SMOKETEST_IPS="{ips_for_fping}"')
+        if "UCX_NET_DEVICES" not in options.omitenvvars:
+            if "rc" in ucx_tls:
+                env_file_contents.append(
+                    f'export UCX_NET_DEVICES="{nccl_list.replace(",", ":1,")}:1"'
+                )
+            else:
+                env_file_contents.append(f'export UCX_NET_DEVICES="{nixl_list}"')
+        if "NCCL_IB_HCA" not in options.omitenvvars:
+            env_file_contents.append(f'export NCCL_IB_HCA="={nccl_list}"')
+        if "NCCL_SOCKET_IFNAME" not in options.omitenvvars:
+            env_file_contents.append(f'export NCCL_SOCKET_IFNAME="{default_interface}"')
+        if "NCCL_IB_GID_INDEX" not in options.omitenvvars:
+            if s_gid:
+                env_file_contents.append(f"export NCCL_IB_GID_INDEX={s_gid[0]}")
+        env_file_contents.append("\n".join(init_container_commands))
+        if "NVSHMEM_HCA_LIST" in env_vars != "none":
+            if "GLOO_SOCKET_IFNAME" not in options.omitenvvars:
+                env_file_contents.append(f'export GLOO_SOCKET_IFNAME="{default_interface}"')
+            if "NVSHMEM_DEBUG" not in options.omitenvvars:
+                env_file_contents.append(f'export NVSHMEM_DEBUG="{nvshmem_debug}"')
+            if "NVSHMEM_REMOTE_TRANSPORT" not in options.omitenvvars:
+                env_file_contents.append(
+                    f'export NVSHMEM_REMOTE_TRANSPORT="{nvshmem_remote_transport}"'
+                )
+            if "NVSHMEM_IB_ENABLE_IBGDA" not in options.omitenvvars:
+                env_file_contents.append(
+                    f'export NVSHMEM_IB_ENABLE_IBGDA="{nvshmem_ib_enable_ibgda}"'
+                )
+            if "NVSHMEM_BOOTSTRAP_UID_SOCK_IFNAME" not in options.omitenvvars:
+                env_file_contents.append(
+                    f'export NVSHMEM_BOOTSTRAP_UID_SOCK_IFNAME="{default_interface}"'
+                )
+            if "NVSHMEM_IB_GID_INDEX" not in options.omitenvvars:
+                if s_gid:
+                    env_file_contents.append(f'export NVSHMEM_IB_GID_INDEX="{s_gid[0]}"')
+            if "NVSHMEM_ENABLE_NIC_PE_MAPPING" not in options.omitenvvars:
+                env_file_contents.append(
+                    f'export NVSHMEM_ENABLE_NIC_PE_MAPPING="{nvshmem_enable_nic_pe_mapping}"'
+                )
+            if "NVSHMEM_HCA_LIST" not in options.omitenvvars:
+                env_file_contents.append(
+                    f'export NVSHMEM_HCA_LIST="{nccl_list.replace(",", ":1,")}:1"'
+                )
+            if "NVSHMEM_IB_ADDR_RANGE" not in options.omitenvvars:
+                env_file_contents.append(
+                    f'export NVSHMEM_IB_ADDR_RANGE="{nvshmem_ib_addr_range}"'
+                )
+            if is_infiniband:
+                if "NVSHMEM_IB_ENABLE_IBGDA" not in options.omitenvvars:
+                    env_file_contents.append(
+                        f'export NVSHMEM_IB_ENABLE_IBGDA="{is_infiniband}"'
+                    )
+
+    lwswi = int(os.getenv("LWS_WORKER_INDEX", "0"))
+    dpsi = int(os.getenv("DP_SIZE_LOCAL", "0"))
+    sr = lwswi * dpsi
+    env_file_contents.append(f'export START_RANK="{sr}"')
+
+    env_file_contents.append("if [ -z $LWS_WORKER_INDEX ]; then")
+    env_file_contents.append("  find /dev/shm -type f -delete")
+    env_file_contents.append("fi")
+
+    if disable_acs == "1":
+        env_file_contents.append(
+            "if [ ! -z $UCX_NET_DEVICES && ! -z NCCL_IB_HCA && ! -f ~/acs_disabled ]; then"
+        )
+        env_file_contents.append(" acs_disable_failure=0")
+        env_file_contents.append(" for BDF in $(lspci -d \"*:*:*\" | awk '{print $1}'); do")
+        env_file_contents.append("    setpci -v -s ${BDF} ECAP_ACS+0x6.w > /dev/null 2>&1")
+        env_file_contents.append("    if [ $? -ne 0 ]; then")
+        env_file_contents.append(
+            '      #echo "ACS is already disabled for PCI device \\"${BDF}\\""'
+        )
+        env_file_contents.append("      continue")
+        env_file_contents.append("    fi")
+        env_file_contents.append(
+            "    setpci -v -s ${BDF} ECAP_ACS+0x6.w=0000 > /dev/null 2>&1"
+        )
+        env_file_contents.append("    if [ $? -eq 0 ]; then")
+        env_file_contents.append('      echo "ACS disabled for PCI device \\"${BDF}\\""')
+        env_file_contents.append("    else")
+        env_file_contents.append("      acs_disable_failure=1")
+        env_file_contents.append(
+            '      echo "WARNING: Failed to disable ACS for PCI device \\"${BDF}\\""'
+        )
+        env_file_contents.append("    fi")
+        env_file_contents.append("  done")
+        env_file_contents.append(" if [[ $acs_disable_failure -eq 0 ]]; then")
+        env_file_contents.append(
+            '      echo "ACS is disabled for all relevant PCI devices"'
+        )
+        env_file_contents.append(" fi")
+        env_file_contents.append(" touch ~/acs_disabled")
+        env_file_contents.append("fi")
+
+    env_file_contents.append("echo")
+
+
+    def _parse_pod_index(suffix):
+        """Safely compute pod index by summing dash-separated integers from a pod name suffix."""
+        parts = suffix.split("-")
+        total = 0
+        for p in parts:
+            if p.isdigit():
+                total += int(p)
+        return total
+
+
+    pod_index = None
+    if lws_leader_address:
+        if pod_name.count("decode"):
+            pod_index = _parse_pod_index(pod_name.split("decode-")[-1])
+        if pod_name.count("prefill"):
+            pod_index = _parse_pod_index(pod_name.split("prefill-")[-1])
+
+    print(f'DEBUG: Pod index is "{pod_index}"')
+
+    for key in dict(os.environ).keys():
+        if "VLLM_" in key:
+            value = os.environ.get(key)
+            if value.count(",,"):
+                if pod_index is not None:
+                    if len(value.split(",,")) > pod_index:
+                        newvalue = value.split(",,")[pod_index]
+                    else:
+                        newvalue = value.split(",,")[0]
+                else:
+                    newvalue = value.split(",,")[0]
+                print(
+                    f'INFO: Variable "{key}" with value "{value}" will be re-exported with "{newvalue}" ({pod_index})'
+                )
+                env_file_contents.append(f"export {key}={newvalue}")
+
+    if pod_labels.count("_eq_") and kubeconfig_path:
+        try:
+            labels_list = pod_labels.split(",")
+            if pod_index is not None and len(labels_list) > pod_index:
+                pod_label = labels_list[pod_index]
+            else:
+                pod_label = labels_list[0]
+            pod_label_name, pod_label_value = pod_label.split("_eq_")
+
+            # Try kubectl first (available in some images)
+            kubectl_bin = shutil.which("kubectl")
+            if kubectl_bin:
+                result = subprocess.run(
+                    [
+                        kubectl_bin,
+                        "--kubeconfig",
+                        kubeconfig_path,
+                        "label",
+                        "pod",
+                        pod_name,
+                        "--namespace",
+                        pod_namespace,
+                        f"{pod_label_name}={pod_label_value}",
+                        "--overwrite",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0:
+                    print(
+                        f'INFO: Added label "{pod_label_name}={pod_label_value}" to this pod (via kubectl)'
+                    )
+                else:
+                    raise RuntimeError(f"kubectl label failed: {result.stderr}")
+            else:
+                # Fall back to K8s API via urllib (stdlib, no pip needed)
+                import urllib.request
+                import ssl
+                import yaml
+
+                with open(kubeconfig_path, "r") as f:
+                    kubeconfig = yaml.safe_load(f)
+
+                # Extract server and credentials from kubeconfig
+                cluster = kubeconfig["clusters"][0]["cluster"]
+                user = kubeconfig["users"][0]["user"]
+                server = cluster["server"].rstrip("/")
+
+                ssl_ctx = ssl.create_default_context()
+                if "certificate-authority-data" in cluster:
+                    import base64
+                    import tempfile
+
+                    ca_data = base64.b64decode(cluster["certificate-authority-data"])
+                    ca_file = tempfile.NamedTemporaryFile(delete=False, suffix=".crt")
+                    ca_file.write(ca_data)
+                    ca_file.close()
+                    ssl_ctx.load_verify_locations(ca_file.name)
+                elif "certificate-authority" in cluster:
+                    ssl_ctx.load_verify_locations(cluster["certificate-authority"])
+                else:
+                    ssl_ctx.check_hostname = False
+                    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+                if "client-certificate-data" in user and "client-key-data" in user:
+                    import base64
+                    import tempfile
+
+                    cert_data = base64.b64decode(user["client-certificate-data"])
+                    key_data = base64.b64decode(user["client-key-data"])
+                    cert_file = tempfile.NamedTemporaryFile(delete=False, suffix=".crt")
+                    cert_file.write(cert_data)
+                    cert_file.close()
+                    key_file = tempfile.NamedTemporaryFile(delete=False, suffix=".key")
+                    key_file.write(key_data)
+                    key_file.close()
+                    ssl_ctx.load_cert_chain(cert_file.name, key_file.name)
+
+                headers = {"Content-Type": "application/merge-patch+json"}
+                if "token" in user:
+                    headers["Authorization"] = f"Bearer {user['token']}"
+
+                patch_url = f"{server}/api/v1/namespaces/{pod_namespace}/pods/{pod_name}"
+                patch_body = json.dumps(
+                    {"metadata": {"labels": {pod_label_name: pod_label_value}}}
+                ).encode("utf-8")
+
+                req = urllib.request.Request(
+                    patch_url, data=patch_body, headers=headers, method="PATCH"
+                )
+                resp = urllib.request.urlopen(req, context=ssl_ctx)
+                if resp.status == 200:
+                    print(
+                        f'INFO: Added label "{pod_label_name}={pod_label_value}" to this pod (via K8s API)'
+                    )
+                else:
+                    raise RuntimeError(f"K8s API returned status {resp.status}")
+
+        except Exception as e:
+            print(f"WARNING: Pod self-labeling failed (non-fatal): {e}")
+            print("WARNING: Context-length-aware routing will not work without pod labels.")
+
+    env_file_contents.append('echo "Defined NCCL environment variables"')
+    env_file_contents.append(
+        'env | grep -E "^NCCL|^UCX|^CUDA|^OMP|^NPROC|^SMOKETEST|^NVSHMEM|START|WORLD_SIZE|RANK|^MASTER" | sort'
+    )
+    env_file_contents.append("echo")
+
+    try:
+        env_file_contents = "\n".join(env_file_contents)
+        with open(env_file_name, "w") as file:
+            file.write(env_file_contents)
+    except OSError as e:
+        print(f'Error writing to environment file "{env_file_name}": {e}')
+        exit(1)
+
+    bashrc_path = Path(f"{Path.home()}/.bashrc")
+    if bashrc_path.is_file():
+        bashrc_updated = False
+        try:
+            with open(f"{Path.home()}/.bashrc", "r") as file:
+                bashrc_contents = file.read().split("\n")
+
+            for line in bashrc_contents:
+                if line.count(f"source ~/{options.envfile}"):
+                    bashrc_updated = True
+                    break
+
+            if not bashrc_updated:
+                with open(f"{Path.home()}/.bashrc", "a") as file:
+                    file.write(f"source ~/{options.envfile}" + "\n")
+        except OSError as e:
+            print(f'Error writing to file "{bashrc_path}": {e}')
+            exit(1)
+  show_gids.sh: |
+    #!/bin/bash
+
+    black='\E[30;50m'
+
+    red='\E[31;50m'
+
+    green='\E[32;50m'
+
+    yellow='\E[33;50m'
+
+    blue='\E[34;50m'
+
+    magenta='\E[35;50m'
+
+    cyan='\E[36;50m'
+
+    white='\E[37;50m'
+
+    bold='\033[1m'
+
+    gid_count=0
+
+    # cecho (color echo) prints text in color.
+
+    # first parameter should be the desired color followed by text
+
+    function cecho ()
+    {
+        echo -en $1
+        shift
+        echo -n $*
+        tput sgr0
+    }
+
+    # becho (color echo) prints text in bold.
+
+    function becho ()
+    {
+        echo -en $bold
+        echo -n $*
+        tput sgr0
+    }
+
+    function print_gids()
+    {
+
+        dev=$1
+        port=$2
+        for gf in /sys/class/infiniband/$dev/ports/$port/gids/* ; do
+            gid=$(cat $gf);
+            if [ $gid = 0000:0000:0000:0000:0000:0000:0000:0000 ] ; then
+                continue
+            fi
+            echo -e $(basename $gf) "\t" $gid
+        done
+    }
+
+    echo -e "DEV\tPORT\tINDEX\tGID\t\t\t\t\tIPv4 \t\tVER\tDEV"
+    echo -e "---\t----\t-----\t---\t\t\t\t\t------------ \t---\t---"
+    DEVS=$1
+    if [ -z "$DEVS" ] ; then
+        DEVS=$(ls /sys/class/infiniband/)
+    fi
+
+    for d in $DEVS ; do
+        for p in $(ls /sys/class/infiniband/$d/ports/) ; do
+            for g in $(ls /sys/class/infiniband/$d/ports/$p/gids/) ; do
+                gid=$(cat /sys/class/infiniband/$d/ports/$p/gids/$g);
+                if [ $gid = 0000:0000:0000:0000:0000:0000:0000:0000 ] ; then
+                    continue
+                fi
+                if [ $gid = fe80:0000:0000:0000:0000:0000:0000:0000 ] ; then
+                    continue
+                fi
+                _ndev=$(cat /sys/class/infiniband/$d/ports/$p/gid_attrs/ndevs/$g 2>/dev/null)
+                __type=$(cat /sys/class/infiniband/$d/ports/$p/gid_attrs/types/$g 2>/dev/null)
+                _type=$(echo $__type| grep -o "[Vv].*")
+                if [ $(echo $gid | cut -d ":" -f -1) = "0000" ] ; then
+                    ipv4=$(printf "%d.%d.%d.%d" 0x${gid:30:2} 0x${gid:32:2} 0x${gid:35:2} 0x${gid:37:2})
+                    echo -e "$d\t$p\t$g\t$gid\t$ipv4 \t$_type\t$_ndev"
+                else
+                    echo -e "$d\t$p\t$g\t$gid\t\t\t$_type\t$_ndev"
+                fi
+                gid_count=$(expr 1 + $gid_count)
+            done #g (gid)
+        done #p (port)
+    done #d (dev)
+
+    echo n_gids_found=$gid_count
+  standalone-preprocess.py: |
+    #!/usr/bin/env python3
+
+    """Serialize tensorizer file if needed"""
+
+    import json
+    import logging
+    import multiprocessing
+    import os
+    import subprocess
+    import sys
+    import threading
+    import time
+
+    import psutil
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+    logger = logging.getLogger(__name__)
+
+
+    def kill_process(proc: psutil.Process):
+        """kills a process"""
+        for child in proc.children(recursive=True):
+            if child.is_running():
+                child.kill()
+                logger.info("child process %d terminated", child.pid)
+
+        if proc.is_running():
+            proc.kill()
+            logger.info("main process %d terminated", proc.pid)
+
+
+    def vllm_health(
+        process: multiprocessing.Process | subprocess.Popen,
+        health_counter: list[float],
+        health_counter_lock: threading.Lock,
+        end_event: threading.Event,
+    ):
+        """makes sure vllm process is not stuck"""
+
+        max_health_wait = 15 * 60
+
+        proc = psutil.Process(process.pid)
+        while not end_event.is_set() and proc.is_running():
+            time.sleep(0.5)
+
+            start = 0.0
+            with health_counter_lock:
+                start = health_counter[0]
+
+            elapsed = time.perf_counter() - start
+            if elapsed > max_health_wait:
+                # if vllm hasn't responded
+                logger.info(
+                    "vLLM process is stuck for more than %.2f secs, aborting ...", elapsed
+                )
+                kill_process(proc)
+                return
+
+
+    class PipeTee:
+        """sends stdout to pipe"""
+
+        def __init__(self, pipe):
+            self.pipe = pipe
+            self.stdout = sys.stdout
+            sys.stdout = self
+
+        def write(self, data):
+            """writes data"""
+            self.stdout.write(data)
+            self.pipe.send(data)
+
+        def flush(self):
+            """flushes data"""
+            self.stdout.flush()
+
+        def __del__(self):
+            sys.stdout = self.stdout
+            self.stdout = None
+
+
+    def serialize(model: str, tensorizer_uri: str, conn) -> None:
+        """serializes a model to disk"""
+
+        _ = PipeTee(conn)
+
+        from vllm.engine.arg_utils import EngineArgs
+        from vllm.model_executor.model_loader.tensorizer import (
+            TensorizerConfig,
+            tensorize_vllm_model,
+        )
+
+        engine_args = EngineArgs(model=model)
+        tensorizer_config = TensorizerConfig(tensorizer_uri=tensorizer_uri)
+
+        tensorize_vllm_model(engine_args, tensorizer_config)
+
+
+    def serialize_model(model: str, tensorizer_uri: str) -> None:
+        """process to serialize a model to disk"""
+
+        parent_conn, child_conn = multiprocessing.Pipe()
+
+        process = multiprocessing.Process(
+            target=serialize,
+            args=(model, tensorizer_uri, child_conn),
+        )
+        process.start()
+
+        # Close the write end of the pipe in the parent process
+        child_conn.close()
+
+        health_counter = [time.perf_counter()]
+        health_counter_lock = threading.Lock()
+        end_health_event = threading.Event()
+
+        health_thread = threading.Thread(
+            target=vllm_health,
+            args=(process, health_counter, health_counter_lock, end_health_event),
+            daemon=True,
+        )
+        health_thread.start()
+
+        while process.is_alive() or parent_conn.poll():
+            if parent_conn.poll():
+                try:
+                    _ = parent_conn.recv()
+                    # restart health counter
+                    with health_counter_lock:
+                        health_counter[0] = time.perf_counter()
+                except EOFError:
+                    break  # Exit loop when pipe is closed
+
+        # Wait for the child process to finish
+        process.join()
+        parent_conn.close()
+        end_health_event.set()  # end health check event
+        health_thread.join()
+
+        if process.exitcode is not None and process.exitcode != 0:
+            raise RuntimeError(f"Serialize process exited with code '{process.exitcode}'")
+
+
+    def get_env_variables(dicts: list[dict]) -> list[str]:
+        """get environment variables"""
+
+        logger.info("Environment variables:")
+
+        env_vars = os.environ
+
+        envs = []
+        missing_envs = []
+        for env_dict in dicts:
+            name = env_dict["name"]
+            value = env_vars.get(name)
+            if value is None and env_dict["required"]:
+                missing_envs.append(name)
+            else:
+                envs.append(value)
+                logger.info("  '%s': '%s'", name, value)
+
+        if len(missing_envs) > 0:
+            raise RuntimeError(f"Env. variables not found: {','.join(missing_envs)}.")
+        return envs
+
+
+    def logging_config(path: str) -> None:
+        """create custom logging config"""
+
+        # first clear config path env.
+        if "VLLM_LOGGING_CONFIG_PATH" in os.environ:
+            del os.environ["VLLM_LOGGING_CONFIG_PATH"]
+
+        from vllm.logger import DEFAULT_LOGGING_CONFIG
+
+        json_data = DEFAULT_LOGGING_CONFIG
+        formatters = json_data.get("formatters")
+        if formatters is not None:
+            vllm_formatter = formatters.get("vllm")
+            if vllm_formatter is not None:
+                format_str = vllm_formatter.get("format")
+                if format_str is not None:
+                    vllm_formatter["format"] = format_str.replace(
+                        "%(asctime)s", "%(asctime)s.%(msecs)03d"
+                    )
+
+        # change default config
+        json_string = json.dumps(json_data, indent=4)
+        logger.info("custom log config: %s", json_string)
+
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(json_string)
+            logger.info("custom log config saved path: %s", path)
+
+
+    def create_logging_config(path: str):
+        """process create custom logging config"""
+
+        process = multiprocessing.Process(
+            target=logging_config,
+            args=(path,),
+        )
+        process.start()
+
+        # Wait for the child process to finish
+        process.join()
+
+        if process.exitcode is not None and process.exitcode != 0:
+            raise RuntimeError(
+                f"Custom logging config process exited with code '{process.exitcode}'"
+            )
+
+
+    def preprocess_run() -> str:
+        """preprocess function"""
+
+        envs = get_env_variables(
+            [
+                {"name": "LLMDBENCH_VLLM_COMMON_VLLM_LOAD_FORMAT", "required": True},
+                {"name": "LLMDBENCH_VLLM_STANDALONE_MODEL", "required": True},
+                {"name": "LLMDBENCH_VLLM_TENSORIZER_URI", "required": True},
+                {"name": "VLLM_LOGGING_CONFIG_PATH", "required": False},
+            ]
+        )
+
+        load_format = envs[0].strip().lower()
+        model = envs[1].strip()
+        tensorizer_uri = envs[2]
+        logging_config_path = envs[3]
+
+        if logging_config_path is not None and logging_config_path != "":
+            # create custom configuration and save to this path
+            create_logging_config(logging_config_path.strip())
+
+        if load_format == "tensorizer":
+            # first serialize model in order to run tokenizer library later
+            try:
+                logger.info(
+                    "Start model %s serialization for tokenizer library to %s",
+                    model,
+                    tensorizer_uri,
+                )
+                serialize_model(model, tensorizer_uri)
+                logger.info("Model %s serialized to %s", model, tensorizer_uri)
+            finally:
+                logger.info("End model %s serialization", model)
+
+
+    if __name__ == "__main__":
+        try:
+            logger.info("Start preprocess run")
+            preprocess_run()
+        except Exception:
+            logger.exception("Error running preprocess")
+        finally:
+            logger.info("End preprocess run")
+  standalone-preprocess.sh: |
+    #!/usr/bin/env bash
+
+    # Installs dependencies for different load formats
+    # Handles server extra arguments
+
+    export LLMDBENCH_VLLM_TENSORIZER_URI=""
+
+    # export a custom log format path
+    shopt -s nocasematch # Enable case-insensitive matching
+    if [[ ${VLLM_LOGGING_LEVEL} == "DEBUG" ]]; then
+        # export a custom log format path
+        # the preprocess python script will create the file with custom log format
+        export VLLM_LOGGING_CONFIG_PATH=/tmp/vllm_logging_config.json
+    fi
+    shopt -u nocasematch # Disable case-insensitive matching
+
+    # unescape double quotes if existent
+    export LLMDBENCH_VLLM_COMMON_MODEL_LOADER_EXTRA_CONFIG=$(echo "$LLMDBENCH_VLLM_COMMON_MODEL_LOADER_EXTRA_CONFIG" | sed 's/\\"/"/g')
+
+    # installs dependencies for load formats
+    if [[ ${LLMDBENCH_VLLM_COMMON_VLLM_LOAD_FORMAT} == "fastsafetensors" ]]; then
+        pip install --root-user-action=ignore fastsafetensors==0.1.15
+    elif [[ ${LLMDBENCH_VLLM_COMMON_VLLM_LOAD_FORMAT} == "tensorizer" ]]; then
+        sudo apt update
+        sudo apt install -y jq
+        pip install --root-user-action=ignore tensorizer==2.12.0
+        # path to save serialized file
+        export LLMDBENCH_VLLM_TENSORIZER_URI="/tmp/${LLMDBENCH_VLLM_STANDALONE_MODEL}/v1/model.tensors"
+        export LLMDBENCH_VLLM_COMMON_MODEL_LOADER_EXTRA_CONFIG=$(echo "$LLMDBENCH_VLLM_COMMON_MODEL_LOADER_EXTRA_CONFIG" | jq '.tensorizer_uri = env.LLMDBENCH_VLLM_TENSORIZER_URI' | tr -d '\n')
+    elif [[ ${LLMDBENCH_VLLM_COMMON_VLLM_LOAD_FORMAT} == "runai_streamer" ]]; then
+        sudo apt update
+        sudo apt install -y jq
+        pip install --root-user-action=ignore runai==0.4.1
+        # controls the level of concurrency and number of OS threads
+        # reading tensors from the file to the CPU buffer
+        # https://github.com/run-ai/runai-model-streamer/blob/master/docs/src/env-vars.md
+        export LLMDBENCH_VLLM_COMMON_MODEL_LOADER_EXTRA_CONFIG=$(echo "$LLMDBENCH_VLLM_COMMON_MODEL_LOADER_EXTRA_CONFIG" | jq '.concurrency = 32' | tr -d '\n')
+    fi
+
+    echo "vllm extra arguments: '${LLMDBENCH_VLLM_COMMON_MODEL_LOADER_EXTRA_CONFIG}'"
+
+    # sets TORCH_CUDA_ARCH_LIST
+    gpu_name=$(echo $LLMDBENCH_VLLM_COMMON_AFFINITY | cut -d ':' -f 2 | xargs)
+    if [[ -n "$gpu_name" ]]; then
+        echo "--- gpu scenario start name: $gpu_name"
+        compute_cap_list=""
+        declare -A compute_cap_map
+        while IFS= read -r line; do
+            fullname=$(echo $line | cut -d ',' -f 1 | xargs)
+            # Replace blanks with hyphens
+            name=$(echo "${fullname// /-}")
+            if [[ "$gpu_name" == "$name" ]]; then
+                compute_cap=$(echo $line | cut -d ',' -f 2 | xargs)
+                # add compute capability if not added already
+                if [[ ! -n "${compute_cap_map[$compute_cap]}" ]]; then
+                    compute_cap_map[$compute_cap]=1
+                    compute_cap_list="${compute_cap_list:+${compute_cap_list};}$compute_cap"
+                fi
+                uuid=$(echo $line | cut -d ',' -f 3 | xargs)
+                persistence_mode=$(echo $line | cut -d ',' -f 4 | xargs)
+                echo "gpu_uuid='$uuid' gpu_name='$fullname' compute_cap='$compute_cap' persistence_mode='$persistence_mode'"
+            fi
+        done < <( nvidia-smi --query-gpu=name,compute_cap,uuid,persistence_mode --format=csv,noheader,nounits )
+        echo "--- gpu scenario end name: $gpu_name"
+
+        if [[ -n "$compute_cap_list" ]]; then
+            export TORCH_CUDA_ARCH_LIST=$compute_cap_list
+            echo "TORCH_CUDA_ARCH_LIST: $TORCH_CUDA_ARCH_LIST"
+        fi
+    fi
+kind: ConfigMap
+metadata:
+  name: llm-d-benchmark-preprocesses
+  namespace: llm-inference

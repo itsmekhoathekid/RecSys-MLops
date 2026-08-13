@@ -1,7 +1,7 @@
 # Observability Proof
 
 This proof covers the final-coursework observability scope for the RecSys MLOps
-platform on GCP project `rec-sys-503309` and GKE cluster
+platform on GCP project `recsys-mlops` and GKE cluster
 `recsys-mlops-gke`.
 
 The evidence is organized around the rubric areas:

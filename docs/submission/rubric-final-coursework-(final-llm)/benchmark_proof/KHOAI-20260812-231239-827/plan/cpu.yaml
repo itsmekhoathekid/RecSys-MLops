@@ -1,0 +1,18 @@
+# CPU Example Specification
+# Deploys a model on CPU-only nodes without GPU accelerators.
+# See scenarios/examples/cpu.yaml for details.
+
+# [REQUIRED]
+base_dir: /Users/KHOAI/anhkhoa/llm-d-benchmark
+
+# [REQUIRED]
+values_file:
+  path: /Users/KHOAI/anhkhoa/llm-d-benchmark/config/templates/values/defaults.yaml
+
+# [REQUIRED]
+template_dir:
+  path: /Users/KHOAI/anhkhoa/llm-d-benchmark/config/templates/jinja
+
+# [OPTIONAL]
+scenario_file:
+  path: /Users/KHOAI/anhkhoa/llm-d-benchmark/config/scenarios/examples/cpu.yaml

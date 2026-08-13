@@ -1,0 +1,13 @@
+2026-08-12 23:12:39,831 - DEBUG   - 🔍 Rendered Specification File
+ {
+  "base_dir": "/Users/KHOAI/anhkhoa/llm-d-benchmark",
+  "values_file": {
+    "path": "/Users/KHOAI/anhkhoa/llm-d-benchmark/config/templates/values/defaults.yaml"
+  },
+  "template_dir": {
+    "path": "/Users/KHOAI/anhkhoa/llm-d-benchmark/config/templates/jinja"
+  },
+  "scenario_file": {
+    "path": "/Users/KHOAI/anhkhoa/llm-d-benchmark/config/scenarios/examples/cpu.yaml"
+  }
+}

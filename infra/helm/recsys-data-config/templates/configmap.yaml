@@ -4,7 +4,7 @@ metadata:
   name: recsys-data-platform-config
   namespace: {{ .Values.namespace.name }}
 data:
-  PYTHONPATH: /opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys
+  PYTHONPATH: /opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys
   DATA_PLATFORM_MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
   MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
   AWS_DEFAULT_REGION: us-east-1
@@ -42,6 +42,7 @@ data:
   DP1_DAG_SCHEDULE: {{ .Values.airflow.dp1Schedule | quote }}
   DP2_DAG_SCHEDULE: {{ .Values.airflow.dp2Schedule | quote }}
   DP3_DAG_SCHEDULE: {{ .Values.airflow.dp3Schedule | quote }}
+  ANALYTICS_DAG_SCHEDULE: {{ .Values.airflow.analyticsSchedule | quote }}
   FEAST_MATERIALIZE_DAG_SCHEDULE: {{ .Values.airflow.feastMaterializeSchedule | quote }}
   FEATURE_DRIFT_DAG_SCHEDULE: {{ .Values.airflow.featureDriftSchedule | quote }}
   LAKEHOUSE_MAINTENANCE_DAG_SCHEDULE: {{ .Values.airflow.lakehouseMaintenanceSchedule | quote }}

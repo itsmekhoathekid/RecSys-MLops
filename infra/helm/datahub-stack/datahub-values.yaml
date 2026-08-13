@@ -52,6 +52,12 @@ global:
   datahub:
     metadata_service_authentication:
       enabled: false
+    systemUpdate:
+      enabled: true
+      consolidatedUpgrade: true
+      zdu:
+        enable: false
+        preEnable: false
   elasticsearch:
     host: "opensearch-cluster-master"
     port: "9200"

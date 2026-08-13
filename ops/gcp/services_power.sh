@@ -44,6 +44,7 @@ SMOKE_GRAFANA_PORT="${GCP_SERVICES_SMOKE_GRAFANA_PORT:-23000}"
 CPU_NODE_POOL="${GCP_CPU_NODE_POOL:-recsys-mlops-cpu}"
 ML_NODE_POOL="${GCP_ML_NODE_POOL:-recsys-mlops-ml-system}"
 GPU_NODE_POOL="${GCP_GPU_NODE_POOL:-recsys-mlops-gpu}"
+LLM_CPU_NODE_POOL="${GCP_LLM_CPU_NODE_POOL:-recsys-mlops-llm-cpu}"
 
 DEFAULT_CPU_NODES="${GCP_CPU_NODES:-1}"
 DEFAULT_CPU_MIN_NODES="${GCP_CPU_MIN_NODES:-${DEFAULT_CPU_NODES}}"
@@ -54,6 +55,9 @@ DEFAULT_ML_MAX_NODES="${GCP_ML_MAX_NODES:-1}"
 DEFAULT_GPU_NODES="${GCP_GPU_NODES:-0}"
 DEFAULT_GPU_MIN_NODES="${GCP_GPU_MIN_NODES:-${DEFAULT_GPU_NODES}}"
 DEFAULT_GPU_MAX_NODES="${GCP_GPU_MAX_NODES:-1}"
+DEFAULT_LLM_CPU_NODES="${GCP_LLM_CPU_NODES:-1}"
+DEFAULT_LLM_CPU_MIN_NODES="${GCP_LLM_CPU_MIN_NODES:-${DEFAULT_LLM_CPU_NODES}}"
+DEFAULT_LLM_CPU_MAX_NODES="${GCP_LLM_CPU_MAX_NODES:-2}"
 
 usage() {
   cat <<USAGE
@@ -68,6 +72,7 @@ Environment overrides:
   GKE_CLUSTER=${CLUSTER}
   GCP_CPU_NODES=${DEFAULT_CPU_NODES}
   GCP_ML_NODES=${DEFAULT_ML_NODES}
+  GCP_LLM_CPU_NODES=${DEFAULT_LLM_CPU_NODES}
   GCP_GPU_NODES=${DEFAULT_GPU_NODES}
   GCP_SERVICES_SKIP_SMOKE=${SKIP_SMOKE}
   GCP_SERVICES_INSTALL_CI=${INSTALL_CI}
@@ -236,6 +241,7 @@ write_state() {
   record_pool_state CPU "${CPU_NODE_POOL}" "${DEFAULT_CPU_NODES}" "${DEFAULT_CPU_MIN_NODES}" "${DEFAULT_CPU_MAX_NODES}"
   record_pool_state ML "${ML_NODE_POOL}" "${DEFAULT_ML_NODES}" "${DEFAULT_ML_MIN_NODES}" "${DEFAULT_ML_MAX_NODES}"
   record_pool_state GPU "${GPU_NODE_POOL}" "${DEFAULT_GPU_NODES}" "${DEFAULT_GPU_MIN_NODES}" "${DEFAULT_GPU_MAX_NODES}"
+  record_pool_state LLM_CPU "${LLM_CPU_NODE_POOL}" "${DEFAULT_LLM_CPU_NODES}" "${DEFAULT_LLM_CPU_MIN_NODES}" "${DEFAULT_LLM_CPU_MAX_NODES}"
 }
 
 validate_state_target() {
@@ -456,6 +462,12 @@ load_state_or_defaults() {
   GPU_MIN="${DEFAULT_GPU_MIN_NODES}"
   GPU_MAX="${DEFAULT_GPU_MAX_NODES}"
 
+  LLM_CPU_EXISTS=1
+  LLM_CPU_POOL="${LLM_CPU_NODE_POOL}"
+  LLM_CPU_NODES="${DEFAULT_LLM_CPU_NODES}"
+  LLM_CPU_MIN="${DEFAULT_LLM_CPU_MIN_NODES}"
+  LLM_CPU_MAX="${DEFAULT_LLM_CPU_MAX_NODES}"
+
   if [[ -f "${STATE_FILE}" ]]; then
     validate_state_target
     local assignments
@@ -470,8 +482,11 @@ load_state_or_defaults() {
         for key in \
           CPU_EXISTS CPU_POOL CPU_NODES CPU_MIN CPU_MAX \
           ML_EXISTS ML_POOL ML_NODES ML_MIN ML_MAX \
-          GPU_EXISTS GPU_POOL GPU_NODES GPU_MIN GPU_MAX; do
-          printf '%s=%q\n' "${key}" "${!key}"
+          GPU_EXISTS GPU_POOL GPU_NODES GPU_MIN GPU_MAX \
+          LLM_CPU_EXISTS LLM_CPU_POOL LLM_CPU_NODES LLM_CPU_MIN LLM_CPU_MAX; do
+          # Missing pools record only *_EXISTS=0. Expand absent detail fields
+          # safely under set -u; callers skip them based on the exists flag.
+          printf '%s=%q\n' "${key}" "${!key-}"
         done
       )
     )"
@@ -483,7 +498,7 @@ print_status() {
   get_credentials
   echo "== Saved power state =="
   if [[ -f "${STATE_FILE}" ]]; then
-    grep -E '^(STATE_PROJECT_ID|STATE_ZONE|STATE_CLUSTER|PROJECT_ID|ZONE|CLUSTER|RECORDED_AT|HIBERNATING|CPU_(POOL|NODES|MIN|MAX)|ML_(POOL|NODES|MIN|MAX)|GPU_(POOL|NODES|MIN|MAX))=' "${STATE_FILE}" || true
+    grep -E '^(STATE_PROJECT_ID|STATE_ZONE|STATE_CLUSTER|PROJECT_ID|ZONE|CLUSTER|RECORDED_AT|HIBERNATING|CPU_(POOL|NODES|MIN|MAX)|ML_(POOL|NODES|MIN|MAX)|GPU_(POOL|NODES|MIN|MAX)|LLM_CPU_(POOL|NODES|MIN|MAX))=' "${STATE_FILE}" || true
   else
     echo "No ${STATE_FILE} found."
   fi
@@ -922,6 +937,11 @@ wait_ready_after_up() {
       -l "cloud.google.com/gke-nodepool=${GPU_POOL}" \
       --timeout="${WAIT_TIMEOUT}" || true
   fi
+  if (( LLM_CPU_NODES > 0 )) && [[ "${LLM_CPU_EXISTS:-1}" == "1" ]] && pool_exists "${LLM_CPU_POOL}"; then
+    kubectl wait --for=condition=Ready node \
+      -l "cloud.google.com/gke-nodepool=${LLM_CPU_POOL}" \
+      --timeout="${WAIT_TIMEOUT}"
+  fi
 
   ensure_ingress_nginx_mesh
 
@@ -1178,6 +1198,10 @@ rollback_failed_hibernate() {
     && ! scale_pool_up GPU "${GPU_POOL}" "${GPU_NODES}" "${GPU_MIN}" "${GPU_MAX}"; then
     rollback_failed=1
   fi
+  if [[ "${LLM_CPU_EXISTS:-1}" == "1" ]] \
+    && ! scale_pool_up LLM_CPU "${LLM_CPU_POOL}" "${LLM_CPU_NODES}" "${LLM_CPU_MIN}" "${LLM_CPU_MAX}"; then
+    rollback_failed=1
+  fi
   restore_pdbs_after_hibernate || rollback_failed=1
 
   if (( rollback_failed == 0 )); then
@@ -1211,7 +1235,8 @@ hibernate_down() {
   relax_pdbs_for_hibernate
   if ! scale_pool_down CPU "${CPU_NODE_POOL}" \
     || ! scale_pool_down ML "${ML_NODE_POOL}" \
-    || ! scale_pool_down GPU "${GPU_NODE_POOL}"; then
+    || ! scale_pool_down GPU "${GPU_NODE_POOL}" \
+    || ! scale_pool_down LLM_CPU "${LLM_CPU_NODE_POOL}"; then
     echo "Hibernate failed before all pools reached zero." >&2
     rollback_failed_hibernate || true
     return 1
@@ -1219,6 +1244,7 @@ hibernate_down() {
   ensure_pool_down CPU "${CPU_NODE_POOL}"
   ensure_pool_down ML "${ML_NODE_POOL}"
   ensure_pool_down GPU "${GPU_NODE_POOL}"
+  ensure_pool_down LLM_CPU "${LLM_CPU_NODE_POOL}"
   echo "GCP services are hibernating. Run '$0 up' to restore node pools and wait services Ready."
 }
 
@@ -1242,6 +1268,9 @@ resume_up() {
   fi
   if [[ "${GPU_EXISTS:-1}" == "1" ]]; then
     scale_pool_up GPU "${GPU_POOL}" "${GPU_NODES}" "${GPU_MIN}" "${GPU_MAX}"
+  fi
+  if [[ "${LLM_CPU_EXISTS:-1}" == "1" ]]; then
+    scale_pool_up LLM_CPU "${LLM_CPU_POOL}" "${LLM_CPU_NODES}" "${LLM_CPU_MIN}" "${LLM_CPU_MAX}"
   fi
 
   restore_pdbs_after_hibernate

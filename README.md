@@ -299,7 +299,7 @@ flowchart LR
 
 ## 🗂️ Coursework Documentation
 
-The two tables below convert the major sections from the first two tabs of [Coursework Tracking (Public).xlsx](<docs/xlsx/Coursework Tracking (Public).xlsx>) into navigable documentation indexes.
+The tables below convert the major sections from [Coursework Tracking (Public).xlsx](<docs/xlsx/Coursework Tracking (Public).xlsx>) into navigable documentation indexes.
 
 ### Data Platform
 
@@ -343,3 +343,31 @@ Source: tab **`rubic final-coursework (final -`**.
 | [Repository Design](<docs/submission/rubic-final-coursework-(final-ml)/repository_design.md>) | Clean repository boundaries, clean code, and design-pattern evidence. |
 | [Low-Level ML Design](<docs/submission/rubic-final-coursework-(final-ml)/low_level_ml_design.md>) | Five key service classes and their implementation mappings. |
 | [Novel Ideas](<docs/submission/rubic-final-coursework-(final-ml)/noval_ideas.md>) | Automated shadow deployment, progressive A/B gates, promotion, fallback, and cleanup. |
+
+### LLM System
+
+Source: tab **`rubic final-coursework (final -llm)`**.
+
+| Rubric area | Coverage |
+| --- | --- |
+| [README and High-Level System Design](README.md) | Business domain, repository structure, table of contents, and deployable-unit architecture. |
+| [Deploy LLM Inference Platform + Setup Custom Model](<docs/submission/rubric-final-coursework-(final-llm)/llm_inference_platform.md>) | llama.cpp custom model serving, llm-d Agent Gateway routing, benchmark comparison, and load-aware optimization evidence. |
+| [Deploy a Global Model Config](<docs/submission/rubric-final-coursework-(final-llm)/global_model_config.md>) | Shared kagent `ModelConfig`, Agent Gateway routing, Secret reference, applied resource evidence, and end-to-end Agent inference. |
+| Deploy Agent Registry | Work in progress. |
+| RAG | Work in progress. |
+| User and Chunk Retrieval MCP Tool + Agent | Work in progress. |
+| Real-Time Drift Detection MCP Tool + Agent | Work in progress. |
+| Demonstrate Basic Understanding of Agents | Work in progress. |
+| Deploy a Coordinator Agent | Work in progress. |
+| Agent Warm-Up | Work in progress. |
+| Validation & Verification | Work in progress. |
+| Improve the Data Generator | Work in progress. |
+| CI/CD | Work in progress. |
+| Routing & Gateway (NGINX Ingress Controller) | Work in progress. |
+| IaC | Work in progress. |
+| Observability | Work in progress. |
+| A/B Testing | Work in progress. |
+| Security | Work in progress. |
+| Repository Design | Work in progress. |
+| Low-Level ML Design | Work in progress. |
+| Novel Ideas | Work in progress. |

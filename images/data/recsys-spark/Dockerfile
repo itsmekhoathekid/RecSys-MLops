@@ -122,4 +122,4 @@ ENV PATH=/opt/venv/bin:${PATH} \
     PYSPARK_DRIVER_PYTHON=/opt/venv/bin/python \
     AWS_REGION=us-east-1 \
     SPARK_EXTRA_CLASSPATH=/opt/spark/jars/* \
-    PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/analytics/src:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys
+    PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/analytics/src:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys

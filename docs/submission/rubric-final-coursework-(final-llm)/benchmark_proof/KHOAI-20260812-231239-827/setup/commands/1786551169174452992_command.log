@@ -1,0 +1,1 @@
+---> will execute: "kubectl --namespace kube-system get pods -o jsonpath={.items[*].metadata.name}"

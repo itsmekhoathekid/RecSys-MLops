@@ -1,0 +1,94 @@
+# Keep the installation intentionally small while retaining one real Agent for
+# end-to-end verification of the shared ModelConfig.
+kmcp:
+  enabled: false
+
+# Quota-safe requests for the coursework GKE cluster. Limits retain burst room.
+database:
+  postgres:
+    bundled:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+
+controller:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ui:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+kagent-tools:
+  enabled: false
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+providers:
+  default: openAI
+  openAI:
+    provider: OpenAI
+    model: qwen3.5-0.8b
+    apiKeySecretRef: kagent-agent-gateway
+    apiKeySecretKey: AGENT_GATEWAY_API_KEY
+    defaultHeaders:
+      X-Gateway-Base-Model-Name: llm-d-optimized-baseline
+    config:
+      baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
+
+# Agents are deployed by the repository-owned recsys-kagent-agent chart. The
+# upstream demo Agents and MCP servers are disabled to avoid unnecessary GKE
+# resources and oversized prompts for the 4,096-token coursework model.
+k8s-agent:
+  enabled: false
+
+kgateway-agent:
+  enabled: false
+
+istio-agent:
+  enabled: false
+
+promql-agent:
+  enabled: false
+
+observability-agent:
+  enabled: false
+
+argo-rollouts-agent:
+  enabled: false
+
+helm-agent:
+  enabled: false
+
+cilium-policy-agent:
+  enabled: false
+
+cilium-manager-agent:
+  enabled: false
+
+cilium-debug-agent:
+  enabled: false
+
+grafana-mcp:
+  enabled: false
+
+querydoc:
+  enabled: false

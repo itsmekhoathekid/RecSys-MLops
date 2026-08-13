@@ -1,0 +1,204 @@
+2026-08-12 23:12:39,827 - INFO    - Specification resolved: examples/cpu to /Users/KHOAI/anhkhoa/llm-d-benchmark/config/specification/examples/cpu.yaml.j2
+2026-08-12 23:12:39,827 - INFO    - Using Package: "llmdbenchmark:0.7.0" found at https://github.com/llm-d/llm-d-benchmark
+2026-08-12 23:12:39,827 - INFO    - ✅ Created Workspace: "/Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps"
+2026-08-12 23:12:39,827 - INFO    - ✅ Created llmdbenchmark instance in workspace: "/Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827"
+
+2026-08-12 23:12:39,828 - INFO    - 🔧 Loaded cluster config overrides from /private/tmp/llmdbenchmark-gke-rwo.yaml
+2026-08-12 23:12:39,831 - DEBUG   - 🔍 Rendered Specification File
+ {
+  "base_dir": "/Users/KHOAI/anhkhoa/llm-d-benchmark",
+  "values_file": {
+    "path": "/Users/KHOAI/anhkhoa/llm-d-benchmark/config/templates/values/defaults.yaml"
+  },
+  "template_dir": {
+    "path": "/Users/KHOAI/anhkhoa/llm-d-benchmark/config/templates/jinja"
+  },
+  "scenario_file": {
+    "path": "/Users/KHOAI/anhkhoa/llm-d-benchmark/config/scenarios/examples/cpu.yaml"
+  }
+}
+2026-08-12 23:12:39,831 - INFO    - ✅ Specification file rendered and validated successfully.
+2026-08-12 23:12:39,831 - DEBUG   - 🔍 Using specification file to fully render templates into complete system stack plans.
+2026-08-12 23:12:39,863 - INFO    - Processing scenario with 1 stack(s)...
+
+2026-08-12 23:12:39,867 - INFO    - Loaded 39 template(s) from /Users/KHOAI/anhkhoa/llm-d-benchmark/config/templates/jinja
+2026-08-12 23:12:39,867 - INFO    - [1/1] Processing stack: cpu-example
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: storage.workloadPvc.size: '20Gi' -> '10Gi'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: storage.workloadPvc.accessModes: ['ReadWriteMany'] -> ['ReadWriteOnce']
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: storage.workloadPvc.storageClassName: 'auto' -> 'standard'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: dataAccess.nodeSelector.recsys.ai/pool: <unset> -> 'ml-system'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: dataAccess.tolerations: [] -> [{'key': 'recsys.ai/workload', 'operator': 'Equal', 'value': 'ml-system', 'effect': 'NoSchedule'}]
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.resources.cpu: 16 -> '500m'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.resources.memory: '32Gi' -> '2Gi'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.nodeSelector.recsys.ai/pool: <unset> -> 'ml-system'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.tolerations: [] -> [{'key': 'recsys.ai/workload', 'operator': 'Equal', 'value': 'ml-system', 'effect': 'NoSchedule'}]
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.inferencePerf.rayonNumThreads: 4 -> 1
+2026-08-12 23:12:39,871 - INFO    - Image override: benchmark pinned to ghcr.io/llm-d/llm-d-benchmark:v0.7.0
+2026-08-12 23:12:39,871 - INFO    - Image override: vllm pinned to public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.26.0
+2026-08-12 23:12:39,871 - INFO    - Image override: vllmOpenai pinned to public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.26.0
+2026-08-12 23:12:39,871 - INFO    - Image override: routerEndpointPicker pinned to ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.9.0
+2026-08-12 23:12:39,871 - INFO    - Image override: routingSidecar pinned to ghcr.io/llm-d/llm-d-router-disagg-sidecar:v0.9.0
+2026-08-12 23:12:39,871 - INFO    - Image override: udsTokenizer pinned to docker.io/vllm/vllm-openai:v0.26.0
+2026-08-12 23:12:39,871 - INFO    - Image override: python pinned to python:3.10
+2026-08-12 23:12:39,871 - INFO    - Image override: standalone pinned to public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.26.0
+2026-08-12 23:12:39,872 - INFO    - 🔍 Resolving image tag for: ghcr.io/llm-d/llm-d-workload-variant-autoscaler
+2026-08-12 23:12:43,617 - INFO    - 📦 Resolved ghcr.io/llm-d/llm-d-workload-variant-autoscaler to verify-a3c779
+2026-08-12 23:12:43,617 - INFO    - 🔍 Resolving chart version for: llmDInfra
+2026-08-12 23:12:45,419 - INFO    - 📦 Resolved chart llmDInfra to v1.4.0 (via repo URL)
+2026-08-12 23:12:45,420 - INFO    - 🔍 Resolving chart version for: llmDModelservice
+2026-08-12 23:12:46,851 - INFO    - 📦 Resolved chart llmDModelservice to v0.4.15 (via repo URL)
+2026-08-12 23:12:46,852 - INFO    - Namespace from CLI: deploy=llm-inference, harness=llm-inference, wva=llm-inference
+2026-08-12 23:12:46,852 - INFO    - Model from CLI: qwen3.5-0.8b (shortName=qwen3-5--5a687092-3-5-0-8b) [stack=cpu-example]
+2026-08-12 23:12:46,853 - INFO    - ℹ️ No HuggingFace token found -- HF secret will not be created. Public models will work; gated models will fail at standup.
+2026-08-12 23:12:46,880 - INFO    - ✅ Rendered: 01_pvc_workload-pvc.yaml
+2026-08-12 23:12:46,904 - INFO    - ✅ Rendered: 02_pvc_model-pvc.yaml
+2026-08-12 23:12:46,928 - INFO    - ✅ Rendered: 02a_pv_model-hostpath.yaml
+2026-08-12 23:12:46,951 - INFO    - ✅ Rendered: 03_cluster-monitoring-config.yaml
+2026-08-12 23:12:46,976 - INFO    - ✅ Rendered: 03_download_daemonset.yaml
+2026-08-12 23:12:47,000 - INFO    - ✅ Rendered: 04_download_job.yaml
+2026-08-12 23:12:47,024 - INFO    - ✅ Rendered: 05_namespace_sa_rbac_secret.yaml
+2026-08-12 23:12:47,047 - INFO    - ✅ Rendered: 05a_agentgateway_scc.yaml
+2026-08-12 23:12:47,074 - INFO    - ✅ Rendered: 06_pod_access_to_harness_data.yaml
+2026-08-12 23:12:47,097 - INFO    - ✅ Rendered: 07_service_access_to_harness_data.yaml
+2026-08-12 23:12:47,125 - INFO    - ✅ Rendered: 08_httproute.yaml
+2026-08-12 23:12:47,151 - INFO    - ✅ Rendered: 09_helmfile-gateway-provider.yaml
+2026-08-12 23:12:47,177 - INFO    - ✅ Rendered: 10_helmfile-main.yaml
+2026-08-12 23:12:47,203 - INFO    - ✅ Rendered: 11_infra.yaml
+2026-08-12 23:12:47,227 - INFO    - ✅ Rendered: 12_router-values.yaml
+2026-08-12 23:12:47,310 - INFO    - ✅ Rendered: 13_ms-values.yaml
+2026-08-12 23:12:47,333 - INFO    - ✅ Rendered: 13a_modelservice-direct-service.yaml
+2026-08-12 23:12:47,417 - INFO    - ✅ Rendered: 14_standalone-deployment_yaml.yaml
+2026-08-12 23:12:47,443 - INFO    - ✅ Rendered: 15_standalone-service_yaml.yaml
+2026-08-12 23:12:47,468 - INFO    - ✅ Rendered: 16_pvc_extra-pvc.yaml
+2026-08-12 23:12:47,492 - INFO    - ✅ Rendered: 17_standalone-podmonitor.yaml
+2026-08-12 23:12:47,517 - INFO    - ✅ Rendered: 18_podmonitor.yaml
+2026-08-12 23:12:47,542 - INFO    - ✅ Rendered: 19_wva-kustomize.yaml
+2026-08-12 23:12:47,571 - INFO    - ✅ Rendered: 20_harness_pod.yaml
+2026-08-12 23:12:47,595 - INFO    - ✅ Rendered: 21_keda-triggerauthentication.yaml
+2026-08-12 23:12:47,618 - INFO    - ✅ Rendered: 22_prometheus-rbac.yaml
+2026-08-12 23:12:47,642 - INFO    - ✅ Rendered: 23_wva-namespace.yaml
+2026-08-12 23:12:47,673 - INFO    - ✅ Rendered: 24_fma-deployment.yaml
+2026-08-12 23:12:47,696 - INFO    - ✅ Rendered: 25_fma-clusterrole.yaml
+2026-08-12 23:12:47,719 - INFO    - ✅ Rendered: 26_helmfile-fma-controllers.yaml
+2026-08-12 23:12:47,746 - INFO    - ✅ Rendered: 27_keda-scaledobjects.yaml
+2026-08-12 23:12:47,769 - INFO    - ✅ Rendered: 27a_keda-triggerauthentication.yaml
+2026-08-12 23:12:47,814 - INFO    - ✅ Rendered: 28_wva-scaledobject.yaml
+2026-08-12 23:12:47,843 - INFO    - ✅ Rendered: 29_epp-keda-saturation-epp-monitoring.yaml
+2026-08-12 23:12:47,870 - INFO    - ✅ Rendered: 30_keda-scaledobject.yaml
+2026-08-12 23:12:47,893 - INFO    - ✅ Rendered: 31_nok8s-epp-config.yaml
+2026-08-12 23:12:47,916 - INFO    - ✅ Rendered: 32_nok8s-epp-endpoints.yaml
+2026-08-12 23:12:47,940 - INFO    - ✅ Rendered: 33_nok8s-envoy.yaml
+2026-08-12 23:12:47,965 - INFO    - ✅ Rendered: 34_nok8s-containers.yaml
+2026-08-12 23:12:48,016 - INFO    - Output: /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/plan/cpu-example
+2026-08-12 23:12:48,016 - INFO    - Success: 39, Errors: 0
+
+2026-08-12 23:12:48,016 - INFO    - Scenario rendering complete! Output in: /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/plan
+2026-08-12 23:12:48,889 - INFO    - 📄 Pre-rendered modelservice Helm manifests (211 lines) → cpu-example/helm/modelservice.yaml
+2026-08-12 23:12:48,911 - INFO    - Auto-detected deploy method(s) from plan: modelservice
+2026-08-12 23:12:50,279 - INFO    - Extracted current kubeconfig context context.ctx
+2026-08-12 23:12:50,279 - INFO    - Using kubeconfig: /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/environment/context.ctx
+
+2026-08-12 23:12:50,308 - INFO    - 📋 Executing 3 global step(s)...
+
+2026-08-12 23:12:50,308 - INFO    - >> [00] Validate cluster and run-phase prerequisites
+
+2026-08-12 23:12:50,308 - INFO    -     | Starting benchmark run phase
+2026-08-12 23:12:50,309 - INFO    -     | Output destination: local (/Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/results)
+2026-08-12 23:12:50,309 - INFO    - ✅ [00] Completed: run_preflight
+2026-08-12 23:12:50,309 - INFO    - >> [01] Clean up leftover harness pods from previous run
+2026-08-12 23:12:50,330 - INFO    -     | Cleaning up previous harness pods (label=llmdbench-harness-launcher, ns=llm-inference)...
+2026-08-12 23:12:50,611 - INFO    - ✅ [01] Completed: run_cleanup_previous
+2026-08-12 23:12:50,611 - INFO    - >> [02] Prepare harness namespace (PVC, data access pod)
+2026-08-12 23:12:50,930 - INFO    -     | HF token not configured -- skipping secret creation
+2026-08-12 23:12:51,224 - INFO    -     | PVC 'workload-pvc' already exists with correct size (10Gi) ✓
+2026-08-12 23:12:51,225 - INFO    -     | Using existing workload PVC 'workload-pvc'
+2026-08-12 23:12:52,184 - INFO    -     | ✅ workload PVC "workload-pvc": Bound (storageClass=standard) (00:00)
+2026-08-12 23:12:53,461 - INFO    -     | 🚚 Creating configmap with preprocess scripts...
+2026-08-12 23:12:54,010 - INFO    -     | 📦 ConfigMap "llm-d-benchmark-preprocesses" created in ns/llm-inference with 7 file(s):
+2026-08-12 23:12:54,010 - INFO    -     |     │ benchmark_nixl.py (24.7 KB)
+2026-08-12 23:12:54,010 - INFO    -     |     │ gemini-arp-fix.sh (1.5 KB)
+2026-08-12 23:12:54,010 - INFO    -     |     │ install_nsys.sh (0.3 KB)
+2026-08-12 23:12:54,010 - INFO    -     |     │ set_llmdbench_environment.py (30.6 KB)
+2026-08-12 23:12:54,010 - INFO    -     |     │ show_gids.sh (2.1 KB)
+2026-08-12 23:12:54,010 - INFO    -     |     │ standalone-preprocess.py (7.1 KB)
+2026-08-12 23:12:54,010 - INFO    -     |     │ standalone-preprocess.sh (3.3 KB)
+2026-08-12 23:12:54,383 - INFO    -     | ✅ harness data-access pod: 1/1 Ready (00:00)
+2026-08-12 23:12:54,384 - INFO    - ✅ [02] Completed: harness_namespace
+
+2026-08-12 23:12:54,384 - INFO    - 📋 Executing 10 per-stack step(s) across 1 stack(s) (max parallel: 1)...
+
+2026-08-12 23:12:54,384 - INFO    - Stack 'cpu-example': starting 10 step(s)...
+2026-08-12 23:12:54,385 - INFO    - >> [02] Stack 'cpu-example': Wait for FMA launcher pool to warm up
+2026-08-12 23:12:54,421 - INFO    - ✅ [02] Stack 'cpu-example': Completed: fma_warmup
+2026-08-12 23:12:54,421 - INFO    - >> [03] Stack 'cpu-example': Detect model serving endpoint
+2026-08-12 23:12:54,421 - INFO    -     | Using explicit endpoint URL: http://qwen35-gguf.llm-inference.svc.cluster.local:8000 (stack_type=llm-d)
+2026-08-12 23:12:54,421 - INFO    - ✅ [03] Stack 'cpu-example': Completed: detect_endpoint
+2026-08-12 23:12:54,421 - INFO    - >> [04] Stack 'cpu-example': Verify model is served at endpoint
+2026-08-12 23:12:54,445 - INFO    -     | Verifying model 'qwen3.5-0.8b' at http://qwen35-gguf.llm-inference.svc.cluster.local:8000...
+2026-08-12 23:13:00,430 - INFO    -     | Model 'qwen3.5-0.8b' verified at http://qwen35-gguf.llm-inference.svc.cluster.local:8000
+2026-08-12 23:13:00,431 - INFO    - ✅ [04] Stack 'cpu-example': Completed: verify_model
+2026-08-12 23:13:00,431 - INFO    - >> [05] Stack 'cpu-example': Render workload profile templates
+2026-08-12 23:13:00,478 - INFO    -     | Rendered profile: sanity_random-override.yaml (treatment=override)
+2026-08-12 23:13:00,478 - INFO    -     | Profiles rendered to /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/workload/profiles/inference-perf
+2026-08-12 23:13:00,478 - INFO    - ✅ [05] Stack 'cpu-example': Completed: render_profiles
+2026-08-12 23:13:00,478 - INFO    - >> [06] Stack 'cpu-example': Create profile and harness-scripts ConfigMaps
+2026-08-12 23:13:00,545 - INFO    -     | Creating ConfigMap 'inference-perf-profiles' with 3 profile(s) in ns=llm-inference...
+2026-08-12 23:13:00,996 - INFO    -     | ConfigMap 'inference-perf-profiles' created with 3 profile(s)
+2026-08-12 23:13:00,997 - INFO    -     | Creating ConfigMap 'llmdbench-harness-scripts' with 25 harness script(s) in ns=llm-inference...
+2026-08-12 23:13:01,750 - INFO    -     | ConfigMap 'llmdbench-harness-scripts' created with 25 script(s)
+2026-08-12 23:13:01,750 - INFO    - ✅ [06] Stack 'cpu-example': Completed: create_profile_configmap
+2026-08-12 23:13:01,750 - INFO    - >> [07] Stack 'cpu-example': Deploy harness pod(s) for benchmark execution
+2026-08-12 23:13:01,788 - INFO    -     | Running 1 treatment(s) x 1 parallel pod(s) for 'inference-perf' (sequential per treatment)...
+2026-08-12 23:13:01,788 - INFO    - 🚀     | [1/1] Treatment 'override': deploying 1 pod(s)...
+2026-08-12 23:13:02,511 - INFO    -     | Deployed pod 'inference-perf-wyqs65q1' (experiment=inference-perf-override-1786551181-lnqxn8, parallel=1/1)
+2026-08-12 23:13:02,511 - INFO    -     | Waiting for pods (label=app=llmdbench-harness-launcher) to start (timeout=3600s)...
+2026-08-12 23:13:08,229 - INFO    -     | All pods are running
+2026-08-12 23:13:08,229 - INFO    -     | Waiting for pods (label=app=llmdbench-harness-launcher) to complete (timeout=3600s)...
+2026-08-12 23:17:32,634 - INFO    -     | All pods completed successfully
+2026-08-12 23:17:33,543 - INFO    -     | Collecting results for 1 dir(s): inference-perf-override-1786551181-lnqxn8_1
+2026-08-12 23:17:34,320 - INFO    -     | Collected 13 file(s) for inference-perf-override-1786551181-lnqxn8_1
+2026-08-12 23:17:34,794 - INFO    -     | Deleted pod 'inference-perf-wyqs65q1'
+2026-08-12 23:17:34,795 - INFO    - ✅     | [1/1] Treatment 'override' complete (273s)
+2026-08-12 23:17:34,795 - INFO    - ✅ [07] Stack 'cpu-example': Completed: deploy_harness
+2026-08-12 23:17:34,795 - INFO    - -- [07] Stack 'cpu-example': deploy_harness_local
+2026-08-12 23:17:34,796 - INFO    - >> [08] Stack 'cpu-example': Wait for harness pod(s) to complete
+2026-08-12 23:17:34,796 - INFO    - ✅ [08] Stack 'cpu-example': Completed: wait_completion
+2026-08-12 23:17:34,796 - INFO    - -- [09] Stack 'cpu-example': collect_results
+2026-08-12 23:17:34,796 - INFO    - >> [09] Stack 'cpu-example': Capture WVA HPA/ScaledObject/Deployment state and controller logs
+2026-08-12 23:17:34,896 - INFO    - ✅ [09] Stack 'cpu-example': Completed: capture_cluster_state
+
+2026-08-12 23:17:34,896 - INFO    - 📋 Executing 3 global step(s)...
+
+2026-08-12 23:17:34,896 - INFO    - -- [10] Skipping: upload_results (Upload results to cloud storage)
+2026-08-12 23:17:34,897 - INFO    - >> [11] Clean up harness pods and ConfigMaps
+2026-08-12 23:17:34,928 - INFO    -     | Cleaning up harness resources in ns=llm-inference...
+2026-08-12 23:17:35,214 - INFO    -     | Harness pods deleted
+2026-08-12 23:17:35,657 - INFO    -     | ConfigMap 'inference-perf-profiles' deleted
+2026-08-12 23:17:36,121 - INFO    -     | ConfigMap 'llmdbench-harness-scripts' deleted
+2026-08-12 23:17:36,121 - INFO    - ✅ [11] Completed: run_cleanup_post
+2026-08-12 23:17:36,122 - INFO    - >> [12] Run local analysis on collected results
+2026-08-12 23:17:36,122 - INFO    - 🔍     | Analyzing inference-perf-override-1786551181-lnqxn8_1...
+2026-08-12 23:17:36,245 - INFO    -     | Converting stage_0_lifecycle_metrics.json to Benchmark Report v0.1
+2026-08-12 23:17:36,259 - INFO    -     | Converting stage_0_lifecycle_metrics.json to Benchmark Report v0.2
+2026-08-12 23:17:36,268 - INFO    -     | inference-perf CLI not on PATH -- skipping --analyze
+2026-08-12 23:17:36,269 - INFO    -     | matplotlib not available -- skipping per-request plots
+2026-08-12 23:17:36,269 - INFO    -     | matplotlib not available -- skipping session plots
+2026-08-12 23:17:36,269 - INFO    - ✅ [12] Completed: analyze_results
+
+2026-08-12 23:17:36,295 - INFO    - ============================================================
+2026-08-12 23:17:36,295 - INFO    - BENCHMARK RUN SUMMARY
+2026-08-12 23:17:36,295 - INFO    - ============================================================
+2026-08-12 23:17:36,295 - INFO    -   Harness:       inference-perf
+2026-08-12 23:17:36,295 - INFO    -   Workload:      sanity_random.yaml
+2026-08-12 23:17:36,295 - INFO    -   Model:         qwen3.5-0.8b
+2026-08-12 23:17:36,295 - INFO    -   Namespace:     llm-inference
+2026-08-12 23:17:36,295 - INFO    -   Mode:          run-only
+2026-08-12 23:17:36,295 - INFO    -   Parallelism:   1
+2026-08-12 23:17:36,295 - INFO    -   Treatments:    1
+2026-08-12 23:17:36,296 - INFO    -     - inference-perf-override-1786551181-lnqxn8
+2026-08-12 23:17:36,296 - INFO    -       [1/1] inference-perf-override-1786551181-lnqxn8_1 (10 files)
+2026-08-12 23:17:36,296 - INFO    -   Local results: /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/results
+2026-08-12 23:17:36,296 - INFO    -   PVC results:   kubectl exec -n llm-inference $(kubectl get pod -n llm-inference -l role=llm-d-benchmark-data-access -o jsonpath='{.items[0].metadata.name}') -- ls /requests/
+2026-08-12 23:17:36,296 - INFO    - ============================================================
+2026-08-12 23:17:36,296 - INFO    - ✅ Run complete (mode=run-only, harness=inference-perf).
+2026-08-12 23:17:37,129 - INFO    - Run parameters stored in configmap/llm-d-benchmark-run-parameters (key=run-20260812T161736Z) in ns/llm-inference

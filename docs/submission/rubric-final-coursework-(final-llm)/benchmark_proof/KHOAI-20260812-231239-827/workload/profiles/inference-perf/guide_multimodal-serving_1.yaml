@@ -1,0 +1,57 @@
+load:
+  type: constant
+  interval: 60.0
+  stages:
+    # Warmup — seat residents (~1×S)
+    - rate: 5
+      duration: 600            # 5*600  = 3000
+
+    # Main ladder
+    - rate: 5
+      duration: 100
+    - rate: 10
+      duration: 100
+    - rate: 15
+      duration: 100
+    - rate: 20
+      duration: 100
+    - rate: 25
+      duration: 100
+    - rate: 30
+      duration: 100
+    - rate: 35
+      duration: 100
+api:
+  type: chat
+  streaming: true
+server:
+  type: vllm
+  model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+  base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+data:
+  type: shared_prefix
+  shared_prefix:
+    multimodal:
+      image:
+      count: { type: fixed, min: 4, max: 4, mean: 4 }  # items per request
+      insertion_point: 0.0
+      resolutions:
+        - resolution: "720p"
+          weight: 1
+    num_groups: 600
+    num_prompts_per_group: 5
+    system_prompt_len: 100
+    question_len: 1200
+    output_len: 300
+    enable_multi_turn_chat: false
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+storage:
+  local_storage:
+    path: /workspace

@@ -1,0 +1,67 @@
+{
+    "kind": "Config",
+    "apiVersion": "v1",
+    "clusters": [
+        {
+            "name": "gke_iac-lab-488408_asia-southeast1_iac-lab-488408-new-gke",
+            "cluster": {
+                "server": "https://34.126.181.58",
+                "certificate-authority-data": "DATA+OMITTED"
+            }
+        },
+        {
+            "name": "gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke",
+            "cluster": {
+                "server": "https://34.21.200.91",
+                "certificate-authority-data": "DATA+OMITTED"
+            }
+        }
+    ],
+    "users": [
+        {
+            "name": "gke_iac-lab-488408_asia-southeast1_iac-lab-488408-new-gke",
+            "user": {
+                "exec": {
+                    "command": "/opt/homebrew/share/google-cloud-sdk/bin/gke-gcloud-auth-plugin",
+                    "args": null,
+                    "env": null,
+                    "apiVersion": "client.authentication.k8s.io/v1beta1",
+                    "installHint": "Install gke-gcloud-auth-plugin for use with kubectl by following https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin",
+                    "provideClusterInfo": true,
+                    "interactiveMode": "IfAvailable"
+                }
+            }
+        },
+        {
+            "name": "gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke",
+            "user": {
+                "exec": {
+                    "command": "/opt/homebrew/share/google-cloud-sdk/bin/gke-gcloud-auth-plugin",
+                    "args": null,
+                    "env": null,
+                    "apiVersion": "client.authentication.k8s.io/v1beta1",
+                    "installHint": "Install gke-gcloud-auth-plugin for use with kubectl by following https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin",
+                    "provideClusterInfo": true,
+                    "interactiveMode": "IfAvailable"
+                }
+            }
+        }
+    ],
+    "contexts": [
+        {
+            "name": "gke_iac-lab-488408_asia-southeast1_iac-lab-488408-new-gke",
+            "context": {
+                "cluster": "gke_iac-lab-488408_asia-southeast1_iac-lab-488408-new-gke",
+                "user": "gke_iac-lab-488408_asia-southeast1_iac-lab-488408-new-gke"
+            }
+        },
+        {
+            "name": "gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke",
+            "context": {
+                "cluster": "gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke",
+                "user": "gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke"
+            }
+        }
+    ],
+    "current-context": "gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke"
+}

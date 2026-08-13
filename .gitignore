@@ -42,6 +42,7 @@ AGENTS.md
 .uv-cache/
 .ci-image-manifest/
 .deploy-evidence/
+.vault-bootstrap/
 .hypothesis/
 /data_platform/
 output

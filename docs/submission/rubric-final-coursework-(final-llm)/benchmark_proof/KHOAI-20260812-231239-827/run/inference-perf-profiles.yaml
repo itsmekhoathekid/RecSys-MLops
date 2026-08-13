@@ -1,0 +1,166 @@
+apiVersion: v1
+data:
+  guide_multimodal-serving_1.yaml: |
+    load:
+      type: constant
+      interval: 60.0
+      stages:
+        # Warmup — seat residents (~1×S)
+        - rate: 5
+          duration: 600            # 5*600  = 3000
+
+        # Main ladder
+        - rate: 5
+          duration: 100
+        - rate: 10
+          duration: 100
+        - rate: 15
+          duration: 100
+        - rate: 20
+          duration: 100
+        - rate: 25
+          duration: 100
+        - rate: 30
+          duration: 100
+        - rate: 35
+          duration: 100
+    api:
+      type: chat
+      streaming: true
+    server:
+      type: vllm
+      model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+      base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+      ignore_eos: true
+    tokenizer:
+      pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+    data:
+      type: shared_prefix
+      shared_prefix:
+        multimodal:
+          image:
+          count: { type: fixed, min: 4, max: 4, mean: 4 }  # items per request
+          insertion_point: 0.0
+          resolutions:
+            - resolution: "720p"
+              weight: 1
+        num_groups: 600
+        num_prompts_per_group: 5
+        system_prompt_len: 100
+        question_len: 1200
+        output_len: 300
+        enable_multi_turn_chat: false
+    report:
+      request_lifecycle:
+        summary: true
+        per_stage: true
+        per_request: true
+    storage:
+      local_storage:
+        path: /workspace
+  guide_predicted-latency-routing_1.yaml: |
+    load:
+      type: concurrent
+      num_workers: 6
+      request_timeout: 300.0
+      stages:
+        - num_requests: 192
+          concurrency_level: 32
+    api:
+      type: completion
+      streaming: true
+    server:
+      type: vllm
+      model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+      base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+      ignore_eos: true
+    tokenizer:
+      pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+      data:
+        type: conversation_replay
+        conversation_replay:
+          seed: ${CONCURRENCY}         # unique seed per concurrency level
+          num_conversations: ${CONCURRENCY}   # equals concurrency_level above
+          shared_system_prompt_len: 3000
+          dynamic_system_prompt_len:
+            type: uniform
+            min: 15000
+            max: 100000
+            mean: 55000
+            std_dev: 25000
+          turns_per_conversation:
+            type: normal
+            min: 2
+            max: 20
+            mean: 6
+            std_dev: 3.5
+          input_tokens_per_turn:
+            type: lognormal
+            min: 100
+            max: 10000
+            mean: 1500
+            std_dev: 1200
+          output_tokens_per_turn:
+            type: lognormal
+            min: 50
+            max: 4000
+            mean: 800
+            std_dev: 600
+          tool_call_latency_sec:
+            type: normal
+            min: 0
+            max: 0
+            mean: 0
+            std_dev: 0
+    report:
+      request_lifecycle:
+        summary: true
+        per_stage: true
+        per_request: true
+    storage:
+      local_storage:
+        path: /workspace
+  sanity_random-override.yaml: |
+    load:
+      type: constant
+      stages:
+      - rate: 0.25
+        duration: 120
+      request_timeout: 30
+      num_workers: 1
+    api:
+      type: completion
+      streaming: true
+    server:
+      type: vllm
+      model_name: qwen3.5-0.8b
+      base_url: http://qwen35-gguf.llm-inference.svc.cluster.local:8000
+      ignore_eos: true
+    tokenizer:
+      pretrained_model_name_or_path: Qwen/Qwen3.5-0.8B
+    data:
+      type: random
+      input_distribution:
+        min: 256
+        max: 512
+        mean: 384
+        std_dev: 10
+        total_count: 100
+      output_distribution:
+        min: 10
+        max: 100
+        mean: 50
+        std_dev: 10
+        total_count: 100
+    report:
+      request_lifecycle:
+        summary: true
+        per_stage: true
+        per_request: true
+    storage:
+      local_storage:
+        path: /workspace
+kind: ConfigMap
+metadata:
+  name: inference-perf-profiles
+  namespace: llm-inference

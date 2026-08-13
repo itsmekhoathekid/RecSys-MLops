@@ -4,6 +4,8 @@ vault:
   auth:
     mountPath: kubernetes
     role: recsys-external-secrets
+    audiences:
+      - vault
     serviceAccount:
       name: external-secrets
       namespace: external-secrets

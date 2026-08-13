@@ -1,0 +1,9 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: LLMDBENCH_VLLM_MODELSERVICE_GAIE_PRESETS_CONFIG empty.Failed to retrieve ConfigMap 'llm-d-benchmark-standup-parameters': (404)
+Reason: Not Found
+HTTP response headers: HTTPHeaderDict({'Audit-Id': '3a6994d9-3cb3-4d13-98d5-6623c49b4e6a', 'Cache-Control': 'no-cache, private', 'Content-Type': 'application/json', 'X-Kubernetes-Pf-Flowschema-Uid': '07fb164b-cf25-483f-96c7-60272034653b', 'X-Kubernetes-Pf-Prioritylevel-Uid': '3c177b24-519a-4a69-9fa3-62a4db5bd962', 'Date': 'Wed, 12 Aug 2026 16:15:59 GMT', 'Content-Length': '248'})
+HTTP response body: {"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"configmaps \"llm-d-benchmark-standup-parameters\" not found","reason":"NotFound","details":{"name":"llm-d-benchmark-standup-parameters","kind":"configmaps"},"code":404}
+
+
+Failed to retrieve /standup/ev.yaml: [Errno 2] No such file or directory: '/standup/ev.yaml'
+Environment variable empty: LLMDBENCH_VLLM_MODELSERVICE_GAIE_PRESETS_CONFIG

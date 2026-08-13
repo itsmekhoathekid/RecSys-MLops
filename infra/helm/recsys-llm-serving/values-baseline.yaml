@@ -1,0 +1,3 @@
+# Unoptimized treatment: the paired router only uses random-picker. No
+# load producer, load scorer, or prefix-aware plugin is configured.
+optimizationProfile: baseline

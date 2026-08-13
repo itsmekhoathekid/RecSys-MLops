@@ -200,6 +200,32 @@ def test_feature_store_image_matches_feast_sqlalchemy_registry_driver():
     assert 'drivername="postgresql+psycopg"' not in registry
 
 
+def test_feature_store_chart_bootstraps_sql_registry_schema():
+    rendered = render("recsys-feature-store")
+    assert "feature-postgres-schema-init" in rendered
+    assert "CREATE SCHEMA IF NOT EXISTS" in rendered
+    assert "SET search_path TO" in rendered
+
+
+def test_runtime_images_expose_the_src_layout_feature_store_package():
+    package_src = "/opt/recsys/packages/recsys-feature-store-runtime/src"
+    dockerfiles = (
+        "images/data/recsys-data-ingestion/Dockerfile",
+        "images/data/recsys-feature-store/Dockerfile",
+        "images/data/recsys-drift-retrain/Dockerfile",
+        "images/data/recsys-spark/Dockerfile",
+        "images/ml/recsys-mlops-training/Dockerfile",
+    )
+    for path in dockerfiles:
+        assert package_src in (ROOT / path).read_text(), path
+    for path in (
+        "infra/helm/recsys-data-config/templates/configmap.yaml",
+        "apps/data-platform/src/orchestration/airflow/spark_utils.py",
+        "apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py",
+    ):
+        assert package_src in (ROOT / path).read_text(), path
+
+
 def test_stream_verifier_is_read_only_and_checks_deployed_services():
     verifier = (ROOT / "jenkins/scripts/test/data_platform.sh").read_text()
     assert "test_debezium_connector_tasks" in verifier

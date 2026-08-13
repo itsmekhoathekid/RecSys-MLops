@@ -1,0 +1,68 @@
+2026-08-12 23:12:39,863 - INFO    - Processing scenario with 1 stack(s)...
+
+2026-08-12 23:12:39,867 - INFO    - Loaded 39 template(s) from /Users/KHOAI/anhkhoa/llm-d-benchmark/config/templates/jinja
+2026-08-12 23:12:39,867 - INFO    - [1/1] Processing stack: cpu-example
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: storage.workloadPvc.size: '20Gi' -> '10Gi'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: storage.workloadPvc.accessModes: ['ReadWriteMany'] -> ['ReadWriteOnce']
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: storage.workloadPvc.storageClassName: 'auto' -> 'standard'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: dataAccess.nodeSelector.recsys.ai/pool: <unset> -> 'ml-system'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: dataAccess.tolerations: [] -> [{'key': 'recsys.ai/workload', 'operator': 'Equal', 'value': 'ml-system', 'effect': 'NoSchedule'}]
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.resources.cpu: 16 -> '500m'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.resources.memory: '32Gi' -> '2Gi'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.nodeSelector.recsys.ai/pool: <unset> -> 'ml-system'
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.tolerations: [] -> [{'key': 'recsys.ai/workload', 'operator': 'Equal', 'value': 'ml-system', 'effect': 'NoSchedule'}]
+2026-08-12 23:12:39,869 - INFO    - [cpu-example] Scenario override: harness.inferencePerf.rayonNumThreads: 4 -> 1
+2026-08-12 23:12:39,871 - INFO    - Image override: benchmark pinned to ghcr.io/llm-d/llm-d-benchmark:v0.7.0
+2026-08-12 23:12:39,871 - INFO    - Image override: vllm pinned to public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.26.0
+2026-08-12 23:12:39,871 - INFO    - Image override: vllmOpenai pinned to public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.26.0
+2026-08-12 23:12:39,871 - INFO    - Image override: routerEndpointPicker pinned to ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.9.0
+2026-08-12 23:12:39,871 - INFO    - Image override: routingSidecar pinned to ghcr.io/llm-d/llm-d-router-disagg-sidecar:v0.9.0
+2026-08-12 23:12:39,871 - INFO    - Image override: udsTokenizer pinned to docker.io/vllm/vllm-openai:v0.26.0
+2026-08-12 23:12:39,871 - INFO    - Image override: python pinned to python:3.10
+2026-08-12 23:12:39,871 - INFO    - Image override: standalone pinned to public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.26.0
+2026-08-12 23:12:46,852 - INFO    - Namespace from CLI: deploy=llm-inference, harness=llm-inference, wva=llm-inference
+2026-08-12 23:12:46,852 - INFO    - Model from CLI: qwen3.5-0.8b (shortName=qwen3-5--5a687092-3-5-0-8b) [stack=cpu-example]
+2026-08-12 23:12:46,853 - INFO    - ℹ️ No HuggingFace token found -- HF secret will not be created. Public models will work; gated models will fail at standup.
+2026-08-12 23:12:46,880 - INFO    - ✅ Rendered: 01_pvc_workload-pvc.yaml
+2026-08-12 23:12:46,904 - INFO    - ✅ Rendered: 02_pvc_model-pvc.yaml
+2026-08-12 23:12:46,928 - INFO    - ✅ Rendered: 02a_pv_model-hostpath.yaml
+2026-08-12 23:12:46,951 - INFO    - ✅ Rendered: 03_cluster-monitoring-config.yaml
+2026-08-12 23:12:46,976 - INFO    - ✅ Rendered: 03_download_daemonset.yaml
+2026-08-12 23:12:47,000 - INFO    - ✅ Rendered: 04_download_job.yaml
+2026-08-12 23:12:47,024 - INFO    - ✅ Rendered: 05_namespace_sa_rbac_secret.yaml
+2026-08-12 23:12:47,047 - INFO    - ✅ Rendered: 05a_agentgateway_scc.yaml
+2026-08-12 23:12:47,074 - INFO    - ✅ Rendered: 06_pod_access_to_harness_data.yaml
+2026-08-12 23:12:47,097 - INFO    - ✅ Rendered: 07_service_access_to_harness_data.yaml
+2026-08-12 23:12:47,125 - INFO    - ✅ Rendered: 08_httproute.yaml
+2026-08-12 23:12:47,151 - INFO    - ✅ Rendered: 09_helmfile-gateway-provider.yaml
+2026-08-12 23:12:47,177 - INFO    - ✅ Rendered: 10_helmfile-main.yaml
+2026-08-12 23:12:47,203 - INFO    - ✅ Rendered: 11_infra.yaml
+2026-08-12 23:12:47,227 - INFO    - ✅ Rendered: 12_router-values.yaml
+2026-08-12 23:12:47,310 - INFO    - ✅ Rendered: 13_ms-values.yaml
+2026-08-12 23:12:47,333 - INFO    - ✅ Rendered: 13a_modelservice-direct-service.yaml
+2026-08-12 23:12:47,417 - INFO    - ✅ Rendered: 14_standalone-deployment_yaml.yaml
+2026-08-12 23:12:47,443 - INFO    - ✅ Rendered: 15_standalone-service_yaml.yaml
+2026-08-12 23:12:47,468 - INFO    - ✅ Rendered: 16_pvc_extra-pvc.yaml
+2026-08-12 23:12:47,492 - INFO    - ✅ Rendered: 17_standalone-podmonitor.yaml
+2026-08-12 23:12:47,517 - INFO    - ✅ Rendered: 18_podmonitor.yaml
+2026-08-12 23:12:47,542 - INFO    - ✅ Rendered: 19_wva-kustomize.yaml
+2026-08-12 23:12:47,571 - INFO    - ✅ Rendered: 20_harness_pod.yaml
+2026-08-12 23:12:47,595 - INFO    - ✅ Rendered: 21_keda-triggerauthentication.yaml
+2026-08-12 23:12:47,618 - INFO    - ✅ Rendered: 22_prometheus-rbac.yaml
+2026-08-12 23:12:47,642 - INFO    - ✅ Rendered: 23_wva-namespace.yaml
+2026-08-12 23:12:47,673 - INFO    - ✅ Rendered: 24_fma-deployment.yaml
+2026-08-12 23:12:47,696 - INFO    - ✅ Rendered: 25_fma-clusterrole.yaml
+2026-08-12 23:12:47,719 - INFO    - ✅ Rendered: 26_helmfile-fma-controllers.yaml
+2026-08-12 23:12:47,746 - INFO    - ✅ Rendered: 27_keda-scaledobjects.yaml
+2026-08-12 23:12:47,769 - INFO    - ✅ Rendered: 27a_keda-triggerauthentication.yaml
+2026-08-12 23:12:47,814 - INFO    - ✅ Rendered: 28_wva-scaledobject.yaml
+2026-08-12 23:12:47,843 - INFO    - ✅ Rendered: 29_epp-keda-saturation-epp-monitoring.yaml
+2026-08-12 23:12:47,870 - INFO    - ✅ Rendered: 30_keda-scaledobject.yaml
+2026-08-12 23:12:47,893 - INFO    - ✅ Rendered: 31_nok8s-epp-config.yaml
+2026-08-12 23:12:47,916 - INFO    - ✅ Rendered: 32_nok8s-epp-endpoints.yaml
+2026-08-12 23:12:47,940 - INFO    - ✅ Rendered: 33_nok8s-envoy.yaml
+2026-08-12 23:12:47,965 - INFO    - ✅ Rendered: 34_nok8s-containers.yaml
+2026-08-12 23:12:48,016 - INFO    - Output: /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/plan/cpu-example
+2026-08-12 23:12:48,016 - INFO    - Success: 39, Errors: 0
+
+2026-08-12 23:12:48,016 - INFO    - Scenario rendering complete! Output in: /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/plan

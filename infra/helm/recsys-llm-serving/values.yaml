@@ -1,0 +1,64 @@
+replicaCount: 2
+
+optimizationProfile: baseline
+
+updateStrategy:
+  type: Recreate
+
+image:
+  repository: ghcr.io/ggml-org/llama.cpp
+  tag: server
+  digest: sha256:9b518883e8faab479650ec802e02c9e37c6bb21d36168509efd8fb3c87fc1648
+  pullPolicy: IfNotPresent
+
+model:
+  repository: ggml-org/Qwen3.5-0.8B-GGUF
+  quantization: Q4_0
+  alias: qwen3.5-0.8b
+  contextSize: 4096
+  parallel: 1
+  threads: 2
+  threadsBatch: 2
+  batchSize: 512
+  ubatchSize: 128
+  disableMultimodal: true
+  metrics: true
+
+service:
+  port: 8000
+
+gateway:
+  enabled: true
+  name: llm-d-inference-gateway
+  className: agentgateway
+  port: 80
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 1536Mi
+  limits:
+    cpu: "2"
+    memory: 3Gi
+
+nodeSelector: {}
+tolerations: []
+
+cache:
+  persistence:
+    enabled: false
+    storageClassName: standard-rwo
+    size: 5Gi
+  emptyDir:
+    sizeLimit: 2Gi
+
+podMonitoring:
+  enabled: false
+  interval: 30s
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
+networkPolicy:
+  enabled: false

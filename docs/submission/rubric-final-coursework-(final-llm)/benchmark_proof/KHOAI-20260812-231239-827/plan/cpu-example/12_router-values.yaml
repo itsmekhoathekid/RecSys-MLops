@@ -1,0 +1,46 @@
+router:
+  epp:
+    extProcPort: 9002
+    extraContainerPorts:
+    - containerPort: 5557
+      name: zmq
+      protocol: TCP
+    flags:
+      v: '1'
+    image:
+      pullPolicy: Always
+      registry: ghcr.io/llm-d
+      repository: llm-d-router-endpoint-picker
+      tag: v0.9.0
+    pluginsConfigFile: default-plugins.yaml
+    pluginsCustomConfig: {}
+    replicas: 1
+    volumeMounts: []
+    volumes: []
+  extraServicePorts:
+  - name: zmq
+    port: 5557
+    protocol: TCP
+    targetPort: 5557
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8081
+  inferencePool:
+    failureMode: FailOpen
+  modelServers:
+    matchLabels:
+      llm-d.ai/inferenceServing: 'true'
+      llm-d.ai/model: qwen3-5--5a687092-3-5-0-8b
+    targetPorts:
+    - number: 8000
+  monitoring:
+    interval: 10s
+    prometheus:
+      auth:
+        enabled: true
+        secretName: inference-gateway-sa-metrics-reader-secret
+      enabled: true
+    secretName: inference-gateway-sa-metrics-reader-secret
+  tokenizer:
+    enabled: false

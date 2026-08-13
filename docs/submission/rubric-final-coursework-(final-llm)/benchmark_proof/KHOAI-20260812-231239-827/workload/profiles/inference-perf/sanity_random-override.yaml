@@ -1,0 +1,39 @@
+load:
+  type: constant
+  stages:
+  - rate: 0.25
+    duration: 120
+  request_timeout: 30
+  num_workers: 1
+api:
+  type: completion
+  streaming: true
+server:
+  type: vllm
+  model_name: qwen3.5-0.8b
+  base_url: http://qwen35-gguf.llm-inference.svc.cluster.local:8000
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: Qwen/Qwen3.5-0.8B
+data:
+  type: random
+  input_distribution:
+    min: 256
+    max: 512
+    mean: 384
+    std_dev: 10
+    total_count: 100
+  output_distribution:
+    min: 10
+    max: 100
+    mean: 50
+    std_dev: 10
+    total_count: 100
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+storage:
+  local_storage:
+    path: /workspace

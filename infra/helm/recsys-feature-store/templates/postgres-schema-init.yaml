@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.featurePostgres.name }}-schema-init
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: schema-init
+          image: {{ .Values.images.postgres }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; do
+                sleep 2
+              done
+              psql -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA IF NOT EXISTS "{{ .Values.featurePostgres.schema }}" AUTHORIZATION "{{ .Values.featurePostgres.user }}";'
+              psql -v ON_ERROR_STOP=1 -c 'ALTER ROLE "{{ .Values.featurePostgres.user }}" IN DATABASE "{{ .Values.featurePostgres.database }}" SET search_path TO "{{ .Values.featurePostgres.schema }}", public;'
+          env:
+            - name: PGHOST
+              value: {{ .Values.featurePostgres.name | quote }}
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: {{ .Values.featurePostgres.database | quote }}
+            - name: PGUSER
+              value: {{ .Values.featurePostgres.user | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: recsys-data-platform-secret
+                  key: FEAST_POSTGRES_PASSWORD

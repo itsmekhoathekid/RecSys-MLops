@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-d-benchmark-harness
+  namespace: llm-inference
+spec:
+  ports:
+  - name: rsync
+    protocol: TCP
+    port: 20873
+    targetPort: 20873
+  selector:
+    app: llm-d-benchmark-harness
+  type: ClusterIP

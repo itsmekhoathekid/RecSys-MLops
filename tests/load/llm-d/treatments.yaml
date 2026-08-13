@@ -1,0 +1,17 @@
+# Repository-owned experiment matrix. Pass one treatment at a time through
+# LLMDBENCH_WORKLOAD/LLMDBENCH_* so every result has an explicit configuration.
+treatments:
+  - name: baseline
+    workload: sanity_random.yaml
+    router: uniform-random
+    prefix_caching: false
+    dtype: float32
+    max_model_len: 8192
+    max_num_seqs: 1
+  - name: prefix-heavy
+    workload: shared_prefix.yaml
+    router: optimized-baseline
+    prefix_caching: true
+    dtype: float32
+    max_model_len: 8192
+    max_num_seqs: 1

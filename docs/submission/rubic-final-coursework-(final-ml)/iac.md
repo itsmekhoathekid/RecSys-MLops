@@ -4,12 +4,12 @@ This document records the final Infrastructure as Code setup deployed to Google 
 
 ## Target Project
 
-- GCP project: `rec-sys-503309`
-- Project number: `455131526306`
+- GCP project: `recsys-mlops`
+- Project number: `900810319875`
 - Region: `asia-southeast1`
 - Zone: `asia-southeast1-b`
 - GKE cluster: `recsys-mlops-gke`
-- Artifact Registry: `asia-southeast1-docker.pkg.dev/rec-sys-503309/recsys`
+- Artifact Registry: `asia-southeast1-docker.pkg.dev/recsys-mlops/recsys`
 
 ## IaC Layout
 
@@ -83,7 +83,7 @@ retired.
 ```bash
 gcloud builds submit \
   --config infra/cloudbuild/recsys-images.yaml \
-  --project rec-sys-503309
+  --project recsys-mlops
 ```
 
 Do not run that command on the current tree. Current delivery validates
@@ -124,7 +124,7 @@ recsys-flink:gcp            sha256:ca89c5f434828c619a37c79366943a0a49be98b38d8d3
 
 ## Terraform Proof
 
-Terraform was applied from `infra/terraform/gcp` against project `rec-sys-503309`.
+Terraform was applied from `infra/terraform/gcp` against project `recsys-mlops`.
 
 Validation:
 

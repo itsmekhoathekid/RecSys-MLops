@@ -1,0 +1,213 @@
+fullnameOverride: qwen3-5--5a687092-3-5-0-8b
+
+
+schedulerName: default-scheduler
+
+modelArtifacts:
+  name: qwen3.5-0.8b
+  uri: pvc://model-pvc/models/qwen3.5-0.8b
+  size: 1Ti
+  mountPath: /model-cache
+  labels:
+    llm-d.ai/inferenceServing: "true"
+    llm-d.ai/model: qwen3-5--5a687092-3-5-0-8b
+    llm-d.ai/guide: "cpu"
+
+multinode: false
+
+accelerator:
+  type: cpu
+
+  dra: false
+
+
+routing:
+  servicePort: 8000
+  proxy:
+    enabled: true
+    image: "ghcr.io/llm-d/llm-d-router-disagg-sidecar:v0.9.0"
+    imagePullPolicy: Always
+    targetPort: 8200
+    connector: nixlv2
+    secure: false
+    zapEncoder: json
+    zapLogLevel: debug
+    debugLevel: 3
+
+
+decode:
+  create: true
+  replicas: 2
+
+  autoscaling:
+    enabled: false
+
+
+
+
+
+  parallelism:
+    tensor: 1
+    data: 1
+    dataLocal: 1
+    workers: 1
+
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/os
+            operator: In
+            values:
+            - "linux"
+
+
+
+
+
+
+
+
+
+  containers:
+  - name: "vllm"
+    image: "public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.26.0"
+    imagePullPolicy: IfNotPresent
+    mountModelVolume: true
+    modelCommand: custom
+    command:
+      - /bin/bash
+      - '-c'
+    args:
+      - |
+        python3 /setup/preprocess/set_llmdbench_environment.py && . $HOME/llmdbench_env.sh; vllm serve /model-cache/models/qwen3.5-0.8b \
+          --host 0.0.0.0 \
+          --served-model-name qwen3.5-0.8b \
+          --port $VLLM_METRICS_PORT \
+          --block-size $VLLM_BLOCK_SIZE \
+          --max-model-len $VLLM_MAX_MODEL_LEN \
+          --tensor-parallel-size $VLLM_TENSOR_PARALLELISM \
+          --no-enable-log-requests \
+          --disable-uvicorn-access-log \
+          --no-enable-prefix-caching
+    env:
+      - name: VLLM_IS_DECODE
+        value: "1"
+      - name: HOME
+        value: "/tmp"
+      - name: USER
+        value: "llm-d"
+      - name: HF_HOME
+        value: "/tmp/huggingface"
+      - name: MODEL_NAME
+        value: "qwen3.5-0.8b"
+      - name: MODEL_PATH
+        value: "models/qwen3.5-0.8b"
+      - name: VLLM_CACHE_ROOT
+        value: "/tmp/vllm"
+      - name: VLLM_WORKER_MULTIPROC_METHOD
+        value: "spawn"
+      - name: VLLM_LOGGING_LEVEL
+        value: "INFO"
+      - name: VLLM_HTTP_TIMEOUT_KEEP_ALIVE
+        value: "120"
+      - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+        value: "1"
+      - name: VLLM_SERVER_DEV_MODE
+        value: "1"
+      - name: VLLM_INFERENCE_PORT
+        value: "8000"
+      - name: VLLM_METRICS_PORT
+        value: "8200"
+      - name: VLLM_BLOCK_SIZE
+        value: "64"
+      - name: VLLM_MAX_MODEL_LEN
+        value: "1024"
+      - name: VLLM_LOAD_FORMAT
+        value: "auto"
+      - name: VLLM_ACCELERATOR_MEM_UTIL
+        value: "0"
+      - name: VLLM_MAX_NUM_SEQ
+        value: "256"
+      - name: VLLM_TENSOR_PARALLELISM
+        value: "1"
+      - name: VLLM_MAX_NUM_BATCHED_TOKENS
+        value: "256"
+      - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+        value: "5557"
+      - name: UCX_TLS
+        value: "sm,cuda_ipc,cuda_copy,tcp"
+      - name: UCX_SOCKADDR_TLS_PRIORITY
+        value: "tcp"
+      - name: POD_IP
+        valueFrom:
+          fieldRef:
+            apiVersion: v1
+            fieldPath: status.podIP
+      - name: LLMDBENCH_POD_NS
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+
+    resources:
+      limits:
+        memory: 32Gi
+        cpu: "8"
+      requests:
+        memory: 32Gi
+        cpu: "8"
+    extraConfig:
+      startupProbe:
+        httpGet:
+          path: /health
+          port: 8200
+        failureThreshold: 60
+        initialDelaySeconds: 30
+        periodSeconds: 30
+        timeoutSeconds: 5
+      livenessProbe:
+        tcpSocket:
+          port: 8200
+        failureThreshold: 10
+        periodSeconds: 5
+        timeoutSeconds: 15
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8200
+        failureThreshold: 10
+        periodSeconds: 5
+        timeoutSeconds: 15
+    volumeMounts:
+      - name: dshm
+        mountPath: /dev/shm
+      - name: preprocesses
+        mountPath: /setup/preprocess
+      - name: k8s-llmdbench-context
+        mountPath: /etc/kubeconfig
+        readOnly: true
+
+  volumes:
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 16Gi
+    - name: preprocesses
+      configMap:
+        name: llm-d-benchmark-preprocesses
+        defaultMode: 320
+    - name: k8s-llmdbench-context
+      secret:
+        secretName: llmdbench-context
+
+  monitoring:
+    podmonitor:
+      enabled: false
+
+prefill:
+  create: false

@@ -1,12 +1,12 @@
 # Security Proof
 
-This proof covers the final-coursework rubric item **Security** on GCP/GKE project `rec-sys-503309`.
+This proof covers the final-coursework rubric item **Security** on GCP/GKE project `recsys-mlops`.
 
 ## Scope
 
 | Rubric item | Implementation |
 |---|---|
-| Centralized secret management | External Secrets Operator uses one central `ClusterSecretStore` named `recsys-central-secrets`, then syncs service-specific Kubernetes Secrets into the namespaces that need them. |
+| Centralized secret management | HashiCorp Vault HA stores the source values in KV v2. External Secrets Operator authenticates with a short-lived Kubernetes service-account JWT through `ClusterSecretStore/recsys-vault`, then syncs namespace-local Kubernetes Secrets. |
 | Service-to-service authentication | Istio sidecar injection, STRICT mTLS, namespace-level default deny, and explicit `AuthorizationPolicy` allow rules by source principal and port. |
 
 ## Security Architecture
@@ -16,8 +16,10 @@ The implementation separates credential distribution from runtime network enforc
 ```mermaid
 flowchart LR
     subgraph SecretDistribution["Credential distribution"]
-        T["Terraform-generated credentials"] --> C["Central source Secrets<br/>external-secrets namespace"]
-        C --> S["ClusterSecretStore<br/>recsys-central-secrets"]
+        T["Terraform-generated and supplied credentials"] --> V["Vault KV v2<br/>recsys/data/*"]
+        KMS["Google Cloud KMS<br/>auto-unseal"] --> V
+        WI["GKE Workload Identity"] --> V
+        V --> S["ClusterSecretStore<br/>recsys-vault"]
         S --> E["Service-level ExternalSecret"]
         E --> K["Namespace-local Kubernetes Secret"]
         K --> W["Application workload"]
@@ -34,16 +36,17 @@ flowchart LR
 
 | Security plane | Main control | Enforcement point |
 |---|---|---|
-| Secret management | `ClusterSecretStore` and `ExternalSecret` | External Secrets Operator creates or refreshes namespace-local Secrets consumed by workloads. |
+| Secret management | Vault KV v2, `ClusterSecretStore`, and `ExternalSecret` | Vault is the source of truth; External Secrets Operator creates or refreshes namespace-local Secrets consumed by workloads. |
 | Authentication | Istio `PeerAuthentication` in `STRICT` mode | Source and destination Envoy sidecars establish mutually authenticated TLS. |
 | Authorization | Default-deny plus explicit `AuthorizationPolicy` resources | Destination Envoy validates source workload identity and destination port before forwarding traffic. |
 
 ## Effective Production Security Setup
 
 Security is bootstrapped before the application releases that depend on it. The
-effective GCP configuration differs from the reusable chart defaults in two
-important ways: the central secret backend is Kubernetes, not Vault, and
-Terraform expands the mesh policy scope to six runtime namespaces.
+effective GCP configuration deploys Vault 2.0.3 with the official HashiCorp
+chart 0.34.0, HA integrated storage (Raft), three persistent replicas, GCP Cloud
+KMS auto-unseal, and GKE Workload Identity. Terraform also expands the mesh
+policy scope to six runtime namespaces.
 
 ### Bootstrap Order And Ownership
 
@@ -52,9 +55,10 @@ flowchart TD
     GKE["Terraform creates GKE<br/>with Workload Identity"]
     NS["Terraform creates and labels<br/>runtime namespaces"]
     Operators["Terraform installs Istio,<br/>External Secrets and cert-manager"]
-    Source["Terraform generates credentials and writes<br/>central source Secrets in external-secrets"]
+    VaultInfra["Terraform creates KMS key, Vault GSA/WI,<br/>3-node Vault Raft release and PVCs"]
+    Bootstrap["One-time bootstrap creates KV v2, policies,<br/>Kubernetes auth and migrates grouped secrets"]
     Security["Terraform installs recsys-security"]
-    Store["ClusterSecretStore<br/>Kubernetes provider"]
+    Store["ClusterSecretStore/recsys-vault<br/>Vault provider + JWT audience"]
     Sync["ExternalSecrets create<br/>namespace-local Secrets"]
     Mesh["STRICT mTLS, default deny,<br/>explicit ALLOW policies"]
     Wait["Terraform waits for every required<br/>ExternalSecret and target Secret"]
@@ -62,7 +66,7 @@ flowchart TD
     Jenkins["Jenkins later updates application images<br/>without owning central secrets"]
 
     GKE --> NS --> Operators
-    Operators --> Source --> Security
+    Operators --> VaultInfra --> Bootstrap --> Security
     Security --> Store --> Sync --> Wait --> Apps --> Jenkins
     Security --> Mesh --> Apps
 ```
@@ -71,44 +75,104 @@ flowchart TD
 | --- | --- |
 | GCP identity | Terraform enables the GKE Workload Identity pool. Node VMs use `recsys-mlops-nodes`; the `ci/recsys-jenkins` Kubernetes service account receives direct Artifact Registry writer IAM through its Workload Identity principal. |
 | Kubernetes identity | Kubernetes service accounts identify workloads to the API server and become Istio SPIFFE principals such as `cluster.local/ns/api-serving/sa/default`. |
-| Secret source | Terraform-generated or supplied values are stored as five source Kubernetes Secrets in the `external-secrets` namespace: `data-platform`, `mlflow`, `runtime`, `kserve-minio`, and `gateway`. |
-| Secret distribution | The Terraform-owned `recsys-security` release creates one Kubernetes-backed `ClusterSecretStore` and namespace-local `ExternalSecret` objects. External Secrets Operator owns the generated target Secrets. |
+| Secret source | Vault KV v2 mount `recsys` stores seven groups: `data-platform`, `mlflow`, `runtime`, `kserve-minio`, `gateway`, `analytics`, and `jenkins-runtime`. The five Terraform migration sources and the manually supplied analytics migration source were removed after successful sync. The CI chart still owns a `jenkins-runtime` mirror used as the rotation/migration input. |
+| Secret distribution | The Terraform-owned `recsys-security` release creates Vault-backed `ClusterSecretStore/recsys-vault` and namespace-local `ExternalSecret` objects. The analytics and demo-web releases use the same store. External Secrets Operator owns the generated target Secrets. |
 | East-west transport | Istio sidecars provide workload certificates and mTLS. Destination-side `AuthorizationPolicy` resources enforce source principal and port allow lists. |
 | Network segmentation | Two NetworkPolicy templates select MinIO, feature Postgres, and Redis. They describe namespace/port boundaries, subject to the GKE network-policy enforcement caveat below. |
 | North-south access | NGINX terminates TLS and applies shared Basic Auth and rate limits before its Envoy sidecar sends mTLS traffic to API and observability workloads. |
-| Release ownership | Terraform owns the central secret payloads, `recsys-security`, Istio/operator releases, and gateway. Jenkins owns application image releases and reads already-synced runtime Secrets; it does not receive plaintext secrets through Helm arguments. |
+| Release ownership | Vault owns the central payloads. Terraform owns Vault/KMS/IAM, `recsys-security`, Istio/operator releases, and gateway. Jenkins owns application image releases and reads already-synced runtime Secrets; it does not receive plaintext secrets through Helm arguments. |
 
-The effective overrides are assembled in
-[locals.tf](../../../infra/terraform/gcp/locals.tf), the source payloads and
-readiness gate are in
-[secret_management.tf](../../../infra/terraform/gcp/secret_management.tf), and
-the security release dependency chain is in
-[recsys_services.tf](../../../infra/terraform/gcp/recsys_services.tf#L486).
+The Vault infrastructure is defined in [vault.tf](../../../infra/terraform/gcp/vault.tf#L1),
+its HA server configuration is in [values.yaml.tftpl](../../../configs/vault/values.yaml.tftpl#L1),
+and the safe initialization/migration workflow is in
+[bootstrap_vault.sh](../../../ops/gcp/bootstrap_vault.sh#L1). The effective
+External Secrets overrides are assembled in
+[locals.tf](../../../infra/terraform/gcp/locals.tf#L89).
 
 ### Effective Secret Backend
 
-The chart supports Vault as a reusable default, but production Terraform sets:
+Production Terraform sets:
 
 ```text
-secretStore.provider = kubernetes
-secretStore.name = recsys-central-secrets
-secretStore.kubernetes.remoteNamespace = external-secrets
-secretStore.kubernetes.auth.serviceAccount = external-secrets/external-secrets
+secretStore.provider = vault
+secretStore.name = recsys-vault
+vault.server = http://vault.vault.svc.cluster.local:8200
+vault.mountPath = recsys
+vault.auth.mountPath = kubernetes
+vault.auth.role = recsys-external-secrets
+vault.auth.serviceAccount = external-secrets/external-secrets
+vault.auth.audiences = [vault]
 externalSecrets.creationPolicy = Owner
 ```
 
-Therefore the current design is centralized **inside the GKE cluster**. It is
-not currently backed by HashiCorp Vault, Google Secret Manager, or Cloud KMS.
-The `ClusterSecretStore` uses the External Secrets service account to read the
-source Kubernetes Secrets and materialize only the requested group in each
-target namespace.
+Vault is reachable only through the internal ClusterIP endpoint
+`http://vault.vault.svc.cluster.local:8200`; it has no public LoadBalancer or
+Ingress. The `external-secrets/external-secrets` service account requests a JWT
+with audience `vault`. Vault validates that JWT through Kubernetes TokenReview,
+maps it to policy `recsys-external-secrets`, and returns a short-lived Vault
+token (TTL 1 hour, maximum 4 hours). That policy can only read
+`recsys/data/*` and list/read `recsys/metadata/*`.
+
+Vault data is stored on three 10 GiB `standard` persistent disks by integrated
+Raft storage. The Vault service account impersonates the dedicated Google
+service account through Workload Identity; that GSA can view and
+encrypt/decrypt only the `vault-unseal` Cloud KMS key. The KMS key has 90-day
+rotation and Terraform `prevent_destroy`.
 
 The target Secret is owned by its `ExternalSecret`, so deleting the
 `ExternalSecret` can also delete the generated Secret under `creationPolicy:
 Owner`. Terraform's `recsys_external_secrets_ready` gate waits for each
 `ExternalSecret` to report Ready and verifies that its target Secret exists
 before MLflow, data-platform, serving, observability, or gateway workloads are
-allowed to roll out.
+allowed to roll out. Analytics and demo web also reference `recsys-vault` from
+their own Helm releases.
+
+### Deployment And Migration Runbook
+
+This is intentionally a two-phase migration so ESO never switches to an empty
+or uninitialized backend.
+
+1. Set `deploy_vault=true` and temporarily keep
+   `vault_legacy_source_secrets_enabled=true` in the ignored
+   `infra/terraform/gcp/terraform.tfvars`.
+2. Deploy only the Vault dependency chain first:
+
+   ```bash
+   terraform -chdir=infra/terraform/gcp init
+   terraform -chdir=infra/terraform/gcp apply \
+     -target=helm_release.vault \
+     -target=kubernetes_cluster_role_binding_v1.vault_token_reviewer
+   ```
+
+3. Initialize Vault, configure auth/policies, migrate the seven groups, encrypt
+   the recovery artifact, and revoke the initial root token:
+
+   ```bash
+   bash ops/gcp/bootstrap_vault.sh
+   ```
+
+4. Switch the central store and the two independently owned ExternalSecrets:
+
+   ```bash
+   terraform -chdir=infra/terraform/gcp apply \
+     -target=helm_release.recsys_security
+   helm upgrade recsys-analytics infra/helm/recsys-analytics \
+     --namespace analytics --reuse-values \
+     --set externalSecret.storeName=recsys-vault --wait
+   helm upgrade recsys-demo-web infra/helm/recsys-demo-web \
+     --namespace api-serving --reuse-values \
+     --set externalSecret.secretStoreName=recsys-vault --wait
+   ```
+
+5. Verify `recsys-vault` is valid and every ExternalSecret is synced. Only then
+   set `vault_legacy_source_secrets_enabled=false` and apply the legacy-source
+   removal. The manually supplied `external-secrets/analytics` migration source
+   is also removed. Do not delete the namespace-local target Secrets; ESO owns
+   and refreshes those for the workloads.
+
+6. Run a normal, non-targeted `terraform plan` to review unrelated pending
+   infrastructure changes separately. Targeting above is only for ordering the
+   one-time backend migration.
 
 ### Effective Mesh Enforcement Scope
 
@@ -153,112 +217,69 @@ do not replace mesh identity. The full NGINX, DNS, certificate, Basic Auth, and
 rate-limit setup is documented in
 [Routing & Gateway](routing_gateway.md#setup-and-configuration-flow).
 
-### GCP IAM And Jenkins Deployment Identity
-
-GKE disables legacy ABAC and client certificates and enables Workload Identity.
-The Jenkins pod runs as Kubernetes service account `ci/recsys-jenkins`; Terraform
-grants that workload principal `roles/artifactregistry.writer`, so Jenkins can
-push immutable build artifacts without mounting a static Google service-account
-JSON key. Jenkins preflight verifies the production project, cluster context,
-registry, identity, and upload permission before deployment.
-
-Inside Kubernetes, however, the Jenkins service account is bound to the
-`recsys-ci-runner` ClusterRole with wildcard API groups, resources, and verbs.
-This is effectively cluster-admin-equivalent access and is what allows the
-pipeline to upgrade releases across namespaces. The controller also runs a
-privileged Docker-in-Docker sidecar with an unauthenticated pod-local Docker API
-on port `2375`; compromise of the Jenkins container therefore has a large
-cluster and node-runtime blast radius. These are current implementation facts,
-not least-privilege targets.
-
-### Workload Hardening Present In Selected Charts
-
-The serving runtime, demo frontend/backend, and model rollout watcher explicitly
-run as non-root and/or disable privilege escalation. Triton and demo containers
-drop Linux capabilities, and demo pods use the runtime-default seccomp profile.
-These controls are workload-specific: there is no namespace Pod Security
-Admission label enforcing them platform-wide, and several other charts rely on
-their image defaults.
-
-## Current Security Boundaries And Gaps
-
-The controls above are real, but their current boundary should not be
-overstated:
-
-- **Terraform state contains secret material.** Generated passwords and the
-  centralized Kubernetes Secret payloads are present in the local Terraform
-  state. The state and `terraform.tfvars` are ignored by Git, but there is no
-  remote encrypted backend, locking, centralized access policy, or state audit
-  trail.
-- **The secret backend is cluster-local.** Compromise of the cluster or the
-  External Secrets service account can expose the source and replicated
-  Secrets. Google Secret Manager or Vault would create a stronger external
-  trust boundary.
-- **Kubernetes NetworkPolicy is not enforced by the current GKE cluster.** The
-  state reports `network_policy.enabled=false` and no Dataplane V2 provider.
-  The MinIO/Postgres/Redis NetworkPolicy objects can be rendered and applied but
-  do not isolate traffic until GKE network-policy enforcement is enabled.
-- **The control plane is public.** Private nodes/endpoints are disabled and no
-  `master_authorized_networks_config` is set. GKE authentication still applies,
-  but the Kubernetes API endpoint is internet-reachable rather than restricted
-  to an approved CIDR/VPN path.
-- **Mesh coverage is partial.** `datahub`, `analytics`, `ci`, and
-  `ingress-nginx` do not receive this chart's namespace STRICT/default-deny
-  baseline. Several compatibility policies intentionally use `PERMISSIVE`, and
-  selected workload policies omit a source constraint, allowing any source that
-  can reach the selected port.
-- **Jenkins is highly privileged.** Wildcard cluster RBAC, root startup tasks,
-  privileged Docker-in-Docker, and a TLS-disabled Docker socket are acceptable
-  only if the Jenkins namespace and webhook are treated as a high-trust
-  administration boundary.
-- **The shared GKE node identity can publish images.** The node service account
-  currently has both Artifact Registry reader and writer roles. Workload
-  Identity gives Jenkins its own writer principal, so the node-level writer
-  grant is broader than required for normal image pulls and weakens workload
-  isolation.
-- **Gateway auth is shared Basic Auth.** It protects public API and
-  observability routes, but it is not per-user OAuth/OIDC, short-lived identity,
-  or application-level authorization. The production ClusterIssuer is also an
-  external prerequisite rather than a Terraform-owned object.
-- **Rotation requires workload action.** External Secrets refreshes targets
-  hourly, but pods using environment variables retain their previous values
-  until restarted. No automatic reloader is installed.
-- **Supply-chain enforcement is incomplete.** Jenkins deploys immutable image
-  digests and performs vulnerability scanning, but GKE Binary Authorization and
-  admission-time signature verification are not configured.
-- **Destruction protection is off.** The current cluster has Terraform/GKE
-  deletion protection disabled, increasing the impact of an accidental
-  infrastructure destroy.
 
 ## Centralized Secret Management
 
-The security setup keeps source credentials centralized and lets workloads consume namespace-local synced secrets. This avoids copying secret manifests into every service chart while still giving each namespace only the secret it needs.
+Vault is the central source of truth. Workloads continue to consume ordinary
+namespace-local Kubernetes Secrets, but those objects are reconciled from Vault
+and are not hand-copied into service charts.
 
 ### Code Reference
 
-- [dependencies.tf (line 58)](../../../infra/terraform/gcp/dependencies.tf#L58), [dependencies.tf (line 74)](../../../infra/terraform/gcp/dependencies.tf#L74): installs External Secrets Operator with Helm and CRDs.
-- [secret_management.tf (line 1)](../../../infra/terraform/gcp/secret_management.tf#L1), [secret_management.tf (line 78)](../../../infra/terraform/gcp/secret_management.tf#L78): defines central source-secret payloads for data platform, MLflow, runtime, KServe, and gateway credentials.
-- [secretstore.yaml (line 1)](../../../infra/helm/recsys-security/templates/secretstore.yaml#L1), [secretstore.yaml (line 35)](../../../infra/helm/recsys-security/templates/secretstore.yaml#L35): renders the central `ClusterSecretStore`.
-- [externalsecrets.yaml (line 1)](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L1), [externalsecrets.yaml (line 34)](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L34): renders `ExternalSecret` objects that sync target Kubernetes Secrets.
+- [vault.tf (line 1)](../../../infra/terraform/gcp/vault.tf#L1), [vault.tf (line 20)](../../../infra/terraform/gcp/vault.tf#L20), [vault.tf (line 56)](../../../infra/terraform/gcp/vault.tf#L56): creates the Vault GSA, Cloud KMS key/IAM, Workload Identity binding, official Helm release, and TokenReview RBAC.
+- [values.yaml.tftpl (line 1)](../../../configs/vault/values.yaml.tftpl#L1), [values.yaml.tftpl (line 55)](../../../configs/vault/values.yaml.tftpl#L55), [values.yaml.tftpl (line 86)](../../../configs/vault/values.yaml.tftpl#L86): configures Vault 2.0.3, three-node HA Raft, PVCs, internal service, and GCP KMS seal.
+- [bootstrap_vault.sh (line 112)](../../../ops/gcp/bootstrap_vault.sh#L112), [bootstrap_vault.sh (line 145)](../../../ops/gcp/bootstrap_vault.sh#L145), [bootstrap_vault.sh (line 164)](../../../ops/gcp/bootstrap_vault.sh#L164), [bootstrap_vault.sh (line 175)](../../../ops/gcp/bootstrap_vault.sh#L175): initializes Vault, enables KV v2, writes least-privilege policy/Kubernetes auth, and migrates grouped secret values without printing them.
+- [secretstore.yaml (line 23)](../../../infra/helm/recsys-security/templates/secretstore.yaml#L23), [secretstore.yaml (line 31)](../../../infra/helm/recsys-security/templates/secretstore.yaml#L31): renders the Vault-backed `ClusterSecretStore`, including service-account JWT audience.
+- [externalsecrets.yaml (line 1)](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L1): renders the core service `ExternalSecret` objects.
+- [recsys-analytics values (line 6)](../../../infra/helm/recsys-analytics/values.yaml#L6), [recsys-demo-web values (line 64)](../../../infra/helm/recsys-demo-web/values.yaml#L64): point the independently owned analytics and demo-web ExternalSecrets at `recsys-vault`.
 
 ### End-To-End Secret Flow
 
-1. Terraform creates grouped source credentials.
+1. Terraform deploys the Vault endpoint and its unseal trust chain.
 
-   [secret_management.tf (line 1)](../../../infra/terraform/gcp/secret_management.tf#L1) groups credentials by platform responsibility: `data-platform`, `mlflow`, `runtime`, `kserve-minio`, and `gateway`. Terraform stores the source objects as Kubernetes Secrets in the `external-secrets` namespace and labels each object with its security scope.
+   [vault.tf (line 1)](../../../infra/terraform/gcp/vault.tf#L1) creates a
+   dedicated GSA and exact-key KMS permissions. Workload Identity maps
+   `vault/vault` to that GSA without a JSON service-account key. The official
+   HashiCorp Helm chart installs three Vault pods backed by Raft PVCs. The live
+   endpoint is `vault.vault.svc.cluster.local:8200` and is ClusterIP-only.
 
-2. One `ClusterSecretStore` exposes the central source to External Secrets Operator.
+2. The one-time bootstrap initializes and populates Vault.
 
-   The GCP deployment configures the Kubernetes provider, store name `recsys-central-secrets`, remote namespace `external-secrets`, and the `external-secrets` service account in [locals.tf (line 96)](../../../infra/terraform/gcp/locals.tf#L96). The store authenticates to the Kubernetes API and reads source objects from that namespace.
+   Run `bash ops/gcp/bootstrap_vault.sh` while the seven migration source Secrets
+   exist. It performs a KMS round-trip check, initializes five recovery shares
+   with threshold three, enables KV v2 mount `recsys`, creates policies and the
+   Kubernetes auth role, and copies these groups without printing values:
 
-3. Service-level `ExternalSecret` resources request the credential group needed in their namespace.
+   | Vault path | Keys stored at migration | Purpose |
+   |---|---:|---|
+   | `recsys/data/data-platform` | 12 | MinIO and data-platform PostgreSQL credentials |
+   | `recsys/data/mlflow` | 5 | MLflow database and artifact-store credentials |
+   | `recsys/data/runtime` | 25 | Kubeflow/training runtime endpoints and credentials |
+   | `recsys/data/kserve-minio` | 6 | KServe S3 storage initializer credentials |
+   | `recsys/data/gateway` | 1 | Shared ingress Basic Auth payload |
+   | `recsys/data/analytics` | 16 | Trino/catalog/Superset/PostgreSQL credentials |
+   | `recsys/data/jenkins-runtime` | 3 | Jenkins URL, user, and runtime token merged into the Kubeflow runtime Secret |
+
+   Plaintext exists only in a mode-700 temporary directory and is deleted on
+   exit. Recovery shares and the scoped admin token are stored in
+   `.vault-bootstrap/vault-init.json.enc`, encrypted by the same KMS key and
+   mode 600; `.vault-bootstrap/` is gitignored. The initial root token is
+   revoked after the scoped admin token is created.
+
+3. One `ClusterSecretStore` authenticates External Secrets Operator to Vault.
+
+   The GCP deployment selects provider `vault`, store `recsys-vault`, mount
+   `recsys`, auth mount `kubernetes`, role `recsys-external-secrets`, and JWT
+   audience `vault` in [locals.tf (line 89)](../../../infra/terraform/gcp/locals.tf#L89).
+
+4. Service-level `ExternalSecret` resources request only the credential group needed in their namespace.
 
    ```yaml
    spec:
      refreshInterval: 1h
      secretStoreRef:
        kind: ClusterSecretStore
-       name: recsys-central-secrets
+       name: recsys-vault
      target:
        name: recsys-mlops-runtime
        creationPolicy: Owner
@@ -275,16 +296,410 @@ The security setup keeps source credentials centralized and lets workloads consu
    | `data-platform` | `observability` | `recsys-data-platform-secret` | PostgreSQL and Redis exporters |
    | `mlflow` | `experiment-tracking` | `recsys-mlflow-secrets` | MLflow, model-store MinIO, and registry PostgreSQL |
    | `runtime` | `kubeflow` | `recsys-mlops-runtime` | Kubeflow components, Ray jobs, model registry, and model CD handoff |
+   | `jenkins-runtime` | `kubeflow` (merged with `runtime`) | `recsys-mlops-runtime` | Jenkins model-CD handoff |
    | `kserve-minio` | `kserve-triton-inference` | `recsys-kserve-minio` | KServe storage initializer |
    | `gateway` | `api-serving`, `observability` | `recsys-gateway-basic-auth` | NGINX ingress authentication |
+   | `analytics` | `analytics` | `recsys-analytics-secret` | Trino, Superset, catalog PostgreSQL, and lakehouse thrift |
+   | `data-platform` (selected properties only) | `api-serving` | `recsys-demo-web-db` | Demo backend database client |
 
-4. Workloads consume the namespace-local target Secret.
+5. Workloads consume the namespace-local target Secret.
 
    Applications do not read the central source namespace directly. They use standard Kubernetes `envFrom`, `secretKeyRef`, or a service-account secret reference. For example, Flink loads `recsys-data-platform-secret` through the [split streaming chart](../../../infra/helm/recsys-streaming/templates/flink.yaml#L69), MLflow reads MinIO credentials through [mlflow.yaml (line 30)](../../../infra/helm/mlflow-stack/templates/mlflow.yaml#L30), and the KServe service account references `recsys-kserve-minio` in [kserve-serviceaccount.yaml (line 1)](../../../infra/helm/recsys-serving/templates/kserve-serviceaccount.yaml#L1).
 
-5. External Secrets Operator reconciles changes.
+6. External Secrets Operator reconciles changes.
 
-   Every `refreshInterval`, the operator rereads the central group and updates the namespace-local Secret. Workloads that import secrets as environment variables receive the new value after their pods restart; consumers that mount Secret volumes can use Kubernetes volume refresh behavior.
+   Every `refreshInterval`, the operator obtains a short-lived Vault token,
+   rereads the central group, and updates the namespace-local Secret. Workloads
+   that import secrets as environment variables receive the new value after
+   their pods restart; consumers that mount Secret volumes can use Kubernetes
+   volume refresh behavior. After all nine ExternalSecrets reported
+   `SecretSynced=True`, the six legacy migration sources were deleted.
+
+### How The Encrypted Bootstrap Artifact Is Created
+
+The artifact `.vault-bootstrap/vault-init.json.enc` is created only during the
+first successful run of `bash ops/gcp/bootstrap_vault.sh`, when Vault reports
+`initialized=false`. Terraform, Helm, and the Vault pods do not create this
+local file.
+
+The creation flow is:
+
+```text
+vault operator init
+  -> five recovery shares + one-time initial root token
+  -> create policy recsys-secrets-admin
+  -> vault token create (scoped administrator token)
+  -> remove root_token from the final JSON
+  -> add recsys_admin_token to the final JSON
+  -> encrypt the final JSON with Google Cloud KMS
+  -> revoke the one-time initial root token
+  -> move ciphertext to .vault-bootstrap/vault-init.json.enc
+```
+
+The corresponding script blocks are:
+
+1. [Initialize Vault](../../../ops/gcp/bootstrap_vault.sh#L112):
+   `vault operator init` creates the recovery shares and initial root token.
+   An early KMS-encrypted recovery copy is written immediately so initialization
+   material is recoverable if a later bootstrap step fails.
+2. [Create the scoped administrator policy and token](../../../ops/gcp/bootstrap_vault.sh#L194):
+   `vault token create` produces an orphan token with only the
+   `recsys-secrets-admin` policy and no default policy. This is the token used
+   later to register or rotate service secrets; it is not the ESO short-lived
+   read-only token.
+3. [Build the final JSON](../../../ops/gcp/bootstrap_vault.sh#L235): `jq`
+   deletes `.root_token`, adds `.recsys_admin_token`, and records
+   `.initial_root_token_revoked=true`. The plaintext JSON remains only in the
+   mode-700 temporary working directory.
+4. [Encrypt and install the artifact](../../../ops/gcp/bootstrap_vault.sh#L244):
+   `gcloud kms encrypt` creates ciphertext, the initial root token revokes
+   itself, and `mv` installs the ciphertext at
+   `.vault-bootstrap/vault-init.json.enc` with mode `600`.
+
+After the script exits, its `EXIT` trap removes the temporary plaintext files.
+Subsequent bootstrap runs see `initialized=true`, decrypt the existing artifact
+temporarily to obtain `recsys_admin_token`, and do not initialize Vault or
+create another administrator token.
+
+### Register A New Service Secret
+
+Use a scoped Vault administrator or writer identity for secret changes. Do not
+use a root token, put plaintext values in Git/Helm/Terraform arguments, or type
+them directly into a command that will be retained in shell history. The
+current coursework setup keeps its scoped administrator token inside the
+KMS-encrypted `.vault-bootstrap/vault-init.json.enc` artifact.
+
+Prepare a private working directory and load that token without printing it:
+
+```bash
+repo_root=/Users/KHOAI/anhkhoa/RecSys-MLops
+vault_work_dir="$(mktemp -d)"
+chmod 700 "${vault_work_dir}"
+trap 'unset VAULT_TOKEN; rm -rf "${vault_work_dir}"' EXIT
+
+gcloud kms decrypt \
+  --project recsys-mlops \
+  --location global \
+  --keyring recsys-mlops-vault \
+  --key vault-unseal \
+  --ciphertext-file "${repo_root}/.vault-bootstrap/vault-init.json.enc" \
+  --plaintext-file "${vault_work_dir}/vault-bootstrap.json" \
+  --quiet
+
+VAULT_TOKEN="$(jq -er '.recsys_admin_token' \
+  "${vault_work_dir}/vault-bootstrap.json")"
+
+vault_exec() {
+  printf '%s\n' "${VAULT_TOKEN}" | kubectl exec -i -n vault vault-0 -- \
+    sh -c 'IFS= read -r VAULT_TOKEN; export VAULT_TOKEN; \
+      export VAULT_ADDR=http://127.0.0.1:8200; exec vault "$@"' sh "$@"
+}
+
+vault_exec_stdin_value() {
+  value_file="$1"
+  shift
+  {
+    printf '%s\n' "${VAULT_TOKEN}"
+    sed -n '1,$p' "${value_file}"
+  } | kubectl exec -i -n vault vault-0 -- \
+    sh -c 'IFS= read -r VAULT_TOKEN; export VAULT_TOKEN; \
+      export VAULT_ADDR=http://127.0.0.1:8200; exec vault "$@"' sh "$@"
+}
+```
+
+![Vault operator session initialized with KMS-backed credentials](../../pngs/vault_operator_session_kms_helpers.png)
+
+**Figure: Initialize a protected Vault operator session.** This capture shows
+the mode-`700` temporary working directory, KMS decryption of the encrypted
+bootstrap artifact, and the `vault_exec` helpers used to run scoped operations
+inside `vault-0`. The administrator token is loaded into the session but is not
+printed. The helper also provides a stdin path for secret values so they do not
+need to appear in command arguments or shell history.
+
+Example: register `DB_USERNAME` and `DB_PASSWORD` for a new
+`recommendation-api` group. The password is read silently, exists only in the
+current shell/private temporary file, and is sent to the KV-specific command
+through stdin. `vault kv put` is appropriate during registration because it
+creates version 1; if the path already exists, it creates a new version from
+the complete set of fields supplied and can replace omitted fields. This is the
+HashiCorp-documented [`kv put` workflow](https://developer.hashicorp.com/vault/docs/commands/kv/put):
+
+```bash
+# zsh syntax (the default shell used by this workstation). In zsh, `read -p`
+# means "read from a coprocess", so Bash's `read -rsp PROMPT VARIABLE` form
+# would fail with `read: -p: no coprocess`.
+IFS= read -r -s 'db_password?New recommendation-api DB password: '
+printf '\n'
+if [ -z "${db_password}" ]; then
+  printf 'Password must not be empty; Vault was not changed.\n' >&2
+else
+  printf '%s' "${db_password}" \
+    >"${vault_work_dir}/recommendation-api-password"
+  unset db_password
+
+  vault_exec_stdin_value "${vault_work_dir}/recommendation-api-password" \
+    kv put -mount=recsys recommendation-api \
+    DB_USERNAME=recsys_app DB_PASSWORD=- >/dev/null
+fi
+```
+
+Declare how ESO materializes that Vault group; this manifest belongs in the
+service Helm chart or the central security chart rather than being maintained
+as an ad-hoc live resource:
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: recommendation-api
+  namespace: api-serving
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: recsys-vault
+  target:
+    name: recommendation-api
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: recommendation-api
+```
+
+After applying the Helm release, verify metadata, synchronization, and key
+presence without displaying a secret value:
+
+```bash
+vault_exec kv metadata get -format=json \
+  -mount=recsys recommendation-api | \
+  jq '{current_version: .data.current_version, versions: (.data.versions | length)}'
+
+kubectl wait --for=condition=Ready \
+  externalsecret/recommendation-api \
+  -n api-serving --timeout=120s
+
+kubectl get externalsecret recommendation-api -n api-serving
+kubectl get secret recommendation-api -n api-serving -o json | \
+  jq -e '.data | has("DB_USERNAME") and has("DB_PASSWORD")' >/dev/null
+```
+
+### Inspect Secret Groups, Key Names, And One Login Field
+
+After preparing `VAULT_TOKEN` and the `vault_exec` helper above, list the
+available groups under the `recsys` KV v2 mount:
+
+```bash
+vault_exec kv list -format=json -mount=recsys | jq -r '.[]'
+```
+
+List only the key names in one group without displaying their values. The
+helper below performs JSON filtering inside the Vault pod, so the full payload
+does not cross the `kubectl exec` boundary; only key names reach the operator's
+terminal:
+
+```bash
+vault_key_names() {
+  mount_path="$1"
+  secret_path="$2"
+  printf '%s\n' "${VAULT_TOKEN}" | kubectl exec -i -n vault vault-0 -- \
+    sh -c '
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200
+      vault kv get -format=json -mount="$1" "$2" | awk '\''
+        /^[[:space:]]*"data":[[:space:]]*\{/ {
+          data_blocks++
+          if (data_blocks == 2) {
+            in_secret_data = 1
+            next
+          }
+        }
+        in_secret_data && /^[[:space:]]*\}/ { exit }
+        in_secret_data {
+          key = $0
+          sub(/^[[:space:]]*"/, "", key)
+          sub(/".*/, "", key)
+          if (length(key) > 0) print key
+        }
+      '\''
+    ' sh "${mount_path}" "${secret_path}"
+}
+
+vault_key_names recsys analytics
+```
+
+Expected key names include `SUPERSET_ADMIN_USERNAME`,
+`SUPERSET_ADMIN_PASSWORD`, `CATALOG_POSTGRES_USER`, and
+`CATALOG_POSTGRES_PASSWORD`. Do not replace this command with an unfiltered
+`vault kv get`, because the default table prints every plaintext value.
+
+Read an exact non-sensitive field when needed:
+
+```bash
+vault_exec kv get -mount=recsys \
+  -field=SUPERSET_ADMIN_USERNAME analytics
+```
+
+For an interactive login password on macOS, send only the selected field
+directly to the clipboard so it does not appear on the terminal. Do not run
+this while shell tracing is enabled, and clear the clipboard after login:
+
+```bash
+vault_exec kv get -mount=recsys \
+  -field=SUPERSET_ADMIN_PASSWORD analytics | pbcopy
+
+# Paste into the Superset login form, then clear the clipboard.
+printf '' | pbcopy
+```
+
+![Vault analytics key names and login fields example](../../pngs/vault_analytics_keys_and_login_fields.png)
+
+**Figure: Inspect an analytics secret group and retrieve exact login fields.**
+The capture first lists only the 16 key names in `recsys/analytics`, then reads
+the exact Superset username and password fields needed for an interactive
+login. It is retained as coursework evidence of the operator workflow. Because
+the demonstration password is visible in the capture, treat that value as
+disclosed: rotate it after evidence collection and never reuse it in another
+environment. For future captures, use the clipboard command above so the
+password is not rendered in the terminal.
+
+Use Vault as the operator-facing source of truth. Reading and decoding an
+entire Kubernetes Secret, displaying a full Vault group, or capturing a
+terminal containing a password is not acceptable evidence.
+
+### Rotate A Secret, Force Sync, And Verify
+
+For an external system such as PostgreSQL or a third-party API, create or
+activate the new credential at that system first. Keep the old credential valid
+until the new Vault version has synced and the consumer passes its functional
+test. Changing only Vault does not change the database/provider password.
+
+Capture the current KV v2 version, patch only the field being rotated, and
+confirm that Vault created a newer version:
+
+```bash
+before_version="$(vault_exec kv metadata get -format=json \
+  -mount=recsys recommendation-api | jq -er '.data.current_version')"
+
+IFS= read -r -s 'new_db_password?Rotated recommendation-api DB password: '
+printf '\n'
+if [ -z "${new_db_password}" ]; then
+  printf 'Password must not be empty; Vault was not changed.\n' >&2
+else
+  printf '%s' "${new_db_password}" \
+    >"${vault_work_dir}/recommendation-api-password-rotated"
+
+  vault_exec_stdin_value \
+    "${vault_work_dir}/recommendation-api-password-rotated" \
+    kv patch -cas="${before_version}" -mount=recsys recommendation-api \
+    DB_PASSWORD=- >/dev/null
+fi
+
+after_version="$(vault_exec kv metadata get -format=json \
+  -mount=recsys recommendation-api | jq -er '.data.current_version')"
+test "${after_version}" -gt "${before_version}"
+```
+
+`vault kv patch` is used instead of a second `kv put` because rotation changes
+only `DB_PASSWORD`; `DB_USERNAME` and every unspecified key remain intact. The
+`-cas` check makes the operation fail if another writer creates a newer version
+after `before_version` was read, preventing a silent lost update. This follows
+HashiCorp's [`kv patch` workflow](https://developer.hashicorp.com/vault/docs/commands/kv/patch)
+for KV v2.
+
+![Vault KV v2 password rotation with CAS](../../pngs/vault_secret_rotation_kv_patch_cas.png)
+
+**Figure: Rotate one Vault KV v2 field with optimistic concurrency control.**
+This capture shows the zsh-compatible silent prompt, the empty-value guard,
+`vault kv patch -cas="${before_version}"`, and the final assertion that the KV
+version increased. The password itself is not displayed. This proves the
+Vault-side rotation; the force-sync, target comparison, rollout, and functional
+test below prove that the new version propagated to the consuming service.
+
+ESO otherwise reconciles on its one-hour interval. To force an immediate sync,
+change the `force-sync` annotation and wait for `syncedResourceVersion` to
+change; checking `Ready` alone is insufficient because it may already be true
+from the previous version:
+
+```bash
+before_sync="$(kubectl get externalsecret recommendation-api \
+  -n api-serving -o jsonpath='{.status.syncedResourceVersion}')"
+
+kubectl annotate externalsecret recommendation-api \
+  -n api-serving \
+  force-sync="$(date +%s)" --overwrite
+
+for attempt in $(seq 1 60); do
+  after_sync="$(kubectl get externalsecret recommendation-api \
+    -n api-serving -o jsonpath='{.status.syncedResourceVersion}')"
+  if [ -n "${after_sync}" ] && [ "${after_sync}" != "${before_sync}" ]; then
+    break
+  fi
+  sleep 2
+done
+test "${after_sync}" != "${before_sync}"
+
+kubectl get externalsecret recommendation-api -n api-serving
+```
+
+For a controlled operator test, compare the synced target with the value still
+held in the current shell without printing either value. Do not enable shell
+tracing (`set -x`) during this operation:
+
+```bash
+synced_db_password="$(kubectl get secret recommendation-api \
+  -n api-serving -o jsonpath='{.data.DB_PASSWORD}' | base64 --decode)"
+test "${synced_db_password}" = "${new_db_password}"
+unset synced_db_password new_db_password
+```
+
+Finally restart consumers that read Secrets through environment variables,
+wait for the rollout, and run a service-level health/login test before revoking
+the old credential at its source:
+
+```bash
+kubectl rollout restart deployment/recommendation-api -n api-serving
+kubectl rollout status deployment/recommendation-api \
+  -n api-serving --timeout=300s
+
+# Terminal A: expose the internal service temporarily.
+kubectl port-forward -n api-serving \
+  service/recommendation-api 18080:80
+
+# Terminal B: replace this with the service's real authenticated health,
+# database connection, or API request. Rollout alone does not prove the new
+# credential works against its upstream system.
+curl --fail --silent --show-error http://127.0.0.1:18080/health
+```
+
+If the functional test fails, keep the old upstream credential active and use
+KV v2 history to restore the previous Vault data, then force sync and restart
+again:
+
+```bash
+vault_exec kv rollback -mount=recsys \
+  -version="${before_version}" recommendation-api
+```
+
+The complete verification chain is therefore: new upstream credential works,
+Vault `current_version` increases, ESO `syncedResourceVersion` changes,
+`SecretSynced=True`, the target contains the expected keys/value, rollout
+completes, and the application's authenticated functional test passes. Only
+then revoke the old credential.
+
+This lifecycle was verified on the live GKE deployment with an isolated
+`coursework-rotation-smoke` Vault path and temporary ExternalSecret. The test
+created KV version 1, patched only `PASSWORD` to produce version 2, forced an
+ESO refresh, confirmed a new `syncedResourceVersion`, compared the rotated
+value in memory without printing it, confirmed the unchanged `USERNAME` key
+was preserved, and observed `Ready=True`. The temporary ExternalSecret,
+generated Kubernetes Secret, and Vault metadata were deleted after the test;
+no production credential was modified.
+
+The KV-specific CLI syntax was separately verified with an isolated
+`coursework-kv-wrapper-smoke` path: `vault kv put` created version 1,
+`vault kv patch -cas=1` created version 2, and the unspecified `USERNAME` field
+remained unchanged. Its Vault metadata and all temporary local files were
+deleted after the test.
 
 ### External Secrets Operator Runtime
 
@@ -307,24 +722,41 @@ kubectl get pods -n external-secrets
 **Capture command**
 
 ```bash
-kubectl get clustersecretstore
+kubectl get clustersecretstore recsys-vault -o wide
 ```
 
-![Central ClusterSecretStore proof](../../pngs/cluster_secret.png)
+![Vault ClusterSecretStore ready](../../pngs/vault_clustersecretstore_ready.png)
 
-**Figure: Central ClusterSecretStore proof.** `recsys-central-secrets` is the shared secret backend reference used by all service-level `ExternalSecret` objects. A healthy/ready status proves workloads can reuse one central secret store instead of each namespace defining its own secret source.
+**Figure: Central ClusterSecretStore proof.** `recsys-vault` must show
+`STATUS=Valid` and `READY=True`. This proves ESO can authenticate to Vault and
+use the shared store instead of each namespace defining its own secret source.
 
-### Central Source Secrets
+### Vault Endpoint, Raft Storage, And Auto-Unseal
 
 **Capture command**
 
 ```bash
-kubectl get secret -n external-secrets -l app.kubernetes.io/part-of=recsys-mlops
+helm list -n vault
+kubectl get pod,pvc,svc -n vault
+kubectl exec -n vault vault-0 -- \
+  env VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json | \
+jq '{initialized,sealed,storage_type,ha_enabled}'
 ```
 
-![Central source secrets proof](../../pngs/centrel_src_secrets.png)
+![Vault HA Raft and auto-unseal status](../../pngs/vault_ha_raft_kms_status.png)
 
-**Figure: Central source secret groups.** The source secrets are grouped by platform area, for example data platform, gateway, KServe/MinIO, MLflow, and runtime credentials. This proves secrets are stored centrally first, then synced outward to the namespaces that need them.
+**Figure: Vault runtime proof.** Capture the `vault` Helm release, three
+`1/1 Running` pods, three bound 10 GiB PVCs, ClusterIP-only services, and the
+sanitized status fields `initialized=true`, `sealed=false`,
+`storage_type=raft`, and `ha_enabled=true`. Do not capture `vault kv get`,
+Kubernetes Secret YAML/JSON, recovery shares, tokens, or decoded values.
+
+![Vault HA pods in k9s](../../pngs/vault_ha_pods_k9s.png)
+
+**Figure: Vault pod runtime proof.** The k9s view shows `vault-0`, `vault-1`,
+and `vault-2` at `1/1 Running` on the live GKE cluster. This is complementary
+runtime evidence; the terminal capture above proves the chart version, bound
+Raft volumes, ClusterIP-only endpoint, initialization, unsealed state, and HA.
 
 ### Synced Service Secrets
 
@@ -334,9 +766,12 @@ kubectl get secret -n external-secrets -l app.kubernetes.io/part-of=recsys-mlops
 kubectl get externalsecret -A
 ```
 
-![Synced ExternalSecret proof](../../pngs/get_ex_secrets.png)
+![Vault-backed ExternalSecrets synced](../../pngs/vault_external_secrets_synced.png)
 
-**Figure: Namespace-level ExternalSecret sync proof.** Each row shows an `ExternalSecret` in a service namespace, the `ClusterSecretStore` it reads from, and the sync/ready state. This proves namespace-local Kubernetes Secrets are generated by External Secrets Operator rather than manually duplicated.
+**Figure: Namespace-level ExternalSecret sync proof.** All nine rows should
+show `STORE=recsys-vault`, `STATUS=SecretSynced`, and `READY=True`. This proves
+namespace-local Kubernetes Secrets are generated from Vault by External
+Secrets Operator rather than manually duplicated.
 
 ## Service Mesh Authentication
 
@@ -379,37 +814,25 @@ sequenceDiagram
 
 ### Identity, Default Deny, And Explicit Allow
 
-Authentication and authorization are separate controls:
+The repository authorizes service-to-service traffic through Istio workload
+identity, strict mTLS, and explicit allowlists. For example,
+`api-serving/default` may call Triton with the following authorization tuple:
 
-```yaml
-# Authentication: require an authenticated mTLS peer.
-kind: PeerAuthentication
-spec:
-  mtls:
-    mode: STRICT
----
-# Authorization baseline: no traffic is allowed by default.
-kind: AuthorizationPolicy
-spec: {}
-```
+- Caller: `cluster.local/ns/api-serving/sa/default`
+- Destination namespace: `kserve-triton-inference`
+- Destination ports: `80`, `8080`, and `9000`
 
-mTLS answers **which workload is calling**. The source identity is derived from the workload certificate, not from a caller-supplied HTTP header. `AuthorizationPolicy` then answers **whether that workload may call the destination port**.
+The corresponding rule is defined in
+[istio-authorization.yaml (line 162)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L162).
+The request is protected by these layers:
 
-For example, the KServe policy allows the API and Prometheus service accounts to reach Triton/KServe ports:
-
-```yaml
-rules:
-  - from:
-      - source:
-          principals:
-            - cluster.local/ns/api-serving/sa/default
-            - cluster.local/ns/observability/sa/recsys-prometheus
-    to:
-      - operation:
-          ports: ["80", "8080", "9000"]
-```
-
-The principal and port checks are enforced by the destination Envoy before the request reaches Triton.
+1. The namespace receives an Envoy sidecar through
+   `istio-injection=enabled` in
+   [namespaces.tf (line 1)](../../../infra/terraform/gcp/namespaces.tf#L1).
+2. `PeerAuthentication` in `STRICT` mode requires mutually authenticated TLS.
+3. An empty namespace-level `AuthorizationPolicy` establishes default deny.
+4. Explicit `ALLOW` policies reopen only the required caller identities and
+   destination ports.
 
 ### API-To-Triton Security Example
 

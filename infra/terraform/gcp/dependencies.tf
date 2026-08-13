@@ -12,6 +12,7 @@ resource "null_resource" "cluster_credentials" {
     google_container_node_pool.cpu,
     google_container_node_pool.ml_system,
     google_container_node_pool.gpu,
+    google_container_node_pool.llm_cpu,
   ]
 }
 
@@ -51,6 +52,34 @@ resource "helm_release" "keda_http" {
   namespace  = "keda"
   wait       = true
   timeout    = 600
+
+  # The chart's HA defaults reserve 2 CPU on a cluster whose free-trial quota
+  # is only 12 vCPU. One replica of each component remains fully functional
+  # for this single-cluster deployment and leaves room for Spark/KFP jobs.
+  set {
+    name  = "interceptor.replicas.min"
+    value = "1"
+  }
+
+  set {
+    name  = "interceptor.resources.requests.cpu"
+    value = "25m"
+  }
+
+  set {
+    name  = "scaler.replicas"
+    value = "1"
+  }
+
+  set {
+    name  = "scaler.resources.requests.cpu"
+    value = "25m"
+  }
+
+  set {
+    name  = "operator.resources.requests.cpu"
+    value = "25m"
+  }
 
   depends_on = [helm_release.keda]
 }

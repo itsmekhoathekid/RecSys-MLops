@@ -17,10 +17,12 @@ def test_feast_offline_store_uses_postgres() -> None:
     assert config["registry"]["registry_type"] == "sql"
     assert config["registry"]["path"] == "${FEAST_SQL_REGISTRY_URL}"
     assert config["registry"]["cache_mode"] == "sync"
+    assert config["entity_key_serialization_version"] == 3
     assert config["offline_store"]["type"] == "postgres"
     assert config["offline_store"]["host"] == "feature-postgres.recsys-dataflow.svc.cluster.local"
     assert config["offline_store"]["port"] == 5432
     assert config["offline_store"]["db_schema"] == "feature_store"
+    assert config["offline_store"]["password"] == "${FEAST_POSTGRES_PASSWORD}"
     assert config["offline_store"]["sslmode"] == "disable"
 
 

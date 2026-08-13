@@ -124,7 +124,7 @@ def test_external_secret_exposes_only_source_postgres_credentials() -> None:
     ]
     assert external_secret["spec"]["secretStoreRef"] == {
         "kind": "ClusterSecretStore",
-        "name": "recsys-central-secrets",
+        "name": "recsys-vault",
     }
     assert external_secret["spec"]["data"] == [
         {

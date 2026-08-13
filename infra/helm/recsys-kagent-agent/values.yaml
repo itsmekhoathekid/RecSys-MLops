@@ -1,0 +1,13 @@
+agent:
+  name: global-model-config-smoke
+  modelConfig: default-model-config
+  systemMessage: |
+    You are a minimal verification agent. Follow the user's response-format
+    instruction exactly and do not add any other text.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

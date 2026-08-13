@@ -23,6 +23,7 @@ def _fake_environment(tmp_path: Path) -> dict[str, str]:
         ("recsys-mlops-cpu", 1, 1, 2),
         ("recsys-mlops-ml-system", 1, 1, 1),
         ("recsys-mlops-gpu", 0, 0, 1),
+        ("recsys-mlops-llm-cpu", 1, 1, 2),
     ):
         (cloud_state / f"{pool}.nodes").write_text(f"{nodes}\n", encoding="utf-8")
         (cloud_state / f"{pool}.min").write_text(f"{minimum}\n", encoding="utf-8")
@@ -32,7 +33,7 @@ def _fake_environment(tmp_path: Path) -> dict[str, str]:
         fake_bin / "python3",
         """#!/usr/bin/env bash
 case "${*: -1}" in
-  projectId) printf '%s\n' rec-sys-503309 ;;
+  projectId) printf '%s\n' recsys-mlops ;;
   zone) printf '%s\n' asia-southeast1-b ;;
   cluster) printf '%s\n' recsys-mlops-gke ;;
   *) exit 2 ;;
@@ -186,9 +187,11 @@ def test_up_down_status_are_repeatable_and_preserve_pvc_identity(tmp_path: Path)
     first_snapshot = state_file.read_text(encoding="utf-8")
     assert "CPU_NODES=1" in first_snapshot
     assert "ML_NODES=1" in first_snapshot
+    assert "LLM_CPU_NODES=1" in first_snapshot
     assert "HIBERNATING=1" in first_snapshot
     assert "uid-postgres" in pvc_state_file.read_text(encoding="utf-8")
     assert (cloud_state / "recsys-mlops-cpu.nodes").read_text().strip() == "0"
+    assert (cloud_state / "recsys-mlops-llm-cpu.nodes").read_text().strip() == "0"
 
     _run("down", env)
     assert state_file.read_text(encoding="utf-8") == first_snapshot
@@ -201,6 +204,7 @@ def test_up_down_status_are_repeatable_and_preserve_pvc_identity(tmp_path: Path)
     assert "HIBERNATING=0" in state_file.read_text(encoding="utf-8")
     assert (cloud_state / "recsys-mlops-cpu.nodes").read_text().strip() == "1"
     assert (cloud_state / "recsys-mlops-ml-system.nodes").read_text().strip() == "1"
+    assert (cloud_state / "recsys-mlops-llm-cpu.nodes").read_text().strip() == "1"
 
     _run("up", env)
     up_status = _run("status", env)
@@ -294,7 +298,7 @@ def test_snapshot_from_another_project_cannot_override_production_target(tmp_pat
     state_file = Path(env["GCP_POWER_STATE_FILE"])
     state_file.write_text(
         state_file.read_text(encoding="utf-8").replace(
-            "STATE_PROJECT_ID=rec-sys-503309", "STATE_PROJECT_ID=fsds-coursework"
+            "STATE_PROJECT_ID=recsys-mlops", "STATE_PROJECT_ID=fsds-coursework"
         ),
         encoding="utf-8",
     )
@@ -303,7 +307,7 @@ def test_snapshot_from_another_project_cannot_override_production_target(tmp_pat
 
     assert failed.returncode == 2
     assert "Power snapshot target mismatch" in failed.stderr
-    assert "configured: rec-sys-503309" in failed.stderr
+    assert "configured: recsys-mlops" in failed.stderr
 
 
 def test_up_normalizes_istiod_without_weakening_mesh_readiness(tmp_path: Path) -> None:

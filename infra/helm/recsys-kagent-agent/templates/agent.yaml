@@ -1,0 +1,17 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: {{ .Values.agent.name }}
+  labels:
+    {{- include "recsys-kagent-agent.labels" . | nindent 4 }}
+spec:
+  type: Declarative
+  description: Minimal Agent proving the shared global ModelConfig is usable.
+  declarative:
+    modelConfig: {{ .Values.agent.modelConfig }}
+    stream: false
+    systemMessage: |
+      {{- .Values.agent.systemMessage | nindent 6 }}
+    deployment:
+      resources:
+        {{- toYaml .Values.agent.resources | nindent 8 }}

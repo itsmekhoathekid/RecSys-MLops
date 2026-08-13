@@ -1,0 +1,47 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/ggml-org/llama.cpp
+  tag: server
+  digest: sha256:9b518883e8faab479650ec802e02c9e37c6bb21d36168509efd8fb3c87fc1648
+  pullPolicy: IfNotPresent
+
+model:
+  repository: ggml-org/Qwen3.5-0.8B-GGUF
+  quantization: Q4_0
+  alias: qwen3.5-0.8b
+  contextSize: 4096
+  parallel: 1
+  threads: 2
+  threadsBatch: 2
+  batchSize: 512
+  ubatchSize: 128
+  disableMultimodal: true
+  metrics: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 1536Mi
+  limits:
+    cpu: "2"
+    memory: 3Gi
+
+nodeSelector:
+  recsys.ai/workload: llm-inference
+
+tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: llm-inference
+    effect: NoSchedule
+
+cache:
+  persistence:
+    enabled: false
+  emptyDir:
+    sizeLimit: 10Gi
+
+podMonitoring:
+  enabled: true
+  interval: 30s

@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "recsys-llm-serving.name" . }}
+  labels:
+    {{- include "recsys-llm-serving.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+  selector:
+    matchLabels:
+      {{- include "recsys-llm-serving.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        recsys.ai/optimization-profile: {{ .Values.optimizationProfile | quote }}
+      labels:
+        {{- include "recsys-llm-serving.labels" . | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 60
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: llama-server
+          image: {{ include "recsys-llm-serving.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --hf-repo
+            - {{ printf "%s:%s" .Values.model.repository .Values.model.quantization | quote }}
+            - --alias
+            - {{ .Values.model.alias | quote }}
+            - --host
+            - 0.0.0.0
+            - --port
+            - {{ .Values.service.port | quote }}
+            - --ctx-size
+            - {{ .Values.model.contextSize | quote }}
+            - --parallel
+            - {{ .Values.model.parallel | quote }}
+            - --threads
+            - {{ .Values.model.threads | quote }}
+            - --threads-batch
+            - {{ .Values.model.threadsBatch | quote }}
+            - --batch-size
+            - {{ .Values.model.batchSize | quote }}
+            - --ubatch-size
+            - {{ .Values.model.ubatchSize | quote }}
+            {{- if .Values.model.disableMultimodal }}
+            - --no-mmproj
+            {{- end }}
+            {{- if .Values.model.metrics }}
+            - --metrics
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache
+      volumes:
+        - name: model-cache
+          {{- if .Values.cache.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "recsys-llm-serving.name" . }}-cache
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.cache.emptyDir.sizeLimit }}
+          {{- end }}

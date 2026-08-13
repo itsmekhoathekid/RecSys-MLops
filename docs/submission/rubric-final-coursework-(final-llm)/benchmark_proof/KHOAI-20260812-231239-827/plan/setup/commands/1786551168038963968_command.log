@@ -1,0 +1,1 @@
+---> will execute: "helmfile --selector name=qwen3-5--5a687092-3-5-0-8b-ms template -f /Users/KHOAI/anhkhoa/RecSys-MLops/reports/llm-d/baseline-direct-025rps/KHOAI-20260812-231239-827/plan/cpu-example/helm/helmfile.yaml --skip-schema-validation"

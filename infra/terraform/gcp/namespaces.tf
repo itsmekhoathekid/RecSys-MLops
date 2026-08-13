@@ -76,6 +76,23 @@ resource "kubernetes_namespace" "api_serving" {
   depends_on = [google_container_node_pool.ml_system]
 }
 
+resource "kubernetes_namespace" "llm_inference" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  metadata {
+    labels = {
+      istio-injection = "disabled"
+    }
+
+    name = "llm-inference"
+  }
+
+  depends_on = [
+    google_container_node_pool.llm_cpu,
+    google_container_node_pool.ml_system,
+  ]
+}
+
 resource "kubernetes_labels" "ingress_nginx_mesh" {
   count = var.deploy_gateway && var.deploy_service_mesh ? 1 : 0
 

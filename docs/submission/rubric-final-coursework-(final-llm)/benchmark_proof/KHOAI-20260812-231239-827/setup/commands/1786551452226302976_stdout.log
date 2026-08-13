@@ -1,0 +1,451 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"llmdbench-harness-launcher\",\"function\":\"load_generator\"},\"name\":\"inference-perf-wyqs65q1\",\"namespace\":\"llm-inference\"},\"spec\":{\"containers\":[{\"args\":[\"for script in /workspace/harnesses/*; do\\n  [ -f \\\"$script\\\" ] || continue;\\n  cp \\\"$script\\\" /usr/local/bin/;\\n  chmod +x \\\"/usr/local/bin/$(basename \\\"$script\\\")\\\";\\ndone; export LLMDBENCH_RUN_EXPERIMENT_HARNESS=inference-perf-llm-d-benchmark.sh; export LLMDBENCH_RUN_EXPERIMENT_ANALYZER=inference-perf-analyze_results.sh; export LLMDBENCH_RUN_EXPERIMENT_RESULTS_DIR=/requests/inference-perf-override-1786551181-lnqxn8_1; export LLMDBENCH_CONTROL_WORK_DIR=/requests/inference-perf-override-1786551181-lnqxn8_1; export LLMDBENCH_RUN_EXPERIMENT_HARNESS_WORKLOAD_NAME=sanity_random-override.yaml; export LLMDBENCH_HARNESS_START=$(date -u +%Y-%m-%dT%H:%M:%SZ); export LLMDBENCH_HARNESS_ARGS='--workload sanity_random-override.yaml'; export LLMDBENCH_HARNESS_VERSION=$(grep '^inference-perf:' /workspace/repos.txt 2\\u003e/dev/null | cut -d' ' -f3 || echo 'unknown'); llm-d-benchmark.sh\"],\"command\":[\"sh\",\"-c\"],\"env\":[{\"name\":\"LLMDBENCH_RUN_EXPERIMENT_LAUNCHER\",\"value\":\"1\"},{\"name\":\"LLMDBENCH_MAGIC_ENVAR\",\"value\":\"harness_pod\"},{\"name\":\"LLMDBENCH_DEPLOY_METHODS\",\"value\":\"modelservice\"},{\"name\":\"LLMDBENCH_CLUSTER_TYPE\",\"value\":\"GKE\"},{\"name\":\"LLMDBENCH_RUN_WORKSPACE_DIR\",\"value\":\"/workspace\"},{\"name\":\"LLMDBENCH_CONTROL_WORK_DIR\",\"value\":\"/requests/inference-perf-override-1786551181-lnqxn8_1\"},{\"name\":\"LLMDBENCH_DEPLOY_CURRENT_MODEL\",\"value\":\"qwen3.5-0.8b\"},{\"name\":\"LLMDBENCH_DEPLOY_CURRENT_TOKENIZER\",\"value\":\"qwen3.5-0.8b\"},{\"name\":\"LLMDBENCH_HARNESS_STACK_ENDPOINT_URL\",\"value\":\"http://qwen35-gguf.llm-inference.svc.cluster.local:8000\"},{\"name\":\"LLMDBENCH_HARNESS_STACK_TYPE\",\"value\":\"llm-d\"},{\"name\":\"LLMDBENCH_HARNESS_NAME\",\"value\":\"inference-perf\"},{\"name\":\"LLMDBENCH_RUN_EXPERIMENT_ID\",\"value\":\"inference-perf-override-1786551181-lnqxn8\"},{\"name\":\"LLMDBENCH_DESCRIPTION_TEXT\",\"value\":\"\"},{\"name\":\"LLMDBENCH_DESCRIPTION_KEYWORDS\",\"value\":\"\"},{\"name\":\"RAYON_NUM_THREADS\",\"value\":\"1\"},{\"name\":\"HOME\",\"value\":\"/requests/.home\"},{\"name\":\"HF_HOME\",\"value\":\"/requests/.cache/huggingface\"},{\"name\":\"XDG_CACHE_HOME\",\"value\":\"/requests/.cache\"},{\"name\":\"MPLCONFIGDIR\",\"value\":\"/requests/.cache/matplotlib\"},{\"name\":\"POD_NAME\",\"valueFrom\":{\"fieldRef\":{\"fieldPath\":\"metadata.name\"}}},{\"name\":\"POD_UID\",\"valueFrom\":{\"fieldRef\":{\"fieldPath\":\"metadata.uid\"}}},{\"name\":\"LLMDBENCH_VLLM_COMMON_NAMESPACE\",\"value\":\"llm-inference\"},{\"name\":\"LLMDBENCH_BASE64_CONTEXT_CONTENTS\",\"value\":\"YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6Ci0gY2x1c3RlcjoKICAgIGNlcnRpZmljYXRlLWF1dGhvcml0eS1kYXRhOiBMUzB0TFMxQ1JVZEpUaUJEUlZKVVNVWkpRMEZVUlMwdExTMHRDazFKU1VWTVZFTkRRWEJYWjBGM1NVSkJaMGxTUVU1YVZ5dFpLMVpXTkV4M2VETnZiMk0xYnpsS1dYZDNSRkZaU2t0dldrbG9kbU5PUVZGRlRFSlJRWGNLVEhwRmRFMURjMGRCTVZWRlFYaE5hMDVYUlRSTmVsa3hXa1JKZEUxRVZtaE9lVEF3VFZkUk1VeFhSVEphUjBWMFRWUnNhbHBxVG0xUFIxRXlXa1JyZVFwTlEwRllSRlJKTWsxRVozaE5SRVV5VFdwRk1FNHhiMWxFZWtsM1RsUlpkMDlFUVhsTlZHTjVUVlJSTTFkcVFYWk5VekIzUzNkWlJGWlJVVVJGZVZFeENsbFVaM3BPYWxaclRXa3dkMDVYUlROTVZGRjRXa1JWZEZsVVdtdFpVekI0VDFkT2JVMHlXVFJhUkZwclQxUkpkMmRuUjJsTlFUQkhRMU54UjFOSllqTUtSRkZGUWtGUlZVRkJORWxDYW5kQmQyZG5SMHRCYjBsQ1oxRkVRa1pyVEdvNE9URmhUREV4TVdoc0szcHdWVmszZFU5TmNUZDVXVkZ1ZWpnemFIZzRhZ3BpVDBoaFVYbG9iSEpUVW1KT2JqZDBNVWgwVVRCeVQxcExhVVoxTDIxQlJYQlVXVmxyUVU1aFFqQklVVVIzWkcwNWFYaElMMGxFV20xclYwRTBTRkJEQ2tremJrdHlRMnM1Y0dSSVlqUTVMM3BsSzJzMVZuQmlkMWN6TDJWc1lsSlRkRUpXWmtadGRsbGtVek5ZT1hwMVNEaHBVM0ZyVTBGRmRYcE5LMmRhYW1vS2NYVm1OMm9yYlZWVlozRllObFZOZURJNFIwNU9PVE5FYXpaWlFrNU9NUzl0ZW5CdFRFMDBNR3RVZFROdGFETXZjRlV5TUd4WWFWRjBkVWx2V1dGdFRBcFpjVzFaYUZCcGNsQTBiWE5VTkZwdlF6ZEtLMmRoZEhwQ1V6RkhaV1ZHV2xWNEwzTlhOemg2Ym1vMVZtVmxZbUZCVW5ORWIyUlJSSGMwT1RsQ2NWbG1DbkIzUTBNMmExb3pXVzRyUTJsc1F6RnJkVmszWW1neVUwVXhkVTB5UlUwME16UlFaV2hLTjI1QmNubDNlaTgwS3lzMVZtOVhSMFE1U1dSUlZIcEVTRWdLTXk5bVFuTnNVeTlZYVRGeVpHWm1WV0prWkhGSlMzbzRTVkZUZG5GcFIyOVlURVF3UkdoQlZtaEhUVTVVYm10SlJtSlFjMkZZWlM5eVl6aEZZVmg0UmdwNE0wNHJXbmx3ZDJKc2EwTXdNV1ZzUWtoTlYzZHpZbk53Y2pOVVVGWlFMMGN5S3pOdlNXNUtSRTFCWlRoWE5pOHhOWEo0Tnl0cGRYZEZSa3hSZVV4MkNtazVlRkpYTVc5d09EWndUM0l4TjJGUWJrVkROVEZ2T0d0dE9FTkJkMFZCUVdGT1EwMUZRWGRFWjFsRVZsSXdVRUZSU0M5Q1FWRkVRV2RKUlUxQk9FY0tRVEZWWkVWM1JVSXZkMUZHVFVGTlFrRm1PSGRJVVZsRVZsSXdUMEpDV1VWR1RXd3pPRWxYVEhoS1pGcG1hMnBHTTFWU2QxZHhlVWhNYzBsMVRVRXdSd3BEVTNGSFUwbGlNMFJSUlVKRGQxVkJRVFJKUW1kUlFrVm5iWEYyTmpKWlQzb3ZjM2xQUWtwMlRFOURUMnBZUkhCQ1NYaGhZV1p5VWtkc2RuWTFUMEZLQ2xZeVJuSjROblpRYVdWNlJGZEpia0pSWVdkYVpIbzROVEZtUm1sVFJXNUhVR3MxZHpCSVRFUjNSM1J1TDBvd1ZqSm9jRWhEWWtsNVJVTkhjUzgwZGtnS1dtMVlNR3BDV0VaelZGZGpWUzlNYjNBNVNqTkxiV0pCZG5Fdk0zbDVhVkJSYUhjdlMwVnlVVzFUZVUwMlIxY3lURzlwWmpJclMwbFBRVGhUZVdvck1RcHFlbkJWU0hvclZITmFLMGxCVTNaNWMzWldSVVJwVGl0VWQyUXdjMkpQTlVSamNDOXZPVWh3YlhOR0sxTjFTV1Z3VldwWlRsRlZlRkppZEVWTlQzVnBDalJSZHpCdmFEbExaalJYUTFkeVUwWjJOVXhVU3pGd1pITnpRbm8wU2pKTVZGcHNjVVJPYjJkTmJEQklSMUo0Tlc1aGRtWkNVR2xtUVcxTmFTdE1hSGdLY0ZOWWNUaFpiRE5NTDI5QlVFNUlPRnBhVFdKR1YweHllR3hhYW5kT2JuSjRRblpYZDNwRFNXMXpjM0kwVTFrMWJGQlhTVTF4ZVhWT1RHbG5RVkpYTWdvNFNsRnpSMHBLYVV0MGJrWTVia3d4UkRkWWIyTkhUMDVWZG1wSWRGRmlOVkIzYlhsbGFsUjJhM0p1VmpSUVIwRnBMM0ZoVTBaVFFUbEJTWG81SzJ3MUNtdFNUbXREV0c1bU56VXplazFXYUdOR1lqVkhNRVV4VFRod2JEVldkSFJ0TmxVcmVtTkViak5VZERORlYzWmpkVXh5V2s5ak5XcEdibUpXUTA4eVpGZ0tWREI1ZDIxcE1WcDROblJVTVdsSVJsVjNTV3R2YVRnOUNpMHRMUzB0UlU1RUlFTkZVbFJKUmtsRFFWUkZMUzB0TFMwSwogICAgc2VydmVyOiBodHRwczovLzM0LjIxLjIwMC45MQogIG5hbWU6IGdrZV9yZWNzeXMtbWxvcHNfYXNpYS1zb3V0aGVhc3QxLWJfcmVjc3lzLW1sb3BzLWdrZQpjb250ZXh0czoKLSBjb250ZXh0OgogICAgY2x1c3RlcjogZ2tlX3JlY3N5cy1tbG9wc19hc2lhLXNvdXRoZWFzdDEtYl9yZWNzeXMtbWxvcHMtZ2tlCiAgICB1c2VyOiBna2VfcmVjc3lzLW1sb3BzX2FzaWEtc291dGhlYXN0MS1iX3JlY3N5cy1tbG9wcy1na2UKICBuYW1lOiBna2VfcmVjc3lzLW1sb3BzX2FzaWEtc291dGhlYXN0MS1iX3JlY3N5cy1tbG9wcy1na2UKY3VycmVudC1jb250ZXh0OiBna2VfcmVjc3lzLW1sb3BzX2FzaWEtc291dGhlYXN0MS1iX3JlY3N5cy1tbG9wcy1na2UKa2luZDogQ29uZmlnCnVzZXJzOgotIG5hbWU6IGdrZV9yZWNzeXMtbWxvcHNfYXNpYS1zb3V0aGVhc3QxLWJfcmVjc3lzLW1sb3BzLWdrZQogIHVzZXI6CiAgICBleGVjOgogICAgICBhcGlWZXJzaW9uOiBjbGllbnQuYXV0aGVudGljYXRpb24uazhzLmlvL3YxYmV0YTEKICAgICAgYXJnczogbnVsbAogICAgICBjb21tYW5kOiAvb3B0L2hvbWVicmV3L3NoYXJlL2dvb2dsZS1jbG91ZC1zZGsvYmluL2drZS1nY2xvdWQtYXV0aC1wbHVnaW4KICAgICAgZW52OiBudWxsCiAgICAgIGluc3RhbGxIaW50OiBJbnN0YWxsIGdrZS1nY2xvdWQtYXV0aC1wbHVnaW4gZm9yIHVzZSB3aXRoIGt1YmVjdGwgYnkgZm9sbG93aW5nCiAgICAgICAgaHR0cHM6Ly9jbG91ZC5nb29nbGUuY29tL2t1YmVybmV0ZXMtZW5naW5lL2RvY3MvaG93LXRvL2NsdXN0ZXItYWNjZXNzLWZvci1rdWJlY3RsI2luc3RhbGxfcGx1Z2luCiAgICAgIGludGVyYWN0aXZlTW9kZTogSWZBdmFpbGFibGUKICAgICAgcHJvdmlkZUNsdXN0ZXJJbmZvOiB0cnVlCg==\"},{\"name\":\"LLMDBENCH_VLLM_COMMON_INFERENCE_PORT\",\"value\":\"8000\"},{\"name\":\"LLMDBENCH_RUN_EXPERIMENT_RESULTS_DIR_PREFIX\",\"value\":\"/requests\"},{\"name\":\"LLMDBENCH_HARNESS_STACK_NAME\",\"value\":\"qwen3-5--5a687092-3-5-0-8b\"},{\"name\":\"LLMDBENCH_VLLM_COMMON_METRICS_SCRAPE_ENABLED\",\"value\":\"false\"},{\"name\":\"LLMDBENCH_VLLM_COMMON_METRICS_PORT\",\"value\":\"8200\"},{\"name\":\"LLMDBENCH_VLLM_MONITORING_METRICS_PATH\",\"value\":\"/metrics\"},{\"name\":\"LLMDBENCH_EPP_METRICS_SECRET\",\"value\":\"inference-gateway-sa-metrics-reader-secret\"},{\"name\":\"LLMDBENCH_TIME_SERIES_METRICS\",\"value\":\"[\\\"vllm:kv_cache_usage_perc\\\",\\\"vllm:gpu_cache_usage_perc\\\",\\\"vllm:cpu_cache_usage_perc\\\",\\\"vllm:gpu_memory_usage_bytes\\\",\\\"vllm:cpu_memory_usage_bytes\\\",\\\"container_memory_usage_bytes\\\",\\\"DCGM_FI_DEV_GPU_UTIL\\\",\\\"DCGM_FI_DEV_POWER_USAGE\\\",\\\"vllm:num_requests_running\\\",\\\"vllm:num_requests_waiting\\\",\\\"vllm:prefix_cache_hits_total\\\",\\\"vllm:prefix_cache_queries_total\\\",\\\"vllm:external_prefix_cache_hits_total\\\",\\\"vllm:external_prefix_cache_queries_total\\\",\\\"vllm:prefix_cache_hit_rate\\\",\\\"vllm:external_prefix_cache_hit_rate\\\",\\\"vllm:nixl_xfer_time_seconds_sum\\\",\\\"vllm:nixl_xfer_time_seconds_count\\\",\\\"vllm:nixl_bytes_transferred_sum\\\",\\\"vllm:nixl_bytes_transferred_count\\\",\\\"vllm:num_preemptions_total\\\",\\\"vllm:prompt_tokens_total\\\",\\\"vllm:generation_tokens_total\\\",\\\"inference_pool_average_kv_cache_utilization\\\",\\\"inference_pool_average_queue_size\\\",\\\"inference_pool_average_running_requests\\\",\\\"inference_pool_ready_pods\\\",\\\"llm_d_epp_flow_control_pool_saturation\\\",\\\"llm_d_epp_flow_control_queue_size\\\",\\\"llm_d_epp_request_running\\\"]\"},{\"name\":\"LLMDBENCH_METRICS_EMBED_TIME_SERIES\",\"value\":\"true\"},{\"name\":\"LLMDBENCH_METRICS_TS_MAX_POINTS\",\"value\":\"256\"},{\"name\":\"LLMDBENCH_STANDALONE_ENABLED\",\"value\":\"false\"},{\"name\":\"LLMDBENCH_STANDALONE_LAUNCHER_ENABLED\",\"value\":\"false\"},{\"name\":\"LLMDBENCH_FMA_ENABLED\",\"value\":\"false\"},{\"name\":\"LLMDBENCH_VLLM_COMMON_VLLM_LOAD_FORMAT\",\"value\":\"auto\"}],\"image\":\"ghcr.io/llm-d/llm-d-benchmark:v0.7.0\",\"imagePullPolicy\":\"Always\",\"name\":\"harness\",\"resources\":{\"limits\":{\"cpu\":\"500m\",\"memory\":\"2Gi\"},\"requests\":{\"cpu\":\"500m\",\"memory\":\"2Gi\"}},\"volumeMounts\":[{\"mountPath\":\"/requests\",\"name\":\"results\"},{\"mountPath\":\"/workspace/profiles/inference-perf\",\"name\":\"inference-perf-profiles\"},{\"mountPath\":\"/workspace/harnesses\",\"name\":\"harness-scripts\"}]}],\"nodeSelector\":{\"recsys.ai/pool\":\"ml-system\"},\"restartPolicy\":\"Never\",\"serviceAccountName\":\"inference-perf-runner\",\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"recsys.ai/workload\",\"operator\":\"Equal\",\"value\":\"ml-system\"}],\"volumes\":[{\"name\":\"results\",\"persistentVolumeClaim\":{\"claimName\":\"workload-pvc\"}},{\"configMap\":{\"name\":\"inference-perf-profiles\"},\"name\":\"inference-perf-profiles\"},{\"configMap\":{\"defaultMode\":493,\"name\":\"llmdbench-harness-scripts\"},\"name\":\"harness-scripts\"}]}}\n"
+                },
+                "creationTimestamp": "2026-08-12T16:13:02Z",
+                "generation": 1,
+                "labels": {
+                    "app": "llmdbench-harness-launcher",
+                    "function": "load_generator",
+                    "topology.kubernetes.io/region": "asia-southeast1",
+                    "topology.kubernetes.io/zone": "asia-southeast1-b"
+                },
+                "name": "inference-perf-wyqs65q1",
+                "namespace": "llm-inference",
+                "resourceVersion": "1786551450468799011",
+                "uid": "18f8a484-5ff2-4728-93b2-7e3c7987a9bf"
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "args": [
+                            "for script in /workspace/harnesses/*; do\n  [ -f \"$script\" ] || continue;\n  cp \"$script\" /usr/local/bin/;\n  chmod +x \"/usr/local/bin/$(basename \"$script\")\";\ndone; export LLMDBENCH_RUN_EXPERIMENT_HARNESS=inference-perf-llm-d-benchmark.sh; export LLMDBENCH_RUN_EXPERIMENT_ANALYZER=inference-perf-analyze_results.sh; export LLMDBENCH_RUN_EXPERIMENT_RESULTS_DIR=/requests/inference-perf-override-1786551181-lnqxn8_1; export LLMDBENCH_CONTROL_WORK_DIR=/requests/inference-perf-override-1786551181-lnqxn8_1; export LLMDBENCH_RUN_EXPERIMENT_HARNESS_WORKLOAD_NAME=sanity_random-override.yaml; export LLMDBENCH_HARNESS_START=$(date -u +%Y-%m-%dT%H:%M:%SZ); export LLMDBENCH_HARNESS_ARGS='--workload sanity_random-override.yaml'; export LLMDBENCH_HARNESS_VERSION=$(grep '^inference-perf:' /workspace/repos.txt 2\u003e/dev/null | cut -d' ' -f3 || echo 'unknown'); llm-d-benchmark.sh"
+                        ],
+                        "command": [
+                            "sh",
+                            "-c"
+                        ],
+                        "env": [
+                            {
+                                "name": "LLMDBENCH_RUN_EXPERIMENT_LAUNCHER",
+                                "value": "1"
+                            },
+                            {
+                                "name": "LLMDBENCH_MAGIC_ENVAR",
+                                "value": "harness_pod"
+                            },
+                            {
+                                "name": "LLMDBENCH_DEPLOY_METHODS",
+                                "value": "modelservice"
+                            },
+                            {
+                                "name": "LLMDBENCH_CLUSTER_TYPE",
+                                "value": "GKE"
+                            },
+                            {
+                                "name": "LLMDBENCH_RUN_WORKSPACE_DIR",
+                                "value": "/workspace"
+                            },
+                            {
+                                "name": "LLMDBENCH_CONTROL_WORK_DIR",
+                                "value": "/requests/inference-perf-override-1786551181-lnqxn8_1"
+                            },
+                            {
+                                "name": "LLMDBENCH_DEPLOY_CURRENT_MODEL",
+                                "value": "qwen3.5-0.8b"
+                            },
+                            {
+                                "name": "LLMDBENCH_DEPLOY_CURRENT_TOKENIZER",
+                                "value": "qwen3.5-0.8b"
+                            },
+                            {
+                                "name": "LLMDBENCH_HARNESS_STACK_ENDPOINT_URL",
+                                "value": "http://qwen35-gguf.llm-inference.svc.cluster.local:8000"
+                            },
+                            {
+                                "name": "LLMDBENCH_HARNESS_STACK_TYPE",
+                                "value": "llm-d"
+                            },
+                            {
+                                "name": "LLMDBENCH_HARNESS_NAME",
+                                "value": "inference-perf"
+                            },
+                            {
+                                "name": "LLMDBENCH_RUN_EXPERIMENT_ID",
+                                "value": "inference-perf-override-1786551181-lnqxn8"
+                            },
+                            {
+                                "name": "LLMDBENCH_DESCRIPTION_TEXT"
+                            },
+                            {
+                                "name": "LLMDBENCH_DESCRIPTION_KEYWORDS"
+                            },
+                            {
+                                "name": "RAYON_NUM_THREADS",
+                                "value": "1"
+                            },
+                            {
+                                "name": "HOME",
+                                "value": "/requests/.home"
+                            },
+                            {
+                                "name": "HF_HOME",
+                                "value": "/requests/.cache/huggingface"
+                            },
+                            {
+                                "name": "XDG_CACHE_HOME",
+                                "value": "/requests/.cache"
+                            },
+                            {
+                                "name": "MPLCONFIGDIR",
+                                "value": "/requests/.cache/matplotlib"
+                            },
+                            {
+                                "name": "POD_NAME",
+                                "valueFrom": {
+                                    "fieldRef": {
+                                        "apiVersion": "v1",
+                                        "fieldPath": "metadata.name"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "POD_UID",
+                                "valueFrom": {
+                                    "fieldRef": {
+                                        "apiVersion": "v1",
+                                        "fieldPath": "metadata.uid"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "LLMDBENCH_VLLM_COMMON_NAMESPACE",
+                                "value": "llm-inference"
+                            },
+                            {
+                                "name": "LLMDBENCH_BASE64_CONTEXT_CONTENTS",
+                                "value": "YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6Ci0gY2x1c3RlcjoKICAgIGNlcnRpZmljYXRlLWF1dGhvcml0eS1kYXRhOiBMUzB0TFMxQ1JVZEpUaUJEUlZKVVNVWkpRMEZVUlMwdExTMHRDazFKU1VWTVZFTkRRWEJYWjBGM1NVSkJaMGxTUVU1YVZ5dFpLMVpXTkV4M2VETnZiMk0xYnpsS1dYZDNSRkZaU2t0dldrbG9kbU5PUVZGRlRFSlJRWGNLVEhwRmRFMURjMGRCTVZWRlFYaE5hMDVYUlRSTmVsa3hXa1JKZEUxRVZtaE9lVEF3VFZkUk1VeFhSVEphUjBWMFRWUnNhbHBxVG0xUFIxRXlXa1JyZVFwTlEwRllSRlJKTWsxRVozaE5SRVV5VFdwRk1FNHhiMWxFZWtsM1RsUlpkMDlFUVhsTlZHTjVUVlJSTTFkcVFYWk5VekIzUzNkWlJGWlJVVVJGZVZFeENsbFVaM3BPYWxaclRXa3dkMDVYUlROTVZGRjRXa1JWZEZsVVdtdFpVekI0VDFkT2JVMHlXVFJhUkZwclQxUkpkMmRuUjJsTlFUQkhRMU54UjFOSllqTUtSRkZGUWtGUlZVRkJORWxDYW5kQmQyZG5SMHRCYjBsQ1oxRkVRa1pyVEdvNE9URmhUREV4TVdoc0szcHdWVmszZFU5TmNUZDVXVkZ1ZWpnemFIZzRhZ3BpVDBoaFVYbG9iSEpUVW1KT2JqZDBNVWgwVVRCeVQxcExhVVoxTDIxQlJYQlVXVmxyUVU1aFFqQklVVVIzWkcwNWFYaElMMGxFV20xclYwRTBTRkJEQ2tremJrdHlRMnM1Y0dSSVlqUTVMM3BsSzJzMVZuQmlkMWN6TDJWc1lsSlRkRUpXWmtadGRsbGtVek5ZT1hwMVNEaHBVM0ZyVTBGRmRYcE5LMmRhYW1vS2NYVm1OMm9yYlZWVlozRllObFZOZURJNFIwNU9PVE5FYXpaWlFrNU9NUzl0ZW5CdFRFMDBNR3RVZFROdGFETXZjRlV5TUd4WWFWRjBkVWx2V1dGdFRBcFpjVzFaYUZCcGNsQTBiWE5VTkZwdlF6ZEtLMmRoZEhwQ1V6RkhaV1ZHV2xWNEwzTlhOemg2Ym1vMVZtVmxZbUZCVW5ORWIyUlJSSGMwT1RsQ2NWbG1DbkIzUTBNMmExb3pXVzRyUTJsc1F6RnJkVmszWW1neVUwVXhkVTB5UlUwME16UlFaV2hLTjI1QmNubDNlaTgwS3lzMVZtOVhSMFE1U1dSUlZIcEVTRWdLTXk5bVFuTnNVeTlZYVRGeVpHWm1WV0prWkhGSlMzbzRTVkZUZG5GcFIyOVlURVF3UkdoQlZtaEhUVTVVYm10SlJtSlFjMkZZWlM5eVl6aEZZVmg0UmdwNE0wNHJXbmx3ZDJKc2EwTXdNV1ZzUWtoTlYzZHpZbk53Y2pOVVVGWlFMMGN5S3pOdlNXNUtSRTFCWlRoWE5pOHhOWEo0Tnl0cGRYZEZSa3hSZVV4MkNtazVlRkpYTVc5d09EWndUM0l4TjJGUWJrVkROVEZ2T0d0dE9FTkJkMFZCUVdGT1EwMUZRWGRFWjFsRVZsSXdVRUZSU0M5Q1FWRkVRV2RKUlUxQk9FY0tRVEZWWkVWM1JVSXZkMUZHVFVGTlFrRm1PSGRJVVZsRVZsSXdUMEpDV1VWR1RXd3pPRWxYVEhoS1pGcG1hMnBHTTFWU2QxZHhlVWhNYzBsMVRVRXdSd3BEVTNGSFUwbGlNMFJSUlVKRGQxVkJRVFJKUW1kUlFrVm5iWEYyTmpKWlQzb3ZjM2xQUWtwMlRFOURUMnBZUkhCQ1NYaGhZV1p5VWtkc2RuWTFUMEZLQ2xZeVJuSjROblpRYVdWNlJGZEpia0pSWVdkYVpIbzROVEZtUm1sVFJXNUhVR3MxZHpCSVRFUjNSM1J1TDBvd1ZqSm9jRWhEWWtsNVJVTkhjUzgwZGtnS1dtMVlNR3BDV0VaelZGZGpWUzlNYjNBNVNqTkxiV0pCZG5Fdk0zbDVhVkJSYUhjdlMwVnlVVzFUZVUwMlIxY3lURzlwWmpJclMwbFBRVGhUZVdvck1RcHFlbkJWU0hvclZITmFLMGxCVTNaNWMzWldSVVJwVGl0VWQyUXdjMkpQTlVSamNDOXZPVWh3YlhOR0sxTjFTV1Z3VldwWlRsRlZlRkppZEVWTlQzVnBDalJSZHpCdmFEbExaalJYUTFkeVUwWjJOVXhVU3pGd1pITnpRbm8wU2pKTVZGcHNjVVJPYjJkTmJEQklSMUo0Tlc1aGRtWkNVR2xtUVcxTmFTdE1hSGdLY0ZOWWNUaFpiRE5NTDI5QlVFNUlPRnBhVFdKR1YweHllR3hhYW5kT2JuSjRRblpYZDNwRFNXMXpjM0kwVTFrMWJGQlhTVTF4ZVhWT1RHbG5RVkpYTWdvNFNsRnpSMHBLYVV0MGJrWTVia3d4UkRkWWIyTkhUMDVWZG1wSWRGRmlOVkIzYlhsbGFsUjJhM0p1VmpSUVIwRnBMM0ZoVTBaVFFUbEJTWG81SzJ3MUNtdFNUbXREV0c1bU56VXplazFXYUdOR1lqVkhNRVV4VFRod2JEVldkSFJ0TmxVcmVtTkViak5VZERORlYzWmpkVXh5V2s5ak5XcEdibUpXUTA4eVpGZ0tWREI1ZDIxcE1WcDROblJVTVdsSVJsVjNTV3R2YVRnOUNpMHRMUzB0UlU1RUlFTkZVbFJKUmtsRFFWUkZMUzB0TFMwSwogICAgc2VydmVyOiBodHRwczovLzM0LjIxLjIwMC45MQogIG5hbWU6IGdrZV9yZWNzeXMtbWxvcHNfYXNpYS1zb3V0aGVhc3QxLWJfcmVjc3lzLW1sb3BzLWdrZQpjb250ZXh0czoKLSBjb250ZXh0OgogICAgY2x1c3RlcjogZ2tlX3JlY3N5cy1tbG9wc19hc2lhLXNvdXRoZWFzdDEtYl9yZWNzeXMtbWxvcHMtZ2tlCiAgICB1c2VyOiBna2VfcmVjc3lzLW1sb3BzX2FzaWEtc291dGhlYXN0MS1iX3JlY3N5cy1tbG9wcy1na2UKICBuYW1lOiBna2VfcmVjc3lzLW1sb3BzX2FzaWEtc291dGhlYXN0MS1iX3JlY3N5cy1tbG9wcy1na2UKY3VycmVudC1jb250ZXh0OiBna2VfcmVjc3lzLW1sb3BzX2FzaWEtc291dGhlYXN0MS1iX3JlY3N5cy1tbG9wcy1na2UKa2luZDogQ29uZmlnCnVzZXJzOgotIG5hbWU6IGdrZV9yZWNzeXMtbWxvcHNfYXNpYS1zb3V0aGVhc3QxLWJfcmVjc3lzLW1sb3BzLWdrZQogIHVzZXI6CiAgICBleGVjOgogICAgICBhcGlWZXJzaW9uOiBjbGllbnQuYXV0aGVudGljYXRpb24uazhzLmlvL3YxYmV0YTEKICAgICAgYXJnczogbnVsbAogICAgICBjb21tYW5kOiAvb3B0L2hvbWVicmV3L3NoYXJlL2dvb2dsZS1jbG91ZC1zZGsvYmluL2drZS1nY2xvdWQtYXV0aC1wbHVnaW4KICAgICAgZW52OiBudWxsCiAgICAgIGluc3RhbGxIaW50OiBJbnN0YWxsIGdrZS1nY2xvdWQtYXV0aC1wbHVnaW4gZm9yIHVzZSB3aXRoIGt1YmVjdGwgYnkgZm9sbG93aW5nCiAgICAgICAgaHR0cHM6Ly9jbG91ZC5nb29nbGUuY29tL2t1YmVybmV0ZXMtZW5naW5lL2RvY3MvaG93LXRvL2NsdXN0ZXItYWNjZXNzLWZvci1rdWJlY3RsI2luc3RhbGxfcGx1Z2luCiAgICAgIGludGVyYWN0aXZlTW9kZTogSWZBdmFpbGFibGUKICAgICAgcHJvdmlkZUNsdXN0ZXJJbmZvOiB0cnVlCg=="
+                            },
+                            {
+                                "name": "LLMDBENCH_VLLM_COMMON_INFERENCE_PORT",
+                                "value": "8000"
+                            },
+                            {
+                                "name": "LLMDBENCH_RUN_EXPERIMENT_RESULTS_DIR_PREFIX",
+                                "value": "/requests"
+                            },
+                            {
+                                "name": "LLMDBENCH_HARNESS_STACK_NAME",
+                                "value": "qwen3-5--5a687092-3-5-0-8b"
+                            },
+                            {
+                                "name": "LLMDBENCH_VLLM_COMMON_METRICS_SCRAPE_ENABLED",
+                                "value": "false"
+                            },
+                            {
+                                "name": "LLMDBENCH_VLLM_COMMON_METRICS_PORT",
+                                "value": "8200"
+                            },
+                            {
+                                "name": "LLMDBENCH_VLLM_MONITORING_METRICS_PATH",
+                                "value": "/metrics"
+                            },
+                            {
+                                "name": "LLMDBENCH_EPP_METRICS_SECRET",
+                                "value": "inference-gateway-sa-metrics-reader-secret"
+                            },
+                            {
+                                "name": "LLMDBENCH_TIME_SERIES_METRICS",
+                                "value": "[\"vllm:kv_cache_usage_perc\",\"vllm:gpu_cache_usage_perc\",\"vllm:cpu_cache_usage_perc\",\"vllm:gpu_memory_usage_bytes\",\"vllm:cpu_memory_usage_bytes\",\"container_memory_usage_bytes\",\"DCGM_FI_DEV_GPU_UTIL\",\"DCGM_FI_DEV_POWER_USAGE\",\"vllm:num_requests_running\",\"vllm:num_requests_waiting\",\"vllm:prefix_cache_hits_total\",\"vllm:prefix_cache_queries_total\",\"vllm:external_prefix_cache_hits_total\",\"vllm:external_prefix_cache_queries_total\",\"vllm:prefix_cache_hit_rate\",\"vllm:external_prefix_cache_hit_rate\",\"vllm:nixl_xfer_time_seconds_sum\",\"vllm:nixl_xfer_time_seconds_count\",\"vllm:nixl_bytes_transferred_sum\",\"vllm:nixl_bytes_transferred_count\",\"vllm:num_preemptions_total\",\"vllm:prompt_tokens_total\",\"vllm:generation_tokens_total\",\"inference_pool_average_kv_cache_utilization\",\"inference_pool_average_queue_size\",\"inference_pool_average_running_requests\",\"inference_pool_ready_pods\",\"llm_d_epp_flow_control_pool_saturation\",\"llm_d_epp_flow_control_queue_size\",\"llm_d_epp_request_running\"]"
+                            },
+                            {
+                                "name": "LLMDBENCH_METRICS_EMBED_TIME_SERIES",
+                                "value": "true"
+                            },
+                            {
+                                "name": "LLMDBENCH_METRICS_TS_MAX_POINTS",
+                                "value": "256"
+                            },
+                            {
+                                "name": "LLMDBENCH_STANDALONE_ENABLED",
+                                "value": "false"
+                            },
+                            {
+                                "name": "LLMDBENCH_STANDALONE_LAUNCHER_ENABLED",
+                                "value": "false"
+                            },
+                            {
+                                "name": "LLMDBENCH_FMA_ENABLED",
+                                "value": "false"
+                            },
+                            {
+                                "name": "LLMDBENCH_VLLM_COMMON_VLLM_LOAD_FORMAT",
+                                "value": "auto"
+                            }
+                        ],
+                        "image": "ghcr.io/llm-d/llm-d-benchmark:v0.7.0",
+                        "imagePullPolicy": "Always",
+                        "name": "harness",
+                        "resources": {
+                            "limits": {
+                                "cpu": "500m",
+                                "memory": "2Gi"
+                            },
+                            "requests": {
+                                "cpu": "500m",
+                                "memory": "2Gi"
+                            }
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/requests",
+                                "name": "results"
+                            },
+                            {
+                                "mountPath": "/workspace/profiles/inference-perf",
+                                "name": "inference-perf-profiles"
+                            },
+                            {
+                                "mountPath": "/workspace/harnesses",
+                                "name": "harness-scripts"
+                            },
+                            {
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "kube-api-access-xnq8q",
+                                "readOnly": true
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "nodeName": "gke-recsys-mlops-gke-recsys-mlops-ml--84c4fc7c-9spc",
+                "nodeSelector": {
+                    "recsys.ai/pool": "ml-system"
+                },
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Never",
+                "schedulerName": "default-scheduler",
+                "securityContext": {},
+                "serviceAccount": "inference-perf-runner",
+                "serviceAccountName": "inference-perf-runner",
+                "terminationGracePeriodSeconds": 30,
+                "tolerations": [
+                    {
+                        "effect": "NoSchedule",
+                        "key": "recsys.ai/workload",
+                        "operator": "Equal",
+                        "value": "ml-system"
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    }
+                ],
+                "volumes": [
+                    {
+                        "name": "results",
+                        "persistentVolumeClaim": {
+                            "claimName": "workload-pvc"
+                        }
+                    },
+                    {
+                        "configMap": {
+                            "defaultMode": 420,
+                            "name": "inference-perf-profiles"
+                        },
+                        "name": "inference-perf-profiles"
+                    },
+                    {
+                        "configMap": {
+                            "defaultMode": 493,
+                            "name": "llmdbench-harness-scripts"
+                        },
+                        "name": "harness-scripts"
+                    },
+                    {
+                        "name": "kube-api-access-xnq8q",
+                        "projected": {
+                            "defaultMode": 420,
+                            "sources": [
+                                {
+                                    "serviceAccountToken": {
+                                        "expirationSeconds": 3607,
+                                        "path": "token"
+                                    }
+                                },
+                                {
+                                    "configMap": {
+                                        "items": [
+                                            {
+                                                "key": "ca.crt",
+                                                "path": "ca.crt"
+                                            }
+                                        ],
+                                        "name": "kube-root-ca.crt"
+                                    }
+                                },
+                                {
+                                    "downwardAPI": {
+                                        "items": [
+                                            {
+                                                "fieldRef": {
+                                                    "apiVersion": "v1",
+                                                    "fieldPath": "metadata.namespace"
+                                                },
+                                                "path": "namespace"
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-08-12T16:17:30Z",
+                        "observedGeneration": 1,
+                        "status": "False",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-08-12T16:13:02Z",
+                        "observedGeneration": 1,
+                        "reason": "PodCompleted",
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-08-12T16:17:29Z",
+                        "observedGeneration": 1,
+                        "reason": "PodCompleted",
+                        "status": "False",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-08-12T16:17:29Z",
+                        "observedGeneration": 1,
+                        "reason": "PodCompleted",
+                        "status": "False",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-08-12T16:13:02Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "500m",
+                            "memory": "2Gi"
+                        },
+                        "containerID": "containerd://86ae082283484f63b5702fd475ad232981f949249c1227124f7052fa1f699b6f",
+                        "image": "ghcr.io/llm-d/llm-d-benchmark:v0.7.0",
+                        "imageID": "ghcr.io/llm-d/llm-d-benchmark@sha256:edd3761cf3c96c4571a2c448b0783c633aab40e6959f88c8562cc723bdda576e",
+                        "lastState": {},
+                        "name": "harness",
+                        "ready": false,
+                        "resources": {
+                            "limits": {
+                                "cpu": "500m",
+                                "memory": "2Gi"
+                            },
+                            "requests": {
+                                "cpu": "500m",
+                                "memory": "2Gi"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": false,
+                        "state": {
+                            "terminated": {
+                                "containerID": "containerd://86ae082283484f63b5702fd475ad232981f949249c1227124f7052fa1f699b6f",
+                                "exitCode": 0,
+                                "finishedAt": "2026-08-12T16:17:28Z",
+                                "reason": "Completed",
+                                "startedAt": "2026-08-12T16:13:04Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 0,
+                                "supplementalGroups": [
+                                    0
+                                ],
+                                "uid": 0
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/requests",
+                                "name": "results"
+                            },
+                            {
+                                "mountPath": "/workspace/profiles/inference-perf",
+                                "name": "inference-perf-profiles"
+                            },
+                            {
+                                "mountPath": "/workspace/harnesses",
+                                "name": "harness-scripts"
+                            },
+                            {
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "kube-api-access-xnq8q",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "10.40.0.5",
+                "hostIPs": [
+                    {
+                        "ip": "10.40.0.5"
+                    }
+                ],
+                "observedGeneration": 1,
+                "phase": "Succeeded",
+                "podIP": "10.44.1.42",
+                "podIPs": [
+                    {
+                        "ip": "10.44.1.42"
+                    }
+                ],
+                "qosClass": "Guaranteed",
+                "startTime": "2026-08-12T16:13:02Z"
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

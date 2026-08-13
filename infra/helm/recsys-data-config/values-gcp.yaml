@@ -19,6 +19,8 @@ airflow:
   dp1Schedule: manual
   dp2Schedule: manual
   dp3Schedule: manual
+  analyticsSchedule: manual
+  feastMaterializeSchedule: manual
 
 dataSetup:
   generatorConfig: configs/data-platform/generator/e2e-2k.yaml

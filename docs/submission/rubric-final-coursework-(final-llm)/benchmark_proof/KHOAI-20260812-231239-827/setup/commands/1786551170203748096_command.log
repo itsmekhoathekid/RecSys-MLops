@@ -1,0 +1,1 @@
+---> will execute: "kubectl config view -o json"

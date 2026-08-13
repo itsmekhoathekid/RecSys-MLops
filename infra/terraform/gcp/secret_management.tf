@@ -66,7 +66,7 @@ locals {
 }
 
 resource "kubernetes_secret_v1" "centralized_recsys" {
-  for_each = local.external_secret_payloads
+  for_each = var.vault_legacy_source_secrets_enabled ? local.external_secret_payloads : {}
 
   metadata {
     name      = each.key

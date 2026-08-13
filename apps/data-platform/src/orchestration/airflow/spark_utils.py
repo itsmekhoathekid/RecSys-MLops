@@ -32,7 +32,7 @@ DATAFLOW_NODE_SELECTOR = os.getenv(
     "recsys.ai/pool=cpu-services",
 )
 COMMON_ENV = {
-    "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys",
+    "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys",
     "VALIDATION_RUN_ID": "{{ run_id }}",
     "RUNTIME_LINEAGE_ENABLED": "true",
     "RUNTIME_LINEAGE_STRICT": "false",

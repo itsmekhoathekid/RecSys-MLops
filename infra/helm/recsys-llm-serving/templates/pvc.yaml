@@ -1,0 +1,15 @@
+{{- if .Values.cache.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "recsys-llm-serving.name" . }}-cache
+  labels:
+    {{- include "recsys-llm-serving.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.cache.persistence.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.persistence.size }}
+{{- end }}

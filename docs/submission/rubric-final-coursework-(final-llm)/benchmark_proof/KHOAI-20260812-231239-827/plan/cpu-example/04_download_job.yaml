@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: download-model
+  namespace: llm-inference
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      namespace: llm-inference
+      labels:
+        app: llm-d-benchmark-harness
+    spec:
+      containers:
+        - name: downloader
+          image: ghcr.io/llm-d/llm-d-benchmark:v0.7.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              mkdir -p "${MOUNT_PATH}/${MODEL_PATH}" && \
+              pip install -U --user huggingface_hub && \
+              export PATH="${PATH}:${HOME}/.local/bin" && \
+              hf download "${HF_MODEL_ID}" --local-dir "/cache/${MODEL_PATH}"
+          env:
+            - name: MODEL_PATH
+              value: models/qwen3.5-0.8b
+            - name: HF_MODEL_ID
+              value: qwen3.5-0.8b
+            - name: HF_HOME
+              value: /tmp/huggingface
+            - name: HOME
+              value: /tmp
+            - name: MOUNT_PATH
+              value: /cache
+          volumeMounts:
+            - name: model-cache
+              mountPath: /cache
+      restartPolicy: OnFailure
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-pvc

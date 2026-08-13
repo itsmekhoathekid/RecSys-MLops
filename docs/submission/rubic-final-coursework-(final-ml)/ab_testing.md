@@ -1,6 +1,6 @@
 # A/B Testing Proof
 
-This proof covers the final-coursework rubric item **A/B Testing** on GCP/GKE project `rec-sys-503309`.
+This proof covers the final-coursework rubric item **A/B Testing** on GCP/GKE project `recsys-mlops`.
 
 ## Scope
 

@@ -1,3 +1,6 @@
 pvc:
   storage: 10Gi
-  storageClassName: standard-rwo
+  # Free-trial regions have a small SSD quota. The legacy `standard` class
+  # provisions pd-standard (HDD) and keeps the ephemeral KFP workspace out of
+  # that quota while MinIO remains the durable artifact store.
+  storageClassName: standard

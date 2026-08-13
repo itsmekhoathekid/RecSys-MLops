@@ -36,7 +36,7 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:${PATH} \
-    PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys
+    PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl jq \

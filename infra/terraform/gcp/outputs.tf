@@ -35,3 +35,30 @@ output "gpu_pool_summary" {
     spot             = var.gpu_spot
   }
 }
+
+output "llm_cpu_pool_summary" {
+  value = var.deploy_llm_inference && var.llm_node_pool_mode == "dedicated" ? {
+    name         = google_container_node_pool.llm_cpu[0].name
+    machine_type = var.llm_cpu_machine_type
+    min_nodes    = var.llm_cpu_min_nodes
+    max_nodes    = var.llm_cpu_max_nodes
+    spot         = var.llm_cpu_spot
+  } : null
+}
+
+output "llm_inference_placement" {
+  value = var.deploy_llm_inference ? {
+    mode      = var.llm_node_pool_mode
+    node_pool = var.llm_node_pool_mode == "dedicated" ? google_container_node_pool.llm_cpu[0].name : google_container_node_pool.cpu.name
+  } : null
+}
+
+output "vault_endpoint" {
+  description = "Cluster-internal HashiCorp Vault endpoint used by External Secrets Operator."
+  value       = var.deploy_vault ? "http://vault.vault.svc.cluster.local:8200" : null
+}
+
+output "vault_kms_key" {
+  description = "Cloud KMS key used for Vault auto-unseal and bootstrap artifact encryption."
+  value       = var.deploy_vault ? google_kms_crypto_key.vault_unseal[0].id : null
+}

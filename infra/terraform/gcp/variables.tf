@@ -100,6 +100,64 @@ variable "cpu_spot" {
   default     = false
 }
 
+variable "llm_cpu_machine_type" {
+  description = "Machine type for the dedicated CPU-only llm-d model-serving pool."
+  type        = string
+  default     = "n2-standard-4"
+}
+
+variable "llm_cpu_min_nodes" {
+  description = "Minimum nodes in the dedicated llm-d CPU pool."
+  type        = number
+  default     = 1
+}
+
+variable "llm_cpu_max_nodes" {
+  description = "Maximum nodes in the dedicated llm-d CPU pool."
+  type        = number
+  default     = 2
+}
+
+variable "llm_cpu_disk_size_gb" {
+  description = "Boot disk size for dedicated llm-d CPU nodes."
+  type        = number
+  default     = 30
+}
+
+variable "llm_cpu_disk_type" {
+  description = "Boot disk type for dedicated llm-d CPU nodes. pd-standard avoids consuming the exhausted SSD quota."
+  type        = string
+  default     = "pd-standard"
+}
+
+variable "llm_cpu_spot" {
+  description = "Use Spot VMs for llm-d CPU inference. Keep false for reproducible benchmarks."
+  type        = bool
+  default     = false
+}
+
+variable "llm_node_pool_mode" {
+  description = "LLM placement mode: dedicated creates the llm-cpu pool; cpu-services-shared reuses the existing recsys-mlops-cpu node pool."
+  type        = string
+  default     = "dedicated"
+
+  validation {
+    condition     = contains(["dedicated", "cpu-services-shared"], var.llm_node_pool_mode)
+    error_message = "llm_node_pool_mode must be dedicated or cpu-services-shared."
+  }
+}
+
+variable "llm_optimization_profile" {
+  description = "LLM treatment profile: baseline uses uniform random routing; optimized adds llm-d inflight token load-aware routing. Both profiles use the same llama.cpp GGUF servers."
+  type        = string
+  default     = "baseline"
+
+  validation {
+    condition     = contains(["baseline", "optimized"], var.llm_optimization_profile)
+    error_message = "llm_optimization_profile must be baseline or optimized."
+  }
+}
+
 variable "ml_machine_type" {
   description = "Machine type for the dedicated ML system node pool used by MLflow, API serving, and Triton/KServe."
   type        = string
@@ -232,6 +290,36 @@ variable "deploy_serving" {
   default     = true
 }
 
+variable "deploy_llm_inference" {
+  description = "Deploy the llm-d, agentgateway, and CPU llama.cpp GGUF model-serving stack."
+  type        = bool
+  default     = false
+}
+
+variable "agentgateway_version" {
+  description = "Pinned agentgateway CRD and controller chart version."
+  type        = string
+  default     = "v1.1.0"
+}
+
+variable "llm_d_router_chart_version" {
+  description = "Pinned llm-d Router Gateway chart version."
+  type        = string
+  default     = "v0.9.0"
+}
+
+variable "gateway_api_version" {
+  description = "Pinned Kubernetes Gateway API CRD version required by llm-d."
+  type        = string
+  default     = "v1.5.1"
+}
+
+variable "gateway_api_inference_extension_version" {
+  description = "Pinned Gateway API Inference Extension CRD version required by llm-d."
+  type        = string
+  default     = "v1.5.0"
+}
+
 variable "deploy_gateway" {
   description = "Deploy ingress-nginx and the public RecSys gateway. Requires DNS/TLS planning."
   type        = bool
@@ -246,6 +334,47 @@ variable "deploy_datahub" {
 
 variable "deploy_service_mesh" {
   description = "Deploy Istio service mesh control plane and RecSys mTLS/authorization policies."
+  type        = bool
+  default     = true
+}
+
+variable "deploy_vault" {
+  description = "Deploy HashiCorp Vault HA with Raft storage and GCP Cloud KMS auto-unseal."
+  type        = bool
+  default     = false
+}
+
+variable "vault_chart_version" {
+  description = "Pinned official HashiCorp Vault Helm chart version."
+  type        = string
+  default     = "0.34.0"
+}
+
+variable "vault_replicas" {
+  description = "Number of Vault HA Raft replicas. Use an odd number for quorum."
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.vault_replicas >= 3 && var.vault_replicas % 2 == 1
+    error_message = "vault_replicas must be an odd number greater than or equal to 3."
+  }
+}
+
+variable "vault_storage_size" {
+  description = "Persistent disk size for each Vault Raft replica."
+  type        = string
+  default     = "10Gi"
+}
+
+variable "vault_kms_location" {
+  description = "GCP Cloud KMS location used by Vault auto-unseal."
+  type        = string
+  default     = "global"
+}
+
+variable "vault_legacy_source_secrets_enabled" {
+  description = "Keep the pre-Vault source Kubernetes Secrets during migration. Disable only after Vault-backed ExternalSecrets are Ready."
   type        = bool
   default     = true
 }
@@ -266,6 +395,24 @@ variable "gateway_tls_cluster_issuer" {
   description = "Existing cert-manager ClusterIssuer used by public gateway routes."
   type        = string
   default     = "letsencrypt-prod"
+}
+
+variable "gateway_tls_issuer_create" {
+  description = "Create the cert-manager ClusterIssuer as part of the gateway release."
+  type        = bool
+  default     = false
+}
+
+variable "gateway_tls_issuer_email" {
+  description = "ACME account email used when the gateway creates its ClusterIssuer."
+  type        = string
+  default     = ""
+}
+
+variable "gateway_tls_issuer_server" {
+  description = "ACME directory URL used when the gateway creates its ClusterIssuer."
+  type        = string
+  default     = "https://acme-v02.api.letsencrypt.org/directory"
 }
 
 variable "gateway_htpasswd" {

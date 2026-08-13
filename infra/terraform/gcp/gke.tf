@@ -113,8 +113,11 @@ resource "google_container_node_pool" "cpu" {
   }
 
   upgrade_settings {
-    max_surge       = 1
-    max_unavailable = 0
+    # This project normally runs at its regional CPU and SSD quotas. Recreate
+    # one node at a time so an update never needs an extra 8-vCPU/70-GB surge
+    # node. Workloads can be briefly unavailable while the node is replaced.
+    max_surge       = 0
+    max_unavailable = 1
   }
 
   node_config {
@@ -130,6 +133,59 @@ resource "google_container_node_pool" "cpu" {
       "recsys.ai/workload" = "data-platform"
     })
     tags = ["${var.name_prefix}-cpu"]
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+
+  depends_on = [google_project_iam_member.gke_node_roles]
+}
+
+resource "google_container_node_pool" "llm_cpu" {
+  count    = var.deploy_llm_inference && var.llm_node_pool_mode == "dedicated" ? 1 : 0
+  provider = google-beta
+
+  name       = "${var.name_prefix}-llm-cpu"
+  location   = var.zone
+  cluster    = google_container_cluster.recsys.name
+  node_count = var.llm_cpu_min_nodes
+
+  autoscaling {
+    min_node_count = var.llm_cpu_min_nodes
+    max_node_count = var.llm_cpu_max_nodes
+  }
+
+  management {
+    auto_repair  = true
+    auto_upgrade = true
+  }
+
+  upgrade_settings {
+    # Keep upgrades within the same fixed quota envelope as the initial node.
+    max_surge       = 0
+    max_unavailable = 1
+  }
+
+  node_config {
+    machine_type    = var.llm_cpu_machine_type
+    disk_size_gb    = var.llm_cpu_disk_size_gb
+    disk_type       = var.llm_cpu_disk_type
+    image_type      = "COS_CONTAINERD"
+    spot            = var.llm_cpu_spot
+    service_account = google_service_account.gke_nodes.email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+    labels = merge(var.labels, {
+      "recsys.ai/pool"     = "llm-cpu"
+      "recsys.ai/workload" = "llm-inference"
+    })
+    tags = ["${var.name_prefix}-llm-cpu"]
+
+    taint {
+      key    = "recsys.ai/workload"
+      value  = "llm-inference"
+      effect = "NO_SCHEDULE"
+    }
 
     workload_metadata_config {
       mode = "GKE_METADATA"
