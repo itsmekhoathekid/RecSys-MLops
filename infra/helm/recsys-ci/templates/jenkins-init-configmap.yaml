@@ -65,6 +65,13 @@ data:
           <projectUrl>{{ .Values.jenkins.github.projectUrl }}</projectUrl>
           <displayName></displayName>
         </com.coravy.hudson.plugins.github.GithubProjectProperty>
+        <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+          <triggers>
+            <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
+              <spec></spec>
+            </com.cloudbees.jenkins.GitHubPushTrigger>
+          </triggers>
+        </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
         <hudson.model.ParametersDefinitionProperty>
           <parameterDefinitions>
             <hudson.model.BooleanParameterDefinition>
@@ -108,11 +115,6 @@ data:
         <scriptPath>{{ .Values.jenkins.seedJob.scriptPath }}</scriptPath>
         <lightweight>true</lightweight>
       </definition>
-      <triggers>
-        <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
-          <spec></spec>
-        </com.cloudbees.jenkins.GitHubPushTrigger>
-      </triggers>
       <disabled>false</disabled>
     </flow-definition>
   zz-seed-cicd-views.groovy: |
@@ -140,11 +142,13 @@ data:
     }
 
     def scmPipelineXml = { jobName, description, forceComponents, forceDeploy, githubTrigger, jobScriptPath ->
-      def triggerBlock = githubTrigger ? """<triggers>
-        <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
-          <spec></spec>
-        </com.cloudbees.jenkins.GitHubPushTrigger>
-      </triggers>""" : "<triggers/>"
+      def triggerProperty = githubTrigger ? """<org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+          <triggers>
+            <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
+              <spec></spec>
+            </com.cloudbees.jenkins.GitHubPushTrigger>
+          </triggers>
+        </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>""" : ""
       return """<?xml version='1.1' encoding='UTF-8'?>
     <flow-definition plugin="workflow-job">
       <actions/>
@@ -155,6 +159,7 @@ data:
           <projectUrl>${xmlEscape(projectUrl)}</projectUrl>
           <displayName></displayName>
         </com.coravy.hudson.plugins.github.GithubProjectProperty>
+        ${triggerProperty}
         <hudson.model.ParametersDefinitionProperty>
           <parameterDefinitions>
             <hudson.model.StringParameterDefinition>
@@ -223,7 +228,6 @@ data:
         <scriptPath>${xmlEscape(jobScriptPath)}</scriptPath>
         <lightweight>true</lightweight>
       </definition>
-      ${triggerBlock}
       <disabled>false</disabled>
     </flow-definition>"""
     }

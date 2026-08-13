@@ -101,6 +101,9 @@
     "flag": "RUN_CI_CONFIG",
     "changeDetection": {
       "prefixes": [
+        "configs/kagent/",
+        "configs/llm-d/",
+        "configs/vault/",
         "infra/terraform/",
         "infra/helm/",
         "infra/helm/recsys-ci/",

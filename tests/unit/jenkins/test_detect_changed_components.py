@@ -109,6 +109,18 @@ def test_ci_configuration_path_does_not_fake_product_component():
     assert "CHANGED_COMPONENTS=ci_config" not in render_jenkins_environment(result)
 
 
+def test_llm_and_vault_configs_select_ci_configuration_only():
+    for path in (
+        "configs/kagent/values.yaml",
+        "configs/llm-d/agentgateway-values.yaml",
+        "configs/vault/values.yaml.tftpl",
+    ):
+        result = detect([path])
+        assert result.flags["RUN_CI_CONFIG"] is True
+        assert result.component_names == ()
+        assert result.unmapped_paths == ()
+
+
 def test_unknown_runtime_path_fails_closed(monkeypatch, capsys, tmp_path):
     result = detect(["new-runtime/worker.py"])
     assert result.unmapped_paths == ("new-runtime/worker.py",)

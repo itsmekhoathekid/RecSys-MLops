@@ -328,6 +328,7 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "skipDefaultCheckout" not in source
     assert "checkout scm" not in source
     assert "disableConcurrentBuilds()" in source
+    assert "triggers {\n    githubPush()\n  }" in source
     assert "script: 'git rev-parse HEAD'" in source
     assert "values_args=(" not in source
     assert "source jenkins/scripts/" not in source
@@ -359,6 +360,23 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
         ROOT / "jenkins/scripts/entrypoints/release_build_publish.sh"
     ).read_text(encoding="utf-8")
     assert "[BUILD] Build image ${image_index}/${image_total}" in build_entrypoint
+
+
+def test_github_webhook_trigger_uses_pipeline_job_property() -> None:
+    seed = (
+        ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml"
+    ).read_text(encoding="utf-8")
+
+    trigger_property = (
+        "org.jenkinsci.plugins.workflow.job.properties."
+        "PipelineTriggersJobProperty"
+    )
+    assert seed.count(f"<{trigger_property}>") >= 2
+    assert seed.count(f"</{trigger_property}>") >= 2
+    assert "def triggerProperty = githubTrigger" in seed
+    assert "${triggerProperty}" in seed
+    assert "def triggerBlock = githubTrigger" not in seed
+    assert "${triggerBlock}" not in seed
 
 
 def test_gcp_production_target_is_strict_and_self_consistent():
