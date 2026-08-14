@@ -62,6 +62,12 @@ locals {
     gateway = {
       auth = local.gateway_htpasswd
     }
+    agentregistry = {
+      POSTGRES_DB                 = "agentregistry"
+      POSTGRES_USER               = "agentregistry"
+      POSTGRES_PASSWORD           = random_password.agentregistry_postgres.result
+      AGENT_REGISTRY_DATABASE_URL = "postgresql://agentregistry:${random_password.agentregistry_postgres.result}@agentregistry-postgres.agentregistry.svc.cluster.local:5432/agentregistry?sslmode=disable"
+    }
   }
 }
 
@@ -85,8 +91,10 @@ resource "kubernetes_secret_v1" "centralized_recsys" {
 
 resource "null_resource" "recsys_external_secrets_ready" {
   triggers = {
-    cluster_id     = google_container_cluster.recsys.id
-    chart_revision = local.service_mesh_sets["chartRevision"]
+    cluster_id         = google_container_cluster.recsys.id
+    chart_revision     = local.service_mesh_sets["chartRevision"]
+    agent_gateway_auth = tostring(var.deploy_llm_inference && var.agent_gateway_auth_enabled)
+    agent_registry     = tostring(var.deploy_agent_registry)
   }
 
   provisioner "local-exec" {
@@ -105,8 +113,29 @@ resource "null_resource" "recsys_external_secrets_ready" {
       api-serving recsys-gateway-basic-auth
       observability recsys-gateway-basic-auth
       SECRETS
+
+      if [[ "$${WAIT_AGENT_GATEWAY}" == "true" ]]; then
+        while read -r namespace name; do
+          kubectl wait --for=condition=Ready "externalsecret/$${name}" \
+            -n "$${namespace}" --timeout=300s
+          kubectl get "secret/$${name}" -n "$${namespace}" >/dev/null
+        done <<'AGENT_GATEWAY_SECRETS'
+      kagent kagent-agent-gateway
+      llm-inference agentgateway-api-keys
+      AGENT_GATEWAY_SECRETS
+      fi
+
+      if [[ "$${WAIT_AGENT_REGISTRY}" == "true" ]]; then
+        kubectl wait --for=condition=Ready "externalsecret/agentregistry-runtime" \
+          -n agentregistry --timeout=300s
+        kubectl get "secret/agentregistry-runtime" -n agentregistry >/dev/null
+      fi
     EOT
     interpreter = ["/bin/bash", "-c"]
+    environment = {
+      WAIT_AGENT_GATEWAY  = tostring(var.deploy_llm_inference && var.agent_gateway_auth_enabled)
+      WAIT_AGENT_REGISTRY = tostring(var.deploy_agent_registry)
+    }
   }
 
   depends_on = [helm_release.recsys_security]

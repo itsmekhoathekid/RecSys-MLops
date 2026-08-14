@@ -53,6 +53,11 @@ output "llm_inference_placement" {
   } : null
 }
 
+output "agent_registry_endpoint" {
+  description = "Cluster-internal Agent Registry UI/API endpoint."
+  value       = var.deploy_agent_registry ? "http://agentregistry.agentregistry.svc.cluster.local:12121" : null
+}
+
 output "vault_endpoint" {
   description = "Cluster-internal HashiCorp Vault endpoint used by External Secrets Operator."
   value       = var.deploy_vault ? "http://vault.vault.svc.cluster.local:8200" : null

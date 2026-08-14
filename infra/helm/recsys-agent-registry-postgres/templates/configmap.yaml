@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentregistry-postgres-init
+  labels:
+    {{- include "recsys-agent-registry-postgres.labels" . | nindent 4 }}
+data:
+  00-vector.sql: |
+    CREATE EXTENSION IF NOT EXISTS vector;
+

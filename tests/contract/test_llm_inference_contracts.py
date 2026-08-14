@@ -102,6 +102,26 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     assert "k8s-agent:\n  enabled: false" in values
 
 
+def test_agentgateway_auth_uses_one_vault_key_for_client_and_server() -> None:
+    policy = (
+        ROOT / "infra/helm/recsys-llm-serving/templates/gateway-auth.yaml"
+    ).read_text()
+    security_values = (ROOT / "infra/helm/recsys-security/values.yaml").read_text()
+    bootstrap = (ROOT / "ops/gcp/bootstrap_vault.sh").read_text()
+    smoke = (ROOT / "ops/validation/llm_inference_smoke.sh").read_text()
+
+    assert "kind: AgentgatewayPolicy" in policy
+    assert "phase: PreRouting" in policy
+    assert "mode: {{ .Values.gateway.auth.mode }}" in policy
+    assert "secretName: kagent-agent-gateway" in security_values
+    assert "secretName: agentgateway-api-keys" in security_values
+    assert security_values.count("vaultPath: agent-gateway") == 2
+    assert "AGENT_GATEWAY_API_KEY" in bootstrap
+    assert 'write "recsys/data/${secret_group}"' in bootstrap
+    assert 'unauthenticated_status' in smoke
+    assert 'Authorization: Bearer ${GATEWAY_API_KEY}' in smoke
+
+
 def test_llm_treatment_overlays_select_baseline_and_optimized_runtime() -> None:
     baseline = (
         ROOT / "infra/helm/recsys-llm-serving/values-baseline.yaml"

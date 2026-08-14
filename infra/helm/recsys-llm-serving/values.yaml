@@ -32,6 +32,11 @@ gateway:
   name: llm-d-inference-gateway
   className: agentgateway
   port: 80
+  auth:
+    enabled: true
+    policyName: llm-d-inference-gateway-api-key
+    mode: Strict
+    secretName: agentgateway-api-keys
 
 resources:
   requests:

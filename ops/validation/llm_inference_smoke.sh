@@ -6,6 +6,8 @@ DEPLOYMENT="${LLM_DEPLOYMENT:-qwen35-gguf}"
 SERVICE="${LLM_SERVICE:-qwen35-gguf}"
 GATEWAY="${LLM_GATEWAY:-llm-d-inference-gateway}"
 GATEWAY_ROUTE_MODEL="${LLM_GATEWAY_ROUTE_MODEL:-llm-d-optimized-baseline}"
+GATEWAY_API_KEY_SECRET="${LLM_GATEWAY_API_KEY_SECRET:-agentgateway-api-keys}"
+GATEWAY_API_KEY_FIELD="${LLM_GATEWAY_API_KEY_FIELD:-AGENT_GATEWAY_API_KEY}"
 MODEL="${LLM_MODEL:-qwen3.5-0.8b}"
 MAX_TOKENS="${LLM_SMOKE_MAX_TOKENS:-4}"
 LOCAL_PORT="${LLM_SMOKE_PORT:-18000}"
@@ -19,7 +21,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in kubectl curl; do
+for tool in kubectl curl base64; do
   command -v "${tool}" >/dev/null 2>&1 || {
     echo "Missing required command: ${tool}" >&2
     exit 1
@@ -62,9 +64,39 @@ if [[ -z "${GATEWAY_ADDRESS}" ]]; then
   exit 1
 fi
 
-curl -fsS "http://${GATEWAY_ADDRESS}/v1/chat/completions" \
+GATEWAY_API_KEY="$(kubectl get secret "${GATEWAY_API_KEY_SECRET}" -n "${NAMESPACE}" \
+  -o "jsonpath={.data.${GATEWAY_API_KEY_FIELD}}" | base64 --decode)"
+if [[ -z "${GATEWAY_API_KEY}" ]]; then
+  echo "Gateway API key is empty in ${NAMESPACE}/${GATEWAY_API_KEY_SECRET}." >&2
+  exit 1
+fi
+
+unauthenticated_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+  "http://${GATEWAY_ADDRESS}/v1/chat/completions" \
   -H 'Content-Type: application/json' \
   -H "X-Gateway-Base-Model-Name: ${GATEWAY_ROUTE_MODEL}" \
+  -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"authentication check\"}],\"max_tokens\":1}")"
+if [[ "${unauthenticated_status}" != "401" ]]; then
+  echo "Expected unauthenticated Gateway request to return 401, got ${unauthenticated_status}." >&2
+  exit 1
+fi
+
+invalid_key_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+  "http://${GATEWAY_ADDRESS}/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer invalid-agentgateway-smoke-key' \
+  -H "X-Gateway-Base-Model-Name: ${GATEWAY_ROUTE_MODEL}" \
+  -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"invalid authentication check\"}],\"max_tokens\":1}")"
+if [[ "${invalid_key_status}" != "401" ]]; then
+  echo "Expected invalid Gateway API key to return 401, got ${invalid_key_status}." >&2
+  exit 1
+fi
+
+curl -fsS "http://${GATEWAY_ADDRESS}/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${GATEWAY_API_KEY}" \
+  -H "X-Gateway-Base-Model-Name: ${GATEWAY_ROUTE_MODEL}" \
   -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: gateway-ready\"}],\"max_tokens\":${MAX_TOKENS},\"temperature\":0}"
+unset GATEWAY_API_KEY
 echo
 echo "LLM inference smoke test passed."

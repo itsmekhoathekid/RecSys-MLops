@@ -12,9 +12,9 @@ kms_keyring="${VAULT_KMS_KEYRING:-recsys-mlops-vault}"
 kms_key="${VAULT_KMS_KEY:-vault-unseal}"
 gcp_project="${VAULT_GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 
-service_secret_groups=(data-platform mlflow runtime kserve-minio gateway analytics jenkins-runtime)
+service_secret_groups=(data-platform mlflow runtime kserve-minio gateway analytics jenkins-runtime agent-gateway agentregistry)
 
-for required_command in gcloud jq kubectl; do
+for required_command in gcloud jq kubectl openssl; do
   if ! command -v "${required_command}" >/dev/null 2>&1; then
     echo "Required command not found: ${required_command}" >&2
     exit 1
@@ -174,6 +174,42 @@ vault_exec "${active_token}" write auth/kubernetes/role/recsys-external-secrets 
 echo "Copying service secret groups into Vault KV v2 without printing values..."
 for secret_group in "${service_secret_groups[@]}"; do
   if ! kubectl get secret "${secret_group}" -n external-secrets >/dev/null 2>&1; then
+    if [[ "${secret_group}" == "agent-gateway" ]]; then
+      if vault_exec "${active_token}" kv metadata get -mount=recsys "${secret_group}" >/dev/null 2>&1; then
+        echo "  ${secret_group}: legacy source absent; keeping the existing Vault version"
+      else
+        payload_file="${bootstrap_tmp}/${secret_group}.json"
+        agent_gateway_api_key="agw-$(openssl rand -hex 32)"
+        jq -n --arg api_key "${agent_gateway_api_key}" \
+          '{data: {AGENT_GATEWAY_API_KEY: $api_key}}' >"${payload_file}"
+        unset agent_gateway_api_key
+        vault_exec_with_payload "${active_token}" "${payload_file}" \
+          write "recsys/data/${secret_group}" - >/dev/null
+        echo "  ${secret_group}: generated and stored 1 key"
+      fi
+      continue
+    fi
+    if [[ "${secret_group}" == "agentregistry" ]]; then
+      if vault_exec "${active_token}" kv metadata get -mount=recsys "${secret_group}" >/dev/null 2>&1; then
+        echo "  ${secret_group}: legacy source absent; keeping the existing Vault version"
+      else
+        payload_file="${bootstrap_tmp}/${secret_group}.json"
+        postgres_password="$(openssl rand -hex 32)"
+        database_url="postgresql://agentregistry:${postgres_password}@agentregistry-postgres.agentregistry.svc.cluster.local:5432/agentregistry?sslmode=disable"
+        jq -n \
+          --arg database "agentregistry" \
+          --arg username "agentregistry" \
+          --arg password "${postgres_password}" \
+          --arg database_url "${database_url}" \
+          '{data: {POSTGRES_DB: $database, POSTGRES_USER: $username, POSTGRES_PASSWORD: $password, AGENT_REGISTRY_DATABASE_URL: $database_url}}' \
+          >"${payload_file}"
+        unset postgres_password database_url
+        vault_exec_with_payload "${active_token}" "${payload_file}" \
+          write "recsys/data/${secret_group}" - >/dev/null
+        echo "  ${secret_group}: generated and stored 4 keys"
+      fi
+      continue
+    fi
     echo "  ${secret_group}: legacy source absent; keeping the existing Vault version"
     continue
   fi

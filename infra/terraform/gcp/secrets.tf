@@ -23,6 +23,11 @@ resource "random_password" "mlflow_postgres" {
   special = false
 }
 
+resource "random_password" "agentregistry_postgres" {
+  length  = 32
+  special = false
+}
+
 resource "random_password" "datahub_mysql_root" {
   length  = 32
   special = false

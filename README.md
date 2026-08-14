@@ -353,7 +353,7 @@ Source: tab **`rubic final-coursework (final -llm)`**.
 | [README and High-Level System Design](README.md) | Business domain, repository structure, table of contents, and deployable-unit architecture. |
 | [Deploy LLM Inference Platform + Setup Custom Model](<docs/submission/rubric-final-coursework-(final-llm)/llm_inference_platform.md>) | llama.cpp custom model serving, llm-d Agent Gateway routing, benchmark comparison, and load-aware optimization evidence. |
 | [Deploy a Global Model Config](<docs/submission/rubric-final-coursework-(final-llm)/global_model_config.md>) | Shared kagent `ModelConfig`, Agent Gateway routing, Secret reference, applied resource evidence, and end-to-end Agent inference. |
-| Deploy Agent Registry | Work in progress. |
+| [Deploy Agent Registry](<docs/submission/rubric-final-coursework-(final-llm)/agent_registry.md>) | Vault-backed Agent Registry `0.4.0`, persistent pgvector, namespace-scoped kagent deployment RBAC, and live UI/API proof. |
 | RAG | Work in progress. |
 | User and Chunk Retrieval MCP Tool + Agent | Work in progress. |
 | Real-Time Drift Detection MCP Tool + Agent | Work in progress. |

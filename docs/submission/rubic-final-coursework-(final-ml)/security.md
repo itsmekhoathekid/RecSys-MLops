@@ -75,7 +75,7 @@ flowchart TD
 | --- | --- |
 | GCP identity | Terraform enables the GKE Workload Identity pool. Node VMs use `recsys-mlops-nodes`; the `ci/recsys-jenkins` Kubernetes service account receives direct Artifact Registry writer IAM through its Workload Identity principal. |
 | Kubernetes identity | Kubernetes service accounts identify workloads to the API server and become Istio SPIFFE principals such as `cluster.local/ns/api-serving/sa/default`. |
-| Secret source | Vault KV v2 mount `recsys` stores seven groups: `data-platform`, `mlflow`, `runtime`, `kserve-minio`, `gateway`, `analytics`, and `jenkins-runtime`. The five Terraform migration sources and the manually supplied analytics migration source were removed after successful sync. The CI chart still owns a `jenkins-runtime` mirror used as the rotation/migration input. |
+| Secret source | Vault KV v2 mount `recsys` stores nine groups: `data-platform`, `mlflow`, `runtime`, `kserve-minio`, `gateway`, `analytics`, `jenkins-runtime`, `agent-gateway`, and `agentregistry`. The Agent Gateway API key and Agent Registry PostgreSQL credentials are generated directly into Vault when absent; the other groups preserve the documented migration flow. |
 | Secret distribution | The Terraform-owned `recsys-security` release creates Vault-backed `ClusterSecretStore/recsys-vault` and namespace-local `ExternalSecret` objects. The analytics and demo-web releases use the same store. External Secrets Operator owns the generated target Secrets. |
 | East-west transport | Istio sidecars provide workload certificates and mTLS. Destination-side `AuthorizationPolicy` resources enforce source principal and port allow lists. |
 | Network segmentation | Two NetworkPolicy templates select MinIO, feature Postgres, and Redis. They describe namespace/port boundaries, subject to the GKE network-policy enforcement caveat below. |
@@ -144,7 +144,7 @@ or uninitialized backend.
      -target=kubernetes_cluster_role_binding_v1.vault_token_reviewer
    ```
 
-3. Initialize Vault, configure auth/policies, migrate the seven groups, encrypt
+3. Initialize Vault, configure auth/policies, migrate or generate the nine groups, encrypt
    the recovery artifact, and revoke the initial root token:
 
    ```bash
@@ -174,50 +174,6 @@ or uninitialized backend.
    infrastructure changes separately. Targeting above is only for ordering the
    one-time backend migration.
 
-### Effective Mesh Enforcement Scope
-
-Terraform supplies the following namespace list to the security chart rather
-than relying on the shorter chart default:
-
-| Namespace | Sidecar injection | STRICT mTLS and default deny | Main explicit access |
-| --- | --- | --- | --- |
-| `api-serving` | Enabled | Enforced | NGINX, Prometheus, API-internal calls, and dataflow callers to ports `80/8080`. |
-| `kserve-triton-inference` | Enabled | Enforced | API and Prometheus identities to KServe/Triton ports `80/8080/9000`. |
-| `recsys-dataflow` | Enabled | Enforced | Dataflow, Kubeflow, DataHub, Prometheus, and selected API access to data/platform ports. |
-| `kubeflow` | Enabled | Enforced | Kubeflow-local traffic plus dataflow and Prometheus on the configured KFP/Ray/artifact ports. |
-| `experiment-tracking` | Enabled | Enforced | Kubeflow, KServe, and Prometheus to MLflow/Postgres/MinIO ports. |
-| `observability` | Enabled | Enforced | API, dataflow, Kubeflow, Prometheus, Promtail, and NGINX to Grafana/Loki/Tempo/PushGateway/exporter ports. |
-| `datahub` | Enabled by the namespace resource | **Not included** in the security chart's STRICT/default-deny list | Its sidecar can originate and receive mesh traffic, but this chart does not enforce a DataHub namespace baseline. |
-| `ingress-nginx` | Enabled for the controller | **Not included** in the STRICT/default-deny list | Its service-account principal is allowed by destination API/observability policies. |
-| `ci` | Explicitly disabled on Jenkins/watcher pods | Not enforced | Jenkins uses Kubernetes RBAC, Workload Identity, and Kubernetes Secrets instead of this mesh policy set. |
-| `analytics` | Not configured by this security chart | Not enforced | Analytics is outside the current mesh authorization boundary. |
-
-A namespace label only causes sidecar injection; it does not by itself create a
-STRICT `PeerAuthentication` or default-deny `AuthorizationPolicy`. This is why
-DataHub sidecar presence is proof of mesh participation, but not proof that the
-same namespace-level deny baseline is enforced there.
-
-### Service-To-Service Allow Matrix
-
-The main runtime paths opened after default deny are:
-
-| Caller identity | Destination | Ports and purpose |
-| --- | --- | --- |
-| `api-serving/default` | `recsys-dataflow` | `5432/6379` for Feast/Postgres and Redis features. |
-| `api-serving/default` | `kserve-triton-inference` | `80/8080/9000` for KServe HTTP and Triton gRPC inference. |
-| `ingress-nginx/ingress-nginx` | `api-serving` | `80/8080` for public feature API and demo routes. |
-| `ingress-nginx/ingress-nginx` | `observability` | `3000/3100/3200` for public Grafana, Loki, and Tempo query routes. |
-| `recsys-dataflow/default` | `kubeflow` | KFP API and workflow-related ports for drift-triggered retraining. |
-| Kubeflow pipeline service accounts | `experiment-tracking` | `5000/5432/9000` for MLflow, registry Postgres, and artifact MinIO. |
-| `observability/recsys-prometheus` | Runtime namespaces | Metrics/exporter ports required by Prometheus scraping. |
-| `observability/recsys-promtail` | Loki | `3100` for log ingestion. |
-
-Public gateway authentication and TLS are an additional north-south layer; they
-do not replace mesh identity. The full NGINX, DNS, certificate, Basic Auth, and
-rate-limit setup is documented in
-[Routing & Gateway](routing_gateway.md#setup-and-configuration-flow).
-
-
 ## Centralized Secret Management
 
 Vault is the central source of truth. Workloads continue to consume ordinary
@@ -229,9 +185,59 @@ and are not hand-copied into service charts.
 - [vault.tf (line 1)](../../../infra/terraform/gcp/vault.tf#L1), [vault.tf (line 20)](../../../infra/terraform/gcp/vault.tf#L20), [vault.tf (line 56)](../../../infra/terraform/gcp/vault.tf#L56): creates the Vault GSA, Cloud KMS key/IAM, Workload Identity binding, official Helm release, and TokenReview RBAC.
 - [values.yaml.tftpl (line 1)](../../../configs/vault/values.yaml.tftpl#L1), [values.yaml.tftpl (line 55)](../../../configs/vault/values.yaml.tftpl#L55), [values.yaml.tftpl (line 86)](../../../configs/vault/values.yaml.tftpl#L86): configures Vault 2.0.3, three-node HA Raft, PVCs, internal service, and GCP KMS seal.
 - [bootstrap_vault.sh (line 112)](../../../ops/gcp/bootstrap_vault.sh#L112), [bootstrap_vault.sh (line 145)](../../../ops/gcp/bootstrap_vault.sh#L145), [bootstrap_vault.sh (line 164)](../../../ops/gcp/bootstrap_vault.sh#L164), [bootstrap_vault.sh (line 175)](../../../ops/gcp/bootstrap_vault.sh#L175): initializes Vault, enables KV v2, writes least-privilege policy/Kubernetes auth, and migrates grouped secret values without printing them.
+- [recsys-security values (line 28)](../../../infra/helm/recsys-security/values.yaml#L28): configures the core service `vaultPath` values, including the two `agent-gateway` mappings and the `agentregistry` database mapping.
+- [bootstrap_vault.sh (line 177)](../../../ops/gcp/bootstrap_vault.sh#L177), [bootstrap_vault.sh (line 192)](../../../ops/gcp/bootstrap_vault.sh#L192), [bootstrap_vault.sh (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216): writes the generated Agent Gateway API key, generated Agent Registry PostgreSQL payload, and migrated generic service groups respectively to `recsys/data/${secret_group}`.
 - [secretstore.yaml (line 23)](../../../infra/helm/recsys-security/templates/secretstore.yaml#L23), [secretstore.yaml (line 31)](../../../infra/helm/recsys-security/templates/secretstore.yaml#L31): renders the Vault-backed `ClusterSecretStore`, including service-account JWT audience.
 - [externalsecrets.yaml (line 1)](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L1): renders the core service `ExternalSecret` objects.
 - [recsys-analytics values (line 6)](../../../infra/helm/recsys-analytics/values.yaml#L6), [recsys-demo-web values (line 64)](../../../infra/helm/recsys-demo-web/values.yaml#L64): point the independently owned analytics and demo-web ExternalSecrets at `recsys-vault`.
+
+### Vault ACL Policy: Who Can Read What
+
+The bootstrap creates the `recsys-external-secrets` Vault ACL policy with this
+least-privilege rule:
+
+```hcl
+path "recsys/data/*" {
+  capabilities = ["read"]
+}
+path "recsys/metadata/*" {
+  capabilities = ["read", "list"]
+}
+```
+
+This policy is assigned to Vault tokens issued through Kubernetes auth for the
+`external-secrets/external-secrets` service account. It is therefore the
+permission of **External Secrets Operator against Vault**, not a permission
+granted directly to the application pods:
+
+```text
+ServiceAccount external-secrets/external-secrets
+  -> Vault Kubernetes auth role recsys-external-secrets
+  -> short-lived Vault token carrying policy recsys-external-secrets
+  -> read Vault KV v2 values under recsys/data/*
+  -> reconcile namespace-local Kubernetes Secrets
+  -> application pods consume only their referenced Kubernetes Secret
+```
+
+For the KV v2 engine, `recsys/data/*` is the API path containing secret values;
+`read` permits ESO to retrieve them but does not permit create, update, patch,
+or delete. `recsys/metadata/*` contains path and version metadata; `read` and
+`list` let ESO discover and inspect records without granting write access.
+The wildcard covers the configured groups such as `agent-gateway`,
+`agentregistry`, `data-platform`, and `runtime`, but each `ExternalSecret`
+still selects a specific `remoteRef`/`dataFrom.extract` key and writes only to
+its configured target namespace. Secret registration and rotation use the
+separate scoped admin token rather than this read-only ESO policy.
+
+The policy is rendered and installed in
+[bootstrap_vault.sh (line 149)](../../../ops/gcp/bootstrap_vault.sh#L149), and
+the binding to the exact service-account name/namespace, JWT audience, policy,
+and token TTL is configured in
+[bootstrap_vault.sh (line 166)](../../../ops/gcp/bootstrap_vault.sh#L166).
+The `ClusterSecretStore` selects that role and service account in
+[secretstore.yaml (line 23)](../../../infra/helm/recsys-security/templates/secretstore.yaml#L23),
+with the concrete values defined in
+[recsys-security values (line 1)](../../../infra/helm/recsys-security/values.yaml#L1).
 
 ### End-To-End Secret Flow
 
@@ -245,20 +251,26 @@ and are not hand-copied into service charts.
 
 2. The one-time bootstrap initializes and populates Vault.
 
-   Run `bash ops/gcp/bootstrap_vault.sh` while the seven migration source Secrets
+   Run `bash ops/gcp/bootstrap_vault.sh` while the migration source Secrets
    exist. It performs a KMS round-trip check, initializes five recovery shares
    with threshold three, enables KV v2 mount `recsys`, creates policies and the
    Kubernetes auth role, and copies these groups without printing values:
 
-   | Vault path | Keys stored at migration | Purpose |
-   |---|---:|---|
-   | `recsys/data/data-platform` | 12 | MinIO and data-platform PostgreSQL credentials |
-   | `recsys/data/mlflow` | 5 | MLflow database and artifact-store credentials |
-   | `recsys/data/runtime` | 25 | Kubeflow/training runtime endpoints and credentials |
-   | `recsys/data/kserve-minio` | 6 | KServe S3 storage initializer credentials |
-   | `recsys/data/gateway` | 1 | Shared ingress Basic Auth payload |
-   | `recsys/data/analytics` | 16 | Trino/catalog/Superset/PostgreSQL credentials |
-   | `recsys/data/jenkins-runtime` | 3 | Jenkins URL, user, and runtime token merged into the Kubeflow runtime Secret |
+   The KV v2 logical record `recsys/<group>` is represented internally by the
+   Vault API as `recsys/data/<group>`. The path configuration and write
+   provenance for every stored group are:
+
+   | Vault API path | Keys | Config secret path | Vault write implementation | Purpose |
+   |---|---:|---|---|---|
+   | `recsys/data/data-platform` | 12 | [recsys-security values (line 43)](../../../infra/helm/recsys-security/values.yaml#L43) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | MinIO and data-platform PostgreSQL credentials |
+   | `recsys/data/mlflow` | 5 | [recsys-security values (line 51)](../../../infra/helm/recsys-security/values.yaml#L51) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | MLflow database and artifact-store credentials |
+   | `recsys/data/runtime` | 25 | [recsys-security values (line 55)](../../../infra/helm/recsys-security/values.yaml#L55) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | Kubeflow/training runtime endpoints and credentials |
+   | `recsys/data/kserve-minio` | 6 | [recsys-security values (line 60)](../../../infra/helm/recsys-security/values.yaml#L60) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | KServe S3 storage initializer credentials |
+   | `recsys/data/gateway` | 1 | [recsys-security values (line 69)](../../../infra/helm/recsys-security/values.yaml#L69) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | Shared ingress Basic Auth payload |
+   | `recsys/data/analytics` | 16 | [recsys-analytics values (line 6)](../../../infra/helm/recsys-analytics/values.yaml#L6) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | Trino/catalog/Superset/PostgreSQL credentials |
+   | `recsys/data/jenkins-runtime` | 3 | [Terraform additional path (line 109)](../../../infra/terraform/gcp/locals.tf#L109) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | Jenkins URL, user, and runtime token merged into the Kubeflow runtime Secret |
+   | `recsys/data/agent-gateway` | 1 | [client/server paths (line 28)](../../../infra/helm/recsys-security/values.yaml#L28) | [generated API-key writer (line 177)](../../../ops/gcp/bootstrap_vault.sh#L177) | Generated `AGENT_GATEWAY_API_KEY` shared by the kagent client and agentgateway validator |
+   | `recsys/data/agentregistry` | 4 | [Agent Registry path (line 38)](../../../infra/helm/recsys-security/values.yaml#L38) | [generated PostgreSQL writer (line 192)](../../../ops/gcp/bootstrap_vault.sh#L192) | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `AGENT_REGISTRY_DATABASE_URL` |
 
    Plaintext exists only in a mode-700 temporary directory and is deleted on
    exit. Recovery shares and the scoped admin token are stored in
@@ -299,6 +311,9 @@ and are not hand-copied into service charts.
    | `jenkins-runtime` | `kubeflow` (merged with `runtime`) | `recsys-mlops-runtime` | Jenkins model-CD handoff |
    | `kserve-minio` | `kserve-triton-inference` | `recsys-kserve-minio` | KServe storage initializer |
    | `gateway` | `api-serving`, `observability` | `recsys-gateway-basic-auth` | NGINX ingress authentication |
+   | `agent-gateway` | `kagent` | `kagent-agent-gateway` | Bearer credential sent by kagent's OpenAI-compatible client |
+   | `agent-gateway` | `llm-inference` | `agentgateway-api-keys` | Valid API-key set enforced by `AgentgatewayPolicy` in Strict mode |
+   | `agentregistry` | `agentregistry` | `agentregistry-runtime` | Agent Registry server connection URL and pgvector PostgreSQL credentials |
    | `analytics` | `analytics` | `recsys-analytics-secret` | Trino, Superset, catalog PostgreSQL, and lakehouse thrift |
    | `data-platform` (selected properties only) | `api-serving` | `recsys-demo-web-db` | Demo backend database client |
 
@@ -312,8 +327,8 @@ and are not hand-copied into service charts.
    rereads the central group, and updates the namespace-local Secret. Workloads
    that import secrets as environment variables receive the new value after
    their pods restart; consumers that mount Secret volumes can use Kubernetes
-   volume refresh behavior. After all nine ExternalSecrets reported
-   `SecretSynced=True`, the six legacy migration sources were deleted.
+   volume refresh behavior. After all twelve ExternalSecrets reported
+   `SecretSynced=True`, the validated legacy migration sources were deleted.
 
 ### How The Encrypted Bootstrap Artifact Is Created
 
@@ -763,15 +778,19 @@ Raft volumes, ClusterIP-only endpoint, initialization, unsealed state, and HA.
 **Capture command**
 
 ```bash
-kubectl get externalsecret -A
+kubectl get externalsecret -A -o wide
 ```
 
-![Vault-backed ExternalSecrets synced](../../pngs/vault_external_secrets_synced.png)
+![All Vault-backed service ExternalSecrets synced](../../pngs/vault_external_secrets_all_services_synced.png)
 
-**Figure: Namespace-level ExternalSecret sync proof.** All nine rows should
-show `STORE=recsys-vault`, `STATUS=SecretSynced`, and `READY=True`. This proves
-namespace-local Kubernetes Secrets are generated from Vault by External
-Secrets Operator rather than manually duplicated.
+**Figure: All service ExternalSecrets synchronized from Vault.** The live GKE
+capture shows all twelve namespace-level resources using
+`STORE=recsys-vault`, with `STATUS=SecretSynced`, `READY=True`, and a recent
+`LAST SYNC`. The rows include the ML platform services, Agent Registry, the
+kagent Agent Gateway client secret, and the Agent Gateway validator secret.
+This proves that External Secrets Operator generates and refreshes the
+namespace-local Kubernetes Secrets from the centralized Vault source rather
+than relying on manually duplicated credentials.
 
 ## Service Mesh Authentication
 
@@ -779,8 +798,116 @@ Istio enforces service identity and network-level access control. The baseline p
 
 ### Code Reference
 
+- [locals.tf (line 80)](../../../infra/terraform/gcp/locals.tf#L80), [locals.tf (line 110)](../../../infra/terraform/gcp/locals.tf#L110): selects the six namespaces that receive the production mesh enforcement baseline and passes them to the security chart.
+- [namespaces.tf (line 1)](../../../infra/terraform/gcp/namespaces.tf#L1), [namespaces.tf (line 51)](../../../infra/terraform/gcp/namespaces.tf#L51), [namespaces.tf (line 65)](../../../infra/terraform/gcp/namespaces.tf#L65): labels the observability, experiment-tracking, dataflow, KServe/Triton, and API namespaces for automatic Envoy sidecar injection.
 - [istio-mtls.yaml (line 1)](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L1), [istio-mtls.yaml (line 116)](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L116): renders namespace STRICT mTLS and selected permissive exceptions.
 - [istio-authorization.yaml (line 1)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L1), [istio-authorization.yaml (line 235)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L235): renders default-deny and explicit allow policies for API, KServe/Triton, Dataflow, Kubeflow, MLflow, and Observability traffic.
+- [istio-authorization.yaml (line 162)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L162), [istio-authorization.yaml (line 179)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L179): implements the concrete API-to-Triton and ingress/API service-to-service allow rules shown below.
+
+### Applied Service-To-Service Authentication Configuration
+
+Terraform passes the production namespace list from
+[locals.tf (line 80)](../../../infra/terraform/gcp/locals.tf#L80) into the
+`recsys-security` Helm chart. For every selected namespace, the chart renders
+the following baseline from
+[istio-mtls.yaml (line 1)](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L1):
+
+```yaml
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: recsys-strict-mtls
+  namespace: <selected-namespace>
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-default-deny
+  namespace: <selected-namespace>
+spec: {}
+```
+
+`PeerAuthentication` provides service-to-service authentication: both Envoy
+proxies must present workload certificates, and the caller becomes a SPIFFE
+identity such as `cluster.local/ns/api-serving/sa/default`. The empty
+`AuthorizationPolicy` then denies the authenticated request unless another
+`ALLOW` rule explicitly matches it.
+
+For example, the destination-side rule below allows only the API service
+account and Prometheus to access KServe/Triton on the required ports. It is
+rendered by
+[istio-authorization.yaml (line 162)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L162):
+
+```yaml
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: recsys-kserve-allow
+  namespace: kserve-triton-inference
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/api-serving/sa/default
+              - cluster.local/ns/observability/sa/recsys-prometheus
+      to:
+        - operation:
+            ports: ["80", "8080", "9000"]
+```
+
+The certificate identity authenticates **who** is calling; the destination
+namespace, source principal, and port tuple authorizes **what** that identity
+may call. Istio does not require application code to exchange a shared mesh
+password; protocol-level credentials such as database passwords remain a
+separate application control where the destination requires them.
+
+### Effective Mesh Enforcement Scope
+
+Terraform supplies the following namespace list to the security chart rather
+than relying on the shorter chart default:
+
+| Namespace | Sidecar injection | STRICT mTLS and default deny | Main explicit access |
+| --- | --- | --- | --- |
+| `api-serving` | Enabled | Enforced | NGINX, Prometheus, API-internal calls, and dataflow callers to ports `80/8080`. |
+| `kserve-triton-inference` | Enabled | Enforced | API and Prometheus identities to KServe/Triton ports `80/8080/9000`. |
+| `recsys-dataflow` | Enabled | Enforced | Dataflow, Kubeflow, DataHub, Prometheus, and selected API access to data/platform ports. |
+| `kubeflow` | Enabled | Enforced | Kubeflow-local traffic plus dataflow and Prometheus on the configured KFP/Ray/artifact ports. |
+| `experiment-tracking` | Enabled | Enforced | Kubeflow, KServe, and Prometheus to MLflow/Postgres/MinIO ports. |
+| `observability` | Enabled | Enforced | API, dataflow, Kubeflow, Prometheus, Promtail, and NGINX to Grafana/Loki/Tempo/PushGateway/exporter ports. |
+| `datahub` | Enabled by the namespace resource | **Not included** in the security chart's STRICT/default-deny list | Its sidecar can originate and receive mesh traffic, but this chart does not enforce a DataHub namespace baseline. |
+| `ingress-nginx` | Enabled for the controller | **Not included** in the STRICT/default-deny list | Its service-account principal is allowed by destination API/observability policies. |
+| `ci` | Explicitly disabled on Jenkins/watcher pods | Not enforced | Jenkins uses Kubernetes RBAC, Workload Identity, and Kubernetes Secrets instead of this mesh policy set. |
+| `analytics` | Not configured by this security chart | Not enforced | Analytics is outside the current mesh authorization boundary. |
+
+A namespace label only causes sidecar injection; it does not by itself create a
+STRICT `PeerAuthentication` or default-deny `AuthorizationPolicy`. This is why
+DataHub sidecar presence is proof of mesh participation, but not proof that the
+same namespace-level deny baseline is enforced there.
+
+### Service-To-Service Allow Matrix
+
+The main runtime paths opened after default deny are:
+
+| Caller identity | Destination | Ports and purpose | Policy reference |
+| --- | --- | --- | --- |
+| `api-serving/default` | `recsys-dataflow` | `5432/6379` for Feast/Postgres and Redis features. | [Dataflow allow (line 23)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L23) |
+| `api-serving/default` | `kserve-triton-inference` | `80/8080/9000` for KServe HTTP and Triton gRPC inference. | [KServe allow (line 162)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L162) |
+| `ingress-nginx/ingress-nginx` | `api-serving` | `80/8080` for public feature API and demo routes. | [API allow (line 179)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L179) |
+| `ingress-nginx/ingress-nginx` | `observability` | `3000/3100/3200` for public Grafana, Loki, and Tempo query routes. | [Observability allow (line 199)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L199) |
+| `recsys-dataflow/default` | `kubeflow` | KFP API and workflow-related ports for drift-triggered retraining. | [Kubeflow allow (line 77)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L77) |
+| Kubeflow pipeline service accounts | `experiment-tracking` | `5000/5432/9000` for MLflow, registry Postgres, and artifact MinIO. | [MLflow allow (line 142)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L142) |
+| `observability/recsys-prometheus` | Runtime namespaces | Metrics/exporter ports required by Prometheus scraping. | [Dataflow principal (line 14)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L14), [MLflow principal (line 150)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L150), [KServe principal (line 170)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L170) |
+| `observability/recsys-promtail` | Loki | `3100` for log ingestion. | [Observability principal and ports (line 206)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L206) |
+
+Public gateway authentication and TLS are an additional north-south layer; they
+do not replace mesh identity. The full NGINX, DNS, certificate, Basic Auth, and
+rate-limit setup is documented in
+[Routing & Gateway](routing_gateway.md#setup-and-configuration-flow).
 
 ### Request Enforcement Flow
 

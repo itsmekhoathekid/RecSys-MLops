@@ -243,6 +243,43 @@ The distinction is:
 - Section 5 installs the shared controller and `GatewayClass`.
 - Section 6 creates the concrete `llm-d-inference-gateway` used by this model.
 
+The repository also attaches a strict API-key policy to the entire Gateway:
+
+**Source:** [`gateway-auth.yaml`](../../../infra/helm/recsys-llm-serving/templates/gateway-auth.yaml).
+
+```yaml
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-d-inference-gateway-api-key
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: llm-d-inference-gateway
+  traffic:
+    phase: PreRouting
+    apiKeyAuthentication:
+      mode: Strict
+      secretRef:
+        name: agentgateway-api-keys
+```
+
+`PreRouting` applies authentication before route selection. A missing or invalid
+`Authorization: Bearer ...` credential returns HTTP `401`; only a key contained
+in `llm-inference/agentgateway-api-keys` is forwarded to llm-d. External Secrets
+Operator reconciles that Secret from Vault KV v2 path `recsys/agent-gateway`.
+The same Vault record is synced to `kagent/kagent-agent-gateway`, which supplies
+the client credential referenced by the global `ModelConfig`.
+
+The executable proof is [`llm_inference_smoke.sh`](../../../ops/validation/llm_inference_smoke.sh):
+it asserts that both a missing key and an invalid key return `401`, then reads
+the namespace-local Secret and verifies that an authenticated completion succeeds.
+
+Internet reference:
+
+- [agentgateway 1.1 API-key authentication](https://agentgateway.dev/docs/kubernetes/1.1.x/security/extauth/apikey/).
+
 #### Image proof
 
 ![The LLM Gateway is programmed with an external address](../../pngs/llm_gateway_programmed.png)

@@ -18,11 +18,10 @@ resource "kubernetes_namespace" "kagent" {
   depends_on = [google_container_node_pool.ml_system]
 }
 
-# The current internal Agent Gateway does not enforce authentication. kagent's
-# OpenAI client still requires a non-empty API key, so this Secret supplies a
-# non-credential placeholder. Replace it when Gateway authentication is enabled.
+# Development fallback only. With agentgateway authentication enabled, External
+# Secrets creates this Secret from Vault and this Terraform resource has count 0.
 resource "kubernetes_secret_v1" "kagent_agent_gateway" {
-  count = var.deploy_llm_inference ? 1 : 0
+  count = var.deploy_llm_inference && !var.agent_gateway_auth_enabled ? 1 : 0
 
   metadata {
     name      = "kagent-agent-gateway"
@@ -74,6 +73,8 @@ resource "helm_release" "kagent" {
   depends_on = [
     helm_release.kagent_crds,
     helm_release.llm_d_router,
+    helm_release.recsys_security,
+    null_resource.recsys_external_secrets_ready,
     kubernetes_secret_v1.kagent_agent_gateway,
   ]
 }

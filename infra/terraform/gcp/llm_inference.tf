@@ -1,3 +1,14 @@
+check "agent_gateway_auth_dependencies" {
+  assert {
+    condition = (
+      !var.deploy_llm_inference ||
+      !var.agent_gateway_auth_enabled ||
+      (var.deploy_vault && var.deploy_service_mesh)
+    )
+    error_message = "agent_gateway_auth_enabled requires deploy_vault=true and deploy_service_mesh=true so Vault and External Secrets Operator can supply the API key."
+  }
+}
+
 resource "null_resource" "llm_gateway_api_crds" {
   count = var.deploy_llm_inference ? 1 : 0
 
@@ -83,8 +94,15 @@ resource "helm_release" "recsys_llm_serving" {
     ),
   ]
 
+  set {
+    name  = "gateway.auth.enabled"
+    value = tostring(var.agent_gateway_auth_enabled)
+  }
+
   depends_on = [
     helm_release.agentgateway,
+    helm_release.recsys_security,
+    null_resource.recsys_external_secrets_ready,
     kubernetes_namespace.llm_inference,
   ]
 }

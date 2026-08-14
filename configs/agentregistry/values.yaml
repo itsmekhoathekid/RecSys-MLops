@@ -1,0 +1,41 @@
+# The chart is intentionally internal-only. Use kubectl port-forward for the
+# coursework proof; a public route must be added later with authentication/TLS.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+
+# Limit write access to the registry namespace and the existing kagent runtime
+# instead of accepting the chart's cluster-wide default.
+rbac:
+  enabled: true
+  watchedNamespaces:
+    - agentregistry
+    - kagent
+
+# PostgreSQL runs as a separate persistent pgvector StatefulSet. Both the
+# server and database consume the same Vault-synchronized Kubernetes Secret.
+database:
+  postgres:
+    type: external
+    external:
+      secretRef:
+        name: agentregistry-runtime
+        key: AGENT_REGISTRY_DATABASE_URL
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+nodeSelector:
+  recsys.ai/workload: ml-system
+
+tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+    effect: NoSchedule

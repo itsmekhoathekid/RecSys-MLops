@@ -103,6 +103,9 @@ locals {
       "vault.auth.serviceAccount.namespace"                  = "external-secrets"
       "externalSecrets.enabled"                              = "true"
       "externalSecrets.creationPolicy"                       = "Owner"
+      "externalSecrets.agentGatewayClient.enabled"           = tostring(var.deploy_llm_inference && var.agent_gateway_auth_enabled)
+      "externalSecrets.agentGatewayServer.enabled"           = tostring(var.deploy_llm_inference && var.agent_gateway_auth_enabled)
+      "externalSecrets.agentRegistry.enabled"                = tostring(var.deploy_agent_registry)
       "externalSecrets.runtime.additionalVaultPaths[0]"      = "jenkins-runtime"
       "istio.enabled"                                        = tostring(var.deploy_service_mesh)
     },

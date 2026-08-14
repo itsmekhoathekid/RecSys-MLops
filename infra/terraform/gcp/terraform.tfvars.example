@@ -44,6 +44,10 @@ image_tag                    = "gcp"
 
 deploy_ray_job = true
 deploy_llm_inference = false
+# Agent Registry requires deploy_llm_inference=true and deploy_vault=true.
+deploy_agent_registry = false
+# API-key authentication requires deploy_vault=true when LLM inference is enabled.
+agent_gateway_auth_enabled = true
 deploy_gateway = false
 deploy_service_mesh = true
 deploy_vault = false

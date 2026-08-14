@@ -1,0 +1,46 @@
+image:
+  repository: pgvector/pgvector
+  tag: 0.8.6-pg16
+  pullPolicy: IfNotPresent
+
+secret:
+  name: agentregistry-runtime
+  databaseKey: POSTGRES_DB
+  usernameKey: POSTGRES_USER
+  passwordKey: POSTGRES_PASSWORD
+
+persistence:
+  storageClassName: standard-rwo
+  size: 5Gi
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podSecurityContext:
+  fsGroup: 999
+  fsGroupChangePolicy: OnRootMismatch
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  runAsNonRoot: true
+  runAsUser: 999
+  runAsGroup: 999
+  seccompProfile:
+    type: RuntimeDefault
+
+nodeSelector:
+  recsys.ai/workload: ml-system
+
+tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+    effect: NoSchedule

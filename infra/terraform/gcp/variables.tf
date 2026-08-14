@@ -296,6 +296,12 @@ variable "deploy_llm_inference" {
   default     = false
 }
 
+variable "agent_gateway_auth_enabled" {
+  description = "Require a Vault-backed API key on every request to the llm-d agentgateway."
+  type        = bool
+  default     = true
+}
+
 variable "agentgateway_version" {
   description = "Pinned agentgateway CRD and controller chart version."
   type        = string

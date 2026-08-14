@@ -597,5 +597,8 @@ resource "helm_release" "recsys_security" {
     kubernetes_namespace.observability,
     kubernetes_namespace.api_serving,
     kubernetes_namespace.kserve_triton_inference,
+    kubernetes_namespace.kagent,
+    kubernetes_namespace.llm_inference,
+    kubernetes_namespace.agentregistry,
   ]
 }

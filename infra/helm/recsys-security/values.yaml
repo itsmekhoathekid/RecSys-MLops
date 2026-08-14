@@ -25,6 +25,21 @@ externalSecrets:
   enabled: true
   refreshInterval: 1h
   creationPolicy: Owner
+  agentGatewayClient:
+    enabled: false
+    namespace: kagent
+    secretName: kagent-agent-gateway
+    vaultPath: agent-gateway
+  agentGatewayServer:
+    enabled: false
+    namespace: llm-inference
+    secretName: agentgateway-api-keys
+    vaultPath: agent-gateway
+  agentRegistry:
+    enabled: false
+    namespace: agentregistry
+    secretName: agentregistry-runtime
+    vaultPath: agentregistry
   dataPlatform:
     namespace: recsys-dataflow
     secretName: recsys-data-platform-secret
