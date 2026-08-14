@@ -109,8 +109,9 @@ def test_ci_configuration_path_does_not_fake_product_component():
     assert "CHANGED_COMPONENTS=ci_config" not in render_jenkins_environment(result)
 
 
-def test_llm_and_vault_configs_select_ci_configuration_only():
+def test_agent_registry_llm_and_vault_configs_select_ci_configuration_only():
     for path in (
+        "configs/agentregistry/values.yaml",
         "configs/kagent/values.yaml",
         "configs/llm-d/agentgateway-values.yaml",
         "configs/vault/values.yaml.tftpl",

@@ -101,6 +101,7 @@
     "flag": "RUN_CI_CONFIG",
     "changeDetection": {
       "prefixes": [
+        "configs/agentregistry/",
         "configs/kagent/",
         "configs/llm-d/",
         "configs/vault/",
