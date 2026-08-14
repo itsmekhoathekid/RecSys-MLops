@@ -129,17 +129,6 @@ generates/writes its four values. The Terraform migration payload and random
 password are defined in [secret_management.tf (line 65)](../../../infra/terraform/gcp/secret_management.tf#L65)
 and [secrets.tf (line 26)](../../../infra/terraform/gcp/secrets.tf#L26).
 
-Actual safe output from the applied bootstrap:
-
-```text
-agentregistry: generated and stored 4 keys
-Vault bootstrap complete.
-Service secret values were not printed.
-```
-
-**Code block provenance:** output from `bash ops/gcp/bootstrap_vault.sh` on the
-coursework GKE cluster. No value was copied into this document.
-
 ## Step 3 — Sync the Vault group into Kubernetes
 
 The security chart maps Vault path `agentregistry` to a namespace-local Secret:
@@ -358,44 +347,25 @@ external pgvector dependency reproducible in this repository.
 
 ## Step 7 — Verify the complete installation
 
-Run the repository smoke test:
-
-```bash
-cd /Users/KHOAI/anhkhoa/RecSys-MLops
-bash ops/validation/agent_registry_smoke.sh
-```
-
-It verifies Helm releases, rollouts, service/PVC, ExternalSecret, pgvector, and
-both HTTP endpoints without reading or printing any credential.
+The repository smoke test verifies Helm releases, rollouts, service/PVC,
+ExternalSecret, pgvector, and both HTTP endpoints without reading or printing
+any credential.
 
 **Code reference:** [agent_registry_smoke.sh (line 18)](../../../ops/validation/agent_registry_smoke.sh#L18).
 
-Applied output:
+![Agent Registry deployment smoke proof](../../pngs/agent_registry_deployment_smoke_proof.png)
 
-```text
-NAME                   STATUS     CHART
-agentregistry          deployed   agentregistry-0.4.0
-agentregistry-postgres deployed   recsys-agent-registry-postgres-0.1.1
-
-deployment "agentregistry" successfully rolled out
-partitioned roll out complete: 1 new pods have been updated...
-
-agentregistry                 1/1   Running
-agentregistry-postgres-0      1/1   Running
-agentregistry-runtime         SecretSynced   True
-
-pgvector extension: 0.8.6
-UI HTTP 200
-OpenAPI HTTP 200
-```
-
-**Code block provenance:** condensed output of the smoke script from the live
-coursework GKE cluster on 14 August 2026.
+**Figure: Live Agent Registry deployment proof.** The captured smoke-test
+result shows both Helm releases in `deployed` state; the Agent Registry and
+PostgreSQL pods at `1/1 Running`; a bound `5Gi` PostgreSQL PVC; the
+`agentregistry-runtime` ExternalSecret at `SecretSynced=True`; pgvector version
+`0.8.6`; and successful `HTTP 200` responses from both the UI and OpenAPI
+endpoints. This is evidence from the coursework GKE cluster on 14 August 2026.
 
 Contract coverage is stored in
 [test_agent_registry_contracts.py (line 10)](../../../tests/contract/test_agent_registry_contracts.py#L10).
 
-## Step 8 — Open the UI and capture deployment proof
+## Step 8 — Open the UI
 
 Start a local port-forward:
 
@@ -416,19 +386,8 @@ Agent Registry Catalog from `localhost:12121` through the private Kubernetes
 port-forward. The visible Servers, Skills, Agents, Prompts, and Deployed views
 prove that the Registry web application is reachable. All counters are zero
 because no artifact had been published at capture time; an empty catalog does
-not mean the Registry deployment failed. Runtime readiness is independently
-proved by the Helm, pod, ExternalSecret, pgvector, and HTTP checks in Step 7.
-
-For the rubric, capture:
-
-1. One terminal image containing the output of
-   `bash ops/validation/agent_registry_smoke.sh`. It proves the two releases,
-   pods, PVC, Vault sync, pgvector, and HTTP responses.
-2. One browser image of the Agent Registry UI at `localhost:12121`, preferably
-   the **Agents** or **Deployed** view.
-
-The first terminal capture proves that the registry is actually running; the
-browser capture proves that its UI is reachable.
+not mean the Registry deployment failed. The Step 7 terminal image proves
+runtime readiness, while this browser image proves that the UI is reachable.
 
 ## Step 9 — Publish and deploy an agent through the registry
 
