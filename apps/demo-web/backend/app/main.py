@@ -32,25 +32,17 @@ from app.models import (
 )
 from app.telemetry import configure_telemetry
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 LOGGER = logging.getLogger("recsys.demo_api")
-REQUESTS = Counter(
-    "recsys_demo_api_requests_total", "Demo API requests", ["method", "path", "status"]
-)
-LATENCY = Histogram(
-    "recsys_demo_api_request_duration_seconds", "Demo API latency", ["method", "path"]
-)
+REQUESTS = Counter("recsys_demo_api_requests_total", "Demo API requests", ["method", "path", "status"])
+LATENCY = Histogram("recsys_demo_api_request_duration_seconds", "Demo API latency", ["method", "path"])
 
 repository = DemoRepository()
 downstream_client: httpx.AsyncClient | None = None
 
 
 def inference_url() -> str:
-    return os.getenv(
-        "INFERENCE_API_URL", "http://recsys-inference-api.api-serving.svc.cluster.local"
-    )
+    return os.getenv("INFERENCE_API_URL", "http://recsys-inference-api.api-serving.svc.cluster.local")
 
 
 def feature_url() -> str:
@@ -121,9 +113,7 @@ async def ready() -> dict[str, str]:
         inference.raise_for_status()
         features.raise_for_status()
     except Exception as exc:
-        raise HTTPException(
-            status_code=503, detail=f"dependency not ready: {exc}"
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"dependency not ready: {exc}") from exc
     return {"status": "ready"}
 
 
@@ -156,30 +146,22 @@ async def products(
     return ProductPage(items=items, total=total, limit=limit, offset=offset)
 
 
-@app.post(
-    "/api/events", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED
-)
+@app.post("/api/events", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED)
 async def create_event(
     request: EventRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> EventAccepted:
     selected_key = idempotency_key.strip() if idempotency_key else None
     if selected_key is not None and not 8 <= len(selected_key) <= 200:
-        raise HTTPException(
-            status_code=422, detail="Idempotency-Key must contain 8-200 characters"
-        )
+        raise HTTPException(status_code=422, detail="Idempotency-Key must contain 8-200 characters")
     event_id = event_id_for(request, selected_key)
     payload_hash = canonical_payload_hash(request)
     try:
-        row, duplicate = await asyncio.to_thread(
-            repository.record_event, request, event_id, payload_hash
-        )
+        row, duplicate = await asyncio.to_thread(repository.record_event, request, event_id, payload_hash)
     except RecordNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"{exc} not found") from exc
     except IdempotencyConflictError as exc:
-        raise HTTPException(
-            status_code=409, detail=f"idempotency conflict for event {exc}"
-        ) from exc
+        raise HTTPException(status_code=409, detail=f"idempotency conflict for event {exc}") from exc
     except Exception as exc:
         LOGGER.exception("event_write_failed event_id=%s", event_id)
         raise HTTPException(status_code=503, detail="database unavailable") from exc
@@ -212,12 +194,8 @@ async def event_status(event_id: str) -> EventStatus:
             return EventStatus(event_id=event_id, status="feature_store_updated")
         return EventStatus(event_id=event_id, status="accepted")
     except Exception:
-        LOGGER.warning(
-            "feature_status_unavailable event_id=%s", event_id, exc_info=True
-        )
-        return EventStatus(
-            event_id=event_id, status="accepted", feature_service_available=False
-        )
+        LOGGER.warning("feature_status_unavailable event_id=%s", event_id, exc_info=True)
+        return EventStatus(event_id=event_id, status="accepted", feature_service_available=False)
 
 
 @app.post("/api/recommendations", response_model=RecommendationResponse)
@@ -247,14 +225,10 @@ async def recommendations(request: RecommendationRequest) -> RecommendationRespo
         upstream.raise_for_status()
         payload: dict[str, Any] = upstream.json()
     except Exception as exc:
-        raise HTTPException(
-            status_code=502, detail="recommendation service unavailable"
-        ) from exc
+        raise HTTPException(status_code=502, detail="recommendation service unavailable") from exc
 
     raw_items = payload.get("items") or []
-    product_map = await asyncio.to_thread(
-        repository.products_by_id, [int(item["item_id"]) for item in raw_items]
-    )
+    product_map = await asyncio.to_thread(repository.products_by_id, [int(item["item_id"]) for item in raw_items])
     items = [
         RecommendationItem(
             item_id=int(item["item_id"]),
@@ -273,9 +247,7 @@ async def recommendations(request: RecommendationRequest) -> RecommendationRespo
             items,
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=503, detail="failed to persist recommendation impressions"
-        ) from exc
+        raise HTTPException(status_code=503, detail="failed to persist recommendation impressions") from exc
     return RecommendationResponse(
         request_id=request_id,
         user_id=request.user_id,
