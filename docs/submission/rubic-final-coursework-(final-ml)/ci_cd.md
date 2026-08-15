@@ -334,7 +334,7 @@ Reference code:
 This single Stage View column contains both image production and artifact
 packaging.
 
-#### `[BUILD] Build, scan and publish catalog images`
+#### `[BUILD] Build and publish catalog images`
 
 1. Read the authoritative `buildImages` list from the release plan.
 2. Iterate once in topological order. Shared images such as `recsys-spark` occur
@@ -342,11 +342,10 @@ packaging.
 3. Resolve Dockerfile, context and internal-image build arguments from the
    15-image catalog.
 4. Build the commit-scoped local image.
-5. Scan it with Trivy and enforce its image policy.
-6. If publishing is enabled, push it, resolve the immutable
+5. If publishing is enabled, push it, resolve the immutable
    `registry/image@sha256:...` reference and record it in
    `.ci-image-manifest/release-plan.env`.
-7. If `recsys-spark` was built, run the unified Spark image smoke test once.
+6. If `recsys-spark` was built, run the unified Spark image smoke test once.
 
 Code:
 [`release_build_publish.sh`, lines 17-42](../../../jenkins/scripts/entrypoints/release_build_publish.sh#L17-L42),
@@ -355,7 +354,7 @@ Code:
 [`image manifest`, lines 7-48](../../../jenkins/scripts/lib/image_manifest.sh#L7-L48).
 
 The push call chain is
-`Jenkinsfile -> release_build_publish.sh -> build_scan_publish_image() ->
+`Jenkinsfile -> release_build_publish.sh -> build_publish_image() ->
 push_built_image() -> docker push`. The remote tag is
 `${IMAGE_PUSH_REGISTRY}/<image>:${GIT_COMMIT}`. After the push, Jenkins extracts
 or inspects the registry digest and records
@@ -365,7 +364,7 @@ manifest value over any tag.
 Reference code:
 [`build-stage arguments`](../../../Jenkinsfile#L156-L166),
 [`release-plan image loop`](../../../jenkins/scripts/entrypoints/release_build_publish.sh#L17-L40),
-[`catalog build, scan, push and digest record`](../../../jenkins/scripts/build/engine.sh#L96-L162), and
+[`catalog build, push and digest record`](../../../jenkins/scripts/build/engine.sh), and
 [`docker push with one auth-refresh retry`](../../../jenkins/scripts/build/engine.sh#L78-L94).
 
 #### API image boundary: API and Feature API share one artifact
@@ -653,7 +652,7 @@ The deploy consumer/dependency graph is
 | Immutable release plan | [`release_plan.py`](../../../jenkins/python/release_plan.py) |
 | 15-image catalog | [`images/catalog.json`](../../../images/catalog.json) |
 | Component CI entrypoint and dispatcher | [`component_ci.sh`](../../../jenkins/scripts/entrypoints/component_ci.sh), [`dispatch.sh`](../../../jenkins/scripts/ci/dispatch.sh) |
-| Build, scan, publish and digest manifest | [`release_build_publish.sh`](../../../jenkins/scripts/entrypoints/release_build_publish.sh), [`engine.sh`](../../../jenkins/scripts/build/engine.sh) |
+| Build, publish and digest manifest | [`release_build_publish.sh`](../../../jenkins/scripts/entrypoints/release_build_publish.sh), [`engine.sh`](../../../jenkins/scripts/build/engine.sh) |
 | KFP compile/validate | [`release_package_artifacts.sh`](../../../jenkins/scripts/entrypoints/release_package_artifacts.sh), [`kfp_package.sh`](../../../jenkins/scripts/build/kfp_package.sh) |
 | Deploy-unit graph | [`deploy-units.json`](../../../jenkins/config/deploy-units.json) |
 | Global production preflight | [`release_deploy_preflight.sh`](../../../jenkins/scripts/entrypoints/release_deploy_preflight.sh) |
@@ -1217,15 +1216,15 @@ that exists, and coverage for Flink job modules plus
 `Component CI > Stream Features To Online Store` showing Flink/Redis online
 writer tests and coverage.
 
-**Build:** the release plan builds, scans, and optionally publishes only
+**Build:** the release plan builds and optionally publishes only
 `recsys-flink:<git_commit>`; the retired `recsys-dataflow-cli` image is not part
 of the 15-image catalog.
 
 ![Stream Online Build Jenkins UI proof](../../pngs/cicd_stream_online_build.png)
 
 **Figure: Stream Online Build proof.** Capture Jenkins
-`Component Build And Publish` showing the Flink image scan, publication, and
-resolved digest.
+`Component Build And Publish` showing the Flink image publication and resolved
+digest.
 
 **Deploy:** the same split `recsys-streaming` release receives the Flink digest
 and rolls both continuous submitters. The component-specific verification

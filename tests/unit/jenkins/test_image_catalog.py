@@ -140,7 +140,6 @@ def test_release_builder_invokes_each_planned_image_once(tmp_path: Path) -> None
             "IMAGE_TAG": "a" * 40,
             "PUBLISH_IMAGES": "0",
             "REQUIRE_GCP_ARTIFACT_REGISTRY": "0",
-            "CONTAINER_SCAN_ENABLED": "0",
         }
     )
     subprocess.run(

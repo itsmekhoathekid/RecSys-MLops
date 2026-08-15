@@ -36,12 +36,11 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         sqlalchemy==1.4.54
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
         acryl-datahub==1.6.0.17 \
-        openlineage-python==1.52.0 \
         setuptools==81.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0
 RUN /opt/venv/bin/python -m pip uninstall -y pip \
-    && /opt/venv/bin/python -c "from datahub.emitter.rest_emitter import DatahubRestEmitter; from openlineage.client import OpenLineageClient"
+    && /opt/venv/bin/python -c "from datahub.api.entities.dataprocess.dataprocess_instance import DataProcessInstance; from datahub.emitter.rest_emitter import DatahubRestEmitter"
 
 FROM python:3.11-slim AS runtime
 

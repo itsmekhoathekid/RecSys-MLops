@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 source jenkins/scripts/lib/config.sh
+source jenkins/scripts/lib/registry.sh
 
 gcp_metadata_project_id() {
   curl -fsS -H 'Metadata-Flavor: Google' \
@@ -158,15 +159,18 @@ gcp_verify_unit_secrets() {
 
 gcp_verify_candidate_digests() {
   local plan_path="${1:-.ci-release-plan.json}"
+  local image_registry
   local image_name digest_ref
   [[ -s "${plan_path}" ]] || {
     recsys_error "release plan is missing: ${plan_path}"
     return 2
   }
+  image_registry="$(gcp_production_field imageRegistry)"
+  registry_login_gcp "${image_registry}" >/dev/null
   while IFS= read -r image_name; do
     [[ -n "${image_name}" ]] || continue
     digest_ref="$(image_manifest_lookup "${image_name}")"
-    [[ "${digest_ref}" == "$(gcp_production_field imageRegistry)"/*@sha256:* ]] || {
+    [[ "${digest_ref}" == "${image_registry}"/*@sha256:* ]] || {
       recsys_error "release manifest does not contain an immutable digest for ${image_name}"
       return 2
     }

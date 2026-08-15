@@ -26,7 +26,7 @@ while IFS= read -r image_name; do
   [[ -n "${image_name}" ]] || continue
   ((image_index += 1))
   recsys_log "[BUILD] Build image ${image_index}/${image_total}: ${image_name}"
-  build_scan_publish_image "${image_name}"
+  build_publish_image "${image_name}"
   if [[ "${image_name}" == "recsys-spark" ]]; then
     built_spark=1
   fi

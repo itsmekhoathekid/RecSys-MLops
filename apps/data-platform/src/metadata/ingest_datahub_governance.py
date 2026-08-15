@@ -29,6 +29,7 @@ from metadata.governance_catalog import (
     flow_urn,
     job_urn,
     pipeline_flow_id,
+    pipeline_orchestrator,
 )
 from metadata.governance_schemas import (
     FEATURE_PRIMARY_KEYS,
@@ -77,6 +78,7 @@ class Job:
 class DataProduct:
     id: str
     flow_id: str
+    orchestrator: str
     flow_name: str
     description: str
     tags: tuple[str, ...]
@@ -510,7 +512,7 @@ def emit_dataset_contract(emitter: GovernanceEmitter, dataset: Dataset) -> None:
 
 
 def emit_flow(emitter: GovernanceEmitter, product: DataProduct) -> str:
-    urn = flow_urn(product.flow_id)
+    urn = flow_urn(product.flow_id, orchestrator=product.orchestrator)
     emit_aspect(
         emitter,
         urn,
@@ -522,7 +524,7 @@ def emit_flow(emitter: GovernanceEmitter, product: DataProduct) -> str:
             "externalUrl": "http://airflow-webserver.recsys-dataflow.svc.cluster.local:8080",
             "customProperties": {
                 "data_product": product.id,
-                "orchestrator": "Kubernetes CDC and Flink runtime",
+                "orchestrator": product.orchestrator,
             },
         },
     )
@@ -589,6 +591,7 @@ def dp1() -> DataProduct:
     return DataProduct(
         id="DP1",
         flow_id=pipeline_flow_id("DP1"),
+        orchestrator=pipeline_orchestrator("DP1"),
         flow_name="DP1 Data Generator Batch Ingestion To Bronze Lakehouse",
         description="Direct batch ingestion from Data Generator output into the Bronze Iceberg lakehouse.",
         tags=("DP1", "DataContract", "NativePipeline"),
@@ -639,6 +642,7 @@ def dp2() -> DataProduct:
     return DataProduct(
         id="DP2",
         flow_id=pipeline_flow_id("DP2"),
+        orchestrator=pipeline_orchestrator("DP2"),
         flow_name="DP2 Bronze To Silver And Gold",
         description="PySpark curation from Bronze Iceberg tables into deduplicated and normalized Silver Iceberg tables.",
         tags=("DP2", "DataContract", "NativePipeline"),
@@ -708,6 +712,7 @@ def dp3() -> DataProduct:
     return DataProduct(
         id="DP3",
         flow_id=pipeline_flow_id("DP3"),
+        orchestrator=pipeline_orchestrator("DP3"),
         flow_name="DP3 Silver To Feast Offline Features",
         description="PySpark feature engineering from DP2 Silver Iceberg tables into Iceberg features and PostgreSQL Feast offline tables.",
         tags=("DP3", "DataContract", "NativePipeline"),
@@ -760,6 +765,7 @@ def cdc_ingestion() -> DataProduct:
     return DataProduct(
         id="CDC_INGESTION",
         flow_id=pipeline_flow_id("CDC_INGESTION"),
+        orchestrator=pipeline_orchestrator("CDC_INGESTION"),
         flow_name="CDC PostgreSQL To Kafka",
         description="PostgreSQL WAL captured by Debezium and published to cdc.* Kafka topics.",
         tags=("CDC_INGESTION", "DataContract", "NativePipeline"),
@@ -795,6 +801,7 @@ def streaming_features() -> DataProduct:
     return DataProduct(
         id="STREAMING_FEATURES",
         flow_id=pipeline_flow_id("STREAMING_FEATURES"),
+        orchestrator=pipeline_orchestrator("STREAMING_FEATURES"),
         flow_name="Flink Streaming Features",
         description="Two continuously running Flink jobs consume cdc.behavior_events and update the configured offline store plus Redis online features.",
         tags=("STREAMING_FEATURES", "DataContract", "NativePipeline"),
@@ -835,7 +842,7 @@ def verify_governance_coverage(products: tuple[DataProduct, ...]) -> dict[str, A
             continue
         if env != ENV:
             errors.append(
-                f"Dataset environment must be {ENV} for native OpenLineage identity: {urn}"
+                f"Dataset environment must be {ENV} for canonical DataHub identity: {urn}"
             )
     for product in products:
         if product.flow_id != pipeline_flow_id(product.id):
@@ -843,8 +850,16 @@ def verify_governance_coverage(products: tuple[DataProduct, ...]) -> dict[str, A
                 f"DataFlow identity mismatch for {product.id}: "
                 f"{product.flow_id} != {pipeline_flow_id(product.id)}"
             )
+        if product.orchestrator != pipeline_orchestrator(product.id):
+            errors.append(
+                f"DataFlow orchestrator mismatch for {product.id}: "
+                f"{product.orchestrator} != {pipeline_orchestrator(product.id)}"
+            )
     all_job_urns = {
-        job_urn(flow_urn(product.flow_id), job.id)
+        job_urn(
+            flow_urn(product.flow_id, orchestrator=product.orchestrator),
+            job.id,
+        )
         for product in products
         for job in product.jobs
     }
@@ -881,8 +896,9 @@ def verify_governance_coverage(products: tuple[DataProduct, ...]) -> dict[str, A
         "datasets": len(known_datasets),
         "jobs": len(all_job_urns),
         "runtime_lineage": {
-            "mode": "native-openlineage",
-            "endpoint": "/openapi/openlineage/api/v1/lineage",
+            "mode": "datahub-airflow-plugin+datahub-sdk",
+            "airflow": "declared-inlets-outlets",
+            "non_airflow": "data-process-instance",
         },
         "validation": {
             "mode": "datahub-custom-assertion-writeback",

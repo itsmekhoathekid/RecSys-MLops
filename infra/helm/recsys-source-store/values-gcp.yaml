@@ -1,4 +1,10 @@
 storageClassName: standard-rwo
 istioInject: "true"
+initSchema:
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
 sourcePostgres:
   storage: 20Gi

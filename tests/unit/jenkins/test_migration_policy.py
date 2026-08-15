@@ -15,6 +15,21 @@ def test_destructive_sql_patterns_are_rejected():
     )
 
 
+def test_operational_cutover_utilities_are_not_database_migrations(monkeypatch):
+    monkeypatch.setattr(
+        policy.subprocess,
+        "check_output",
+        lambda *args, **kwargs: (
+            "ops/migrations/datahub-sdk-lineage-cutover/cutover.py\n"
+            "apps/api/migrations/001_expand.sql\n"
+        ),
+    )
+
+    assert policy.changed_files("base") == [
+        policy.ROOT / "apps/api/migrations/001_expand.sql"
+    ]
+
+
 def test_reversible_policy_requires_all_compensation_steps(tmp_path, monkeypatch):
     monkeypatch.setattr(policy, "ROOT", tmp_path)
     manifest_dir = tmp_path / "jenkins/config/migrations"

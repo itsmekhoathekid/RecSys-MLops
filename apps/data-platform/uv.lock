@@ -3114,22 +3114,6 @@ wheels = [
 ]
 
 [[package]]
-name = "openlineage-python"
-version = "1.52.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "attrs" },
-    { name = "httpx" },
-    { name = "packaging" },
-    { name = "python-dateutil" },
-    { name = "pyyaml" },
-    { name = "requests" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/77/2f5b471c93c8c89f8777a18e0a05abd8dd14abf76f71bcd57f5e3c90d8e5/openlineage_python-1.52.0-py3-none-any.whl", hash = "sha256:e1bd73b3066021eecf69cc5c3571f6fd7e253768ea941f2c76f18969ea0ecb20", size = 116447, upload-time = "2026-07-23T14:40:32.073Z" },
-]
-
-[[package]]
 name = "opentelemetry-api"
 version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4279,7 +4263,6 @@ dependencies = [
     { name = "jaraco-context" },
     { name = "kfp" },
     { name = "kubernetes" },
-    { name = "openlineage-python" },
     { name = "pandas" },
     { name = "pendulum" },
     { name = "psycopg", extra = ["binary"] },
@@ -4312,7 +4295,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "acryl-datahub", specifier = ">=1.6.0.17" },
+    { name = "acryl-datahub", specifier = "==1.6.0.17" },
     { name = "boto3", specifier = "==1.35.36" },
     { name = "cryptography", specifier = "==49.0.0" },
     { name = "evidently", specifier = ">=0.7.0" },
@@ -4321,7 +4304,6 @@ requires-dist = [
     { name = "jaraco-context", specifier = "==6.1.0" },
     { name = "kfp", specifier = ">=2.16.1" },
     { name = "kubernetes", specifier = ">=30.1.0" },
-    { name = "openlineage-python", specifier = ">=1.52.0" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pendulum", specifier = ">=3.0.0,<4" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },

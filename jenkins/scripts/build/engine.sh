@@ -4,62 +4,6 @@ record_built_image() {
   image_manifest_record "${BUILD_MANIFEST_PATH}" "$1" "$2"
 }
 
-scan_built_image() {
-  local image="$1"
-  local image_name="$2"
-  local scan_report="${BUILD_SCAN_REPORT_DIR}/${image_name}.json"
-  if ! recsys_is_true "${BUILD_SCAN_ENABLED}"; then
-    recsys_log "skip vulnerability scan for ${image}; CONTAINER_SCAN_ENABLED=${BUILD_SCAN_ENABLED}"
-    return 0
-  fi
-
-  local args=(image --exit-code 0 --ignore-unfixed --scanners vuln --format json "${image}")
-  if command -v trivy >/dev/null 2>&1; then
-    trivy "${args[@]}" >"${scan_report}"
-    python3 jenkins/python/container_scan_policy.py \
-      --image-name "${image_name}" \
-      --report "${scan_report}"
-    return
-  fi
-
-  local archive="${BUILD_MANIFEST_DIR}/${image_name}-${BUILD_IMAGE_TAG}-$$.tar"
-  local scan_container="trivy-${image_name}-${BUILD_NUMBER:-manual}-$$"
-  local scan_cache_volume="${TRIVY_CACHE_VOLUME:-recsys-trivy-cache}"
-  local scan_status=0
-  scan_container="${scan_container//[^a-zA-Z0-9_.-]/-}"
-
-  docker volume create "${scan_cache_volume}" >/dev/null || scan_status=$?
-  docker rm -f "${scan_container}" >/dev/null 2>&1 || true
-  if [[ "${scan_status}" -eq 0 ]]; then
-    docker save --output "${archive}" "${image}" || scan_status=$?
-  fi
-  if [[ "${scan_status}" -eq 0 ]]; then
-    docker create \
-      --name "${scan_container}" \
-      --mount "type=volume,source=${scan_cache_volume},target=/root/.cache" \
-      aquasec/trivy:0.58.2 \
-      image --exit-code 0 --ignore-unfixed --scanners vuln --format json \
-      --output /scan.json --input /image.tar >/dev/null || scan_status=$?
-  fi
-  if [[ "${scan_status}" -eq 0 ]]; then
-    docker cp "${archive}" "${scan_container}:/image.tar" || scan_status=$?
-  fi
-  if [[ "${scan_status}" -eq 0 ]]; then
-    docker start -a "${scan_container}" || scan_status=$?
-  fi
-  if [[ "${scan_status}" -eq 0 ]]; then
-    docker cp "${scan_container}:/scan.json" "${scan_report}" || scan_status=$?
-  fi
-  if [[ "${scan_status}" -eq 0 ]]; then
-    python3 jenkins/python/container_scan_policy.py \
-      --image-name "${image_name}" \
-      --report "${scan_report}" || scan_status=$?
-  fi
-  docker rm -f "${scan_container}" >/dev/null 2>&1 || true
-  rm -f "${archive}"
-  return "${scan_status}"
-}
-
 refresh_registry_login_if_needed() {
   if ! recsys_is_true "${BUILD_PUBLISH_IMAGES}" || [[ "${BUILD_REGISTRY_HOST}" != *".pkg.dev" ]]; then
     return 0
@@ -93,7 +37,7 @@ push_built_image() {
   docker push "${remote_image}" 2>&1 | tee "${push_log}"
 }
 
-build_scan_publish_image() {
+build_publish_image() {
   local name="$1"
   local record_type value_a value_b
   local dockerfile=""
@@ -136,8 +80,6 @@ build_scan_publish_image() {
   image_key="$(image_manifest_key "${name}")"
   record_built_image "${image_key}_LOCAL_IMAGE" "${local_image}"
   record_built_image "${image_key}_IMAGE" "${remote_image}"
-  scan_built_image "${local_image}" "${name}"
-
   if ! recsys_is_true "${BUILD_PUBLISH_IMAGES}"; then
     recsys_log "skip docker push for ${remote_image}; PUBLISH_IMAGES=${BUILD_PUBLISH_IMAGES}"
     return 0

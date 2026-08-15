@@ -29,7 +29,6 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         pydantic==2.13.4 \
         "psycopg[binary]==3.3.4" \
         psycopg-pool==3.3.1 \
-        openlineage-python==1.52.0 \
         pyyaml==6.0.3 \
         requests==2.34.2 \
         s3fs==2024.10.0 \
@@ -38,7 +37,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         wheel==0.46.2 \
         jaraco.context==6.1.0
 RUN /opt/venv/bin/python -m pip uninstall -y pip \
-    && /opt/venv/bin/python -c "from datahub.emitter.rest_emitter import DatahubRestEmitter; from openlineage.client import OpenLineageClient"
+    && /opt/venv/bin/python -c "from datahub.api.entities.dataprocess.dataprocess_instance import DataProcessInstance; from datahub.emitter.rest_emitter import DatahubRestEmitter"
 
 FROM python:3.11-slim AS runtime
 

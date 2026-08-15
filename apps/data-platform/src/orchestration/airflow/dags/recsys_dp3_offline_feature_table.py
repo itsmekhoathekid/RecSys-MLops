@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from orchestration.airflow.spark_utils import (
     DAG,
     FEATURE_STORE_IMAGE,
@@ -8,6 +10,12 @@ from orchestration.airflow.spark_utils import (
     env_schedule,
     pod_task,
     spark_native_submit,
+)
+from metadata.governance_catalog import (
+    BRONZE_URNS,
+    ICEBERG_FEATURE_URNS,
+    POSTGRES_FEATURE_URNS,
+    SILVER_URNS,
 )
 
 
@@ -21,6 +29,20 @@ VERIFY_POSTGRES_OFFLINE_STORE_COMMAND = (
 )
 
 
+def _enabled(name: str, default: str = "true") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+DP3_INPUT_URNS = (
+    BRONZE_URNS.values()
+    if os.getenv("DP3_SOURCE", "silver_lakehouse") != "silver_lakehouse"
+    else SILVER_URNS.values()
+)
+DP3_OUTPUT_URNS = list(ICEBERG_FEATURE_URNS.values())
+if _enabled("FEAST_POSTGRES_EXPORT_ENABLED"):
+    DP3_OUTPUT_URNS.extend(POSTGRES_FEATURE_URNS.values())
+
+
 if DAG is not None:
     with DAG(
         dag_id="recsys_dp3_offline_feature_table",
@@ -30,11 +52,18 @@ if DAG is not None:
         max_active_runs=1,
         tags=["recsys", "dp3", "offline-store", "features"],
     ) as recsys_dp3_offline_feature_table:
-        ingest_stage = pod_task("ingest_stage", SPARK_IMAGE, DP3_FEATURE_COMMAND)
+        ingest_stage = pod_task(
+            "ingest_stage",
+            SPARK_IMAGE,
+            DP3_FEATURE_COMMAND,
+            inlets=DP3_INPUT_URNS,
+            outlets=DP3_OUTPUT_URNS,
+        )
         validate_stage = pod_task(
             "validate_stage",
             FEATURE_STORE_IMAGE,
             VERIFY_POSTGRES_OFFLINE_STORE_COMMAND,
+            inlets=POSTGRES_FEATURE_URNS.values(),
         )
 
         ingest_stage >> validate_stage

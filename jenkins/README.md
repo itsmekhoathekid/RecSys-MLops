@@ -98,7 +98,7 @@ Each changed component follows the same sequence:
 1. Component unit tests with `pytest-cov` and `COVERAGE_MIN`, default `90`.
 2. Component integration tests from `tests/integration/<component>/` when present.
 3. Existing contract tests relevant to the component.
-4. Docker build and vulnerability scan with the full `GIT_COMMIT` tag.
+4. Docker build with the full `GIT_COMMIT` tag.
 5. Push to the production Artifact Registry and resolve an immutable digest.
 6. Deploy the digest to GKE only on `main`, unless `FORCE_DEPLOY=true`.
 7. Run component production smoke/workflow checks after all selected release

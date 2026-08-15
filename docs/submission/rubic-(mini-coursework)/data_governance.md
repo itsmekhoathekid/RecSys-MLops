@@ -27,15 +27,16 @@ flowchart LR
   subgraph GovernancePublishers["Governance publishers"]
     Definitions["Catalog definitions"] --> Coverage["verify_governance_coverage"]
     Coverage --> CatalogCLI["Manual catalog sync CLI"]
-    Batch --> OL["OpenLineage START / COMPLETE / FAIL"]
-    CDC --> OL
-    Stream --> OL
+    Batch --> Plugin["DataHub Airflow plugin<br/>declared inlets / outlets + task runs"]
+    CDC --> SDK["DataHub SDK<br/>DataProcessInstance"]
+    Stream --> SDK
     Stores --> Validator["Read actual data and run checks"]
     Validator --> Results["Assertion result writeback"]
   end
 
   CatalogCLI --> GMS["DataHub GMS"]
-  OL --> GMS
+  Plugin --> GMS
+  SDK --> GMS
   Results --> GMS
   GMS --> MySQL["MySQL metadata"]
   GMS --> Kafka["Shared Kafka"]
@@ -48,18 +49,19 @@ flowchart LR
 
 ### 1. Data Lineage
 
-Every governed stage uses `RuntimeLineageRecorder`. Entering its context emits `START`; a successful exit emits `COMPLETE`; an exception or explicit `fail()` emits `FAIL`. Each event carries the Airflow run ID, pipeline and job/stage identity, canonical DataHub input/output Dataset URNs, and an error message when the run fails. The event is sent to DataHub's native OpenLineage endpoint.
+Airflow and non-Airflow workloads have separate publishers. Airflow tasks declare canonical Dataset URNs through `inlets` and `outlets`; the DataHub Airflow plugin materializes DataFlow, DataJob, task-run process instances, and task success/failure. Spark and analytics pods set `RUNTIME_LINEAGE_ENABLED=false`, so an Airflow execution has one publisher. CDC and Flink keep dynamic lineage through `RuntimeLineageRecorder`, which now uses the DataHub SDK and `DataProcessInstance` with the lifecycle `STARTED -> SUCCESS/FAILURE`.
 
-**Proof:** the recorder owns the run lifecycle, converts canonical DataHub URNs into OpenLineage datasets, and publishes the resulting event directly to DataHub.
+**Proof:** DAG tests compare every declared inlet/outlet with the governance catalog. SDK recorder tests verify canonical job templates, deterministic run identity, exact input/output replacement, error properties, retry policy, and terminal states.
 
 **Reference code:**
 
-- [`build_event()` constructs the OpenLineage run, job, inputs, and outputs](../../../apps/data-platform/src/metadata/runtime_lineage.py#L66-L124).
-- [`_openlineage_client()` configures the native DataHub OpenLineage endpoint](../../../apps/data-platform/src/metadata/runtime_lineage.py#L127-L149).
-- [`RuntimeLineageRecorder` emits `START`, `COMPLETE`, and `FAIL`](../../../apps/data-platform/src/metadata/runtime_lineage.py#L179-L239).
+- [`pod_task()` converts canonical URNs into plugin `Urn` inlets/outlets](../../../apps/data-platform/src/orchestration/airflow/spark_utils.py).
+- [The DAG lineage contract test covers DP1-DP3, Feast, analytics, and drift](../../../tests/unit/data_platform/test_airflow_datahub_lineage.py).
+- [`RuntimeLineageRecorder` emits DataHub SDK process instances](../../../apps/data-platform/src/metadata/runtime_lineage.py).
 - [Canonical flow, job, and Dataset URNs are centralized in `governance_catalog.py`](../../../apps/data-platform/src/metadata/governance_catalog.py#L11-L122).
+- [DataHub Airflow plugin documentation](https://docs.datahub.com/docs/metadata-ingestion-modules/airflow-plugin).
 
-The catalog does not declare static lineage. Catalog synchronization deliberately writes an empty `upstreamLineage` aspect to remove stale direct Dataset edges, leaving runtime OpenLineage as the only lineage source.
+The catalog does not declare static Dataset-to-Dataset lineage. Catalog synchronization deliberately writes an empty `upstreamLineage` aspect to remove stale direct edges. Execution lineage comes from Airflow task inlets/outlets or from SDK run inputs/outputs.
 
 **Proof:** governed Dataset definitions contain no predeclared inputs or outputs, and catalog emission clears both upstream and fine-grained lineage lists.
 
@@ -67,7 +69,7 @@ The catalog does not declare static lineage. Catalog synchronization deliberatel
 
 - [`emit_dataset()` removes static Dataset lineage](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L327-L353).
 - [The catalog test verifies there is no predeclared lineage](../../../tests/unit/test_runtime_lineage.py#L42-L51).
-- [The DP2 mapping test proves runtime OpenLineage resolves to the exact catalog URNs](../../../tests/unit/test_runtime_lineage.py#L54-L75).
+- [The identity tests prove plugin and SDK lineage resolve to the exact catalog URNs](../../../tests/unit/test_runtime_lineage.py).
 
 ### 2. Data Validation
 
@@ -121,13 +123,13 @@ These gaps do not prevent the current catalog/lineage/contract demonstration, bu
 
 ## Entity And Relationship Model
 
-DataHub receives runtime dependencies through its native OpenLineage endpoint. OpenLineage `inputs` and `outputs` become the DataJob's inlets and outlets, while the catalog path uses `DataHubRestEmitter`, `MetadataChangeProposalWrapper`, GraphQL, and `DataHubGraph` for definitions and contracts.
+DataHub receives Airflow dependencies from declared `inlets`/`outlets` and execution state from the plugin listener. CDC and Flink use `DatahubRestEmitter`, `DataProcessInstance`, and full-replacement `DataJobInputOutput` aspects. The catalog path separately uses `MetadataChangeProposalWrapper`, GraphQL, and `DataHubGraph` for definitions and contracts.
 
 ```text
 Domain: RecSys Data Platform
 `- Data Product: DP1 / DP2 / DP3 / CDC_INGESTION / STREAMING_FEATURES
    |- Dataset(s): schema + tags + custom properties + contract
-   |- DataFlow: canonical OpenLineage flow identity
+   |- DataFlow: canonical orchestrator + flow identity
    `- DataJob(s): catalog definition + runtime runs
 
 Data Contract
@@ -137,7 +139,7 @@ Data Contract
 Runtime inputs  -> DataJob -> runtime outputs
 ```
 
-For every governed dataset, `emit_dataset_contract()` defines the schema and data-quality assertion URNs and bundles them into an active contract. Runtime validation updates the result history independently; OpenLineage updates run and lineage history independently. This separation lets the UI show both the expected model and the evidence produced by real executions.
+For every governed dataset, `emit_dataset_contract()` defines the schema and data-quality assertion URNs and bundles them into an active contract. Runtime validation updates result history independently; the plugin/SDK publishers update execution and lineage history independently. This separation lets the UI show both the expected model and the evidence produced by real executions.
 
 ## DP1 Linked With Related Tables
 
@@ -147,7 +149,7 @@ For every governed dataset, `emit_dataset_contract()` defines the schema and dat
 
 ![DataHub lineage from the DP1 batch-ingestion jobs through Bronze tables into the downstream DP2 flow](../../pngs/dp1_lineage.png)
 
-**Figure 1 — DP1 batch ingestion and downstream handoff.** DataHub shows the DP1 ingestion and validation jobs, the ten governed `recsys.lakehouse.bronze_*` Iceberg outputs, and their downstream consumption by DP2. This historical capture predates the separate `optimize_stage` node; current runtime lineage records optimization between ingestion and validation. No raw-S3 or governed Parquet dataset appears between the DP1 task and Bronze.
+**Figure 1 — Historical DP1 capture (pre-cutover).** This image predates the DataHub SDK/plugin cutover and must not be used as acceptance evidence for the new architecture. After deployment, replace it with a capture that shows plugin-created `ingest_stage`, `optimize_stage`, and `validate_stage` jobs and a successful task-run process instance.
 
 ### DP1 Validation And Data Contract Image Proof
 
@@ -159,15 +161,14 @@ For every governed dataset, `emit_dataset_contract()` defines the schema and dat
 
 #### Data Lineage
 
-DP1 executes `generate Parquet -> ingest Bronze -> optimize Bronze -> validate Bronze`. The ingestion recorder commits ten generated tables to `recsys.lakehouse.bronze_*` and adds each canonical Bronze URN as an observed output. It has no governed Parquet input because those files are an ephemeral exchange format rather than catalog Datasets. Optimization records the same Bronze URNs as both inputs and outputs because it rewrites physical files without creating new logical Datasets; validation records all Bronze URNs as inputs.
+DP1 executes `generate Parquet -> ingest Bronze -> optimize Bronze -> validate Bronze`. The DAG declares the ten canonical Bronze URNs as ingest outputs, optimize inputs and outputs, and validation inputs. It has no governed Parquet input because those files are an ephemeral exchange format rather than catalog Datasets.
 
-**Proof:** Airflow enforces `ingest_stage >> optimize_stage >> validate_stage`, ingestion adds a lineage output immediately after each Iceberg write, and optimization constructs a self-lineage recorder for the Bronze scope.
+**Proof:** Airflow enforces `ingest_stage >> optimize_stage >> validate_stage`; the task objects carry exact catalog URNs and the listener owns run state.
 
 **Reference code:**
 
 - [DP1 Airflow commands and stage ordering](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py#L13-L67).
-- [`load_generator_run_to_lakehouse()` writes the ten Bronze tables and records their output URNs](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L69-L102).
-- [`optimization_dataset_urns()` and `optimize_stage` record Bronze as both input and output](../../../apps/data-platform/src/lakehouse/optimize.py#L76-L84), [recorder construction](../../../apps/data-platform/src/lakehouse/optimize.py#L149-L171).
+- [DP1 declares ingest, optimize, and validation inlets/outlets](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py).
 - [The canonical ten raw/Bronze table identities](../../../apps/data-platform/src/lakehouse/iceberg.py#L53-L67).
 
 #### Data Contract
@@ -196,13 +197,13 @@ Before ingestion, the generator rejects broken relational and business invariant
 
 ## DP2 Linked With Related Tables
 
-`recsys_dp2_bronze_to_silver_gold` reads the DP1 Bronze Iceberg tables and writes nine curated `silver_*` Iceberg tables. `clean_behavior_events` is normalized and deduplicated with `.dropDuplicates(["event_id"])`; `silver_rejected_behavior_events` contains unsupported-schema rows and may legitimately be empty. The Silver tables are optimized before validation.
+`recsys_dp2_bronze_to_silver_gold` reads the DP1 Bronze Iceberg tables and writes eight curated `silver_*` Iceberg tables. `clean_behavior_events` is normalized and deduplicated with `.dropDuplicates(["event_id"])`; `silver_rejected_behavior_events` contains unsupported-schema rows and may legitimately be empty. The Silver tables are optimized before validation.
 
 ### DP2 Lineage Image Proof
 
 ![Expanded DataHub lineage from DP1 Bronze tables through the DP2 PySpark jobs to Silver Iceberg tables](../../pngs/dp2_datahub_lineage.png)
 
-**Figure 3 — DP2 Bronze-to-Silver transformation.** The expanded historical graph centers the DP2 ingestion and validation endpoints, with ten DP1 Bronze inputs on the left and nine curated `iceberg.recsys.lakehouse.silver_*` outputs on the right. Current lineage inserts `Optimize Stage` between those endpoints. The additional DP3 feature nodes are downstream impact context; the DP2 evidence is the Bronze -> PySpark -> optimized Silver path.
+**Figure 3 — Historical DP2 capture (pre-cutover).** This image is retained only for context and is not evidence for the plugin architecture. Replace it after cutover with a graph and successful plugin process instance showing the current eight Silver outputs and the optimize task.
 
 ### DP2 Validation And Data Contract Image Proof
 
@@ -214,32 +215,32 @@ Before ingestion, the generator rejects broken relational and business invariant
 
 #### Data Lineage
 
-DP2 records `10 Bronze Iceberg inputs -> DP2.ingest_stage -> 9 Silver Iceberg outputs`. Spark normalizes compatible schema evolution, splits unsupported behavior-event versions, deduplicates events and impressions, builds order facts and product SCD data, and writes only `silver_*` logical outputs. The following optimize stage records the same nine Silver URNs as inputs and outputs before validation consumes them.
+DP2 declares `10 Bronze Iceberg inputs -> DP2.ingest_stage -> 8 Silver Iceberg outputs`. Spark normalizes compatible schema evolution, splits unsupported behavior-event versions, deduplicates events and impressions, builds order facts and product SCD data, and writes only `silver_*` logical outputs. The following optimize stage declares the same eight Silver URNs as inputs and outputs before validation consumes them.
 
-**Proof:** the runtime entrypoint adds every canonical Bronze URN to the ingest recorder and only the Silver tables returned by the transformation as outputs.
+**Proof:** the DAG's three task objects use the canonical Bronze and Silver maps directly; a contract test asserts their exact sets.
 
 **Reference code:**
 
 - [DP2 Airflow ingest, optimize, validate commands and ordering](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py#L13-L57).
-- [`build_dp2_silver_gold()` records all Bronze inputs and actual Silver outputs](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L20-L31).
+- [DP2 declares exact task lineage](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py).
 - [Silver normalization, rejection, deduplication, joins, and writes](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L25-L118).
 - [Canonical Bronze and Silver URN maps](../../../apps/data-platform/src/metadata/governance_catalog.py#L80-L113).
 
 #### Data Contract
 
-DP2 owns nine Silver Dataset contracts. Each contract declares the transformation-aligned Silver schema and primary key. `clean_behavior_events` additionally requires `event_id`, `event_timestamp`, and `ingestion_ts`, and its contract description requires `event_id` uniqueness.
+DP2 owns eight Silver Dataset contracts. Each contract declares the transformation-aligned Silver schema and primary key. `clean_behavior_events` additionally requires `event_id`, `event_timestamp`, and `ingestion_ts`, and its contract description requires `event_id` uniqueness.
 
-**Proof:** the centralized Silver schema composes source fields with derived fields such as `event_type_id` and `is_valid_purchase`, and `dp2()` attaches those schemas and keys to the nine governed Datasets.
+**Proof:** the centralized Silver schema composes source fields with derived fields such as `event_type_id` and `is_valid_purchase`, and `dp2()` attaches those schemas and keys to the eight governed Datasets.
 
 **Reference code:**
 
 - [Silver Dataset schemas and derived columns](../../../apps/data-platform/src/metadata/governance_schemas.py#L204-L231).
 - [Silver primary-key definitions](../../../apps/data-platform/src/metadata/governance_schemas.py#L289-L299).
-- [`dp2()` declares the nine Silver contracts and their validation ownership](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L622-L669).
+- [`dp2()` declares the eight Silver contracts and their validation ownership](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L622-L669).
 
 #### Data Validation
 
-Every normal Silver table requires `row_count > 0`; `rejected_behavior_events` may be empty. `clean_behavior_events` is also required to contain `event_id`, `event_timestamp`, and `ingestion_ts`, with `duplicate_event_id == 0`. A failed report is written to DataHub, the validation lineage run is marked `FAIL`, and Spark raises an exception so Airflow cannot continue successfully.
+Every normal Silver table requires `row_count > 0`; `rejected_behavior_events` may be empty. `clean_behavior_events` is also required to contain `event_id`, `event_timestamp`, and `ingestion_ts`, with `duplicate_event_id == 0`. A failed report is written to DataHub, Spark raises an exception, and the Airflow listener marks the task-run process instance `FAILURE`.
 
 **Proof:** validation reads each expected Silver table, evaluates the special rejected-table and clean-event rules, publishes all Dataset results, and raises when the aggregate report is not `SUCCESS`.
 
@@ -255,9 +256,9 @@ Every normal Silver table requires `row_count > 0`; `rejected_behavior_events` m
 
 ### DP3 Lineage Image Proof
 
-![DataHub lineage from nine Silver Iceberg inputs through DP3 to Iceberg features and PostgreSQL Feast tables](../../pngs/dp3_datahub_lineage.png)
+![Historical DataHub lineage from Silver Iceberg inputs through DP3 to Iceberg features and PostgreSQL Feast tables](../../pngs/dp3_datahub_lineage.png)
 
-**Figure 5 — DP3 Silver-to-Feast offline-feature lineage.** Nine DP2 Silver datasets feed the DP3 `Ingest Stage`; the flow produces five Iceberg feature tables and exports the four Feast source tables to PostgreSQL before `Validate Stage`. The separate Iceberg and PostgreSQL nodes make the storage boundary explicit: Iceberg holds batch feature outputs, while PostgreSQL is the Feast offline store.
+**Figure 5 — Historical DP3 capture (pre-cutover).** This image is not acceptance evidence for the new plugin architecture. Replace it after deployment with the configured DP3 branch, its plugin-created job URNs, and a successful process instance.
 
 ### DP3 Validation And Data Contract Image Proof
 
@@ -269,16 +270,16 @@ Every normal Silver table requires `row_count > 0`; `rejected_behavior_events` m
 
 #### Data Lineage
 
-With the default `silver_lakehouse` source, DP3 records `9 Silver inputs -> DP3.ingest_stage -> 5 Iceberg feature outputs + 4 PostgreSQL Feast outputs`. The PostgreSQL lineage outputs are added only when PostgreSQL export is enabled. Optional Feast Parquet copies and drift snapshots are physical side outputs but are not governed Dataset URNs, so they do not appear in DataHub lineage.
+With the default `silver_lakehouse` source, DP3 declares `8 Silver inputs -> DP3.ingest_stage -> 5 Iceberg feature outputs + 4 PostgreSQL Feast outputs`. Setting `DP3_SOURCE=bronze_lakehouse` switches the declared inputs to Bronze, and disabling PostgreSQL export removes those four declared outputs. Optional Feast Parquet copies and drift snapshots are physical side outputs but are not governed Dataset URNs.
 
-**Proof:** the runtime selects the input URN family from the configured source, adds an Iceberg URN after each feature-table write, and adds the PostgreSQL URNs returned by the enabled export step.
+**Proof:** DAG construction selects the canonical input/output sets from the same feature flags used by the workload, and tests import the configured branches.
 
 **Reference code:**
 
 - [DP3 Airflow Spark ingest and PostgreSQL validation ordering](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp3_offline_feature_table.py#L14-L40).
 - [DP3 feature construction graph](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L74-L109).
 - [PostgreSQL export returns the four governed output URNs](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L138-L155).
-- [`run_dp3_offline_features()` records Silver inputs and Iceberg/PostgreSQL outputs](../../../apps/data-platform/src/features/spark/dp3_offline_feature_entrypoint.py#L214-L298).
+- [DP3 declares feature-flag-aware lineage](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp3_offline_feature_table.py).
 
 #### Data Contract
 
@@ -312,7 +313,7 @@ Validation is split across two execution points. During `ingest_stage`, Spark ch
 
 ![DataHub lineage from ten source PostgreSQL tables through the Debezium connector task to ten CDC Kafka topics](../../pngs/cdc_datahub_lineage.png)
 
-**Figure 7 — CDC ingestion lineage.** Ten source PostgreSQL tables feed the `Register Debezium Connector` task and map to ten `cdc.*` Kafka topics. The connector is represented as the processing node between the source tables and topics, and the dedicated `CDC PostgreSQL To Kafka` flow keeps this real-time ingestion path separate from rubric DP1.
+**Figure 7 — Historical CDC capture (pre-cutover).** Replace this after cutover with SDK evidence under orchestrator `kafka-connect`, including the connector's successful process instance and its observed tables/topics.
 
 The accepted connector configuration determines the runtime source-table and Kafka-topic observations.
 
@@ -333,17 +334,19 @@ The PostgreSQL datasets remain owned by DP3 and are only referenced by the strea
 
 ![DataHub lineage from cdc.behavior_events into separate Flink online-store and offline-store jobs](../../pngs/streaming_datahub_lineage.png)
 
-**Figure 8 — Streaming feature-store processing.** The `cdc.behavior_events` topic branches into distinct `Run Flink Stream To Online Store` and `Run Flink Stream To Offline Store` jobs. The expanded offline branch shows the three PostgreSQL feature tables; the Redis children of the online-store job are collapsed in this capture. The two job nodes still make the online and offline processing responsibilities explicit.
+**Figure 8 — Historical streaming capture (pre-cutover).** Replace this after cutover with SDK evidence under orchestrator `flink`; the new capture must show the bounded job's process instance and the appropriate offline/online outputs.
 
 The event reports the PostgreSQL offline outputs for the offline-store job and the Redis outputs for the online-store job.
 
 ### Execution And Governance Steps
 
-1. **Data lineage:** the [Flink entrypoint](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L174) creates two runtime recorders with the same `cdc.behavior_events` input. The offline job records the three PostgreSQL Feast feature tables as outputs, while the online job records the three Redis feature datasets. A continuously running job remains at `START`; termination records `COMPLETE` or `FAIL`.
+1. **Data lineage:** the [Flink entrypoint](../../../apps/data-platform/src/features/flink/realtime_stream_job.py#L174) creates two SDK recorders with the same `cdc.behavior_events` input. The offline job writes three PostgreSQL outputs, while the online job writes three Redis outputs. A continuously running job remains `STARTED`; termination records `SUCCESS` or `FAILURE`.
 2. **Data contract:** [`streaming_features`](../../../apps/data-platform/src/metadata/ingest_datahub_governance.py#L829-L866) owns contracts only for the three Redis datasets because the PostgreSQL offline tables remain owned by DP3. Each Redis contract declares the entity key, feature schema, and intended TTL semantics.
 3. **Data validation:** [`validate_streaming_redis`](../../../apps/data-platform/src/validate/governance_contracts.py#L219-L249) scans `fs:user_sequence:*`, `fs:user_aggregate:*`, and `fs:item:*`. Each contract passes only when at least one matching key exists and a sampled Redis hash has a non-empty payload. The current validator does not yet verify TTL, and PostgreSQL outputs are validated under DP3 rather than duplicated under Streaming.
 
 ## Runtime Governance Verification
+
+Before deleting legacy entities, follow the [SDK lineage cutover runbook](../../../ops/migrations/datahub-sdk-lineage-cutover/README.md): capture fresh plugin/SDK evidence, run the migration in dry-run mode, review its recoverable manifest, and only then use `--apply --confirm-cutover`. Restore re-emits `Status.removed=false`. The migration soft-deletes process instances first, then old DataJobs and only the obsolete CDC/Flink Airflow flows; it never targets governed Datasets, contracts, assertions, or reused DP1-DP3 flows.
 
 After the DP1, DP2, DP3, CDC, and streaming validation tasks have run, verify coverage without contacting DataHub:
 
@@ -352,4 +355,4 @@ PYTHONPATH=apps/data-platform/src \
 python -m metadata.ingest_datahub_governance --verify-only
 ```
 
-A successful result contains `"verified": true`, `"datasets": 51`, `"jobs": 11`, native OpenLineage mode, and direct assertion-writeback mode. It verifies static governance identity and coverage without depending on legacy files.
+A successful result contains `"verified": true`, the current generated dataset/job counts, `datahub-airflow-plugin+datahub-sdk` mode, and direct assertion-writeback mode. The test derives the counts from the catalog so documentation cannot silently drift from implementation.

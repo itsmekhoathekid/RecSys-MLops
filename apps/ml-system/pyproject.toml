@@ -12,7 +12,7 @@ dependencies = [
     "feast[redis]==0.64.0",
     "flask>=3.1.3",
     "fsspec==2024.10.0",
-    "gitpython==3.1.57",
+    "gitpython==3.1.58",
     "jaraco.context==6.1.0",
     "kfp>=2.16.1",
     "kfp-kubernetes>=1.4.0",

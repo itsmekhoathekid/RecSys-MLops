@@ -80,9 +80,9 @@ def test_split_charts_have_unique_kubernetes_resource_owners():
                 str(metadata.get("namespace", "recsys-dataflow")),
                 str(metadata.get("name")),
             )
-            assert (
-                key not in owners
-            ), f"{key} owned by {owners.get(key)} and {chart_name}"
+            assert key not in owners, (
+                f"{key} owned by {owners.get(key)} and {chart_name}"
+            )
             owners[key] = chart_name
 
 
@@ -96,6 +96,42 @@ def test_resource_ownership_matches_release_boundaries():
     assert "name: redis" in rendered["recsys-feature-store"]
     assert "name: flink-jobmanager" in rendered["recsys-streaming"]
     assert "name: airflow-scheduler" in rendered["recsys-airflow"]
+
+
+def test_source_schema_hook_can_use_spare_gcp_ml_node_capacity():
+    documents = list(yaml.safe_load_all(render("recsys-source-store")))
+    schema_job = next(
+        document
+        for document in documents
+        if document.get("kind") == "Job"
+        and document["metadata"]["name"] == "init-source-schema"
+    )
+    assert schema_job["spec"]["template"]["spec"]["tolerations"] == [
+        {
+            "key": "recsys.ai/workload",
+            "operator": "Equal",
+            "value": "ml-system",
+            "effect": "NoSchedule",
+        }
+    ]
+
+
+def test_cdc_registration_hook_can_use_spare_gcp_ml_node_capacity():
+    documents = list(yaml.safe_load_all(render("recsys-kafka-connect")))
+    registration_job = next(
+        document
+        for document in documents
+        if document.get("kind") == "Job"
+        and document["metadata"]["name"] == "register-realtime-cdc-connector"
+    )
+    assert registration_job["spec"]["template"]["spec"]["tolerations"] == [
+        {
+            "key": "recsys.ai/workload",
+            "operator": "Equal",
+            "value": "ml-system",
+            "effect": "NoSchedule",
+        }
+    ]
 
 
 def test_kafka_connect_replaces_the_vulnerable_vendor_http2_jar():
@@ -122,11 +158,29 @@ def test_airflow_runtime_is_pinned_to_the_stable_2_9_control_plane():
     assert "ARG PYTHON_VERSION" not in dockerfile
     assert "constraints-${AIRFLOW_VERSION}" in dockerfile
     assert "constraints-${AIRFLOW_PYTHON_VERSION}.txt" in dockerfile
+    assert "acryl-datahub-airflow-plugin==1.6.0" in dockerfile
+    assert "patch_datahub_plugin_no_openlineage.py" in dockerfile
+    assert "datahub_airflow_plugin.datahub_listener" in dockerfile
     assert "exec airflow webserver" in rendered_airflow
     assert "exec airflow scheduler" in rendered_airflow
     assert "airflow api-server" not in rendered_airflow
     assert "airflow dag-processor" not in rendered_airflow
     assert rendered_airflow.count("name: AIRFLOW__CORE__EXECUTOR") == 2
+    for name, value in (
+        ("AIRFLOW__DATAHUB__ENABLED", "true"),
+        ("AIRFLOW__DATAHUB__CLUSTER", "PROD"),
+        ("AIRFLOW__DATAHUB__CAPTURE_EXECUTIONS", "true"),
+        ("AIRFLOW__DATAHUB__ENABLE_DATAJOB_LINEAGE", "true"),
+        ("AIRFLOW__DATAHUB__MATERIALIZE_IOLETS", "true"),
+        ("AIRFLOW__DATAHUB__ENABLE_EXTRACTORS", "false"),
+        ("AIRFLOW__DATAHUB__DISABLE_OPENLINEAGE_PLUGIN", "true"),
+    ):
+        assert rendered_airflow.count(f"name: {name}") == 2
+        rendered_values = rendered_airflow.count(
+            f'value: "{value}"'
+        ) + rendered_airflow.count(f"value: {value}")
+        assert rendered_values >= 2
+    assert rendered_airflow.count("name: AIRFLOW_CONN_DATAHUB_REST_DEFAULT") == 2
     assert "component_test_airflow_dag_registered" in runtime_verifier
     assert "airflow dags list --output plain" in runtime_verifier
     assert "airflow dags trigger" not in runtime_verifier
@@ -138,6 +192,28 @@ def test_airflow_runtime_is_pinned_to_the_stable_2_9_control_plane():
         assert f"{pipeline}_DAG_SCHEDULE" in data_config
     assert "DATA_PLATFORM_DAG_SCHEDULE" not in data_config
     assert "BATCH_FEATURE_DAG_SCHEDULE" not in data_config
+
+
+def test_datahub_sdk_cutover_removes_openlineage_from_non_airflow_runtimes():
+    dependency_files = [
+        ROOT / "pyproject.toml",
+        ROOT / "uv.lock",
+        ROOT / "apps/data-platform/pyproject.toml",
+        ROOT / "apps/data-platform/uv.lock",
+        ROOT / "apps/ml-system/uv.lock",
+    ]
+    runtime_images = [
+        ROOT / "images/data/recsys-data-ingestion/Dockerfile",
+        ROOT / "images/data/recsys-feature-store/Dockerfile",
+        ROOT / "images/data/recsys-flink/Dockerfile",
+        ROOT / "images/data/recsys-spark/Dockerfile",
+    ]
+    for path in dependency_files + runtime_images:
+        assert "openlineage-python" not in path.read_text().lower()
+    assert '"acryl-datahub==1.6.0.17"' in dependency_files[0].read_text()
+    assert '"acryl-datahub==1.6.0.17"' in dependency_files[2].read_text()
+    for path in runtime_images:
+        assert "acryl-datahub==1.6.0.17" in path.read_text()
 
 
 def test_unified_spark_and_dp_profiles_are_the_only_batch_contract():

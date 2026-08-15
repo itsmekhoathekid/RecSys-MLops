@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 
+from metadata.governance_catalog import BRONZE_URNS, SILVER_URNS, dataset_urn
+from orchestration.airflow.spark_utils import datahub_urns
+
 try:
     from airflow import DAG
     from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
@@ -19,6 +22,19 @@ SPARK_IMAGE = os.getenv(
 DBT_IMAGE = os.getenv(
     "ANALYTICS_DBT_IMAGE",
     "registry.example.invalid/recsys/recsys-analytics-dbt:required",
+)
+SILVER_SOURCE_TABLES = (
+    "clean_behavior_events",
+    "clean_impressions",
+    "clean_recommendation_requests",
+    "product_scd",
+    "users",
+    "products",
+)
+BRONZE_SOURCE_TABLES = ("orders", "order_items")
+ANALYTICS_STAGING_URNS = tuple(
+    dataset_urn("iceberg", f"analytics.staging.{table}")
+    for table in SILVER_SOURCE_TABLES + BRONZE_SOURCE_TABLES
 )
 
 
@@ -42,7 +58,15 @@ def analytics_env_from():
     ]
 
 
-def analytics_task(task_id: str, image: str, command: list[str], arguments: list[str]):
+def analytics_task(
+    task_id: str,
+    image: str,
+    command: list[str],
+    arguments: list[str],
+    *,
+    inlets=(),
+    outlets=(),
+):
     return KubernetesPodOperator(
         task_id=task_id,
         name=task_id.replace("_", "-"),
@@ -62,6 +86,9 @@ def analytics_task(task_id: str, image: str, command: list[str], arguments: list
         on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
+        env_vars={"RUNTIME_LINEAGE_ENABLED": "false"},
+        inlets=datahub_urns(inlets),
+        outlets=datahub_urns(outlets),
     )
 
 
@@ -83,6 +110,11 @@ if DAG is not None:
             SPARK_IMAGE,
             ["/opt/spark/bin/spark-submit"],
             ["local:///opt/recsys/apps/analytics/src/sync_silver.py"],
+            inlets=(
+                *(SILVER_URNS[name] for name in SILVER_SOURCE_TABLES),
+                *(BRONZE_URNS[name] for name in BRONZE_SOURCE_TABLES),
+            ),
+            outlets=ANALYTICS_STAGING_URNS,
         )
         dbt_build = analytics_task(
             "build_gold_marts",

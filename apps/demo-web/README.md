@@ -27,9 +27,9 @@ frontend build, Helm lint, and Helm rendering.
 
 Changes under this app, its Helm chart, security contract, or demo tests select
 the `demo_web` component. A `main` build creates `recsys-demo-api` and
-`recsys-demo-web` images with the full Git SHA, runs Trivy for high/critical
-findings, pushes both to Artifact Registry, records tag and digest manifests,
-and performs an atomic Helm deployment.
+`recsys-demo-web` images with the full Git SHA, pushes both to Artifact
+Registry, records tag and digest manifests, and performs an atomic Helm
+deployment.
 
 On GKE the root Ingress sets `nginx.ingress.kubernetes.io/service-upstream=true`.
 The ingress-nginx pod therefore targets the Service ClusterIP, allowing its

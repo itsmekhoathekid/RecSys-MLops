@@ -76,7 +76,6 @@ RUN uv export \
         numpy==2.2.6 \
         onnx==1.22.0 \
         onnxscript==0.7.1 \
-        openlineage-python==1.52.0 \
         pandas==2.3.3 \
         pendulum==3.2.0 \
         "psycopg[binary]==3.3.4" \
@@ -95,7 +94,7 @@ RUN uv export \
         wheel==0.46.2 \
     && uv pip check --python /opt/venv/bin/python \
     && /opt/venv/bin/python -m pip uninstall -y pip \
-    && /opt/venv/bin/python -c "from datahub.emitter.rest_emitter import DatahubRestEmitter; from openlineage.client import OpenLineageClient"
+    && /opt/venv/bin/python -c "from datahub.api.entities.dataprocess.dataprocess_instance import DataProcessInstance; from datahub.emitter.rest_emitter import DatahubRestEmitter"
 
 FROM spark:3.5.8-scala2.12-java11-ubuntu AS runtime
 

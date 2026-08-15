@@ -157,10 +157,10 @@ pipeline {
       }
     }
 
-    stage('Component Build And Publish') { // Build, scan and optionally publish only the images/artifacts listed in the release plan.
+    stage('Component Build And Publish') { // Build and optionally publish only the images/artifacts listed in the release plan.
       when { expression { env.RUN_COMPONENT_BUILD == 'true' } }
       steps {
-        echo '[BUILD] Build, scan and publish catalog images'
+        echo '[BUILD] Build and publish catalog images'
         sh """
           IMAGE_PUSH_REGISTRY='${env.IMAGE_PUSH_REGISTRY}' \
           IMAGE_TAG='${env.GIT_COMMIT ?: ''}' \

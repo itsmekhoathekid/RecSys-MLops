@@ -8,6 +8,7 @@ from orchestration.airflow.spark_utils import (
     pod_task,
     spark_native_submit,
 )
+from metadata.governance_catalog import BRONZE_URNS
 
 
 DP1_INGEST_COMMAND = """
@@ -52,16 +53,24 @@ if DAG is not None:
         max_active_runs=1,
         tags=["recsys", "dp1", "raw", "bronze"],
     ) as recsys_dp1_raw_to_bronze:
-        ingest_stage = pod_task("ingest_stage", SPARK_IMAGE, DP1_INGEST_COMMAND)
+        ingest_stage = pod_task(
+            "ingest_stage",
+            SPARK_IMAGE,
+            DP1_INGEST_COMMAND,
+            outlets=BRONZE_URNS.values(),
+        )
         optimize_stage = pod_task(
             "optimize_stage",
             SPARK_IMAGE,
             DP1_OPTIMIZE_COMMAND,
+            inlets=BRONZE_URNS.values(),
+            outlets=BRONZE_URNS.values(),
         )
         validate_stage = pod_task(
             "validate_stage",
             SPARK_IMAGE,
             DP1_VALIDATE_COMMAND,
+            inlets=BRONZE_URNS.values(),
         )
 
         ingest_stage >> optimize_stage >> validate_stage

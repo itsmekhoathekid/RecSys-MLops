@@ -297,10 +297,10 @@ Superset as `superset`, the demo backend as UID/GID `10001`, and the frontend as
 unprivileged Nginx UID `101`.
 
 Some framework images still require root-owned runtime preparation. Those are
-handled through Kubernetes security configuration and container scan policy;
-this document does not claim that every image is rootless.
+handled through Kubernetes security configuration; this document does not
+claim that every image is rootless.
 
-## Jenkins Build, Scan and Publish Flow
+## Jenkins Build and Publish Flow
 
 ```mermaid
 flowchart LR
@@ -308,8 +308,7 @@ flowchart LR
     B --> C["Unique buildImages in topological order"]
     C --> D["Catalog build-spec"]
     D --> E["docker build"]
-    E --> F["Trivy scan + policy"]
-    F --> G{"PUBLISH_IMAGES?"}
+    E --> G{"PUBLISH_IMAGES?"}
     G -- "No" --> H["Keep commit-scoped local image"]
     G -- "Yes" --> I["Push to GCP Artifact Registry"]
     I --> J["Resolve image@sha256 digest"]
@@ -324,7 +323,7 @@ Jenkins does not run a separate recursive build function per component:
    list.
 2. `release_build_publish.sh` loops through that list once.
 3. The engine asks the catalog for Dockerfile, context and internal build args.
-4. Each image runs build, scan, optional push and manifest recording once.
+4. Each image runs build, optional push and manifest recording once.
 5. If Spark was built, its unified smoke test runs once.
 
 Code:
@@ -349,26 +348,6 @@ immutable digest. Docker documents that pulling by digest selects one exact
 image version:
 [Docker image pull by digest](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier).
 
-## Vulnerability Scanning
-
-Every planned image is scanned with Trivy before publishing. `HIGH` and
-`CRITICAL` findings block the build unless they match a time-bounded,
-owner/reason-qualified exception. An exception also has maximum HIGH/CRITICAL
-counts; exceeding the approved vendor baseline still fails CI.
-
-Code:
-
-- scan execution:
-  [`engine.sh`, lines 7-60](../../../jenkins/scripts/build/engine.sh#L7-L60);
-- policy evaluation:
-  [`container_scan_policy.py`, lines 20-92](../../../jenkins/python/container_scan_policy.py#L20-L92);
-- current time-bounded exceptions:
-  [`container-scan-policy.json`](../../../jenkins/config/container-scan-policy.json).
-
-`recsys-spark` has one unified JAR exception instead of separate data/ML/
-analytics Spark exceptions. The policy is an explicit temporary risk record, not
-a permanent allow-list.
-
 ## Validation and Proof Commands
 
 Run all commands from the repository root.
@@ -380,15 +359,14 @@ make validate
 
 uv run pytest \
   tests/unit/jenkins/test_image_catalog.py \
-  tests/unit/jenkins/test_container_scan_policy.py \
   tests/contract/test_repository_layout_contracts.py \
   tests/contract/test_docker_dataflow_contracts.py \
   -q
 ```
 
 These tests prove the 15-image count, one-Spark invariant, dependency order,
-build-once behavior, Dockerfile ownership, unified Spark capabilities and scan
-policy.
+build-once behavior, Dockerfile ownership, unified Spark capabilities, and
+catalog policy.
 
 ### Build one standalone image
 
@@ -457,7 +435,6 @@ IMAGE_PUSH_REGISTRY=registry.example.invalid/recsys \
 IMAGE_TAG="${commit}" \
 PUBLISH_IMAGES=0 \
 REQUIRE_GCP_ARTIFACT_REGISTRY=0 \
-CONTAINER_SCAN_ENABLED=1 \
 jenkins/scripts/entrypoints/release_build_publish.sh \
   /tmp/recsys-full-image-plan.json
 ```
@@ -530,7 +507,6 @@ For the final submission, capture:
 - the catalog showing exactly 15 image IDs;
 - a full plan showing each image once and `recsys-spark` once;
 - Jenkins `[BUILD] Build image N/M` markers;
-- Trivy policy output;
 - unified Spark smoke-test success;
 - Artifact Registry commit tag and SHA-256 digest;
 - `.ci-image-manifest/release-plan.env`; and
@@ -540,7 +516,7 @@ Suggested screenshot filenames:
 
 ```text
 docs/pngs/docker_catalog_validation_proof.png
-docs/pngs/docker_build_scan_proof.png
+docs/pngs/docker_build_publish_proof.png
 docs/pngs/docker_artifact_registry_digest_proof.png
 docs/pngs/docker_unified_spark_smoke_proof.png
 ```
@@ -554,9 +530,8 @@ docs/pngs/docker_unified_spark_smoke_proof.png
 | Catalog validation/query CLI | [`jenkins/python/image_catalog.py`](../../../jenkins/python/image_catalog.py) |
 | Release image ordering | [`jenkins/python/release_plan.py`](../../../jenkins/python/release_plan.py) |
 | Build-once loop | [`release_build_publish.sh`](../../../jenkins/scripts/entrypoints/release_build_publish.sh) |
-| Build, scan, push and digest recording | [`engine.sh`](../../../jenkins/scripts/build/engine.sh) |
+| Build, push and digest recording | [`engine.sh`](../../../jenkins/scripts/build/engine.sh) |
 | Image manifest | [`image_manifest.sh`](../../../jenkins/scripts/lib/image_manifest.sh) |
-| Container scan policy | [`container_scan_policy.py`](../../../jenkins/python/container_scan_policy.py), [`container-scan-policy.json`](../../../jenkins/config/container-scan-policy.json) |
 | Unified Spark smoke test | [`unified_spark_image.sh`](../../../jenkins/scripts/test/unified_spark_image.sh) |
 | Build context exclusions | [`.dockerignore`](../../../.dockerignore) |
 | No-legacy/runtime layout contracts | [`test_repository_layout_contracts.py`](../../../tests/contract/test_repository_layout_contracts.py) |

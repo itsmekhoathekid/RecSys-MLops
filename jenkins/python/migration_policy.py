@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 from jenkins.python.configuration import ROOT, load_components  # noqa: E402
 
 MIGRATION_PATH = re.compile(r"(^|/)(migrations?|alembic|schema)(/|$)", re.IGNORECASE)
+OPERATIONAL_MIGRATION_PREFIX = "ops/migrations/"
 DESTRUCTIVE_SQL = re.compile(
     r"\b(DROP\s+(TABLE|COLUMN|SCHEMA|DATABASE)|TRUNCATE\s+TABLE|ALTER\s+TABLE\b[^;]*\bDROP\b)",
     re.IGNORECASE | re.DOTALL,
@@ -29,7 +30,13 @@ def changed_files(base_ref: str = "") -> list[Path]:
     return [
         ROOT / line
         for line in output.splitlines()
-        if line and MIGRATION_PATH.search(line)
+        if line
+        and MIGRATION_PATH.search(line)
+        # Runbooks and executable cutover utilities migrate external systems and
+        # carry their own dry-run/apply/restore contract. The component policy is
+        # specifically the database/schema gate and must not classify these as
+        # application database migrations for every selected component.
+        and not line.startswith(OPERATIONAL_MIGRATION_PREFIX)
     ]
 
 

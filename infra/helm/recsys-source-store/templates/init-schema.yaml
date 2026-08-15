@@ -16,6 +16,10 @@ spec:
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
+      {{- with .Values.initSchema.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: init-source-schema
           image: {{ .Values.images.dataIngestion }}

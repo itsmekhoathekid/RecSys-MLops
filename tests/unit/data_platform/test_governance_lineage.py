@@ -53,7 +53,7 @@ def test_governance_products_use_canonical_flow_ids_and_single_dataset_ownership
     }
 
 
-def test_datajob_catalog_emission_does_not_duplicate_openlineage_io():
+def test_datajob_catalog_emission_does_not_duplicate_runtime_io():
     proposals = []
 
     class Emitter:
@@ -63,7 +63,7 @@ def test_datajob_catalog_emission_does_not_duplicate_openlineage_io():
     product = streaming_features()
     emit_job(
         Emitter(),
-        "urn:li:dataFlow:(airflow,recsys_flink_stream_features,PROD)",
+        "urn:li:dataFlow:(flink,recsys_flink_stream_features,PROD)",
         product.jobs[0],
     )
     assert all(isinstance(item, MetadataChangeProposalWrapper) for item in proposals)
@@ -100,7 +100,7 @@ def test_governance_verifier_checks_native_definitions_without_minio_reports():
     assert coverage["verified"] is True
     assert coverage["datasets"] == 50
     assert coverage["jobs"] == sum(len(product.jobs) for product in products)
-    assert coverage["runtime_lineage"]["mode"] == "native-openlineage"
+    assert coverage["runtime_lineage"]["mode"] == ("datahub-airflow-plugin+datahub-sdk")
     assert coverage["validation"]["intermediate_reports"] is False
 
 

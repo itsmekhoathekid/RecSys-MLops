@@ -11,6 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 USER airflow
+COPY --chown=airflow:root images/data/recsys-airflow/patch_datahub_plugin_no_openlineage.py /tmp/patch_datahub_plugin_no_openlineage.py
 RUN pip install --upgrade \
     --constraint "${AIRFLOW_CONSTRAINTS_URL}" \
     "apache-airflow==${AIRFLOW_VERSION}" \
@@ -18,6 +19,7 @@ RUN pip install --upgrade \
     apache-airflow-providers-http==4.12.0 \
     apache-airflow-providers-cncf-kubernetes==8.3.3 \
     apache-airflow-providers-postgres==5.11.2 \
+    acryl-datahub-airflow-plugin==1.6.0 \
     pyyaml==6.0.1 \
     redis==5.0.7 \
     requests==2.31.0 \
@@ -31,7 +33,9 @@ RUN pip install --upgrade \
     "setuptools==78.1.1" \
     "urllib3==2.7.0" \
     "wheel==0.46.2" \
-    && pip check
+    && python /tmp/patch_datahub_plugin_no_openlineage.py \
+    && pip check \
+    && python -c "from datahub_airflow_plugin.entities import Urn; from datahub_airflow_plugin.datahub_listener import get_airflow_plugin_listener"
 
 FROM apache/airflow:slim-${AIRFLOW_VERSION}-python${AIRFLOW_PYTHON_VERSION} AS runtime
 

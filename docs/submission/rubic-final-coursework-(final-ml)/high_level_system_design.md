@@ -371,11 +371,11 @@ flowchart LR
   end
   SilverGold --> AnalyticsSync
   Airflow -. "recsys_analytics_daily" .-> AnalyticsSync
-  Airflow -. "publish runtime lineage" .-> Governance
-  Kafka -. "datasets / lineage" .-> Governance
+  Airflow -. "DataHub plugin: runs + declared lineage" .-> Governance
+  Kafka -. "CDC SDK lineage" .-> Governance
   Bronze -. "datasets / lineage" .-> Governance
   SilverGold -. "datasets / lineage" .-> Governance
-  OfflineFS -. "feature lineage" .-> Governance
+  OfflineFS -. "Flink SDK feature lineage" .-> Governance
 
   %% =========================
   %% ML workflow
@@ -690,7 +690,7 @@ flowchart LR
 ```mermaid
 flowchart TB
   Developer["Developer / Git change"]
-  CI["Jenkins CI/CD<br/>path-based test, build, Trivy scan, publish"]
+  CI["Jenkins CI/CD<br/>path-based test, build, publish"]
   Registry[("GCP Artifact Registry<br/>versioned container images")]
   Terraform["Terraform GCP<br/>network, GKE, node pools, buckets, IAM"]
   Helm["Helm Releases<br/>data platform, runtime, serving,<br/>observability, analytics, CI, security"]

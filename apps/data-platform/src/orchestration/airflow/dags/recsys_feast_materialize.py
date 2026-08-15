@@ -7,6 +7,7 @@ from orchestration.airflow.spark_utils import (
     env_schedule,
     pod_task,
 )
+from metadata.governance_catalog import POSTGRES_FEATURE_URNS, REDIS_FEATURE_URNS
 
 
 FEAST_ENV_EXPORTS = """
@@ -47,11 +48,14 @@ if DAG is not None:
             "feast_materialize_incremental",
             FEATURE_STORE_IMAGE,
             FEAST_MATERIALIZE_INCREMENTAL_COMMAND,
+            inlets=POSTGRES_FEATURE_URNS.values(),
+            outlets=REDIS_FEATURE_URNS.values(),
         )
         validate_online_store = pod_task(
             "verify_redis_online_store_updated",
             FEATURE_STORE_IMAGE,
             VERIFY_REDIS_ONLINE_STORE_COMMAND,
+            inlets=REDIS_FEATURE_URNS.values(),
         )
 
         materialize_incremental >> validate_online_store

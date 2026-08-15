@@ -21,8 +21,9 @@ jenkins:
   runtimeCredentialsSecret:
     enabled: true
   dind:
-    # Reuse Jenkins home for Docker graph data so a fresh free-trial project
-    # only provisions one modest persistent disk for CI.
+    # Reuse Jenkins home for Docker graph data so GKE provisions one CI disk.
+    # The locked ML environment peaks above 19 GiB during full releases, so the
+    # production override keeps enough headroom for Jenkins metadata and reports.
     useJenkinsHomePvc: true
     pvc:
       enabled: false
@@ -34,7 +35,7 @@ jenkins:
     enabled: true
   pvc:
     volumeName: ""
-    storage: 20Gi
+    storage: 60Gi
     storageClassName: standard
 
 modelRolloutWatcher:

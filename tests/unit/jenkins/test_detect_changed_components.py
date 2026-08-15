@@ -140,7 +140,7 @@ def test_unknown_runtime_path_fails_closed(monkeypatch, capsys, tmp_path):
     assert "ERROR: Unmapped active runtime path" in capsys.readouterr().out
 
 
-def test_dp2_release_plan_builds_spark_and_immutable_airflow_once():
+def test_dp2_release_plan_does_not_expand_shared_spark_into_training_artifacts():
     plan = create_release_plan(
         ["dp2"],
         changed_paths=[
@@ -149,19 +149,25 @@ def test_dp2_release_plan_builds_spark_and_immutable_airflow_once():
         commit="abc",
     )
     assert plan["buildImages"] == [
-        "recsys-base-python",
         "recsys-spark",
         "recsys-airflow",
-        "recsys-mlops-training",
     ]
-    assert plan["buildArtifacts"] == ["kubeflow-bst"]
+    assert plan["buildArtifacts"] == []
     assert plan["deployUnits"] == [
-        "kubeflow-bst-package",
         "data-config",
         "airflow",
     ]
     assert plan["version"] == 2
     assert "workflowChecks" not in plan
+
+
+def test_training_release_plan_keeps_its_explicit_kubeflow_artifact():
+    plan = create_release_plan(["training"], commit="abc")
+
+    assert plan["buildArtifacts"] == ["kubeflow-bst"]
+    assert "recsys-mlops-training" in plan["buildImages"]
+    assert "recsys-spark" in plan["buildImages"]
+    assert "kubeflow-bst-package" in plan["deployUnits"]
 
 
 def test_chart_change_selects_its_exact_deploy_unit():

@@ -18,6 +18,10 @@ spec:
     spec:
       enableServiceLinks: false
       restartPolicy: OnFailure
+      {{- with .Values.realtimeCdcConnector.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: register-debezium
           image: {{ .Values.images.dataIngestion }}

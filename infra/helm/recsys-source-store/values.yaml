@@ -2,6 +2,8 @@ namespace:
   name: recsys-dataflow
 storageClassName: ""
 istioInject: "false"
+initSchema:
+  tolerations: []
 images:
   postgres: postgres:16
   dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required

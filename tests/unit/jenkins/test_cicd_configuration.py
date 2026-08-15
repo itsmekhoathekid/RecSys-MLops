@@ -219,6 +219,55 @@ printf 'attempts=%s logins=%s\n' \
     assert "digest: sha256:" in push_log.read_text(encoding="utf-8")
 
 
+def test_deploy_preflight_refreshes_registry_login_before_digest_checks(tmp_path):
+    login_path = tmp_path / "registry-login"
+    plan_path = tmp_path / "release-plan.json"
+    plan_path.write_text("{}\n", encoding="utf-8")
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            r"""
+set -euo pipefail
+source jenkins/scripts/lib/common.sh
+source jenkins/scripts/deploy/preflight/gcp.sh
+login_path="$1"
+plan_path="$2"
+gcp_production_field() {
+  [[ "$1" == "imageRegistry" ]] || return 1
+  printf '%s\n' 'asia-southeast1-docker.pkg.dev/example/recsys'
+}
+registry_login_gcp() {
+  printf '%s\n' "$1" >"${login_path}"
+}
+image_manifest_lookup() {
+  printf 'asia-southeast1-docker.pkg.dev/example/recsys/%s@sha256:%064d\n' "$1" 0
+}
+python3() {
+  printf '%s\n' 'recsys-base-python'
+}
+docker() {
+  [[ "$1 $2" == "manifest inspect" ]]
+  [[ -s "${login_path}" ]]
+}
+gcp_verify_candidate_digests "${plan_path}"
+""",
+            "deploy-preflight-login-test",
+            str(login_path),
+            str(plan_path),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert login_path.read_text(encoding="utf-8").strip().endswith(
+        "asia-southeast1-docker.pkg.dev/example/recsys"
+    )
+
+
 def test_full_jenkins_trigger_reuses_crumb_session_cookie():
     trigger = (ROOT / "ops/gcp/trigger_full_jenkins.sh").read_text(encoding="utf-8")
 
@@ -349,7 +398,7 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" in source
     for marker in (
         "[CI] Contract checks",
-        "[BUILD] Build, scan and publish catalog images",
+        "[BUILD] Build and publish catalog images",
         "[PACKAGE] Compile Kubeflow package",
         "[DEPLOY] Production preflight",
         "[DEPLOY] Deploy release",
@@ -495,9 +544,7 @@ def test_catalog_driven_builder_owns_exactly_sixteen_images():
     assert "image_catalog.py dependencies" not in engine
     assert "flock" not in engine
     assert "build_reuse_shared_image" not in engine
-    assert "build_scan_publish_image" in engine
-    assert "BUILD_SCAN_REPORT_DIR" in engine
-    assert "container_scan_policy.py" in engine
+    assert "build_publish_image" in engine
 
 
 def test_locked_ml_images_match_exported_dependency_versions():
@@ -507,10 +554,10 @@ def test_locked_ml_images_match_exported_dependency_versions():
         encoding="utf-8"
     )
     ml_lock = (ROOT / "apps/ml-system/uv.lock").read_text(encoding="utf-8")
-    assert '"gitpython==3.1.57"' in root_project
-    assert 'name = "gitpython"\nversion = "3.1.57"' in root_lock
-    assert '"gitpython==3.1.57"' in ml_project
-    assert 'name = "gitpython"\nversion = "3.1.57"' in ml_lock
+    assert '"gitpython==3.1.58"' in root_project
+    assert 'name = "gitpython"\nversion = "3.1.58"' in root_lock
+    assert '"gitpython==3.1.58"' in ml_project
+    assert 'name = "gitpython"\nversion = "3.1.58"' in ml_lock
 
     for relative_path in (
         "images/data/recsys-spark/Dockerfile",

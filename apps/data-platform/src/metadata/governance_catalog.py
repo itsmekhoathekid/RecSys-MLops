@@ -16,6 +16,14 @@ PIPELINE_FLOW_IDS = {
     "STREAMING_FEATURES": "recsys_flink_stream_features",
     "ANALYTICS": "recsys_analytics_sync_silver",
 }
+PIPELINE_ORCHESTRATORS = {
+    "DP1": "airflow",
+    "DP2": "airflow",
+    "DP3": "airflow",
+    "CDC_INGESTION": "kafka-connect",
+    "STREAMING_FEATURES": "flink",
+    "ANALYTICS": "airflow",
+}
 FEATURE_TABLES = (
     "user_sequence_features",
     "user_aggregate_features",
@@ -40,8 +48,13 @@ def data_contract_id(dataset: str) -> str:
     return slug[:180] or "recsys-data-contract"
 
 
-def flow_urn(flow_id: str, cluster: str = ENV) -> str:
-    return f"urn:li:dataFlow:(airflow,{flow_id},{cluster})"
+def flow_urn(
+    flow_id: str,
+    cluster: str = ENV,
+    *,
+    orchestrator: str = "airflow",
+) -> str:
+    return f"urn:li:dataFlow:({orchestrator},{flow_id},{cluster})"
 
 
 def pipeline_flow_id(pipeline: str) -> str:
@@ -51,21 +64,25 @@ def pipeline_flow_id(pipeline: str) -> str:
         raise ValueError(f"Unknown runtime-lineage pipeline: {pipeline}") from exc
 
 
-def openlineage_job_name(pipeline: str, job_id: str) -> str:
-    """Return the name DataHub's native OpenLineage mapper uses as DataJob id."""
-    return f"{pipeline_flow_id(pipeline)}.{job_id}"
+def pipeline_orchestrator(pipeline: str) -> str:
+    try:
+        return PIPELINE_ORCHESTRATORS[pipeline]
+    except KeyError as exc:
+        raise ValueError(f"Unknown runtime-lineage pipeline: {pipeline}") from exc
 
 
-def _flow_id_from_urn(flow: str) -> str:
-    match = re.fullmatch(r"urn:li:dataFlow:\([^,]+,([^,]+),[^)]+\)", flow)
-    if not match:
-        raise ValueError(f"Invalid DataHub DataFlow URN: {flow}")
-    return match.group(1)
+def pipeline_flow_urn(pipeline: str, cluster: str = ENV) -> str:
+    return flow_urn(
+        pipeline_flow_id(pipeline),
+        cluster,
+        orchestrator=pipeline_orchestrator(pipeline),
+    )
 
 
 def job_urn(flow: str, job_id: str) -> str:
-    data_job_id = f"{_flow_id_from_urn(flow)}.{job_id}"
-    return f"urn:li:dataJob:({flow},{data_job_id})"
+    if not re.fullmatch(r"urn:li:dataFlow:\([^,]+,[^,]+,[^)]+\)", flow):
+        raise ValueError(f"Invalid DataHub DataFlow URN: {flow}")
+    return f"urn:li:dataJob:({flow},{job_id})"
 
 
 def dataset_urn_parts(urn: str) -> tuple[str, str, str]:

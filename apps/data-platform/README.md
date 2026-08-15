@@ -55,7 +55,9 @@ flowchart TD
 | PyFlink Redis, PostgreSQL, and Iceberg sinks | `apps/data-platform/src/features/flink/sinks/` |
 | Redis online writer | `apps/data-platform/src/feature_store/online_writer.py` |
 | Airflow orchestration | `apps/data-platform/src/orchestration/airflow/dags/recsys_*.py`, with shared Spark/Kubernetes helpers in `apps/data-platform/src/orchestration/airflow/spark_utils.py` |
-| Governance lineage | `apps/data-platform/src/metadata/ingest_datahub_governance.py` |
+| Governance catalog | `apps/data-platform/src/metadata/ingest_datahub_governance.py` |
+| Airflow declared lineage | `apps/data-platform/src/orchestration/airflow/dags/`, `spark_utils.py` |
+| CDC/Flink SDK lineage | `apps/data-platform/src/metadata/runtime_lineage.py` |
 
 ## Runtime Notes
 
@@ -67,6 +69,11 @@ flowchart TD
 - Feast offline feature tables live in PostgreSQL; Iceberg/Hudi/S3 paths are used for lakehouse, audit, and versioning proof storage.
 - Online feature store keys live in Redis with the `fs:*` key templates.
 - Spark and Flink production paths use native Spark/Flink APIs.
+- Airflow `2.9.3` uses the isolated `acryl-datahub-airflow-plugin==1.6.0` dependency; other data runtimes use `acryl-datahub==1.6.0.17`.
+- The Airflow build applies an exact-version lazy-import compatibility patch for plugin `1.6.0`, allowing extractors to remain disabled without adding an OpenLineage package.
+- Airflow tasks declare table-level lineage with `inlets`/`outlets`. Their pods set `RUNTIME_LINEAGE_ENABLED=false`, leaving execution state to the plugin listener.
+- CDC uses orchestrator `kafka-connect` and Flink uses orchestrator `flink`; both emit `DataProcessInstance` lifecycle and dynamic run IO directly through the DataHub SDK.
+- The operational cutover procedure is in [`ops/migrations/datahub-sdk-lineage-cutover/README.md`](../../ops/migrations/datahub-sdk-lineage-cutover/README.md). Plugin behavior is documented by [DataHub](https://docs.datahub.com/docs/metadata-ingestion-modules/airflow-plugin).
 
 ## Useful Evidence Commands
 

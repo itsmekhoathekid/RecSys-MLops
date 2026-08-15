@@ -205,7 +205,7 @@ def create_release_plan(
     )
     for artifact, spec in artifact_specs.items():
         if (
-            set(spec["consumesImages"]) & deploy_trigger_images
+            set(spec["consumesImages"]).issubset(deploy_trigger_images)
             and artifact not in build_artifacts
         ):
             build_artifacts.append(artifact)
@@ -228,7 +228,10 @@ def create_release_plan(
         unit["name"]
         for unit in units
         if set(unit["components"]) & set(component_names)
-        or set(unit["consumesImages"]) & deploy_trigger_images
+        or (
+            not unit["consumesArtifacts"]
+            and set(unit["consumesImages"]) & deploy_trigger_images
+        )
         or set(unit["consumesArtifacts"]) & set(build_artifacts)
     }
     for unit in units:

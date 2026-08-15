@@ -26,9 +26,11 @@ Code references:
 
 ## Kubernetes Execution Model
 
-`pod_task()` creates a `KubernetesPodOperator` in `recsys-dataflow`. Every task receives the shared ConfigMap and Secret, runs with `set -euo pipefail`, disables the Istio sidecar for finite batch work, streams logs to Airflow, selects the configured node pool, and deletes its pod after completion. See [spark_utils.py](../../../apps/data-platform/src/orchestration/airflow/spark_utils.py#L113).
+`pod_task()` creates a `KubernetesPodOperator` in `recsys-dataflow`. Every task receives the shared ConfigMap and Secret, runs with `set -euo pipefail`, disables the Istio sidecar for finite batch work, streams logs to Airflow, selects the configured node pool, and deletes its pod after completion. The helper also converts canonical Dataset URNs into DataHub plugin `Urn` objects for declared `inlets` and `outlets`. See [spark_utils.py](../../../apps/data-platform/src/orchestration/airflow/spark_utils.py).
 
-`spark_native_submit()` submits Spark applications in Kubernetes cluster mode and forwards the lakehouse catalogs, object-store credentials, validation/lineage settings, resource limits, shuffle sizing, and dynamic-allocation settings to the driver and executors. `spark.kubernetes.submission.waitAppCompletion=true` prevents Airflow from marking a task successful before its Spark application finishes. See [spark_utils.py](../../../apps/data-platform/src/orchestration/airflow/spark_utils.py#L132).
+`spark_native_submit()` submits Spark applications in Kubernetes cluster mode and forwards the lakehouse catalogs, object-store credentials, validation settings, resource limits, shuffle sizing, and dynamic-allocation settings to the driver and executors. It propagates `RUNTIME_LINEAGE_ENABLED=false`; task success/failure and declared table lineage are emitted once by the DataHub Airflow listener. `spark.kubernetes.submission.waitAppCompletion=true` prevents Airflow from marking a task successful before its Spark application finishes.
+
+The Airflow image pins `acryl-datahub-airflow-plugin==1.6.0` for Airflow `2.9.3`. Scheduler and webserver share the REST connection, `cluster=PROD`, execution capture, DataJob lineage, and iolet materialization settings; extractors and the plugin's OpenLineage bridge are disabled. See the [DataHub Airflow plugin documentation](https://docs.datahub.com/docs/metadata-ingestion-modules/airflow-plugin).
 
 ## DP1: Data Generator To Bronze Iceberg
 
@@ -54,7 +56,7 @@ The generator's Parquet fragments exist only inside the DP1 task pod. They are a
 4. Add `source_run_id` and `lakehouse_ingestion_ts`.
 5. Create the Iceberg namespace when necessary.
 6. atomically create or replace `recsys.lakehouse.bronze_<source_table>`.
-7. Record the ten Bronze Iceberg URNs as runtime lineage outputs.
+7. Commit the ten Bronze Iceberg tables; the DAG already declares those canonical URNs as task outlets.
 
 References: [recsys_dp1_raw_to_bronze.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py#L13), [batch_lakehouse_ingestion.py (line 69)](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L69), [line 87](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L87), and [line 97](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L97).
 
@@ -98,13 +100,13 @@ Bronze Iceberg
 4. Separate unsupported schema versions.
 5. Deduplicate supported behavior events by `event_id`.
 6. Build clean events/impressions/requests, order facts, product SCD, users, products, and preferences.
-7. Commit nine curated `silver_*` Iceberg tables and runtime lineage.
+7. Commit eight curated `silver_*` Iceberg tables; the DAG declares them as task outlets.
 
 References: [recsys_dp2_bronze_to_silver_gold.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py#L13), [dp2_silver_gold_entrypoint.py (line 15)](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L15), and [build_silver_tables.py (line 28)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L28).
 
 ### Step 2: Optimize Stage
 
-`DP2_OPTIMIZE_COMMAND` runs the shared optimizer with `--scope silver --pipeline DP2`. All nine Silver tables receive the same physical-file policy as DP1; clean behavior events and impressions also have optional user/item/time Z-order profiles.
+`DP2_OPTIMIZE_COMMAND` runs the shared optimizer with `--scope silver --pipeline DP2`. All eight Silver tables receive the same physical-file policy as DP1; clean behavior events and impressions also have optional user/item/time Z-order profiles.
 
 References: [recsys_dp2_bronze_to_silver_gold.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py#L19), [optimize.py (line 24)](../../../apps/data-platform/src/lakehouse/optimize.py#L24), and [line 38](../../../apps/data-platform/src/lakehouse/optimize.py#L38).
 
