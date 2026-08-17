@@ -11,6 +11,7 @@ dependencies = [
   "feast[milvus]==0.64.0",
   "pymilvus==2.6.12",
   "pydantic>=2.10,<3",
+  "psycopg2-binary>=2.9.10,<3",
   "recsys-rag-runtime",
   "recsys-serving-common",
   "setuptools==80.9.0",

@@ -46,6 +46,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         pydantic==2.13.4 \
         "psycopg[binary]==3.3.4" \
         psycopg-pool==3.3.1 \
+        psycopg2-binary==2.9.12 \
         pyyaml==6.0.3 \
         requests==2.34.2 \
         pymilvus==2.6.12 \
