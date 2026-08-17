@@ -5,6 +5,12 @@ milvus:
   annotations:
     sidecar.istio.io/inject: "false"
   standalone:
+    persistence:
+      persistentVolumeClaim:
+        # The project SSD/pd-balanced quota is saturated by the existing
+        # platform. This small FLAT index is latency-insensitive on disk, so
+        # use durable pd-standard capacity instead of consuming SSD quota.
+        storageClass: standard
     resources:
       requests:
         cpu: 150m
@@ -16,3 +22,7 @@ milvus:
         operator: Equal
         value: cpu-services
         effect: NoSchedule
+  etcd:
+    persistence:
+      # Keep Milvus metadata durable while avoiding the same SSD quota.
+      storageClass: standard
