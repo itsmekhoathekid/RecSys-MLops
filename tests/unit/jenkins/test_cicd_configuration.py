@@ -179,6 +179,22 @@ def test_rag_promotion_contract_gate_uses_the_required_python_runtime():
     assert "supported_embedding_contracts" in contract_gate
 
 
+def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
+    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
+    tunnel = deployment.split("rag_start_api_port_forward()", 1)[1].split(
+        "\n}", 1
+    )[0]
+    gcp_values = (
+        ROOT / "infra/helm/recsys-rag-api/values-gcp.yaml"
+    ).read_text(encoding="utf-8")
+
+    assert "--field-selector=status.phase=Running" in tunnel
+    assert 'port-forward "pod/${ready_pod}"' in tunnel
+    assert 'rollout status deployment/recsys-rag-api' in tunnel
+    assert "for _ in $(seq 1 30)" in tunnel
+    assert "recsys.ai/pool: cpu-services" in gcp_values
+
+
 def test_rag_promotion_uses_pinned_embedding_batch_and_schedulable_request():
     deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
     promotion = deployment.split("rag_index_promote()", 1)[1]

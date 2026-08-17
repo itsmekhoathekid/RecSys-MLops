@@ -143,21 +143,56 @@ EOF
   rag_wait_job "${namespace}" "${job}" 300s
 }
 
+rag_start_api_port_forward() {
+  local port="${RAG_API_VERIFY_PORT:-18089}"
+  local namespace="${API_NAMESPACE:-api-serving}"
+  local ready_pod=""
+  mkdir -p .ci-deploy
+
+  # A Service port-forward can select a Pending pod during a rolling update.
+  # Wait for the deployment, then pin the tunnel to a Running pod so promotion
+  # cannot fail nondeterministically because another replica is still Pending.
+  kubectl -n "${namespace}" rollout status deployment/recsys-rag-api --timeout=300s
+  ready_pod="$(kubectl -n "${namespace}" get pods \
+    -l app.kubernetes.io/name=recsys-rag-api \
+    --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.name}')"
+  if [[ -z "${ready_pod}" ]]; then
+    echo "No Running RAG API pod is available for promotion verification" >&2
+    return 1
+  fi
+
+  kubectl -n "${namespace}" port-forward "pod/${ready_pod}" "${port}:8080" >.ci-deploy/rag-api-port-forward.log 2>&1 &
+  RAG_API_FORWARD_PID=$!
+  for _ in $(seq 1 30); do
+    if curl --fail --silent "http://127.0.0.1:${port}/ready" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  kill "${RAG_API_FORWARD_PID}" 2>/dev/null || true
+  return 1
+}
+
+rag_stop_api_port_forward() {
+  if [[ -n "${RAG_API_FORWARD_PID:-}" ]]; then
+    kill "${RAG_API_FORWARD_PID}" 2>/dev/null || true
+    unset RAG_API_FORWARD_PID
+  fi
+}
+
 rag_verify_api_contract() {
   local expected_model="${RAG_EMBEDDING_MODEL:-intfloat/multilingual-e5-small}"
   local expected_revision="${RAG_EMBEDDING_REVISION:-03415a4be176a1620747c692ed433219fabc3def}"
   local expected_dimension="${RAG_EMBEDDING_DIMENSION:-384}"
   local port="${RAG_API_VERIFY_PORT:-18089}"
   local report=".ci-deploy/rag-api-version.json"
-  mkdir -p .ci-deploy
-  kubectl -n "${API_NAMESPACE:-api-serving}" port-forward service/recsys-rag-api "${port}:80" >.ci-deploy/rag-api-port-forward.log 2>&1 &
-  local forward_pid=$!
-  sleep 3
+  rag_start_api_port_forward
   if ! curl --fail --silent --show-error "http://127.0.0.1:${port}/version" >"${report}"; then
-    kill "${forward_pid}" 2>/dev/null || true
+    rag_stop_api_port_forward
     return 1
   fi
-  kill "${forward_pid}" 2>/dev/null || true
+  rag_stop_api_port_forward
   # Keep the promotion gate on the base Python runtime already required by the
   # Jenkins controller; production agents do not guarantee an external jq
   # binary. The report contains only public model contract metadata.
@@ -242,10 +277,7 @@ EOF
   rag_wait_job "${namespace}" "${job}" 3600s
 
   local port="${RAG_API_VERIFY_PORT:-18089}"
-  mkdir -p .ci-deploy
-  kubectl -n "${API_NAMESPACE:-api-serving}" port-forward service/recsys-rag-api "${port}:80" >.ci-deploy/rag-api-port-forward.log 2>&1 &
-  local forward_pid=$!
-  sleep 3
+  rag_start_api_port_forward
   # This post-promotion gate exercises the deployed query encoder, Feast,
   # Milvus and grouping logic together. Failure restores the previous ETag-
   # guarded pointer before the release is reported unsuccessful.
@@ -256,9 +288,9 @@ EOF
     --minimum-recall "${RAG_MINIMUM_RECALL_AT_10:-0.90}" \
     --maximum-p95-ms "${RAG_MAXIMUM_API_P95_MS:-750}" \
     --concurrency 10; then
-    kill "${forward_pid}" 2>/dev/null || true
+    rag_stop_api_port_forward
     rag_rollback_pointer "${image}" "${pipeline_run}"
     return 1
   fi
-  kill "${forward_pid}" 2>/dev/null || true
+  rag_stop_api_port_forward
 }
