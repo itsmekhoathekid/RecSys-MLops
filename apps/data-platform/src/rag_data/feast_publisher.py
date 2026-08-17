@@ -126,6 +126,11 @@ class FeastMilvusPublisher:
         from feast.infra.key_encoding_utils import deserialize_entity_key
 
         collection = COLLECTION_BY_SLOT[slot]
+        # Feast creates and flushes the collection but Milvus standalone does
+        # not guarantee that it is loaded for query immediately afterwards.
+        # Loading here makes exact-ID validation deterministic on production;
+        # the call is idempotent when the collection is already loaded.
+        self.milvus.load_collection(collection_name=collection)
         rows = self.milvus.query(
             collection_name=collection,
             # Feast persists feature payloads in a flexible JSON field, so scalar
