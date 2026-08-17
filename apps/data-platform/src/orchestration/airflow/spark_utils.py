@@ -52,7 +52,9 @@ DATAFLOW_NODE_SELECTOR = os.getenv(
     "recsys.ai/pool=cpu-services",
 )
 COMMON_ENV = {
-    "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys",
+    # KPO env vars override the image-level PYTHONPATH, so every source-backed
+    # runtime imported by data-platform tasks must remain explicit here.
+    "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys/packages/recsys-rag-runtime/src:/opt/recsys",
     "VALIDATION_RUN_ID": "{{ run_id }}",
     # The Airflow listener is the sole execution/lineage publisher for these pods.
     "RUNTIME_LINEAGE_ENABLED": "false",

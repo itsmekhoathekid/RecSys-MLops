@@ -112,3 +112,4 @@ def test_airflow_pods_disable_the_direct_sdk_recorder():
     from orchestration.airflow.spark_utils import COMMON_ENV
 
     assert COMMON_ENV["RUNTIME_LINEAGE_ENABLED"] == "false"
+    assert "/opt/recsys/packages/recsys-rag-runtime/src" in COMMON_ENV["PYTHONPATH"]
