@@ -365,12 +365,15 @@
           "apps/data-platform/feature-store/rag_feature_repo/",
           "infra/helm/recsys-milvus/",
           "infra/helm/recsys-rag-data/",
+          "tests/fixtures/rag_feature_repo/",
+          "tests/integration/rag_index/",
           "tests/unit/data_platform/rag_data/"
         ],
         "files": [
           "jenkins/scripts/ci/data.sh",
           "jenkins/scripts/deploy/rag.sh",
           "jenkins/scripts/test/rag.sh",
+          "scripts/rag/verify_retrieval.py",
           "apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_index.py",
           "apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_reconciliation.py"
         ]

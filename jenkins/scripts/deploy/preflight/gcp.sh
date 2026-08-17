@@ -136,8 +136,12 @@ if missing:
 
 gcp_verify_unit_secrets() {
   case "$1" in
-    data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|feature-registry|streaming|airflow|milvus|rag-feature-registry|rag-index-promotion)
+    data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|feature-registry|streaming|airflow)
       gcp_verify_external_secret_target recsys-dataflow recsys-data-platform-secret
+      ;;
+    milvus|milvus-credentials|rag-feature-registry|rag-index-promotion)
+      gcp_verify_external_secret_target recsys-dataflow recsys-data-platform-secret \
+        AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY MILVUS_USERNAME MILVUS_PASSWORD
       ;;
     mlflow)
       gcp_verify_external_secret_target experiment-tracking recsys-mlflow-secrets

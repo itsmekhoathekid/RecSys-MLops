@@ -18,6 +18,11 @@ resource "random_password" "airflow_postgres" {
   special = false
 }
 
+resource "random_password" "milvus_root" {
+  length  = 32
+  special = false
+}
+
 resource "random_password" "mlflow_postgres" {
   length  = 32
   special = false

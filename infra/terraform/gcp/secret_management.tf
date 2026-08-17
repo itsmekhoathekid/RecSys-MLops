@@ -17,7 +17,7 @@ locals {
       FEAST_POSTGRES_USER               = "feast"
       FEAST_POSTGRES_PASSWORD           = random_password.feast_postgres.result
       MILVUS_USERNAME                   = "root"
-      MILVUS_PASSWORD                   = "Milvus"
+      MILVUS_PASSWORD                   = random_password.milvus_root.result
     }
     mlflow = {
       MINIO_ROOT_USER     = "minio"

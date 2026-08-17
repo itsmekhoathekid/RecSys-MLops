@@ -166,7 +166,17 @@
       "components": ["rag_index"],
       "consumesImages": ["recsys-data-ingestion"],
       "consumesArtifacts": [],
-      "dependsOn": ["feature-store", "milvus"]
+      "dependsOn": ["feature-store", "milvus-credentials"]
+    },
+    {
+      "name": "milvus-credentials",
+      "kind": "kubernetes-action",
+      "release": "recsys-milvus-credentials",
+      "namespace": "recsys-dataflow",
+      "components": ["rag_index"],
+      "consumesImages": ["recsys-data-ingestion"],
+      "consumesArtifacts": [],
+      "dependsOn": ["milvus"]
     },
     {
       "name": "rag-api",

@@ -233,7 +233,8 @@ def test_rag_change_detection_and_release_dependency_order():
 
     plan = create_release_plan(["rag_index", "rag_api"], commit="abc123")
     units = plan["deployUnits"]
-    assert units.index("milvus") < units.index("rag-feature-registry")
+    assert units.index("milvus") < units.index("milvus-credentials")
+    assert units.index("milvus-credentials") < units.index("rag-feature-registry")
     assert units.index("rag-feature-registry") < units.index("rag-api")
     assert units.index("rag-api") < units.index("rag-index-promotion")
 

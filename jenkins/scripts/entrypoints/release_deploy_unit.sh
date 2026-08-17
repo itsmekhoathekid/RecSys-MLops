@@ -279,6 +279,9 @@ case "${unit_name}" in
   rag-feature-registry)
     rag_feature_registry_apply "$(resolve_release_image recsys-data-ingestion)"
     ;;
+  milvus-credentials)
+    rag_milvus_credentials_bootstrap "$(resolve_release_image recsys-data-ingestion)"
+    ;;
   rag-index-promotion)
     rag_index_promote "$(resolve_release_image recsys-data-ingestion)"
     ;;
