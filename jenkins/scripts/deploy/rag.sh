@@ -36,7 +36,10 @@ spec:
         - name: feast-apply
           image: ${image}
           command: ["bash", "-c"]
-          args: ["feast -c apps/data-platform/feature-store/rag_feature_repo apply --skip-source-validation --no-progress"]
+          args:
+            - >-
+              export FEAST_SQL_REGISTRY_URL="\$(python -m recsys_feature_store_runtime.sql_registry_state url)";
+              feast -c apps/data-platform/feature-store/rag_feature_repo apply --skip-source-validation --no-progress
           envFrom:
             - configMapRef: {name: recsys-data-platform-config}
             - secretRef: {name: recsys-data-platform-secret}

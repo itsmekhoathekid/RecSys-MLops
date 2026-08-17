@@ -8,6 +8,7 @@ compatible active pointer; serving errors preserve the last-known-good pointer.
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Callable
 
@@ -21,6 +22,42 @@ from recsys_rag_api.contracts import RetrievalRequest, RetrievalResponse
 from recsys_rag_api.pointer import ActivePointerManager, EmbeddingContract
 from recsys_rag_api.retrieval import FeastCandidateSearch, RetrievalService
 from recsys_rag_api.settings import RagApiSettings
+
+
+def _configure_feast_registry_url() -> str:
+    """Build Feast's escaped SQL registry URL from injected PostgreSQL env.
+
+    Kubernetes injects the password separately from non-secret connection
+    metadata. Keeping URL construction in-process avoids writing credentials to
+    a ConfigMap or command line while still satisfying Feast's YAML expansion.
+    """
+
+    configured = os.getenv("FEAST_SQL_REGISTRY_URL", "").strip()
+    if configured:
+        return configured
+
+    from sqlalchemy.engine import URL
+
+    registry_url = URL.create(
+        drivername="postgresql+psycopg2",
+        username=os.getenv("FEAST_POSTGRES_USER", "feast"),
+        password=os.getenv("FEAST_POSTGRES_PASSWORD", "feast"),
+        host=os.getenv(
+            "FEAST_POSTGRES_HOST",
+            "feature-postgres.recsys-dataflow.svc.cluster.local",
+        ),
+        port=int(os.getenv("FEAST_POSTGRES_PORT", "5432")),
+        database=os.getenv("FEAST_POSTGRES_DB", "feature_store"),
+        query={
+            "sslmode": os.getenv("FEAST_POSTGRES_SSLMODE", "disable"),
+            "options": (
+                "-csearch_path="
+                + os.getenv("FEAST_POSTGRES_SCHEMA", "feature_store")
+            ),
+        },
+    ).render_as_string(hide_password=False)
+    os.environ["FEAST_SQL_REGISTRY_URL"] = registry_url
+    return registry_url
 
 
 def _pointer_loader(settings: RagApiSettings) -> Callable[[], bytes]:
@@ -56,6 +93,7 @@ def create_app(
         if retrieval_service is None:
             from feast import FeatureStore
 
+            _configure_feast_registry_url()
             contract = EmbeddingContract(
                 model=settings.embedding_model,
                 revision=settings.embedding_revision,

@@ -14,6 +14,11 @@ config:
   minioEndpoint: http://data-platform-minio.recsys-dataflow.svc.cluster.local:9000
   milvusHost: http://recsys-milvus.recsys-dataflow.svc.cluster.local
   milvusPort: "19530"
+  feastPostgresHost: feature-postgres.recsys-dataflow.svc.cluster.local
+  feastPostgresPort: "5432"
+  feastPostgresDatabase: feature_store
+  feastPostgresSchema: feature_store
+  feastPostgresSslmode: disable
   embeddingModel: intfloat/multilingual-e5-small
   embeddingRevision: 03415a4be176a1620747c692ed433219fabc3def
   embeddingDimension: "384"

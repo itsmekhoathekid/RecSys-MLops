@@ -7,7 +7,7 @@ os.environ.setdefault("RECSYS_OTEL_ENABLED", "0")
 
 from fastapi.testclient import TestClient
 
-from recsys_rag_api.app import create_app
+from recsys_rag_api.app import _configure_feast_registry_url, create_app
 from recsys_rag_api.contracts import RetrievalResponse
 from recsys_rag_api.settings import RagApiSettings
 
@@ -76,3 +76,22 @@ def test_settings_from_environment(monkeypatch):
     assert loaded.embedding_revision == "env-revision"
     assert loaded.embedding_dimension == 384
     assert loaded.pointer_reload_seconds == 15
+
+
+def test_feast_registry_url_is_built_without_exposing_unescaped_password(monkeypatch):
+    from sqlalchemy.engine import make_url
+
+    monkeypatch.delenv("FEAST_SQL_REGISTRY_URL", raising=False)
+    monkeypatch.setenv("FEAST_POSTGRES_USER", "rag_user")
+    monkeypatch.setenv("FEAST_POSTGRES_PASSWORD", "p@ss:/word")
+    monkeypatch.setenv("FEAST_POSTGRES_HOST", "feature-postgres.internal")
+    monkeypatch.setenv("FEAST_POSTGRES_DB", "feature_store")
+    monkeypatch.setenv("FEAST_POSTGRES_SCHEMA", "rag")
+
+    configured = _configure_feast_registry_url()
+    parsed = make_url(configured)
+
+    assert parsed.username == "rag_user"
+    assert parsed.password == "p@ss:/word"
+    assert parsed.host == "feature-postgres.internal"
+    assert parsed.query["options"] == "-csearch_path=rag"

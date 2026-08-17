@@ -9,6 +9,11 @@ data:
   MINIO_ENDPOINT: {{ .Values.config.minioEndpoint | quote }}
   MILVUS_HOST: {{ .Values.config.milvusHost | quote }}
   MILVUS_PORT: {{ .Values.config.milvusPort | quote }}
+  FEAST_POSTGRES_HOST: {{ .Values.config.feastPostgresHost | quote }}
+  FEAST_POSTGRES_PORT: {{ .Values.config.feastPostgresPort | quote }}
+  FEAST_POSTGRES_DB: {{ .Values.config.feastPostgresDatabase | quote }}
+  FEAST_POSTGRES_SCHEMA: {{ .Values.config.feastPostgresSchema | quote }}
+  FEAST_POSTGRES_SSLMODE: {{ .Values.config.feastPostgresSslmode | quote }}
   RAG_EMBEDDING_MODEL: {{ .Values.config.embeddingModel | quote }}
   RAG_EMBEDDING_REVISION: {{ .Values.config.embeddingRevision | quote }}
   RAG_EMBEDDING_DIMENSION: {{ .Values.config.embeddingDimension | quote }}

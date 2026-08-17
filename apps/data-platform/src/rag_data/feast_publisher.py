@@ -38,7 +38,13 @@ class FeastMilvusPublisher:
     ) -> None:
         from feast import FeatureStore
         from pymilvus import MilvusClient
+        from recsys_feature_store_runtime.sql_registry_state import (
+            configure_registry_url,
+        )
 
+        # Feast does not build the SQL registry URL from the individual
+        # PostgreSQL variables. Configure it before parsing feature_store.yaml.
+        configure_registry_url()
         self.store = FeatureStore(repo_path=str(repo_path))
         self.milvus = MilvusClient(uri=milvus_uri, token=milvus_token)
 
