@@ -1206,7 +1206,9 @@ def main() -> int:
         description="Ingest RecSys batch, CDC, and streaming governance metadata into DataHub."
     )
     parser.add_argument(
-        "--gms-url", default="http://localhost:8088", help="DataHub GMS base URL."
+        "--gms-url",
+        default=os.getenv("DATAHUB_GMS_URL", "http://localhost:8088"),
+        help="DataHub GMS base URL (defaults to DATAHUB_GMS_URL).",
     )
     parser.add_argument(
         "--pushgateway-url",
