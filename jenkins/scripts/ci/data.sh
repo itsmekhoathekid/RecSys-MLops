@@ -121,12 +121,88 @@ ci_rag_index() {
   local integration_status=0
   (
     local rag_minio_address rag_milvus_address rag_ready=0
+    local rag_runtime="compose"
+    local rag_network="${rag_project}-network"
+    local rag_etcd_container="${rag_project}-etcd"
+    local rag_minio_container="${rag_project}-minio"
+    local rag_milvus_container="${rag_project}-milvus"
+
+    rag_cleanup() {
+      if [[ "${rag_runtime}" == "compose" ]]; then
+        docker compose -p "${rag_project}" -f "${rag_compose}" \
+          down --volumes --remove-orphans >/dev/null 2>&1 || true
+        return
+      fi
+      docker rm -f \
+        "${rag_milvus_container}" \
+        "${rag_minio_container}" \
+        "${rag_etcd_container}" >/dev/null 2>&1 || true
+      docker network rm "${rag_network}" >/dev/null 2>&1 || true
+    }
+
+    rag_logs() {
+      if [[ "${rag_runtime}" == "compose" ]]; then
+        docker compose -p "${rag_project}" -f "${rag_compose}" logs || true
+        return
+      fi
+      docker logs "${rag_etcd_container}" || true
+      docker logs "${rag_minio_container}" || true
+      docker logs "${rag_milvus_container}" || true
+    }
+
+    rag_start_services() {
+      if docker compose version >/dev/null 2>&1; then
+        docker compose -p "${rag_project}" -f "${rag_compose}" up -d || return 1
+        rag_minio_address="$(docker compose -p "${rag_project}" -f "${rag_compose}" port minio 9000)" || return 1
+        rag_milvus_address="$(docker compose -p "${rag_project}" -f "${rag_compose}" port milvus 19530)" || return 1
+        return
+      fi
+
+      # The production Jenkins image intentionally ships only the Docker CLI.
+      # Recreate the compose topology with isolated, build-scoped resources so
+      # the RAG integration gate remains a real Milvus/MinIO test.
+      rag_runtime="docker"
+      docker network create "${rag_network}" >/dev/null || return 1
+      docker run -d \
+        --name "${rag_etcd_container}" \
+        --network "${rag_network}" \
+        --network-alias etcd \
+        quay.io/coreos/etcd:v3.5.18 \
+        etcd --advertise-client-urls=http://etcd:2379 \
+        --listen-client-urls=http://0.0.0.0:2379 \
+        --data-dir=/etcd >/dev/null || return 1
+      docker run -d \
+        --name "${rag_minio_container}" \
+        --network "${rag_network}" \
+        --network-alias minio \
+        -p 127.0.0.1::9000 \
+        -e MINIO_ROOT_USER=minio \
+        -e MINIO_ROOT_PASSWORD=minio123 \
+        quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z \
+        minio server /data --console-address :9001 >/dev/null || return 1
+      docker run -d \
+        --name "${rag_milvus_container}" \
+        --network "${rag_network}" \
+        --network-alias milvus \
+        -p 127.0.0.1::19530 \
+        -e ETCD_ENDPOINTS=etcd:2379 \
+        -e MINIO_ADDRESS=minio:9000 \
+        -e MINIO_ACCESS_KEY_ID=minio \
+        -e MINIO_SECRET_ACCESS_KEY=minio123 \
+        -e MINIO_BUCKET_NAME=recsys-milvus-ci \
+        milvusdb/milvus:v2.6.18 \
+        milvus run standalone >/dev/null || return 1
+      rag_minio_address="$(docker port "${rag_minio_container}" 9000/tcp)" || return 1
+      rag_milvus_address="$(docker port "${rag_milvus_container}" 19530/tcp)" || return 1
+    }
+
     # Keep the ephemeral services recoverable on every exit path, including
     # readiness and port-discovery failures before pytest starts.
-    trap 'docker compose -p "${rag_project}" -f "${rag_compose}" down --volumes --remove-orphans' EXIT
-    docker compose -p "${rag_project}" -f "${rag_compose}" up -d
-    rag_minio_address="$(docker compose -p "${rag_project}" -f "${rag_compose}" port minio 9000)"
-    rag_milvus_address="$(docker compose -p "${rag_project}" -f "${rag_compose}" port milvus 19530)"
+    trap rag_cleanup EXIT
+    if ! rag_start_services; then
+      rag_logs
+      exit 1
+    fi
     rag_minio_address="${rag_minio_address/0.0.0.0/127.0.0.1}"
     rag_milvus_address="${rag_milvus_address/0.0.0.0/127.0.0.1}"
     for _ in {1..60}; do
@@ -138,7 +214,7 @@ ci_rag_index() {
       sleep 2
     done
     if [[ "${rag_ready}" != "1" ]]; then
-      docker compose -p "${rag_project}" -f "${rag_compose}" logs
+      rag_logs
       exit 1
     fi
     export RAG_TEST_MINIO_ENDPOINT="http://${rag_minio_address}"
