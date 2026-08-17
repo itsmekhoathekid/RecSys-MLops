@@ -240,7 +240,12 @@ spec:
       annotations: {sidecar.istio.io/inject: "false"}
     spec:
       restartPolicy: Never
-      nodeSelector: {recsys.ai/pool: cpu-services}
+      # Serving owns the constrained CPU pool during promotion. The transient
+      # encoder job uses capacity released on the ML node after the API moves,
+      # then exits and returns those resources to online workloads.
+      nodeSelector: {recsys.ai/workload: ml-system}
+      tolerations:
+        - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001}
       containers:
         - name: index

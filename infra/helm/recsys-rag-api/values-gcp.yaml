@@ -1,3 +1,11 @@
 nodeSelector:
   recsys.ai/pool: cpu-services
 tolerations: []
+
+# Leave room for the Istio sidecar on the quota-capped shared CPU node. The
+# encoder can still burst to the chart's 2-CPU limit; production acceptance is
+# enforced by the concurrency-10 p95 gate after every index promotion.
+resources:
+  requests:
+    cpu: 400m
+    memory: 1Gi

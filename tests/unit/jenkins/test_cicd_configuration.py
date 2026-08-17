@@ -202,6 +202,8 @@ def test_rag_promotion_uses_pinned_embedding_batch_and_schedulable_request():
     assert promotion.count("embed-chunks") == 2
     assert promotion.count("--checkpoint-every 32") == 2
     assert 'requests: {cpu: 500m, memory: 2Gi}' in promotion
+    assert "nodeSelector: {recsys.ai/workload: ml-system}" in promotion
+    assert "value: ml-system, effect: NoSchedule" in promotion
 
 
 def test_registry_push_refreshes_login_and_retries_once(tmp_path):
