@@ -23,6 +23,10 @@ milvus:
         value: cpu-services
         effect: NoSchedule
   etcd:
+    podAnnotations:
+      # Milvus standalone is intentionally outside the mesh. Keep its etcd
+      # peer outside too; otherwise STRICT mTLS resets plain gRPC on 2379.
+      sidecar.istio.io/inject: "false"
     persistence:
       # Keep Milvus metadata durable while avoiding the same SSD quota.
       storageClass: standard
