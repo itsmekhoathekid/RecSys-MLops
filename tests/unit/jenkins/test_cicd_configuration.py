@@ -179,6 +179,15 @@ def test_rag_promotion_contract_gate_uses_the_required_python_runtime():
     assert "supported_embedding_contracts" in contract_gate
 
 
+def test_rag_promotion_uses_pinned_embedding_batch_and_schedulable_request():
+    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
+    promotion = deployment.split("rag_index_promote()", 1)[1]
+
+    assert promotion.count("embed-chunks") == 2
+    assert promotion.count("--checkpoint-every 32") == 2
+    assert 'requests: {cpu: 500m, memory: 2Gi}' in promotion
+
+
 def test_registry_push_refreshes_login_and_retries_once(tmp_path):
     attempt_path = tmp_path / "push-attempts"
     login_path = tmp_path / "registry-logins"

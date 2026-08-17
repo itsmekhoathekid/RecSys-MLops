@@ -215,11 +215,11 @@ spec:
             - >-
               set -euo pipefail;
               python -m rag_data.cli chunk-items --config configs/data-platform/rag/pipeline.yaml --source-run-id '${source_run}' --run-id '${smoke_run}' --item-limit 3 --force;
-              python -m rag_data.cli embed-chunks --config configs/data-platform/rag/pipeline.yaml --run-id '${smoke_run}' --force;
+              python -m rag_data.cli embed-chunks --config configs/data-platform/rag/pipeline.yaml --run-id '${smoke_run}' --checkpoint-every 32 --force;
               python -m rag_data.cli publish-index --config configs/data-platform/rag/pipeline.yaml --run-id '${smoke_run}' --mode reconcile;
               python -m rag_data.cli validate-index --config configs/data-platform/rag/pipeline.yaml --run-id '${smoke_run}' --expected-item-count 3;
               python -m rag_data.cli chunk-items --config configs/data-platform/rag/pipeline.yaml --source-run-id '${source_run}' --run-id '${pipeline_run}';
-              python -m rag_data.cli embed-chunks --config configs/data-platform/rag/pipeline.yaml --run-id '${pipeline_run}';
+              python -m rag_data.cli embed-chunks --config configs/data-platform/rag/pipeline.yaml --run-id '${pipeline_run}' --checkpoint-every 32;
               python -m rag_data.cli publish-index --config configs/data-platform/rag/pipeline.yaml --run-id '${pipeline_run}' --mode reconcile;
               python -m rag_data.cli validate-index --config configs/data-platform/rag/pipeline.yaml --run-id '${pipeline_run}' --expected-item-count '${expected_items}' --promote
           envFrom:
@@ -230,7 +230,10 @@ spec:
             - {name: MILVUS_HOST, value: "http://recsys-milvus.recsys-dataflow.svc.cluster.local"}
             - {name: RAG_FEAST_REPO, value: "apps/data-platform/feature-store/rag_feature_repo"}
           resources:
-            requests: {cpu: "1", memory: 2Gi}
+            # The ONNX encoder can burst to two cores, while a 500m request
+            # keeps the resumable batch Job schedulable on the shared GKE CPU
+            # node when quota prevents an autoscaler expansion.
+            requests: {cpu: 500m, memory: 2Gi}
             limits: {cpu: "2", memory: 4Gi}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
           volumeMounts: [{name: tmp, mountPath: /tmp}]
