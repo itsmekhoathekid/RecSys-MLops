@@ -82,6 +82,10 @@ e2e:
   realtimeEnabled: "true"
   datahubIngestEnabled: "false"
 
+datahub:
+  runtimeLineageStrict: "false"
+  validationStrict: "false"
+
 spark:
   k8sMaster: k8s://https://kubernetes.default.svc
   serviceAccountName: default

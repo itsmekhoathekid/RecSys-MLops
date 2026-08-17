@@ -28,6 +28,10 @@ dataSetup:
   dp3Config: configs/data-platform/spark/dp3-e2e-2k.yaml
   realtimeLimitPerTable: "1000"
 
+datahub:
+  runtimeLineageStrict: "true"
+  validationStrict: "true"
+
 spark:
   driverMemory: 1g
   driverMemoryOverhead: 512m
