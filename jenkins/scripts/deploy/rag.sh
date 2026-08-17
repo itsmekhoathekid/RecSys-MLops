@@ -26,7 +26,9 @@ spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600
   template:
-    metadata: {labels: {app.kubernetes.io/name: ${job}, app.kubernetes.io/component: rag-indexing}}
+    metadata:
+      labels: {app.kubernetes.io/name: ${job}, app.kubernetes.io/component: rag-indexing}
+      annotations: {sidecar.istio.io/inject: "false"}
     spec:
       restartPolicy: Never
       nodeSelector: {recsys.ai/pool: cpu-services}
@@ -58,7 +60,9 @@ spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 3600
   template:
-    metadata: {labels: {app.kubernetes.io/name: ${job}, app.kubernetes.io/component: rag-indexing}}
+    metadata:
+      labels: {app.kubernetes.io/name: ${job}, app.kubernetes.io/component: rag-indexing}
+      annotations: {sidecar.istio.io/inject: "false"}
     spec:
       restartPolicy: Never
       nodeSelector: {recsys.ai/pool: cpu-services}
@@ -117,6 +121,8 @@ metadata: {name: ${job}, namespace: ${namespace}}
 spec:
   backoffLimit: 0
   template:
+    metadata:
+      annotations: {sidecar.istio.io/inject: "false"}
     spec:
       restartPolicy: Never
       containers:
@@ -177,7 +183,9 @@ spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400
   template:
-    metadata: {labels: {app.kubernetes.io/name: ${job}, app.kubernetes.io/component: rag-indexing}}
+    metadata:
+      labels: {app.kubernetes.io/name: ${job}, app.kubernetes.io/component: rag-indexing}
+      annotations: {sidecar.istio.io/inject: "false"}
     spec:
       restartPolicy: Never
       nodeSelector: {recsys.ai/pool: cpu-services}

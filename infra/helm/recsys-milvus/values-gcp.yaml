@@ -1,5 +1,14 @@
 milvus:
+  # The production node pool is quota-capped. Keep the 2 CPU / 4 GiB limits
+  # from values.yaml, but reserve only the steady-state footprint needed by
+  # the current ~1k-vector FLAT index so scheduling remains deterministic.
+  annotations:
+    sidecar.istio.io/inject: "false"
   standalone:
+    resources:
+      requests:
+        cpu: 150m
+        memory: 1Gi
     nodeSelector:
       recsys.ai/pool: cpu-services
     tolerations:
