@@ -68,7 +68,9 @@ spec:
       annotations: {sidecar.istio.io/inject: "false"}
     spec:
       restartPolicy: Never
-      nodeSelector: {recsys.ai/pool: cpu-services}
+      nodeSelector: {recsys.ai/workload: ml-system}
+      tolerations:
+        - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}
       containers:
         - name: rotate-root
           image: ${image}

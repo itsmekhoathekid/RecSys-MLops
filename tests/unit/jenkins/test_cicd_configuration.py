@@ -195,6 +195,16 @@ def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
     assert "recsys.ai/pool: cpu-services" in gcp_values
 
 
+def test_rag_transient_milvus_jobs_use_released_ml_capacity():
+    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
+    bootstrap = deployment.split("rag_milvus_credentials_bootstrap()", 1)[1].split(
+        "rag_rollback_pointer()", 1
+    )[0]
+
+    assert "nodeSelector: {recsys.ai/workload: ml-system}" in bootstrap
+    assert "value: ml-system, effect: NoSchedule" in bootstrap
+
+
 def test_rag_promotion_uses_pinned_embedding_batch_and_schedulable_request():
     deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
     promotion = deployment.split("rag_index_promote()", 1)[1]
