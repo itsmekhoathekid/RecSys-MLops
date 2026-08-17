@@ -17,6 +17,10 @@ class RagApiSettings:
     minio_endpoint: str
     minio_access_key: str
     minio_secret_key: str
+    milvus_host: str
+    milvus_port: int
+    milvus_username: str
+    milvus_password: str
     embedding_model: str
     embedding_revision: str
     embedding_dimension: int
@@ -44,6 +48,13 @@ class RagApiSettings:
             ),
             minio_access_key=os.getenv("AWS_ACCESS_KEY_ID", ""),
             minio_secret_key=os.getenv("AWS_SECRET_ACCESS_KEY", ""),
+            milvus_host=os.getenv(
+                "MILVUS_HOST",
+                "http://recsys-milvus.recsys-dataflow.svc.cluster.local",
+            ).rstrip("/"),
+            milvus_port=int(os.getenv("MILVUS_PORT", "19530")),
+            milvus_username=os.getenv("MILVUS_USERNAME", "root"),
+            milvus_password=os.getenv("MILVUS_PASSWORD", "").strip(),
             embedding_model=os.getenv(
                 "RAG_EMBEDDING_MODEL", "intfloat/multilingual-e5-small"
             ),

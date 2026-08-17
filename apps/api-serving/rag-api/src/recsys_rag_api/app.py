@@ -18,9 +18,10 @@ from fastapi import FastAPI, HTTPException, Request
 from recsys_rag_runtime import OnnxE5Encoder
 from recsys_serving_common.runtime import configure_api, healthz, metrics, version_payload
 
+from recsys_rag_api.batching import BatchingTextEncoder
 from recsys_rag_api.contracts import RetrievalRequest, RetrievalResponse
 from recsys_rag_api.pointer import ActivePointerManager, EmbeddingContract
-from recsys_rag_api.retrieval import FeastCandidateSearch, RetrievalService
+from recsys_rag_api.retrieval import MilvusCandidateSearch, RetrievalService
 from recsys_rag_api.settings import RagApiSettings
 
 
@@ -90,8 +91,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        batching_encoder: BatchingTextEncoder | None = None
+        milvus_client: object | None = None
         if retrieval_service is None:
             from feast import FeatureStore
+            from pymilvus import MilvusClient
 
             _configure_feast_registry_url()
             contract = EmbeddingContract(
@@ -104,19 +108,41 @@ def create_app(
                 supported_contracts=[contract],
                 reload_seconds=settings.pointer_reload_seconds,
             )
-            service = RetrievalService(
-                encoder=OnnxE5Encoder(
+            batching_encoder = BatchingTextEncoder(
+                OnnxE5Encoder(
                     settings.model_dir, dimension=settings.embedding_dimension
+                )
+            )
+            feature_store = FeatureStore(repo_path=settings.feast_repo_path)
+            # Feast is the registry/schema authority. Resolve both slots at
+            # startup so a malformed FeatureView fails before serving traffic.
+            for feature_view in ("rag_item_chunks_blue", "rag_item_chunks_green"):
+                feature_store.get_feature_view(feature_view)
+            milvus_client = MilvusClient(
+                uri=f"{settings.milvus_host}:{settings.milvus_port}",
+                token=(
+                    f"{settings.milvus_username}:{settings.milvus_password}"
+                    if settings.milvus_username and settings.milvus_password
+                    else ""
                 ),
-                search=FeastCandidateSearch(
-                    FeatureStore(repo_path=settings.feast_repo_path)
+            )
+            service = RetrievalService(
+                encoder=batching_encoder,
+                search=MilvusCandidateSearch(
+                    milvus_client, project=feature_store.project
                 ),
                 pointers=pointers,
             )
         else:
             service = retrieval_service
         app.state.retrieval_service = service
-        yield
+        try:
+            yield
+        finally:
+            if batching_encoder is not None:
+                batching_encoder.close()
+            if milvus_client is not None:
+                milvus_client.close()
 
     app = configure_api(
         FastAPI(title="RecSys RAG Item Retrieval API", version="0.1.0", lifespan=lifespan)

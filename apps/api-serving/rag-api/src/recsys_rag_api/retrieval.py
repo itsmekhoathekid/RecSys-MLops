@@ -8,7 +8,8 @@ chunks. Item score is maximum cosine similarity with deterministic tie-breaks.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Protocol
+import threading
+from typing import Any, Protocol
 
 from recsys_rag_runtime import QUERY_PREFIX, TextEncoder
 
@@ -190,3 +191,91 @@ class FeastCandidateSearch:
             )
             for index in range(row_count)
         ]
+
+
+class MilvusCandidateSearch:
+    """Search Feast-managed Milvus collections without returning query vectors.
+
+    Feast remains the control plane for entities, FeatureViews, registry state,
+    writes, and blue/green collection names. Feast 0.64's document read adapter
+    includes the 384-float embedding in every returned hit so it can discover
+    the ANN field. At a pool of 200 that creates avoidable protobuf conversion
+    and Python GIL contention. This read adapter uses the same persistent Milvus
+    client and collection contract, but requests only ranking metadata and text.
+    """
+
+    OUTPUT_FIELDS = (
+        "chunk_id",
+        "item_id",
+        "chunk_type",
+        "source_key",
+        "text",
+        "brand",
+        "category_l1",
+        "category_l2",
+        "category_l3",
+        "current_price",
+        "in_stock",
+        "average_rating",
+    )
+
+    def __init__(self, client: object, *, project: str = "recsys_rag") -> None:
+        self.client = client
+        self.project = project
+        self._loaded: set[str] = set()
+        self._load_lock = threading.Lock()
+
+    def search(
+        self, *, feature_view: str, query_vector: list[float], top_k: int
+    ) -> list[CandidateChunk]:
+        """Return typed candidates from the active Feast collection.
+
+        Collection loading is idempotent and synchronized because a cold burst
+        may reach the process before either blue/green slot has been used.
+        MilvusClient itself owns the reusable gRPC channel for concurrent calls.
+        """
+
+        collection_name = f"{self.project}_{feature_view}"
+        if collection_name not in self._loaded:
+            with self._load_lock:
+                if collection_name not in self._loaded:
+                    self.client.load_collection(collection_name=collection_name)
+                    self._loaded.add(collection_name)
+        results = self.client.search(
+            collection_name=collection_name,
+            data=[query_vector],
+            anns_field="embedding",
+            search_params={"metric_type": "COSINE", "params": {}},
+            limit=top_k,
+            output_fields=list(self.OUTPUT_FIELDS),
+        )
+        hits = results[0] if results else []
+        return [self._candidate(hit) for hit in hits]
+
+    @staticmethod
+    def _candidate(hit: Any) -> CandidateChunk:
+        """Coerce a pymilvus hit or dict-shaped test double into a contract."""
+
+        entity = hit.get("entity", {})
+        score = getattr(hit, "distance", None)
+        if score is None:
+            score = hit.get("distance", hit.get("score", 0.0))
+
+        def value(name: str, default: object = "") -> object:
+            return entity.get(name, hit.get(name, default))
+
+        return CandidateChunk(
+            chunk_id=str(value("chunk_id")),
+            item_id=int(value("item_id", 0)),
+            chunk_type=str(value("chunk_type")),
+            source_key=str(value("source_key")),
+            text=str(value("text")),
+            brand=str(value("brand")),
+            category_l1=str(value("category_l1")),
+            category_l2=str(value("category_l2")),
+            category_l3=str(value("category_l3")),
+            current_price=float(value("current_price", 0.0)),
+            in_stock=str(value("in_stock", "false")).casefold() in {"true", "1"},
+            average_rating=float(value("average_rating", 0.0)),
+            score=float(score),
+        )

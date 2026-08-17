@@ -18,6 +18,13 @@ ci_rag_api() {
   tests=(tests/unit/api_serving/rag_api)
   cov_paths=(recsys_rag_api)
   run_configured_component_tests "${component}" "apps/api-serving/rag-api/src:apps/api-serving/shared/src:packages/recsys-rag-runtime/src"
+  "${ci_environment}/bin/interrogate" \
+    --fail-under 90 \
+    --ignore-init-method \
+    --ignore-private \
+    --ignore-semiprivate \
+    --ignore-property-decorators \
+    apps/api-serving/rag-api/src/recsys_rag_api
   helm lint infra/helm/recsys-rag-api -f infra/helm/recsys-rag-api/values-gcp.yaml
   helm template recsys-rag-api infra/helm/recsys-rag-api \
     -f infra/helm/recsys-rag-api/values-gcp.yaml \

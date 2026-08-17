@@ -7,7 +7,12 @@ from pydantic import ValidationError
 
 from recsys_rag_api.contracts import CandidateChunk, RetrievalFilters, RetrievalRequest
 from recsys_rag_api.pointer import ActivePointerManager, EmbeddingContract
-from recsys_rag_api.retrieval import FeastCandidateSearch, RetrievalService, _matches
+from recsys_rag_api.retrieval import (
+    FeastCandidateSearch,
+    MilvusCandidateSearch,
+    RetrievalService,
+    _matches,
+)
 
 
 REVISION = "03415a4be176a1620747c692ed433219fabc3def"
@@ -182,3 +187,50 @@ def test_feast_adapter_coerces_column_response_and_empty_result():
     assert FeastCandidateSearch(FeatureStore({})).search(
         feature_view="rag_item_chunks_blue", query_vector=[1.0] * 384, top_k=5
     ) == []
+
+
+class MilvusClient:
+    def __init__(self):
+        self.loaded = []
+        self.calls = []
+
+    def load_collection(self, *, collection_name):
+        self.loaded.append(collection_name)
+
+    def search(self, **kwargs):
+        self.calls.append(kwargs)
+        return [
+            [
+                {
+                    "distance": 0.92,
+                    "entity": {
+                        "chunk_id": "1:a",
+                        "item_id": "1",
+                        "chunk_type": "review",
+                        "source_key": "r",
+                        "text": "text",
+                        "brand": "Sony",
+                        "category_l1": "Điện tử",
+                        "current_price": "20.99",
+                        "in_stock": "true",
+                        "average_rating": "4.7",
+                    },
+                }
+            ]
+        ]
+
+
+def test_milvus_adapter_reuses_loaded_collection_and_omits_embedding_payload():
+    client = MilvusClient()
+    adapter = MilvusCandidateSearch(client)
+    first = adapter.search(
+        feature_view="rag_item_chunks_blue", query_vector=[1.0] * 384, top_k=200
+    )
+    adapter.search(
+        feature_view="rag_item_chunks_blue", query_vector=[1.0] * 384, top_k=100
+    )
+    assert first[0].item_id == 1
+    assert first[0].score == 0.92
+    assert client.loaded == ["recsys_rag_rag_item_chunks_blue"]
+    assert "embedding" not in client.calls[0]["output_fields"]
+    assert client.calls[0]["limit"] == 200
