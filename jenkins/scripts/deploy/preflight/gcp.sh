@@ -136,7 +136,7 @@ if missing:
 
 gcp_verify_unit_secrets() {
   case "$1" in
-    data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|feature-registry|streaming|airflow)
+    data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|feature-registry|streaming|airflow|milvus|rag-feature-registry|rag-index-promotion)
       gcp_verify_external_secret_target recsys-dataflow recsys-data-platform-secret
       ;;
     mlflow)
@@ -153,6 +153,10 @@ gcp_verify_unit_secrets() {
         HUDI_WAREHOUSE HUDI_DATASET_TABLE HUDI_CLEAN_HOURS_RETAINED \
         HUDI_ZK_URL HUDI_ZK_PORT HUDI_ZK_BASE_PATH HUDI_ZK_LOCK_KEY
       gcp_verify_external_secret_target kserve-triton-inference recsys-kserve-minio
+      ;;
+    rag-api)
+      gcp_verify_external_secret_target api-serving recsys-rag-api \
+        AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY MILVUS_USERNAME MILVUS_PASSWORD
       ;;
   esac
 }

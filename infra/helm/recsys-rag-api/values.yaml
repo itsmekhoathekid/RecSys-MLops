@@ -1,0 +1,37 @@
+namespace: api-serving
+name: recsys-rag-api
+image: registry.example.invalid/recsys/recsys-rag-api:required
+imagePullPolicy: IfNotPresent
+replicas: 1
+existingSecret: recsys-rag-api
+service: {port: 80, targetPort: 8080}
+rollout: {maxSurge: 1, maxUnavailable: 0, minReadySeconds: 10, progressDeadlineSeconds: 180}
+config:
+  feastRepoPath: /opt/recsys/apps/data-platform/feature-store/rag_feature_repo
+  modelDir: /opt/recsys/models/multilingual-e5-small
+  lakeBucket: recsys-lakehouse
+  activePointerKey: gold/rag_item_embeddings/_active/pointer.json
+  minioEndpoint: http://data-platform-minio.recsys-dataflow.svc.cluster.local:9000
+  milvusHost: http://recsys-milvus.recsys-dataflow.svc.cluster.local
+  milvusPort: "19530"
+  embeddingModel: intfloat/multilingual-e5-small
+  embeddingRevision: 03415a4be176a1620747c692ed433219fabc3def
+  embeddingDimension: "384"
+  pointerReloadSeconds: "60"
+  jsonLogs: "1"
+  otelEnabled: "1"
+  otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317
+resources:
+  requests: {cpu: 500m, memory: 1Gi}
+  limits: {cpu: "2", memory: 2Gi}
+nodeSelector: {}
+tolerations: []
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 2
+  pollingInterval: 10
+  cooldownPeriod: 120
+  serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
+  requestRateTarget: "5"
+observability: {serviceMonitor: {enabled: true, interval: 15s}}

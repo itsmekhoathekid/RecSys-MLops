@@ -48,6 +48,10 @@ externalSecrets:
     namespace: observability
     secretName: recsys-data-platform-secret
     vaultPath: data-platform
+  ragApi:
+    namespace: api-serving
+    secretName: recsys-rag-api
+    vaultPath: data-platform
   mlflow:
     namespace: experiment-tracking
     secretName: recsys-mlflow-secrets

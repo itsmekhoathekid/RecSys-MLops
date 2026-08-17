@@ -74,6 +74,16 @@
         "tests/integration/test_hudi_native_upsert_versioning.py"
       ]
     },
+    "datahub-governance": {
+      "prefixes": [
+        "apps/data-platform/src/metadata/"
+      ],
+      "files": [
+        "apps/data-platform/src/validate/governance_contracts.py",
+        "tests/unit/data_platform/test_governance_lineage.py",
+        "tests/unit/test_runtime_lineage.py"
+      ]
+    },
     "airflow-data-release": {
       "prefixes": [
         "infra/helm/recsys-airflow/"
@@ -94,6 +104,13 @@
         "infra/helm/recsys-streaming/",
         "infra/helm/recsys-event-stream/",
         "infra/helm/recsys-kafka-connect/"
+      ]
+    },
+    "rag-shared-runtime": {
+      "prefixes": [
+        "packages/recsys-rag-runtime/",
+        "configs/data-platform/rag/",
+        "scripts/models/"
       ]
     }
   },
@@ -327,6 +344,76 @@
         "dp2"
       ],
       "migrationPolicy": "expand-only"
+    },
+    {
+      "name": "rag_index",
+      "flag": "RUN_RAG_INDEX",
+      "label": "RAG Item Index",
+      "ciProfile": "data",
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "data-common",
+          "datahub-governance",
+          "airflow-data-release",
+          "spark-utils",
+          "rag-shared-runtime"
+        ],
+        "prefixes": [
+          "apps/data-platform/src/rag_data/",
+          "apps/data-platform/feature-store/rag_feature_repo/",
+          "infra/helm/recsys-milvus/",
+          "infra/helm/recsys-rag-data/",
+          "tests/unit/data_platform/rag_data/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/data.sh",
+          "jenkins/scripts/deploy/rag.sh",
+          "jenkins/scripts/test/rag.sh",
+          "apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_index.py",
+          "apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_reconciliation.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-data-ingestion",
+        "recsys-airflow"
+      ],
+      "buildArtifacts": [],
+      "verifyDependsOn": [],
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "rag_api",
+      "flag": "RUN_RAG_API",
+      "label": "RAG Retrieval API",
+      "ciProfile": "rag-api",
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "rag-shared-runtime"
+        ],
+        "prefixes": [
+          "apps/api-serving/shared/",
+          "apps/api-serving/rag-api/",
+          "infra/helm/recsys-rag-api/",
+          "tests/unit/api_serving/rag_api/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/serving.sh",
+          "jenkins/scripts/deploy/rag.sh",
+          "jenkins/scripts/test/rag.sh"
+        ]
+      },
+      "buildImages": [
+        "recsys-rag-api"
+      ],
+      "buildArtifacts": [],
+      "verifyDependsOn": [
+        "rag_index"
+      ],
+      "migrationPolicy": "none"
     },
     {
       "name": "online_feature_api",

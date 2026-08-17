@@ -1,0 +1,24 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recsys-milvus-ingress
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: milvus
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.namespace }}}
+          podSelector:
+            matchLabels: {app.kubernetes.io/component: rag-indexing}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.apiNamespace }}}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: recsys-rag-api}
+      ports:
+        - {protocol: TCP, port: 19530}
+{{- end }}

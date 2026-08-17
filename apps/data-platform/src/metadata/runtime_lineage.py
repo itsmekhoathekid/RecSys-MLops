@@ -91,6 +91,7 @@ class RuntimeLineageRecorder:
     inputs: set[str] = field(default_factory=set)
     outputs: set[str] = field(default_factory=set)
     run_id: str = field(default_factory=lineage_run_id)
+    properties: dict[str, str] = field(default_factory=dict)
     _finished: bool = field(default=False, init=False)
     _emitter: DatahubRestEmitter | None = field(default=None, init=False, repr=False)
     _instance: DataProcessInstance | None = field(default=None, init=False, repr=False)
@@ -119,6 +120,7 @@ class RuntimeLineageRecorder:
                     "nominalRunId": str(self.run_id),
                     "pipeline": self.pipeline,
                     "jobId": self.job_id,
+                    **self.properties,
                 },
                 inlets=_dataset_urns(self.inputs),
                 outlets=_dataset_urns(self.outputs),

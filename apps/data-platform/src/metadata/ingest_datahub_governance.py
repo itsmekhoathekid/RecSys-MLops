@@ -21,6 +21,11 @@ from metadata.governance_catalog import (
     KAFKA_TOPIC_URNS,
     POSTGRES_FEATURE_URNS,
     REDIS_FEATURE_URNS,
+    RAG_ACTIVE_POINTER_URN,
+    RAG_GOLD_EMBEDDINGS_URN,
+    RAG_MILVUS_URNS,
+    RAG_RAW_DOCUMENTS_URN,
+    RAG_SILVER_CHUNKS_URN,
     SILVER_URNS,
     SOURCE_POSTGRES_URNS,
     assertion_urn,
@@ -40,6 +45,7 @@ from metadata.governance_schemas import (
     cdc_topic_schema,
     feature_schema,
     raw_schema,
+    rag_schema,
     silver_schema,
 )
 from monitoring.pushgateway import MetricSample, push_metrics
@@ -559,13 +565,19 @@ def _dataset(
     primary_keys: tuple[str, ...] = (),
     validation_pipeline: str | None = None,
     required_columns: tuple[str, ...] = (),
+    extra_tags: tuple[str, ...] = (),
+    custom_properties: dict[str, str] | None = None,
 ) -> Dataset:
     return Dataset(
         urn=urn,
         name=name,
         description=description,
-        tags=(product, "DataContract", "NativePipeline"),
-        custom_properties={"data_product": product, "contract": contract},
+        tags=(product, "DataContract", "NativePipeline", *extra_tags),
+        custom_properties={
+            "data_product": product,
+            "contract": contract,
+            **(custom_properties or {}),
+        },
         schema=schema,
         primary_keys=primary_keys,
         validation_pipeline=validation_pipeline,
@@ -736,6 +748,149 @@ def dp3() -> DataProduct:
     )
 
 
+def rag_items() -> DataProduct:
+    """Define run-agnostic RAG item artifacts, index slots, and contracts."""
+
+    common = {
+        "schema_version": "1",
+        "chunker_version": "semantic_chunker_v1",
+        "embedding_model": "intfloat/multilingual-e5-small",
+        "embedding_dimension": "384",
+        "metric": "COSINE",
+        "index_type": "FLAT",
+    }
+    datasets = (
+        _dataset(
+            RAG_RAW_DOCUMENTS_URN,
+            "recsys-lakehouse.raw.rag_item_documents",
+            "Canonical synthetic item documents generated from source product IDs and mapped taxonomy.",
+            "RAG_ITEMS",
+            "Complete manifest, canonical schema, and unique item_id values",
+            schema=rag_schema("raw"),
+            primary_keys=("item_id",),
+            validation_pipeline="RAG_ITEMS",
+            required_columns=("item_id", "structured_metadata", "unstructured_text"),
+            custom_properties=common,
+        ),
+        _dataset(
+            RAG_SILVER_CHUNKS_URN,
+            "recsys-lakehouse.silver.rag_item_chunks",
+            "Structure-aware semantic chunks with stable IDs and item content hashes.",
+            "RAG_ITEMS",
+            "Unique chunk_id, valid item reference, and token_count <= 384",
+            schema=rag_schema("silver"),
+            primary_keys=("chunk_id",),
+            validation_pipeline="RAG_ITEMS",
+            required_columns=("chunk_id", "item_id", "content_hash", "source_run_id"),
+            extra_tags=("SemanticChunking",),
+            custom_properties=common,
+        ),
+        _dataset(
+            RAG_GOLD_EMBEDDINGS_URN,
+            "recsys-lakehouse.gold.rag_item_embeddings",
+            "Normalized 384-dimensional multilingual E5 item chunk embeddings.",
+            "RAG_ITEMS",
+            "Every embedding has 384 finite floats and L2 norm in [0.999,1.001]",
+            schema=rag_schema("gold"),
+            primary_keys=("chunk_id",),
+            validation_pipeline="RAG_ITEMS",
+            required_columns=("chunk_id", "embedding", "item_content_hash"),
+            extra_tags=("Embedding",),
+            custom_properties=common,
+        ),
+        *tuple(
+            _dataset(
+                urn,
+                f"recsys_rag.rag_item_chunks_{slot}",
+                f"Feast-managed Milvus {slot} collection for atomic RAG index releases.",
+                "RAG_ITEMS",
+                "Milvus count equals gold manifest and retrieval smoke passes",
+                schema=rag_schema("milvus"),
+                primary_keys=("chunk_id",),
+                validation_pipeline="RAG_ITEMS",
+                required_columns=("chunk_id", "embedding", "item_id"),
+                extra_tags=("VectorIndex",),
+                custom_properties={**common, "slot": slot},
+            )
+            for slot, urn in RAG_MILVUS_URNS.items()
+        ),
+        _dataset(
+            RAG_ACTIVE_POINTER_URN,
+            "recsys-lakehouse.gold.rag_item_embeddings._active",
+            "ETag-protected active pointer selecting one validated Milvus slot.",
+            "RAG_ITEMS",
+            "Pointer collection, model revision, and dimension have passed promotion validation",
+            schema=rag_schema("pointer"),
+            primary_keys=("active_slot",),
+            validation_pipeline="RAG_ITEMS",
+            required_columns=("active_slot", "pipeline_run_id", "embedding_dimension"),
+            extra_tags=("VectorIndex",),
+            custom_properties=common,
+        ),
+    )
+    jobs = tuple(
+        Job(
+            id=job_id,
+            name=name,
+            description=description,
+            tags=("RAG_ITEMS", "DataContract", "NativePipeline", tag),
+            custom_properties={"engine": engine, **common},
+        )
+        for job_id, name, description, tag, engine in (
+            (
+                "generate_item_documents",
+                "Generate Item Documents",
+                "Compose deterministic catalog metadata with schema-constrained synthetic text.",
+                "DataContract",
+                "PostgreSQL plus OrcaRouter",
+            ),
+            (
+                "semantic_chunk_items",
+                "Semantic Chunk Items",
+                "Render hard-boundary item sections and split long units at semantic breakpoints.",
+                "SemanticChunking",
+                "Python plus ONNX Runtime",
+            ),
+            (
+                "embed_item_chunks",
+                "Embed Item Chunks",
+                "Encode passage-prefixed chunks with the pinned multilingual E5 ONNX model.",
+                "Embedding",
+                "ONNX Runtime CPU",
+            ),
+            (
+                "incremental_upsert_index",
+                "Incremental Upsert Index",
+                "Native-upsert safe changed chunks through Feast into the active Milvus slot.",
+                "VectorIndex",
+                "Feast plus Milvus",
+            ),
+            (
+                "reconcile_vector_index",
+                "Reconcile Vector Index",
+                "Rebuild the inactive slot when deletion, shrink, or contract migration is detected.",
+                "VectorIndex",
+                "Feast plus Milvus",
+            ),
+            (
+                "validate_and_publish_index",
+                "Validate And Publish Index",
+                "Validate IDs/count/vector contract and ETag-promote the candidate pointer.",
+                "VectorIndex",
+                "Feast, Milvus, and MinIO",
+            ),
+        )
+    )
+    return DataProduct(
+        id="RAG_ITEMS",
+        flow_id=pipeline_flow_id("RAG_ITEMS"),
+        orchestrator=pipeline_orchestrator("RAG_ITEMS"),
+        flow_name="RAG Item Documents To Feast Milvus Index",
+        description="Canonical item documents through semantic chunks and E5 embeddings to blue/green Milvus retrieval.",
+        tags=("RAG_ITEMS", "DataContract", "NativePipeline"),
+        datasets=datasets,
+        jobs=jobs,
+    )
 def cdc_ingestion() -> DataProduct:
     source = tuple(
         _dataset(
@@ -940,6 +1095,26 @@ def emit_products(
             "#00838F",
         ),
         (
+            "RAG_ITEMS",
+            "Item documents, semantic chunks, embeddings, and blue/green vector index.",
+            "#C62828",
+        ),
+        (
+            "SemanticChunking",
+            "Structure-aware semantic chunking with explicit token contracts.",
+            "#AD1457",
+        ),
+        (
+            "Embedding",
+            "Pinned and checksummed multilingual embedding artifact.",
+            "#4527A0",
+        ),
+        (
+            "VectorIndex",
+            "Validated Feast/Milvus vector index or atomic active pointer.",
+            "#283593",
+        ),
+        (
             "DataContract",
             "Entity has an explicit schema or pipeline contract in the RecSys data platform repo.",
             "#455A64",
@@ -1054,7 +1229,14 @@ def main() -> int:
         help="Verify governance definitions and data-contract coverage without contacting DataHub.",
     )
     args = parser.parse_args()
-    products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
+    products = (
+        dp1(),
+        dp2(),
+        dp3(),
+        cdc_ingestion(),
+        streaming_features(),
+        rag_items(),
+    )
     if args.verify_only:
         try:
             coverage = verify_governance_coverage(products)

@@ -73,7 +73,7 @@ build_publish_image() {
   }
 
   docker build "${docker_args[@]}" -f "${dockerfile}" -t "${local_image}" "${context}"
-  if [[ "${name}" == "recsys-online-feature-api" || "${name}" == "recsys-inference-api" ]]; then
+  if [[ "${name}" == "recsys-online-feature-api" || "${name}" == "recsys-inference-api" || "${name}" == "recsys-rag-api" ]]; then
     bash jenkins/scripts/test/serving_images.sh "${local_image}" "${name}"
   fi
   docker tag "${local_image}" "${remote_image}"

@@ -147,6 +147,50 @@
       ]
     },
     {
+      "name": "milvus",
+      "kind": "helm",
+      "release": "recsys-milvus",
+      "namespace": "recsys-dataflow",
+      "chart": "infra/helm/recsys-milvus",
+      "components": ["rag_index"],
+      "consumesImages": [],
+      "imageValues": {},
+      "consumesArtifacts": [],
+      "dependsOn": ["data-config", "data-lakehouse"]
+    },
+    {
+      "name": "rag-feature-registry",
+      "kind": "kubernetes-action",
+      "release": "recsys-rag-feature-registry",
+      "namespace": "recsys-dataflow",
+      "components": ["rag_index"],
+      "consumesImages": ["recsys-data-ingestion"],
+      "consumesArtifacts": [],
+      "dependsOn": ["feature-store", "milvus"]
+    },
+    {
+      "name": "rag-api",
+      "kind": "helm",
+      "release": "recsys-rag-api",
+      "namespace": "api-serving",
+      "chart": "infra/helm/recsys-rag-api",
+      "components": ["rag_api"],
+      "consumesImages": ["recsys-rag-api"],
+      "imageValues": {"recsys-rag-api": "image"},
+      "consumesArtifacts": [],
+      "dependsOn": ["rag-feature-registry"]
+    },
+    {
+      "name": "rag-index-promotion",
+      "kind": "kubernetes-action",
+      "release": "recsys-rag-index-promotion",
+      "namespace": "recsys-dataflow",
+      "components": ["rag_index"],
+      "consumesImages": ["recsys-data-ingestion"],
+      "consumesArtifacts": [],
+      "dependsOn": ["rag-feature-registry", "rag-api"]
+    },
+    {
       "name": "streaming",
       "kind": "helm",
       "release": "recsys-streaming",
@@ -175,7 +219,7 @@
       "release": "recsys-airflow",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-airflow",
-      "components": [],
+      "components": ["rag_index"],
       "consumesImages": [
         "recsys-airflow",
         "recsys-data-ingestion",

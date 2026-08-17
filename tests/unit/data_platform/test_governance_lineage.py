@@ -7,6 +7,7 @@ from metadata.governance_catalog import (
     BRONZE_URNS,
     POSTGRES_FEATURE_URNS,
     REDIS_FEATURE_URNS,
+    RAG_MILVUS_URNS,
     SILVER_URNS,
 )
 from metadata.governance_schemas import RAW_TABLE_SCHEMAS, SchemaColumn
@@ -20,6 +21,7 @@ from metadata.ingest_datahub_governance import (
     emit_dataset,
     emit_dataset_contract,
     emit_job,
+    rag_items,
     schema_metadata,
     streaming_features,
     verify_governance_coverage,
@@ -27,13 +29,14 @@ from metadata.ingest_datahub_governance import (
 
 
 def test_governance_products_use_canonical_flow_ids_and_single_dataset_ownership():
-    products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
+    products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features(), rag_items())
     assert [product.flow_id for product in products] == [
         "recsys_dp1_raw_to_bronze",
         "recsys_dp2_bronze_to_silver_gold",
         "recsys_dp3_offline_feature_table",
         "recsys_cdc_postgres_to_kafka",
         "recsys_flink_stream_features",
+        "recsys_rag_item_index",
     ]
 
     ownership: dict[str, list[str]] = {}
@@ -51,6 +54,9 @@ def test_governance_products_use_canonical_flow_ids_and_single_dataset_ownership
     assert set(REDIS_FEATURE_URNS.values()) == {
         dataset.urn for dataset in streaming_features().datasets
     }
+    assert set(RAG_MILVUS_URNS.values()).issubset(
+        {dataset.urn for dataset in rag_items().datasets}
+    )
 
 
 def test_datajob_catalog_emission_does_not_duplicate_runtime_io():
@@ -95,10 +101,10 @@ def test_empty_upstream_lineage_is_upserted_to_remove_stale_dataset_edges():
 
 
 def test_governance_verifier_checks_native_definitions_without_minio_reports():
-    products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
+    products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features(), rag_items())
     coverage = verify_governance_coverage(products)
     assert coverage["verified"] is True
-    assert coverage["datasets"] == 50
+    assert coverage["datasets"] == 56
     assert coverage["jobs"] == sum(len(product.jobs) for product in products)
     assert coverage["runtime_lineage"]["mode"] == ("datahub-airflow-plugin+datahub-sdk")
     assert coverage["validation"]["intermediate_reports"] is False
@@ -133,9 +139,9 @@ def test_data_product_resources_are_replaced_with_exact_canonical_assets():
 
 
 def test_every_governed_dataset_has_schema_and_valid_primary_keys():
-    products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
+    products = (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features(), rag_items())
     datasets = [dataset for product in products for dataset in product.datasets]
-    assert len(datasets) == 50
+    assert len(datasets) == 56
     assert all(dataset.schema for dataset in datasets)
     assert all(dataset.validation_pipeline for dataset in datasets)
     assert all(dataset.custom_properties.get("contract") for dataset in datasets)

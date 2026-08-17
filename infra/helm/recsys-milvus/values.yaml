@@ -1,0 +1,46 @@
+namespace: recsys-dataflow
+
+networkPolicy:
+  enabled: true
+  apiNamespace: api-serving
+
+milvus:
+  cluster:
+    enabled: false
+  standalone:
+    replicas: 1
+    persistence:
+      enabled: true
+      persistentVolumeClaim:
+        accessModes: ReadWriteOnce
+        size: 20Gi
+    resources:
+      requests: {cpu: "1", memory: 2Gi}
+      limits: {cpu: "2", memory: 4Gi}
+    nodeSelector:
+      recsys.ai/pool: cpu-services
+  service:
+    type: ClusterIP
+    port: 19530
+  etcd:
+    replicaCount: 1
+  pulsarv3:
+    enabled: false
+  pulsar:
+    enabled: false
+  minio:
+    enabled: false
+  externalS3:
+    enabled: true
+    host: data-platform-minio.recsys-dataflow.svc.cluster.local
+    port: "9000"
+    bucketName: recsys-milvus
+    useSSL: false
+    useIAM: false
+    accessKey: ""
+    secretKey: ""
+  extraConfigFiles:
+    user.yaml: |+
+      common:
+        security:
+          authorizationEnabled: true

@@ -1,0 +1,44 @@
+schema_version: 1
+catalog_mapping_version: catalog_mapping_v1
+
+generation:
+  base_url: https://api.orcarouter.ai/v1
+  model: openai/gpt-oss-120b
+  temperature: 0.3
+  max_tokens: 1800
+  max_attempts: 3
+  timeout_seconds: 120
+
+storage:
+  bucket: recsys-lakehouse
+  prefix: raw
+  dataset_name: rag_item_documents
+
+catalog:
+  categories:
+    9000: ["Điện tử", "Thiết bị âm thanh", "Tai nghe over-ear"]
+    9001: ["Điện tử", "Thiết bị âm thanh", "Tai nghe true wireless"]
+    9002: ["Điện tử", "Thiết bị âm thanh", "Loa Bluetooth"]
+    9003: ["Điện tử", "Thiết bị âm thanh", "Soundbar"]
+    9004: ["Điện tử", "Gaming", "Tai nghe gaming"]
+  brands:
+    8000: Sony
+    8001: Bose
+    8002: JBL
+    8003: Sennheiser
+    8004: Audio-Technica
+    8005: Anker Soundcore
+    8006: Logitech G
+  category_sku_slugs:
+    9000: HEADPHONES
+    9001: TRUE-WIRELESS
+    9002: BLUETOOTH-SPEAKER
+    9003: SOUNDBAR
+    9004: GAMING-HEADSET
+  warranty_months_by_category:
+    9000: 24
+    9001: 24
+    9002: 12
+    9003: 24
+    9004: 12
+  warehouses: [SGN-01, HAN-01, DAD-01]

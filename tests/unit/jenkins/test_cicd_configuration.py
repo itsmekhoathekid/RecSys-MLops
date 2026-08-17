@@ -32,6 +32,8 @@ EXPECTED_LABELS = [
     "DP1 Raw To Bronze",
     "DP2 Bronze To Silver Gold",
     "DP3 Offline Feature Table",
+    "RAG Item Index",
+    "RAG Retrieval API",
     "Online Feature API",
     "Inference API",
     "KServe Inference Engine",
@@ -450,11 +452,13 @@ def test_component_ci_profiles_use_repo_locks():
         "ml",
         "online-feature-api",
         "inference-api",
+        "rag-api",
         "demo",
         "analytics",
     }
     assert components["online_feature_api"]["ciProfile"] == "online-feature-api"
     assert components["inference_api"]["ciProfile"] == "inference-api"
+    assert components["rag_api"]["ciProfile"] == "rag-api"
     assert components["kserve"]["ciProfile"] == "ml"
     for profile in profiles.values():
         assert profile["lockFile"].endswith("/uv.lock")
@@ -531,10 +535,10 @@ def test_catalog_contains_only_supported_migration_policies():
     }
 
 
-def test_catalog_driven_builder_owns_exactly_sixteen_images():
+def test_catalog_driven_builder_owns_exactly_seventeen_images():
     catalog = json.loads((ROOT / "images/catalog.json").read_text(encoding="utf-8"))
     assert catalog["version"] == 1
-    assert len(catalog["images"]) == 16
+    assert len(catalog["images"]) == 17
     assert {name for name in catalog["images"] if name.endswith("-spark")} == {
         "recsys-spark"
     }

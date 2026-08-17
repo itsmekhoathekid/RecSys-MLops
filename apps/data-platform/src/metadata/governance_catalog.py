@@ -15,6 +15,7 @@ PIPELINE_FLOW_IDS = {
     "CDC_INGESTION": "recsys_cdc_postgres_to_kafka",
     "STREAMING_FEATURES": "recsys_flink_stream_features",
     "ANALYTICS": "recsys_analytics_sync_silver",
+    "RAG_ITEMS": "recsys_rag_item_index",
 }
 PIPELINE_ORCHESTRATORS = {
     "DP1": "airflow",
@@ -23,6 +24,7 @@ PIPELINE_ORCHESTRATORS = {
     "CDC_INGESTION": "kafka-connect",
     "STREAMING_FEATURES": "flink",
     "ANALYTICS": "airflow",
+    "RAG_ITEMS": "airflow",
 }
 FEATURE_TABLES = (
     "user_sequence_features",
@@ -122,6 +124,23 @@ def redis_feature_urn(table: str) -> str:
     return dataset_urn(
         "redis", f"redis://redis.recsys-dataflow.svc.cluster.local:6379/{table}"
     )
+
+
+def rag_s3_urn(path: str) -> str:
+    """Return the run-agnostic governed dataset identity for one RAG artifact."""
+
+    return dataset_urn("s3", f"recsys-lakehouse/{path}")
+
+
+RAG_SOURCE_PRODUCTS_URN = source_postgres_urn("products")
+RAG_RAW_DOCUMENTS_URN = rag_s3_urn("raw/rag_item_documents")
+RAG_SILVER_CHUNKS_URN = rag_s3_urn("silver/rag_item_chunks")
+RAG_GOLD_EMBEDDINGS_URN = rag_s3_urn("gold/rag_item_embeddings")
+RAG_ACTIVE_POINTER_URN = rag_s3_urn("gold/rag_item_embeddings/_active")
+RAG_MILVUS_URNS = {
+    slot: dataset_urn("milvus", f"recsys_rag.rag_item_chunks_{slot}")
+    for slot in ("blue", "green")
+}
 
 
 BRONZE_URNS = {table: bronze_urn(table) for table in RAW_GENERATOR_TABLES}

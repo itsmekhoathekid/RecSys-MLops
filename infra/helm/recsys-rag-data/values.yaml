@@ -1,0 +1,32 @@
+namespace:
+  name: recsys-dataflow
+
+image:
+  repository: registry.example.invalid/recsys/recsys-data-ingestion
+  tag: required
+  pullPolicy: IfNotPresent
+
+job:
+  runId: ""
+  limit: 0
+  itemIds: []
+  checkpointEvery: 10
+  workers: 4
+  force: false
+  backoffLimit: 0
+  ttlSecondsAfterFinished: null
+
+configPath: configs/data-platform/rag/item_metadata.yaml
+configMapName: recsys-data-platform-config
+platformSecretName: recsys-data-platform-secret
+orcaSecretName: rag-item-metadata-orcarouter
+istioInject: "false"
+tolerations: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

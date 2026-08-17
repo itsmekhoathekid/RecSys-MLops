@@ -32,6 +32,10 @@ FEATURE_STORE_IMAGE = os.getenv(
     "FEATURE_STORE_IMAGE",
     "registry.example.invalid/recsys/recsys-feature-store:required",
 )
+DATA_INGESTION_IMAGE = os.getenv(
+    "DATA_INGESTION_IMAGE",
+    "registry.example.invalid/recsys/recsys-data-ingestion:required",
+)
 SPARK_IMAGE = os.getenv(
     "SPARK_IMAGE",
     os.getenv(

@@ -47,6 +47,10 @@ featurePostgres:
   sslmode: disable
   istioInject: "false"
 
+milvus:
+  username: root
+  password: Milvus
+
 minio:
   name: data-platform-minio
   endpoint: http://data-platform-minio:9000

@@ -36,9 +36,9 @@ def render(chart_name: str, *, set_values: tuple[str, ...] = ()) -> str:
     ).stdout
 
 
-def test_image_catalog_has_sixteen_images_and_one_spark():
+def test_image_catalog_has_seventeen_images_and_one_spark():
     catalog = json.loads((ROOT / "images/catalog.json").read_text())
-    assert len(catalog["images"]) == 16
+    assert len(catalog["images"]) == 17
     assert {name for name in catalog["images"] if name.endswith("-spark")} == {
         "recsys-spark"
     }
@@ -96,6 +96,58 @@ def test_resource_ownership_matches_release_boundaries():
     assert "name: redis" in rendered["recsys-feature-store"]
     assert "name: flink-jobmanager" in rendered["recsys-streaming"]
     assert "name: airflow-scheduler" in rendered["recsys-airflow"]
+
+
+def test_event_stream_persists_kafka_and_zookeeper_state():
+    documents = list(yaml.safe_load_all(render("recsys-event-stream")))
+    by_kind_name = {
+        (document["kind"], document["metadata"]["name"]): document
+        for document in documents
+        if isinstance(document, dict) and document.get("kind")
+    }
+
+    kafka_pvc = by_kind_name[("PersistentVolumeClaim", "kafka-data")]
+    zookeeper_pvc = by_kind_name[("PersistentVolumeClaim", "zookeeper-data")]
+    assert kafka_pvc["spec"]["storageClassName"] == "standard"
+    assert zookeeper_pvc["spec"]["storageClassName"] == "standard"
+    assert kafka_pvc["spec"]["resources"]["requests"]["storage"] == "20Gi"
+    assert zookeeper_pvc["spec"]["resources"]["requests"]["storage"] == "5Gi"
+
+    kafka = by_kind_name[("Deployment", "kafka")]
+    zookeeper = by_kind_name[("Deployment", "zookeeper")]
+    assert kafka["spec"]["strategy"]["type"] == "Recreate"
+    assert zookeeper["spec"]["strategy"]["type"] == "Recreate"
+    assert kafka["spec"]["template"]["spec"]["securityContext"] == {
+        "fsGroup": 1000,
+        "fsGroupChangePolicy": "OnRootMismatch",
+    }
+    kafka_env = {
+        entry["name"]: entry["value"]
+        for entry in kafka["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert kafka_env["KAFKA_LOG_DIRS"] == "/var/lib/kafka/data/kafka"
+    assert kafka["spec"]["template"]["spec"]["volumes"][0]["persistentVolumeClaim"][
+        "claimName"
+    ] == "kafka-data"
+    assert zookeeper["spec"]["template"]["spec"]["volumes"][0][
+        "persistentVolumeClaim"
+    ]["claimName"] == "zookeeper-data"
+
+
+def test_kafka_connect_internal_topics_match_small_cluster_partition_count():
+    documents = list(yaml.safe_load_all(render("recsys-kafka-connect")))
+    deployment = next(
+        document
+        for document in documents
+        if document.get("kind") == "Deployment"
+        and document["metadata"]["name"] == "kafka-connect"
+    )
+    env = {
+        entry["name"]: entry["value"]
+        for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert env["CONNECT_OFFSET_STORAGE_PARTITIONS"] == "4"
+    assert env["CONNECT_STATUS_STORAGE_PARTITIONS"] == "4"
 
 
 def test_source_schema_hook_can_use_spare_gcp_ml_node_capacity():

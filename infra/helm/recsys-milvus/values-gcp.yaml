@@ -1,0 +1,9 @@
+milvus:
+  standalone:
+    nodeSelector:
+      recsys.ai/pool: cpu-services
+    tolerations:
+      - key: recsys.ai/workload
+        operator: Equal
+        value: cpu-services
+        effect: NoSchedule

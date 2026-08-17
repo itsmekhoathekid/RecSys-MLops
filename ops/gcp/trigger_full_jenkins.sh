@@ -9,7 +9,9 @@ max_parallel="${COMPONENT_CI_MAX_PARALLEL:-3}"
 coverage_min="${COVERAGE_MIN:-90}"
 gateway_credentials_id="${GATEWAY_SMOKE_CREDENTIALS_ID:-}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
-components="${FORCE_COMPONENTS:-materialize,training,dp1,dp2,dp3,online_feature_api,inference_api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,ci_config}"
+components="${FORCE_COMPONENTS:-materialize,training,dp1,dp2,dp3,online_feature_api,inference_api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,rag_index,rag_api,ci_config}"
+rag_source_run_id="${RAG_SOURCE_RUN_ID:-}"
+rag_pipeline_run_id="${RAG_PIPELINE_RUN_ID:-}"
 crumb_header=()
 headers_file="$(mktemp)"
 cookie_file="$(mktemp)"
@@ -46,6 +48,8 @@ curl -fsS \
   --data-urlencode "COVERAGE_MIN=${coverage_min}" \
   --data-urlencode "GATEWAY_SMOKE_CREDENTIALS_ID=${gateway_credentials_id}" \
   --data-urlencode "PROMOTION_MANIFEST_URI=${promotion_manifest_uri}" \
+  --data-urlencode "RAG_SOURCE_RUN_ID=${rag_source_run_id}" \
+  --data-urlencode "RAG_PIPELINE_RUN_ID=${rag_pipeline_run_id}" \
   --data-urlencode "FORCE_COMPONENTS=${components}"
 
 queue_url="$(

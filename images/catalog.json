@@ -81,6 +81,11 @@
       "context": ".",
       "dependencies": []
     },
+    "recsys-rag-api": {
+      "dockerfile": "images/serving/recsys-rag-api/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
     "recsys-demo-api": {
       "dockerfile": "images/demo/recsys-demo-api/Dockerfile",
       "context": ".",

@@ -13,6 +13,8 @@ pipeline {
     string(name: 'COMPONENT_CI_MAX_PARALLEL', defaultValue: '3', description: 'Maximum component CI branches running in the Jenkins controller pod.')
     string(name: 'GATEWAY_SMOKE_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins username/password credential for authenticated demo web smoke.')
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')
+    string(name: 'RAG_SOURCE_RUN_ID', defaultValue: '', description: 'Complete canonical RAG item-document run consumed by index promotion.')
+    string(name: 'RAG_PIPELINE_RUN_ID', defaultValue: '', description: 'Unique silver/gold/index run ID used by RAG promotion and rollback.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
     string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, including ci_config. Empty keeps path-based detection.')
   }
@@ -186,7 +188,7 @@ pipeline {
         script {
           echo '[DEPLOY] Deploy release'
           env.DEPLOY_STARTED = 'true' // Mark that the build crossed from validation into production-changing work.
-          def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}'"
+          def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' RAG_SOURCE_RUN_ID='${params.RAG_SOURCE_RUN_ID}' RAG_PIPELINE_RUN_ID='${params.RAG_PIPELINE_RUN_ID}'"
           componentPipeline.deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json') // Respect dependency layers and serialize units sharing the same Jenkins lock.
           echo '[VERIFY] Verify release'
           if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
@@ -204,7 +206,7 @@ pipeline {
   post { // Publish evidence and clean build-scoped resources whether the pipeline succeeds or fails.
     always {
       junit allowEmptyResults: true, testResults: 'reports/junit/*.xml' // Render component and production-smoke results in the Jenkins test UI.
-      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.model-cd/*,.demo-web/**/*' // Preserve the release plan, exact images, coverage, validation and deployment diagnostics as build proof.
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.ci-deploy/**/*,.model-cd/*,.demo-web/**/*' // Preserve the release plan, exact images, index verification/rollback evidence, coverage, validation and deployment diagnostics as build proof.
       sh '''
         set +e
         if [ -n "${CI_TMP_ROOT:-}" ] && [ -d "${CI_TMP_ROOT}" ]; then

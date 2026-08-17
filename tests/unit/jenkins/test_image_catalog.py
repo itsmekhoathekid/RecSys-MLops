@@ -26,10 +26,10 @@ def _catalog_payload() -> dict:
     return json.loads((ROOT / "images/catalog.json").read_text(encoding="utf-8"))
 
 
-def test_catalog_contains_exactly_sixteen_images_and_one_spark() -> None:
+def test_catalog_contains_exactly_seventeen_images_and_one_spark() -> None:
     images = load_catalog()
 
-    assert len(images) == 16
+    assert len(images) == 17
     assert {name for name in images if name.endswith("-spark")} == {"recsys-spark"}
     assert all(spec["context"] == "." for spec in images.values())
     assert all((ROOT / spec["dockerfile"]).is_file() for spec in images.values())
@@ -109,7 +109,7 @@ def test_full_release_plan_builds_every_image_once_in_topological_order() -> Non
     images = load_catalog()
     plan = create_release_plan([component["name"] for component in load_components()])
 
-    assert len(plan["buildImages"]) == len(set(plan["buildImages"])) == 16
+    assert len(plan["buildImages"]) == len(set(plan["buildImages"])) == 17
     position = {name: index for index, name in enumerate(plan["buildImages"])}
     for name, spec in images.items():
         for dependency in spec["dependencies"]:
@@ -159,6 +159,6 @@ def test_release_builder_invokes_each_planned_image_once(tmp_path: Path) -> None
         for line in docker_log.read_text().splitlines()
         if line.startswith("build ")
     ]
-    assert len(builds) == 16
+    assert len(builds) == 17
     for image_name in plan["buildImages"]:
         assert sum(f"-t {image_name}:" in line for line in builds) == 1

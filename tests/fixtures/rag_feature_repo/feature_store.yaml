@@ -1,0 +1,13 @@
+project: recsys_rag_ci
+provider: local
+registry: /tmp/recsys-rag-ci-registry.db
+offline_store:
+  type: file
+online_store:
+  type: milvus
+  path: /tmp/recsys-rag-ci-milvus.db
+  vector_enabled: true
+  embedding_dim: 384
+  index_type: FLAT
+  metric_type: COSINE
+entity_key_serialization_version: 3

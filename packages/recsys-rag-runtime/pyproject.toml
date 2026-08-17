@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recsys-rag-runtime"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=2,<3",
+  "onnxruntime==1.23.2",
+  "transformers>=4.48,<5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

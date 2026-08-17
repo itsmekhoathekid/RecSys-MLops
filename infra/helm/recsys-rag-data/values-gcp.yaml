@@ -1,0 +1,9 @@
+image:
+  pullPolicy: IfNotPresent
+
+istioInject: "true"
+tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+    effect: NoSchedule

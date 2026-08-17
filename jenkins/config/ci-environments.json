@@ -21,6 +21,11 @@
       "lockFile": "apps/api-serving/inference-api/uv.lock",
       "pythonVersion": "3.11"
     },
+    "rag-api": {
+      "projectPath": "apps/api-serving/rag-api",
+      "lockFile": "apps/api-serving/rag-api/uv.lock",
+      "pythonVersion": "3.11"
+    },
     "demo": {
       "projectPath": "apps/demo-web/backend",
       "lockFile": "apps/demo-web/backend/uv.lock",

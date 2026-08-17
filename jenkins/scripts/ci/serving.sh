@@ -14,6 +14,17 @@ ci_inference_api() {
   run_configured_component_tests "${component}" "apps/api-serving/inference-api/src:apps/api-serving/online-feature-api/src:apps/api-serving/shared/src:packages/recsys-feature-store-runtime/src"
 }
 
+ci_rag_api() {
+  tests=(tests/unit/api_serving/rag_api)
+  cov_paths=(recsys_rag_api)
+  run_configured_component_tests "${component}" "apps/api-serving/rag-api/src:apps/api-serving/shared/src:packages/recsys-rag-runtime/src"
+  helm lint infra/helm/recsys-rag-api -f infra/helm/recsys-rag-api/values-gcp.yaml
+  helm template recsys-rag-api infra/helm/recsys-rag-api \
+    -f infra/helm/recsys-rag-api/values-gcp.yaml \
+    --set-string image=registry.example.invalid/recsys/recsys-rag-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+    >/dev/null
+}
+
 ci_kserve() {
   tests=(tests/unit/ml_system/test_model_promotion.py tests/contract/test_serving_contracts.py)
   append_integration_dir kserve

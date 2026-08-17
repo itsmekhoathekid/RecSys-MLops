@@ -7,6 +7,8 @@ run_component_ci() {
     dp1) ci_dp1 ;;
     dp2) ci_dp2 ;;
     dp3) ci_dp3 ;;
+    rag_index) ci_rag_index ;;
+    rag_api) ci_rag_api ;;
     online_feature_api) ci_online_feature_api ;;
     inference_api) ci_inference_api ;;
     kserve) ci_kserve ;;

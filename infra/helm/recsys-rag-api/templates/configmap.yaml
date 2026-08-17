@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }}}
+data:
+  RAG_FEAST_REPO: {{ .Values.config.feastRepoPath | quote }}
+  RAG_MODEL_DIR: {{ .Values.config.modelDir | quote }}
+  LAKE_BUCKET: {{ .Values.config.lakeBucket | quote }}
+  RAG_ACTIVE_POINTER_KEY: {{ .Values.config.activePointerKey | quote }}
+  MINIO_ENDPOINT: {{ .Values.config.minioEndpoint | quote }}
+  MILVUS_HOST: {{ .Values.config.milvusHost | quote }}
+  MILVUS_PORT: {{ .Values.config.milvusPort | quote }}
+  RAG_EMBEDDING_MODEL: {{ .Values.config.embeddingModel | quote }}
+  RAG_EMBEDDING_REVISION: {{ .Values.config.embeddingRevision | quote }}
+  RAG_EMBEDDING_DIMENSION: {{ .Values.config.embeddingDimension | quote }}
+  RAG_POINTER_RELOAD_SECONDS: {{ .Values.config.pointerReloadSeconds | quote }}
+  RECSYS_JSON_LOGS: {{ .Values.config.jsonLogs | quote }}
+  RECSYS_OTEL_ENABLED: {{ .Values.config.otelEnabled | quote }}
+  OTEL_SERVICE_NAME: recsys-rag-api
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.config.otelEndpoint | quote }}
+  TRANSFORMERS_OFFLINE: "1"
+  HF_HUB_OFFLINE: "1"

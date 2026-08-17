@@ -1,0 +1,21 @@
+{
+  "catalog_start_item_id": 800000,
+  "item_count": 160,
+  "minimum_queries": 30,
+  "brands": [
+    {"name": "Sony", "offset": 0},
+    {"name": "Bose", "offset": 1},
+    {"name": "JBL", "offset": 2},
+    {"name": "Sennheiser", "offset": 3},
+    {"name": "Audio-Technica", "offset": 4},
+    {"name": "Anker Soundcore", "offset": 5},
+    {"name": "Logitech G", "offset": 6}
+  ],
+  "categories": [
+    {"query": "tai nghe over-ear", "path": ["Điện tử", "Thiết bị âm thanh", "Tai nghe over-ear"], "offset": 0},
+    {"query": "tai nghe true wireless", "path": ["Điện tử", "Thiết bị âm thanh", "Tai nghe true wireless"], "offset": 1},
+    {"query": "loa bluetooth", "path": ["Điện tử", "Thiết bị âm thanh", "Loa Bluetooth"], "offset": 2},
+    {"query": "soundbar", "path": ["Điện tử", "Thiết bị âm thanh", "Soundbar"], "offset": 3},
+    {"query": "tai nghe gaming", "path": ["Điện tử", "Gaming", "Tai nghe gaming"], "offset": 4}
+  ]
+}

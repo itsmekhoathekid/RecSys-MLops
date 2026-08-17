@@ -18,6 +18,11 @@ from metadata.governance_catalog import (
     KAFKA_TOPIC_URNS,
     POSTGRES_FEATURE_URNS,
     REDIS_FEATURE_URNS,
+    RAG_ACTIVE_POINTER_URN,
+    RAG_GOLD_EMBEDDINGS_URN,
+    RAG_MILVUS_URNS,
+    RAG_RAW_DOCUMENTS_URN,
+    RAG_SILVER_CHUNKS_URN,
     SILVER_URNS,
     SOURCE_POSTGRES_URNS,
     flow_urn,
@@ -31,6 +36,7 @@ from metadata.ingest_datahub_governance import (
     dp2,
     dp3,
     emit_job,
+    rag_items,
     streaming_features,
     verify_governance_coverage,
 )
@@ -38,7 +44,7 @@ from metadata.runtime_lineage import RuntimeLineageRecorder, runtime_run_uuid
 
 
 def _products():
-    return (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features())
+    return (dp1(), dp2(), dp3(), cdc_ingestion(), streaming_features(), rag_items())
 
 
 class _Emitter:
@@ -90,6 +96,13 @@ def test_datahub_sdk_dataset_identity_covers_every_governed_platform(monkeypatch
         SOURCE_POSTGRES_URNS.values(),
         KAFKA_TOPIC_URNS.values(),
         REDIS_FEATURE_URNS.values(),
+        RAG_MILVUS_URNS.values(),
+        {
+            RAG_RAW_DOCUMENTS_URN,
+            RAG_SILVER_CHUNKS_URN,
+            RAG_GOLD_EMBEDDINGS_URN,
+            RAG_ACTIVE_POINTER_URN,
+        },
     )
     emitter = _Emitter()
     monkeypatch.setattr(runtime_lineage, "_runtime_emitter", lambda: emitter)

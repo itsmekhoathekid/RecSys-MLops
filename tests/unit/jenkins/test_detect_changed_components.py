@@ -52,7 +52,7 @@ def test_shared_lakehouse_path_selects_all_declared_consumers():
 def test_shared_data_platform_dag_helper_selects_all_consumers():
     assert selected(
         ["apps/data-platform/src/orchestration/airflow/spark_utils.py"]
-    ) == {"materialize", "dp1", "dp2", "dp3", "drift"}
+    ) == {"materialize", "dp1", "dp2", "dp3", "rag_index", "drift"}
 
 
 def test_each_split_airflow_dag_selects_only_its_component():
@@ -197,18 +197,45 @@ def test_inference_only_change_builds_and_deploys_only_inference_api():
     assert result.release_plan["deployUnits"] == ["inference-api"]
 
 
-def test_shared_serving_change_builds_and_deploys_both_apis():
+def test_shared_serving_change_builds_and_deploys_all_three_apis():
     result = detect(["apps/api-serving/shared/src/recsys_serving_common/contracts.py"])
 
-    assert result.component_names == ("online_feature_api", "inference_api")
+    assert result.component_names == (
+        "rag_api",
+        "online_feature_api",
+        "inference_api",
+    )
     assert result.release_plan["buildImages"] == [
         "recsys-online-feature-api",
         "recsys-inference-api",
+        "recsys-rag-api",
     ]
     assert result.release_plan["deployUnits"] == [
+        "rag-api",
         "online-feature-api",
         "inference-api",
     ]
+
+
+def test_rag_change_detection_and_release_dependency_order():
+    index = detect(["apps/data-platform/src/rag_data/semantic_chunker.py"])
+    assert index.component_names == ("rag_index",)
+    assert {"recsys-data-ingestion", "recsys-airflow"}.issubset(
+        index.release_plan["buildImages"]
+    )
+
+    api = detect(["apps/api-serving/rag-api/src/recsys_rag_api/app.py"])
+    assert api.component_names == ("rag_api",)
+    assert api.release_plan["buildImages"] == ["recsys-rag-api"]
+
+    shared = selected(["packages/recsys-rag-runtime/src/recsys_rag_runtime/embedding.py"])
+    assert shared == {"rag_index", "rag_api"}
+
+    plan = create_release_plan(["rag_index", "rag_api"], commit="abc123")
+    units = plan["deployUnits"]
+    assert units.index("milvus") < units.index("rag-feature-registry")
+    assert units.index("rag-feature-registry") < units.index("rag-api")
+    assert units.index("rag-api") < units.index("rag-index-promotion")
 
 
 def test_kserve_only_change_builds_no_api_image():
@@ -299,7 +326,11 @@ def test_rename_is_classified_as_delete_and_add():
         ChangedFile("A", "apps/api-serving/shared/src/new.py"),
     ]
     result = detect_changed_components(changes)
-    assert result.component_names == ("online_feature_api", "inference_api")
+    assert result.component_names == (
+        "rag_api",
+        "online_feature_api",
+        "inference_api",
+    )
     assert result.deleted_unmapped_paths == ("legacy/old.py",)
 
 

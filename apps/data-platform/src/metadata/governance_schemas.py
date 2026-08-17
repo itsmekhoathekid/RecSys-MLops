@@ -259,6 +259,64 @@ def feature_schema(table: str) -> tuple[SchemaColumn, ...]:
     return FEATURE_TABLE_SCHEMAS[table]
 
 
+RAG_DATASET_SCHEMAS: dict[str, tuple[SchemaColumn, ...]] = {
+    "raw": _columns(
+        ("item_id", "BIGINT"),
+        ("sku", "STRING"),
+        ("structured_metadata", "STRUCT"),
+        ("unstructured_text", "STRUCT"),
+        ("reviews_and_qna", "STRUCT"),
+    ),
+    "silver": _columns(
+        ("chunk_id", "STRING"),
+        ("item_id", "BIGINT"),
+        ("chunk_type", "STRING"),
+        ("source_key", "STRING"),
+        ("chunk_index", "INTEGER"),
+        ("text", "STRING"),
+        ("embedding_text", "STRING"),
+        ("token_count", "INTEGER"),
+        ("content_hash", "STRING"),
+        ("item_content_hash", "STRING"),
+        ("source_run_id", "STRING"),
+        ("event_timestamp", "TIMESTAMP<US,UTC>"),
+    ),
+    "gold": _columns(
+        ("chunk_id", "STRING"),
+        ("item_id", "BIGINT"),
+        ("embedding", "ARRAY<FLOAT>"),
+        ("content_hash", "STRING"),
+        ("item_content_hash", "STRING"),
+        ("source_run_id", "STRING"),
+        ("event_timestamp", "TIMESTAMP<US,UTC>"),
+    ),
+    "milvus": _columns(
+        ("chunk_id", "STRING"),
+        ("embedding", "FLOAT_VECTOR(384)"),
+        ("item_id", "BIGINT"),
+        ("chunk_type", "STRING"),
+        ("content_hash", "STRING"),
+        ("source_run_id", "STRING"),
+    ),
+    "pointer": _columns(
+        ("active_slot", "STRING"),
+        ("feature_view", "STRING"),
+        ("pipeline_run_id", "STRING"),
+        ("source_run_id", "STRING"),
+        ("embedding_model", "STRING"),
+        ("embedding_revision", "STRING"),
+        ("embedding_dimension", "INTEGER"),
+        ("published_at", "TIMESTAMP<US,UTC>"),
+    ),
+}
+
+
+def rag_schema(dataset: str) -> tuple[SchemaColumn, ...]:
+    """Return the field-level contract without publishing any record values."""
+
+    return RAG_DATASET_SCHEMAS[dataset]
+
+
 def cdc_topic_schema(table: str) -> tuple[SchemaColumn, ...]:
     payload = tuple(
         SchemaColumn(

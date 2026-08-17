@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recsys-rag-api"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "boto3==1.35.36",
+  "feast[milvus]==0.64.0",
+  "pymilvus==2.6.12",
+  "pydantic>=2.10,<3",
+  "recsys-rag-runtime",
+  "recsys-serving-common",
+  "setuptools==80.9.0",
+  "uvicorn>=0.34,<1",
+]
+
+[tool.uv.sources]
+recsys-rag-runtime = { path = "../../../packages/recsys-rag-runtime", editable = true }
+recsys-serving-common = { path = "../shared", editable = true }
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28.1,<1",
+  "pytest>=9,<10",
+  "pytest-cov>=7,<8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

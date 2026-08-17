@@ -1,0 +1,10 @@
+apiVersion: v2
+name: recsys-milvus
+description: RecSys standalone Milvus vector store for Feast RAG retrieval.
+type: application
+version: 0.1.0
+appVersion: "2.6.18"
+dependencies:
+  - name: milvus
+    version: 5.0.22
+    repository: https://zilliztech.github.io/milvus-helm/

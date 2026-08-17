@@ -1,0 +1,83 @@
+{{- $runId := required "job.runId is required" .Values.job.runId -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: recsys-rag-data
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    recsys.ai/dataset: rag-item-documents
+  annotations:
+    recsys.ai/run-id: {{ $runId | quote }}
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  {{- with .Values.job.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ . }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: recsys-rag-data
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.istioInject | quote }}
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: item-metadata-generator
+          image: "{{ .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          workingDir: /opt/recsys
+          command: ["bash", "-lc"]
+          args:
+            - |
+              cleanup() {
+                status=$?
+                /opt/venv/bin/python -c "import urllib.request; req=urllib.request.Request('http://127.0.0.1:15020/quitquitquit', method='POST'); urllib.request.urlopen(req, timeout=2).read()" >/dev/null 2>&1 || true
+                exit "$status"
+              }
+              trap cleanup EXIT
+              cli_args=(
+                generate-items
+                --config {{ .Values.configPath | quote }}
+                --run-id {{ $runId | quote }}
+                --limit {{ .Values.job.limit }}
+                --checkpoint-every {{ .Values.job.checkpointEvery }}
+                --workers {{ .Values.job.workers }}
+                {{- range .Values.job.itemIds }}
+                --item-id {{ . }}
+                {{- end }}
+                {{- if .Values.job.force }}
+                --force
+                {{- end }}
+              )
+              /opt/venv/bin/python -m rag_data.cli "${cli_args[@]}"
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.configMapName }}
+            - secretRef:
+                name: {{ .Values.platformSecretName }}
+          env:
+            - name: ORCAROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.orcaSecretName }}
+                  key: ORCAROUTER_API_KEY
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true

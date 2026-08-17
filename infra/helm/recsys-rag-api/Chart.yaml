@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-rag-api
+description: Grouped RAG item retrieval API backed by Feast and Milvus.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -16,6 +16,8 @@ locals {
       AIRFLOW_POSTGRES_PASSWORD         = random_password.airflow_postgres.result
       FEAST_POSTGRES_USER               = "feast"
       FEAST_POSTGRES_PASSWORD           = random_password.feast_postgres.result
+      MILVUS_USERNAME                   = "root"
+      MILVUS_PASSWORD                   = "Milvus"
     }
     mlflow = {
       MINIO_ROOT_USER     = "minio"
@@ -111,6 +113,7 @@ resource "null_resource" "recsys_external_secrets_ready" {
       kubeflow recsys-mlops-runtime
       kserve-triton-inference recsys-kserve-minio
       api-serving recsys-gateway-basic-auth
+      api-serving recsys-rag-api
       observability recsys-gateway-basic-auth
       SECRETS
 

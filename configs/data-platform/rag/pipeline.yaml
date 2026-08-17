@@ -1,0 +1,40 @@
+schema_version: 1
+
+chunking:
+  strategy: structure_aware_semantic
+  version: semantic_chunker_v1
+  target_tokens: 240
+  min_tokens: 80
+  max_tokens: 384
+  overlap_tokens: 32
+  breakpoint_percentile: 20
+
+embedding:
+  model: intfloat/multilingual-e5-small
+  revision: 03415a4be176a1620747c692ed433219fabc3def
+  checksum: sha256:8da4c9ba0ad59f58e8566839425d7fd6339d31414d0ce5cba2d7d0afb75dd8b6
+  dimension: 384
+  model_dir: /opt/recsys/models/multilingual-e5-small
+  checksum_manifest: /opt/recsys/models/multilingual-e5-small/model_manifest.json
+  onnx_file: model_quantized.onnx
+  batch_sizes: [32, 16, 8]
+  passage_prefix: "passage: "
+  query_prefix: "query: "
+
+storage:
+  bucket: recsys-lakehouse
+  active_pointer_key: gold/rag_item_embeddings/_active/pointer.json
+
+feast:
+  repo_path: apps/data-platform/feature-store/rag_feature_repo
+  project: recsys_rag
+  feature_views:
+    blue: rag_item_chunks_blue
+    green: rag_item_chunks_green
+
+milvus:
+  host: http://recsys-milvus.recsys-dataflow.svc.cluster.local
+  port: 19530
+  dimension: 384
+  index_type: FLAT
+  metric_type: COSINE

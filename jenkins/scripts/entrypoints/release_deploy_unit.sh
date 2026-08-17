@@ -21,6 +21,7 @@ source jenkins/scripts/deploy/serving.sh
 source jenkins/scripts/deploy/rollout.sh
 source jenkins/scripts/deploy/demo.sh
 source jenkins/scripts/deploy/analytics.sh
+source jenkins/scripts/deploy/rag.sh
 
 image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_REGISTRY:-$(python3 jenkins/python/configuration.py gcp imageRegistry)}}"
 image_registry="${image_registry%/}"
@@ -197,6 +198,35 @@ with open(output_path, "w", encoding="utf-8") as stream:
 PY
     helm_args+=(-f "${sensitive_values_file}")
   fi
+  if [[ "${unit_name}" == "milvus" ]]; then
+    sensitive_values_file="$(mktemp)"
+    sensitive_helm_values_files+=("${sensitive_values_file}")
+    chmod 600 "${sensitive_values_file}"
+    python3 - "${namespace_data}" "${sensitive_values_file}" <<'PY'
+import base64
+import json
+import subprocess
+import sys
+
+namespace, output_path = sys.argv[1:]
+payload = json.loads(subprocess.check_output(
+    ["kubectl", "-n", namespace, "get", "secret", "recsys-data-platform-secret", "-o", "json"],
+    text=True,
+))
+data = payload.get("data", {})
+access = base64.b64decode(data["AWS_ACCESS_KEY_ID"]).decode("utf-8")
+secret = base64.b64decode(data["AWS_SECRET_ACCESS_KEY"]).decode("utf-8")
+
+def quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+with open(output_path, "w", encoding="utf-8") as stream:
+    stream.write("milvus:\n  externalS3:\n")
+    stream.write(f"    accessKey: {quote(access)}\n")
+    stream.write(f"    secretKey: {quote(secret)}\n")
+PY
+    helm_args+=(-f "${sensitive_values_file}")
+  fi
   for image_index in "${!unit_image_names[@]}"; do
     image_reference="$(resolve_unit_image \
       "${unit_image_names[image_index]}" "${unit_image_paths[image_index]}")"
@@ -240,11 +270,17 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
 }
 
 case "${unit_name}" in
-  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api)
+  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api|milvus|rag-api)
     deploy_helm_unit
     ;;
   feature-registry)
     feast_registry_apply "$(resolve_release_image recsys-feature-store)"
+    ;;
+  rag-feature-registry)
+    rag_feature_registry_apply "$(resolve_release_image recsys-data-ingestion)"
+    ;;
+  rag-index-promotion)
+    rag_index_promote "$(resolve_release_image recsys-data-ingestion)"
     ;;
   mlflow)
     deploy_mlflow
