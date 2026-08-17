@@ -112,7 +112,14 @@ pipeline {
                 -type f -name '*.sh' -print0 | xargs -0 bash -n
               for chart_file in infra/helm/*/Chart.yaml; do
                 chart_dir="$(dirname "${chart_file}")"
-                if [ -f "${chart_dir}/values-gcp.yaml" ]; then
+                if [ "${chart_dir}" = "infra/helm/recsys-rag-data" ]; then
+                  # The one-shot generator chart intentionally requires a run ID;
+                  # CI supplies a non-production sentinel only for template validation.
+                  helm lint "${chart_dir}" -f "${chart_dir}/values-gcp.yaml"
+                  helm template validation "${chart_dir}" \
+                    -f "${chart_dir}/values-gcp.yaml" \
+                    --set job.runId=ci-validation >/dev/null
+                elif [ -f "${chart_dir}/values-gcp.yaml" ]; then
                   helm lint "${chart_dir}" -f "${chart_dir}/values-gcp.yaml"
                   helm template validation "${chart_dir}" \
                     -f "${chart_dir}/values-gcp.yaml" >/dev/null
