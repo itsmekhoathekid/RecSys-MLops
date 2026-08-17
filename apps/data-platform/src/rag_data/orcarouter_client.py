@@ -96,7 +96,7 @@ class OrcaRouterClient:
         self,
         *,
         api_key: str,
-        model: str = "openai/gpt-oss-120b",
+        model: str = "deepseek/deepseek-v4-pro",
         base_url: str = "https://api.orcarouter.ai/v1",
         temperature: float = 0.3,
         max_tokens: int = 1800,

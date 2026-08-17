@@ -4,7 +4,9 @@ metadata:
   name: recsys-data-platform-config
   namespace: {{ .Values.namespace.name }}
 data:
-  PYTHONPATH: /opt/flink/opt/python:/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys
+  # Keep shared runtimes importable when envFrom overrides the image-level
+  # PYTHONPATH in one-shot Jobs and Airflow-launched Kubernetes pods.
+  PYTHONPATH: /opt/flink/opt/python:/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys/packages/recsys-rag-runtime/src:/opt/recsys
   DATA_PLATFORM_MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
   MINIO_ENDPOINT: {{ .Values.minio.endpoint | quote }}
   AWS_DEFAULT_REGION: us-east-1

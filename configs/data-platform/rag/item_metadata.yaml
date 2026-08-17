@@ -3,7 +3,7 @@ catalog_mapping_version: catalog_mapping_v1
 
 generation:
   base_url: https://api.orcarouter.ai/v1
-  model: openai/gpt-oss-120b
+  model: deepseek/deepseek-v4-pro
   temperature: 0.3
   max_tokens: 1800
   max_attempts: 3
