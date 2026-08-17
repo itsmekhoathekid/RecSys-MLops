@@ -158,12 +158,26 @@ rag_verify_api_contract() {
     return 1
   fi
   kill "${forward_pid}" 2>/dev/null || true
-  jq -e \
-    --arg model "${expected_model}" \
-    --arg revision "${expected_revision}" \
-    --argjson dimension "${expected_dimension}" \
-    '.supported_embedding_contracts | any(.model == $model and .revision == $revision and .dimension == $dimension)' \
-    "${report}" >/dev/null
+  # Keep the promotion gate on the base Python runtime already required by the
+  # Jenkins controller; production agents do not guarantee an external jq
+  # binary. The report contains only public model contract metadata.
+  python3 - "${report}" "${expected_model}" "${expected_revision}" "${expected_dimension}" <<'PY'
+import json
+import sys
+
+report_path, expected_model, expected_revision, expected_dimension = sys.argv[1:]
+with open(report_path, encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+matched = any(
+    contract.get("model") == expected_model
+    and contract.get("revision") == expected_revision
+    and contract.get("dimension") == int(expected_dimension)
+    for contract in payload.get("supported_embedding_contracts", [])
+)
+if not matched:
+    raise SystemExit("RAG API does not support the candidate embedding contract")
+PY
 }
 
 rag_index_promote() {

@@ -168,6 +168,17 @@ def test_online_feature_deploy_uses_canonical_registry_secret_without_cli_leakag
     assert '--set-string "config.feastPostgresPassword=' not in entrypoint
 
 
+def test_rag_promotion_contract_gate_uses_the_required_python_runtime():
+    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
+    contract_gate = deployment.split("rag_verify_api_contract()", 1)[1].split(
+        "\n}", 1
+    )[0]
+
+    assert 'python3 - "${report}"' in contract_gate
+    assert "jq -e" not in contract_gate
+    assert "supported_embedding_contracts" in contract_gate
+
+
 def test_registry_push_refreshes_login_and_retries_once(tmp_path):
     attempt_path = tmp_path / "push-attempts"
     login_path = tmp_path / "registry-logins"
