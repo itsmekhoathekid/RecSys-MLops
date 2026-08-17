@@ -125,12 +125,17 @@ gcp_verify_external_secret_target() {
   kubectl get "secret/${name}" -n "${namespace}" -o json \
     | python3 -c '
 import json
+import base64
 import sys
 
 available = json.load(sys.stdin).get("data", {})
 missing = sorted(set(sys.argv[1:]) - set(available))
 if missing:
     raise SystemExit(f"Secret is missing required keys: {missing}")
+if "MILVUS_PASSWORD" in sys.argv[1:]:
+    password = base64.b64decode(available["MILVUS_PASSWORD"]).decode("utf-8")
+    if password != password.strip():
+        raise SystemExit("MILVUS_PASSWORD must not contain leading or trailing whitespace")
 ' "$@"
 }
 

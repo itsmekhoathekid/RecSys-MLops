@@ -44,14 +44,17 @@ externalSecrets:
     namespace: recsys-dataflow
     secretName: recsys-data-platform-secret
     vaultPath: data-platform
+    trimMilvusPassword: true
   dataPlatformObservability:
     namespace: observability
     secretName: recsys-data-platform-secret
     vaultPath: data-platform
+    trimMilvusPassword: true
   ragApi:
     namespace: api-serving
     secretName: recsys-rag-api
     vaultPath: data-platform
+    trimMilvusPassword: true
   mlflow:
     namespace: experiment-tracking
     secretName: recsys-mlflow-secrets
