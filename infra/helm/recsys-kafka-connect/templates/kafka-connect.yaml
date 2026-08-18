@@ -56,6 +56,10 @@ spec:
               value: "1"
             - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
               value: "1"
+            - name: CONNECT_OFFSET_STORAGE_PARTITIONS
+              value: {{ .Values.kafkaConnect.offsetStoragePartitions | quote }}
+            - name: CONNECT_STATUS_STORAGE_PARTITIONS
+              value: {{ .Values.kafkaConnect.statusStoragePartitions | quote }}
             - name: CONNECT_KEY_CONVERTER
               value: org.apache.kafka.connect.json.JsonConverter
             - name: CONNECT_VALUE_CONVERTER

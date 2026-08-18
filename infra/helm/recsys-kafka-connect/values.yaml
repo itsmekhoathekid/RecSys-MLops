@@ -10,6 +10,8 @@ kafkaConnect:
   name: kafka-connect
   port: 8083
   istioInject: "false"
+  offsetStoragePartitions: 4
+  statusStoragePartitions: 4
 realtimeCdcConnector:
   enabled: true
   waitTimeoutSeconds: 480

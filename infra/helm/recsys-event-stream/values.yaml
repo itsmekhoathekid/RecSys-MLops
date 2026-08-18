@@ -1,12 +1,20 @@
 namespace:
   name: recsys-dataflow
+storageClassName: ""
 images:
   zookeeper: confluentinc/cp-zookeeper:7.5.0
   kafka: confluentinc/cp-kafka:7.5.0
   pullPolicy: IfNotPresent
+zookeeper:
+  persistence:
+    enabled: true
+    storage: 5Gi
 kafka:
   name: kafka
   bootstrapServers: kafka:29092
   topicPartitions: 4
+  persistence:
+    enabled: true
+    storage: 20Gi
 realtimeFlinkConsumer:
   topic: cdc.behavior_events

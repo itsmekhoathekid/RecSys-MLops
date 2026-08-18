@@ -1,0 +1,11 @@
+storageClassName: standard
+
+kafka:
+  persistence:
+    enabled: true
+    storage: 20Gi
+
+zookeeper:
+  persistence:
+    enabled: true
+    storage: 5Gi

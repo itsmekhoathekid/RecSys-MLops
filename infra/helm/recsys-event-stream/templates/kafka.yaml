@@ -1,3 +1,35 @@
+{{- if .Values.zookeeper.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zookeeper-data
+  namespace: {{ .Values.namespace.name }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.storageClassName }}
+  storageClassName: {{ .Values.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.zookeeper.persistence.storage }}
+---
+{{- end }}
+{{- if .Values.kafka.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-data
+  namespace: {{ .Values.namespace.name }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.storageClassName }}
+  storageClassName: {{ .Values.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.kafka.persistence.storage }}
+---
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -17,6 +49,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: zookeeper
@@ -39,6 +73,17 @@ spec:
               value: "2000"
           ports:
             - containerPort: 2181
+          {{- if .Values.zookeeper.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/zookeeper
+          {{- end }}
+      {{- if .Values.zookeeper.persistence.enabled }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: zookeeper-data
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -60,6 +105,8 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ .Values.kafka.name }}
@@ -70,6 +117,9 @@ spec:
       annotations:
         sidecar.istio.io/inject: "false"
     spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       enableServiceLinks: false
       containers:
         - name: kafka
@@ -90,5 +140,18 @@ spec:
               value: "1"
             - name: KAFKA_NUM_PARTITIONS
               value: {{ .Values.kafka.topicPartitions | quote }}
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data/kafka
           ports:
             - containerPort: 29092
+          {{- if .Values.kafka.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+          {{- end }}
+      {{- if .Values.kafka.persistence.enabled }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: kafka-data
+      {{- end }}
