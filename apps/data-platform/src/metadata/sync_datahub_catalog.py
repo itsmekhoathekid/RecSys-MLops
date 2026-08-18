@@ -35,7 +35,17 @@ def parse_args() -> argparse.Namespace:
 
 def sync_catalog(client: DataHubCatalogClient, products) -> dict[str, object]:
     synced = client.sync(products)
-    remote = client.verify_remote(products)
+    # Data Product lookup is backed by DataHub's search index, which can lag the
+    # successful GraphQL mutation by a few seconds. Keep the catalog operation
+    # strict, but tolerate that bounded propagation delay before failing CI/CD.
+    for attempt in range(6):
+        try:
+            remote = client.verify_remote(products)
+            break
+        except RuntimeError:
+            if attempt == 5:
+                raise
+            time.sleep(min(2 ** attempt, 8))
     return {
         "mode": "dataset-only-static",
         **asdict(synced),

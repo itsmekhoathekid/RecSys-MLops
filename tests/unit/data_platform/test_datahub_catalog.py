@@ -173,6 +173,29 @@ def test_sync_output_has_the_stable_dataset_only_shape():
     }
 
 
+def test_sync_retries_remote_verification_while_search_index_propagates(monkeypatch):
+    class Client:
+        attempts = 0
+
+        def sync(self, _products):
+            return SyncSummary(data_products=5, datasets=44, lineage_edges=40)
+
+        def verify_remote(self, _products):
+            self.attempts += 1
+            if self.attempts < 3:
+                raise RuntimeError("Missing Data Product: ANALYTICS")
+            return RemoteVerification(
+                data_products=5, datasets=44, lineage_edges=40, verified=True
+            )
+
+    client = Client()
+    sleeps = []
+    monkeypatch.setattr(sync_module.time, "sleep", sleeps.append)
+    assert sync_catalog(client, catalog_products())["verified"] is True
+    assert client.attempts == 3
+    assert sleeps == [1, 2]
+
+
 def test_verify_only_checks_remote_without_upserting(monkeypatch):
     class Client:
         synced = False
