@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from argparse import Namespace
+from types import SimpleNamespace
 
+import pytest
 import metadata.sync_datahub_catalog as sync_module
+import metadata.datahub_client as client_module
 from metadata.datahub_client import DataHubCatalogClient, RemoteVerification, SyncSummary
 from metadata.governance_catalog import (
     ANALYTICS_STAGING_URNS,
@@ -204,3 +207,211 @@ def test_verify_only_checks_remote_without_upserting(monkeypatch):
     assert sync_module.main() == 0
     assert client.synced is False
     assert client.closed is True
+
+
+def test_field_type_and_schema_mapping_cover_supported_native_types():
+    expected = {
+        "ARRAY<STRING>": "ArrayTypeClass",
+        "STRUCT<x:INT>": "RecordTypeClass",
+        "DATE": "DateTypeClass",
+        "TIMESTAMP": "TimeTypeClass",
+        "BOOLEAN": "BooleanTypeClass",
+        "DECIMAL(18,2)": "NumberTypeClass",
+        "BINARY": "BytesTypeClass",
+        "STRING": "StringTypeClass",
+    }
+    for native_type, class_name in expected.items():
+        mapped = DataHubCatalogClient._field_type(native_type)
+        assert type(mapped.type).__name__ == class_name
+    schema = DataHubCatalogClient._schema_metadata(dp1_product().datasets[0])
+    assert schema.platform == "urn:li:dataPlatform:iceberg"
+    assert schema.primaryKeys
+
+
+def test_from_env_builds_one_shared_graph_and_sdk_client(monkeypatch):
+    captured = {}
+
+    class Graph:
+        def __init__(self, config):
+            captured["config"] = config
+
+    class SDKClient:
+        def __init__(self, graph):
+            captured["graph"] = graph
+
+    monkeypatch.setenv("DATAHUB_TOKEN", " token ")
+    monkeypatch.setattr(client_module, "DataHubGraph", Graph)
+    monkeypatch.setattr(client_module, "DataHubClient", SDKClient)
+    adapter = DataHubCatalogClient.from_env("http://datahub:8080/")
+    assert captured["config"].server == "http://datahub:8080"
+    assert captured["config"].token == "token"
+    assert adapter._graph is captured["graph"]
+
+
+class FakeGraph:
+    def __init__(self):
+        self.calls = []
+        self.entities = {}
+        self.existing = set()
+        self.aspects = {}
+        self.closed = False
+
+    def execute_graphql(self, query, variables):
+        self.calls.append((query, variables))
+        if "searchAcrossEntities" in query:
+            name = variables["input"]["query"]
+            entity = self.entities.get(name)
+            return {
+                "searchAcrossEntities": {
+                    "searchResults": [{"entity": entity}] if entity else []
+                }
+            }
+        if "createDomain" in query:
+            return {"createDomain": "urn:li:domain:recsys"}
+        if "createDataProduct" in query:
+            return {"createDataProduct": {"urn": "urn:li:dataProduct:new"}}
+        return {}
+
+    def exists(self, urn):
+        return urn in self.existing
+
+    def get_aspect(self, urn, _aspect):
+        return self.aspects.get(urn)
+
+    def close(self):
+        self.closed = True
+
+
+def _adapter(graph=None):
+    adapter = DataHubCatalogClient.__new__(DataHubCatalogClient)
+    adapter._graph = graph or FakeGraph()
+    adapter._client = SimpleNamespace(entities=SimpleNamespace(upsert=lambda _entity: None))
+    return adapter
+
+
+def test_domain_entity_search_and_creation_paths():
+    graph = FakeGraph()
+    graph.entities[client_module.DOMAIN_NAME] = {
+        "urn": "urn:li:domain:existing",
+        "properties": {"name": client_module.DOMAIN_NAME},
+    }
+    adapter = _adapter(graph)
+    assert adapter._ensure_domain() == "urn:li:domain:existing"
+    graph.entities.clear()
+    assert adapter._ensure_domain() == "urn:li:domain:recsys"
+
+
+def test_tag_and_data_product_upserts_reconcile_exact_resources():
+    graph = FakeGraph()
+    upserts = []
+    adapter = _adapter(graph)
+    adapter._client = SimpleNamespace(
+        entities=SimpleNamespace(upsert=lambda entity: upserts.append(entity))
+    )
+    product = dp1_product()
+    adapter._upsert_tags((product,))
+    assert {str(tag.urn) for tag in upserts} >= {"urn:li:tag:DP1", "urn:li:tag:BatchPipeline"}
+
+    graph.entities[product.name] = {
+        "urn": "urn:li:dataProduct:existing",
+        "properties": {"name": product.name},
+        "domain": {"domain": {"urn": "urn:li:domain:recsys"}},
+    }
+    urns = tuple(dataset.urn for dataset in product.datasets)
+    assert adapter._upsert_data_product(product, "urn:li:domain:recsys", urns) == "urn:li:dataProduct:existing"
+    assert graph.calls[-1][1]["input"]["resourceUrns"] == list(urns)
+
+    graph.entities.clear()
+    assert adapter._upsert_data_product(product, "urn:li:domain:recsys", urns) == "urn:li:dataProduct:new"
+
+
+def test_sync_walks_every_dataset_and_product(monkeypatch):
+    adapter = _adapter()
+    products = catalog_products()
+    datasets = []
+    data_products = []
+    monkeypatch.setattr(adapter, "_ensure_domain", lambda: "urn:li:domain:recsys")
+    monkeypatch.setattr(adapter, "_upsert_tags", lambda value: None)
+    monkeypatch.setattr(adapter, "_upsert_dataset", lambda spec, _domain: datasets.append(spec.urn))
+    monkeypatch.setattr(
+        adapter,
+        "_upsert_data_product",
+        lambda product, _domain, urns: data_products.append((product.id, urns)),
+    )
+    summary = adapter.sync(products)
+    assert (summary.data_products, summary.datasets, summary.lineage_edges) == (5, 44, 40)
+    assert len(datasets) == 44
+    assert len(data_products) == 5
+
+
+def test_remote_verification_success_and_failure(monkeypatch):
+    product = dp2_product()
+    graph = FakeGraph()
+    graph.existing = {dataset.urn for dataset in product.datasets}
+    graph.aspects = {
+        dataset.urn: SimpleNamespace(
+            upstreams=[SimpleNamespace(dataset=upstream) for upstream in dataset.upstreams]
+        )
+        for dataset in product.datasets
+    }
+    adapter = _adapter(graph)
+    monkeypatch.setattr(adapter, "_find_entity", lambda *_args: {"urn": "urn:product"})
+    verified = adapter.verify_remote((product,))
+    assert verified.verified and verified.lineage_edges == 9
+    adapter.close()
+    assert graph.closed
+
+    missing = _adapter(FakeGraph())
+    monkeypatch.setattr(missing, "_find_entity", lambda *_args: None)
+    with pytest.raises(RuntimeError, match="Missing Data Product"):
+        missing.verify_remote((product,))
+
+
+def test_cli_argument_metrics_and_push_contract(monkeypatch):
+    monkeypatch.setenv("DATAHUB_GMS_URL", "http://env-gms:8080")
+    monkeypatch.setattr("sys.argv", ["sync", "--strict", "--verify-only"])
+    args = sync_module.parse_args()
+    assert args.gms_url == "http://env-gms:8080"
+    assert args.strict and args.verify_only
+
+    samples = sync_module.metric_samples(
+        {"verified": True, "datasets": 44, "lineage_edges": 40, "data_products": 5}
+    )
+    assert len(samples) == 10
+    pushed = []
+    monkeypatch.setattr(sync_module, "push_metrics", lambda *args, **kwargs: pushed.append((args, kwargs)))
+    sync_module.push_sync_metrics({"verified": False}, "http://pushgateway:9091")
+    assert pushed[0][1]["gateway_url"] == "http://pushgateway:9091"
+
+
+@pytest.mark.parametrize(("strict", "expected"), [(False, 0), (True, 1)])
+def test_cli_sync_failure_respects_strict_mode(monkeypatch, strict, expected):
+    client = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(
+        sync_module,
+        "parse_args",
+        lambda: Namespace(gms_url="http://gms", pushgateway_url="", strict=strict, verify_only=False),
+    )
+    monkeypatch.setattr(sync_module.DataHubCatalogClient, "from_env", lambda _url: client)
+    monkeypatch.setattr(sync_module, "sync_catalog", lambda *_args: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(sync_module, "push_sync_metrics", lambda *_args: None)
+    assert sync_module.main() == expected
+
+
+def test_cli_sync_success_closes_client_and_pushes_metrics(monkeypatch):
+    state = {"closed": False, "pushed": False}
+    client = SimpleNamespace(close=lambda: state.update(closed=True))
+    monkeypatch.setattr(
+        sync_module,
+        "parse_args",
+        lambda: Namespace(gms_url="http://gms", pushgateway_url="http://push", strict=True, verify_only=False),
+    )
+    monkeypatch.setattr(sync_module.DataHubCatalogClient, "from_env", lambda _url: client)
+    monkeypatch.setattr(
+        sync_module,
+        "sync_catalog",
+        lambda *_args: {"mode": "dataset-only-static", "verified": True},
+    )
+    monkeypatch.setattr(sync_module, "push_sync_metrics", lambda *_args: state.update(pushed=True))
+    assert sync_module.main() == 0
+    assert state == {"closed": True, "pushed": True}
