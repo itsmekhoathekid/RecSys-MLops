@@ -79,7 +79,7 @@ datahub_catalog_cutover() {
   local volume_yaml=""
   if [[ "${mode}" == "apply" ]]; then
     args='["--manifest", "/manifest/manifest.json", "--apply", "--confirm-cutover"]'
-    volume_yaml="        volumeMounts:
+    volume_yaml="          volumeMounts:
             - {name: manifest, mountPath: /manifest, readOnly: true}"
   fi
   kubectl apply -f - <<EOF
