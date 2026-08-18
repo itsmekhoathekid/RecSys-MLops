@@ -99,6 +99,7 @@ spec:
           command: ["python", "/opt/recsys/ops/migrations/datahub-dataset-lineage-cutover/cutover.py"]
           args: ${args}
           env:
+            - {name: PYTHONWARNINGS, value: "ignore"}
             - {name: DATAHUB_GMS_URL, value: "${gms_url}"}
             - name: DATAHUB_TOKEN
               valueFrom:
@@ -111,6 +112,7 @@ $(if [[ "${mode}" == "apply" ]]; then printf '      volumes:\n        - name: ma
 EOF
   if [[ "${mode}" == "plan" ]]; then
     datahub_wait_job "${namespace}" "${job}" 900s | tee "${manifest}"
+    python3 -c 'import json, sys; data=json.load(open(sys.argv[1])); assert data.get("dry_run") is True; assert isinstance(data.get("records"), list)' "${manifest}"
   else
     datahub_wait_job "${namespace}" "${job}" 900s
     datahub_catalog_verify "${image}"

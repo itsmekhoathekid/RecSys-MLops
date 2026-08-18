@@ -82,6 +82,9 @@ def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
     assert 'DATAHUB_CUTOVER_MODE=${datahub_cutover_mode}' in trigger
     cutover_entrypoint = ROOT / "jenkins/scripts/entrypoints/datahub_cutover.sh"
     assert cutover_entrypoint.stat().st_mode & 0o111
+    deploy_script = (ROOT / "jenkins/scripts/deploy/datahub.sh").read_text(encoding="utf-8")
+    assert 'name: PYTHONWARNINGS, value: "ignore"' in deploy_script
+    assert 'data.get("dry_run") is True' in deploy_script
 
 
 def test_full_release_verification_orders_data_before_training(tmp_path):
