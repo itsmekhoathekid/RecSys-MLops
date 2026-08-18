@@ -15,6 +15,7 @@ run_component_verification() {
     dp2) test_dp2 ;;
     dp1) test_dp1 ;;
     dp3) test_dp3 ;;
+    datahub_catalog) test_datahub_catalog ;;
     rag_index) test_rag_index ;;
     rag_api) test_rag_api ;;
     online_feature_api) test_online_feature_api ;;

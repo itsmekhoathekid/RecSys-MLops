@@ -44,7 +44,6 @@ spec:
             - configMapRef: {name: recsys-data-platform-config}
             - secretRef: {name: recsys-data-platform-secret}
           env:
-            - {name: RUNTIME_LINEAGE_ENABLED, value: "false"}
             - {name: MILVUS_HOST, value: "http://recsys-milvus.recsys-dataflow.svc.cluster.local"}
 EOF
   rag_wait_job "${namespace}" "${job}" 600s
@@ -139,7 +138,6 @@ spec:
             - configMapRef: {name: recsys-data-platform-config}
             - secretRef: {name: recsys-data-platform-secret}
           env:
-            - {name: RUNTIME_LINEAGE_STRICT, value: "true"}
             - {name: MILVUS_HOST, value: "http://recsys-milvus.recsys-dataflow.svc.cluster.local"}
 EOF
   rag_wait_job "${namespace}" "${job}" 300s
@@ -268,7 +266,6 @@ spec:
             - configMapRef: {name: recsys-data-platform-config}
             - secretRef: {name: recsys-data-platform-secret}
           env:
-            - {name: RUNTIME_LINEAGE_STRICT, value: "true"}
             - {name: MILVUS_HOST, value: "http://recsys-milvus.recsys-dataflow.svc.cluster.local"}
             - {name: RAG_FEAST_REPO, value: "apps/data-platform/feature-store/rag_feature_repo"}
           resources:

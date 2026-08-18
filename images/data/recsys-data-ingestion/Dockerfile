@@ -57,7 +57,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         wheel==0.46.2 \
         jaraco.context==6.1.0
 RUN /opt/venv/bin/python -m pip uninstall -y pip \
-    && /opt/venv/bin/python -c "from datahub.api.entities.dataprocess.dataprocess_instance import DataProcessInstance; from datahub.emitter.rest_emitter import DatahubRestEmitter"
+    && /opt/venv/bin/python -c "from datahub.sdk import DataHubClient, Dataset, Tag"
 
 FROM python:3.11-slim AS runtime
 ARG RAG_MODEL
@@ -88,6 +88,7 @@ COPY --from=deps /opt/venv /opt/venv
 COPY --from=rag-model /opt/recsys/models /opt/recsys/models
 COPY configs /opt/recsys/configs
 COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
+COPY ops/migrations/datahub-dataset-lineage-cutover /opt/recsys/ops/migrations/datahub-dataset-lineage-cutover
 COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
 COPY packages/recsys-rag-runtime /opt/recsys/packages/recsys-rag-runtime
 COPY apps/data-platform/feature-store/rag_feature_repo /opt/recsys/apps/data-platform/feature-store/rag_feature_repo

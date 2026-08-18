@@ -17,7 +17,6 @@ data:
   ICEBERG_CATALOG: recsys
   ICEBERG_LAKEHOUSE_NAMESPACE: lakehouse
   LAKEHOUSE_WAREHOUSE: s3a://recsys-lakehouse/warehouse
-  RUNTIME_LINEAGE_ENABLED: "true"
   ANALYTICS_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
   ANALYTICS_NAMESPACE: {{ .Values.namespace | quote }}
   SPARK_IMAGE: {{ .Values.images.spark | quote }}

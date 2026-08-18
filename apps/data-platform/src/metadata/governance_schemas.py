@@ -317,24 +317,19 @@ def rag_schema(dataset: str) -> tuple[SchemaColumn, ...]:
     return RAG_DATASET_SCHEMAS[dataset]
 
 
-def cdc_topic_schema(table: str) -> tuple[SchemaColumn, ...]:
-    payload = tuple(
-        SchemaColumn(
-            name=f"payload.after.{column.name}",
-            native_type=column.native_type,
-            description=f"Debezium after-image field {column.name}.",
-            nullable=True,
-        )
-        for column in raw_schema(table)
-    )
-    return _columns(
-        ("payload.op", "STRING"),
-        ("payload.ts_ms", "BIGINT"),
-        ("payload.source", "RECORD"),
-        ("payload.before", "RECORD"),
-        ("payload.after", "RECORD"),
-        ("payload.transaction", "RECORD"),
-    ) + payload
+def analytics_schema(table: str) -> tuple[SchemaColumn, ...]:
+    """Return the source schema plus the timestamp added by analytics sync."""
+
+    silver_tables = {
+        "clean_behavior_events",
+        "clean_impressions",
+        "clean_recommendation_requests",
+        "product_scd",
+        "users",
+        "products",
+    }
+    source = silver_schema(table) if table in silver_tables else bronze_schema(table)
+    return _merge_columns(source, _columns(("analytics_synced_at", "TIMESTAMP")))
 
 
 RAW_PRIMARY_KEYS = primary_keys_by_table()

@@ -35,12 +35,11 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache \
         s3fs==2024.10.0 \
         sqlalchemy==1.4.54
 RUN uv pip install --python /opt/venv/bin/python --no-cache \
-        acryl-datahub==1.6.0.17 \
         setuptools==81.0.0 \
         wheel==0.46.2 \
         jaraco.context==6.1.0
 RUN /opt/venv/bin/python -m pip uninstall -y pip \
-    && /opt/venv/bin/python -c "from datahub.api.entities.dataprocess.dataprocess_instance import DataProcessInstance; from datahub.emitter.rest_emitter import DatahubRestEmitter"
+    && /opt/venv/bin/python -c "import feast; import redis; import sqlalchemy"
 
 FROM python:3.11-slim AS runtime
 

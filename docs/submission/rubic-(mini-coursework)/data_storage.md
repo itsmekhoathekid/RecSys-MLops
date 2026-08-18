@@ -61,7 +61,7 @@ The shared runner in [optimize.py (line 70)](../../../apps/data-platform/src/lak
 5. Run `rewrite_manifests`.
 6. Read the same physical-file metrics again.
 7. Return a JSON-ready per-table and aggregate report.
-8. Emit runtime lineage for `optimize_stage`, with the same tables as inputs and outputs and `ingest_stage` upstream.
+8. Return optimization metrics; optimization does not create artificial self-lineage edges.
 
 Missing tables fail DP1/DP2 because their DAG commands do not pass `--skip-missing`. Consequently validation can never pass against a partially optimized governed table set.
 
@@ -150,7 +150,7 @@ The full function validates identifiers and positive sizing inputs before execut
 | Data layout | No table-specific clustering | Optional Z-order for known user/item/time access paths | Improves Parquet/Iceberg file pruning for dominant filters. |
 | Metadata | Data-file rewrite only | Data-file rewrite followed by manifest rewrite | Reduces manifest fragmentation and scan-planning work. |
 | Future writes | Spark task defaults | AQE sizing, hash distribution, 128 MiB target, Zstandard | Makes later output less likely to recreate the same small-file pattern. |
-| Ownership | One maintenance DAG could drift from data-product schedules | DP1 owns Bronze optimization; DP2 owns Silver optimization | Keeps lifecycle, failure, lineage, and validation inside the producing data product. |
+| Ownership | One maintenance DAG could drift from data-product schedules | DP1 owns Bronze optimization; DP2 owns Silver optimization | Keeps lifecycle and validation inside the producing data product. |
 | Safety | Missing data could be skipped by a generic maintenance run | Governed DAG commands do not pass `--skip-missing` | An incomplete Bronze or Silver inventory fails visibly. |
 
 Query-latency improvement is intentionally not claimed from the small coursework dataset. Physical file metrics are the reproducible primary evidence; a separate controlled query benchmark is required before making a latency claim.
@@ -227,11 +227,11 @@ Equivalent optimizer applications are:
 
 ```bash
 spark-submit apps/data-platform/src/lakehouse/optimize.py \
-  --scope bronze --pipeline DP1 --strategy binpack \
+  --scope bronze --strategy binpack \
   --target-file-size-mb 128 --min-input-files 2
 
 spark-submit apps/data-platform/src/lakehouse/optimize.py \
-  --scope silver --pipeline DP2 --strategy binpack \
+  --scope silver --strategy binpack \
   --target-file-size-mb 128 --min-input-files 2
 ```
 
@@ -242,7 +242,7 @@ For selective clustering, set `LAKEHOUSE_OPTIMIZATION_STRATEGY=zorder`; tables w
 - DP1's first persistent datasets are ten named Bronze Iceberg tables.
 - DP2 reads Bronze through the Iceberg catalog and produces nine Silver Iceberg tables.
 - Optimization failure fails the owning DP1/DP2 DAG before validation.
-- Runtime lineage records `ingest_stage -> optimize_stage -> validate_stage`.
+- Static catalog lineage records dataset transformations; maintenance and validation tasks do not become lineage nodes.
 - No `recsys_lakehouse_maintenance` DAG exists; optimization cannot drift away from its data-product run.
 - DP3 remains unchanged and is not given a mandatory optimization stage.
 

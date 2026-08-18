@@ -68,7 +68,7 @@ flowchart LR
 
 ## Source And Bronze ERD
 
-Bronze preserves the same business columns and logical relationships as Source, then adds `source_run_id` and `lakehouse_ingestion_ts` to every table. PostgreSQL currently enforces primary keys; the FK lines below are logical data-contract relationships used by Spark joins and DataHub lineage.
+Bronze preserves the same business columns and logical relationships as Source, then adds `source_run_id` and `lakehouse_ingestion_ts` to every table. PostgreSQL currently enforces primary keys; the FK lines below document relationships used by Spark joins and static DataHub lineage.
 
 ```mermaid
 erDiagram
@@ -212,7 +212,7 @@ ingestion audit fields described above.*
 
 ## Silver, Dimension, Fact, And Gold Feature ERD
 
-Iceberg does not enforce foreign keys. These lines document transformation lineage and join semantics. Composite `PK` labels are the logical uniqueness contracts published to DataHub.
+Iceberg does not enforce foreign keys. These lines document transformation lineage and join semantics. Composite `PK` labels are published as schema primary-key metadata in DataHub.
 
 ```mermaid
 erDiagram

@@ -1,7 +1,7 @@
 {
   "uid": "recsys-datahub-governance",
   "title": "DataHub Governance",
-  "description": "Governance ingest health and DataHub runtime telemetry for the local RecSys stack.",
+  "description": "Static batch dataset catalog sync health and DataHub service telemetry.",
   "tags": ["recsys", "datahub", "governance", "lineage"],
   "timezone": "browser",
   "schemaVersion": 39,
@@ -65,10 +65,10 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Jobs",
+      "title": "Lineage Edges",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 3 },
-      "targets": [{ "expr": "max(recsys_datahub_ingest_job_count) or vector(0)", "legendFormat": "jobs" }],
+      "targets": [{ "expr": "max(recsys_datahub_ingest_lineage_edge_count) or vector(0)", "legendFormat": "edges" }],
       "fieldConfig": { "defaults": { "decimals": 0, "unit": "short", "color": { "mode": "palette-classic" } } },
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
     },

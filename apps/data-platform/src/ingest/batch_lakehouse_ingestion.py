@@ -12,8 +12,6 @@ import pyarrow.fs as pafs
 
 from features.spark.session import read_parquet_table, row_count, spark_session, write_iceberg_table
 from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES, create_spark_namespace
-from metadata.governance_catalog import BRONZE_URNS
-from metadata.runtime_lineage import RuntimeLineageRecorder
 
 
 @dataclass(frozen=True)
@@ -85,18 +83,16 @@ def load_generator_run_to_lakehouse(
     ingestion_ts = datetime.now(timezone.utc)
     try:
         create_spark_namespace(spark, catalog)
-        with RuntimeLineageRecorder("DP1", "ingest_stage") as lineage:
-            counts: dict[str, int] = {}
-            for table_name in RAW_GENERATOR_TABLES:
-                frame = read_parquet_table(spark, str(run_path), table_name)
-                frame = frame.withColumn("source_run_id", F.lit(source_run_id)).withColumn(
-                    "lakehouse_ingestion_ts",
-                    F.lit(ingestion_ts).cast("timestamp"),
-                )
-                counts[table_name] = row_count(frame)
-                write_iceberg_table(frame, layout.table_name(table_name), mode=mode)
-                lineage.add_outputs(BRONZE_URNS[table_name])
-            return counts
+        counts: dict[str, int] = {}
+        for table_name in RAW_GENERATOR_TABLES:
+            frame = read_parquet_table(spark, str(run_path), table_name)
+            frame = frame.withColumn("source_run_id", F.lit(source_run_id)).withColumn(
+                "lakehouse_ingestion_ts",
+                F.lit(ingestion_ts).cast("timestamp"),
+            )
+            counts[table_name] = row_count(frame)
+            write_iceberg_table(frame, layout.table_name(table_name), mode=mode)
+        return counts
     finally:
         if owns_spark:
             spark.stop()

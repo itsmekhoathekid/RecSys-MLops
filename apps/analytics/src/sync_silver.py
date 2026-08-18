@@ -91,12 +91,6 @@ def build_spark(config: AnalyticsSyncConfig) -> Any:
     return builder.getOrCreate()
 
 
-def analytics_dataset_urn(table: str) -> str:
-    from metadata.governance_catalog import dataset_urn
-
-    return dataset_urn("iceberg", f"analytics.staging.{table}")
-
-
 def redacted_config(config: AnalyticsSyncConfig) -> dict[str, str]:
     """Return log-safe sync settings without object-store or catalog credentials."""
     payload = asdict(config)
@@ -116,20 +110,13 @@ def sync_table(spark: Any, config: AnalyticsSyncConfig, table: str) -> int:
 
 
 def run(config: AnalyticsSyncConfig | None = None) -> dict[str, Any]:
-    from metadata.governance_catalog import BRONZE_URNS, SILVER_URNS
-    from metadata.runtime_lineage import RuntimeLineageRecorder
-
     config = config or AnalyticsSyncConfig.from_env()
     spark = build_spark(config)
     counts: dict[str, int] = {}
     try:
         spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {config.target_catalog}.{config.target_namespace}")
-        with RuntimeLineageRecorder("ANALYTICS", "sync_lakehouse_to_shared_catalog") as lineage:
-            lineage.add_inputs(*(SILVER_URNS[name] for name in SILVER_SOURCE_TABLES))
-            lineage.add_inputs(*(BRONZE_URNS[name] for name in BRONZE_SOURCE_TABLES))
-            lineage.add_outputs(*(analytics_dataset_urn(name) for name in SOURCE_TABLES))
-            for table in SOURCE_TABLES:
-                counts[table] = sync_table(spark, config, table)
+        for table in SOURCE_TABLES:
+            counts[table] = sync_table(spark, config, table)
         return {"status": "ok", "tables": counts, "config": redacted_config(config)}
     finally:
         spark.stop()

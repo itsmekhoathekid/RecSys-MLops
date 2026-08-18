@@ -13,7 +13,7 @@ documented in the [submission reference guide](../README.md).
 | Processing jobs | [processing_jobs.md](processing_jobs.md) | Spark baseline/optimized, Flink baseline/optimized, Spark UI/Flink UI, Airflow integration. |
 | Data storage optimization | [data_storage.md](data_storage.md) | DP1 Bronze and DP2 Silver Iceberg compaction, clustering, write properties, manifests, and before/after evidence. |
 | Data pipeline orchestration | [data_pipeline_orchestration.md](data_pipeline_orchestration.md) | Six operational Airflow DAGs, DP1/DP2/DP3 step-by-step flow, source references, commands, and task logs. |
-| Data governance | [data_governance.md](data_governance.md) | DataHub DP1/DP2/DP3 lineage, validation, data contracts. |
+| Data governance | [data_governance.md](data_governance.md) | Static DataHub lineage for five batch Data Products. |
 | Schema design | [schema_design.md](schema_design.md) | Bronze/silver/gold tables, SCD2 dimension, feature table timestamp columns, naming convention. |
 | Novel ideas | [novel_ideas.md](novel_ideas.md) | DataHub governance as product catalog and drift-to-retrain loop. |
 

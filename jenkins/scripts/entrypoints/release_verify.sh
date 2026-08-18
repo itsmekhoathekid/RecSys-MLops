@@ -6,6 +6,7 @@ source jenkins/scripts/lib/common.sh
 source jenkins/scripts/lib/config.sh
 source jenkins/scripts/lib/image_manifest.sh
 source jenkins/scripts/deploy/runtime.sh
+source jenkins/scripts/deploy/datahub.sh
 source jenkins/scripts/test/runtime.sh
 source jenkins/scripts/test/data_platform.sh
 source jenkins/scripts/test/ml_platform.sh
@@ -13,6 +14,7 @@ source jenkins/scripts/test/serving.sh
 source jenkins/scripts/test/demo.sh
 source jenkins/scripts/test/analytics.sh
 source jenkins/scripts/test/rag.sh
+source jenkins/scripts/test/datahub.sh
 source jenkins/scripts/test/dispatch.sh
 
 image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_REGISTRY:-$(python3 jenkins/python/configuration.py gcp imageRegistry)}}"

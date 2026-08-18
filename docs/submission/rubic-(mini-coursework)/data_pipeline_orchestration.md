@@ -26,11 +26,11 @@ Code references:
 
 ## Kubernetes Execution Model
 
-`pod_task()` creates a `KubernetesPodOperator` in `recsys-dataflow`. Every task receives the shared ConfigMap and Secret, runs with `set -euo pipefail`, disables the Istio sidecar for finite batch work, streams logs to Airflow, selects the configured node pool, and deletes its pod after completion. The helper also converts canonical Dataset URNs into DataHub plugin `Urn` objects for declared `inlets` and `outlets`. See [spark_utils.py](../../../apps/data-platform/src/orchestration/airflow/spark_utils.py).
+`pod_task()` creates a `KubernetesPodOperator` in `recsys-dataflow`. Every task receives the shared ConfigMap and Secret, runs with `set -euo pipefail`, disables the Istio sidecar for finite batch work, streams logs to Airflow, selects the configured node pool, and deletes its pod after completion. See [spark_utils.py](../../../apps/data-platform/src/orchestration/airflow/spark_utils.py).
 
-`spark_native_submit()` submits Spark applications in Kubernetes cluster mode and forwards the lakehouse catalogs, object-store credentials, validation settings, resource limits, shuffle sizing, and dynamic-allocation settings to the driver and executors. It propagates `RUNTIME_LINEAGE_ENABLED=false`; task success/failure and declared table lineage are emitted once by the DataHub Airflow listener. `spark.kubernetes.submission.waitAppCompletion=true` prevents Airflow from marking a task successful before its Spark application finishes.
+`spark_native_submit()` submits Spark applications in Kubernetes cluster mode and forwards the lakehouse catalogs, object-store credentials, resource limits, shuffle sizing, and dynamic-allocation settings to the driver and executors. `spark.kubernetes.submission.waitAppCompletion=true` prevents Airflow from marking a task successful before its Spark application finishes.
 
-The Airflow image pins `acryl-datahub-airflow-plugin==1.6.0` for Airflow `2.9.3`. Scheduler and webserver share the REST connection, `cluster=PROD`, execution capture, DataJob lineage, and iolet materialization settings; extractors and the plugin's OpenLineage bridge are disabled. See the [DataHub Airflow plugin documentation](https://docs.datahub.com/docs/metadata-ingestion-modules/airflow-plugin).
+Airflow remains an orchestration boundary only. Static table lineage is synchronized separately from the pure catalog definitions, so scheduler availability and task execution do not depend on DataHub.
 
 ## DP1: Data Generator To Bronze Iceberg
 
@@ -56,19 +56,19 @@ The generator's Parquet fragments exist only inside the DP1 task pod. They are a
 4. Add `source_run_id` and `lakehouse_ingestion_ts`.
 5. Create the Iceberg namespace when necessary.
 6. atomically create or replace `recsys.lakehouse.bronze_<source_table>`.
-7. Commit the ten Bronze Iceberg tables; the DAG already declares those canonical URNs as task outlets.
+7. Commit the ten Bronze Iceberg tables. Their static catalog definitions and lineage are synchronized separately by Jenkins.
 
 References: [recsys_dp1_raw_to_bronze.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py#L13), [batch_lakehouse_ingestion.py (line 69)](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L69), [line 87](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L87), and [line 97](../../../apps/data-platform/src/ingest/batch_lakehouse_ingestion.py#L97).
 
 ### Step 2: Optimize Stage
 
-`DP1_OPTIMIZE_COMMAND` runs `optimize.py --scope bronze --pipeline DP1`. All ten Bronze tables receive compaction, target-file sizing, Zstandard compression, hash write distribution, manifest maintenance, and optional Z-order clustering. Missing tables fail the governed run because `--skip-missing` is not used.
+`DP1_OPTIMIZE_COMMAND` runs `optimize.py --scope bronze`. All ten Bronze tables receive compaction, target-file sizing, Zstandard compression, hash write distribution, manifest maintenance, and optional Z-order clustering. Missing tables fail the local pipeline because `--skip-missing` is not used.
 
 References: [recsys_dp1_raw_to_bronze.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py#L29), [optimize.py (line 34)](../../../apps/data-platform/src/lakehouse/optimize.py#L34), and [line 130](../../../apps/data-platform/src/lakehouse/optimize.py#L130).
 
 ### Step 3: Validate Stage
 
-The validator reads every Bronze table through the Spark Iceberg catalog and requires a positive row count, all source primary-key/audit columns, and no nulls in those required fields. It publishes the DP1 governance report and records `optimize_stage` as its upstream job.
+The validator reads every Bronze table through the Spark Iceberg catalog and requires a positive row count, all source primary-key/audit columns, and no nulls in those required fields. It emits a local validation report and fails the Airflow task when a check fails; it does not publish execution metadata to DataHub.
 
 References: [recsys_dp1_raw_to_bronze.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py#L39), [governance_contracts.py (line 102)](../../../apps/data-platform/src/validate/governance_contracts.py#L102), and [line 121](../../../apps/data-platform/src/validate/governance_contracts.py#L121).
 
@@ -100,13 +100,13 @@ Bronze Iceberg
 4. Separate unsupported schema versions.
 5. Deduplicate supported behavior events by `event_id`.
 6. Build clean events/impressions/requests, order facts, product SCD, users, products, and preferences.
-7. Commit eight curated `silver_*` Iceberg tables; the DAG declares them as task outlets.
+7. Commit eight curated `silver_*` Iceberg tables. Jenkins later reconciles their static definitions and lineage in DataHub.
 
 References: [recsys_dp2_bronze_to_silver_gold.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py#L13), [dp2_silver_gold_entrypoint.py (line 15)](../../../apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py#L15), and [build_silver_tables.py (line 28)](../../../apps/data-platform/src/features/spark/build_silver_tables.py#L28).
 
 ### Step 2: Optimize Stage
 
-`DP2_OPTIMIZE_COMMAND` runs the shared optimizer with `--scope silver --pipeline DP2`. All eight Silver tables receive the same physical-file policy as DP1; clean behavior events and impressions also have optional user/item/time Z-order profiles.
+`DP2_OPTIMIZE_COMMAND` runs the shared optimizer with `--scope silver`. All eight Silver tables receive the same physical-file policy as DP1; clean behavior events and impressions also have optional user/item/time Z-order profiles.
 
 References: [recsys_dp2_bronze_to_silver_gold.py](../../../apps/data-platform/src/orchestration/airflow/dags/recsys_dp2_bronze_to_silver_gold.py#L19), [optimize.py (line 24)](../../../apps/data-platform/src/lakehouse/optimize.py#L24), and [line 38](../../../apps/data-platform/src/lakehouse/optimize.py#L38).
 
@@ -198,7 +198,7 @@ Task logs are streamed by `KubernetesPodOperator`; Spark tasks additionally wait
 
 - Generator or Bronze commit failure stops DP1 before optimization.
 - Missing tables or a failed Iceberg rewrite stop DP1/DP2 before validation.
-- A contract failure writes its governance report, exits non-zero, and fails the validation task.
+- A local validation failure prints its report, exits non-zero, and fails the validation task.
 - Operators must preserve `DP1 -> DP2 -> DP3 -> materialize`; deployment
   verification does not execute production data workflows.
 - `catchup=False` and `max_active_runs=1` prevent backfill storms and overlapping runs of the same DAG.

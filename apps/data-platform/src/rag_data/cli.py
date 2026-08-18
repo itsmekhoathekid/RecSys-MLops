@@ -1,9 +1,4 @@
-"""Public CLI for canonical generation, chunking, embedding, and index lifecycle.
-
-Commands are idempotent through run-scoped manifests and checkpoints. Direct
-invocations emit strict DataHub runtime lineage; Airflow pods disable SDK
-emission because their inlets/outlets already describe the same run.
-"""
+"""Public CLI for canonical generation, chunking, embedding, and index lifecycle."""
 
 from __future__ import annotations
 
@@ -30,15 +25,6 @@ from rag_data.orcarouter_client import OrcaRouterClient
 from rag_data.pipeline import chunk_canonical_items, embed_item_chunks
 from rag_data.semantic_chunker import ChunkerConfig
 from rag_data.storage import CompletedRunError, MinioRunStorage
-from metadata.governance_catalog import (
-    RAG_ACTIVE_POINTER_URN,
-    RAG_GOLD_EMBEDDINGS_URN,
-    RAG_MILVUS_URNS,
-    RAG_RAW_DOCUMENTS_URN,
-    RAG_SILVER_CHUNKS_URN,
-    RAG_SOURCE_PRODUCTS_URN,
-)
-from metadata.runtime_lineage import RuntimeLineageRecorder
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -327,71 +313,22 @@ def rollback_item_index(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Dispatch one CLI command while recording runtime DataHub lineage."""
+    """Dispatch one idempotent RAG pipeline command."""
 
     args = build_parser().parse_args(argv)
-    milvus = set(RAG_MILVUS_URNS.values())
-    command_contract = {
-        "generate-items": (
-            "generate_item_documents",
-            {RAG_SOURCE_PRODUCTS_URN},
-            {RAG_RAW_DOCUMENTS_URN},
-            generate_items,
-        ),
-        "chunk-items": (
-            "semantic_chunk_items",
-            {RAG_RAW_DOCUMENTS_URN},
-            {RAG_SILVER_CHUNKS_URN},
-            chunk_items,
-        ),
-        "embed-chunks": (
-            "embed_item_chunks",
-            {RAG_SILVER_CHUNKS_URN},
-            {RAG_GOLD_EMBEDDINGS_URN},
-            embed_chunks,
-        ),
-        "publish-index": (
-            "reconcile_vector_index"
-            if getattr(args, "mode", None) == "reconcile"
-            else "incremental_upsert_index",
-            {RAG_GOLD_EMBEDDINGS_URN},
-            milvus,
-            publish_item_index,
-        ),
-        "validate-index": (
-            "validate_and_publish_index",
-            milvus,
-            {RAG_ACTIVE_POINTER_URN},
-            validate_item_index,
-        ),
-        "rollback-index": (
-            "validate_and_publish_index",
-            {RAG_ACTIVE_POINTER_URN},
-            {RAG_ACTIVE_POINTER_URN},
-            rollback_item_index,
-        ),
+    handlers = {
+        "generate-items": generate_items,
+        "chunk-items": chunk_items,
+        "embed-chunks": embed_chunks,
+        "publish-index": publish_item_index,
+        "validate-index": validate_item_index,
+        "rollback-index": rollback_item_index,
     }
     try:
-        job_id, inputs, outputs, handler = command_contract[args.command]
+        handler = handlers[args.command]
     except KeyError as exc:
         raise ValueError(f"Unsupported command: {args.command}") from exc
-    # Airflow pods set RUNTIME_LINEAGE_ENABLED=false because inlets/outlets are
-    # emitted by its plugin. Direct CLI and Helm jobs retain strict SDK lineage.
-    with RuntimeLineageRecorder(
-        "RAG_ITEMS",
-        job_id,
-        inputs=inputs,
-        outputs=outputs,
-        run_id=getattr(args, "run_id", "unknown"),
-        properties={
-            "sourceRunId": str(getattr(args, "source_run_id", "")),
-            "mode": str(getattr(args, "mode", "")),
-        },
-    ) as lineage:
-        result = handler(args)
-        if result:
-            lineage.fail(f"CLI exited with status {result}")
-        return result
+    return handler(args)
 
 
 if __name__ == "__main__":

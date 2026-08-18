@@ -20,7 +20,7 @@ def test_operational_cutover_utilities_are_not_database_migrations(monkeypatch):
         policy.subprocess,
         "check_output",
         lambda *args, **kwargs: (
-            "ops/migrations/datahub-sdk-lineage-cutover/cutover.py\n"
+            "ops/migrations/datahub-dataset-lineage-cutover/cutover.py\n"
             "apps/api/migrations/001_expand.sql\n"
         ),
     )

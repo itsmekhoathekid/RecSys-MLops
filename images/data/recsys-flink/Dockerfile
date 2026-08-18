@@ -57,7 +57,6 @@ RUN mkdir -p "${TMPDIR}" "${PIP_CACHE_DIR}" \
 
 RUN python3 -m pip install --no-cache-dir \
         apache-beam==2.75.0 \
-        acryl-datahub==1.6.0.17 \
         avro==1.12.0 \
         cloudpickle==2.2.1 \
         cryptography==47.0.0 \
@@ -70,8 +69,6 @@ RUN python3 -m pip install --no-cache-dir \
         requests==2.34.2 \
         "psycopg[binary]==3.3.4" \
         psycopg-pool==3.3.1
-
-RUN python3 -c "from datahub.api.entities.dataprocess.dataprocess_instance import DataProcessInstance; from datahub.emitter.rest_emitter import DatahubRestEmitter"
 
 COPY --from=jar-downloader /tmp/recsys-jars/*.jar /opt/flink/lib/
 COPY --from=jar-downloader /tmp/recsys-tools /opt/flink/autoscaler

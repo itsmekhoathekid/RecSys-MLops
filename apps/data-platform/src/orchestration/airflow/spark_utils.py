@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import Iterable
 
 try:
     from airflow import DAG
@@ -11,21 +9,6 @@ try:
     from pendulum import datetime
 except ImportError:  # pragma: no cover
     DAG = KubernetesPodOperator = datetime = k8s = None
-
-try:
-    from datahub_airflow_plugin.entities import Urn as DataHubUrn
-except (
-    ImportError
-):  # pragma: no cover - local SDK remains newer than the Airflow 2 plugin
-
-    @dataclass(frozen=True)
-    class DataHubUrn:  # type: ignore[no-redef]
-        _urn: str
-
-        @property
-        def urn(self) -> str:
-            return self._urn
-
 
 NAMESPACE = "recsys-dataflow"
 FEATURE_STORE_IMAGE = os.getenv(
@@ -55,12 +38,6 @@ COMMON_ENV = {
     # KPO env vars override the image-level PYTHONPATH, so every source-backed
     # runtime imported by data-platform tasks must remain explicit here.
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys/packages/recsys-rag-runtime/src:/opt/recsys",
-    "VALIDATION_RUN_ID": "{{ run_id }}",
-    # The Airflow listener is the sole execution/lineage publisher for these pods.
-    "RUNTIME_LINEAGE_ENABLED": "false",
-    "RUNTIME_LINEAGE_STRICT": "false",
-    "DATAHUB_VALIDATION_ENABLED": "true",
-    "DATAHUB_VALIDATION_STRICT": "false",
 }
 SPARK_DRIVER_EXECUTOR_ENV = (
     "PYTHONPATH",
@@ -87,12 +64,6 @@ SPARK_DRIVER_EXECUTOR_ENV = (
     "FEAST_POSTGRES_EXPORT_ENABLED",
     "SPARK_SQL_SHUFFLE_PARTITIONS",
     "SPARK_ADVISORY_PARTITION_SIZE_BYTES",
-    "DATAHUB_GMS_URL",
-    "DATAHUB_VALIDATION_ENABLED",
-    "DATAHUB_VALIDATION_STRICT",
-    "RUNTIME_LINEAGE_ENABLED",
-    "RUNTIME_LINEAGE_STRICT",
-    "VALIDATION_RUN_ID",
 )
 SPARK_SECRET_ENV = (
     "MINIO_ROOT_USER",
@@ -134,18 +105,12 @@ def parse_node_selector(value: str) -> dict[str, str]:
     return selectors
 
 
-def datahub_urns(urns: Iterable[str]) -> list[DataHubUrn]:
-    return [DataHubUrn(urn) for urn in sorted(set(urns))]
-
-
 def pod_task(
     task_id: str,
     image: str,
     command: str,
     *,
     istio_inject: bool = False,
-    inlets: Iterable[str] = (),
-    outlets: Iterable[str] = (),
 ):
     return KubernetesPodOperator(
         task_id=task_id,
@@ -162,8 +127,6 @@ def pod_task(
         on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
-        inlets=datahub_urns(inlets),
-        outlets=datahub_urns(outlets),
     )
 
 

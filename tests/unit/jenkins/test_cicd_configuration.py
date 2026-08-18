@@ -32,6 +32,7 @@ EXPECTED_LABELS = [
     "DP1 Raw To Bronze",
     "DP2 Bronze To Silver Gold",
     "DP3 Offline Feature Table",
+    "DataHub Static Catalog",
     "RAG Item Index",
     "RAG Retrieval API",
     "Online Feature API",
@@ -53,6 +54,32 @@ def test_component_catalog_is_valid_and_preserves_stage_view_labels():
     assert all(component["changeDetection"] for component in components)
     assert all("buildImages" in component for component in components)
     assert all("verifyDependsOn" in component for component in components)
+
+
+def test_datahub_catalog_has_a_dedicated_component_and_deploy_action():
+    components = {
+        component["name"]: component for component in configuration.load_components()
+    }
+    component = components["datahub_catalog"]
+    assert component["buildImages"] == ["recsys-data-ingestion"]
+    assert component["migrationPolicy"] == "none"
+
+    units = json.loads((ROOT / "jenkins/config/deploy-units.json").read_text())["units"]
+    unit = next(item for item in units if item["name"] == "datahub-catalog")
+    assert unit["kind"] == "kubernetes-action"
+    assert unit["components"] == ["datahub_catalog"]
+    assert unit["dependsOn"] == ["data-config"]
+
+
+def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
+    pipeline = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    assert "choices: ['skip', 'plan', 'apply']" in pipeline
+    assert "datahub-dataset-lineage-cutover.json.counts" in pipeline
+    assert "Apply the archived DataHub soft-delete manifest? Targets:" in pipeline
+    assert ".ci-deploy/**/*" in pipeline
+    trigger = (ROOT / "ops/gcp/trigger_full_jenkins.sh").read_text(encoding="utf-8")
+    assert "datahub_catalog" in trigger
+    assert 'DATAHUB_CUTOVER_MODE=${datahub_cutover_mode}' in trigger
 
 
 def test_full_release_verification_orders_data_before_training(tmp_path):

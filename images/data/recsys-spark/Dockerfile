@@ -61,7 +61,6 @@ RUN uv export \
         --python /opt/venv/bin/python \
         --no-cache \
         --constraint /tmp/ml-constraints.txt \
-        acryl-datahub==1.6.0.17 \
         boto3==1.35.36 \
         cryptography==49.0.0 \
         evidently==0.7.21 \
@@ -93,8 +92,7 @@ RUN uv export \
         setuptools==81.0.0 \
         wheel==0.46.2 \
     && uv pip check --python /opt/venv/bin/python \
-    && /opt/venv/bin/python -m pip uninstall -y pip \
-    && /opt/venv/bin/python -c "from datahub.api.entities.dataprocess.dataprocess_instance import DataProcessInstance; from datahub.emitter.rest_emitter import DatahubRestEmitter"
+    && /opt/venv/bin/python -m pip uninstall -y pip
 
 FROM spark:3.5.8-scala2.12-java11-ubuntu AS runtime
 

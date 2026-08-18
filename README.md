@@ -10,7 +10,7 @@ This project is an end-to-end recommendation platform for e-commerce. It turns c
 
 ## 📝 System Overview
 
-- **Data and analytics platform:** Generates configurable historical and real-time e-commerce events in PostgreSQL and MinIO, then streams CDC records through Debezium and Kafka. Spark builds batch features and Iceberg Bronze/Silver/Gold tables, while Flink handles event-time processing, deduplication, watermarking, streaming quality windows, and online feature updates. Airflow orchestrates ingestion, validation, compaction, materialization, drift, and analytics workflows; Feast serves PostgreSQL offline features and Redis online features; Hudi, DataHub, Trino, dbt, Superset, and Evidently provide dataset versioning, lineage, governed analytics, data quality, and drift monitoring.
+- **Data and analytics platform:** Generates configurable historical and real-time e-commerce events in PostgreSQL and MinIO, then streams CDC records through Debezium and Kafka. Spark builds batch features and Iceberg Bronze/Silver/Gold tables, while Flink handles event-time processing, deduplication, watermarking, streaming quality windows, and online feature updates. Airflow orchestrates ingestion, validation, compaction, materialization, drift, and analytics workflows; Feast serves PostgreSQL offline features and Redis online features; Hudi, DataHub, Trino, dbt, Superset, and Evidently provide dataset versioning, static batch dataset lineage, governed analytics, data quality, and drift monitoring.
 
 - **ML training and retraining platform:** Trains a PyTorch Behavior Sequence Transformer with time-aware datasets, negative sampling, ranking metrics, checkpointing, and ONNX/Triton model packaging. Kubeflow Pipelines coordinates data preparation, KubeRay/Ray Tune hyperparameter search and distributed training, evaluation, and promotion. MLflow uses PostgreSQL for tracking and registry metadata and MinIO for artifacts and versioned models; offline NDCG gates, feature-drift checks, and online candidate error/latency gates control promotion and drift-triggered retraining.
 
@@ -195,7 +195,7 @@ flowchart TD
 
 ### Data Platform Pipeline
 
-The data platform combines batch and CDC ingestion, Spark and Flink processing, Airflow orchestration, data-quality checks, DataHub lineage, and Feast offline/online feature stores.
+The data platform combines batch and CDC ingestion, Spark and Flink processing, Airflow orchestration, local data-quality checks, static DataHub batch-dataset lineage, and Feast offline/online feature stores.
 
 ```mermaid
 flowchart LR
@@ -234,7 +234,7 @@ flowchart LR
   subgraph Control["Orchestration, Quality & Governance"]
     Airflow["Airflow Orchestration"]
     DataChecks["Data Quality + Pipeline Health"]
-    DataHub["DataHub Catalog + Lineage"]
+    DataHub["DataHub Static Batch Catalog + Lineage"]
   end
 
   Airflow -.-> Spark
@@ -245,7 +245,6 @@ flowchart LR
   Kafka -.-> DataChecks
   BronzeLake -.-> DataHub
   SilverGoldLake -.-> DataHub
-  Kafka -.-> DataHub
 ```
 
 ### Ranking Sequence Model Architecture
@@ -313,7 +312,7 @@ Source: tab **`rubic (mini-coursework)`**.
 | [Processing Jobs](<docs/submission/rubic-(mini-coursework)/processing_jobs.md>) | Spark offline processing, Flink streaming processing, optimization evidence, pipeline integration, and window processing. |
 | [Data Storage](<docs/submission/rubic-(mini-coursework)/data_storage.md>) | Lakehouse compaction/partitioning and data-warehouse indexing. |
 | [Data Pipeline Orchestration](<docs/submission/rubic-(mini-coursework)/data_pipeline_orchestration.md>) | Airflow DP1, DP2, and DP3 ingest/validate stages. |
-| [Data Governance](<docs/submission/rubic-(mini-coursework)/data_governance.md>) | DataHub lineage, validation, and data contracts for DP1, DP2, and DP3. |
+| [Data Governance](<docs/submission/rubic-(mini-coursework)/data_governance.md>) | Static DataHub dataset lineage for DP1, DP2, DP3, RAG, and analytics. |
 | [Schema Design](<docs/submission/rubic-(mini-coursework)/schema_design.md>) | Zone schemas, SCD2 dimensions, feature timestamps, table relationships, and naming conventions. |
 | [Novel Ideas](<docs/submission/rubic-(mini-coursework)/novel_ideas.md>) | Grafana-based data-quality monitoring and analytics-platform extensions. |
 
@@ -367,7 +366,7 @@ Source: tab **`rubic final-coursework (final -llm)`**.
 | IaC | Work in progress. |
 | Observability | Work in progress. |
 | A/B Testing | Work in progress. |
-| Security | Work in progress. |
+| [Security](<docs/submission/rubric-final-coursework-(final-llm)/security.md>) | HashiCorp Vault HA/Raft with Cloud KMS auto-unseal, External Secrets synchronization, Agent Gateway API-key authentication, secret rotation, and verification evidence. |
 | Repository Design | Work in progress. |
 | Low-Level ML Design | Work in progress. |
 | Novel Ideas | Work in progress. |

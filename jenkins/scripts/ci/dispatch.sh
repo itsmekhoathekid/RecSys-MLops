@@ -7,6 +7,7 @@ run_component_ci() {
     dp1) ci_dp1 ;;
     dp2) ci_dp2 ;;
     dp3) ci_dp3 ;;
+    datahub_catalog) ci_datahub_catalog ;;
     rag_index) ci_rag_index ;;
     rag_api) ci_rag_api ;;
     online_feature_api) ci_online_feature_api ;;

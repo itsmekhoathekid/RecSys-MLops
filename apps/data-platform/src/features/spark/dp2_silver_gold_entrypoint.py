@@ -11,22 +11,16 @@ from lakehouse.iceberg import (
     SILVER_LAKEHOUSE_TABLES,
     create_spark_namespace,
 )
-from metadata.datahub_validation import publish_validation_results
-from metadata.governance_catalog import BRONZE_URNS, SILVER_URNS
-from metadata.runtime_lineage import RuntimeLineageRecorder
-from validate.governance_contracts import check, dataset_result
+from validate.governance_contracts import build_validation_report, check, dataset_result
 
 
 def build_dp2_silver_gold() -> dict[str, int]:
     spark = spark_session("recsys-dp2-bronze-to-silver-gold")
     catalog = IcebergCatalogConfig()
     try:
-        with RuntimeLineageRecorder("DP2", "ingest_stage") as lineage:
-            create_spark_namespace(spark, catalog)
-            silver = build_silver_tables(spark, catalog=catalog, source="lakehouse")
-            lineage.add_inputs(*BRONZE_URNS.values())
-            lineage.add_outputs(*(SILVER_URNS[name] for name in silver))
-            return {name: row_count(frame) for name, frame in sorted(silver.items())}
+        create_spark_namespace(spark, catalog)
+        silver = build_silver_tables(spark, catalog=catalog, source="lakehouse")
+        return {name: row_count(frame) for name, frame in sorted(silver.items())}
     finally:
         spark.stop()
 
@@ -35,63 +29,31 @@ def validate_dp2_silver_gold() -> dict[str, int]:
     spark = spark_session("recsys-dp2-validate-silver-gold")
     catalog = IcebergCatalogConfig()
     try:
-        with RuntimeLineageRecorder(
-            "DP2",
-            "validate_stage",
-            inputs=set(SILVER_URNS.values()),
-        ) as lineage:
-            counts: dict[str, int] = {}
-            datasets: dict[str, dict[str, Any]] = {}
-            for table_name in SILVER_LAKEHOUSE_TABLES:
-                full_name = catalog.lakehouse_table(f"silver_{table_name}")
-                frame = read_iceberg_table(spark, full_name)
-                counts[table_name] = row_count(frame)
-                expected = ">= 0" if table_name == "rejected_behavior_events" else "> 0"
-                count_ok = (
-                    counts[table_name] >= 0
-                    if table_name == "rejected_behavior_events"
-                    else counts[table_name] > 0
-                )
-                checks = [
-                    check(  # row_count: Silver outputs need rows; rejected output may be empty.
-                        "row_count",
-                        "SUCCESS" if count_ok else "FAILURE",
-                        expected,
-                        counts[table_name],
-                    )
-                ]
-                if table_name == "clean_behavior_events":
-                    duplicate_count = (
-                        counts[table_name] - frame.select("event_id").distinct().count()
-                    )
-                    checks.extend(
-                        [
-                            check(  # required_columns: clean events need ID and event/ingestion times.
-                                "required_columns",
-                                "SUCCESS"
-                                if {
-                                    "event_id",
-                                    "event_timestamp",
-                                    "ingestion_ts",
-                                }.issubset(frame.columns)
-                                else "FAILURE",
-                                ["event_id", "event_timestamp", "ingestion_ts"],
-                                sorted(frame.columns),
-                            ),
-                            check(  # duplicate_event_id: every clean event_id must be unique.
-                                "duplicate_event_id",
-                                "SUCCESS" if duplicate_count == 0 else "FAILURE",
-                                0,
-                                duplicate_count,
-                            ),
-                        ]
-                    )
-                datasets[SILVER_URNS[table_name]] = dataset_result(checks)
-            report = publish_validation_results("DP2", datasets)
-            if report["status"] != "SUCCESS":
-                lineage.fail(f"DP2 data contract status: {report['status']}")
-                raise AssertionError(f"DP2 validation failed: {report}")
-            return counts
+        counts: dict[str, int] = {}
+        datasets: dict[str, dict[str, Any]] = {}
+        for table_name in SILVER_LAKEHOUSE_TABLES:
+            full_name = catalog.lakehouse_table(f"silver_{table_name}")
+            frame = read_iceberg_table(spark, full_name)
+            counts[table_name] = row_count(frame)
+            expected = ">= 0" if table_name == "rejected_behavior_events" else "> 0"
+            count_ok = counts[table_name] >= 0 if table_name == "rejected_behavior_events" else counts[table_name] > 0
+            checks = [check("row_count", "SUCCESS" if count_ok else "FAILURE", expected, counts[table_name])]
+            if table_name == "clean_behavior_events":
+                duplicate_count = counts[table_name] - frame.select("event_id").distinct().count()
+                checks.extend([
+                    check(
+                        "required_columns",
+                        "SUCCESS" if {"event_id", "event_timestamp", "ingestion_ts"}.issubset(frame.columns) else "FAILURE",
+                        ["event_id", "event_timestamp", "ingestion_ts"],
+                        sorted(frame.columns),
+                    ),
+                    check("duplicate_event_id", "SUCCESS" if duplicate_count == 0 else "FAILURE", 0, duplicate_count),
+                ])
+            datasets[f"silver.{table_name}"] = dataset_result(checks)
+        report = build_validation_report("DP2", datasets)
+        if report["status"] != "SUCCESS":
+            raise AssertionError(f"DP2 validation failed: {report}")
+        return counts
     finally:
         spark.stop()
 

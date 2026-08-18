@@ -22,6 +22,7 @@ source jenkins/scripts/deploy/rollout.sh
 source jenkins/scripts/deploy/demo.sh
 source jenkins/scripts/deploy/analytics.sh
 source jenkins/scripts/deploy/rag.sh
+source jenkins/scripts/deploy/datahub.sh
 
 image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_REGISTRY:-$(python3 jenkins/python/configuration.py gcp imageRegistry)}}"
 image_registry="${image_registry%/}"
@@ -284,6 +285,9 @@ case "${unit_name}" in
     ;;
   rag-index-promotion)
     rag_index_promote "$(resolve_release_image recsys-data-ingestion)"
+    ;;
+  datahub-catalog)
+    datahub_catalog_sync "$(resolve_release_image recsys-data-ingestion)"
     ;;
   mlflow)
     deploy_mlflow

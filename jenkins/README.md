@@ -151,7 +151,7 @@ Run the root Jenkins job with `FORCE_DEPLOY=true` and the complete component
 list in `FORCE_COMPONENTS`:
 
 ```text
-materialize,training,dp1,dp2,dp3,online_feature_api,inference_api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,ci_config
+materialize,training,dp1,dp2,dp3,datahub_catalog,online_feature_api,inference_api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,rag_index,rag_api,ci_config
 ```
 
 The root pipeline keeps a compact Stage View: Declarative checkout, Checkout,
@@ -174,6 +174,9 @@ JENKINS_USER=admin \
 JENKINS_TOKEN="$JENKINS_TOKEN" \
 make jenkins-full
 ```
+
+Set `DATAHUB_CUTOVER_MODE=plan` to archive a cleanup manifest, or `apply` to
+pause at the Jenkins approval gate and then apply that exact reviewed manifest.
 
 Set `COMPONENT_CI_MAX_PARALLEL=2` on smaller controller pods. The trigger always
 publishes images and requests production deployment; use the Jenkins

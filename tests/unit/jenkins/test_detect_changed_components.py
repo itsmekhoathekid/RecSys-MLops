@@ -55,6 +55,13 @@ def test_shared_data_platform_dag_helper_selects_all_consumers():
     ) == {"materialize", "dp1", "dp2", "dp3", "rag_index", "drift"}
 
 
+def test_metadata_change_selects_the_static_datahub_catalog_component():
+    result = detect(["apps/data-platform/src/metadata/governance_catalog.py"])
+    assert result.component_names == ("datahub_catalog",)
+    assert "recsys-data-ingestion" in result.release_plan["buildImages"]
+    assert "datahub-catalog" in result.release_plan["deployUnits"]
+
+
 def test_each_split_airflow_dag_selects_only_its_component():
     expected = {
         "recsys_dp1_raw_to_bronze.py": "dp1",

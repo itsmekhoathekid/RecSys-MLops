@@ -54,24 +54,6 @@ spec:
               value: LocalExecutor
             - name: AIRFLOW__CORE__DAGS_FOLDER
               value: {{ .Values.airflow.dagsPath | quote }}
-            - name: AIRFLOW_CONN_DATAHUB_REST_DEFAULT
-              value: '{"conn_type":"datahub-rest","host":"http://datahub-datahub-gms.datahub.svc.cluster.local:8080"}'
-            - name: AIRFLOW__DATAHUB__ENABLED
-              value: "true"
-            - name: AIRFLOW__DATAHUB__CONN_ID
-              value: datahub_rest_default
-            - name: AIRFLOW__DATAHUB__CLUSTER
-              value: PROD
-            - name: AIRFLOW__DATAHUB__CAPTURE_EXECUTIONS
-              value: "true"
-            - name: AIRFLOW__DATAHUB__ENABLE_DATAJOB_LINEAGE
-              value: "true"
-            - name: AIRFLOW__DATAHUB__MATERIALIZE_IOLETS
-              value: "true"
-            - name: AIRFLOW__DATAHUB__ENABLE_EXTRACTORS
-              value: "false"
-            - name: AIRFLOW__DATAHUB__DISABLE_OPENLINEAGE_PLUGIN
-              value: "true"
             - name: AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT
               value: "900"
             - name: AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT
@@ -144,24 +126,6 @@ spec:
               value: LocalExecutor
             - name: AIRFLOW__CORE__DAGS_FOLDER
               value: {{ .Values.airflow.dagsPath | quote }}
-            - name: AIRFLOW_CONN_DATAHUB_REST_DEFAULT
-              value: '{"conn_type":"datahub-rest","host":"http://datahub-datahub-gms.datahub.svc.cluster.local:8080"}'
-            - name: AIRFLOW__DATAHUB__ENABLED
-              value: "true"
-            - name: AIRFLOW__DATAHUB__CONN_ID
-              value: datahub_rest_default
-            - name: AIRFLOW__DATAHUB__CLUSTER
-              value: PROD
-            - name: AIRFLOW__DATAHUB__CAPTURE_EXECUTIONS
-              value: "true"
-            - name: AIRFLOW__DATAHUB__ENABLE_DATAJOB_LINEAGE
-              value: "true"
-            - name: AIRFLOW__DATAHUB__MATERIALIZE_IOLETS
-              value: "true"
-            - name: AIRFLOW__DATAHUB__ENABLE_EXTRACTORS
-              value: "false"
-            - name: AIRFLOW__DATAHUB__DISABLE_OPENLINEAGE_PLUGIN
-              value: "true"
             - name: AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT
               value: "900"
             - name: AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT

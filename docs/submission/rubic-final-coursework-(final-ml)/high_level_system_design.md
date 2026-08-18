@@ -21,8 +21,8 @@ flowchart LR
     SilverGoldLake[("Iceberg Silver / Gold Tables")]
     Flink["Flink Realtime<br/>Feature Engineering"]
     Airflow["Airflow Orchestration"]
-    DataChecks["Data Quality + Pipeline Health<br/>failures, freshness, contracts, lag"]
-    DataHub["DataHub Governance<br/>Catalog + Lineage"]
+    DataChecks["Local Data Quality + Pipeline Health<br/>failures, freshness, lag"]
+    DataHub["DataHub Governance<br/>Static Batch Dataset Lineage"]
 
     Generator --> Raw --> BronzeLake --> Spark --> SilverGoldLake
     Generator --> SourceDB --> Debezium --> Kafka --> Flink
@@ -34,7 +34,6 @@ flowchart LR
     Kafka -.-> DataChecks
     BronzeLake -.-> DataHub
     SilverGoldLake -.-> DataHub
-    Kafka -.-> DataHub
 
     subgraph FP["Feast Feature Store"]
       direction TB
@@ -365,17 +364,15 @@ flowchart LR
     dbt["dbt<br/>staging → intermediate → core / recsys marts"]
     Superset["Apache Superset<br/>RecSys Business Pulse"]
     AnalyticsStakeholder["Business / ML Stakeholders"]
-    Governance["DataHub<br/>catalog, ownership, contracts, lineage"]
+    Governance["DataHub<br/>catalog, ownership, static dataset lineage"]
 
     AnalyticsSync --> AnalyticsCatalog --> Trino --> dbt --> Superset --> AnalyticsStakeholder
   end
   SilverGold --> AnalyticsSync
   Airflow -. "recsys_analytics_daily" .-> AnalyticsSync
-  Airflow -. "DataHub plugin: runs + declared lineage" .-> Governance
-  Kafka -. "CDC SDK lineage" .-> Governance
-  Bronze -. "datasets / lineage" .-> Governance
-  SilverGold -. "datasets / lineage" .-> Governance
-  OfflineFS -. "Flink SDK feature lineage" .-> Governance
+  Bronze -. "static datasets / lineage" .-> Governance
+  SilverGold -. "static datasets / lineage" .-> Governance
+  OfflineFS -. "batch feature datasets" .-> Governance
 
   %% =========================
   %% ML workflow

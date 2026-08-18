@@ -8,7 +8,6 @@ from orchestration.airflow.spark_utils import (
     pod_task,
     spark_native_submit,
 )
-from metadata.governance_catalog import BRONZE_URNS
 
 
 DP1_INGEST_COMMAND = """
@@ -31,7 +30,6 @@ DP1_OPTIMIZE_COMMAND = spark_native_submit(
     "dp1_optimize_bronze",
     "local:///opt/recsys/apps/data-platform/src/lakehouse/optimize.py",
     "--scope bronze "
-    "--pipeline DP1 "
     "--strategy ${LAKEHOUSE_OPTIMIZATION_STRATEGY:-binpack} "
     "--target-file-size-mb ${LAKEHOUSE_TARGET_FILE_SIZE_MB:-128} "
     "--min-input-files ${LAKEHOUSE_COMPACTION_MIN_INPUT_FILES:-2}",
@@ -57,20 +55,16 @@ if DAG is not None:
             "ingest_stage",
             SPARK_IMAGE,
             DP1_INGEST_COMMAND,
-            outlets=BRONZE_URNS.values(),
         )
         optimize_stage = pod_task(
             "optimize_stage",
             SPARK_IMAGE,
             DP1_OPTIMIZE_COMMAND,
-            inlets=BRONZE_URNS.values(),
-            outlets=BRONZE_URNS.values(),
         )
         validate_stage = pod_task(
             "validate_stage",
             SPARK_IMAGE,
             DP1_VALIDATE_COMMAND,
-            inlets=BRONZE_URNS.values(),
         )
 
         ingest_stage >> optimize_stage >> validate_stage

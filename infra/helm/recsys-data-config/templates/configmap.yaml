@@ -13,10 +13,6 @@ data:
   LAKE_BUCKET: {{ .Values.minio.lakeBucket | quote }}
   OFFLINE_FEATURE_BUCKET: {{ .Values.minio.offlineFeatureBucket | quote }}
   LAKEHOUSE_WAREHOUSE: "s3a://{{ .Values.minio.lakeBucket }}/warehouse"
-  RUNTIME_LINEAGE_ENABLED: "true"
-  RUNTIME_LINEAGE_STRICT: {{ .Values.datahub.runtimeLineageStrict | quote }}
-  DATAHUB_VALIDATION_ENABLED: "true"
-  DATAHUB_VALIDATION_STRICT: {{ .Values.datahub.validationStrict | quote }}
   ICEBERG_CATALOG: {{ .Values.lakehouse.catalog | quote }}
   ICEBERG_LAKEHOUSE_NAMESPACE: {{ .Values.lakehouse.lakehouseNamespace | quote }}
   OFFLINE_FEATURE_CATALOG: {{ .Values.lakehouse.offlineFeatureCatalog | quote }}
@@ -44,6 +40,9 @@ data:
   DP1_DAG_SCHEDULE: {{ .Values.airflow.dp1Schedule | quote }}
   DP2_DAG_SCHEDULE: {{ .Values.airflow.dp2Schedule | quote }}
   DP3_DAG_SCHEDULE: {{ .Values.airflow.dp3Schedule | quote }}
+  RAG_ITEM_DAG_SCHEDULE: {{ .Values.airflow.ragItemSchedule | quote }}
+  RAG_ITEM_SOURCE_RUN_ID: {{ .Values.rag.sourceRunId | quote }}
+  RAG_ITEM_PIPELINE_RUN_ID: {{ .Values.rag.pipelineRunId | quote }}
   ANALYTICS_DAG_SCHEDULE: {{ .Values.airflow.analyticsSchedule | quote }}
   FEAST_MATERIALIZE_DAG_SCHEDULE: {{ .Values.airflow.feastMaterializeSchedule | quote }}
   FEATURE_DRIFT_DAG_SCHEDULE: {{ .Values.airflow.featureDriftSchedule | quote }}
@@ -52,7 +51,6 @@ data:
   LAKEHOUSE_TARGET_FILE_SIZE_MB: {{ .Values.lakehouse.targetFileSizeMb | quote }}
   LAKEHOUSE_COMPACTION_MIN_INPUT_FILES: {{ .Values.lakehouse.compactionMinInputFiles | quote }}
   REALTIME_E2E_ENABLED: {{ .Values.e2e.realtimeEnabled | quote }}
-  DATAHUB_INGEST_ENABLED: {{ .Values.e2e.datahubIngestEnabled | quote }}
   SPARK_K8S_MASTER: {{ .Values.spark.k8sMaster | quote }}
   SPARK_K8S_NAMESPACE: {{ .Values.namespace.name | quote }}
   SPARK_K8S_IMAGE: {{ .Values.images.spark | quote }}
@@ -98,7 +96,6 @@ data:
   OFFLINE_FEATURE_DRIFT_BOOTSTRAP_BASELINE: {{ .Values.drift.bootstrapBaseline | quote }}
   PUSHGATEWAY_URL: {{ .Values.observability.pushgatewayUrl | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.observability.otelEndpoint | quote }}
-  DATAHUB_GMS_URL: "http://datahub-datahub-gms.datahub.svc.cluster.local:8080"
   KFP_ENDPOINT: {{ .Values.observability.kfpEndpoint | quote }}
   KFP_EXPERIMENT_NAME: {{ .Values.observability.kfpExperimentName | quote }}
   KFP_PIPELINE_NAME: {{ .Values.observability.kfpPipelineName | quote }}

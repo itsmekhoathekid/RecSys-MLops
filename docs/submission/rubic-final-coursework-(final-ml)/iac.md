@@ -73,6 +73,11 @@ Terraform provisions the cloud resources, installs required controllers, creates
 | Security mesh | [recsys_services.tf (line 309)](../../../infra/terraform/gcp/recsys_services.tf#L309) | [recsys-security values](../../../infra/helm/recsys-security/values.yaml#L1) configure External Secrets, Istio mTLS, and authorization policies. |
 | DataHub | [prerequisites release](../../../infra/terraform/gcp/datahub.tf#L64), [DataHub release](../../../infra/terraform/gcp/datahub.tf#L84) | [prerequisite values](../../../infra/helm/datahub-stack/prerequisites-values.yaml) and [DataHub values](../../../infra/helm/datahub-stack/datahub-values.yaml) configure metadata storage, Kafka integration, and DataHub services. |
 
+Terraform continues to own the DataHub service. Jenkins separately runs an
+immutable, one-shot `datahub-catalog` deployment unit to synchronize static
+batch dataset metadata; application charts do not carry DataHub credentials or
+execution-tracking settings.
+
 ## Historical Cloud Build Image Proof
 
 The following capture is historical evidence from the earlier coursework

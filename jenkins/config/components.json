@@ -63,14 +63,12 @@
     },
     "lakehouse-common": {
       "prefixes": [
-        "apps/data-platform/src/lakehouse/",
-        "apps/data-platform/src/metadata/"
+        "apps/data-platform/src/lakehouse/"
       ],
       "files": [
         "apps/data-platform/src/validate/governance_contracts.py",
         "tests/unit/data_platform/test_lakehouse_optimization.py",
-        "tests/unit/data_platform/test_governance_lineage.py",
-        "tests/unit/test_runtime_lineage.py",
+        "tests/unit/data_platform/test_datahub_catalog.py",
         "tests/integration/test_hudi_native_upsert_versioning.py"
       ]
     },
@@ -80,8 +78,8 @@
       ],
       "files": [
         "apps/data-platform/src/validate/governance_contracts.py",
-        "tests/unit/data_platform/test_governance_lineage.py",
-        "tests/unit/test_runtime_lineage.py"
+        "tests/unit/data_platform/test_datahub_catalog.py",
+        "tests/unit/data_platform/test_datahub_dataset_cutover.py"
       ]
     },
     "airflow-data-release": {
@@ -162,7 +160,6 @@
           "packages/recsys-feature-store-runtime/",
           "apps/data-platform/feature-store/",
           "apps/data-platform/src/feature_store/",
-          "apps/data-platform/src/metadata/",
           "tests/unit/feature_store/"
         ],
         "files": [
@@ -346,6 +343,29 @@
       "migrationPolicy": "expand-only"
     },
     {
+      "name": "datahub_catalog",
+      "flag": "RUN_DATAHUB_CATALOG",
+      "label": "DataHub Static Catalog",
+      "ciProfile": "data",
+      "changeDetection": {
+        "groups": ["python-common", "jenkins-shared-runtime", "datahub-governance"],
+        "prefixes": [
+          "ops/migrations/datahub-dataset-lineage-cutover/",
+          "infra/helm/recsys-observability/dashboards/"
+        ],
+        "files": [
+          "jenkins/scripts/ci/data.sh",
+          "jenkins/scripts/deploy/datahub.sh",
+          "jenkins/scripts/test/datahub.sh",
+          "tests/contract/test_docker_dataflow_contracts.py"
+        ]
+      },
+      "buildImages": ["recsys-data-ingestion"],
+      "buildArtifacts": [],
+      "verifyDependsOn": [],
+      "migrationPolicy": "none"
+    },
+    {
       "name": "rag_index",
       "flag": "RUN_RAG_INDEX",
       "label": "RAG Item Index",
@@ -355,7 +375,6 @@
           "python-common",
           "jenkins-shared-runtime",
           "data-common",
-          "datahub-governance",
           "airflow-data-release",
           "spark-utils",
           "rag-shared-runtime"

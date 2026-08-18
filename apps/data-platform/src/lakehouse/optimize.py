@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from contextlib import nullcontext
 from typing import Any
 
 from features.spark.session import compact_iceberg_table, spark_session
@@ -12,8 +11,6 @@ from lakehouse.iceberg import (
     SILVER_LAKEHOUSE_TABLES,
     IcebergCatalogConfig,
 )
-from metadata.governance_catalog import BRONZE_URNS, ICEBERG_FEATURE_URNS, SILVER_URNS
-from metadata.runtime_lineage import RuntimeLineageRecorder
 
 
 # Z-order is reserved for tables whose dominant access path uses these columns.
@@ -73,17 +70,6 @@ def _is_missing_table_error(exc: Exception) -> bool:
     )
 
 
-def optimization_dataset_urns(scope: str) -> set[str]:
-    urns: set[str] = set()
-    if scope in {"bronze", "all"}:
-        urns.update(BRONZE_URNS.values())
-    if scope in {"silver", "all"}:
-        urns.update(SILVER_URNS.values())
-    if scope in {"features", "all"}:
-        urns.update(ICEBERG_FEATURE_URNS.values())
-    return urns
-
-
 def optimize_lakehouse(
     spark: Any,
     *,
@@ -138,7 +124,6 @@ def main() -> int:
     parser.add_argument(
         "--scope", choices=("bronze", "silver", "features", "all"), default="all"
     )
-    parser.add_argument("--pipeline", choices=("DP1", "DP2", "DP3"))
     parser.add_argument("--strategy", choices=("binpack", "zorder"), default="binpack")
     parser.add_argument("--target-file-size-mb", type=int, default=128)
     parser.add_argument("--min-input-files", type=int, default=2)
@@ -148,27 +133,15 @@ def main() -> int:
 
     spark = spark_session("recsys-lakehouse-optimization")
     try:
-        urns = optimization_dataset_urns(args.scope)
-        lineage = (
-            RuntimeLineageRecorder(
-                args.pipeline,
-                "optimize_stage",
-                inputs=urns,
-                outputs=urns,
-            )
-            if args.pipeline
-            else nullcontext()
+        report = optimize_lakehouse(
+            spark,
+            scope=args.scope,
+            strategy=args.strategy,
+            target_file_size_bytes=args.target_file_size_mb * 1024 * 1024,
+            min_input_files=args.min_input_files,
+            rewrite_all=args.rewrite_all,
+            skip_missing=args.skip_missing,
         )
-        with lineage:
-            report = optimize_lakehouse(
-                spark,
-                scope=args.scope,
-                strategy=args.strategy,
-                target_file_size_bytes=args.target_file_size_mb * 1024 * 1024,
-                min_input_files=args.min_input_files,
-                rewrite_all=args.rewrite_all,
-                skip_missing=args.skip_missing,
-            )
         print(json.dumps(report, indent=2, sort_keys=True, default=str))
     finally:
         spark.stop()

@@ -34,13 +34,6 @@ from features.flink.source import (
     build_watermark_strategy,
 )
 from features.flink.stream_config import StreamConfig, parse_stream_args
-from metadata.governance_catalog import (
-    ICEBERG_FEATURE_URNS,
-    KAFKA_TOPIC_URNS,
-    POSTGRES_FEATURE_URNS,
-    REDIS_FEATURE_URNS,
-)
-from metadata.runtime_lineage import RuntimeLineageRecorder, lineage_run_id
 
 
 def _attach_postgres_dlq(late_events: Any, args: StreamConfig) -> None:
@@ -178,57 +171,9 @@ def run_pyflink_stream(args: StreamConfig) -> None:
         statement_set.execute().wait()
 
 
-def _lineage_recorders(args: StreamConfig) -> list[RuntimeLineageRecorder]:
-    offline_outputs: set[str] = set()
-    if args.offline_store_enabled:
-        configured_outputs = (
-            POSTGRES_FEATURE_URNS
-            if args.offline_store_sink == "postgres"
-            else ICEBERG_FEATURE_URNS
-        )
-        offline_outputs.update(
-            configured_outputs[table] for table in REDIS_FEATURE_URNS
-        )
-
-    run_id = lineage_run_id()
-    recorders = []
-    if args.offline_store_enabled:
-        recorders.append(
-            RuntimeLineageRecorder(
-                "STREAMING_FEATURES",
-                "run_flink_stream_to_offline_store",
-                inputs={KAFKA_TOPIC_URNS["behavior_events"]},
-                outputs=offline_outputs,
-                run_id=run_id,
-            )
-        )
-    if not args.disable_online_store:
-        recorders.append(
-            RuntimeLineageRecorder(
-                "STREAMING_FEATURES",
-                "run_flink_stream_to_online_store",
-                inputs={KAFKA_TOPIC_URNS["behavior_events"]},
-                outputs=set(REDIS_FEATURE_URNS.values()),
-                run_id=run_id,
-            )
-        )
-    return recorders
-
-
 def main() -> int:
     args = parse_stream_args()
-    recorders = _lineage_recorders(args)
-    for recorder in recorders:
-        recorder.__enter__()
-    try:
-        run_pyflink_stream(args)
-    except Exception as exc:
-        for recorder in recorders:
-            recorder.fail(str(exc))
-        raise
-    else:
-        for recorder in recorders:
-            recorder.complete()
+    run_pyflink_stream(args)
     return 0
 
 

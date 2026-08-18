@@ -16,21 +16,23 @@ minio:
   storage: 20Gi
 
 airflow:
-  dp1Schedule: manual
-  dp2Schedule: manual
-  dp3Schedule: manual
-  analyticsSchedule: manual
-  feastMaterializeSchedule: manual
+  dp1Schedule: "@daily"
+  dp2Schedule: "0 1 * * *"
+  dp3Schedule: "30 1 * * *"
+  ragItemSchedule: "0 2 * * *"
+  analyticsSchedule: "30 2 * * *"
+  feastMaterializeSchedule: "20 */2 * * *"
+  featureDriftSchedule: "30 3 * * *"
+
+rag:
+  sourceRunId: rag-items-deepseek-8a3e686-20260817
+  pipelineRunId: rag-pipeline-2859b30-20260818
 
 dataSetup:
   generatorConfig: configs/data-platform/generator/e2e-2k.yaml
   generatorRunId: test_2k_seed42
   dp3Config: configs/data-platform/spark/dp3-e2e-2k.yaml
   realtimeLimitPerTable: "1000"
-
-datahub:
-  runtimeLineageStrict: "true"
-  validationStrict: "true"
 
 spark:
   driverMemory: 1g

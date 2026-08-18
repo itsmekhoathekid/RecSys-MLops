@@ -210,29 +210,16 @@ def test_airflow_runtime_is_pinned_to_the_stable_2_9_control_plane():
     assert "ARG PYTHON_VERSION" not in dockerfile
     assert "constraints-${AIRFLOW_VERSION}" in dockerfile
     assert "constraints-${AIRFLOW_PYTHON_VERSION}.txt" in dockerfile
-    assert "acryl-datahub-airflow-plugin==1.6.0" in dockerfile
-    assert "patch_datahub_plugin_no_openlineage.py" in dockerfile
-    assert "datahub_airflow_plugin.datahub_listener" in dockerfile
+    assert "acryl-datahub-airflow-plugin" not in dockerfile
+    assert "patch_datahub_plugin_no_openlineage.py" not in dockerfile
+    assert "datahub_" + "airflow_plugin" not in dockerfile
     assert "exec airflow webserver" in rendered_airflow
     assert "exec airflow scheduler" in rendered_airflow
     assert "airflow api-server" not in rendered_airflow
     assert "airflow dag-processor" not in rendered_airflow
     assert rendered_airflow.count("name: AIRFLOW__CORE__EXECUTOR") == 2
-    for name, value in (
-        ("AIRFLOW__DATAHUB__ENABLED", "true"),
-        ("AIRFLOW__DATAHUB__CLUSTER", "PROD"),
-        ("AIRFLOW__DATAHUB__CAPTURE_EXECUTIONS", "true"),
-        ("AIRFLOW__DATAHUB__ENABLE_DATAJOB_LINEAGE", "true"),
-        ("AIRFLOW__DATAHUB__MATERIALIZE_IOLETS", "true"),
-        ("AIRFLOW__DATAHUB__ENABLE_EXTRACTORS", "false"),
-        ("AIRFLOW__DATAHUB__DISABLE_OPENLINEAGE_PLUGIN", "true"),
-    ):
-        assert rendered_airflow.count(f"name: {name}") == 2
-        rendered_values = rendered_airflow.count(
-            f'value: "{value}"'
-        ) + rendered_airflow.count(f"value: {value}")
-        assert rendered_values >= 2
-    assert rendered_airflow.count("name: AIRFLOW_CONN_DATAHUB_REST_DEFAULT") == 2
+    assert "AIRFLOW__" + "DATAHUB" not in rendered_airflow
+    assert "AIRFLOW_CONN_" + "DATAHUB" not in rendered_airflow
     assert "component_test_airflow_dag_registered" in runtime_verifier
     assert "airflow dags list --output plain" in runtime_verifier
     assert "airflow dags trigger" not in runtime_verifier
@@ -240,13 +227,15 @@ def test_airflow_runtime_is_pinned_to_the_stable_2_9_control_plane():
     assert "airflow dags state" not in runtime_verifier
 
     data_config = render("recsys-data-config")
-    for pipeline in ("DP1", "DP2", "DP3"):
+    for pipeline in ("DP1", "DP2", "DP3", "RAG_ITEM"):
         assert f"{pipeline}_DAG_SCHEDULE" in data_config
+    assert "RAG_ITEM_SOURCE_RUN_ID" in data_config
+    assert "RAG_ITEM_PIPELINE_RUN_ID" in data_config
     assert "DATA_PLATFORM_DAG_SCHEDULE" not in data_config
     assert "BATCH_FEATURE_DAG_SCHEDULE" not in data_config
 
 
-def test_datahub_sdk_cutover_removes_openlineage_from_non_airflow_runtimes():
+def test_static_catalog_sdk_is_isolated_to_data_ingestion_runtime():
     dependency_files = [
         ROOT / "pyproject.toml",
         ROOT / "uv.lock",
@@ -254,18 +243,21 @@ def test_datahub_sdk_cutover_removes_openlineage_from_non_airflow_runtimes():
         ROOT / "apps/data-platform/uv.lock",
         ROOT / "apps/ml-system/uv.lock",
     ]
+    datahub_image = ROOT / "images/data/recsys-data-ingestion/Dockerfile"
     runtime_images = [
-        ROOT / "images/data/recsys-data-ingestion/Dockerfile",
         ROOT / "images/data/recsys-feature-store/Dockerfile",
         ROOT / "images/data/recsys-flink/Dockerfile",
         ROOT / "images/data/recsys-spark/Dockerfile",
     ]
-    for path in dependency_files + runtime_images:
+    for path in dependency_files + runtime_images + [datahub_image]:
         assert "openlineage-python" not in path.read_text().lower()
     assert '"acryl-datahub==1.6.0.17"' in dependency_files[0].read_text()
     assert '"acryl-datahub==1.6.0.17"' in dependency_files[2].read_text()
     for path in runtime_images:
-        assert "acryl-datahub==1.6.0.17" in path.read_text()
+        assert "acryl-datahub" not in path.read_text()
+        assert "DataProcess" + "Instance" not in path.read_text()
+    assert "acryl-datahub==1.6.0.17" in datahub_image.read_text()
+    assert "from datahub.sdk import DataHubClient, Dataset, Tag" in datahub_image.read_text()
 
 
 def test_unified_spark_and_dp_profiles_are_the_only_batch_contract():

@@ -15,6 +15,7 @@ pipeline {
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')
     string(name: 'RAG_SOURCE_RUN_ID', defaultValue: '', description: 'Complete canonical RAG item-document run consumed by index promotion.')
     string(name: 'RAG_PIPELINE_RUN_ID', defaultValue: '', description: 'Unique silver/gold/index run ID used by RAG promotion and rollback.')
+    choice(name: 'DATAHUB_CUTOVER_MODE', choices: ['skip', 'plan', 'apply'], description: 'Optional one-time cleanup after static catalog deployment.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
     string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, including ci_config. Empty keeps path-based detection.')
   }
@@ -197,6 +198,14 @@ pipeline {
           env.DEPLOY_STARTED = 'true' // Mark that the build crossed from validation into production-changing work.
           def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' RAG_SOURCE_RUN_ID='${params.RAG_SOURCE_RUN_ID}' RAG_PIPELINE_RUN_ID='${params.RAG_PIPELINE_RUN_ID}'"
           componentPipeline.deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json') // Respect dependency layers and serialize units sharing the same Jenkins lock.
+          if (params.DATAHUB_CUTOVER_MODE != 'skip') {
+            sh "${commandEnv} jenkins/scripts/entrypoints/datahub_cutover.sh plan .ci-deploy/datahub-dataset-lineage-cutover.json"
+            if (params.DATAHUB_CUTOVER_MODE == 'apply') {
+              def cutoverCounts = readFile('.ci-deploy/datahub-dataset-lineage-cutover.json.counts').trim()
+              input message: "Apply the archived DataHub soft-delete manifest? Targets: ${cutoverCounts}", ok: 'Apply cutover'
+              sh "${commandEnv} jenkins/scripts/entrypoints/datahub_cutover.sh apply .ci-deploy/datahub-dataset-lineage-cutover.json"
+            }
+          }
           echo '[VERIFY] Verify release'
           if (env.RUN_DEMO_WEB == 'true' && params.GATEWAY_SMOKE_CREDENTIALS_ID?.trim()) {
             withCredentials([usernamePassword(credentialsId: params.GATEWAY_SMOKE_CREDENTIALS_ID, usernameVariable: 'GATEWAY_SMOKE_USER', passwordVariable: 'GATEWAY_SMOKE_PASSWORD')]) {

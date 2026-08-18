@@ -50,6 +50,11 @@ The GCP Terraform layout follows the same separation of concerns.
 | `dependencies.tf` | Shared operators: cert-manager, KEDA, KServe, Istio, External Secrets. |
 | `recsys_services.tf` | RecSys Helm releases. |
 | `datahub.tf` | DataHub platform release and prerequisites. |
+
+The application-side DataHub integration is isolated under
+`apps/data-platform/src/metadata`: pure catalog and schema declarations feed a
+small high-level `DataHubClient` adapter and a one-shot sync CLI. Data-plane
+Spark, Flink, Airflow, CDC, analytics, and RAG modules do not import it.
 | `secret_management.tf` | Central source secrets for External Secrets Operator. |
 
 ### Code Reference
