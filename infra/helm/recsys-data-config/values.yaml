@@ -48,6 +48,8 @@ featurePostgres:
   istioInject: "false"
 
 milvus:
+  host: http://recsys-milvus.recsys-dataflow.svc.cluster.local
+  port: "19530"
   username: root
   password: Milvus
 

@@ -43,6 +43,8 @@ data:
   RAG_ITEM_DAG_SCHEDULE: {{ .Values.airflow.ragItemSchedule | quote }}
   RAG_ITEM_SOURCE_RUN_ID: {{ .Values.rag.sourceRunId | quote }}
   RAG_ITEM_PIPELINE_RUN_ID: {{ .Values.rag.pipelineRunId | quote }}
+  MILVUS_HOST: {{ .Values.milvus.host | quote }}
+  MILVUS_PORT: {{ .Values.milvus.port | quote }}
   ANALYTICS_DAG_SCHEDULE: {{ .Values.airflow.analyticsSchedule | quote }}
   FEAST_MATERIALIZE_DAG_SCHEDULE: {{ .Values.airflow.feastMaterializeSchedule | quote }}
   FEATURE_DRIFT_DAG_SCHEDULE: {{ .Values.airflow.featureDriftSchedule | quote }}

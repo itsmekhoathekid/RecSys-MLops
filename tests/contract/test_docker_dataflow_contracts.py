@@ -231,6 +231,8 @@ def test_airflow_runtime_is_pinned_to_the_stable_2_9_control_plane():
         assert f"{pipeline}_DAG_SCHEDULE" in data_config
     assert "RAG_ITEM_SOURCE_RUN_ID" in data_config
     assert "RAG_ITEM_PIPELINE_RUN_ID" in data_config
+    assert "MILVUS_HOST" in data_config
+    assert "MILVUS_PORT" in data_config
     assert "DATA_PLATFORM_DAG_SCHEDULE" not in data_config
     assert "BATCH_FEATURE_DAG_SCHEDULE" not in data_config
 
