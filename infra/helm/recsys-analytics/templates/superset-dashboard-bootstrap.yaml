@@ -18,6 +18,11 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector: {{ toYaml .Values.nodeSelectors.supersetDashboardBootstrap | nindent 8 }}
+      tolerations:
+        - key: recsys.ai/workload
+          operator: Equal
+          value: ml-system
+          effect: NoSchedule
       containers:
         - name: bootstrap
           image: {{ .Values.images.superset | quote }}

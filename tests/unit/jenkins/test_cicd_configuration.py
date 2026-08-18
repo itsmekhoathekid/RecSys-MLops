@@ -80,6 +80,8 @@ def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
     trigger = (ROOT / "ops/gcp/trigger_full_jenkins.sh").read_text(encoding="utf-8")
     assert "datahub_catalog" in trigger
     assert 'DATAHUB_CUTOVER_MODE=${datahub_cutover_mode}' in trigger
+    cutover_entrypoint = ROOT / "jenkins/scripts/entrypoints/datahub_cutover.sh"
+    assert cutover_entrypoint.stat().st_mode & 0o111
 
 
 def test_full_release_verification_orders_data_before_training(tmp_path):
@@ -238,7 +240,8 @@ def test_rag_promotion_uses_pinned_embedding_batch_and_schedulable_request():
 
     assert promotion.count("embed-chunks") == 2
     assert promotion.count("--checkpoint-every 32") == 2
-    assert 'requests: {cpu: 500m, memory: 2Gi}' in promotion
+    assert 'local cpu_request="${RAG_PROMOTION_CPU_REQUEST:-100m}"' in promotion
+    assert 'requests: {cpu: "${cpu_request}", memory: 2Gi}' in promotion
     assert "nodeSelector: {recsys.ai/workload: ml-system}" in promotion
     assert "value: ml-system, effect: NoSchedule" in promotion
 
