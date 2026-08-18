@@ -165,6 +165,27 @@ def test_contract_upsert_reuses_existing_urn_and_replaces_assertion(monkeypatch)
     )
 
 
+def test_contract_upsert_accepts_server_assigned_urn_for_new_contract(monkeypatch):
+    calls = []
+    server_urn = "urn:li:dataContract:server-assigned"
+
+    class Graph:
+        def execute_graphql(self, query, variables=None):
+            calls.append((query, variables))
+            return {"upsertDataContract": {"urn": server_urn}}
+
+        def set_soft_delete_status(self, urn, delete):
+            calls.append(("status", {"urn": urn, "delete": delete}))
+
+    client = DataHubCatalogClient.__new__(DataHubCatalogClient)
+    client._graph = Graph()
+    monkeypatch.setattr(client, "_dataset_contract", lambda _urn: None)
+    dataset = dp1_product().datasets[0]
+    resolved = client._upsert_data_contract(dataset, assertion_urn(dataset.urn))
+    assert resolved == server_urn
+    assert calls[-1] == ("status", {"urn": server_urn, "delete": False})
+
+
 def test_removed_legacy_contract_is_discovered_for_reactivation():
     dataset = dp1_product().datasets[0]
     legacy_id = (

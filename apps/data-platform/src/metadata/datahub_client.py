@@ -308,15 +308,14 @@ class DataHubCatalogClient:
         return urn
 
     def _upsert_data_contract(self, spec: DatasetSpec, assertion: str) -> str:
-        contract_urn = self._dataset_contract(spec.urn) or fallback_contract_urn(
-            spec.urn
-        )
+        existing_urn = self._dataset_contract(spec.urn)
+        requested_urn = existing_urn or fallback_contract_urn(spec.urn)
         # Keep the mutation inline so it remains compatible with the GraphQL
         # input type name exposed by both DataHub Core 1.6 and 1.7.
         mutation = f"""
         mutation upsertDataContract {{
           upsertDataContract(
-            urn: {json.dumps(contract_urn)}
+            urn: {json.dumps(requested_urn)}
             input: {{
               entityUrn: {json.dumps(spec.urn)}
               freshness: []
@@ -328,12 +327,21 @@ class DataHubCatalogClient:
         """
         result = self._graph.execute_graphql(mutation)
         resolved = (result.get("upsertDataContract") or {}).get("urn")
-        if resolved and str(resolved) != contract_urn:
+        if not resolved:
             raise RuntimeError(
-                f"DataHub returned unexpected Data Contract URN for {spec.urn}: {resolved}"
+                f"DataHub did not return a Data Contract URN for {spec.urn}"
             )
-        self._graph.set_soft_delete_status(contract_urn, delete=False)
-        return contract_urn
+        resolved_urn = str(resolved)
+        # DataHub Core assigns its own UUID when creating a contract even when
+        # the optional mutation URN is supplied. Existing contracts must still
+        # retain their URN so repeated syncs never create duplicates.
+        if existing_urn and resolved_urn != existing_urn:
+            raise RuntimeError(
+                f"DataHub replaced existing Data Contract URN for {spec.urn}: "
+                f"expected {existing_urn}, got {resolved_urn}"
+            )
+        self._graph.set_soft_delete_status(resolved_urn, delete=False)
+        return resolved_urn
 
     def _assertion_details(self, urn: str) -> dict:
         result = self._graph.execute_graphql(
