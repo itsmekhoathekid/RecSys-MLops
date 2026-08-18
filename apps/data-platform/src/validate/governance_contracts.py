@@ -14,7 +14,12 @@ from feature_store.postgres_offline_store import (
 from ingest.postgres_cdc_contracts import SOURCE_TABLE_CONTRACTS
 from features.spark.session import read_iceberg_table, row_count, spark_session
 from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES
-from validate.report_io import validation_report, write_validation_report
+from validate.report_io import (
+    check,
+    dataset_result,
+    validation_report,
+    write_validation_report,
+)
 
 
 EXPECTED_DATASET_KEYS = {
@@ -45,27 +50,6 @@ EXPECTED_DATASET_KEYS = {
         )
     ),
 }
-
-
-def check(name: str, status: str, expected: Any, observed: Any) -> dict[str, Any]:
-    return {
-        "name": name,
-        "status": status,
-        "expected": expected,
-        "observed": observed,
-    }
-
-
-def dataset_result(checks: list[dict[str, Any]]) -> dict[str, Any]:
-    statuses = {item["status"] for item in checks}
-    status = (
-        "ERROR"
-        if "ERROR" in statuses
-        else "FAILURE"
-        if "FAILURE" in statuses
-        else "SUCCESS"
-    )
-    return {"status": status, "checks": checks}
 
 
 def build_validation_report(

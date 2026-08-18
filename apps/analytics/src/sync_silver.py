@@ -6,8 +6,12 @@ import os
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from validate.governance_contracts import check, dataset_result
-from validate.report_io import validation_report, write_validation_report
+from validate.report_io import (
+    check,
+    dataset_result,
+    validation_report,
+    write_validation_report,
+)
 
 
 SILVER_SOURCE_TABLES = (

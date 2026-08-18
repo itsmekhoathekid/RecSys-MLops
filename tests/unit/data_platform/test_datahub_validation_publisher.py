@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +15,7 @@ from validate.report_io import (
     validation_report,
     write_validation_report,
 )
+from validate import report_io
 
 
 def test_validation_report_round_trip(tmp_path):
@@ -32,6 +35,60 @@ def test_validation_report_round_trip(tmp_path):
     restored = read_validation_report(uri)
     assert restored == report
     assert restored.datasets[0].dataset_key == "bronze.users"
+
+
+def test_validation_report_s3_round_trip_is_atomic(monkeypatch):
+    objects: dict[tuple[str, str], bytes] = {}
+
+    class S3:
+        def put_object(self, *, Bucket, Key, Body, **_kwargs):
+            objects[(Bucket, Key)] = Body
+
+        def copy_object(self, *, Bucket, Key, CopySource, **_kwargs):
+            objects[(Bucket, Key)] = objects[(CopySource["Bucket"], CopySource["Key"])]
+
+        def delete_object(self, *, Bucket, Key):
+            objects.pop((Bucket, Key), None)
+
+        def get_object(self, *, Bucket, Key):
+            return {"Body": io.BytesIO(objects[(Bucket, Key)])}
+
+    monkeypatch.setattr(report_io, "_s3_client", lambda: S3())
+    uri = "s3a://recsys-lakehouse/governance-validation/DP1/report.json"
+    report = validation_report("DP1", "run-s3", {"bronze.users": {"status": "SUCCESS"}})
+    write_validation_report(report, uri)
+    restored = read_validation_report(uri)
+    assert restored.product_id == "DP1"
+    assert restored.report_uri == uri
+    assert set(objects) == {
+        ("recsys-lakehouse", "governance-validation/DP1/report.json")
+    }
+
+
+def test_validation_report_rejects_invalid_location_schema_and_status(tmp_path):
+    with pytest.raises(ValueError, match="Invalid S3"):
+        report_io._s3_location("s3://bucket")
+
+    invalid_schema = tmp_path / "schema.json"
+    invalid_schema.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
+    with pytest.raises(ValueError, match="Unsupported validation report schema"):
+        read_validation_report(str(invalid_schema))
+
+    invalid_status = tmp_path / "status.json"
+    invalid_status.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "product_id": "DP1",
+                "run_id": "run",
+                "generated_at": "now",
+                "datasets": [{"dataset_key": "bronze.users", "status": "UNKNOWN"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unsupported status"):
+        read_validation_report(str(invalid_status))
 
 
 def test_publish_maps_results_and_synthesizes_missing_dataset_error():

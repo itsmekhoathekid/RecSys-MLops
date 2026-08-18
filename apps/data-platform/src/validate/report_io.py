@@ -7,12 +7,33 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, Mapping
+from typing import Any, Literal, Mapping
 from urllib.parse import urlparse
 
 import boto3
 
 ValidationStatus = Literal["SUCCESS", "FAILURE", "ERROR"]
+
+
+def check(name: str, status: str, expected: Any, observed: Any) -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": status,
+        "expected": expected,
+        "observed": observed,
+    }
+
+
+def dataset_result(checks: list[dict[str, Any]]) -> dict[str, Any]:
+    statuses = {item["status"] for item in checks}
+    status = (
+        "ERROR"
+        if "ERROR" in statuses
+        else "FAILURE"
+        if "FAILURE" in statuses
+        else "SUCCESS"
+    )
+    return {"status": status, "checks": checks}
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,7 @@ name = "recsys-analytics"
 version = "0.1.0"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+  "boto3==1.35.36",
   "dbt-trino==1.10.2",
   "psycopg2-binary==2.9.12",
   "pyspark==3.5.8",
