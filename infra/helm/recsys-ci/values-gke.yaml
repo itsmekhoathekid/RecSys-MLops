@@ -22,8 +22,8 @@ jenkins:
     enabled: true
   dind:
     # Reuse Jenkins home for Docker graph data so GKE provisions one CI disk.
-    # The locked ML environment peaks above 19 GiB during full releases, so the
-    # production override keeps enough headroom for Jenkins metadata and reports.
+    # Full releases retain large Spark/Flink/ML layers alongside Jenkins metadata,
+    # so the production override keeps enough headroom for image assembly.
     useJenkinsHomePvc: true
     pvc:
       enabled: false
@@ -35,7 +35,7 @@ jenkins:
     enabled: true
   pvc:
     volumeName: ""
-    storage: 60Gi
+    storage: 100Gi
     storageClassName: standard
 
 modelRolloutWatcher:
