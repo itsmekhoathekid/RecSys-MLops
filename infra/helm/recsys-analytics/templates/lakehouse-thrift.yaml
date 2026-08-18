@@ -40,7 +40,7 @@ spec:
         sidecar.istio.io/inject: "false"
         checksum/bootstrap: {{ include (print $.Template.BasePath "/lakehouse-thrift-bootstrap-configmap.yaml") . | sha256sum }}
     spec:
-      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      nodeSelector: {{ toYaml .Values.nodeSelectors.lakehouseThrift | nindent 8 }}
       containers:
         - name: spark-thrift-server
           image: {{ .Values.images.spark | quote }}

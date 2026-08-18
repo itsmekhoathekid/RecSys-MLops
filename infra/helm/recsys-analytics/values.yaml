@@ -57,6 +57,14 @@ lakehouseThrift:
 nodeSelector:
   recsys.ai/pool: cpu-services
 
+nodeSelectors:
+  lakehouseThrift:
+    recsys.ai/pool: cpu-services
+  trino:
+    recsys.ai/pool: cpu-services
+  supersetDashboardBootstrap:
+    recsys.ai/pool: cpu-services
+
 resources:
   lakehouseThrift:
     requests: {cpu: 250m, memory: 1Gi}

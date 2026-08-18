@@ -12,6 +12,7 @@ deploy_analytics() {
   fi
   helm_atomic_upgrade recsys-analytics infra/helm/recsys-analytics \
     "${namespace_analytics}" "${timeout}" \
+    -f infra/helm/recsys-analytics/values-gcp.yaml \
     --reuse-values \
     --set "namespace=${namespace_analytics}" \
     --set "secrets.create=${secret_create}" \

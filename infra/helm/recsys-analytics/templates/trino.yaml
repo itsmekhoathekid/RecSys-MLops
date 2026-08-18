@@ -31,7 +31,7 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: /v1/jmx/mbean
     spec:
-      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      nodeSelector: {{ toYaml .Values.nodeSelectors.trino | nindent 8 }}
       initContainers:
         - name: initialize-iceberg-jdbc-catalog
           image: {{ .Values.images.spark | quote }}
