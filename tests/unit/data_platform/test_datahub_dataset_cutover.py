@@ -83,6 +83,20 @@ def test_manifest_classifies_flow_job_and_process_instance_without_mutating():
     assert graph.emitted == []
 
 
+def test_relationship_query_supplies_required_datahub_types_input():
+    module = _module()
+
+    class StrictGraph(Graph):
+        def execute_graphql(self, query, variables):
+            assert "types: []" in query
+            assert variables == {"urn": "urn:li:dataFlow:(airflow,flow,PROD)"}
+            return {"entity": {"relationships": {"relationships": []}}}
+
+    assert module.related_jobs(
+        StrictGraph(), "urn:li:dataFlow:(airflow,flow,PROD)"
+    ) == []
+
+
 def test_apply_soft_deletes_only_records_not_previously_removed(monkeypatch):
     module = _module()
     deleted = []

@@ -49,7 +49,7 @@ def _relationships(graph: DataHubGraph, urn: str, entity_type: str) -> list[str]
         """
         query relationships($urn: String!) {
           entity(urn: $urn) {
-            relationships(input: { direction: INCOMING, start: 0, count: 1000 }) {
+            relationships(input: { types: [], direction: INCOMING, start: 0, count: 1000 }) {
               relationships { entity { urn type } }
             }
           }
