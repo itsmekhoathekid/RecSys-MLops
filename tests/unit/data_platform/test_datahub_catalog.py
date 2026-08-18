@@ -6,7 +6,11 @@ from types import SimpleNamespace
 import pytest
 import metadata.sync_datahub_catalog as sync_module
 import metadata.datahub_client as client_module
-from metadata.datahub_client import DataHubCatalogClient, RemoteVerification, SyncSummary
+from metadata.datahub_client import (
+    DataHubCatalogClient,
+    RemoteVerification,
+    SyncSummary,
+)
 from metadata.governance_catalog import (
     ANALYTICS_STAGING_URNS,
     BRONZE_URNS,
@@ -17,6 +21,7 @@ from metadata.governance_catalog import (
     REDIS_FEATURE_URNS,
     SILVER_URNS,
     analytics_product,
+    assertion_urn,
     catalog_products,
     dp1_product,
     dp2_product,
@@ -37,11 +42,15 @@ def test_static_catalog_has_expected_size_and_unique_ownership():
         "data_products": 5,
         "datasets": 44,
         "lineage_edges": 40,
+        "assertions": 44,
+        "data_contracts": 44,
         "verified": True,
     }
     urns = [dataset.urn for product in products for dataset in product.datasets]
     assert len(urns) == len(set(urns))
-    assert not any("source_postgres" in urn or "dataPlatform:kafka" in urn for urn in urns)
+    assert not any(
+        "source_postgres" in urn or "dataPlatform:kafka" in urn for urn in urns
+    )
     assert all(not dataset.upstreams for dataset in dp1_product().datasets)
 
 
@@ -56,23 +65,37 @@ def test_all_40_direct_edges_match_the_static_design():
         (BRONZE_URNS["behavior_events"], SILVER_URNS["clean_behavior_events"]),
         (BRONZE_URNS["behavior_events"], SILVER_URNS["rejected_behavior_events"]),
         (BRONZE_URNS["impressions"], SILVER_URNS["clean_impressions"]),
-        (BRONZE_URNS["recommendation_requests"], SILVER_URNS["clean_recommendation_requests"]),
+        (
+            BRONZE_URNS["recommendation_requests"],
+            SILVER_URNS["clean_recommendation_requests"],
+        ),
         (BRONZE_URNS["product_snapshots"], SILVER_URNS["product_scd"]),
         (BRONZE_URNS["products"], SILVER_URNS["product_scd"]),
         (BRONZE_URNS["users"], SILVER_URNS["users"]),
         (BRONZE_URNS["products"], SILVER_URNS["products"]),
         (BRONZE_URNS["user_preferences"], SILVER_URNS["user_preferences"]),
-        (SILVER_URNS["clean_behavior_events"], ICEBERG_FEATURE_URNS["user_sequence_features"]),
-        (SILVER_URNS["clean_behavior_events"], ICEBERG_FEATURE_URNS["user_aggregate_features"]),
+        (
+            SILVER_URNS["clean_behavior_events"],
+            ICEBERG_FEATURE_URNS["user_sequence_features"],
+        ),
+        (
+            SILVER_URNS["clean_behavior_events"],
+            ICEBERG_FEATURE_URNS["user_aggregate_features"],
+        ),
         (SILVER_URNS["clean_behavior_events"], ICEBERG_FEATURE_URNS["item_features"]),
         (SILVER_URNS["product_scd"], ICEBERG_FEATURE_URNS["item_features"]),
         (SILVER_URNS["clean_impressions"], ICEBERG_FEATURE_URNS["ml_ranking_labels"]),
-        (SILVER_URNS["clean_behavior_events"], ICEBERG_FEATURE_URNS["ml_ranking_labels"]),
+        (
+            SILVER_URNS["clean_behavior_events"],
+            ICEBERG_FEATURE_URNS["ml_ranking_labels"],
+        ),
         *{
             (ICEBERG_FEATURE_URNS[source], ICEBERG_FEATURE_URNS["ml_bst_training"])
             for source in (
-                "ml_ranking_labels", "user_sequence_features",
-                "user_aggregate_features", "item_features",
+                "ml_ranking_labels",
+                "user_sequence_features",
+                "user_aggregate_features",
+                "item_features",
             )
         },
         *{
@@ -106,16 +129,20 @@ def test_all_40_direct_edges_match_the_static_design():
 
 def test_dp2_lineage_matches_spark_transformations():
     datasets = _by_urn(dp2_product())
-    assert datasets[SILVER_URNS["clean_behavior_events"]].upstreams == (BRONZE_URNS["behavior_events"],)
+    assert datasets[SILVER_URNS["clean_behavior_events"]].upstreams == (
+        BRONZE_URNS["behavior_events"],
+    )
     assert datasets[SILVER_URNS["product_scd"]].upstreams == (
-        BRONZE_URNS["product_snapshots"], BRONZE_URNS["products"]
+        BRONZE_URNS["product_snapshots"],
+        BRONZE_URNS["products"],
     )
 
 
 def test_dp3_owns_batch_feature_and_feast_lineage():
     datasets = _by_urn(dp3_product())
     assert datasets[ICEBERG_FEATURE_URNS["item_features"]].upstreams == (
-        SILVER_URNS["clean_behavior_events"], SILVER_URNS["product_scd"]
+        SILVER_URNS["clean_behavior_events"],
+        SILVER_URNS["product_scd"],
     )
     assert datasets[POSTGRES_FEATURE_URNS["item_features"]].upstreams == (
         ICEBERG_FEATURE_URNS["item_features"],
@@ -130,8 +157,12 @@ def test_rag_and_analytics_lineage_are_dataset_only():
     rag = _by_urn(products["RAG_ITEMS"])
     assert rag[RAG_ACTIVE_POINTER_URN].upstreams == tuple(RAG_MILVUS_URNS.values())
     analytics = _by_urn(analytics_product())
-    assert analytics[ANALYTICS_STAGING_URNS["orders"]].upstreams == (BRONZE_URNS["orders"],)
-    assert analytics[ANALYTICS_STAGING_URNS["products"]].upstreams == (SILVER_URNS["products"],)
+    assert analytics[ANALYTICS_STAGING_URNS["orders"]].upstreams == (
+        BRONZE_URNS["orders"],
+    )
+    assert analytics[ANALYTICS_STAGING_URNS["products"]].upstreams == (
+        SILVER_URNS["products"],
+    )
 
 
 def test_high_level_dataset_upsert_replaces_full_upstream_set():
@@ -151,17 +182,32 @@ def test_high_level_dataset_upsert_replaces_full_upstream_set():
     adapter._upsert_dataset(spec, "urn:li:domain:recsys")
     entity = adapter._client.entities.items[-1]
     assert str(entity.urn) == spec.urn
-    assert [str(item.dataset) for item in entity.upstreams.upstreams] == list(spec.upstreams)
+    assert [str(item.dataset) for item in entity.upstreams.upstreams] == list(
+        spec.upstreams
+    )
 
 
 def test_sync_output_has_the_stable_dataset_only_shape():
     class Client:
         def sync(self, _products):
-            return SyncSummary(data_products=5, datasets=44, lineage_edges=40)
+            return SyncSummary(
+                data_products=5,
+                datasets=44,
+                lineage_edges=40,
+                assertions=44,
+                data_contracts=44,
+            )
 
-        def verify_remote(self, _products):
+        def verify_remote(self, _products, *, require_results=False):
+            assert require_results is False
             return RemoteVerification(
-                data_products=5, datasets=44, lineage_edges=40, verified=True
+                data_products=5,
+                datasets=44,
+                lineage_edges=40,
+                assertions=44,
+                data_contracts=44,
+                assertions_with_results=0,
+                verified=True,
             )
 
     assert sync_catalog(Client(), catalog_products()) == {
@@ -169,6 +215,9 @@ def test_sync_output_has_the_stable_dataset_only_shape():
         "data_products": 5,
         "datasets": 44,
         "lineage_edges": 40,
+        "assertions": 44,
+        "data_contracts": 44,
+        "assertions_with_results": 0,
         "verified": True,
     }
 
@@ -178,14 +227,26 @@ def test_sync_retries_remote_verification_while_search_index_propagates(monkeypa
         attempts = 0
 
         def sync(self, _products):
-            return SyncSummary(data_products=5, datasets=44, lineage_edges=40)
+            return SyncSummary(
+                data_products=5,
+                datasets=44,
+                lineage_edges=40,
+                assertions=44,
+                data_contracts=44,
+            )
 
         def verify_remote(self, _products):
             self.attempts += 1
             if self.attempts < 3:
                 raise RuntimeError("Missing Data Product: ANALYTICS")
             return RemoteVerification(
-                data_products=5, datasets=44, lineage_edges=40, verified=True
+                data_products=5,
+                datasets=44,
+                lineage_edges=40,
+                assertions=44,
+                data_contracts=44,
+                assertions_with_results=0,
+                verified=True,
             )
 
     client = Client()
@@ -204,9 +265,16 @@ def test_verify_only_checks_remote_without_upserting(monkeypatch):
         def sync(self, _products):
             self.synced = True
 
-        def verify_remote(self, _products):
+        def verify_remote(self, _products, *, require_results=False):
+            assert require_results is False
             return RemoteVerification(
-                data_products=5, datasets=44, lineage_edges=40, verified=True
+                data_products=5,
+                datasets=44,
+                lineage_edges=40,
+                assertions=44,
+                data_contracts=44,
+                assertions_with_results=0,
+                verified=True,
             )
 
         def close(self):
@@ -221,6 +289,7 @@ def test_verify_only_checks_remote_without_upserting(monkeypatch):
             pushgateway_url="",
             strict=True,
             verify_only=True,
+            require_results=False,
         ),
     )
     monkeypatch.setattr(
@@ -308,7 +377,9 @@ class FakeGraph:
 def _adapter(graph=None):
     adapter = DataHubCatalogClient.__new__(DataHubCatalogClient)
     adapter._graph = graph or FakeGraph()
-    adapter._client = SimpleNamespace(entities=SimpleNamespace(upsert=lambda _entity: None))
+    adapter._client = SimpleNamespace(
+        entities=SimpleNamespace(upsert=lambda _entity: None)
+    )
     return adapter
 
 
@@ -333,7 +404,10 @@ def test_tag_and_data_product_upserts_reconcile_exact_resources():
     )
     product = dp1_product()
     adapter._upsert_tags((product,))
-    assert {str(tag.urn) for tag in upserts} >= {"urn:li:tag:DP1", "urn:li:tag:BatchPipeline"}
+    assert {str(tag.urn) for tag in upserts} >= {
+        "urn:li:tag:DP1",
+        "urn:li:tag:BatchPipeline",
+    }
 
     graph.entities[product.name] = {
         "urn": "urn:li:dataProduct:existing",
@@ -341,11 +415,17 @@ def test_tag_and_data_product_upserts_reconcile_exact_resources():
         "domain": {"domain": {"urn": "urn:li:domain:recsys"}},
     }
     urns = tuple(dataset.urn for dataset in product.datasets)
-    assert adapter._upsert_data_product(product, "urn:li:domain:recsys", urns) == "urn:li:dataProduct:existing"
+    assert (
+        adapter._upsert_data_product(product, "urn:li:domain:recsys", urns)
+        == "urn:li:dataProduct:existing"
+    )
     assert graph.calls[-1][1]["input"]["resourceUrns"] == list(urns)
 
     graph.entities.clear()
-    assert adapter._upsert_data_product(product, "urn:li:domain:recsys", urns) == "urn:li:dataProduct:new"
+    assert (
+        adapter._upsert_data_product(product, "urn:li:domain:recsys", urns)
+        == "urn:li:dataProduct:new"
+    )
 
 
 def test_sync_walks_every_dataset_and_product(monkeypatch):
@@ -355,16 +435,32 @@ def test_sync_walks_every_dataset_and_product(monkeypatch):
     data_products = []
     monkeypatch.setattr(adapter, "_ensure_domain", lambda: "urn:li:domain:recsys")
     monkeypatch.setattr(adapter, "_upsert_tags", lambda value: None)
-    monkeypatch.setattr(adapter, "_upsert_dataset", lambda spec, _domain: datasets.append(spec.urn))
+    monkeypatch.setattr(
+        adapter, "_upsert_dataset", lambda spec, _domain: datasets.append(spec.urn)
+    )
     monkeypatch.setattr(
         adapter,
         "_upsert_data_product",
         lambda product, _domain, urns: data_products.append((product.id, urns)),
     )
+    monkeypatch.setattr(
+        adapter, "_upsert_custom_assertion", lambda spec: assertion_urn(spec.urn)
+    )
+    contracts = []
+    monkeypatch.setattr(
+        adapter,
+        "_upsert_data_contract",
+        lambda spec, assertion: contracts.append((spec.urn, assertion)),
+    )
     summary = adapter.sync(products)
-    assert (summary.data_products, summary.datasets, summary.lineage_edges) == (5, 44, 40)
+    assert (summary.data_products, summary.datasets, summary.lineage_edges) == (
+        5,
+        44,
+        40,
+    )
     assert len(datasets) == 44
     assert len(data_products) == 5
+    assert len(contracts) == 44
 
 
 def test_remote_verification_success_and_failure(monkeypatch):
@@ -373,12 +469,59 @@ def test_remote_verification_success_and_failure(monkeypatch):
     graph.existing = {dataset.urn for dataset in product.datasets}
     graph.aspects = {
         dataset.urn: SimpleNamespace(
-            upstreams=[SimpleNamespace(dataset=upstream) for upstream in dataset.upstreams]
+            upstreams=[
+                SimpleNamespace(dataset=upstream) for upstream in dataset.upstreams
+            ]
         )
         for dataset in product.datasets
     }
     adapter = _adapter(graph)
     monkeypatch.setattr(adapter, "_find_entity", lambda *_args: {"urn": "urn:product"})
+    monkeypatch.setattr(
+        adapter,
+        "_assertion_details",
+        lambda urn: {
+            "urn": urn,
+            "info": {
+                "type": "CUSTOM",
+                "customAssertion": {
+                    "entityUrn": next(
+                        dataset.urn
+                        for dataset in product.datasets
+                        if assertion_urn(dataset.urn) == urn
+                    )
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(adapter, "_latest_assertion_result", lambda _urn: None)
+    monkeypatch.setattr(
+        adapter,
+        "_dataset_contract",
+        lambda dataset_urn: f"urn:li:dataContract:{dataset_urn.rsplit(',', 1)[0]}",
+    )
+    graph.get_aspect = lambda urn, aspect: (
+        graph.aspects.get(urn)
+        if aspect is client_module.UpstreamLineageClass
+        else SimpleNamespace(
+            entity=next(
+                dataset.urn
+                for dataset in product.datasets
+                if urn.endswith(dataset.urn.rsplit(",", 1)[0])
+            ),
+            dataQuality=[
+                SimpleNamespace(
+                    assertion=assertion_urn(
+                        next(
+                            dataset.urn
+                            for dataset in product.datasets
+                            if urn.endswith(dataset.urn.rsplit(",", 1)[0])
+                        )
+                    )
+                )
+            ],
+        )
+    )
     verified = adapter.verify_remote((product,))
     assert verified.verified and verified.lineage_edges == 9
     adapter.close()
@@ -400,9 +543,13 @@ def test_cli_argument_metrics_and_push_contract(monkeypatch):
     samples = sync_module.metric_samples(
         {"verified": True, "datasets": 44, "lineage_edges": 40, "data_products": 5}
     )
-    assert len(samples) == 10
+    assert len(samples) == 13
     pushed = []
-    monkeypatch.setattr(sync_module, "push_metrics", lambda *args, **kwargs: pushed.append((args, kwargs)))
+    monkeypatch.setattr(
+        sync_module,
+        "push_metrics",
+        lambda *args, **kwargs: pushed.append((args, kwargs)),
+    )
     sync_module.push_sync_metrics({"verified": False}, "http://pushgateway:9091")
     assert pushed[0][1]["gateway_url"] == "http://pushgateway:9091"
 
@@ -413,10 +560,22 @@ def test_cli_sync_failure_respects_strict_mode(monkeypatch, strict, expected):
     monkeypatch.setattr(
         sync_module,
         "parse_args",
-        lambda: Namespace(gms_url="http://gms", pushgateway_url="", strict=strict, verify_only=False),
+        lambda: Namespace(
+            gms_url="http://gms",
+            pushgateway_url="",
+            strict=strict,
+            verify_only=False,
+            require_results=False,
+        ),
     )
-    monkeypatch.setattr(sync_module.DataHubCatalogClient, "from_env", lambda _url: client)
-    monkeypatch.setattr(sync_module, "sync_catalog", lambda *_args: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        sync_module.DataHubCatalogClient, "from_env", lambda _url: client
+    )
+    monkeypatch.setattr(
+        sync_module,
+        "sync_catalog",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
     monkeypatch.setattr(sync_module, "push_sync_metrics", lambda *_args: None)
     assert sync_module.main() == expected
 
@@ -427,14 +586,24 @@ def test_cli_sync_success_closes_client_and_pushes_metrics(monkeypatch):
     monkeypatch.setattr(
         sync_module,
         "parse_args",
-        lambda: Namespace(gms_url="http://gms", pushgateway_url="http://push", strict=True, verify_only=False),
+        lambda: Namespace(
+            gms_url="http://gms",
+            pushgateway_url="http://push",
+            strict=True,
+            verify_only=False,
+            require_results=False,
+        ),
     )
-    monkeypatch.setattr(sync_module.DataHubCatalogClient, "from_env", lambda _url: client)
+    monkeypatch.setattr(
+        sync_module.DataHubCatalogClient, "from_env", lambda _url: client
+    )
     monkeypatch.setattr(
         sync_module,
         "sync_catalog",
         lambda *_args: {"mode": "dataset-only-static", "verified": True},
     )
-    monkeypatch.setattr(sync_module, "push_sync_metrics", lambda *_args: state.update(pushed=True))
+    monkeypatch.setattr(
+        sync_module, "push_sync_metrics", lambda *_args: state.update(pushed=True)
+    )
     assert sync_module.main() == 0
     assert state == {"closed": True, "pushed": True}

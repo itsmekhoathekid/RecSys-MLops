@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 
 try:
     from airflow import DAG
@@ -111,6 +112,7 @@ def pod_task(
     command: str,
     *,
     istio_inject: bool = False,
+    trigger_rule: str = "all_success",
 ):
     return KubernetesPodOperator(
         task_id=task_id,
@@ -127,6 +129,24 @@ def pod_task(
         on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
+        trigger_rule=trigger_rule,
+    )
+
+
+def datahub_validation_command(
+    product: str,
+    report_uris: tuple[str, ...],
+    expected_dataset_keys: tuple[str, ...],
+) -> str:
+    reports = " ".join(f"--report-uri {shlex.quote(uri)}" for uri in report_uris)
+    expected = " ".join(
+        f"--expected-dataset-key {shlex.quote(key)}" for key in expected_dataset_keys
+    )
+    return (
+        "python -m metadata.publish_datahub_validation "
+        f"--product {shlex.quote(product)} {reports} {expected} "
+        "--gms-url ${DATAHUB_GMS_URL:-http://datahub-datahub-gms.datahub.svc.cluster.local:8080} "
+        "--strict"
     )
 
 

@@ -32,6 +32,7 @@ from feature_store.postgres_offline_store import (
 )
 from lakehouse.iceberg import IcebergCatalogConfig, create_spark_namespace
 from validate.governance_contracts import build_validation_report, check, dataset_result
+from validate.report_io import validation_report, write_validation_report
 
 
 DRIFT_SNAPSHOT_TABLES = (
@@ -143,6 +144,7 @@ def _write_postgres_tables(
                 conn, config.schema, table_name, frame.to_dict("records")
             )
 
+
 # DP3 validates non-empty Iceberg features with required, non-null entity keys and timestamps.
 def _validate_dp3_iceberg_outputs(
     outputs: dict[str, Any], *, catalog: IcebergCatalogConfig
@@ -202,6 +204,9 @@ def _validate_dp3_iceberg_outputs(
 
 def run_dp3_offline_features(
     config_path: str | Path = "configs/data-platform/spark/dp3.yaml",
+    *,
+    report_uri: str = "",
+    run_id: str = "manual",
 ) -> dict[str, int]:
     spark = spark_session("recsys-pyspark-batch-features")
     config = load_config(config_path)
@@ -251,12 +256,18 @@ def run_dp3_offline_features(
             write_iceberg_table(frame, table_name, mode="overwrite")
         feast_offline_root = output.get("feast_offline_store_uri")
         if feast_offline_root:
-            for table_name in ("user_sequence_features", "user_aggregate_features", "item_features"):
+            for table_name in (
+                "user_sequence_features",
+                "user_aggregate_features",
+                "item_features",
+            ):
                 write_parquet(
                     outputs[catalog.feature_table(table_name)],
                     f"{feast_offline_root.rstrip('/')}/{table_name}",
                 )
-        drift_snapshot_root = os.getenv("OFFLINE_FEATURE_DRIFT_CURRENT_ROOT", "").strip()
+        drift_snapshot_root = os.getenv(
+            "OFFLINE_FEATURE_DRIFT_CURRENT_ROOT", ""
+        ).strip()
         if drift_snapshot_root:
             for table_name in DRIFT_SNAPSHOT_TABLES:
                 write_parquet(
@@ -265,6 +276,13 @@ def run_dp3_offline_features(
                 )
         _write_postgres_tables(outputs, catalog=catalog, output=output)
         report = _validate_dp3_iceberg_outputs(outputs, catalog=catalog)
+        if report_uri:
+            write_validation_report(
+                validation_report(
+                    "DP3", run_id, report["datasets"], report_uri=report_uri
+                ),
+                report_uri,
+            )
         if report["status"] != "SUCCESS":
             raise AssertionError(f"DP3 Iceberg validation failed: {report}")
         summary = {"clean_behavior_events": row_count(silver["clean_behavior_events"])}
@@ -277,8 +295,38 @@ def run_dp3_offline_features(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run PySpark batch feature flow")
     parser.add_argument("--config", default="configs/data-platform/spark/dp3.yaml")
+    parser.add_argument("--report-uri", default="")
+    parser.add_argument("--run-id", default="manual")
     args = parser.parse_args()
-    print(json.dumps(run_dp3_offline_features(args.config), indent=2, sort_keys=True))
+    try:
+        result = run_dp3_offline_features(
+            args.config, report_uri=args.report_uri, run_id=args.run_id
+        )
+    except Exception as exc:
+        if args.report_uri:
+            datasets = {
+                f"iceberg.feature_store.{table}": dataset_result(
+                    [check("validation_execution", "ERROR", "completed", str(exc))]
+                )
+                for table in (
+                    "user_sequence_features",
+                    "user_aggregate_features",
+                    "item_features",
+                    "ml_ranking_labels",
+                    "ml_bst_training",
+                )
+            }
+            write_validation_report(
+                validation_report(
+                    "DP3", args.run_id, datasets, report_uri=args.report_uri
+                ),
+                args.report_uri,
+            )
+        print(
+            json.dumps({"status": "ERROR", "error": str(exc)}, indent=2, sort_keys=True)
+        )
+        return 1
+    print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 

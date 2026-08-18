@@ -21,3 +21,4 @@ data:
   ANALYTICS_NAMESPACE: {{ .Values.namespace | quote }}
   SPARK_IMAGE: {{ .Values.images.spark | quote }}
   ANALYTICS_DBT_IMAGE: {{ .Values.images.dbt | quote }}
+  DATA_INGESTION_IMAGE: {{ .Values.images.dataIngestion | quote }}

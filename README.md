@@ -312,7 +312,7 @@ Source: tab **`rubic (mini-coursework)`**.
 | [Processing Jobs](<docs/submission/rubic-(mini-coursework)/processing_jobs.md>) | Spark offline processing, Flink streaming processing, optimization evidence, pipeline integration, and window processing. |
 | [Data Storage](<docs/submission/rubic-(mini-coursework)/data_storage.md>) | Lakehouse compaction/partitioning and data-warehouse indexing. |
 | [Data Pipeline Orchestration](<docs/submission/rubic-(mini-coursework)/data_pipeline_orchestration.md>) | Airflow DP1, DP2, and DP3 ingest/validate stages. |
-| [Data Governance](<docs/submission/rubic-(mini-coursework)/data_governance.md>) | Static DataHub dataset lineage for DP1, DP2, DP3, RAG, and analytics. |
+| [Data Governance](<docs/submission/rubic-(mini-coursework)/data_governance.md>) | Static DataHub lineage plus 44 CUSTOM assertions and Data Contracts for DP1, DP2, DP3, RAG, and analytics. |
 | [Schema Design](<docs/submission/rubic-(mini-coursework)/schema_design.md>) | Zone schemas, SCD2 dimensions, feature timestamps, table relationships, and naming conventions. |
 | [Novel Ideas](<docs/submission/rubic-(mini-coursework)/novel_ideas.md>) | Grafana-based data-quality monitoring and analytics-platform extensions. |
 

@@ -1,4 +1,4 @@
-# Data Governance: Static Dataset Lineage
+# Data Governance: Static Lineage, Assertions, and Contracts
 
 The RecSys platform uses DataHub as a catalog for batch datasets and logical
 table-level lineage. It deliberately does not use DataHub as a scheduler run,
@@ -14,15 +14,20 @@ The governance implementation has four small responsibilities:
 - [`governance_schemas.py`](../../../apps/data-platform/src/metadata/governance_schemas.py)
   contains field-level Bronze, Silver, feature, RAG, and analytics schemas.
 - [`datahub_client.py`](../../../apps/data-platform/src/metadata/datahub_client.py)
-  adapts the catalog to the high-level `DataHubClient`. Domain and Data Product
-  operations use the graph client only where the high-level SDK has no complete
-  equivalent.
+  adapts datasets and tags to the high-level `DataHubClient`, uses the official
+  graph helpers for externally evaluated CUSTOM assertions, and uses the
+  DataHub GraphQL mutation for Data Contracts.
 - [`sync_datahub_catalog.py`](../../../apps/data-platform/src/metadata/sync_datahub_catalog.py)
   provides local verification, production synchronization, remote verification,
   and Pushgateway metrics.
+- [`report_io.py`](../../../apps/data-platform/src/validate/report_io.py) persists
+  versioned local validation evidence, while
+  [`publish_datahub_validation.py`](../../../apps/data-platform/src/metadata/publish_datahub_validation.py)
+  publishes only the resulting SUCCESS, FAILURE, or ERROR state.
 
-Spark, Flink, Airflow, Kafka Connect, analytics, and RAG runtime code do not
-import this package. Pipeline availability therefore does not depend on DataHub.
+Spark, Flink, Kafka Connect, analytics transformations, and RAG transformations
+do not import the DataHub SDK. A separate `all_done` Airflow pod uses the
+data-ingestion image to publish validation evidence after each local gate.
 
 ## Governed graph
 
@@ -34,10 +39,12 @@ import this package. Pipeline availability therefore does not depend on DataHub.
 | RAG_ITEMS | Documents → chunks → embeddings → Milvus blue/green → active pointer |
 | ANALYTICS | Six Silver and two Bronze inputs → matching analytics staging tables |
 
-CDC source PostgreSQL datasets, Kafka topics, Flink jobs, Airflow jobs, process
-instances, custom assertions, and Data Contracts are intentionally absent.
-Local data validations still fail their Airflow tasks when checks fail, but they
-do not publish assertion results to DataHub.
+CDC source PostgreSQL datasets, Kafka topics, Flink jobs, Airflow jobs, and
+process instances are intentionally absent. Each of the 44 catalog datasets has
+one dataset-level CUSTOM assertion and one active Data Contract whose
+`dataQuality` section contains exactly that assertion. Airflow publishes the
+latest result after executing the local checks; Jenkins never invents pipeline
+results.
 
 ## Synchronization and verification
 
@@ -48,11 +55,13 @@ PYTHONPATH=apps/data-platform/src \
 python -c 'from metadata.governance_catalog import catalog_products, validate_catalog; print(validate_catalog(catalog_products()))'
 ```
 
-The expected summary is five Data Products, 44 datasets, and 40 direct lineage
-edges. Jenkins deploys the immutable data-ingestion image as a one-shot catalog
-Job and uses `--strict`, so an SDK or remote-verification failure fails the
-release action. The post-deploy check runs the same CLI with `--verify-only`,
-which reads DataHub without upserting the catalog.
+The expected summary is five Data Products, 44 datasets, 40 direct lineage
+edges, 44 CUSTOM assertions, and 44 Data Contracts. Jenkins deploys the
+immutable data-ingestion image as a one-shot catalog Job and uses `--strict`, so
+an SDK, GraphQL, or remote-verification failure fails the release action. The
+post-deploy check runs the same CLI with `--verify-only`; after the data DAGs
+have completed, `--verify-only --require-results --strict` additionally proves
+all 44 assertions have evaluation evidence.
 
 Every dataset upsert contains its complete desired upstream set. This reconciles
 removed edges instead of accumulating stale lineage through additive API calls.
@@ -62,12 +71,29 @@ removed edges instead of accumulating stale lineage through additive API calls.
 The reversible cleanup is documented in
 [`datahub-dataset-lineage-cutover`](../../../ops/migrations/datahub-dataset-lineage-cutover/README.md).
 It defaults to dry-run, archives the manifest, verifies the replacement catalog,
-and then soft-deletes legacy jobs, process instances, CDC/streaming assets,
-assertions, and contracts only after explicit approval. Restore replays the
+and then soft-deletes legacy jobs, process instances, CDC/streaming assets, old
+assertions, and contracts belonging only to removed datasets after explicit
+approval. Contracts attached to the current 44 datasets are reused and
+reactivated. Restore replays the
 pre-cutover `removed` state recorded for every entity.
 
 ## Observability
 
 The DataHub dashboard reports catalog-sync success, timestamp, dataset count,
-Data Product presence, and static lineage-edge count. There is no job-count
-metric because this repository no longer manages DataHub jobs.
+Data Product presence, static lineage-edge count, assertion count, contract
+count, and assertions with results. There is no job-count metric because this
+repository no longer manages DataHub jobs.
+
+## UI evidence
+
+For each of DP1, DP2, and DP3, the evidence capture must open a representative
+dataset and show its upstream/downstream lineage together with the Data Contract
+and latest CUSTOM assertion result:
+
+- `docs/pngs/dp1_datahub_contract.png`
+- `docs/pngs/dp2_datahub_contract.png`
+- `docs/pngs/dp3_datahub_contract.png`
+
+RAG reconciliation is no longer a separate DAG. Operators trigger
+`recsys_rag_item_index` with `params.mode=reconcile`, so incremental and rebuild
+executions share the same validation, promotion, and assertion publication path.

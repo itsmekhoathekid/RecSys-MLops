@@ -58,6 +58,8 @@ flowchart TD
 | Static governance catalog | `apps/data-platform/src/metadata/governance_catalog.py` |
 | DataHub SDK adapter | `apps/data-platform/src/metadata/datahub_client.py` |
 | Catalog sync CLI | `apps/data-platform/src/metadata/sync_datahub_catalog.py` |
+| Validation result publisher | `apps/data-platform/src/metadata/publish_datahub_validation.py` |
+| Versioned validation reports | `apps/data-platform/src/validate/report_io.py` |
 
 ## Runtime Notes
 
@@ -69,9 +71,10 @@ flowchart TD
 - Feast offline feature tables live in PostgreSQL; Iceberg/Hudi/S3 paths are used for lakehouse, audit, and versioning proof storage.
 - Online feature store keys live in Redis with the `fs:*` key templates.
 - Spark and Flink production paths use native Spark/Flink APIs.
-- Only the data-ingestion image carries `acryl-datahub`; Spark, Flink, Airflow, feature-store, analytics, CDC, and RAG runtimes are DataHub-independent.
-- Jenkins synchronizes five static batch Data Products with the high-level `DataHubClient` and verifies 44 datasets plus 40 direct edges.
-- Data checks remain local pipeline gates and do not create DataHub assertions or Data Contracts.
+- Only the data-ingestion image carries `acryl-datahub`; Spark, Flink, feature-store, analytics transformations, CDC, and RAG transformations remain SDK-independent.
+- Jenkins synchronizes five static Data Products and verifies 44 datasets, 40 direct edges, 44 CUSTOM assertions, and 44 Data Contracts.
+- Data checks remain local pipeline gates. A separate `all_done` Airflow pod publishes their aggregate SUCCESS/FAILURE/ERROR results to the matching CUSTOM assertions.
+- RAG incremental and reconciliation runs both use `recsys_rag_item_index`; set its `mode` parameter to `reconcile` for a full blue/green rebuild.
 - The reversible cleanup procedure is in [`ops/migrations/datahub-dataset-lineage-cutover/README.md`](../../ops/migrations/datahub-dataset-lineage-cutover/README.md).
 
 ## Useful Evidence Commands

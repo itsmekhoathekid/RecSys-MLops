@@ -54,11 +54,12 @@ ci_dp3() {
 ci_datahub_catalog() {
   tests=(
     tests/unit/data_platform/test_datahub_catalog.py
+    tests/unit/data_platform/test_datahub_validation_publisher.py
     tests/unit/data_platform/test_datahub_dataset_cutover.py
     tests/unit/data_platform/test_governance_contracts.py
     tests/contract/test_docker_dataflow_contracts.py
   )
-  cov_paths=(metadata.governance_catalog metadata.datahub_client metadata.sync_datahub_catalog)
+  cov_paths=(metadata.governance_catalog metadata.datahub_client metadata.sync_datahub_catalog metadata.publish_datahub_validation validate.report_io)
   run_configured_component_tests "${component}" "apps/data-platform/src"
   PYTHONPATH="apps/data-platform/src" "${ci_python}" -c \
     'from metadata.governance_catalog import catalog_products, validate_catalog; print(validate_catalog(catalog_products()))'
@@ -101,8 +102,7 @@ ci_rag_index() {
   PYTHONPATH="apps/data-platform/src" "${ci_python}" -c \
     'from metadata.governance_catalog import catalog_products, validate_catalog; print(validate_catalog(catalog_products()))'
   "${ci_python}" -m py_compile \
-    apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_index.py \
-    apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_reconciliation.py
+    apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_index.py
 
   "${ci_environment}/bin/interrogate" \
     --fail-under 90 \

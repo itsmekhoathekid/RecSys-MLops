@@ -350,8 +350,11 @@
       "changeDetection": {
         "groups": ["python-common", "jenkins-shared-runtime", "datahub-governance"],
         "prefixes": [
+          "apps/data-platform/src/metadata/",
+          "apps/data-platform/src/validate/",
           "ops/migrations/datahub-dataset-lineage-cutover/",
-          "infra/helm/recsys-observability/dashboards/"
+          "infra/helm/recsys-observability/dashboards/",
+          "docs/submission/rubic-(mini-coursework)/"
         ],
         "files": [
           "jenkins/scripts/ci/data.sh",
@@ -393,8 +396,7 @@
           "jenkins/scripts/deploy/rag.sh",
           "jenkins/scripts/test/rag.sh",
           "scripts/rag/verify_retrieval.py",
-          "apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_index.py",
-          "apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_reconciliation.py"
+          "apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_index.py"
         ]
       },
       "buildImages": [

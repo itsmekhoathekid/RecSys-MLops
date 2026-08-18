@@ -30,6 +30,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Verify that the remote DataHub catalog matches the local static catalog.",
     )
+    parser.add_argument(
+        "--require-results",
+        action="store_true",
+        help="Require a completed result for every managed CUSTOM assertion.",
+    )
     return parser.parse_args()
 
 
@@ -45,10 +50,11 @@ def sync_catalog(client: DataHubCatalogClient, products) -> dict[str, object]:
         except RuntimeError:
             if attempt == 5:
                 raise
-            time.sleep(min(2 ** attempt, 8))
+            time.sleep(min(2**attempt, 8))
     return {
         "mode": "dataset-only-static",
         **asdict(synced),
+        "assertions_with_results": remote.assertions_with_results,
         "verified": remote.verified,
     }
 
@@ -57,8 +63,12 @@ def metric_samples(summary: dict[str, object]) -> list[MetricSample]:
     success = 1.0 if summary.get("verified") else 0.0
     samples = [
         MetricSample("recsys_datahub_ingest_success", success),
-        MetricSample("recsys_datahub_ingest_timestamp_seconds", float(int(time.time()))),
-        MetricSample("recsys_datahub_ingest_dataset_count", float(summary.get("datasets", 0))),
+        MetricSample(
+            "recsys_datahub_ingest_timestamp_seconds", float(int(time.time()))
+        ),
+        MetricSample(
+            "recsys_datahub_ingest_dataset_count", float(summary.get("datasets", 0))
+        ),
         MetricSample(
             "recsys_datahub_ingest_lineage_edge_count",
             float(summary.get("lineage_edges", 0)),
@@ -67,13 +77,27 @@ def metric_samples(summary: dict[str, object]) -> list[MetricSample]:
             "recsys_datahub_ingest_data_product_count",
             float(summary.get("data_products", 0)),
         ),
+        MetricSample(
+            "recsys_datahub_ingest_assertion_count",
+            float(summary.get("assertions", 0)),
+        ),
+        MetricSample(
+            "recsys_datahub_ingest_contract_count",
+            float(summary.get("data_contracts", 0)),
+        ),
+        MetricSample(
+            "recsys_datahub_assertions_with_result_count",
+            float(summary.get("assertions_with_results", 0)),
+        ),
     ]
     for product in catalog_products():
-        samples.append(MetricSample(
-            "recsys_datahub_ingest_data_product_present",
-            success,
-            {"data_product": product.id},
-        ))
+        samples.append(
+            MetricSample(
+                "recsys_datahub_ingest_data_product_present",
+                success,
+                {"data_product": product.id},
+            )
+        )
     return samples
 
 
@@ -92,9 +116,15 @@ def main() -> int:
     try:
         if args.verify_only:
             coverage = validate_catalog(products)
-            remote = client.verify_remote(products)
-            summary = {**coverage, "verified": remote.verified}
+            remote = client.verify_remote(
+                products, require_results=getattr(args, "require_results", False)
+            )
+            summary = {**coverage, **asdict(remote)}
         else:
+            if getattr(args, "require_results", False):
+                raise ValueError(
+                    "--require-results can only be used with --verify-only"
+                )
             summary = sync_catalog(client, products)
     except Exception as exc:
         summary = {

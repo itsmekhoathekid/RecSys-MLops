@@ -14,11 +14,20 @@ from typing import Any
 
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.ingestion.graph.client import DataHubGraph, DatahubClientConfig
-from datahub.metadata.schema_classes import StatusClass, UpstreamLineageClass
+from datahub.metadata.schema_classes import (
+    DataContractPropertiesClass,
+    StatusClass,
+    UpstreamLineageClass,
+)
 from datahub.sdk import DataHubClient
 
 from lakehouse.iceberg import RAW_GENERATOR_TABLES
-from metadata.governance_catalog import catalog_products, dataset_urn, validate_catalog
+from metadata.governance_catalog import (
+    assertion_urn,
+    catalog_products,
+    dataset_urn,
+    validate_catalog,
+)
 
 DEFAULT_MANIFEST = Path(".ci-deploy/datahub-dataset-lineage-cutover.json")
 ASSERTION_NAMESPACE = uuid.UUID("5851f697-2fcb-4938-b5c8-34fcb1f9f297")
@@ -57,11 +66,16 @@ def _relationships(graph: DataHubGraph, urn: str, entity_type: str) -> list[str]
         """,
         {"urn": urn},
     )
-    items = ((result.get("entity") or {}).get("relationships") or {}).get("relationships", [])
-    return sorted({
-        item["entity"]["urn"] for item in items
-        if (item.get("entity") or {}).get("type") == entity_type
-    })
+    items = ((result.get("entity") or {}).get("relationships") or {}).get(
+        "relationships", []
+    )
+    return sorted(
+        {
+            item["entity"]["urn"]
+            for item in items
+            if (item.get("entity") or {}).get("type") == entity_type
+        }
+    )
 
 
 def related_jobs(graph: DataHubGraph, flow_urn: str) -> list[str]:
@@ -102,7 +116,10 @@ def legacy_assertion_urns() -> tuple[str, ...]:
     return tuple(
         urn
         for dataset in _old_governed_dataset_urns()
-        for urn in (_assertion_urn(dataset, "schema"), _assertion_urn(dataset, "data_quality"))
+        for urn in (
+            _assertion_urn(dataset, "schema"),
+            _assertion_urn(dataset, "data_quality"),
+        )
     )
 
 
@@ -112,10 +129,18 @@ def _contract_id(dataset: str) -> str:
 
 
 def legacy_contract_urns() -> tuple[str, ...]:
-    return tuple(f"urn:li:dataContract:{_contract_id(dataset)}" for dataset in _old_governed_dataset_urns())
+    # Contracts attached to the current 44 datasets are replacement entities:
+    # the catalog sync reuses/reactivates them in place. Only contracts owned by
+    # datasets removed from the static catalog are cleanup targets.
+    return tuple(
+        f"urn:li:dataContract:{_contract_id(dataset)}"
+        for dataset in legacy_dataset_urns()
+    )
 
 
-def _find_named_entities(graph: DataHubGraph, entity_type: str, names: tuple[str, ...]) -> list[str]:
+def _find_named_entities(
+    graph: DataHubGraph, entity_type: str, names: tuple[str, ...]
+) -> list[str]:
     found: set[str] = set()
     for name in names:
         result = graph.execute_graphql(
@@ -130,7 +155,9 @@ def _find_named_entities(graph: DataHubGraph, entity_type: str, names: tuple[str
     return sorted(found)
 
 
-def _record(graph: DataHubGraph, urn: str, entity_type: str, reason: str) -> dict[str, Any]:
+def _record(
+    graph: DataHubGraph, urn: str, entity_type: str, reason: str
+) -> dict[str, Any]:
     status = graph.get_aspect(urn, StatusClass)
     return {
         "urn": urn,
@@ -147,24 +174,46 @@ def build_manifest(graph: DataHubGraph) -> dict[str, Any]:
             continue
         for job in related_jobs(graph, flow):
             for instance in related_process_instances(graph, job):
-                records[instance] = _record(graph, instance, "DATA_PROCESS_INSTANCE", "runtime-lineage-removed")
+                records[instance] = _record(
+                    graph, instance, "DATA_PROCESS_INSTANCE", "runtime-lineage-removed"
+                )
             records[job] = _record(graph, job, "DATA_JOB", "runtime-lineage-removed")
         records[flow] = _record(graph, flow, "DATA_FLOW", "runtime-lineage-removed")
     static_targets = (
         [(urn, "DATASET", "cdc-catalog-removed") for urn in legacy_dataset_urns()]
-        + [(urn, "ASSERTION", "assertion-writeback-removed") for urn in legacy_assertion_urns()]
-        + [(urn, "DATA_CONTRACT", "data-contract-writeback-removed") for urn in legacy_contract_urns()]
-        + [(f"urn:li:tag:{tag}", "TAG", "legacy-tag-removed") for tag in (
-            "CDC_INGESTION", "STREAMING_FEATURES", "DataContract", "NativePipeline"
-        )]
+        + [
+            (urn, "ASSERTION", "assertion-writeback-removed")
+            for urn in legacy_assertion_urns()
+        ]
+        + [
+            (urn, "DATA_CONTRACT", "data-contract-writeback-removed")
+            for urn in legacy_contract_urns()
+        ]
+        + [
+            (f"urn:li:tag:{tag}", "TAG", "legacy-tag-removed")
+            for tag in (
+                "CDC_INGESTION",
+                "STREAMING_FEATURES",
+                "DataContract",
+                "NativePipeline",
+            )
+        ]
     )
     for urn, entity_type, reason in static_targets:
         if graph.exists(urn):
             records[urn] = _record(graph, urn, entity_type, reason)
-    for urn in _find_named_entities(graph, "DATA_PRODUCT", ("CDC_INGESTION", "STREAMING_FEATURES")):
+    for urn in _find_named_entities(
+        graph, "DATA_PRODUCT", ("CDC_INGESTION", "STREAMING_FEATURES")
+    ):
         records[urn] = _record(graph, urn, "DATA_PRODUCT", "streaming-product-removed")
-    ordered = sorted(records.values(), key=lambda item: (item["entity_type"], item["urn"]))
-    return {"version": 1, "records": ordered, "counts": dict(Counter(item["entity_type"] for item in ordered))}
+    ordered = sorted(
+        records.values(), key=lambda item: (item["entity_type"], item["urn"])
+    )
+    return {
+        "version": 1,
+        "records": ordered,
+        "counts": dict(Counter(item["entity_type"] for item in ordered)),
+    }
 
 
 def verify_replacement_catalog(graph: DataHubGraph) -> None:
@@ -188,9 +237,56 @@ def verify_replacement_catalog(graph: DataHubGraph) -> None:
     for product in products:
         for dataset in product.datasets:
             if not graph.exists(dataset.urn):
-                raise RuntimeError(f"Replacement catalog missing dataset: {dataset.urn}")
+                raise RuntimeError(
+                    f"Replacement catalog missing dataset: {dataset.urn}"
+                )
             aspect = graph.get_aspect(dataset.urn, UpstreamLineageClass)
-            observed_edges.update((str(item.dataset), dataset.urn) for item in (aspect.upstreams if aspect else []))
+            observed_edges.update(
+                (str(item.dataset), dataset.urn)
+                for item in (aspect.upstreams if aspect else [])
+            )
+            expected_assertion = assertion_urn(dataset.urn)
+            assertion = (
+                graph.execute_graphql(
+                    "query assertion($urn: String!) { assertion(urn: $urn) "
+                    "{ info { type customAssertion { entityUrn } } } }",
+                    {"urn": expected_assertion},
+                ).get("assertion")
+                or {}
+            )
+            info = assertion.get("info") or {}
+            custom = info.get("customAssertion") or {}
+            if info.get("type") != "CUSTOM" or custom.get("entityUrn") != dataset.urn:
+                raise RuntimeError(
+                    f"Replacement catalog missing CUSTOM assertion: {expected_assertion}"
+                )
+            contract = graph.execute_graphql(
+                "query datasetContract($urn: String!) { dataset(urn: $urn) "
+                "{ contract { urn } } }",
+                {"urn": dataset.urn},
+            )
+            contract_urn = ((contract.get("dataset") or {}).get("contract") or {}).get(
+                "urn"
+            )
+            if not contract_urn:
+                raise RuntimeError(
+                    f"Replacement catalog missing Data Contract: {dataset.urn}"
+                )
+            properties = graph.get_aspect(
+                str(contract_urn), DataContractPropertiesClass
+            )
+            linked = {
+                str(item.assertion)
+                for item in ((properties.dataQuality or []) if properties else [])
+            }
+            if properties is None or str(properties.entity) != dataset.urn:
+                raise RuntimeError(
+                    f"Replacement Data Contract has wrong entity: {contract_urn}"
+                )
+            if linked != {expected_assertion}:
+                raise RuntimeError(
+                    f"Replacement Data Contract assertion mismatch: {contract_urn}"
+                )
     if observed_edges != expected_edges:
         raise RuntimeError(
             "Replacement catalog lineage mismatch: "
@@ -199,32 +295,49 @@ def verify_replacement_catalog(graph: DataHubGraph) -> None:
         )
 
 
-def set_removed(client: DataHubClient, graph: DataHubGraph, records: list[dict[str, Any]], removed: bool) -> None:
+def set_removed(
+    client: DataHubClient,
+    graph: DataHubGraph,
+    records: list[dict[str, Any]],
+    removed: bool,
+) -> None:
     for record in records:
         if removed:
             if not record["was_removed"]:
                 client.entities.delete(record["urn"], check_exists=False, hard=False)
         else:
-            graph.emit_mcp(MetadataChangeProposalWrapper(
-                entityUrn=record["urn"], aspect=StatusClass(removed=bool(record["was_removed"])),
-            ))
+            graph.emit_mcp(
+                MetadataChangeProposalWrapper(
+                    entityUrn=record["urn"],
+                    aspect=StatusClass(removed=bool(record["was_removed"])),
+                )
+            )
 
 
-def apply_manifest(client: DataHubClient, graph: DataHubGraph, manifest: dict[str, Any]) -> None:
+def apply_manifest(
+    client: DataHubClient, graph: DataHubGraph, manifest: dict[str, Any]
+) -> None:
     verify_replacement_catalog(graph)
     set_removed(client, graph, manifest["records"], True)
 
 
-def restore_manifest(client: DataHubClient, graph: DataHubGraph, manifest: dict[str, Any]) -> None:
+def restore_manifest(
+    client: DataHubClient, graph: DataHubGraph, manifest: dict[str, Any]
+) -> None:
     set_removed(client, graph, manifest["records"], False)
 
 
 def _clients() -> tuple[DataHubClient, DataHubGraph]:
     token = (os.getenv("DATAHUB_TOKEN") or os.getenv("DATAHUB_GMS_TOKEN") or "").strip()
-    graph = DataHubGraph(DatahubClientConfig(
-        server=os.getenv("DATAHUB_GMS_URL", "http://localhost:8088"), token=token or None,
-        timeout_sec=180, retry_max_times=5, datahub_component="recsys-catalog-cutover",
-    ))
+    graph = DataHubGraph(
+        DatahubClientConfig(
+            server=os.getenv("DATAHUB_GMS_URL", "http://localhost:8088"),
+            token=token or None,
+            timeout_sec=180,
+            retry_max_times=5,
+            datahub_component="recsys-catalog-cutover",
+        )
+    )
     return DataHubClient(graph=graph), graph
 
 
@@ -241,12 +354,16 @@ def main() -> int:
         if args.restore:
             manifest = json.loads(args.manifest.read_text())
             restore_manifest(client, graph, manifest)
-            print(json.dumps({"restored": manifest["counts"]}, indent=2, sort_keys=True))
+            print(
+                json.dumps({"restored": manifest["counts"]}, indent=2, sort_keys=True)
+            )
             return 0
         if not args.apply:
             manifest = build_manifest(graph)
             args.manifest.parent.mkdir(parents=True, exist_ok=True)
-            args.manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+            args.manifest.write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+            )
             print(json.dumps({"dry_run": True, **manifest}, indent=2, sort_keys=True))
             return 0
         if not args.confirm_cutover:
@@ -255,7 +372,9 @@ def main() -> int:
         # rewrite targets during the destructive phase.
         manifest = json.loads(args.manifest.read_text())
         apply_manifest(client, graph, manifest)
-        print(json.dumps({"soft_deleted": manifest["counts"]}, indent=2, sort_keys=True))
+        print(
+            json.dumps({"soft_deleted": manifest["counts"]}, indent=2, sort_keys=True)
+        )
         return 0
     finally:
         graph.close()

@@ -303,12 +303,19 @@
       "chart": "infra/helm/recsys-analytics",
       "components": [],
       "consumesImages": [
+        "recsys-data-ingestion",
         "recsys-analytics-dbt",
         "recsys-analytics-superset"
       ],
+      "imageValues": {
+        "recsys-data-ingestion": "images.dataIngestion",
+        "recsys-analytics-dbt": "images.dbt",
+        "recsys-analytics-superset": "images.superset"
+      },
       "consumesArtifacts": [],
       "dependsOn": [
-        "data-lakehouse"
+        "data-lakehouse",
+        "data-config"
       ]
     },
     {

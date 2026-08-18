@@ -162,6 +162,36 @@
       ],
       "fieldConfig": { "defaults": { "decimals": 1, "unit": "bytes" } },
       "options": { "showHeader": true }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "CUSTOM Assertions",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 21 },
+      "targets": [{ "expr": "max(recsys_datahub_ingest_assertion_count) or vector(0)", "legendFormat": "assertions" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Data Contracts",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 21 },
+      "targets": [{ "expr": "max(recsys_datahub_ingest_contract_count) or vector(0)", "legendFormat": "contracts" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Assertions With Results",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 21 },
+      "targets": [{ "expr": "max(recsys_datahub_assertions_with_result_count) or vector(0)", "legendFormat": "evaluated" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" } },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
     }
   ]
 }

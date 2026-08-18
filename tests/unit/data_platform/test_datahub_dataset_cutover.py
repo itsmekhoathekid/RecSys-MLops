@@ -9,7 +9,9 @@ import pytest
 
 def _module():
     path = Path("ops/migrations/datahub-dataset-lineage-cutover/cutover.py")
-    spec = importlib.util.spec_from_file_location("datahub_dataset_lineage_cutover", path)
+    spec = importlib.util.spec_from_file_location(
+        "datahub_dataset_lineage_cutover", path
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -53,6 +55,30 @@ def test_manifest_never_targets_kept_static_datasets():
     assert targets.isdisjoint(kept)
 
 
+def test_legacy_contract_cleanup_excludes_current_catalog_contracts():
+    module = _module()
+    current_datasets = {
+        dataset.urn
+        for product in module.catalog_products()
+        for dataset in product.datasets
+    }
+    assert set(module.legacy_contract_urns()) == {
+        f"urn:li:dataContract:{module._contract_id(dataset)}"
+        for dataset in module.legacy_dataset_urns()
+    }
+    assert all(
+        dataset not in module.legacy_dataset_urns() for dataset in current_datasets
+    )
+
+
+def test_removed_rag_reconciliation_flow_remains_a_historical_cleanup_target():
+    module = _module()
+    assert (
+        "urn:li:dataFlow:(airflow,recsys_rag_item_reconciliation,PROD)"
+        in module.known_flow_urns()
+    )
+
+
 def test_manifest_classifies_flow_job_and_process_instance_without_mutating():
     module = _module()
     flow = module.known_flow_urns()[0]
@@ -69,9 +95,7 @@ def test_manifest_classifies_flow_job_and_process_instance_without_mutating():
             if urn == flow:
                 related = [{"entity": {"urn": job, "type": "DATA_JOB"}}]
             elif urn == job:
-                related = [
-                    {"entity": {"urn": process, "type": process_type}}
-                ]
+                related = [{"entity": {"urn": process, "type": process_type}}]
             return {"entity": {"relationships": {"relationships": related}}}
 
     graph = RelationshipGraph({flow})
@@ -92,25 +116,35 @@ def test_relationship_query_supplies_required_datahub_types_input():
             assert variables == {"urn": "urn:li:dataFlow:(airflow,flow,PROD)"}
             return {"entity": {"relationships": {"relationships": []}}}
 
-    assert module.related_jobs(
-        StrictGraph(), "urn:li:dataFlow:(airflow,flow,PROD)"
-    ) == []
+    assert (
+        module.related_jobs(StrictGraph(), "urn:li:dataFlow:(airflow,flow,PROD)") == []
+    )
 
 
 def test_apply_soft_deletes_only_records_not_previously_removed(monkeypatch):
     module = _module()
     deleted = []
-    client = type("Client", (), {"entities": type("Entities", (), {
-        "delete": lambda self, urn, **kwargs: deleted.append(urn)
-    })()})()
+    client = type(
+        "Client",
+        (),
+        {
+            "entities": type(
+                "Entities",
+                (),
+                {"delete": lambda self, urn, **kwargs: deleted.append(urn)},
+            )()
+        },
+    )()
     verified = []
     monkeypatch.setattr(
         module, "verify_replacement_catalog", lambda graph: verified.append(graph)
     )
-    manifest = {"records": [
-        {"urn": "urn:one", "was_removed": False},
-        {"urn": "urn:two", "was_removed": True},
-    ]}
+    manifest = {
+        "records": [
+            {"urn": "urn:one", "was_removed": False},
+            {"urn": "urn:two", "was_removed": True},
+        ]
+    }
     module.apply_manifest(client, Graph(), manifest)
     assert len(verified) == 1
     assert deleted == ["urn:one"]
@@ -119,10 +153,12 @@ def test_apply_soft_deletes_only_records_not_previously_removed(monkeypatch):
 def test_restore_replays_the_original_removed_state():
     module = _module()
     graph = Graph()
-    manifest = {"records": [
-        {"urn": "urn:li:tag:one", "was_removed": False},
-        {"urn": "urn:li:tag:two", "was_removed": True},
-    ]}
+    manifest = {
+        "records": [
+            {"urn": "urn:li:tag:one", "was_removed": False},
+            {"urn": "urn:li:tag:two", "was_removed": True},
+        ]
+    }
     module.restore_manifest(object(), graph, manifest)
     assert [item.aspect.removed for item in graph.emitted] == [False, True]
 

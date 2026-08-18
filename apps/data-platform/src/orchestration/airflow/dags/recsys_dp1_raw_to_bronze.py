@@ -2,11 +2,30 @@ from __future__ import annotations
 
 from orchestration.airflow.spark_utils import (
     DAG,
+    DATA_INGESTION_IMAGE,
     SPARK_IMAGE,
+    datahub_validation_command,
     datetime,
     env_schedule,
     pod_task,
     spark_native_submit,
+)
+
+REPORT_URI = "s3://recsys-lakehouse/governance-validation/DP1/{{ ts_nodash }}/dp1.json"
+DP1_DATASET_KEYS = tuple(
+    f"bronze.{table}"
+    for table in (
+        "users",
+        "products",
+        "product_snapshots",
+        "user_preferences",
+        "behavior_events",
+        "impressions",
+        "recommendation_requests",
+        "orders",
+        "order_items",
+        "sessions",
+    )
 )
 
 
@@ -38,7 +57,7 @@ DP1_OPTIMIZE_COMMAND = spark_native_submit(
 DP1_VALIDATE_COMMAND = spark_native_submit(
     "dp1_validate_iceberg",
     "local:///opt/recsys/apps/data-platform/src/validate/governance_contracts.py",
-    "dp1",
+    f"dp1 --report-uri '{REPORT_URI}' --run-id '{{{{ run_id }}}}'",
 )
 
 
@@ -66,5 +85,11 @@ if DAG is not None:
             SPARK_IMAGE,
             DP1_VALIDATE_COMMAND,
         )
+        publish_datahub_validation = pod_task(
+            "publish_datahub_validation",
+            DATA_INGESTION_IMAGE,
+            datahub_validation_command("DP1", (REPORT_URI,), DP1_DATASET_KEYS),
+            trigger_rule="all_done",
+        )
 
-        ingest_stage >> optimize_stage >> validate_stage
+        ingest_stage >> optimize_stage >> validate_stage >> publish_datahub_validation

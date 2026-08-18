@@ -54,7 +54,10 @@ The GCP Terraform layout follows the same separation of concerns.
 The application-side DataHub integration is isolated under
 `apps/data-platform/src/metadata`: pure catalog and schema declarations feed a
 small high-level `DataHubClient` adapter and a one-shot sync CLI. Data-plane
-Spark, Flink, Airflow, CDC, analytics, and RAG modules do not import it.
+Spark, Flink, CDC, analytics transformations, and RAG transformations do not
+import the SDK. Versioned local validation reports are consumed by a separate
+Airflow publisher pod, which updates 44 CUSTOM assertions and the corresponding
+Data Contracts without restoring job/process-instance lineage.
 | `secret_management.tf` | Central source secrets for External Secrets Operator. |
 
 ### Code Reference

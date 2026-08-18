@@ -14,6 +14,7 @@ images:
   superset: registry.example.invalid/recsys/recsys-analytics-superset:required
   dbt: registry.example.invalid/recsys/recsys-analytics-dbt:required
   spark: registry.example.invalid/recsys/recsys-spark:required
+  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
   postgres: postgres:16-alpine
   redis: redis:7.4-alpine
   pullPolicy: IfNotPresent

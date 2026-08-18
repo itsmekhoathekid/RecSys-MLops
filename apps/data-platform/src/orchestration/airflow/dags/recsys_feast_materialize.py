@@ -2,10 +2,20 @@ from __future__ import annotations
 
 from orchestration.airflow.spark_utils import (
     DAG,
+    DATA_INGESTION_IMAGE,
     FEATURE_STORE_IMAGE,
+    datahub_validation_command,
     datetime,
     env_schedule,
     pod_task,
+)
+
+REPORT_URI = (
+    "s3://recsys-lakehouse/governance-validation/DP3/{{ ts_nodash }}/redis.json"
+)
+REDIS_DATASET_KEYS = tuple(
+    f"redis.{table}"
+    for table in ("user_sequence_features", "user_aggregate_features", "item_features")
 )
 
 
@@ -27,7 +37,8 @@ feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo \
 """.strip()
 
 VERIFY_REDIS_ONLINE_STORE_COMMAND = (
-    f"{FEAST_ENV_EXPORTS}\npython -m validate.governance_contracts feast-online"
+    f"{FEAST_ENV_EXPORTS}\npython -m validate.governance_contracts feast-online "
+    f"--report-uri '{REPORT_URI}' --run-id '{{{{ run_id }}}}'"
 )
 
 
@@ -53,5 +64,11 @@ if DAG is not None:
             FEATURE_STORE_IMAGE,
             VERIFY_REDIS_ONLINE_STORE_COMMAND,
         )
+        publish_datahub_validation = pod_task(
+            "publish_datahub_validation",
+            DATA_INGESTION_IMAGE,
+            datahub_validation_command("DP3", (REPORT_URI,), REDIS_DATASET_KEYS),
+            trigger_rule="all_done",
+        )
 
-        materialize_incremental >> validate_online_store
+        materialize_incremental >> validate_online_store >> publish_datahub_validation

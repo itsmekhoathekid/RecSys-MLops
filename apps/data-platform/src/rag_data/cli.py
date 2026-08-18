@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any, Sequence
@@ -25,6 +26,8 @@ from rag_data.orcarouter_client import OrcaRouterClient
 from rag_data.pipeline import chunk_canonical_items, embed_item_chunks
 from rag_data.semantic_chunker import ChunkerConfig
 from rag_data.storage import CompletedRunError, MinioRunStorage
+from validate.governance_contracts import check, dataset_result
+from validate.report_io import validation_report, write_validation_report
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -86,12 +89,14 @@ def build_parser() -> argparse.ArgumentParser:
     publish.add_argument("--mode", choices=("incremental", "reconcile"), required=True)
 
     validate = subparsers.add_parser(
-        "validate-index", help="Validate exact candidate contents and optionally promote"
+        "validate-index",
+        help="Validate exact candidate contents and optionally promote",
     )
     validate.add_argument("--config", required=True)
     validate.add_argument("--run-id", required=True)
     validate.add_argument("--promote", action="store_true")
     validate.add_argument("--expected-item-count", type=int, default=0)
+    validate.add_argument("--report-uri", default="")
     rollback = subparsers.add_parser(
         "rollback-index", help="CAS-restore the previous validated active pointer"
     )
@@ -292,13 +297,144 @@ def validate_item_index(args: argparse.Namespace) -> int:
     """CLI handler for candidate validation and explicit CAS promotion."""
 
     config = load_config(args.config)
-    manifest = validate_and_promote_index(
-        store=_artifact_store(config),
-        publisher=_publisher(config),
-        run_id=args.run_id,
-        promote=args.promote,
-        expected_item_count=args.expected_item_count,
-    )
+    store = _artifact_store(config)
+    publisher = _publisher(config)
+    try:
+        manifest = validate_and_promote_index(
+            store=store,
+            publisher=publisher,
+            run_id=args.run_id,
+            promote=args.promote,
+            expected_item_count=args.expected_item_count,
+        )
+        if args.report_uri:
+            gold_manifest, embeddings = store.load_embeddings(args.run_id)
+            _, chunks = store.load_chunks(args.run_id)
+            raw_manifest, documents = store.load_canonical_items(
+                gold_manifest.source_run_id
+            )
+            dimensions_ok = all(
+                len(record.embedding) == gold_manifest.embedding_dimension
+                and all(math.isfinite(value) for value in record.embedding)
+                for record in embeddings
+            )
+            datasets = {
+                "rag.raw_documents": dataset_result(
+                    [
+                        check(
+                            "manifest_count",
+                            "SUCCESS"
+                            if len(documents) == raw_manifest.generated_count
+                            else "FAILURE",
+                            raw_manifest.generated_count,
+                            len(documents),
+                        )
+                    ]
+                ),
+                "rag.silver_chunks": dataset_result(
+                    [
+                        check(
+                            "record_count",
+                            "SUCCESS" if chunks else "FAILURE",
+                            "> 0",
+                            len(chunks),
+                        ),
+                        check(
+                            "chunk_ids_unique",
+                            "SUCCESS"
+                            if len({item.chunk_id for item in chunks}) == len(chunks)
+                            else "FAILURE",
+                            len(chunks),
+                            len({item.chunk_id for item in chunks}),
+                        ),
+                    ]
+                ),
+                "rag.gold_embeddings": dataset_result(
+                    [
+                        check(
+                            "record_count",
+                            "SUCCESS" if embeddings else "FAILURE",
+                            "> 0",
+                            len(embeddings),
+                        ),
+                        check(
+                            "embedding_dimension_and_finite",
+                            "SUCCESS" if dimensions_ok else "FAILURE",
+                            gold_manifest.embedding_dimension,
+                            dimensions_ok,
+                        ),
+                    ]
+                ),
+            }
+            expected_ids = {record.chunk_id for record in embeddings}
+            for slot in ("blue", "green"):
+                try:
+                    count = publisher.collection_count(slot)
+                    ids = publisher.collection_ids(slot)
+                    checks = [
+                        check("collection_readable", "SUCCESS", ">= 0", count),
+                    ]
+                    if slot == manifest.slot:
+                        checks.append(
+                            check(
+                                "candidate_ids",
+                                "SUCCESS"
+                                if count == len(expected_ids) and ids == expected_ids
+                                else "FAILURE",
+                                len(expected_ids),
+                                count,
+                            )
+                        )
+                except Exception as exc:
+                    checks = [
+                        check("collection_readable", "ERROR", "readable", str(exc))
+                    ]
+                datasets[f"rag.milvus.{slot}"] = dataset_result(checks)
+            pointer = store.load_active_pointer()
+            datasets["rag.active_pointer"] = dataset_result(
+                [
+                    check(
+                        "active_pointer",
+                        "SUCCESS"
+                        if pointer and pointer.pointer.pipeline_run_id == args.run_id
+                        else "FAILURE",
+                        args.run_id,
+                        pointer.pointer.pipeline_run_id if pointer else None,
+                    )
+                ]
+            )
+            write_validation_report(
+                validation_report(
+                    "RAG_ITEMS",
+                    args.run_id,
+                    datasets,
+                    report_uri=args.report_uri,
+                ),
+                args.report_uri,
+            )
+    except Exception as exc:
+        if args.report_uri:
+            keys = (
+                "rag.raw_documents",
+                "rag.silver_chunks",
+                "rag.gold_embeddings",
+                "rag.milvus.blue",
+                "rag.milvus.green",
+                "rag.active_pointer",
+            )
+            datasets = {
+                key: dataset_result(
+                    [check("validation_execution", "ERROR", "completed", str(exc))]
+                )
+                for key in keys
+            }
+            write_validation_report(
+                validation_report(
+                    "RAG_ITEMS", args.run_id, datasets, report_uri=args.report_uri
+                ),
+                args.report_uri,
+            )
+        raise
     print(manifest.model_dump_json())
     return 0
 

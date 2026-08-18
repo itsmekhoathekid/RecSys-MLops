@@ -14,6 +14,37 @@ from feature_store.postgres_offline_store import (
 from ingest.postgres_cdc_contracts import SOURCE_TABLE_CONTRACTS
 from features.spark.session import read_iceberg_table, row_count, spark_session
 from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES
+from validate.report_io import validation_report, write_validation_report
+
+
+EXPECTED_DATASET_KEYS = {
+    "dp1": tuple(f"bronze.{table}" for table in RAW_GENERATOR_TABLES),
+    "dp3-postgres": tuple(
+        f"postgres.feature_store.{table}"
+        for table in (
+            "user_sequence_features",
+            "user_aggregate_features",
+            "item_features",
+            "ml_ranking_labels",
+        )
+    ),
+    "streaming-redis": tuple(
+        f"redis.{table}"
+        for table in (
+            "user_sequence_features",
+            "user_aggregate_features",
+            "item_features",
+        )
+    ),
+    "feast-online": tuple(
+        f"redis.{table}"
+        for table in (
+            "user_sequence_features",
+            "user_aggregate_features",
+            "item_features",
+        )
+    ),
+}
 
 
 def check(name: str, status: str, expected: Any, observed: Any) -> dict[str, Any]:
@@ -50,6 +81,7 @@ def build_validation_report(
     )
     return {"pipeline": pipeline, "status": status, "datasets": datasets}
 
+
 # DP1 validates readable, non-empty Bronze tables with source/audit keys present and non-null.
 def validate_dp1_bronze(*, spark=None) -> dict[str, Any]:
     from functools import reduce
@@ -74,22 +106,37 @@ def validate_dp1_bronze(*, spark=None) -> dict[str, Any]:
             missing = sorted(required.difference(table.columns))
             count = row_count(table)
             null_count = (
-                table.filter(reduce(or_, (F.col(name).isNull() for name in required))).count()
+                table.filter(
+                    reduce(or_, (F.col(name).isNull() for name in required))
+                ).count()
                 if not missing
                 else -1
             )
             checks = [
                 check("row_count", "SUCCESS" if count > 0 else "FAILURE", "> 0", count),
-                check("required_columns", "SUCCESS" if not missing else "FAILURE", sorted(required), {"missing": missing}),
-                check("required_values_not_null", "SUCCESS" if null_count == 0 else "FAILURE", 0, null_count),
+                check(
+                    "required_columns",
+                    "SUCCESS" if not missing else "FAILURE",
+                    sorted(required),
+                    {"missing": missing},
+                ),
+                check(
+                    "required_values_not_null",
+                    "SUCCESS" if null_count == 0 else "FAILURE",
+                    0,
+                    null_count,
+                ),
             ]
         except Exception as exc:
-            checks = [check("table_read", "ERROR", "readable Bronze Iceberg table", str(exc))]
+            checks = [
+                check("table_read", "ERROR", "readable Bronze Iceberg table", str(exc))
+            ]
         datasets[f"bronze.{table_name}"] = dataset_result(checks)
     report = build_validation_report("DP1", datasets)
     if owns_spark:
         spark.stop()
     return report
+
 
 # DP3 validates complete, non-empty PostgreSQL tables with non-null entity keys and timestamps.
 def validate_dp3_postgres() -> dict[str, Any]:
@@ -118,26 +165,55 @@ def validate_dp3_postgres() -> dict[str, Any]:
                     columns = {row[0] for row in cur.fetchall()}
                     required = {name for name, _ in TABLE_SCHEMAS[table_name]}
                     missing = sorted(required.difference(columns))
-                    cur.execute(sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
-                        sql.Identifier(config.schema), sql.Identifier(table_name)
-                    ))
+                    cur.execute(
+                        sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
+                            sql.Identifier(config.schema), sql.Identifier(table_name)
+                        )
+                    )
                     rows = int(cur.fetchone()[0])
                     cur.execute(
-                        sql.SQL("SELECT COUNT(*) FROM {}.{} WHERE {} IS NULL OR {} IS NULL").format(
-                            sql.Identifier(config.schema), sql.Identifier(table_name),
+                        sql.SQL(
+                            "SELECT COUNT(*) FROM {}.{} WHERE {} IS NULL OR {} IS NULL"
+                        ).format(
+                            sql.Identifier(config.schema),
+                            sql.Identifier(table_name),
                             sql.Identifier(primary_keys[table_name]),
                             sql.Identifier(timestamp_columns[table_name]),
                         )
                     )
                     null_key_or_timestamp = int(cur.fetchone()[0])
                     checks = [
-                        check("row_count", "SUCCESS" if rows > 0 else "FAILURE", "> 0", rows),
-                        check("required_columns", "SUCCESS" if not missing else "FAILURE", sorted(required), {"missing": missing}),
-                        check("key_and_timestamp_not_null", "SUCCESS" if null_key_or_timestamp == 0 else "FAILURE", 0, null_key_or_timestamp),
+                        check(
+                            "row_count",
+                            "SUCCESS" if rows > 0 else "FAILURE",
+                            "> 0",
+                            rows,
+                        ),
+                        check(
+                            "required_columns",
+                            "SUCCESS" if not missing else "FAILURE",
+                            sorted(required),
+                            {"missing": missing},
+                        ),
+                        check(
+                            "key_and_timestamp_not_null",
+                            "SUCCESS" if null_key_or_timestamp == 0 else "FAILURE",
+                            0,
+                            null_key_or_timestamp,
+                        ),
                     ]
                 except Exception as exc:
-                    checks = [check("table_read", "ERROR", "readable PostgreSQL offline table", str(exc))]
-                datasets[f"postgres.feature_store.{table_name}"] = dataset_result(checks)
+                    checks = [
+                        check(
+                            "table_read",
+                            "ERROR",
+                            "readable PostgreSQL offline table",
+                            str(exc),
+                        )
+                    ]
+                datasets[f"postgres.feature_store.{table_name}"] = dataset_result(
+                    checks
+                )
     return build_validation_report("DP3", datasets)
 
 
@@ -195,7 +271,9 @@ def validate_feast_online_store() -> dict[str, Any]:
             for table_name, (entity_name, feature_name) in feature_refs.items():
                 try:
                     cur.execute(
-                        sql.SQL("SELECT {} FROM {}.{} ORDER BY feature_timestamp DESC LIMIT 1").format(
+                        sql.SQL(
+                            "SELECT {} FROM {}.{} ORDER BY feature_timestamp DESC LIMIT 1"
+                        ).format(
                             sql.Identifier(entity_name),
                             sql.Identifier(config.schema),
                             sql.Identifier(table_name),
@@ -217,7 +295,12 @@ def validate_feast_online_store() -> dict[str, Any]:
                     ]
                 except Exception as exc:
                     checks = [
-                        check("native_feast_lookup", "ERROR", "readable online feature", str(exc))
+                        check(
+                            "native_feast_lookup",
+                            "ERROR",
+                            "readable online feature",
+                            str(exc),
+                        )
                     ]
                 datasets[f"redis.{table_name}"] = dataset_result(checks)
     return build_validation_report("FEAST_ONLINE_STORE", datasets)
@@ -235,22 +318,49 @@ def read_redis_payload(client: Any, key: str) -> Any:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Validate local dataset contracts."
-    )
+    parser = argparse.ArgumentParser(description="Validate local dataset contracts.")
     parser.add_argument(
         "pipeline",
         choices=("dp1", "dp3-postgres", "streaming-redis", "feast-online"),
     )
+    parser.add_argument("--report-uri", default="")
+    parser.add_argument(
+        "--run-id",
+        default=os.getenv(
+            "AIRFLOW_CTX_DAG_RUN_ID", os.getenv("VALIDATION_RUN_ID", "manual")
+        ),
+    )
     args = parser.parse_args()
-    if args.pipeline == "dp1":
-        report = validate_dp1_bronze()
-    elif args.pipeline == "dp3-postgres":
-        report = validate_dp3_postgres()
-    elif args.pipeline == "streaming-redis":
-        report = validate_streaming_redis()
-    else:
-        report = validate_feast_online_store()
+    product_id = "DP1" if args.pipeline == "dp1" else "DP3"
+    try:
+        if args.pipeline == "dp1":
+            report = validate_dp1_bronze()
+        elif args.pipeline == "dp3-postgres":
+            report = validate_dp3_postgres()
+        elif args.pipeline == "streaming-redis":
+            report = validate_streaming_redis()
+        else:
+            report = validate_feast_online_store()
+    except Exception as exc:
+        report = build_validation_report(
+            product_id,
+            {
+                key: dataset_result(
+                    [check("validation_execution", "ERROR", "completed", str(exc))]
+                )
+                for key in EXPECTED_DATASET_KEYS[args.pipeline]
+            },
+        )
+    if args.report_uri:
+        write_validation_report(
+            validation_report(
+                product_id,
+                args.run_id,
+                report["datasets"],
+                report_uri=args.report_uri,
+            ),
+            args.report_uri,
+        )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["status"] == "SUCCESS" else 1
 

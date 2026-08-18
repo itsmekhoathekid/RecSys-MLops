@@ -20,6 +20,28 @@ DBT_IMAGE = os.getenv(
     "ANALYTICS_DBT_IMAGE",
     "registry.example.invalid/recsys/recsys-analytics-dbt:required",
 )
+DATA_INGESTION_IMAGE = os.getenv(
+    "DATA_INGESTION_IMAGE",
+    "registry.example.invalid/recsys/recsys-data-ingestion:required",
+)
+REPORT_URI = (
+    "s3://recsys-lakehouse/governance-validation/ANALYTICS/{{ ts_nodash }}/staging.json"
+)
+ANALYTICS_DATASET_KEYS = tuple(
+    f"analytics.staging.{table}"
+    for table in (
+        "clean_behavior_events",
+        "clean_impressions",
+        "clean_recommendation_requests",
+        "product_scd",
+        "users",
+        "products",
+        "orders",
+        "order_items",
+    )
+)
+
+
 def env_schedule(name: str, default: str | None):
     schedule = os.getenv(name, default or "")
     if schedule.lower() in {"", "none", "manual"}:
@@ -45,6 +67,8 @@ def analytics_task(
     image: str,
     command: list[str],
     arguments: list[str],
+    *,
+    trigger_rule: str = "all_success",
 ):
     return KubernetesPodOperator(
         task_id=task_id,
@@ -65,6 +89,7 @@ def analytics_task(
         on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
+        trigger_rule=trigger_rule,
     )
 
 
@@ -85,7 +110,13 @@ if DAG is not None:
             "sync_silver_catalog",
             SPARK_IMAGE,
             ["/opt/spark/bin/spark-submit"],
-            ["local:///opt/recsys/apps/analytics/src/sync_silver.py"],
+            [
+                "local:///opt/recsys/apps/analytics/src/sync_silver.py",
+                "--report-uri",
+                REPORT_URI,
+                "--run-id",
+                "{{ run_id }}",
+            ],
         )
         dbt_build = analytics_task(
             "build_gold_marts",
@@ -99,4 +130,27 @@ if DAG is not None:
                 "/opt/recsys/apps/analytics/profiles",
             ],
         )
-        sync_silver >> dbt_build
+        publish_datahub_validation = analytics_task(
+            "publish_datahub_validation",
+            DATA_INGESTION_IMAGE,
+            ["python", "-m", "metadata.publish_datahub_validation"],
+            [
+                "--product",
+                "ANALYTICS",
+                "--report-uri",
+                REPORT_URI,
+                *[
+                    value
+                    for key in ANALYTICS_DATASET_KEYS
+                    for value in ("--expected-dataset-key", key)
+                ],
+                "--gms-url",
+                os.getenv(
+                    "DATAHUB_GMS_URL",
+                    "http://datahub-datahub-gms.datahub.svc.cluster.local:8080",
+                ),
+                "--strict",
+            ],
+            trigger_rule="all_done",
+        )
+        sync_silver >> dbt_build >> publish_datahub_validation

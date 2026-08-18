@@ -164,7 +164,6 @@ def test_data_platform_airflow_dags_are_split_one_file_per_dag():
         "recsys_feast_materialize.py": "recsys_feast_materialize",
         "recsys_feature_drift_monitoring.py": ("recsys_feature_drift_monitoring"),
         "recsys_rag_item_index.py": "recsys_rag_item_index",
-        "recsys_rag_item_reconciliation.py": "recsys_rag_item_reconciliation",
     }
 
     assert not (dag_dir / "k8s_data_platform_dag.py").exists()
