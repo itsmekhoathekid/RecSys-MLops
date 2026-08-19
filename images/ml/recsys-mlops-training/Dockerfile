@@ -4,7 +4,7 @@ FROM ${RECSYS_BASE_IMAGE} AS deps
 WORKDIR /opt/recsys
 COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/
 COPY apps/data-platform/pyproject.toml /opt/recsys/apps/data-platform/pyproject.toml
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
 
 ENV UV_LINK_MODE=copy \
     UV_CONCURRENT_DOWNLOADS=8 \
@@ -72,7 +72,7 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:${PATH} \
-    PYTHONPATH=/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys
+    PYTHONPATH=/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/src:/opt/recsys/apps/data-platform/feature-store/runtime/src:/opt/recsys
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates wget \
@@ -87,6 +87,6 @@ COPY configs /opt/recsys/configs
 COPY apps/ml-system/src /opt/recsys/apps/ml-system/src
 COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
 COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
 
 CMD ["bash"]

@@ -17,8 +17,8 @@ FROM ${RECSYS_BASE_IMAGE} AS deps
 
 WORKDIR /opt/recsys
 COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock /opt/recsys/apps/data-platform/
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
-COPY packages/recsys-rag-runtime /opt/recsys/packages/recsys-rag-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
+COPY apps/data-platform/rag-runtime /opt/recsys/apps/data-platform/rag-runtime
 ENV UV_LINK_MODE=copy \
     UV_CONCURRENT_DOWNLOADS=8 \
     UV_CONCURRENT_BUILDS=8
@@ -71,7 +71,7 @@ LABEL org.opencontainers.image.recsys.embedding.model="${RAG_MODEL}" \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:${PATH} \
-    PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys/packages/recsys-rag-runtime/src:/opt/recsys \
+    PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/runtime/src:/opt/recsys/apps/data-platform/rag-runtime/src:/opt/recsys \
     TRANSFORMERS_OFFLINE=1 \
     HF_HUB_OFFLINE=1
 
@@ -89,8 +89,8 @@ COPY --from=rag-model /opt/recsys/models /opt/recsys/models
 COPY configs /opt/recsys/configs
 COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
 COPY ops/migrations/datahub-dataset-lineage-cutover /opt/recsys/ops/migrations/datahub-dataset-lineage-cutover
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
-COPY packages/recsys-rag-runtime /opt/recsys/packages/recsys-rag-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
+COPY apps/data-platform/rag-runtime /opt/recsys/apps/data-platform/rag-runtime
 COPY apps/data-platform/feature-store/rag_feature_repo /opt/recsys/apps/data-platform/feature-store/rag_feature_repo
 COPY apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
 

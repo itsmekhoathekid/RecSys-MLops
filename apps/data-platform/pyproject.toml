@@ -39,8 +39,8 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-recsys-feature-store-runtime = { path = "../../packages/recsys-feature-store-runtime", editable = true }
-recsys-rag-runtime = { path = "../../packages/recsys-rag-runtime", editable = true }
+recsys-feature-store-runtime = { path = "feature-store/runtime", editable = true }
+recsys-rag-runtime = { path = "rag-runtime", editable = true }
 
 [dependency-groups]
 dev = [

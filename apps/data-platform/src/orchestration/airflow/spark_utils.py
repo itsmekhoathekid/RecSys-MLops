@@ -38,7 +38,7 @@ DATAFLOW_NODE_SELECTOR = os.getenv(
 COMMON_ENV = {
     # KPO env vars override the image-level PYTHONPATH, so every source-backed
     # runtime imported by data-platform tasks must remain explicit here.
-    "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys/packages/recsys-rag-runtime/src:/opt/recsys",
+    "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/runtime/src:/opt/recsys/apps/data-platform/rag-runtime/src:/opt/recsys",
 }
 SPARK_DRIVER_EXECUTOR_ENV = (
     "PYTHONPATH",

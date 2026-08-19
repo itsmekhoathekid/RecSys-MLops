@@ -4,20 +4,20 @@ ci_online_feature_api() {
   tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py)
   append_integration_dir online_feature_api
   cov_paths=(recsys_online_feature_api recsys_serving_common)
-  run_configured_component_tests "${component}" "apps/api-serving/online-feature-api/src:apps/api-serving/inference-api/src:apps/api-serving/shared/src:packages/recsys-feature-store-runtime/src"
+  run_configured_component_tests "${component}" "apps/api-serving/online-feature-api/src:apps/api-serving/inference-api/src:apps/api-serving/shared/src:apps/data-platform/feature-store/runtime/src"
 }
 
 ci_inference_api() {
   tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)
   append_integration_dir inference_api
   cov_paths=(recsys_inference_api recsys_serving_common)
-  run_configured_component_tests "${component}" "apps/api-serving/inference-api/src:apps/api-serving/online-feature-api/src:apps/api-serving/shared/src:packages/recsys-feature-store-runtime/src"
+  run_configured_component_tests "${component}" "apps/api-serving/inference-api/src:apps/api-serving/online-feature-api/src:apps/api-serving/shared/src:apps/data-platform/feature-store/runtime/src"
 }
 
 ci_rag_api() {
   tests=(tests/unit/api_serving/rag_api)
   cov_paths=(recsys_rag_api)
-  run_configured_component_tests "${component}" "apps/api-serving/rag-api/src:apps/api-serving/shared/src:packages/recsys-rag-runtime/src"
+  run_configured_component_tests "${component}" "apps/api-serving/rag-api/src:apps/api-serving/shared/src:apps/data-platform/rag-runtime/src"
   "${ci_environment}/bin/interrogate" \
     --fail-under 90 \
     --ignore-init-method \

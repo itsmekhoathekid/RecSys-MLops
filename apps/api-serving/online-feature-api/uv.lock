@@ -1184,7 +1184,7 @@ wheels = [
 [[package]]
 name = "recsys-feature-store-runtime"
 version = "0.1.0"
-source = { editable = "../../../packages/recsys-feature-store-runtime" }
+source = { editable = "../../data-platform/feature-store/runtime" }
 dependencies = [
     { name = "feast", extra = ["redis"] },
     { name = "psycopg2-binary" },
@@ -1232,7 +1232,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4,<4" },
     { name = "psycopg-pool", specifier = ">=3.3.1,<4" },
     { name = "psycopg2-binary", specifier = ">=2.9.10,<3" },
-    { name = "recsys-feature-store-runtime", editable = "../../../packages/recsys-feature-store-runtime" },
+    { name = "recsys-feature-store-runtime", editable = "../../data-platform/feature-store/runtime" },
     { name = "recsys-serving-common", editable = "../shared" },
     { name = "redis", specifier = ">=5,<8" },
     { name = "setuptools", specifier = "==83.0.0" },

@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-recsys-feature-store-runtime = { path = "../../../packages/recsys-feature-store-runtime", editable = true }
+recsys-feature-store-runtime = { path = "../../data-platform/feature-store/runtime", editable = true }
 recsys-serving-common = { path = "../shared", editable = true }
 
 [dependency-groups]

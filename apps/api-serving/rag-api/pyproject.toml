@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-recsys-rag-runtime = { path = "../../../packages/recsys-rag-runtime", editable = true }
+recsys-rag-runtime = { path = "../../data-platform/rag-runtime", editable = true }
 recsys-serving-common = { path = "../shared", editable = true }
 
 [dependency-groups]

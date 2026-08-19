@@ -84,7 +84,7 @@ ci_stream_online() {
   tests=(tests/unit/data_platform/test_data_platform.py tests/unit/data_platform/test_flink_event_time.py tests/contract/test_stream_online_serving_contract.py tests/contract/test_docker_dataflow_contracts.py)
   append_integration_dir stream_online
   cov_paths=(features.flink.features.candidate_pool features.flink.features.item features.flink.features.user_aggregate features.flink.features.user_sequence features.flink.time_utils feature_store.online_writer)
-  run_configured_component_tests "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/shared/src:apps/api-serving/online-feature-api/src:packages/recsys-feature-store-runtime/src"
+  run_configured_component_tests "${component}" "apps/data-platform/src:apps/data-platform/data-generator/src:apps/api-serving/shared/src:apps/api-serving/online-feature-api/src:apps/data-platform/feature-store/runtime/src"
 }
 
 ci_rag_index() {
@@ -97,7 +97,7 @@ ci_rag_index() {
     rag_data.semantic_chunker
     rag_data.index_lifecycle
   )
-  run_configured_component_tests "${component}" "apps/data-platform/src:apps/data-platform/feature-store/rag_feature_repo:packages/recsys-rag-runtime/src"
+  run_configured_component_tests "${component}" "apps/data-platform/src:apps/data-platform/feature-store/rag_feature_repo:apps/data-platform/rag-runtime/src"
 
   PYTHONPATH="apps/data-platform/src" "${ci_python}" -c \
     'from metadata.governance_catalog import catalog_products, validate_catalog; print(validate_catalog(catalog_products()))'
@@ -111,7 +111,7 @@ ci_rag_index() {
     --ignore-semiprivate \
     --ignore-property-decorators \
     apps/data-platform/src/rag_data \
-    packages/recsys-rag-runtime/src
+    apps/data-platform/rag-runtime/src
 
   local rag_registry="${CI_TMP_ROOT}/rag-feast-registry.db"
   FEAST_SQL_REGISTRY_URL="sqlite:///${rag_registry}" \
@@ -232,7 +232,7 @@ ci_rag_index() {
     export RAG_TEST_MILVUS_URI="http://${rag_milvus_address}"
     run_plain_pytest \
       "rag-index-integration" \
-      "apps/data-platform/src:apps/data-platform/feature-store/rag_feature_repo:packages/recsys-rag-runtime/src" \
+      "apps/data-platform/src:apps/data-platform/feature-store/rag_feature_repo:apps/data-platform/rag-runtime/src" \
       tests/integration/rag_index
   ) || integration_status=$?
   [[ "${integration_status}" == "0" ]] || return "${integration_status}"

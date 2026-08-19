@@ -106,7 +106,7 @@
     },
     "rag-shared-runtime": {
       "prefixes": [
-        "packages/recsys-rag-runtime/",
+        "apps/data-platform/rag-runtime/",
         "configs/data-platform/rag/",
         "scripts/models/"
       ]
@@ -157,7 +157,7 @@
           "spark-utils"
         ],
         "prefixes": [
-          "packages/recsys-feature-store-runtime/",
+          "apps/data-platform/feature-store/runtime/",
           "apps/data-platform/feature-store/",
           "apps/data-platform/src/feature_store/",
           "tests/unit/feature_store/"
@@ -189,7 +189,7 @@
           "jenkins-shared-runtime"
         ],
         "prefixes": [
-          "packages/recsys-feature-store-runtime/",
+          "apps/data-platform/feature-store/runtime/",
           "apps/ml-system/",
           "configs/ml-system/",
           "infra/helm/mlflow-stack/",
@@ -452,7 +452,7 @@
         "prefixes": [
           "apps/api-serving/shared/",
           "apps/api-serving/online-feature-api/",
-          "packages/recsys-feature-store-runtime/",
+          "apps/data-platform/feature-store/runtime/",
           "infra/helm/recsys-online-feature-api/",
           "tests/unit/api_serving/"
         ],

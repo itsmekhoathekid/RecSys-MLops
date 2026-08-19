@@ -235,8 +235,23 @@ def test_rag_change_detection_and_release_dependency_order():
     assert api.component_names == ("rag_api",)
     assert api.release_plan["buildImages"] == ["recsys-rag-api"]
 
-    shared = selected(["packages/recsys-rag-runtime/src/recsys_rag_runtime/embedding.py"])
+    shared = selected(
+        ["apps/data-platform/rag-runtime/src/recsys_rag_runtime/embedding.py"]
+    )
     assert shared == {"rag_index", "rag_api"}
+
+    feature_runtime = selected(
+        [
+            "apps/data-platform/feature-store/runtime/src/"
+            "recsys_feature_store_runtime/feast_registry.py"
+        ]
+    )
+    assert feature_runtime == {
+        "dp3",
+        "materialize",
+        "training",
+        "online_feature_api",
+    }
 
     plan = create_release_plan(["rag_index", "rag_api"], commit="abc123")
     units = plan["deployUnits"]

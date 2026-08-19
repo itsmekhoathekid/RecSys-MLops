@@ -311,7 +311,7 @@ def test_feature_store_image_matches_feast_sqlalchemy_registry_driver():
     dockerfile = (ROOT / "images/data/recsys-feature-store/Dockerfile").read_text()
     registry = (
         ROOT
-        / "packages/recsys-feature-store-runtime/src/recsys_feature_store_runtime/sql_registry_state.py"
+        / "apps/data-platform/feature-store/runtime/src/recsys_feature_store_runtime/sql_registry_state.py"
     ).read_text()
     serving_project = (
         ROOT / "apps/api-serving/online-feature-api/pyproject.toml"
@@ -330,7 +330,7 @@ def test_feature_store_chart_bootstraps_sql_registry_schema():
 
 
 def test_runtime_images_expose_the_src_layout_feature_store_package():
-    package_src = "/opt/recsys/packages/recsys-feature-store-runtime/src"
+    package_src = "/opt/recsys/apps/data-platform/feature-store/runtime/src"
     dockerfiles = (
         "images/data/recsys-data-ingestion/Dockerfile",
         "images/data/recsys-feature-store/Dockerfile",
@@ -344,6 +344,25 @@ def test_runtime_images_expose_the_src_layout_feature_store_package():
         "infra/helm/recsys-data-config/templates/configmap.yaml",
         "apps/data-platform/src/orchestration/airflow/spark_utils.py",
         "apps/data-platform/src/orchestration/airflow/dags/recsys_dp1_raw_to_bronze.py",
+    ):
+        assert package_src in (ROOT / path).read_text(), path
+
+    runtime_root = "/opt/recsys/apps/data-platform/feature-store/runtime"
+    assert runtime_root in (
+        ROOT / "images/serving/recsys-online-feature-api/Dockerfile"
+    ).read_text()
+
+
+def test_runtime_images_expose_the_src_layout_rag_package():
+    package_src = "/opt/recsys/apps/data-platform/rag-runtime"
+    for path in (
+        "images/data/recsys-data-ingestion/Dockerfile",
+        "images/serving/recsys-rag-api/Dockerfile",
+    ):
+        assert package_src in (ROOT / path).read_text(), path
+    for path in (
+        "infra/helm/recsys-data-config/templates/configmap.yaml",
+        "apps/data-platform/src/orchestration/airflow/spark_utils.py",
     ):
         assert package_src in (ROOT / path).read_text(), path
 

@@ -1353,7 +1353,7 @@ requires-dist = [
     { name = "psycopg2-binary", specifier = ">=2.9.10,<3" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "pymilvus", specifier = "==2.6.12" },
-    { name = "recsys-rag-runtime", editable = "../../../packages/recsys-rag-runtime" },
+    { name = "recsys-rag-runtime", editable = "../../data-platform/rag-runtime" },
     { name = "recsys-serving-common", editable = "../shared" },
     { name = "setuptools", specifier = "==80.9.0" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
@@ -1370,7 +1370,7 @@ dev = [
 [[package]]
 name = "recsys-rag-runtime"
 version = "0.1.0"
-source = { editable = "../../../packages/recsys-rag-runtime" }
+source = { editable = "../../data-platform/rag-runtime" }
 dependencies = [
     { name = "numpy" },
     { name = "onnxruntime" },

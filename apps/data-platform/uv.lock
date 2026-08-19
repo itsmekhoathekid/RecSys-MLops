@@ -4577,8 +4577,8 @@ requires-dist = [
     { name = "pymilvus", specifier = "==2.6.12" },
     { name = "pyspark", specifier = "==3.5.8" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "recsys-feature-store-runtime", editable = "../../packages/recsys-feature-store-runtime" },
-    { name = "recsys-rag-runtime", editable = "../../packages/recsys-rag-runtime" },
+    { name = "recsys-feature-store-runtime", editable = "feature-store/runtime" },
+    { name = "recsys-rag-runtime", editable = "rag-runtime" },
     { name = "redis", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "s3fs", specifier = "==2024.10.0" },
@@ -4605,7 +4605,7 @@ dev = [
 [[package]]
 name = "recsys-feature-store-runtime"
 version = "0.1.0"
-source = { editable = "../../packages/recsys-feature-store-runtime" }
+source = { editable = "feature-store/runtime" }
 dependencies = [
     { name = "feast", extra = ["redis"] },
     { name = "psycopg2-binary" },
@@ -4622,7 +4622,7 @@ requires-dist = [
 [[package]]
 name = "recsys-rag-runtime"
 version = "0.1.0"
-source = { editable = "../../packages/recsys-rag-runtime" }
+source = { editable = "rag-runtime" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },

@@ -39,7 +39,7 @@ dependencies = [
 
 [tool.uv.sources]
 recsys-data-platform = { path = "../data-platform", editable = true }
-recsys-feature-store-runtime = { path = "../../packages/recsys-feature-store-runtime", editable = true }
+recsys-feature-store-runtime = { path = "../data-platform/feature-store/runtime", editable = true }
 
 [dependency-groups]
 dev = [

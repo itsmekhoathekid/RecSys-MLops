@@ -34,7 +34,7 @@ RUN apt-get update \
 
 COPY apps/ml-system/pyproject.toml apps/ml-system/uv.lock /opt/recsys/apps/ml-system/
 COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock /opt/recsys/apps/data-platform/
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
 
 # Spark owns PySpark and its JARs. Distributed Ray training remains in the
 # dedicated training image. This image installs the locked ML/data runtime
@@ -111,7 +111,7 @@ COPY apps/data-platform/src /opt/recsys/apps/data-platform/src
 COPY apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
 COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
 COPY apps/ml-system/src /opt/recsys/apps/ml-system/src
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
 COPY apps/analytics/src /opt/recsys/apps/analytics/src
 
 ENV PATH=/opt/venv/bin:${PATH} \
@@ -119,4 +119,4 @@ ENV PATH=/opt/venv/bin:${PATH} \
     PYSPARK_DRIVER_PYTHON=/opt/venv/bin/python \
     AWS_REGION=us-east-1 \
     SPARK_EXTRA_CLASSPATH=/opt/spark/jars/* \
-    PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/analytics/src:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys
+    PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/pyspark.zip:/opt/spark/python/lib/py4j-0.10.9.7-src.zip:/opt/recsys/apps/analytics/src:/opt/recsys/apps/ml-system/src:/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/runtime/src:/opt/recsys

@@ -30,7 +30,7 @@ DP1_DATASET_KEYS = tuple(
 
 
 DP1_INGEST_COMMAND = """
-PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys \
+PYTHONPATH=/opt/recsys/apps/data-platform/data-generator/src:/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/runtime/src:/opt/recsys \
 python3 apps/data-platform/data-generator/src/cli.py generate \
   --config $DATA_GENERATOR_CONFIG
 

@@ -3,7 +3,7 @@ FROM ${RECSYS_BASE_IMAGE} AS deps
 
 WORKDIR /opt/recsys
 COPY apps/data-platform/pyproject.toml apps/data-platform/uv.lock /opt/recsys/apps/data-platform/
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
 ENV UV_LINK_MODE=copy \
     UV_CONCURRENT_DOWNLOADS=8 \
     UV_CONCURRENT_BUILDS=8
@@ -36,7 +36,7 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:${PATH} \
-    PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/packages/recsys-feature-store-runtime/src:/opt/recsys
+    PYTHONPATH=/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/runtime/src:/opt/recsys
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl jq \
@@ -51,6 +51,6 @@ COPY apps/data-platform/src/mlops /opt/recsys/apps/data-platform/src/mlops
 COPY apps/data-platform/src/monitoring /opt/recsys/apps/data-platform/src/monitoring
 COPY apps/data-platform/src/validate/offline_feature_drift.py /opt/recsys/apps/data-platform/src/validate/offline_feature_drift.py
 COPY apps/data-platform/src/validate/__init__.py /opt/recsys/apps/data-platform/src/validate/__init__.py
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
 
 CMD ["python", "-m", "mlops.trigger_kubeflow_retrain", "--help"]

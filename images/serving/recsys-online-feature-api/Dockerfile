@@ -11,7 +11,7 @@ WORKDIR /opt/recsys/apps/api-serving/online-feature-api
 RUN pip install --no-cache-dir uv==0.12.1
 COPY apps/api-serving/online-feature-api ./
 COPY apps/api-serving/shared /opt/recsys/apps/api-serving/shared
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
 RUN uv sync --frozen --no-dev --no-cache
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
@@ -27,7 +27,7 @@ RUN groupadd --gid 10001 recsys \
 COPY --from=deps /opt/venv /opt/venv
 COPY apps/api-serving/online-feature-api /opt/recsys/apps/api-serving/online-feature-api
 COPY apps/api-serving/shared /opt/recsys/apps/api-serving/shared
-COPY packages/recsys-feature-store-runtime /opt/recsys/packages/recsys-feature-store-runtime
+COPY apps/data-platform/feature-store/runtime /opt/recsys/apps/data-platform/feature-store/runtime
 COPY apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
 RUN pip check \
     && pip uninstall -y wheel setuptools jaraco.context \

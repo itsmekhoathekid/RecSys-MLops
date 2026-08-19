@@ -22,7 +22,7 @@ WORKDIR /opt/recsys/apps/api-serving/rag-api
 RUN pip install --no-cache-dir uv==0.12.1
 COPY apps/api-serving/rag-api ./
 COPY apps/api-serving/shared /opt/recsys/apps/api-serving/shared
-COPY packages/recsys-rag-runtime /opt/recsys/packages/recsys-rag-runtime
+COPY apps/data-platform/rag-runtime /opt/recsys/apps/data-platform/rag-runtime
 RUN uv sync --frozen --no-dev --no-cache
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
@@ -45,7 +45,7 @@ COPY --from=deps /opt/venv /opt/venv
 COPY --from=model /opt/recsys/models /opt/recsys/models
 COPY apps/api-serving/rag-api /opt/recsys/apps/api-serving/rag-api
 COPY apps/api-serving/shared /opt/recsys/apps/api-serving/shared
-COPY packages/recsys-rag-runtime /opt/recsys/packages/recsys-rag-runtime
+COPY apps/data-platform/rag-runtime /opt/recsys/apps/data-platform/rag-runtime
 COPY apps/data-platform/feature-store/rag_feature_repo /opt/recsys/apps/data-platform/feature-store/rag_feature_repo
 RUN pip check \
     && pip uninstall -y wheel setuptools \
