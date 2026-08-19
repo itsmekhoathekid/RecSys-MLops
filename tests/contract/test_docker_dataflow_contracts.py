@@ -367,6 +367,15 @@ def test_runtime_images_expose_the_src_layout_rag_package():
         assert package_src in (ROOT / path).read_text(), path
 
 
+def test_drift_retrain_image_matches_the_data_platform_setuptools_pin():
+    data_project = (ROOT / "apps/data-platform/pyproject.toml").read_text()
+    dockerfile = (ROOT / "images/data/recsys-drift-retrain/Dockerfile").read_text()
+
+    assert '"setuptools==80.9.0"' in data_project
+    assert "setuptools==80.9.0" in dockerfile
+    assert "setuptools==81.0.0" not in dockerfile
+
+
 def test_stream_verifier_is_read_only_and_checks_deployed_services():
     verifier = (ROOT / "jenkins/scripts/test/data_platform.sh").read_text()
     assert "test_debezium_connector_tasks" in verifier
