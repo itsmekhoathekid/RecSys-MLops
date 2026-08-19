@@ -15,6 +15,8 @@ DATABASE_NAME = os.getenv("SUPERSET_ANALYTICS_DATABASE_NAME", "RecSysAnalytics")
 DASHBOARD_TITLE = "RecSys Business Pulse"
 DASHBOARD_SLUG = "recsys-business-pulse"
 NAMESPACE = uuid.UUID("b22a4eb0-a149-4cd2-a87f-77912461c7b0")
+TRANSIENT_API_STATUSES = frozenset({500, 502, 503, 504})
+TRANSIENT_API_RETRY_SECONDS = 180
 
 
 FUNNEL_DAILY_SQL = """
@@ -419,17 +421,43 @@ class SupersetClient:
         if csrf:
             self.headers["X-CSRFToken"] = csrf
 
-    def request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
-        response = self.session.request(
-            method,
-            f"{API_ROOT}{path}",
-            headers=self.headers,
-            timeout=120,
-            **kwargs,
-        )
-        if not response.ok:
-            raise RuntimeError(f"Superset API {method} {path} failed ({response.status_code}): {response.text[:1000]}")
-        return response
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        retry_transient: bool = False,
+        **kwargs: Any,
+    ) -> requests.Response:
+        deadline = time.monotonic() + TRANSIENT_API_RETRY_SECONDS
+        while True:
+            try:
+                response = self.session.request(
+                    method,
+                    f"{API_ROOT}{path}",
+                    headers=self.headers,
+                    timeout=120,
+                    **kwargs,
+                )
+            except requests.RequestException as exc:
+                if retry_transient and time.monotonic() < deadline:
+                    time.sleep(5)
+                    continue
+                raise RuntimeError(f"Superset API {method} {path} failed: {exc}") from exc
+
+            if response.ok:
+                return response
+            if (
+                retry_transient
+                and response.status_code in TRANSIENT_API_STATUSES
+                and time.monotonic() < deadline
+            ):
+                time.sleep(5)
+                continue
+            raise RuntimeError(
+                f"Superset API {method} {path} failed "
+                f"({response.status_code}): {response.text[:1000]}"
+            )
 
     def get(self, path: str) -> dict[str, Any]:
         return self.request("GET", path).json()
@@ -490,7 +518,11 @@ def upsert_datasets(client: SupersetClient, database_id: int) -> dict[str, int]:
             client.put(f"/api/v1/dataset/{dataset_id}", update_payload)
         else:
             dataset_id = int(client.post("/api/v1/dataset/", payload)["id"])
-        client.request("PUT", f"/api/v1/dataset/{dataset_id}/refresh")
+        client.request(
+            "PUT",
+            f"/api/v1/dataset/{dataset_id}/refresh",
+            retry_transient=True,
+        )
         result[spec.name] = dataset_id
     return result
 
