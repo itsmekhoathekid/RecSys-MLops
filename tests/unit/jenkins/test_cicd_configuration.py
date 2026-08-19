@@ -156,6 +156,18 @@ def test_stream_online_runs_only_the_cross_boundary_contract():
     assert "tests/unit/api_serving/test_serving.py" not in stream_online
 
 
+def test_feature_and_inference_ci_do_not_collect_rag_api_tests():
+    serving_ci = (ROOT / "jenkins/scripts/ci/serving.sh").read_text(encoding="utf-8")
+
+    online = serving_ci.split("ci_online_feature_api()", 1)[1].split("\n}", 1)[0]
+    inference = serving_ci.split("ci_inference_api()", 1)[1].split("\n}", 1)[0]
+    for component in (online, inference):
+        assert "tests/unit/api_serving/test_serving.py" in component
+        assert "tests/unit/api_serving/test_split_services.py" in component
+        assert "tests/unit/api_serving/test_validation_verification.py" in component
+        assert "tests/unit/api_serving tests/" not in component
+
+
 def test_rollout_deploy_uses_release_plan_namespace():
     entrypoint = (
         ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh"

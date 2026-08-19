@@ -1,14 +1,25 @@
 #!/usr/bin/env bash
 
 ci_online_feature_api() {
-  tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py)
+  tests=(
+    tests/unit/api_serving/test_serving.py
+    tests/unit/api_serving/test_split_services.py
+    tests/unit/api_serving/test_validation_verification.py
+    tests/contract/test_serving_contracts.py
+  )
   append_integration_dir online_feature_api
   cov_paths=(recsys_online_feature_api recsys_serving_common)
   run_configured_component_tests "${component}" "apps/api-serving/online-feature-api/src:apps/api-serving/inference-api/src:apps/api-serving/shared/src:apps/data-platform/feature-store/runtime/src"
 }
 
 ci_inference_api() {
-  tests=(tests/unit/api_serving tests/contract/test_serving_contracts.py tests/contract/test_gateway_contracts.py)
+  tests=(
+    tests/unit/api_serving/test_serving.py
+    tests/unit/api_serving/test_split_services.py
+    tests/unit/api_serving/test_validation_verification.py
+    tests/contract/test_serving_contracts.py
+    tests/contract/test_gateway_contracts.py
+  )
   append_integration_dir inference_api
   cov_paths=(recsys_inference_api recsys_serving_common)
   run_configured_component_tests "${component}" "apps/api-serving/inference-api/src:apps/api-serving/online-feature-api/src:apps/api-serving/shared/src:apps/data-platform/feature-store/runtime/src"
