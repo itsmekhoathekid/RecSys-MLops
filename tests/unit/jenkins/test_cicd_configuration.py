@@ -238,6 +238,10 @@ def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
     assert 'rollout status deployment/recsys-rag-api' in tunnel
     assert "for _ in $(seq 1 30)" in tunnel
     assert "recsys.ai/pool: cpu-services" in gcp_values
+    assert "maxSurge: 0" in gcp_values
+    assert "maxUnavailable: 1" in gcp_values
+    assert "cpu: 300m" in gcp_values
+    assert "memory: 768Mi" in gcp_values
 
 
 def test_rag_transient_milvus_jobs_use_released_ml_capacity():
