@@ -86,13 +86,72 @@ repository no longer manages DataHub jobs.
 
 ## UI evidence
 
-For each of DP1, DP2, and DP3, the evidence capture must open a representative
-dataset and show its upstream/downstream lineage together with the Data Contract
-and latest CUSTOM assertion result:
+The following captures are from the deployed DataHub UI. Each product is backed
+by a lineage overview plus dataset-level Data Contract and CUSTOM assertion
+evidence.
 
-- `docs/pngs/dp1_datahub_contract.png`
-- `docs/pngs/dp2_datahub_contract.png`
-- `docs/pngs/dp3_datahub_contract.png`
+### DP1 — Batch Bronze Lakehouse
+
+![DP1 DataHub lineage](../../pngs/dp1_datahub_lineage.png)
+
+**Figure: DP1 static dataset lineage.** The Data Product contains all 10 Bronze
+datasets as governed roots. The graph also shows the exact downstream DP2 and
+Analytics consumers without introducing Airflow job or process-instance nodes.
+
+![DP1 DataHub Data Contract](../../pngs/dp1_datahub_contract.png)
+
+**Figure: DP1 Data Contract.** The representative
+`recsys.lakehouse.bronze_behavior_events` dataset is meeting its contract, and
+the contract contains the aggregate local data-quality assertion.
+
+![DP1 DataHub validation result](../../pngs/dp1_datahub_validation.png)
+
+**Figure: DP1 validation result.** The CUSTOM assertion is supplied by RecSys
+Local Validation and its latest evaluation is `Passing`; the activity panel
+records the completed evaluation time instead of synthesizing a Jenkins result.
+
+### DP2 — Curated Silver Lakehouse
+
+![DP2 DataHub lineage](../../pngs/dp2_datahub_lineage.png)
+
+**Figure: DP2 static dataset lineage.** The graph shows all eight Silver assets,
+their exact Bronze inputs, and the governed downstream Analytics and DP3
+consumers. This is table-level lineage derived from the transformation mapping.
+
+![DP2 DataHub Data Contract](../../pngs/dp2_datahub_contract.png)
+
+**Figure: DP2 Data Contract.** The representative
+`recsys.lakehouse.silver_clean_behavior_events` dataset is meeting its contract
+because its attached dataset-quality assertion is passing.
+
+![DP2 DataHub validation result](../../pngs/dp2_datahub_validation.png)
+
+**Figure: DP2 validation result.** The assertion detail identifies the RecSys
+dataset contract, the external validation provider, and the latest `Passed`
+activity for the curated Silver dataset.
+
+### DP3 — Batch Feature Store
+
+![DP3 DataHub lineage](../../pngs/dp3_datahub_lineage.png)
+
+**Figure: DP3 static dataset lineage.** The graph follows Silver inputs through
+Iceberg feature tables and PostgreSQL exports to Redis materializations. The
+Redis warning badges preserve the latest Feast online-store validation state;
+they are not hidden to make the evidence appear uniformly green. The visible
+`STREAMING_FEATURES` heading is a historical UI grouping, while the replacement
+catalog assigns the Redis datasets to DP3.
+
+![DP3 DataHub Data Contract](../../pngs/dp3_datahub_contract.png)
+
+**Figure: DP3 Data Contract.** The representative Iceberg
+`recsys_features.feature_store.item_features` dataset is meeting its contract
+with exactly one aggregate local data-quality assertion.
+
+![DP3 DataHub validation result](../../pngs/dp3_datahub_validation.png)
+
+**Figure: DP3 validation result.** The CUSTOM assertion detail shows a completed
+`Passing` evaluation for the offline `item_features` dataset, independently of
+the separately reported Redis online-store checks.
 
 RAG reconciliation is no longer a separate DAG. Operators trigger
 `recsys_rag_item_index` with `params.mode=reconcile`, so incremental and rebuild

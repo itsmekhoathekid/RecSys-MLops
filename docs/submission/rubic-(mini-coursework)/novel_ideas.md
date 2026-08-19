@@ -237,11 +237,37 @@ impressions, clicks, carts, purchases, CTR, and CVR.
 > only monitoring. Together, Figures 3 and 4 cover all twelve charts backed by the three read-only
 > Superset semantic datasets.
 
+### DataHub governance proof for Analytics
+
+![Analytics staging dataset lineage in DataHub](../../pngs/analytics_datahub_staging_lineage.png)
+
+**Figure 5 — Analytics staging lineage.** The **Analytics Staging** Data Product contains all eight
+governed staging datasets. The graph records the six Silver-to-staging mappings together with Bronze
+`orders` and `order_items` feeding their matching staging tables. These are static dataset edges, so
+the governance view documents the cross-catalog copy without adding Airflow job or runtime nodes.
+
+![Analytics staging validation history in DataHub](../../pngs/analytics_datahub_validation.png)
+
+**Figure 6 — Analytics validation result.** The representative
+`analytics.staging.clean_behavior_events` CUSTOM assertion is evaluated by **RecSys Local Validation**.
+The green timeline and recent **Passed** activities prove that completed pipeline checks are being
+reported to DataHub, rather than only registering an assertion definition.
+
+![Analytics staging Data Contract in DataHub](../../pngs/analytics_datahub_contract.png)
+
+**Figure 7 — Analytics Data Contract.** The same staging dataset is shown as **meeting its contract**,
+with its aggregate data-quality assertion passing. Together with Figures 5 and 6, this provides UI
+evidence for all three governance requirements: dataset lineage, validation results, and Data Contract
+status.
+
 ### Note (for image)
 
 - Open Superset with `kubectl port-forward -n analytics svc/recsys-analytics-superset 8088:8088`, then browse to `http://localhost:8088/superset/dashboard/recsys-business-pulse/`.
 - Figures 3 and 4 are two viewport captures of the same published **RecSys Business Pulse** dashboard:
   the first records KPIs and trends; the second records category, brand, and product-level analysis.
+- Figures 5–7 are DataHub UI captures of the deployed Analytics catalog. Figure 5 proves the complete
+  eight-table staging lineage; Figures 6 and 7 use `analytics.staging.clean_behavior_events` as the
+  representative dataset because every governed dataset follows the same one-assertion contract model.
 - The production proof has three semantic datasets and twelve charts. Every chart reads only from tested Gold marts through the read-only `superset` Trino user.
 - `mart_ab_experiment_daily` can legitimately contain zero rows until real recommendation requests include both `experiment_id` and `variant`; this does not indicate an analytics pipeline failure.
 - Analytics delivery is part of the main path-based pipeline, not a duplicated Jenkinsfile. Changes
