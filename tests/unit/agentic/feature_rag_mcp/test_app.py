@@ -25,6 +25,7 @@ def settings(token: str = "secret") -> McpSettings:
         rag_api_url="http://rag",
         auth_token=token,
         allowed_origins=("https://kagent.example",),
+        allowed_hosts=("127.0.0.1:*", "recsys-feature-rag-mcp.kagent.svc.cluster.local:8080"),
         image_reference="registry/recsys-feature-rag-mcp@sha256:abc",
     )
 
@@ -133,3 +134,29 @@ def test_streamable_http_initialize_list_and_all_tool_calls():
         ).json()
         assert invalid["result"]["isError"] is True
         assert "validation" in invalid["result"]["content"][0]["text"].lower()
+
+
+def test_streamable_http_allows_the_cluster_service_host():
+    dependency = Client()
+    headers = {
+        "Host": "recsys-feature-rag-mcp.kagent.svc.cluster.local:8080",
+        "Authorization": "Bearer secret",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+    with TestClient(create_app(settings(), dependency, dependency)) as client:
+        response = client.post(
+            "/mcp",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "cluster-contract-test", "version": "1"},
+                },
+            },
+        )
+        assert response.status_code == 200

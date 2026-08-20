@@ -16,6 +16,9 @@ spec:
       {{- .Values.agent.systemMessage | nindent 6 }}
     deployment:
       replicas: {{ .Values.agent.replicas }}
+      {{- with .Values.agent.imageRegistry }}
+      imageRegistry: {{ . | quote }}
+      {{- end }}
       labels:
         recsys.ai/autoscale-target: {{ .Values.agent.name }}
       {{- with .Values.agent.nodeSelector }}

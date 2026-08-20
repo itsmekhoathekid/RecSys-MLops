@@ -14,6 +14,7 @@ class McpSettings:
     rag_api_url: str
     auth_token: str
     allowed_origins: tuple[str, ...]
+    allowed_hosts: tuple[str, ...]
     online_feature_timeout_seconds: float = 2.0
     rag_timeout_seconds: float = 5.0
     image_reference: str = "unknown"
@@ -30,6 +31,14 @@ class McpSettings:
             ).split(",")
             if origin.strip()
         )
+        hosts = tuple(
+            host.strip()
+            for host in os.getenv(
+                "MCP_ALLOWED_HOSTS",
+                "localhost:*,127.0.0.1:*,[::1]:*",
+            ).split(",")
+            if host.strip()
+        )
         return cls(
             online_feature_api_url=os.getenv(
                 "ONLINE_FEATURE_API_URL",
@@ -41,6 +50,7 @@ class McpSettings:
             ).rstrip("/"),
             auth_token=os.getenv("MCP_AUTH_TOKEN", ""),
             allowed_origins=origins,
+            allowed_hosts=hosts,
             online_feature_timeout_seconds=float(
                 os.getenv("ONLINE_FEATURE_TIMEOUT_SECONDS", "2")
             ),

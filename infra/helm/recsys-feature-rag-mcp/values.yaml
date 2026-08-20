@@ -10,6 +10,7 @@ config:
   onlineFeatureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
   ragApiUrl: http://recsys-rag-api.api-serving.svc.cluster.local
   allowedOrigins: http://kagent-ui.kagent.svc.cluster.local
+  allowedHosts: localhost:*,127.0.0.1:*,[::1]:*,recsys-feature-rag-mcp.kagent.svc.cluster.local:8080
   onlineFeatureTimeoutSeconds: "2"
   ragTimeoutSeconds: "5"
 resources:

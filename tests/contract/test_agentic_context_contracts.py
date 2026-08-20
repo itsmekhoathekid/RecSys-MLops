@@ -153,6 +153,7 @@ def test_gcp_agentic_workloads_use_the_ml_system_pool():
             pod_spec = resource["spec"]["template"]["spec"]
         else:
             pod_spec = resource["spec"]["declarative"]["deployment"]
+            assert pod_spec["imageRegistry"] == "ghcr.io"
         assert pod_spec["nodeSelector"] == {"recsys.ai/pool": "ml-system"}
         assert pod_spec["tolerations"] == [
             {

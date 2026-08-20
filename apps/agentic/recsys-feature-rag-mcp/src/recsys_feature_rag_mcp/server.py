@@ -8,6 +8,7 @@ from collections.abc import Awaitable
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from recsys_feature_rag_mcp.clients.online_features import OnlineFeatureClient
 from recsys_feature_rag_mcp.clients.rag import RagClient
@@ -40,6 +41,7 @@ TOOL_NAMES = (
 def create_mcp_server(
     feature_client: OnlineFeatureClient,
     rag_client: RagClient,
+    allowed_hosts: tuple[str, ...] = ("localhost:*", "127.0.0.1:*", "[::1]:*"),
 ) -> FastMCP:
     """Register the four versioned RecSys context tools on FastMCP."""
 
@@ -47,6 +49,10 @@ def create_mcp_server(
         "RecSys Feature and RAG MCP",
         stateless_http=True,
         json_response=True,
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=list(allowed_hosts),
+        ),
     )
 
     async def observed(name: str, operation: Awaitable[Any]) -> Any:

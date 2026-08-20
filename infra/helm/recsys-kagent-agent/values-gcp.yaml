@@ -1,4 +1,5 @@
 agent:
+  imageRegistry: ghcr.io
   nodeSelector:
     recsys.ai/pool: ml-system
   tolerations:

@@ -23,6 +23,10 @@ spec:
     runtime: go
     modelConfig: {{ .Values.agent.modelConfig }}
     stream: false
+    {{- with .Values.agent.imageRegistry }}
+    deployment:
+      imageRegistry: {{ . | quote }}
+    {{- end }}
     systemMessage: |
       {{- .Values.agent.systemMessage | nindent 6 }}
     a2aConfig:

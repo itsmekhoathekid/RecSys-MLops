@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hmac
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -34,7 +34,11 @@ def create_app(
         base_url=settings.rag_api_url,
         timeout_seconds=settings.rag_timeout_seconds,
     )
-    mcp = create_mcp_server(feature_client, rag_client)
+    mcp = create_mcp_server(
+        feature_client,
+        rag_client,
+        allowed_hosts=settings.allowed_hosts,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -56,7 +60,10 @@ def create_app(
     )
 
     @app.middleware("http")
-    async def protect_mcp(request: Request, call_next):
+    async def protect_mcp(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         """Require a bearer token and accepted browser origin on MCP routes."""
 
         if request.url.path.startswith("/mcp"):

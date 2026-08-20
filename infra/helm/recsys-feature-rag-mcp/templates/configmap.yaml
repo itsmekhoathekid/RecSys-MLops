@@ -7,6 +7,7 @@ data:
   ONLINE_FEATURE_API_URL: {{ .Values.config.onlineFeatureApiUrl | quote }}
   RAG_API_URL: {{ .Values.config.ragApiUrl | quote }}
   MCP_ALLOWED_ORIGINS: {{ .Values.config.allowedOrigins | quote }}
+  MCP_ALLOWED_HOSTS: {{ .Values.config.allowedHosts | quote }}
   ONLINE_FEATURE_TIMEOUT_SECONDS: {{ .Values.config.onlineFeatureTimeoutSeconds | quote }}
   RAG_TIMEOUT_SECONDS: {{ .Values.config.ragTimeoutSeconds | quote }}
   RECSYS_IMAGE_REFERENCE: {{ .Values.image | quote }}
