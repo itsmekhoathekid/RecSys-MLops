@@ -207,3 +207,15 @@ def test_registry_uses_arctl_v04_declarative_resources():
     )
     assert "arctlVersion: v0.4.0" in ci_values
     assert "e564334357731c59faa3482f2978c21a205a60ad3bcc63a44465607cc74fa343" in ci_values
+
+
+def test_a2a_smoke_payloads_use_protocol_v03_message_ids():
+    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
+        encoding="utf-8"
+    )
+    autoscale = (
+        ROOT / "ops/validation/agentic_context_autoscale.sh"
+    ).read_text(encoding="utf-8")
+    for script in (deploy, autoscale):
+        assert '"messageId": request_id' in script
+        assert '"params": {\n            "id": request_id' not in script

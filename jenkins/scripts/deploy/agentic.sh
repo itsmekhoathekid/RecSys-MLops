@@ -147,8 +147,8 @@ payload = {
     "id": request_id,
     "method": "message/send",
     "params": {
-        "id": request_id,
         "message": {
+            "messageId": request_id,
             "role": "user",
             "parts": [{"kind": "text", "text": prompt}],
         },

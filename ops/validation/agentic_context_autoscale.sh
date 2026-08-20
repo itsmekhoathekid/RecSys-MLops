@@ -125,8 +125,8 @@ def invoke(index):
         "id": request_id,
         "method": "message/send",
         "params": {
-            "id": request_id,
             "message": {
+                "messageId": request_id,
                 "role": "user",
                 "parts": [{"kind": "text", "text": f"Get online features for user {1001 + index}."}],
             },
