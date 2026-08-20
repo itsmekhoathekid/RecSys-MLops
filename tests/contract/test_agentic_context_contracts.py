@@ -172,6 +172,8 @@ def test_terraform_owns_platform_but_not_the_agent_application_release():
     assert 'resource "kubernetes_persistent_volume_claim_v1" "substrate_valkey"' in terraform
     assert 'storage_class_name = "standard"' in terraform
     assert "prevent_destroy = true" in terraform
+    assert 'postrender {' in terraform
+    assert "substrate_gke_postrender.py" in terraform
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
 
 
@@ -186,3 +188,11 @@ def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
     assert "replicas: 2" in values
     assert "ateom-gvisor:v0.0.6" in values
     assert "sandboxClass: gvisor" in values
+
+
+def test_registry_uses_arctl_namespaced_mcp_identity():
+    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "recsys/recsys-feature-rag-mcp" in deploy
+    assert 'arctl mcp publish "${registry_name}"' in deploy

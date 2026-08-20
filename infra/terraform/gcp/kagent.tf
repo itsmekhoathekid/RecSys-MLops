@@ -106,6 +106,24 @@ resource "helm_release" "substrate" {
   wait       = true
   timeout    = 900
 
+  # GKE projected service-account tokens use the cluster OIDC issuer rather
+  # than Kubernetes' generic in-cluster URL. Substrate must validate the same
+  # issuer used by kagent and the ActorTemplate controller tokens.
+  set {
+    name = "auth.jwt.issuer"
+    value = format(
+      "https://container.googleapis.com/v1/projects/%s/locations/%s/clusters/%s",
+      var.project_id,
+      var.zone,
+      google_container_cluster.recsys.name,
+    )
+  }
+
+  postrender {
+    binary_path = "${path.module}/../../../ops/helm/substrate_gke_postrender.py"
+    args        = ["gke-public-oidc-v1"]
+  }
+
   depends_on = [
     helm_release.substrate_crds,
     kubernetes_persistent_volume_claim_v1.substrate_rustfs,

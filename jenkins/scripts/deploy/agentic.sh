@@ -267,7 +267,7 @@ PY
 }
 
 publish_feature_rag_mcp_registry() {
-  local version commit git_url
+  local version commit git_url registry_name
   agentic_assert_registry_publish_branch || return 0
   agentic_preflight true
   agentic_mcp_protocol_smoke
@@ -275,8 +275,9 @@ publish_feature_rag_mcp_registry() {
   commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
   version="$(agentic_registry_version)"
   git_url="$(agentic_registry_git_url)"
-  if agentic_registry_publish_required mcp recsys-feature-rag-mcp "${version}" "${commit}"; then
-    arctl mcp publish recsys-feature-rag-mcp \
+  registry_name="${AGENT_REGISTRY_MCP_NAME:-recsys/recsys-feature-rag-mcp}"
+  if agentic_registry_publish_required mcp "${registry_name}" "${version}" "${commit}"; then
+    arctl mcp publish "${registry_name}" \
       --remote-url http://recsys-feature-rag-mcp.kagent.svc.cluster.local:8080/mcp \
       --transport streamable-http \
       --git "${git_url}" \
@@ -287,7 +288,7 @@ publish_feature_rag_mcp_registry() {
   fi
   agentic_write_registry_evidence \
     .ci-deploy/feature-rag-mcp-registry.json "${version}" "${commit}" \
-    recsys-feature-rag-mcp
+    "${registry_name}"
 }
 
 publish_context_agent_registry() {
