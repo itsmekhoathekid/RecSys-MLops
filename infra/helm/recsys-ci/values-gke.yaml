@@ -11,6 +11,13 @@ productionTarget:
   imageRegistry: asia-southeast1-docker.pkg.dev/recsys-mlops/recsys
 
 jenkins:
+  nodeSelector:
+    recsys.ai/workload: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
   resources:
     requests:
       cpu: 50m

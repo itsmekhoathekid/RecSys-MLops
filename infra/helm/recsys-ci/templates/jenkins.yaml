@@ -59,6 +59,14 @@ spec:
         app.kubernetes.io/part-of: recsys-ci
     spec:
       serviceAccountName: {{ .Values.rbac.serviceAccountName }}
+      {{- with .Values.jenkins.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.jenkins.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       initContainers:
         - name: fix-jenkins-home-permissions
           image: {{ .Values.jenkins.image }}

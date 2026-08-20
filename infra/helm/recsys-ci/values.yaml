@@ -19,6 +19,8 @@ jenkins:
   enabled: true
   image: jenkins/jenkins:lts-jdk17
   replicas: 1
+  nodeSelector: {}
+  tolerations: []
   adminUser: admin
   adminSecretName: recsys-jenkins-admin
   runtimeCredentialsSecret:
