@@ -180,6 +180,13 @@ agentic_registry_version() {
   printf '0.1.0+%s\n' "${commit:0:12}"
 }
 
+agentic_registry_tag() {
+  local version="${1:-$(agentic_registry_version)}"
+  # Agent Registry v0.4 tags exclude SemVer's build-metadata '+'. Preserve
+  # the requested version verbatim in annotations and use a stable safe tag.
+  printf '%s\n' "${version/+/-}"
+}
+
 agentic_registry_git_url() {
   local remote
   remote="${AGENT_REGISTRY_GIT_URL:-$(git config --get remote.origin.url)}"
@@ -193,21 +200,15 @@ agentic_registry_git_url() {
 agentic_registry_publish_required() {
   local kind="$1"
   local name="$2"
-  local version="$3"
-  local commit="$4"
+  local tag="$3"
+  local version="$4"
+  local commit="$5"
   local output
   output="$(mktemp)"
-  if [[ "${kind}" == "mcp" ]]; then
-    arctl mcp show "${name}" --version "${version}" --output json >"${output}" 2>/dev/null || {
-      rm -f "${output}"
-      return 0
-    }
-  else
-    arctl agent show "${name}" --output json >"${output}" 2>/dev/null || {
-      rm -f "${output}"
-      return 0
-    }
-  fi
+  arctl get "${kind}" "${name}" --tag "${tag}" -o json >"${output}" 2>/dev/null || {
+    rm -f "${output}"
+    return 0
+  }
   if python3 - "${output}" "${version}" "${commit}" <<'PY'
 import json
 import sys
@@ -225,6 +226,74 @@ PY
   rm -f "${output}"
   recsys_error "registry ${kind} ${name}@${version} exists with different metadata"
   return 2
+}
+
+agentic_write_registry_manifest() {
+  local path="$1"
+  local kind="$2"
+  local qualified_name="$3"
+  local version="$4"
+  local tag="$5"
+  local commit="$6"
+  local git_url="$7"
+  python3 - "${path}" "${kind}" "${qualified_name}" "${version}" \
+    "${tag}" "${commit}" "${git_url}" <<'PY'
+import json
+import sys
+
+path, kind, qualified_name, version, tag, commit, git_url = sys.argv[1:]
+namespace, name = qualified_name.split("/", 1)
+metadata = {
+    "namespace": namespace,
+    "name": name,
+    "tag": tag,
+    "labels": {
+        "app.kubernetes.io/part-of": "recsys-agentic-context",
+        "recsys.dev/git-sha": commit[:12],
+    },
+    "annotations": {
+        "recsys.dev/version": version,
+        "recsys.dev/git-commit": commit,
+        "recsys.dev/source": git_url,
+    },
+}
+if kind == "mcp":
+    resource = {
+        "apiVersion": "ar.dev/v1alpha1",
+        "kind": "MCPServer",
+        "metadata": metadata,
+        "spec": {
+            "title": "RecSys Feature/RAG MCP",
+            "description": "Grounded online-feature, exact-chunk and semantic RAG tools",
+            "remote": {
+                "type": "streamable-http",
+                "url": "http://recsys-feature-rag-mcp.kagent.svc.cluster.local:8080/mcp",
+            },
+        },
+    }
+elif kind == "agent":
+    variant = "sandbox" if name.endswith("-sandbox") else "regular"
+    metadata["labels"]["recsys.dev/variant"] = variant
+    resource = {
+        "apiVersion": "ar.dev/v1alpha1",
+        "kind": "Agent",
+        "metadata": metadata,
+        "spec": {
+            "title": f"RecSys Context Agent ({variant})",
+            "description": "Grounded personalization, exact chunk and semantic RAG agent",
+            "mcpServers": [{
+                "kind": "MCPServer",
+                "namespace": namespace,
+                "name": "recsys-feature-rag-mcp",
+                "tag": tag,
+            }],
+        },
+    }
+else:
+    raise SystemExit(f"unsupported registry resource kind: {kind}")
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(resource, stream, indent=2, sort_keys=True)
+PY
 }
 
 agentic_assert_registry_publish_branch() {
@@ -267,32 +336,34 @@ PY
 }
 
 publish_feature_rag_mcp_registry() {
-  local version commit git_url registry_name
+  local version tag commit git_url registry_name manifest
   agentic_assert_registry_publish_branch || return 0
   agentic_preflight true
   agentic_mcp_protocol_smoke
   agentic_registry_open_tunnel
   commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
   version="$(agentic_registry_version)"
+  tag="$(agentic_registry_tag "${version}")"
   git_url="$(agentic_registry_git_url)"
   registry_name="${AGENT_REGISTRY_MCP_NAME:-recsys/recsys-feature-rag-mcp}"
-  if agentic_registry_publish_required mcp "${registry_name}" "${version}" "${commit}"; then
-    arctl mcp publish "${registry_name}" \
-      --remote-url http://recsys-feature-rag-mcp.kagent.svc.cluster.local:8080/mcp \
-      --transport streamable-http \
-      --git "${git_url}" \
-      --version "${version}" \
-      --description "RecSys Feature/RAG MCP; git_commit=${commit}"
+  manifest="$(mktemp)"
+  agentic_write_registry_manifest "${manifest}" mcp "${registry_name}" \
+    "${version}" "${tag}" "${commit}" "${git_url}"
+  if agentic_registry_publish_required mcp "${registry_name}" "${tag}" \
+    "${version}" "${commit}"; then
+    arctl apply -f "${manifest}"
   else
     [[ "$?" == "1" ]]
   fi
+  rm -f "${manifest}"
+  arctl get mcp "${registry_name}" --tag "${tag}" -o json >/dev/null
   agentic_write_registry_evidence \
     .ci-deploy/feature-rag-mcp-registry.json "${version}" "${commit}" \
-    "${registry_name}"
+    "${registry_name}@${tag}"
 }
 
 publish_context_agent_registry() {
-  local version commit git_url name
+  local version tag commit git_url name registry_name manifest
   agentic_assert_registry_publish_branch || return 0
   agentic_preflight true
   kubectl -n kagent wait --for=condition=Ready agent/recsys-context-agent \
@@ -304,18 +375,24 @@ publish_context_agent_registry() {
   agentic_registry_open_tunnel
   commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
   version="$(agentic_registry_version)"
+  tag="$(agentic_registry_tag "${version}")"
   git_url="$(agentic_registry_git_url)"
   for name in recsys-context-agent recsys-context-agent-sandbox; do
-    if agentic_registry_publish_required agent "${name}" "${version}" "${commit}"; then
-      arctl agent publish "${name}" \
-        --git "${git_url}" \
-        --version "${version}" \
-        --description "Grounded RecSys context agent; git_commit=${commit}"
+    registry_name="recsys/${name}"
+    manifest="$(mktemp)"
+    agentic_write_registry_manifest "${manifest}" agent "${registry_name}" \
+      "${version}" "${tag}" "${commit}" "${git_url}"
+    if agentic_registry_publish_required agent "${registry_name}" "${tag}" \
+      "${version}" "${commit}"; then
+      arctl apply -f "${manifest}"
     else
       [[ "$?" == "1" ]]
     fi
+    rm -f "${manifest}"
+    arctl get agent "${registry_name}" --tag "${tag}" -o json >/dev/null
   done
   agentic_write_registry_evidence \
     .ci-deploy/context-agent-registry.json "${version}" "${commit}" \
-    recsys-context-agent recsys-context-agent-sandbox
+    "recsys/recsys-context-agent@${tag}" \
+    "recsys/recsys-context-agent-sandbox@${tag}"
 }

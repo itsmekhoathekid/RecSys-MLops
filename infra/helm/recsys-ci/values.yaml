@@ -51,8 +51,8 @@ jenkins:
     helmVersion: v3.18.4
     kubeconformVersion: v0.8.0
     kubeconformSha256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
-    arctlVersion: v0.3.3
-    arctlSha256: 22b34922697f8ccde582608aaaa180b876ff640fa48d0991aba735adaf0b485b
+    arctlVersion: v0.4.0
+    arctlSha256: e564334357731c59faa3482f2978c21a205a60ad3bcc63a44465607cc74fa343
   seedJob:
     enabled: true
     name: RecSys-GitHub-CICD

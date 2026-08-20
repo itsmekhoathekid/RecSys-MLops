@@ -190,9 +190,20 @@ def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
     assert "sandboxClass: gvisor" in values
 
 
-def test_registry_uses_arctl_namespaced_mcp_identity():
+def test_registry_uses_arctl_v04_declarative_resources():
     deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
         encoding="utf-8"
     )
     assert "recsys/recsys-feature-rag-mcp" in deploy
-    assert 'arctl mcp publish "${registry_name}"' in deploy
+    assert '"apiVersion": "ar.dev/v1alpha1"' in deploy
+    assert '"kind": "MCPServer"' in deploy
+    assert '"kind": "Agent"' in deploy
+    assert 'arctl apply -f "${manifest}"' in deploy
+    assert 'arctl get mcp "${registry_name}" --tag "${tag}"' in deploy
+    assert "${version/+/-}" in deploy
+
+    ci_values = (ROOT / "infra/helm/recsys-ci/values.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "arctlVersion: v0.4.0" in ci_values
+    assert "e564334357731c59faa3482f2978c21a205a60ad3bcc63a44465607cc74fa343" in ci_values

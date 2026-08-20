@@ -10,15 +10,16 @@ command -v arctl >/dev/null 2>&1 || {
 }
 
 version="${AGENTIC_REGISTRY_VERSION:-0.1.0+$(git rev-parse --short=12 HEAD)}"
+tag="${AGENTIC_REGISTRY_TAG:-${version/+/-}}"
 commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
 mkdir -p reports/agentic
 trap agentic_registry_close_tunnel EXIT
 agentic_registry_open_tunnel
 
-arctl mcp show recsys-feature-rag-mcp --version "${version}" --output json \
+arctl get mcp recsys/recsys-feature-rag-mcp --tag "${tag}" -o json \
   >reports/agentic/registry-mcp.json
 for name in recsys-context-agent recsys-context-agent-sandbox; do
-  arctl agent show "${name}" --output json \
+  arctl get agent "recsys/${name}" --tag "${tag}" -o json \
     >"reports/agentic/registry-${name}.json"
 done
 python3 - "${version}" "${commit}" reports/agentic/registry-*.json <<'PY'
@@ -32,4 +33,4 @@ for path in paths:
     assert version in serialized, (path, version)
     assert commit in serialized, (path, commit)
 PY
-echo "Agent Registry contains MCP, regular Agent, and SandboxAgent at ${version}."
+echo "Agent Registry contains MCP, regular Agent, and SandboxAgent at ${version} (${tag})."

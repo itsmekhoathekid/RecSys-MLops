@@ -110,8 +110,9 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     )
     assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in deploy
     assert "0.1.0+%s" in deploy
-    assert "--remote-url" in deploy
-    assert "--transport streamable-http" in deploy
+    assert '"remote": {' in deploy
+    assert '"type": "streamable-http"' in deploy
+    assert 'arctl apply -f "${manifest}"' in deploy
 
     jenkins_chart = (
         ROOT / "infra/helm/recsys-ci/templates/jenkins.yaml"
