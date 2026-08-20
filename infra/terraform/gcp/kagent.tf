@@ -135,10 +135,6 @@ resource "kubernetes_namespace" "kagent" {
   count = var.deploy_llm_inference ? 1 : 0
 
   metadata {
-    labels = {
-      istio-injection = "disabled"
-    }
-
     name = "kagent"
   }
 

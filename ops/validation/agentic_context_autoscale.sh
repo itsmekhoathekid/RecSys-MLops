@@ -4,6 +4,7 @@ set -Eeuo pipefail
 namespace="${KAGENT_NAMESPACE:-kagent}"
 duration="${AGENTIC_LOAD_DURATION_SECONDS:-300}"
 rps="${AGENTIC_LOAD_RPS:-20}"
+chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800078:review:rev_800078_01:0}"
 poll_seconds="${AGENTIC_KEDA_POLL_SECONDS:-15}"
 load_log="${AGENTIC_LOAD_LOG:-reports/agentic/autoscale-load.json}"
 load_pid=""
@@ -31,11 +32,14 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-duration, rps = int(sys.argv[1]), int(sys.argv[2])
+duration, rps, chunk_id = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
 latencies = []
 errors = 0
 
-async def worker(worker_id):
+worker_count = rps * 3
+target_interval = worker_count / rps
+
+async def worker(worker_id, deadline):
     global errors
     headers = {"Authorization": "Bearer " + os.environ["MCP_AUTH_TOKEN"]}
     async with httpx.AsyncClient(headers=headers) as http_client:
@@ -44,12 +48,12 @@ async def worker(worker_id):
         ) as streams:
             async with ClientSession(streams[0], streams[1]) as session:
                 await session.initialize()
-                for _ in range(duration):
+                while time.monotonic() < deadline:
                     started = time.perf_counter()
                     try:
                         result = await session.call_tool(
-                            "get_user_online_features",
-                            {"user_id": 1001, "top_k": 10},
+                            "get_chunk_by_id",
+                            {"chunk_id": chunk_id},
                         )
                         if result.isError:
                             errors += 1
@@ -57,10 +61,15 @@ async def worker(worker_id):
                         errors += 1
                     finally:
                         latencies.append(time.perf_counter() - started)
-                    await asyncio.sleep(max(0, 1 - (time.perf_counter() - started)))
+                    await asyncio.sleep(
+                        max(0, target_interval - (time.perf_counter() - started))
+                    )
 
 async def main():
-    await asyncio.gather(*(worker(worker_id) for worker_id in range(rps)))
+    deadline = time.monotonic() + duration
+    await asyncio.gather(
+        *(worker(worker_id, deadline) for worker_id in range(worker_count))
+    )
     ordered = sorted(latencies)
     p95 = ordered[max(0, int(len(ordered) * 0.95) - 1)]
     result = {
@@ -74,14 +83,14 @@ async def main():
         raise SystemExit(1)
 
 asyncio.run(main())
-' "${duration}" "${rps}" >"${load_log}" &
+' "${duration}" "${rps}" "${chunk_id}" >"${load_log}" &
 load_pid=$!
 
 scaled=false
 for _ in 1 2; do
   sleep "${poll_seconds}"
   replicas="$(kubectl -n "${namespace}" get deployment recsys-feature-rag-mcp \
-    -o jsonpath='{.status.availableReplicas}')"
+    -o jsonpath='{.spec.replicas}')"
   if [[ "${replicas:-0}" -ge 3 ]]; then
     scaled=true
     break
@@ -91,6 +100,8 @@ done
   echo "MCP did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
 }
+kubectl -n "${namespace}" rollout status deployment/recsys-feature-rag-mcp \
+  --timeout=5m
 wait "${load_pid}"
 load_pid=""
 
@@ -156,7 +167,7 @@ agent_scaled=false
 for _ in 1 2; do
   sleep "${poll_seconds}"
   replicas="$(kubectl -n "${namespace}" get deployment recsys-context-agent \
-    -o jsonpath='{.status.availableReplicas}')"
+    -o jsonpath='{.spec.replicas}')"
   if [[ "${replicas:-0}" -ge 3 ]]; then
     agent_scaled=true
     break
@@ -166,6 +177,8 @@ done
   echo "Regular Agent did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
 }
+kubectl -n "${namespace}" rollout status deployment/recsys-context-agent \
+  --timeout=5m
 wait "${load_pid}"
 load_pid=""
 kill "${a2a_pf_pid}" >/dev/null 2>&1 || true

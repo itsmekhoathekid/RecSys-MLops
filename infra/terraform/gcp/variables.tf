@@ -173,7 +173,7 @@ variable "ml_min_nodes" {
 variable "ml_max_nodes" {
   description = "Maximum ML system nodes."
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "ml_disk_size_gb" {

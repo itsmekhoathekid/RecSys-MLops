@@ -25,6 +25,12 @@ llm_cpu_spot         = false
 llm_node_pool_mode   = "dedicated"
 llm_optimization_profile = "baseline"
 
+ml_machine_type = "e2-standard-4"
+ml_min_nodes    = 1
+ml_max_nodes    = 2
+ml_disk_size_gb = 50
+ml_spot         = false
+
 gpu_machine_type      = "n1-standard-8"
 gpu_accelerator_type  = "nvidia-tesla-t4"
 gpu_accelerator_count = 1

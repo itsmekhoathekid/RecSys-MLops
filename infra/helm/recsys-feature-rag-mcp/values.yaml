@@ -5,7 +5,7 @@ imagePullPolicy: IfNotPresent
 replicas: 2
 existingSecret: recsys-feature-rag-mcp-auth
 service: {port: 8080, targetPort: 8080}
-rollout: {maxSurge: 1, maxUnavailable: 0, minReadySeconds: 10, progressDeadlineSeconds: 180}
+rollout: {maxSurge: 1, maxUnavailable: 0, minReadySeconds: 10, progressDeadlineSeconds: 600}
 config:
   onlineFeatureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
   ragApiUrl: http://recsys-rag-api.api-serving.svc.cluster.local
@@ -25,7 +25,7 @@ autoscaling:
   pollingInterval: 15
   cooldownPeriod: 120
   serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
-  requestRateTarget: "10"
+  requestRateTarget: "5"
   fallback: {failureThreshold: 3, replicas: 2}
 observability: {serviceMonitor: {enabled: true, interval: 15s}}
 networkPolicy:

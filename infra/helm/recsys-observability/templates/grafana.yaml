@@ -50,6 +50,11 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: recsys-grafana

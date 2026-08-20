@@ -22,9 +22,12 @@ spec:
     metadata:
       labels:
         {{- include "recsys-feature-rag-mcp.labels" . | nindent 8 }}
+        sidecar.istio.io/inject: "true"
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         sidecar.istio.io/inject: "true"
+        sidecar.istio.io/proxyCPU: "20m"
+        sidecar.istio.io/proxyMemory: "64Mi"
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
         prometheus.io/port: {{ .Values.service.targetPort | quote }}
