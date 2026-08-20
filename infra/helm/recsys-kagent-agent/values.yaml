@@ -13,8 +13,9 @@ mcp:
 agent:
   name: recsys-context-agent
   modelConfig: default-model-config
-  version: 0.1.0
   replicas: 2
+  nodeSelector: {}
+  tolerations: []
   systemMessage: |
     You are the grounded RecSys context agent. Use MCP tools for every factual
     claim about a user, item, or RAG chunk. Prefer build_user_rag_context when

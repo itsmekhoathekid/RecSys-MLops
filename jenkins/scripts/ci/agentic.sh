@@ -19,9 +19,11 @@ agentic_static_checks() {
 agentic_helm_gate() {
   local chart="$1"
   local rendered
+  local values_args=()
   rendered="${reports_dir}/$(basename "${chart}")-rendered.yaml"
-  helm lint "${chart}"
-  helm template contract-test "${chart}" >"${rendered}"
+  [[ -f "${chart}/values-gcp.yaml" ]] && values_args=(-f "${chart}/values-gcp.yaml")
+  helm lint "${chart}" "${values_args[@]}"
+  helm template contract-test "${chart}" "${values_args[@]}" >"${rendered}"
   command -v kubeconform >/dev/null 2>&1 || {
     echo "kubeconform is required for agentic Helm CI" >&2
     return 2

@@ -8,8 +8,8 @@ metadata:
     {{- include "recsys-kagent-agent.labels" . | nindent 4 }}
 spec:
   type: Declarative
+  platform: substrate
   description: gVisor-isolated variant of the grounded RecSys context agent.
-  version: {{ .Values.agent.version | quote }}
   sandbox:
     network:
       allowedDomains:

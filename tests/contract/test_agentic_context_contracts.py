@@ -98,6 +98,7 @@ def test_agent_and_sandbox_use_the_exact_remote_mcp_tool_contract():
         documents, "SandboxAgent", "recsys-context-agent-sandbox"
     )
     assert sandbox["spec"]["declarative"]["runtime"] == "go"
+    assert sandbox["spec"]["platform"] == "substrate"
     assert sandbox["spec"]["sandbox"]["network"]["allowedDomains"] == [
         "recsys-feature-rag-mcp.kagent.svc.cluster.local"
     ]
@@ -125,6 +126,42 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
     assert scaled["spec"]["maxReplicaCount"] == 6
     assert scaled["spec"]["fallback"] == {"failureThreshold": 3, "replicas": 2}
     assert not any(item.get("kind") == "Ingress" for item in mcp_documents)
+
+
+def test_gcp_agentic_workloads_use_the_ml_system_pool():
+    for chart, kind, name in (
+        ("recsys-feature-rag-mcp", "Deployment", "recsys-feature-rag-mcp"),
+        ("recsys-kagent-agent", "Agent", "recsys-context-agent"),
+    ):
+        output = subprocess.run(
+            [
+                "helm",
+                "template",
+                "contract-test",
+                str(ROOT / "infra/helm" / chart),
+                "-f",
+                str(ROOT / "infra/helm" / chart / "values-gcp.yaml"),
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        documents = [document for document in yaml.safe_load_all(output) if document]
+        resource = _resource(documents, kind, name)
+        if kind == "Deployment":
+            pod_spec = resource["spec"]["template"]["spec"]
+        else:
+            pod_spec = resource["spec"]["declarative"]["deployment"]
+        assert pod_spec["nodeSelector"] == {"recsys.ai/pool": "ml-system"}
+        assert pod_spec["tolerations"] == [
+            {
+                "key": "recsys.ai/workload",
+                "operator": "Equal",
+                "value": "ml-system",
+                "effect": "NoSchedule",
+            }
+        ]
 
 
 def test_terraform_owns_platform_but_not_the_agent_application_release():

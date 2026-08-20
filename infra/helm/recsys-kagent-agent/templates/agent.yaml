@@ -8,7 +8,6 @@ metadata:
 spec:
   type: Declarative
   description: Grounded recommendation context agent backed by online features and RAG.
-  version: {{ .Values.agent.version | quote }}
   declarative:
     runtime: go
     modelConfig: {{ .Values.agent.modelConfig }}
@@ -19,6 +18,14 @@ spec:
       replicas: {{ .Values.agent.replicas }}
       labels:
         recsys.ai/autoscale-target: {{ .Values.agent.name }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       resources:
         {{- toYaml .Values.agent.resources | nindent 8 }}
     a2aConfig:

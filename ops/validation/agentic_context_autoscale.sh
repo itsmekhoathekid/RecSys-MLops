@@ -27,6 +27,7 @@ import statistics
 import sys
 import time
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -37,25 +38,26 @@ errors = 0
 async def worker(worker_id):
     global errors
     headers = {"Authorization": "Bearer " + os.environ["MCP_AUTH_TOKEN"]}
-    async with streamable_http_client(
-        "http://127.0.0.1:8080/mcp", headers=headers
-    ) as streams:
-        async with ClientSession(streams[0], streams[1]) as session:
-            await session.initialize()
-            for _ in range(duration):
-                started = time.perf_counter()
-                try:
-                    result = await session.call_tool(
-                        "get_user_online_features",
-                        {"user_id": 1001, "top_k": 10},
-                    )
-                    if result.isError:
+    async with httpx.AsyncClient(headers=headers) as http_client:
+        async with streamable_http_client(
+            "http://127.0.0.1:8080/mcp", http_client=http_client
+        ) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                for _ in range(duration):
+                    started = time.perf_counter()
+                    try:
+                        result = await session.call_tool(
+                            "get_user_online_features",
+                            {"user_id": 1001, "top_k": 10},
+                        )
+                        if result.isError:
+                            errors += 1
+                    except Exception:
                         errors += 1
-                except Exception:
-                    errors += 1
-                finally:
-                    latencies.append(time.perf_counter() - started)
-                await asyncio.sleep(max(0, 1 - (time.perf_counter() - started)))
+                    finally:
+                        latencies.append(time.perf_counter() - started)
+                    await asyncio.sleep(max(0, 1 - (time.perf_counter() - started)))
 
 async def main():
     await asyncio.gather(*(worker(worker_id) for worker_id in range(rps)))

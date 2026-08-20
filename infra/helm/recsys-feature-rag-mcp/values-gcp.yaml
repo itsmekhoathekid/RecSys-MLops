@@ -1,3 +1,7 @@
 nodeSelector:
-  recsys.ai/pool: cpu-services
-tolerations: []
+  recsys.ai/pool: ml-system
+tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+    effect: NoSchedule
