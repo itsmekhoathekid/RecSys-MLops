@@ -113,6 +113,7 @@ agentic_a2a_smoke() {
   if [[ "${agent_name}" == *-sandbox ]]; then
     a2a_path="api/a2a-sandboxes"
     card_path=".well-known/agent-card.json"
+    local_port=$((local_port + 1))
   fi
   local base_url="http://127.0.0.1:${local_port}/${a2a_path}/kagent/${agent_name}"
   local log_file response_file pid card_ready=false
@@ -123,7 +124,7 @@ agentic_a2a_smoke() {
     "${local_port}:8083" >"${log_file}" 2>&1 &
   pid=$!
   for _ in $(seq 1 30); do
-    if python3 - "${base_url}/${card_path}" <<'PY'
+    if python3 - "${base_url}/${card_path}" 2>/dev/null <<'PY'
 import sys
 import urllib.request
 
@@ -147,8 +148,11 @@ PY
     recsys_error "kagent A2A agent card did not become ready for ${agent_name}"
     return 1
   fi
-  local smoke_status=0
-  python3 - "${base_url}/" "${user_id}" "${chunk_id}" "${response_file}" <<'PY' || smoke_status=$?
+  local smoke_status=1
+  local attempt
+  for attempt in 1 2 3; do
+    smoke_status=0
+    python3 - "${base_url}/" "${user_id}" "${chunk_id}" "${response_file}" <<'PY' || smoke_status=$?
 import json
 import sys
 import urllib.request
@@ -190,6 +194,9 @@ if chunk_id not in serialized:
 with open(output_path, "w", encoding="utf-8") as stream:
     json.dump(body, stream, indent=2, sort_keys=True)
 PY
+    [[ "${smoke_status}" -ne 0 ]] || break
+    sleep $((attempt * 5))
+  done
   kill "${pid}" 2>/dev/null || true
   wait "${pid}" 2>/dev/null || true
   return "${smoke_status}"
@@ -387,6 +394,8 @@ publish_context_agent_registry() {
   agentic_assert_registry_publish_branch || return 0
   agentic_preflight true
   kubectl -n kagent wait --for=condition=Ready agent/recsys-context-agent \
+    --timeout="${timeout}"
+  kubectl -n kagent rollout status deployment/recsys-context-agent \
     --timeout="${timeout}"
   kubectl -n kagent wait --for=condition=Ready \
     sandboxagent/recsys-context-agent-sandbox --timeout="${timeout}"

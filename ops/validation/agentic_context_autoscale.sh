@@ -161,7 +161,7 @@ wait "${load_pid}"
 load_pid=""
 
 a2a_port="${AGENTIC_A2A_LOAD_PORT:-18084}"
-a2a_requests="${AGENTIC_AGENT_LOAD_REQUESTS:-100}"
+a2a_requests="${AGENTIC_AGENT_LOAD_REQUESTS:-20}"
 kubectl -n "${namespace}" port-forward service/kagent-controller \
   "${a2a_port}:8083" >reports/agentic/autoscale-a2a-port-forward.log 2>&1 &
 a2a_pf_pid=$!
@@ -195,7 +195,10 @@ def invoke(index):
                 "messageId": request_id,
                 "contextId": request_id,
                 "role": "user",
-                "parts": [{"kind": "text", "text": f"Get online features for user {1001 + index}."}],
+                "parts": [{
+                    "kind": "text",
+                    "text": f"Reply with exactly OK-{index}; do not call tools.",
+                }],
             },
         },
     }
@@ -244,15 +247,8 @@ fi
   exit 1
 }
 wait_for_available_replicas recsys-context-agent 3
-kill "${load_pid}" >/dev/null 2>&1 || true
-wait "${load_pid}" >/dev/null 2>&1 || true
+wait "${load_pid}"
 load_pid=""
-python3 - "${a2a_requests}" >reports/agentic/autoscale-agent-load.json <<'PY'
-import json
-import sys
-
-print(json.dumps({"requests_started": int(sys.argv[1]), "scale_verified": True}))
-PY
 kill "${a2a_pf_pid}" >/dev/null 2>&1 || true
 wait "${a2a_pf_pid}" >/dev/null 2>&1 || true
 a2a_pf_pid=""

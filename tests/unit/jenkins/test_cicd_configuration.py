@@ -114,6 +114,16 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert '"remote": {' in deploy
     assert '"type": "streamable-http"' in deploy
     assert 'arctl apply -f "${manifest}"' in deploy
+    assert "for attempt in 1 2 3" in deploy
+    assert "rollout status deployment/recsys-context-agent" in deploy
+    assert "local_port=$((local_port + 1))" in deploy
+
+    autoscale = (
+        ROOT / "ops/validation/agentic_context_autoscale.sh"
+    ).read_text(encoding="utf-8")
+    assert 'AGENTIC_AGENT_LOAD_REQUESTS:-20' in autoscale
+    assert "do not call tools" in autoscale
+    assert 'wait "${load_pid}"' in autoscale
 
     jenkins_chart = (
         ROOT / "infra/helm/recsys-ci/templates/jenkins.yaml"
