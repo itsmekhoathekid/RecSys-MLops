@@ -466,12 +466,21 @@ def test_get_online_features_reads_candidates_sequence_and_items():
 
 def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkeypatch):
     class BrokenRedis:
+        def __init__(self, *args, **kwargs):
+            pass
+
         async def mget(self, keys):
             raise OSError("redis unavailable")
 
         async def zrevrange(self, key, start, end):
             raise OSError("redis unavailable")
 
+    redis_asyncio = types.ModuleType("redis.asyncio")
+    redis_asyncio.Redis = BrokenRedis
+    redis_package = types.ModuleType("redis")
+    redis_package.asyncio = redis_asyncio
+    monkeypatch.setitem(sys.modules, "redis", redis_package)
+    monkeypatch.setitem(sys.modules, "redis.asyncio", redis_asyncio)
     client = FeatureClient(allow_fallback=True)
     client.client = BrokenRedis()
 
@@ -492,6 +501,12 @@ def test_feature_client_success_and_error_without_fallback(monkeypatch):
         async def zrevrange(self, key, start, end):
             return [b"10", "11"]
 
+    redis_asyncio = types.ModuleType("redis.asyncio")
+    redis_asyncio.Redis = lambda *args, **kwargs: RedisClient()
+    redis_package = types.ModuleType("redis")
+    redis_package.asyncio = redis_asyncio
+    monkeypatch.setitem(sys.modules, "redis", redis_package)
+    monkeypatch.setitem(sys.modules, "redis.asyncio", redis_asyncio)
     client = FeatureClient(allow_fallback=False)
     client.client = RedisClient()
 
