@@ -38,6 +38,7 @@ grafana:
 
 targets:
   apiNamespace: api-serving
+  agenticNamespace: kagent
   dataNamespace: recsys-dataflow
   kserveNamespace: kserve-triton-inference
   mlflowNamespace: experiment-tracking

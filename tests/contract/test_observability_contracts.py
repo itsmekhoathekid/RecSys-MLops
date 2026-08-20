@@ -108,6 +108,7 @@ def test_prometheus_scrapes_api_metrics_once_per_pod():
 
     assert "job_name: recsys-kubernetes-pods" in config
     assert "prometheus_io_scrape" in config
+    assert "- kagent" in config
     assert "job_name: recsys-api-serving" not in config
     assert "job_name: recsys-online-feature-api" not in config
 

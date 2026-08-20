@@ -97,6 +97,7 @@ data:
             namespaces:
               names:
                 - {{ .Values.targets.apiNamespace }}
+                - {{ .Values.targets.agenticNamespace }}
                 - {{ .Values.targets.dataNamespace }}
                 - {{ .Values.targets.kserveNamespace }}
                 - {{ .Values.targets.mlflowNamespace }}
