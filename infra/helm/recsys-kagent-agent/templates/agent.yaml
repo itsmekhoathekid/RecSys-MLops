@@ -15,7 +15,9 @@ spec:
     systemMessage: |
       {{- .Values.agent.systemMessage | nindent 6 }}
     deployment:
+      {{- if not .Values.autoscaling.enabled }}
       replicas: {{ .Values.agent.replicas }}
+      {{- end }}
       {{- with .Values.agent.imageRegistry }}
       imageRegistry: {{ . | quote }}
       {{- end }}

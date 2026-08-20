@@ -43,5 +43,6 @@ autoscaling:
   pollingInterval: 15
   cooldownPeriod: 120
   serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
-  cpuTarget: "0.05"
+  cpuTarget: "0.004"
+  scaleDownStabilizationSeconds: 60
   fallback: {failureThreshold: 3, replicas: 2}

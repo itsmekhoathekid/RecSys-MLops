@@ -26,6 +26,7 @@ autoscaling:
   cooldownPeriod: 120
   serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
   requestRateTarget: "5"
+  scaleDownStabilizationSeconds: 60
   fallback: {failureThreshold: 3, replicas: 2}
 observability: {serviceMonitor: {enabled: true, interval: 15s}}
 networkPolicy:

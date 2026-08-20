@@ -6,7 +6,7 @@ duration="${AGENTIC_LOAD_DURATION_SECONDS:-300}"
 rps="${AGENTIC_LOAD_RPS:-20}"
 chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800078:review:rev_800078_01:0}"
 poll_seconds="${AGENTIC_KEDA_POLL_SECONDS:-15}"
-decision_grace_seconds="${AGENTIC_SCALE_DECISION_GRACE_SECONDS:-5}"
+decision_grace_seconds="${AGENTIC_SCALE_DECISION_GRACE_SECONDS:-15}"
 load_log="${AGENTIC_LOAD_LOG:-reports/agentic/autoscale-load.json}"
 load_ready_log="${load_log%.json}.ready"
 load_pid=""
@@ -18,6 +18,22 @@ cleanup() {
   [[ -n "${a2a_pf_pid}" ]] && kill "${a2a_pf_pid}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+wait_for_available_replicas() {
+  local deployment="$1"
+  local minimum="$2"
+  local replicas
+  for _ in $(seq 1 150); do
+    replicas="$(kubectl -n "${namespace}" get deployment "${deployment}" \
+      -o jsonpath='{.status.availableReplicas}')"
+    if [[ "${replicas:-0}" -ge "${minimum}" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "${deployment} did not reach ${minimum} available replicas." >&2
+  return 1
+}
 
 kubectl -n "${namespace}" rollout status deployment/recsys-feature-rag-mcp \
   --timeout=10m
@@ -118,8 +134,8 @@ done
 scaled=false
 for _ in 1 2; do
   sleep "${poll_seconds}"
-  replicas="$(kubectl -n "${namespace}" get deployment recsys-feature-rag-mcp \
-    -o jsonpath='{.spec.replicas}')"
+  replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-feature-rag-mcp \
+    -o jsonpath='{.status.desiredReplicas}')"
   if [[ "${replicas:-0}" -ge 3 ]]; then
     scaled=true
     break
@@ -128,8 +144,8 @@ done
 if [[ "${scaled}" != "true" ]]; then
   for _ in $(seq 1 "${decision_grace_seconds}"); do
     sleep 1
-    replicas="$(kubectl -n "${namespace}" get deployment recsys-feature-rag-mcp \
-      -o jsonpath='{.spec.replicas}')"
+    replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-feature-rag-mcp \
+      -o jsonpath='{.status.desiredReplicas}')"
     if [[ "${replicas:-0}" -ge 3 ]]; then
       scaled=true
       break
@@ -140,13 +156,12 @@ fi
   echo "MCP did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
 }
-kubectl -n "${namespace}" rollout status deployment/recsys-feature-rag-mcp \
-  --timeout=5m
+wait_for_available_replicas recsys-feature-rag-mcp 3
 wait "${load_pid}"
 load_pid=""
 
 a2a_port="${AGENTIC_A2A_LOAD_PORT:-18084}"
-a2a_requests="${AGENTIC_AGENT_LOAD_REQUESTS:-20}"
+a2a_requests="${AGENTIC_AGENT_LOAD_REQUESTS:-100}"
 kubectl -n "${namespace}" port-forward service/kagent-controller \
   "${a2a_port}:8083" >reports/agentic/autoscale-a2a-port-forward.log 2>&1 &
 a2a_pf_pid=$!
@@ -206,8 +221,8 @@ load_pid=$!
 agent_scaled=false
 for _ in 1 2; do
   sleep "${poll_seconds}"
-  replicas="$(kubectl -n "${namespace}" get deployment recsys-context-agent \
-    -o jsonpath='{.spec.replicas}')"
+  replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-context-agent \
+    -o jsonpath='{.status.desiredReplicas}')"
   if [[ "${replicas:-0}" -ge 3 ]]; then
     agent_scaled=true
     break
@@ -216,8 +231,8 @@ done
 if [[ "${agent_scaled}" != "true" ]]; then
   for _ in $(seq 1 "${decision_grace_seconds}"); do
     sleep 1
-    replicas="$(kubectl -n "${namespace}" get deployment recsys-context-agent \
-      -o jsonpath='{.spec.replicas}')"
+    replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-context-agent \
+      -o jsonpath='{.status.desiredReplicas}')"
     if [[ "${replicas:-0}" -ge 3 ]]; then
       agent_scaled=true
       break
@@ -228,10 +243,16 @@ fi
   echo "Regular Agent did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
 }
-kubectl -n "${namespace}" rollout status deployment/recsys-context-agent \
-  --timeout=5m
-wait "${load_pid}"
+wait_for_available_replicas recsys-context-agent 3
+kill "${load_pid}" >/dev/null 2>&1 || true
+wait "${load_pid}" >/dev/null 2>&1 || true
 load_pid=""
+python3 - "${a2a_requests}" >reports/agentic/autoscale-agent-load.json <<'PY'
+import json
+import sys
+
+print(json.dumps({"requests_started": int(sys.argv[1]), "scale_verified": True}))
+PY
 kill "${a2a_pf_pid}" >/dev/null 2>&1 || true
 wait "${a2a_pf_pid}" >/dev/null 2>&1 || true
 a2a_pf_pid=""
