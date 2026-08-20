@@ -50,7 +50,7 @@ jenkins:
     kubectlVersion: v1.33.0
     helmVersion: v3.18.4
     kubeconformVersion: v0.8.0
-    kubeconformSha256: 7c6a09c6844f55f811e9b7b2b60a6070a512c696c8ec752dfdb3c8ed50ed0364
+    kubeconformSha256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
     arctlVersion: v0.3.3
     arctlSha256: 22b34922697f8ccde582608aaaa180b876ff640fa48d0991aba735adaf0b485b
   seedJob:
