@@ -220,7 +220,7 @@
       "consumesImages": ["recsys-feature-rag-mcp"],
       "imageValues": {"recsys-feature-rag-mcp": "image"},
       "consumesArtifacts": [],
-      "dependsOn": []
+      "dependsOn": ["rag-api"]
     },
     {
       "name": "context-agent",

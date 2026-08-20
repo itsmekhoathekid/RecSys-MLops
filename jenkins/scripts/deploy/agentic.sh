@@ -44,8 +44,21 @@ agentic_preflight() {
   kubectl -n kagent get secret recsys-feature-rag-mcp-auth >/dev/null
   kubectl -n api-serving get service recsys-online-feature-api recsys-rag-api >/dev/null
   for service in recsys-online-feature-api recsys-rag-api; do
-    kubectl -n api-serving get endpoints "${service}" \
-      -o jsonpath='{.subsets[0].addresses[0].ip}' | grep -E '.+'
+    local endpoint_ready=false
+    for _ in $(seq 1 60); do
+      if kubectl -n api-serving get endpointslice \
+        -l "kubernetes.io/service-name=${service}" \
+        -o jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}' \
+        | grep -Eq '.+'; then
+        endpoint_ready=true
+        break
+      fi
+      sleep 2
+    done
+    [[ "${endpoint_ready}" == "true" ]] || {
+      recsys_error "${service} has no Ready EndpointSlice address"
+      return 1
+    }
   done
   kubectl -n kagent rollout status deployment/kagent-controller \
     --timeout="${timeout}"

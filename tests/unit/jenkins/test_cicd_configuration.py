@@ -97,6 +97,7 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
         "recsys-feature-rag-mcp"
     ]
     assert units["context-agent"]["consumesImages"] == []
+    assert units["feature-rag-mcp"]["dependsOn"] == ["rag-api"]
     assert units["context-agent"]["dependsOn"] == ["feature-rag-mcp"]
     assert units["context-agent-registry"]["dependsOn"] == [
         "context-agent",
