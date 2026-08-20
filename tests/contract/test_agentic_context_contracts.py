@@ -218,4 +218,7 @@ def test_a2a_smoke_payloads_use_protocol_v03_message_ids():
     ).read_text(encoding="utf-8")
     for script in (deploy, autoscale):
         assert '"messageId": request_id' in script
+        assert '"contextId": request_id' in script
         assert '"params": {\n            "id": request_id' not in script
+    assert 'a2a_path="api/a2a-sandboxes"' in deploy
+    assert 'card_path=".well-known/agent-card.json"' in deploy

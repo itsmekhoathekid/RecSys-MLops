@@ -95,7 +95,13 @@ agentic_a2a_smoke() {
   local chunk_id="${AGENTIC_SMOKE_CHUNK_ID:?AGENTIC_SMOKE_CHUNK_ID is required for grounded A2A smoke}"
   local user_id="${AGENTIC_SMOKE_USER_ID:-1001}"
   local local_port="${AGENTIC_A2A_LOCAL_PORT:-18083}"
-  local base_url="http://127.0.0.1:${local_port}/api/a2a/kagent/${agent_name}"
+  local a2a_path="api/a2a"
+  local card_path=".well-known/agent.json"
+  if [[ "${agent_name}" == *-sandbox ]]; then
+    a2a_path="api/a2a-sandboxes"
+    card_path=".well-known/agent-card.json"
+  fi
+  local base_url="http://127.0.0.1:${local_port}/${a2a_path}/kagent/${agent_name}"
   local log_file response_file pid card_ready=false
   mkdir -p reports/agentic
   log_file="reports/agentic/${agent_name}-port-forward.log"
@@ -104,7 +110,7 @@ agentic_a2a_smoke() {
     "${local_port}:8083" >"${log_file}" 2>&1 &
   pid=$!
   for _ in $(seq 1 30); do
-    if python3 - "${base_url}/.well-known/agent.json" <<'PY'
+    if python3 - "${base_url}/${card_path}" <<'PY'
 import sys
 import urllib.request
 
@@ -149,6 +155,7 @@ payload = {
     "params": {
         "message": {
             "messageId": request_id,
+            "contextId": request_id,
             "role": "user",
             "parts": [{"kind": "text", "text": prompt}],
         },
