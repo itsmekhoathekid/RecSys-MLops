@@ -24,6 +24,21 @@ CHUNK_FEATURES = (
 )
 
 
+def configure_feast_milvus_bool_compatibility() -> None:
+    """Decode Feast Milvus VARCHAR-backed Bool values without changing the view.
+
+    Feast's Milvus writer serializes scalar feature values to strings, while its
+    reader currently assigns Bool strings directly to protobuf ``bool_val``.
+    Routing only Bool through ``string_val`` preserves the logical FeatureView
+    type and lets this boundary perform strict conversion below.
+    """
+
+    from feast.infra.online_stores.milvus_online_store import milvus
+    from feast.types import ValueType
+
+    milvus.VALUE_TYPE_TO_PROTO_VALUE_MAP[ValueType.BOOL] = "string_val"
+
+
 class OnlineFeatureStore(Protocol):
     """Small Feast boundary used by exact lookup and replaced in unit tests."""
 
@@ -94,7 +109,7 @@ class ChunkLookupService:
                     current_price=float(
                         _column_value(columns, "current_price", index) or 0.0
                     ),
-                    in_stock=bool(_column_value(columns, "in_stock", index)),
+                    in_stock=_as_bool(_column_value(columns, "in_stock", index)),
                     average_rating=float(
                         _column_value(columns, "average_rating", index) or 0.0
                     ),
@@ -115,3 +130,19 @@ def _column_value(columns: dict[str, list[object]], name: str, index: int) -> ob
 
     values = columns.get(name, [])
     return values[index] if index < len(values) else None
+
+
+def _as_bool(value: object) -> bool:
+    """Convert Feast's Milvus wire value without treating ``"False"`` as true."""
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1"}:
+            return True
+        if normalized in {"false", "0", ""}:
+            return False
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    raise ValueError(f"Invalid in_stock value from Feast: {value!r}")

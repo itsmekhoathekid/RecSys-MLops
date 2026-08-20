@@ -6,7 +6,9 @@ duration="${AGENTIC_LOAD_DURATION_SECONDS:-300}"
 rps="${AGENTIC_LOAD_RPS:-20}"
 chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800078:review:rev_800078_01:0}"
 poll_seconds="${AGENTIC_KEDA_POLL_SECONDS:-15}"
+decision_grace_seconds="${AGENTIC_SCALE_DECISION_GRACE_SECONDS:-5}"
 load_log="${AGENTIC_LOAD_LOG:-reports/agentic/autoscale-load.json}"
+load_ready_log="${load_log%.json}.ready"
 load_pid=""
 a2a_pf_pid=""
 
@@ -38,9 +40,13 @@ errors = 0
 
 worker_count = rps * 3
 target_interval = worker_count / rps
+start_event = asyncio.Event()
+ready_event = asyncio.Event()
+ready_count = 0
+deadline = 0.0
 
-async def worker(worker_id, deadline):
-    global errors
+async def worker(worker_id):
+    global errors, ready_count
     headers = {"Authorization": "Bearer " + os.environ["MCP_AUTH_TOKEN"]}
     async with httpx.AsyncClient(headers=headers) as http_client:
         async with streamable_http_client(
@@ -48,6 +54,10 @@ async def worker(worker_id, deadline):
         ) as streams:
             async with ClientSession(streams[0], streams[1]) as session:
                 await session.initialize()
+                ready_count += 1
+                if ready_count == worker_count:
+                    ready_event.set()
+                await start_event.wait()
                 while time.monotonic() < deadline:
                     started = time.perf_counter()
                     try:
@@ -66,10 +76,13 @@ async def worker(worker_id, deadline):
                     )
 
 async def main():
+    global deadline
+    tasks = [asyncio.create_task(worker(worker_id)) for worker_id in range(worker_count)]
+    await asyncio.wait_for(ready_event.wait(), timeout=90)
     deadline = time.monotonic() + duration
-    await asyncio.gather(
-        *(worker(worker_id, deadline) for worker_id in range(worker_count))
-    )
+    print("READY", file=sys.stderr, flush=True)
+    start_event.set()
+    await asyncio.gather(*tasks)
     ordered = sorted(latencies)
     p95 = ordered[max(0, int(len(ordered) * 0.95) - 1)]
     result = {
@@ -83,8 +96,24 @@ async def main():
         raise SystemExit(1)
 
 asyncio.run(main())
-' "${duration}" "${rps}" "${chunk_id}" >"${load_log}" &
+' "${duration}" "${rps}" "${chunk_id}" >"${load_log}" 2>"${load_ready_log}" &
 load_pid=$!
+
+load_ready=false
+for _ in $(seq 1 90); do
+  if grep -qx READY "${load_ready_log}"; then
+    load_ready=true
+    break
+  fi
+  if ! kill -0 "${load_pid}" >/dev/null 2>&1; then
+    wait "${load_pid}"
+  fi
+  sleep 1
+done
+[[ "${load_ready}" == "true" ]] || {
+  echo "MCP load workers did not initialize within 90 seconds." >&2
+  exit 1
+}
 
 scaled=false
 for _ in 1 2; do
@@ -96,6 +125,17 @@ for _ in 1 2; do
     break
   fi
 done
+if [[ "${scaled}" != "true" ]]; then
+  for _ in $(seq 1 "${decision_grace_seconds}"); do
+    sleep 1
+    replicas="$(kubectl -n "${namespace}" get deployment recsys-feature-rag-mcp \
+      -o jsonpath='{.spec.replicas}')"
+    if [[ "${replicas:-0}" -ge 3 ]]; then
+      scaled=true
+      break
+    fi
+  done
+fi
 [[ "${scaled}" == "true" ]] || {
   echo "MCP did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
@@ -173,6 +213,17 @@ for _ in 1 2; do
     break
   fi
 done
+if [[ "${agent_scaled}" != "true" ]]; then
+  for _ in $(seq 1 "${decision_grace_seconds}"); do
+    sleep 1
+    replicas="$(kubectl -n "${namespace}" get deployment recsys-context-agent \
+      -o jsonpath='{.spec.replicas}')"
+    if [[ "${replicas:-0}" -ge 3 ]]; then
+      agent_scaled=true
+      break
+    fi
+  done
+fi
 [[ "${agent_scaled}" == "true" ]] || {
   echo "Regular Agent did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1

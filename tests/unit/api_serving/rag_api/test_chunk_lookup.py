@@ -30,7 +30,7 @@ class Store:
                 "category_l2": ["", None, ""],
                 "category_l3": ["", None, ""],
                 "current_price": [1.5, None, 3.5],
-                "in_stock": [True, None, False],
+                "in_stock": ["True", None, "False"],
                 "average_rating": [4.2, None, 4.8],
                 "source_run_id": ["source", None, "source"],
             }
@@ -53,6 +53,7 @@ def test_lookup_uses_pointer_selected_view_and_preserves_request_order():
     assert result.pipeline_run_id == "pipeline-7"
     assert [chunk.chunk_id for chunk in result.chunks] == ["a", "c"]
     assert result.missing_chunk_ids == ["missing"]
+    assert [chunk.in_stock for chunk in result.chunks] == [True, False]
     assert store.request["entity_rows"] == [
         {"chunk_id": "a"},
         {"chunk_id": "missing"},

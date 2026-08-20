@@ -19,7 +19,10 @@ from recsys_rag_runtime import OnnxE5Encoder
 from recsys_serving_common.runtime import configure_api, healthz, metrics, version_payload
 
 from recsys_rag_api.batching import BatchingTextEncoder
-from recsys_rag_api.chunk_lookup import ChunkLookupService
+from recsys_rag_api.chunk_lookup import (
+    ChunkLookupService,
+    configure_feast_milvus_bool_compatibility,
+)
 from recsys_rag_api.contracts import (
     ChunkBatchRequest,
     ChunkBatchResponse,
@@ -107,6 +110,7 @@ def create_app(
             from pymilvus import MilvusClient
 
             _configure_feast_registry_url()
+            configure_feast_milvus_bool_compatibility()
             contract = EmbeddingContract(
                 model=settings.embedding_model,
                 revision=settings.embedding_revision,
