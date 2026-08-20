@@ -30,6 +30,16 @@ def settings(token: str = "secret") -> McpSettings:
     )
 
 
+def test_downstream_pool_settings_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("DOWNSTREAM_MAX_CONNECTIONS", "50")
+    monkeypatch.setenv("DOWNSTREAM_MAX_KEEPALIVE_CONNECTIONS", "20")
+
+    loaded = McpSettings.from_env()
+
+    assert loaded.downstream_max_connections == 50
+    assert loaded.downstream_max_keepalive_connections == 20
+
+
 def test_health_ready_version_metrics_and_mcp_authentication():
     client_dependency = Client()
     with TestClient(

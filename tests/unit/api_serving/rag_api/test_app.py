@@ -145,10 +145,18 @@ def test_settings_from_environment(monkeypatch):
     monkeypatch.setenv("RAG_EMBEDDING_DIMENSION", "384")
     monkeypatch.setenv("RAG_POINTER_RELOAD_SECONDS", "15")
     monkeypatch.setenv("RAG_EMBEDDING_REVISION", "env-revision")
+    monkeypatch.setenv("RAG_SYNC_WORKERS", "8")
+    monkeypatch.setenv("RAG_SYNC_QUEUE_SIZE", "16")
+    monkeypatch.setenv("RAG_CAPACITY_WAIT_SECONDS", "0.1")
+    monkeypatch.setenv("RAG_STORAGE_TIMEOUT_SECONDS", "5")
     loaded = RagApiSettings.from_env()
     assert loaded.embedding_revision == "env-revision"
     assert loaded.embedding_dimension == 384
     assert loaded.pointer_reload_seconds == 15
+    assert loaded.sync_workers == 8
+    assert loaded.sync_queue_size == 16
+    assert loaded.capacity_wait_seconds == 0.1
+    assert loaded.storage_timeout_seconds == 5
 
 
 def test_feast_registry_url_is_built_without_exposing_unescaped_password(monkeypatch):

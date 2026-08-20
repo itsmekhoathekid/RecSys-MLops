@@ -64,6 +64,8 @@ async def lifespan(_: FastAPI):
                 write=5,
                 pool=5,
             ),
+            # Bound the shared pool so concurrent browser requests cannot create
+            # an unbounded number of downstream sockets.
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
         )
         yield
