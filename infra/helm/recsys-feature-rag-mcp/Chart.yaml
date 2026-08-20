@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-feature-rag-mcp
+description: Stateless MCP facade for online RecSys features and RAG chunks.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

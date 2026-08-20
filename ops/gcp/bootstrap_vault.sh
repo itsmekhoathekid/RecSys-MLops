@@ -12,7 +12,7 @@ kms_keyring="${VAULT_KMS_KEYRING:-recsys-mlops-vault}"
 kms_key="${VAULT_KMS_KEY:-vault-unseal}"
 gcp_project="${VAULT_GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 
-service_secret_groups=(data-platform mlflow runtime kserve-minio gateway analytics jenkins-runtime agent-gateway agentregistry)
+service_secret_groups=(data-platform mlflow runtime kserve-minio gateway analytics jenkins-runtime agent-gateway agentregistry feature-rag-mcp)
 
 for required_command in gcloud jq kubectl openssl; do
   if ! command -v "${required_command}" >/dev/null 2>&1; then
@@ -207,6 +207,22 @@ for secret_group in "${service_secret_groups[@]}"; do
         vault_exec_with_payload "${active_token}" "${payload_file}" \
           write "recsys/data/${secret_group}" - >/dev/null
         echo "  ${secret_group}: generated and stored 4 keys"
+      fi
+      continue
+    fi
+    if [[ "${secret_group}" == "feature-rag-mcp" ]]; then
+      if vault_exec "${active_token}" kv metadata get -mount=recsys "${secret_group}" >/dev/null 2>&1; then
+        echo "  ${secret_group}: legacy source absent; keeping the existing Vault version"
+      else
+        payload_file="${bootstrap_tmp}/${secret_group}.json"
+        mcp_auth_token="$(openssl rand -hex 32)"
+        jq -n --arg token "${mcp_auth_token}" \
+          '{data: {MCP_AUTH_TOKEN: $token, Authorization: ("Bearer " + $token)}}' \
+          >"${payload_file}"
+        unset mcp_auth_token
+        vault_exec_with_payload "${active_token}" "${payload_file}" \
+          write "recsys/data/${secret_group}" - >/dev/null
+        echo "  ${secret_group}: generated and stored 2 keys"
       fi
       continue
     fi

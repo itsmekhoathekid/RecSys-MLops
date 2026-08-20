@@ -1,0 +1,3 @@
+nodeSelector:
+  recsys.ai/pool: cpu-services
+tolerations: []

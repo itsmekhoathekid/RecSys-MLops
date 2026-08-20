@@ -36,6 +36,8 @@ EXPECTED_LABELS = [
     "RAG Item Index",
     "RAG Retrieval API",
     "Online Feature API",
+    "Feature RAG MCP",
+    "RecSys Context Agent",
     "Inference API",
     "KServe Inference Engine",
     "Progressive Model Rollout",
@@ -69,6 +71,53 @@ def test_datahub_catalog_has_a_dedicated_component_and_deploy_action():
     assert unit["kind"] == "kubernetes-action"
     assert unit["components"] == ["datahub_catalog"]
     assert unit["dependsOn"] == ["data-config"]
+
+
+def test_agentic_components_have_separate_image_and_chart_ownership():
+    components = {
+        component["name"]: component for component in configuration.load_components()
+    }
+    assert components["feature_rag_mcp"]["buildImages"] == [
+        "recsys-feature-rag-mcp"
+    ]
+    assert components["feature_rag_mcp"]["verifyDependsOn"] == [
+        "online_feature_api",
+        "rag_api",
+    ]
+    assert components["context_agent"]["buildImages"] == []
+    assert components["context_agent"]["verifyDependsOn"] == ["feature_rag_mcp"]
+
+    units = {
+        item["name"]: item
+        for item in json.loads(
+            (ROOT / "jenkins/config/deploy-units.json").read_text()
+        )["units"]
+    }
+    assert units["feature-rag-mcp"]["consumesImages"] == [
+        "recsys-feature-rag-mcp"
+    ]
+    assert units["context-agent"]["consumesImages"] == []
+    assert units["context-agent"]["dependsOn"] == ["feature-rag-mcp"]
+    assert units["context-agent-registry"]["dependsOn"] == [
+        "context-agent",
+        "feature-rag-mcp-registry",
+    ]
+    assert units["feature-rag-mcp-registry"]["kind"] == "jenkins-action"
+    assert units["context-agent-registry"]["kind"] == "jenkins-action"
+
+    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in deploy
+    assert "0.1.0+%s" in deploy
+    assert "--remote-url" in deploy
+    assert "--transport streamable-http" in deploy
+
+    jenkins_chart = (
+        ROOT / "infra/helm/recsys-ci/templates/jenkins.yaml"
+    ).read_text(encoding="utf-8")
+    assert "kubeconformSha256" in jenkins_chart
+    assert "arctlSha256" in jenkins_chart
 
 
 def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
@@ -492,10 +541,20 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "release_plan.py create" not in pipeline_helper
     assert "applyForcedComponents" not in pipeline_helper
     assert "selected.collate(maxParallel)" in pipeline_helper
+    assert "def isMainRevision()" in pipeline_helper
+    assert "def shouldPublishImages()" in pipeline_helper
+    assert "params.PUBLISH_IMAGES && isMainRevision()" in pipeline_helper
     assert "params.PUBLISH_IMAGES && env.RUN_COMPONENT_DEPLOY" in pipeline_helper
     assert source.count("python3 jenkins/python/configuration.py validate") == 1
     assert source.count("release_deploy_preflight.sh") == 1
-    assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" in source
+    assert "env.SHOULD_PUBLISH_IMAGES = componentPipeline.shouldPublishImages()" in source
+    assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${env.SHOULD_PUBLISH_IMAGES" in source
+    assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" not in source
+    agentic_deploy = (
+        ROOT / "jenkins/scripts/deploy/agentic.sh"
+    ).read_text(encoding="utf-8")
+    assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in agentic_deploy
+    assert "git rev-parse --verify origin/main^{commit}" in agentic_deploy
     for marker in (
         "[CI] Contract checks",
         "[BUILD] Build and publish catalog images",
@@ -551,6 +610,7 @@ def test_component_ci_profiles_use_repo_locks():
         "online-feature-api",
         "inference-api",
         "rag-api",
+        "agentic",
         "demo",
         "analytics",
     }
@@ -633,10 +693,10 @@ def test_catalog_contains_only_supported_migration_policies():
     }
 
 
-def test_catalog_driven_builder_owns_exactly_seventeen_images():
+def test_catalog_driven_builder_owns_all_declared_images():
     catalog = json.loads((ROOT / "images/catalog.json").read_text(encoding="utf-8"))
     assert catalog["version"] == 1
-    assert len(catalog["images"]) == 17
+    assert "recsys-feature-rag-mcp" in catalog["images"]
     assert {name for name in catalog["images"] if name.endswith("-spark")} == {
         "recsys-spark"
     }

@@ -8,7 +8,7 @@ os.environ.setdefault("RECSYS_OTEL_ENABLED", "0")
 from fastapi.testclient import TestClient
 
 from recsys_rag_api.app import _configure_feast_registry_url, create_app
-from recsys_rag_api.contracts import RetrievalResponse
+from recsys_rag_api.contracts import ChunkBatchResponse, ChunkRecord, RetrievalResponse
 from recsys_rag_api.settings import RagApiSettings
 
 
@@ -31,6 +31,36 @@ class Service:
         if self.retrieve_error:
             raise RuntimeError("search unavailable")
         return RetrievalResponse(query=request.query, pipeline_run_id="run-1", items=[])
+
+
+class ChunkService:
+    def __init__(self, *, error: Exception | None = None):
+        self.error = error
+
+    def get_many(self, chunk_ids):
+        if self.error:
+            raise self.error
+        chunks = [
+            ChunkRecord(
+                chunk_id=chunk_id,
+                item_id=index + 1,
+                chunk_type="product_overview",
+                source_key=f"items/{index + 1}",
+                text=f"chunk {chunk_id}",
+                brand="Acme",
+                current_price=10.0,
+                in_stock=True,
+                average_rating=4.5,
+                source_run_id="source-1",
+            )
+            for index, chunk_id in enumerate(chunk_ids)
+            if chunk_id != "missing"
+        ]
+        return ChunkBatchResponse(
+            pipeline_run_id="run-1",
+            chunks=chunks,
+            missing_chunk_ids=[chunk_id for chunk_id in chunk_ids if chunk_id == "missing"],
+        )
 
 
 def settings() -> RagApiSettings:
@@ -70,6 +100,45 @@ def test_readiness_and_retrieval_failures_are_classified():
         assert client.get("/ready").status_code == 503
     with TestClient(create_app(settings(), Service(retrieve_error=True))) as client:
         assert client.post("/v1/rag/retrieve", json={"query": "test"}).status_code == 502
+
+
+def test_exact_and_batch_chunk_lookup_contracts():
+    app = create_app(settings(), Service(), ChunkService())
+    with TestClient(app) as client:
+        exact = client.get("/v1/rag/chunks/chunk-1")
+        assert exact.status_code == 200
+        assert exact.json()["pipeline_run_id"] == "run-1"
+        assert "embedding" not in exact.json()
+
+        missing = client.get("/v1/rag/chunks/missing")
+        assert missing.status_code == 404
+
+        batch = client.post(
+            "/v1/rag/chunks:batch-get",
+            json={"chunk_ids": ["chunk-2", "missing", "chunk-3"]},
+        )
+        assert batch.status_code == 200
+        assert [chunk["chunk_id"] for chunk in batch.json()["chunks"]] == [
+            "chunk-2",
+            "chunk-3",
+        ]
+        assert batch.json()["missing_chunk_ids"] == ["missing"]
+
+
+def test_chunk_lookup_validation_and_failures_are_classified():
+    with TestClient(create_app(settings(), Service(), ChunkService())) as client:
+        duplicate = client.post(
+            "/v1/rag/chunks:batch-get", json={"chunk_ids": ["same", "same"]}
+        )
+        assert duplicate.status_code == 422
+    with TestClient(
+        create_app(settings(), Service(), ChunkService(error=RuntimeError("pointer")))
+    ) as client:
+        assert client.get("/v1/rag/chunks/chunk-1").status_code == 503
+    with TestClient(
+        create_app(settings(), Service(), ChunkService(error=ValueError("feast")))
+    ) as client:
+        assert client.get("/v1/rag/chunks/chunk-1").status_code == 502
 
 
 def test_settings_from_environment(monkeypatch):

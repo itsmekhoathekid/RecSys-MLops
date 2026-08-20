@@ -211,6 +211,50 @@
       "dependsOn": ["rag-feature-registry", "rag-api"]
     },
     {
+      "name": "feature-rag-mcp",
+      "kind": "helm",
+      "release": "recsys-feature-rag-mcp",
+      "namespace": "kagent",
+      "chart": "infra/helm/recsys-feature-rag-mcp",
+      "components": ["feature_rag_mcp"],
+      "consumesImages": ["recsys-feature-rag-mcp"],
+      "imageValues": {"recsys-feature-rag-mcp": "image"},
+      "consumesArtifacts": [],
+      "dependsOn": []
+    },
+    {
+      "name": "context-agent",
+      "kind": "helm",
+      "release": "recsys-kagent-agent",
+      "namespace": "kagent",
+      "chart": "infra/helm/recsys-kagent-agent",
+      "components": ["context_agent"],
+      "consumesImages": [],
+      "imageValues": {},
+      "consumesArtifacts": [],
+      "dependsOn": ["feature-rag-mcp"]
+    },
+    {
+      "name": "feature-rag-mcp-registry",
+      "kind": "jenkins-action",
+      "release": "recsys-feature-rag-mcp-registry",
+      "namespace": "agentregistry",
+      "components": ["feature_rag_mcp"],
+      "consumesImages": ["recsys-feature-rag-mcp"],
+      "consumesArtifacts": [],
+      "dependsOn": ["feature-rag-mcp"]
+    },
+    {
+      "name": "context-agent-registry",
+      "kind": "jenkins-action",
+      "release": "recsys-context-agent-registry",
+      "namespace": "agentregistry",
+      "components": ["context_agent"],
+      "consumesImages": [],
+      "consumesArtifacts": [],
+      "dependsOn": ["context-agent", "feature-rag-mcp-registry"]
+    },
+    {
       "name": "streaming",
       "kind": "helm",
       "release": "recsys-streaming",

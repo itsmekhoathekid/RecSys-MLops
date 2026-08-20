@@ -86,6 +86,11 @@
       "context": ".",
       "dependencies": []
     },
+    "recsys-feature-rag-mcp": {
+      "dockerfile": "images/agentic/recsys-feature-rag-mcp/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
     "recsys-demo-api": {
       "dockerfile": "images/demo/recsys-demo-api/Dockerfile",
       "context": ".",

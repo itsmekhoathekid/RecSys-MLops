@@ -40,6 +40,11 @@ externalSecrets:
     namespace: agentregistry
     secretName: agentregistry-runtime
     vaultPath: agentregistry
+  featureRagMcp:
+    enabled: false
+    namespace: kagent
+    secretName: recsys-feature-rag-mcp-auth
+    vaultPath: feature-rag-mcp
   dataPlatform:
     namespace: recsys-dataflow
     secretName: recsys-data-platform-secret

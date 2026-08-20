@@ -26,6 +26,11 @@
       "lockFile": "apps/api-serving/rag-api/uv.lock",
       "pythonVersion": "3.11"
     },
+    "agentic": {
+      "projectPath": "apps/agentic/recsys-feature-rag-mcp",
+      "lockFile": "apps/agentic/recsys-feature-rag-mcp/uv.lock",
+      "pythonVersion": "3.11"
+    },
     "demo": {
       "projectPath": "apps/demo-web/backend",
       "lockFile": "apps/demo-web/backend/uv.lock",

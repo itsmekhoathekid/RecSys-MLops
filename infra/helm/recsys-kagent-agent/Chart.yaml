@@ -1,6 +1,6 @@
 apiVersion: v2
 name: recsys-kagent-agent
-description: Minimal verification Agent for the shared kagent ModelConfig
+description: Grounded RecSys regular and gVisor-sandboxed kagent profiles.
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

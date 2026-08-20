@@ -474,6 +474,71 @@
       "migrationPolicy": "none"
     },
     {
+      "name": "feature_rag_mcp",
+      "flag": "RUN_FEATURE_RAG_MCP",
+      "label": "Feature RAG MCP",
+      "ciProfile": "agentic",
+      "changeDetection": {
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime"
+        ],
+        "prefixes": [
+          "apps/agentic/recsys-feature-rag-mcp/",
+          "infra/helm/recsys-feature-rag-mcp/",
+          "tests/integration/feature_rag_mcp/",
+          "tests/unit/agentic/feature_rag_mcp/"
+        ],
+        "files": [
+          "images/agentic/recsys-feature-rag-mcp/Dockerfile",
+          "configs/agentic/recsys-context-agent/tools-contract.json",
+          "apps/api-serving/shared/src/recsys_serving_common/contracts.py",
+          "apps/api-serving/rag-api/src/recsys_rag_api/contracts.py",
+          "jenkins/scripts/ci/agentic.sh",
+          "jenkins/scripts/deploy/agentic.sh",
+          "jenkins/scripts/test/agentic.sh",
+          "tests/contract/test_agentic_context_contracts.py"
+        ]
+      },
+      "buildImages": [
+        "recsys-feature-rag-mcp"
+      ],
+      "buildArtifacts": [],
+      "verifyDependsOn": [
+        "online_feature_api",
+        "rag_api"
+      ],
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "context_agent",
+      "flag": "RUN_CONTEXT_AGENT",
+      "label": "RecSys Context Agent",
+      "ciProfile": "agentic",
+      "changeDetection": {
+        "groups": [
+          "jenkins-shared-runtime"
+        ],
+        "prefixes": [
+          "infra/helm/recsys-kagent-agent/",
+          "tests/e2e/agentic_context/"
+        ],
+        "files": [
+          "configs/agentic/recsys-context-agent/tools-contract.json",
+          "jenkins/scripts/ci/agentic.sh",
+          "jenkins/scripts/deploy/agentic.sh",
+          "jenkins/scripts/test/agentic.sh",
+          "tests/contract/test_agentic_context_contracts.py"
+        ]
+      },
+      "buildImages": [],
+      "buildArtifacts": [],
+      "verifyDependsOn": [
+        "feature_rag_mcp"
+      ],
+      "migrationPolicy": "none"
+    },
+    {
       "name": "inference_api",
       "flag": "RUN_INFERENCE_API",
       "label": "Inference API",

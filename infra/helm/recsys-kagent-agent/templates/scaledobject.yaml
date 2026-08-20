@@ -1,0 +1,26 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.agent.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.agent.name }}
+  minReplicaCount: {{ .Values.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
+  pollingInterval: {{ .Values.autoscaling.pollingInterval }}
+  cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod }}
+  fallback:
+    failureThreshold: {{ .Values.autoscaling.fallback.failureThreshold }}
+    replicas: {{ .Values.autoscaling.fallback.replicas }}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.autoscaling.serverAddress | quote }}
+        metricName: recsys_context_agent_cpu_cores
+        threshold: {{ .Values.autoscaling.cpuTarget | quote }}
+        query: 'sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Values.namespace }}",pod=~"{{ .Values.agent.name }}-.*",container!="POD",image!=""}[2m]))'
+{{- end }}

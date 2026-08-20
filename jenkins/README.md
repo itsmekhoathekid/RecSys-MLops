@@ -43,7 +43,10 @@ The Helm chart exposes only `/github-webhook/` through the ingress controller.
 | `dp1` | raw ingestion, data generator, source CDC config | `recsys-data-ingestion`, `recsys-spark`, `recsys-airflow`, `recsys-kafka-connect` |
 | `dp2` | silver/gold Spark transforms and DAG/config | `recsys-spark`, `recsys-airflow` |
 | `dp3` | offline feature builders and feature store config | `recsys-spark`, `recsys-feature-store`, `recsys-airflow` |
+| `rag_api` | RAG API/runtime, exact-chunk and semantic retrieval contracts | `recsys-rag-api` |
 | `online_feature_api` | shared/Feature source, Feature chart and contract tests | `recsys-online-feature-api` |
+| `feature_rag_mcp` | stateless MCP facade, tool contract, image and Helm chart | `recsys-feature-rag-mcp`, MCP Registry metadata |
+| `context_agent` | regular/sandbox agent chart, prompts and A2A tests | chart-only release, regular/sandbox Registry metadata |
 | `inference_api` | shared/Inference source, gateway and recommendation tests | `recsys-inference-api` |
 | `kserve` | `infra/helm/recsys-serving/`, `model_cd.py`, model promotion serving code | production model manifest update |
 | `rollout` | rollout controller, Model-CD pipeline/script, watcher Helm resource, rollout load test, serving/observability contracts | immutable `recsys-mlops-training` watcher image and updated watcher Deployment |

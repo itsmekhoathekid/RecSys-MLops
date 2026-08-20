@@ -45,8 +45,11 @@ verify_deployed_component() {
     materialize|training|dp1|dp2|dp3|drift|stream_offline|stream_online)
       namespace="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
       ;;
-    online_feature_api|inference_api)
+    online_feature_api|inference_api|rag_api)
       namespace="${API_NAMESPACE:-api-serving}"
+      ;;
+    feature_rag_mcp|context_agent)
+      namespace="${KAGENT_NAMESPACE:-kagent}"
       ;;
     kserve|kserve_model_cd)
       namespace="${KSERVE_NAMESPACE:-kserve-triton-inference}"

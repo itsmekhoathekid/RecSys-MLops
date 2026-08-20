@@ -82,7 +82,7 @@ def deployReleasePlan(String scriptPath, String extraEnv, String planPath) {
   }
 }
 
-def shouldDeployRelease() {
+def isMainRevision() {
   def branchEnvironmentIsMain = [
     env.BRANCH_NAME,
     env.GIT_BRANCH
@@ -96,10 +96,17 @@ def shouldDeployRelease() {
     returnStatus: true,
     script: 'test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"'
   ) == 0
+  return branchEnvironmentIsMain || checkedOutCommitIsMain
+}
+
+def shouldPublishImages() {
+  return params.PUBLISH_IMAGES && isMainRevision()
+}
+
+def shouldDeployRelease() {
   return params.PUBLISH_IMAGES && env.RUN_COMPONENT_DEPLOY == 'true' && (
     params.FORCE_DEPLOY ||
-    branchEnvironmentIsMain ||
-    checkedOutCommitIsMain
+    isMainRevision()
   )
 }
 

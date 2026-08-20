@@ -24,6 +24,7 @@ source jenkins/scripts/ci/ml.sh
 source jenkins/scripts/ci/serving.sh
 source jenkins/scripts/ci/demo.sh
 source jenkins/scripts/ci/analytics.sh
+source jenkins/scripts/ci/agentic.sh
 source jenkins/scripts/ci/dispatch.sh
 
 run_component_ci "${component}"

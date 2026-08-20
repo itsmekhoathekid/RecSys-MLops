@@ -28,6 +28,12 @@ help:
 	@echo "  make serving-autoscale-load-test  Run production serving load validation"
 	@echo "  make llm-inference-smoke          Validate Qwen vLLM CPU, llm-d, and agentgateway"
 	@echo "  make llm-inference-benchmark      Benchmark the deployed gateway endpoint"
+	@echo "  make test-agentic                 Run MCP unit and cross-chart contract tests"
+	@echo "  make helm-agentic                 Lint/render the MCP and kagent charts"
+	@echo "  make agentic-preflight            Validate agentic platform prerequisites"
+	@echo "  make agentic-smoke                Run MCP and regular/sandbox A2A smoke tests"
+	@echo "  make agentic-autoscale-test       Run 20 RPS MCP scale/fallback validation"
+	@echo "  make agentic-registry-smoke       Verify published Registry versions"
 	@echo "  make jenkins-full             Trigger the full production Jenkins CI/CD job"
 
 .PHONY: validate
@@ -116,3 +122,34 @@ llm-inference-benchmark:
 .PHONY: jenkins-full
 jenkins-full:
 	@bash ops/gcp/trigger_full_jenkins.sh
+
+.PHONY: test-agentic
+test-agentic:
+	@uv run --project apps/agentic/recsys-feature-rag-mcp pytest \
+	  tests/unit/agentic/feature_rag_mcp \
+	  tests/integration/feature_rag_mcp \
+	  tests/contract/test_agentic_context_contracts.py -q
+
+.PHONY: helm-agentic
+helm-agentic:
+	@helm lint infra/helm/recsys-feature-rag-mcp
+	@helm template validation infra/helm/recsys-feature-rag-mcp >/dev/null
+	@helm lint infra/helm/recsys-kagent-agent
+	@helm template validation infra/helm/recsys-kagent-agent >/dev/null
+
+.PHONY: agentic-preflight
+agentic-preflight:
+	@AGENTIC_SMOKE_CHUNK_ID="$${AGENTIC_SMOKE_CHUNK_ID:-preflight-not-used}" \
+	  bash -c 'source jenkins/scripts/lib/common.sh; source jenkins/scripts/deploy/agentic.sh; timeout=10m; agentic_preflight true'
+
+.PHONY: agentic-smoke
+agentic-smoke:
+	@bash ops/validation/agentic_context_smoke.sh
+
+.PHONY: agentic-autoscale-test
+agentic-autoscale-test:
+	@bash ops/validation/agentic_context_autoscale.sh
+
+.PHONY: agentic-registry-smoke
+agentic-registry-smoke:
+	@bash ops/validation/agentic_context_registry_smoke.sh

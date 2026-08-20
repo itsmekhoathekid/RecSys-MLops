@@ -18,6 +18,8 @@ run_component_verification() {
     datahub_catalog) test_datahub_catalog ;;
     rag_index) test_rag_index ;;
     rag_api) test_rag_api ;;
+    feature_rag_mcp) test_feature_rag_mcp ;;
+    context_agent) test_context_agent ;;
     online_feature_api) test_online_feature_api ;;
     inference_api) test_inference_api ;;
     kserve|kserve_model_cd) test_kserve ;;
@@ -33,6 +35,8 @@ run_component_verification() {
       test_dp3
       test_stream_features
       test_training
+      test_feature_rag_mcp
+      test_context_agent
       test_online_feature_api
       test_inference_api
       test_kserve

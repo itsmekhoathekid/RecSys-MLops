@@ -23,6 +23,7 @@ source jenkins/scripts/deploy/demo.sh
 source jenkins/scripts/deploy/analytics.sh
 source jenkins/scripts/deploy/rag.sh
 source jenkins/scripts/deploy/datahub.sh
+source jenkins/scripts/deploy/agentic.sh
 
 image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_REGISTRY:-$(python3 jenkins/python/configuration.py gcp imageRegistry)}}"
 image_registry="${image_registry%/}"
@@ -42,6 +43,7 @@ local_model_store_endpoint_result=""
 sensitive_helm_values_files=()
 cleanup_release_runtime() {
   stop_runtime_port_forwards
+  agentic_registry_close_tunnel
   local sensitive_file
   for sensitive_file in "${sensitive_helm_values_files[@]}"; do
     [[ -n "${sensitive_file}" ]] && rm -f -- "${sensitive_file}"
@@ -271,7 +273,12 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
 }
 
 case "${unit_name}" in
-  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api|milvus|rag-api)
+  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api|milvus|rag-api|feature-rag-mcp|context-agent)
+    if [[ "${unit_name}" == "feature-rag-mcp" ]]; then
+      agentic_preflight false
+    elif [[ "${unit_name}" == "context-agent" ]]; then
+      agentic_preflight true
+    fi
     deploy_helm_unit
     ;;
   feature-registry)
@@ -288,6 +295,12 @@ case "${unit_name}" in
     ;;
   datahub-catalog)
     datahub_catalog_sync "$(resolve_release_image recsys-data-ingestion)"
+    ;;
+  feature-rag-mcp-registry)
+    publish_feature_rag_mcp_registry
+    ;;
+  context-agent-registry)
+    publish_context_agent_registry
     ;;
   mlflow)
     deploy_mlflow

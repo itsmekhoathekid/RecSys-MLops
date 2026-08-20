@@ -97,6 +97,7 @@ resource "null_resource" "recsys_external_secrets_ready" {
     chart_revision     = local.service_mesh_sets["chartRevision"]
     agent_gateway_auth = tostring(var.deploy_llm_inference && var.agent_gateway_auth_enabled)
     agent_registry     = tostring(var.deploy_agent_registry)
+    feature_rag_mcp    = tostring(var.deploy_llm_inference)
   }
 
   provisioner "local-exec" {
@@ -133,11 +134,19 @@ resource "null_resource" "recsys_external_secrets_ready" {
           -n agentregistry --timeout=300s
         kubectl get "secret/agentregistry-runtime" -n agentregistry >/dev/null
       fi
+
+      if [[ "$${WAIT_FEATURE_RAG_MCP}" == "true" ]]; then
+        kubectl wait --for=condition=Ready \
+          "externalsecret/recsys-feature-rag-mcp-auth" \
+          -n kagent --timeout=300s
+        kubectl get "secret/recsys-feature-rag-mcp-auth" -n kagent >/dev/null
+      fi
     EOT
     interpreter = ["/bin/bash", "-c"]
     environment = {
-      WAIT_AGENT_GATEWAY  = tostring(var.deploy_llm_inference && var.agent_gateway_auth_enabled)
-      WAIT_AGENT_REGISTRY = tostring(var.deploy_agent_registry)
+      WAIT_AGENT_GATEWAY   = tostring(var.deploy_llm_inference && var.agent_gateway_auth_enabled)
+      WAIT_AGENT_REGISTRY  = tostring(var.deploy_agent_registry)
+      WAIT_FEATURE_RAG_MCP = tostring(var.deploy_llm_inference)
     }
   }
 

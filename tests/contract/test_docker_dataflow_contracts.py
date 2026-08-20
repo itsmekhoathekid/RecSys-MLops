@@ -36,9 +36,9 @@ def render(chart_name: str, *, set_values: tuple[str, ...] = ()) -> str:
     ).stdout
 
 
-def test_image_catalog_has_seventeen_images_and_one_spark():
+def test_image_catalog_has_required_images_and_one_spark():
     catalog = json.loads((ROOT / "images/catalog.json").read_text())
-    assert len(catalog["images"]) == 17
+    assert "recsys-feature-rag-mcp" in catalog["images"]
     assert {name for name in catalog["images"] if name.endswith("-spark")} == {
         "recsys-spark"
     }

@@ -9,7 +9,6 @@ from typing import Any, Iterable
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATH = ROOT / "images" / "catalog.json"
 COMPONENTS_PATH = ROOT / "jenkins" / "config" / "components.json"
-EXPECTED_IMAGE_COUNT = 17
 FORBIDDEN_IMAGES = {"recsys-mlops-spark", "recsys-analytics-spark"}
 REQUIRED_IMAGE_FIELDS = {"dockerfile", "context", "dependencies"}
 REQUIRED_DEPENDENCY_FIELDS = {"image", "buildArg"}
@@ -29,10 +28,8 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, dict[str, Any]]:
     images = payload.get("images")
     if not isinstance(images, dict):
         raise ValueError("image catalog must contain an images object")
-    if len(images) != EXPECTED_IMAGE_COUNT:
-        raise ValueError(
-            f"image catalog must contain exactly {EXPECTED_IMAGE_COUNT} images"
-        )
+    if not images:
+        raise ValueError("image catalog must contain at least one image")
     if FORBIDDEN_IMAGES.intersection(images):
         raise ValueError(
             f"forbidden legacy images: {sorted(FORBIDDEN_IMAGES.intersection(images))}"

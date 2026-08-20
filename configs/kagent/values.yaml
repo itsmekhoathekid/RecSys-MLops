@@ -23,6 +23,20 @@ controller:
     limits:
       cpu: 500m
       memory: 512Mi
+  substrate:
+    enabled: true
+    ateApiEndpoint: dns:///api.ate-system.svc:443
+    ateApiInsecure: true
+    atenetRouterURL: http://atenet-router.ate-system.svc:80
+    defaultWorkerPool:
+      name: recsys-context-sandbox-pool
+
+substrateWorkerPool:
+  create: true
+  name: recsys-context-sandbox-pool
+  replicas: 2
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.6
+  sandboxClass: gvisor
 
 ui:
   resources:

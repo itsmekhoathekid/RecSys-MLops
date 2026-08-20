@@ -1,0 +1,33 @@
+namespace: kagent
+name: recsys-feature-rag-mcp
+image: registry.example.invalid/recsys/recsys-feature-rag-mcp:required
+imagePullPolicy: IfNotPresent
+replicas: 2
+existingSecret: recsys-feature-rag-mcp-auth
+service: {port: 8080, targetPort: 8080}
+rollout: {maxSurge: 1, maxUnavailable: 0, minReadySeconds: 10, progressDeadlineSeconds: 180}
+config:
+  onlineFeatureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
+  ragApiUrl: http://recsys-rag-api.api-serving.svc.cluster.local
+  allowedOrigins: http://kagent-ui.kagent.svc.cluster.local
+  onlineFeatureTimeoutSeconds: "2"
+  ragTimeoutSeconds: "5"
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: "1", memory: 512Mi}
+nodeSelector: {}
+tolerations: []
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  pollingInterval: 15
+  cooldownPeriod: 120
+  serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
+  requestRateTarget: "10"
+  fallback: {failureThreshold: 3, replicas: 2}
+observability: {serviceMonitor: {enabled: true, interval: 15s}}
+networkPolicy:
+  enabled: true
+  apiServingNamespaceLabel: api-serving
+  observabilityNamespaceLabel: observability

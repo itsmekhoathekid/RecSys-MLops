@@ -4,6 +4,115 @@ variable "kagent_version" {
   default     = "0.9.9"
 }
 
+variable "agent_substrate_version" {
+  description = "Pinned Agent Substrate CRD and application chart version."
+  type        = string
+  default     = "0.0.6"
+}
+
+resource "kubernetes_namespace" "ate_system" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  metadata {
+    name = "ate-system"
+  }
+
+  depends_on = [google_container_node_pool.ml_system]
+}
+
+resource "helm_release" "substrate_crds" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  name       = "substrate-crds"
+  repository = "oci://ghcr.io/kagent-dev/substrate/helm"
+  chart      = "substrate-crds"
+  version    = var.agent_substrate_version
+  namespace  = kubernetes_namespace.ate_system[0].metadata[0].name
+  atomic     = true
+  wait       = true
+  timeout    = 600
+
+  depends_on = [kubernetes_namespace.ate_system]
+}
+
+# Substrate 0.0.6 does not expose storageClassName values for its RustFS PVC or
+# Valkey volumeClaimTemplates. Pre-creating the exact claims keeps the platform
+# on quota-safe pd-standard disks instead of consuming the regional SSD quota.
+resource "kubernetes_persistent_volume_claim_v1" "substrate_rustfs" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  metadata {
+    name      = "rustfs-data"
+    namespace = kubernetes_namespace.ate_system[0].metadata[0].name
+    labels = {
+      "app.kubernetes.io/managed-by" = "Helm"
+    }
+    annotations = {
+      "meta.helm.sh/release-name"      = "substrate"
+      "meta.helm.sh/release-namespace" = "ate-system"
+    }
+  }
+
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "standard"
+    resources {
+      requests = { storage = "1Gi" }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [kubernetes_namespace.ate_system]
+}
+
+resource "kubernetes_persistent_volume_claim_v1" "substrate_valkey" {
+  for_each = var.deploy_llm_inference ? toset(["0", "1", "2", "3", "4", "5"]) : toset([])
+
+  metadata {
+    name      = "data-valkey-cluster-${each.key}"
+    namespace = kubernetes_namespace.ate_system[0].metadata[0].name
+    labels = {
+      app = "valkey-cluster"
+    }
+  }
+
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "standard"
+    resources {
+      requests = { storage = "1Gi" }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [kubernetes_namespace.ate_system]
+}
+
+resource "helm_release" "substrate" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  name       = "substrate"
+  repository = "oci://ghcr.io/kagent-dev/substrate/helm"
+  chart      = "substrate"
+  version    = var.agent_substrate_version
+  namespace  = kubernetes_namespace.ate_system[0].metadata[0].name
+  atomic     = true
+  wait       = true
+  timeout    = 900
+
+  depends_on = [
+    helm_release.substrate_crds,
+    kubernetes_persistent_volume_claim_v1.substrate_rustfs,
+    kubernetes_persistent_volume_claim_v1.substrate_valkey,
+  ]
+}
+
 resource "kubernetes_namespace" "kagent" {
   count = var.deploy_llm_inference ? 1 : 0
 
@@ -72,22 +181,10 @@ resource "helm_release" "kagent" {
 
   depends_on = [
     helm_release.kagent_crds,
+    helm_release.substrate,
     helm_release.llm_d_router,
     helm_release.recsys_security,
     null_resource.recsys_external_secrets_ready,
     kubernetes_secret_v1.kagent_agent_gateway,
   ]
-}
-
-resource "helm_release" "recsys_kagent_agent" {
-  count = var.deploy_llm_inference ? 1 : 0
-
-  name      = "recsys-kagent-agent"
-  chart     = "${local.helm_dir}/recsys-kagent-agent"
-  namespace = kubernetes_namespace.kagent[0].metadata[0].name
-  atomic    = true
-  wait      = true
-  timeout   = 600
-
-  depends_on = [helm_release.kagent]
 }

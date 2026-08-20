@@ -191,6 +191,7 @@ spec:
               - cluster.local/ns/observability/sa/recsys-prometheus
               - cluster.local/ns/api-serving/sa/default
               - cluster.local/ns/recsys-dataflow/sa/default
+              - cluster.local/ns/kagent/sa/recsys-feature-rag-mcp
       to:
         - operation:
             ports: ["80", "8080"]

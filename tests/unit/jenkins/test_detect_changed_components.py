@@ -204,24 +204,67 @@ def test_inference_only_change_builds_and_deploys_only_inference_api():
     assert result.release_plan["deployUnits"] == ["inference-api"]
 
 
-def test_shared_serving_change_builds_and_deploys_all_three_apis():
+def test_shared_serving_contract_change_also_rebuilds_the_mcp_facade():
     result = detect(["apps/api-serving/shared/src/recsys_serving_common/contracts.py"])
 
     assert result.component_names == (
         "rag_api",
         "online_feature_api",
+        "feature_rag_mcp",
         "inference_api",
     )
     assert result.release_plan["buildImages"] == [
         "recsys-online-feature-api",
         "recsys-inference-api",
         "recsys-rag-api",
+        "recsys-feature-rag-mcp",
     ]
     assert result.release_plan["deployUnits"] == [
         "rag-api",
+        "feature-rag-mcp",
+        "feature-rag-mcp-registry",
         "online-feature-api",
         "inference-api",
     ]
+
+
+def test_agentic_change_routing_and_release_order_matrix():
+    mcp = detect(
+        ["apps/agentic/recsys-feature-rag-mcp/src/recsys_feature_rag_mcp/app.py"]
+    )
+    assert mcp.component_names == ("feature_rag_mcp",)
+    assert mcp.release_plan["buildImages"] == ["recsys-feature-rag-mcp"]
+    assert mcp.release_plan["deployUnits"] == [
+        "feature-rag-mcp",
+        "feature-rag-mcp-registry",
+    ]
+
+    agent = detect(["infra/helm/recsys-kagent-agent/values.yaml"])
+    assert agent.component_names == ("context_agent",)
+    assert agent.release_plan["buildImages"] == []
+    assert agent.release_plan["deployUnits"] == [
+        "context-agent",
+        "context-agent-registry",
+    ]
+
+    interface = detect(
+        ["configs/agentic/recsys-context-agent/tools-contract.json"]
+    )
+    assert interface.component_names == ("feature_rag_mcp", "context_agent")
+    assert interface.release_plan["buildImages"] == ["recsys-feature-rag-mcp"]
+    assert interface.release_plan["deployUnits"] == [
+        "feature-rag-mcp",
+        "context-agent",
+        "feature-rag-mcp-registry",
+        "context-agent-registry",
+    ]
+
+    rag_contract = detect(
+        ["apps/api-serving/rag-api/src/recsys_rag_api/contracts.py"]
+    )
+    assert rag_contract.component_names == ("rag_api", "feature_rag_mcp")
+    units = rag_contract.release_plan["deployUnits"]
+    assert units.index("rag-api") < units.index("feature-rag-mcp")
 
 
 def test_rag_change_detection_and_release_dependency_order():

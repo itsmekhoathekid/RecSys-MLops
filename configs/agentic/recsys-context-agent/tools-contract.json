@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "server": "recsys-feature-rag-mcp",
+  "tools": [
+    "get_user_online_features",
+    "get_chunk_by_id",
+    "retrieve_rag_context",
+    "build_user_rag_context"
+  ],
+  "inputSchemas": {
+    "get_user_online_features": {
+      "type": "object",
+      "required": ["user_id"],
+      "properties": {
+        "user_id": {"type": "integer", "minimum": 0},
+        "candidate_item_ids": {
+          "anyOf": [
+            {"type": "array", "items": {"type": "integer"}, "maxItems": 100},
+            {"type": "null"}
+          ],
+          "default": null
+        },
+        "top_k": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10}
+      }
+    },
+    "get_chunk_by_id": {
+      "type": "object",
+      "required": ["chunk_id"],
+      "properties": {
+        "chunk_id": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "retrieve_rag_context": {
+      "type": "object",
+      "required": ["query"],
+      "properties": {
+        "query": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "top_k_items": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
+        "filters": {
+          "anyOf": [
+            {"type": "object", "additionalProperties": true},
+            {"type": "null"}
+          ],
+          "default": null
+        }
+      }
+    },
+    "build_user_rag_context": {
+      "type": "object",
+      "required": ["user_id", "query"],
+      "properties": {
+        "user_id": {"type": "integer", "minimum": 0},
+        "query": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "candidate_item_ids": {
+          "anyOf": [
+            {"type": "array", "items": {"type": "integer"}, "maxItems": 100},
+            {"type": "null"}
+          ],
+          "default": null
+        },
+        "top_k": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+        "top_k_items": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
+        "filters": {
+          "anyOf": [
+            {"type": "object", "additionalProperties": true},
+            {"type": "null"}
+          ],
+          "default": null
+        }
+      }
+    }
+  }
+}

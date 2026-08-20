@@ -111,3 +111,51 @@ class RetrievalResponse(StrictModel):
     query: str
     pipeline_run_id: str
     items: list[RetrievedItem]
+
+
+class ChunkRecord(StrictModel):
+    """One exact online-store chunk without its retrieval embedding."""
+
+    chunk_id: str
+    item_id: int
+    chunk_type: ChunkType
+    source_key: str
+    text: str
+    brand: str
+    category_l1: str = ""
+    category_l2: str = ""
+    category_l3: str = ""
+    current_price: float
+    in_stock: bool
+    average_rating: float
+    source_run_id: str
+
+
+class ChunkResponse(ChunkRecord):
+    """Exact chunk response annotated with the active index release."""
+
+    pipeline_run_id: str
+
+
+class ChunkBatchRequest(StrictModel):
+    """Bounded, duplicate-free exact chunk lookup request."""
+
+    chunk_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @field_validator("chunk_ids")
+    @classmethod
+    def chunk_ids_must_be_unique_and_non_blank(cls, value: list[str]) -> list[str]:
+        normalized = [chunk_id.strip() for chunk_id in value]
+        if any(not chunk_id for chunk_id in normalized):
+            raise ValueError("chunk_ids must contain non-blank values")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("chunk_ids must be unique")
+        return normalized
+
+
+class ChunkBatchResponse(StrictModel):
+    """Ordered exact chunks plus IDs absent from the active online view."""
+
+    pipeline_run_id: str
+    chunks: list[ChunkRecord]
+    missing_chunk_ids: list[str]

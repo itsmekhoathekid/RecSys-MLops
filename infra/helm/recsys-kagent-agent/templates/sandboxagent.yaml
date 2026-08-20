@@ -1,0 +1,43 @@
+{{- if .Values.sandbox.enabled }}
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: {{ .Values.sandbox.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "recsys-kagent-agent.labels" . | nindent 4 }}
+spec:
+  type: Declarative
+  description: gVisor-isolated variant of the grounded RecSys context agent.
+  version: {{ .Values.agent.version | quote }}
+  sandbox:
+    network:
+      allowedDomains:
+        {{- toYaml .Values.sandbox.allowedDomains | nindent 8 }}
+  substrate:
+    workerPoolRef:
+      apiGroup: ate.dev
+      kind: WorkerPool
+      name: {{ .Values.sandbox.workerPool }}
+  declarative:
+    runtime: go
+    modelConfig: {{ .Values.agent.modelConfig }}
+    stream: false
+    systemMessage: |
+      {{- .Values.agent.systemMessage | nindent 6 }}
+    a2aConfig:
+      skills:
+        - id: sandboxed-recsys-context
+          name: Sandboxed RecSys context
+          description: Retrieve grounded personalization and RAG evidence in gVisor.
+          tags: [recsys, rag, sandbox]
+          examples: ["Build grounded context for user 1001 buying headphones."]
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: {{ .Values.mcp.name }}
+          toolNames:
+            {{- toYaml .Values.mcp.tools | nindent 12 }}
+{{- end }}

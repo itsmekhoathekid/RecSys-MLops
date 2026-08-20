@@ -15,6 +15,7 @@ pipeline {
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')
     string(name: 'RAG_SOURCE_RUN_ID', defaultValue: '', description: 'Complete canonical RAG item-document run consumed by index promotion.')
     string(name: 'RAG_PIPELINE_RUN_ID', defaultValue: '', description: 'Unique silver/gold/index run ID used by RAG promotion and rollback.')
+    string(name: 'AGENTIC_SMOKE_CHUNK_ID', defaultValue: '', description: 'Known active chunk ID required by regular/sandbox grounded A2A smoke tests.')
     choice(name: 'DATAHUB_CUTOVER_MODE', choices: ['skip', 'plan', 'apply'], description: 'Optional one-time cleanup after static catalog deployment.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
     string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, including ci_config. Empty keeps path-based detection.')
@@ -66,6 +67,7 @@ pipeline {
             }
           }
           echo "Selected components: ${env.CHANGED_COMPONENTS}"
+          env.SHOULD_PUBLISH_IMAGES = componentPipeline.shouldPublishImages() ? 'true' : 'false' // Pull requests build every selected image locally but never authenticate to or push into Artifact Registry.
           env.SHOULD_DEPLOY_RELEASE = componentPipeline.shouldDeployRelease() ? 'true' : 'false' // Deploy only published component changes from main, unless FORCE_DEPLOY explicitly overrides the branch gate.
           // ML test environments can exceed the GKE node's ephemeral-storage
           // eviction threshold. Keep disposable CI data on the existing
@@ -152,7 +154,7 @@ pipeline {
     }
 
     stage('Docker Login') { // Authenticate to GCP Artifact Registry only when selected images will be published.
-      when { expression { env.RUN_COMPONENT_BUILD == 'true' && params.PUBLISH_IMAGES } }
+      when { expression { env.RUN_COMPONENT_BUILD == 'true' && env.SHOULD_PUBLISH_IMAGES == 'true' } }
       steps {
         sh '''#!/usr/bin/env bash
           set +x
@@ -174,15 +176,15 @@ pipeline {
         sh """
           IMAGE_PUSH_REGISTRY='${env.IMAGE_PUSH_REGISTRY}' \
           IMAGE_TAG='${env.GIT_COMMIT ?: ''}' \
-          PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' \
-          REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES ? '1' : '0'}' \
+          PUBLISH_IMAGES='${env.SHOULD_PUBLISH_IMAGES == 'true' ? '1' : '0'}' \
+          REQUIRE_GCP_ARTIFACT_REGISTRY='${env.SHOULD_PUBLISH_IMAGES == 'true' ? '1' : '0'}' \
           jenkins/scripts/entrypoints/release_build_publish.sh .ci-release-plan.json # Produce immutable image references in .ci-image-manifest for deployment.
         """
         echo '[PACKAGE] Compile Kubeflow package'
         sh """
           IMAGE_PUSH_REGISTRY='${env.IMAGE_PUSH_REGISTRY}' \
           IMAGE_TAG='${env.GIT_COMMIT ?: ''}' \
-          PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' \
+          PUBLISH_IMAGES='${env.SHOULD_PUBLISH_IMAGES == 'true' ? '1' : '0'}' \
           jenkins/scripts/entrypoints/release_package_artifacts.sh .ci-release-plan.json # Compile non-image release artifacts such as selected Kubeflow packages.
         """
       }
@@ -192,11 +194,11 @@ pipeline {
       when { expression { env.SHOULD_DEPLOY_RELEASE == 'true' } }
       steps {
         echo '[DEPLOY] Production preflight'
-        sh "IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' PUBLISH_IMAGES='${params.PUBLISH_IMAGES ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' jenkins/scripts/entrypoints/release_deploy_preflight.sh .ci-release-plan.json" // Bind the approved GCP target and current commit before any production mutation.
+        sh "IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' PUBLISH_IMAGES='${env.SHOULD_PUBLISH_IMAGES == 'true' ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' jenkins/scripts/entrypoints/release_deploy_preflight.sh .ci-release-plan.json" // Bind the approved GCP target and current commit before any production mutation.
         script {
           echo '[DEPLOY] Deploy release'
           env.DEPLOY_STARTED = 'true' // Mark that the build crossed from validation into production-changing work.
-          def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' RAG_SOURCE_RUN_ID='${params.RAG_SOURCE_RUN_ID}' RAG_PIPELINE_RUN_ID='${params.RAG_PIPELINE_RUN_ID}'"
+          def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' RAG_SOURCE_RUN_ID='${params.RAG_SOURCE_RUN_ID}' RAG_PIPELINE_RUN_ID='${params.RAG_PIPELINE_RUN_ID}' AGENTIC_SMOKE_CHUNK_ID='${params.AGENTIC_SMOKE_CHUNK_ID}'"
           componentPipeline.deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json') // Respect dependency layers and serialize units sharing the same Jenkins lock.
           if (params.DATAHUB_CUTOVER_MODE != 'skip') {
             sh "${commandEnv} jenkins/scripts/entrypoints/datahub_cutover.sh plan .ci-deploy/datahub-dataset-lineage-cutover.json"
@@ -222,7 +224,7 @@ pipeline {
   post { // Publish evidence and clean build-scoped resources whether the pipeline succeeds or fails.
     always {
       junit allowEmptyResults: true, testResults: 'reports/junit/*.xml' // Render component and production-smoke results in the Jenkins test UI.
-      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.ci-deploy/**/*,.model-cd/*,.demo-web/**/*' // Preserve the release plan, exact images, index verification/rollback evidence, coverage, validation and deployment diagnostics as build proof.
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,reports/agentic/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.ci-deploy/**/*,.model-cd/*,.demo-web/**/*' // Preserve the release plan, exact images, index verification/rollback evidence, coverage, validation and deployment diagnostics as build proof.
       sh '''
         set +e
         if [ -n "${CI_TMP_ROOT:-}" ] && [ -d "${CI_TMP_ROOT}" ]; then

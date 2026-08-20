@@ -2,16 +2,42 @@ apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
   name: {{ .Values.agent.name }}
+  namespace: {{ .Values.namespace }}
   labels:
     {{- include "recsys-kagent-agent.labels" . | nindent 4 }}
 spec:
   type: Declarative
-  description: Minimal Agent proving the shared global ModelConfig is usable.
+  description: Grounded recommendation context agent backed by online features and RAG.
+  version: {{ .Values.agent.version | quote }}
   declarative:
+    runtime: go
     modelConfig: {{ .Values.agent.modelConfig }}
     stream: false
     systemMessage: |
       {{- .Values.agent.systemMessage | nindent 6 }}
     deployment:
+      replicas: {{ .Values.agent.replicas }}
+      labels:
+        recsys.ai/autoscale-target: {{ .Values.agent.name }}
       resources:
         {{- toYaml .Values.agent.resources | nindent 8 }}
+    a2aConfig:
+      skills:
+        - id: user-personalization
+          name: User personalization
+          description: Retrieve materialized online features for a user and candidates.
+          tags: [recsys, feast, personalization]
+          examples: ["Summarize the preferences for user 1001."]
+        - id: rag-evidence
+          name: RAG evidence retrieval
+          description: Retrieve exact chunks or semantic product evidence.
+          tags: [recsys, rag, evidence]
+          examples: ["Find evidence about noise-cancelling headphones."]
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: {{ .Values.mcp.name }}
+          toolNames:
+            {{- toYaml .Values.mcp.tools | nindent 12 }}

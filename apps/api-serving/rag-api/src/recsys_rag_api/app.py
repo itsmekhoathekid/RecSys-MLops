@@ -13,13 +13,20 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Callable
 
 import boto3
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Path, Request
 
 from recsys_rag_runtime import OnnxE5Encoder
 from recsys_serving_common.runtime import configure_api, healthz, metrics, version_payload
 
 from recsys_rag_api.batching import BatchingTextEncoder
-from recsys_rag_api.contracts import RetrievalRequest, RetrievalResponse
+from recsys_rag_api.chunk_lookup import ChunkLookupService
+from recsys_rag_api.contracts import (
+    ChunkBatchRequest,
+    ChunkBatchResponse,
+    ChunkResponse,
+    RetrievalRequest,
+    RetrievalResponse,
+)
 from recsys_rag_api.pointer import ActivePointerManager, EmbeddingContract
 from recsys_rag_api.retrieval import MilvusCandidateSearch, RetrievalService
 from recsys_rag_api.settings import RagApiSettings
@@ -84,6 +91,7 @@ def _pointer_loader(settings: RagApiSettings) -> Callable[[], bytes]:
 def create_app(
     settings: RagApiSettings | None = None,
     retrieval_service: RetrievalService | None = None,
+    chunk_lookup_service: ChunkLookupService | None = None,
 ) -> FastAPI:
     """Build an injectable API; production dependencies initialize at startup."""
 
@@ -93,6 +101,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         batching_encoder: BatchingTextEncoder | None = None
         milvus_client: object | None = None
+        exact_lookup = chunk_lookup_service
         if retrieval_service is None:
             from feast import FeatureStore
             from pymilvus import MilvusClient
@@ -133,9 +142,14 @@ def create_app(
                 ),
                 pointers=pointers,
             )
+            exact_lookup = exact_lookup or ChunkLookupService(
+                feature_store=feature_store,
+                pointers=pointers,
+            )
         else:
             service = retrieval_service
         app.state.retrieval_service = service
+        app.state.chunk_lookup_service = exact_lookup
         try:
             yield
         finally:
@@ -200,6 +214,49 @@ def create_app(
             )
         except Exception as exc:
             raise HTTPException(status_code=502, detail="RAG retrieval failed") from exc
+
+    @app.get("/v1/rag/chunks/{chunk_id}", response_model=ChunkResponse)
+    async def get_chunk(
+        request: Request,
+        chunk_id: str = Path(min_length=1, max_length=512),
+    ) -> ChunkResponse:
+        """Return one chunk from the active online FeatureView by stable ID."""
+
+        service = request.app.state.chunk_lookup_service
+        if service is None:
+            raise HTTPException(status_code=503, detail="chunk lookup unavailable")
+        try:
+            result = await asyncio.to_thread(service.get_many, [chunk_id])
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503, detail="active RAG index unavailable"
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="chunk lookup failed") from exc
+        if not result.chunks:
+            raise HTTPException(status_code=404, detail="chunk not found")
+        return ChunkResponse(
+            **result.chunks[0].model_dump(),
+            pipeline_run_id=result.pipeline_run_id,
+        )
+
+    @app.post("/v1/rag/chunks:batch-get", response_model=ChunkBatchResponse)
+    async def batch_get_chunks(
+        payload: ChunkBatchRequest, request: Request
+    ) -> ChunkBatchResponse:
+        """Return ordered chunks and explicitly report IDs not materialized."""
+
+        service = request.app.state.chunk_lookup_service
+        if service is None:
+            raise HTTPException(status_code=503, detail="chunk lookup unavailable")
+        try:
+            return await asyncio.to_thread(service.get_many, payload.chunk_ids)
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503, detail="active RAG index unavailable"
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="chunk lookup failed") from exc
 
     return app
 
