@@ -12,7 +12,7 @@ The in-cluster Jenkins chart seeds a Pipeline-from-SCM job named
 Jenkins UI.
 
 ```text
-GitHub push/PR
+GitHub push (feature/PR branch or main)
   -> GitHub Webhook
   -> Jenkins /github-webhook/
   -> RecSys-GitHub-CICD job
@@ -28,10 +28,14 @@ Webhook settings:
 ```text
 Payload URL: https://<production-gateway>/github-webhook/
 Content type: application/json
-Events: push and pull_request
+Required event: push
 ```
 
 The Helm chart exposes only `/github-webhook/` through the ingress controller.
+The root pipeline declares [`githubPush()`](../Jenkinsfile#L20-L22). Updating a
+PR branch is a push to that branch; merging the PR creates a new push on
+`main`. A separate `pull_request` delivery is not required by this job and
+should not be used to queue a duplicate build for the same commit.
 
 ## Components
 
@@ -93,6 +97,25 @@ empty diff as unchanged.
 A documentation-only push is expected to log `Changed components: unchanged`;
 CI configuration validation, product CI, image publishing, and deployment must
 all remain skipped for that build.
+
+## Async Serving CI References
+
+The async serving refactor is routed and tested as five independent components:
+
+| Component | Runtime reference | CI reference | Helm reference |
+| --- | --- | --- | --- |
+| `online_feature_api` | [`service.py`](../apps/api-serving/online-feature-api/src/recsys_online_feature_api/service.py) | [`ci_online_feature_api`](scripts/ci/serving.sh) | [`recsys-online-feature-api`](../infra/helm/recsys-online-feature-api/) |
+| `inference_api` | [`triton.py`](../apps/api-serving/inference-api/src/recsys_inference_api/triton.py), [`shadow.py`](../apps/api-serving/inference-api/src/recsys_inference_api/shadow.py) | [`ci_inference_api`](scripts/ci/serving.sh) | [`recsys-inference-api`](../infra/helm/recsys-inference-api/) |
+| `rag_api` | [`app.py`](../apps/api-serving/rag-api/src/recsys_rag_api/app.py) | [`ci_rag_api`](scripts/ci/serving.sh) | [`recsys-rag-api`](../infra/helm/recsys-rag-api/) |
+| `feature_rag_mcp` | [`app.py`](../apps/agentic/recsys-feature-rag-mcp/src/recsys_feature_rag_mcp/app.py) | [`agentic.sh`](scripts/ci/agentic.sh) | [`recsys-feature-rag-mcp`](../infra/helm/recsys-feature-rag-mcp/) |
+| `demo_web` | [`database.py`](../apps/demo-web/backend/app/database.py) | [`demo.sh`](scripts/ci/demo.sh) | [`recsys-demo-web`](../infra/helm/recsys-demo-web/) |
+
+Shared limiter behavior and its cancellation/timeout regression coverage are in
+[`concurrency.py`](../apps/api-serving/shared/src/recsys_serving_common/concurrency.py)
+and [`test_concurrency.py`](../tests/unit/api_serving/test_concurrency.py). The
+exact path ownership and CI profiles remain authoritative in
+[`components.json`](config/components.json) and
+[`ci-environments.json`](config/ci-environments.json).
 
 ## Stage Contract
 

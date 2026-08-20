@@ -23,6 +23,8 @@ captured runtime evidence. It was audited against the current `main` branch on
 | CI component detection | [`jenkins/config/components.json`](../../jenkins/config/components.json) |
 | CD deploy units | [`jenkins/config/deploy-units.json`](../../jenkins/config/deploy-units.json) |
 | Release build and deployment | [`jenkins/scripts/entrypoints/release_build_publish.sh`](../../jenkins/scripts/entrypoints/release_build_publish.sh), [`release_deploy_unit.sh`](../../jenkins/scripts/entrypoints/release_deploy_unit.sh) |
+| Async FastAPI serving runtime | [`apps/api-serving/README.md`](../../apps/api-serving/README.md), [`concurrency.py`](../../apps/api-serving/shared/src/recsys_serving_common/concurrency.py) |
+| Serving CI/CD routing and gates | [`Jenkinsfile`](../../Jenkinsfile), [`components.json`](../../jenkins/config/components.json), [`serving.sh`](../../jenkins/scripts/ci/serving.sh) |
 | Data-platform configuration | [`infra/helm/recsys-data-config`](../../infra/helm/recsys-data-config) |
 | Lakehouse, source, stream, feature-store, and orchestration releases | [`infra/helm`](../../infra/helm) split charts |
 | Generator scenarios | [`configs/data-platform/generator`](../../configs/data-platform/generator) |

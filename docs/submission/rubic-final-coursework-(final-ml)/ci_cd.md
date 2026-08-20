@@ -209,7 +209,10 @@ Current profile mapping:
 | --- | --- | --- |
 | `data` | `materialize`, `dp1`, `dp2`, `dp3`, `drift`, `stream_offline`, `stream_online` | `apps/data-platform/pyproject.toml` and `apps/data-platform/uv.lock` |
 | `ml` | `training`, `kserve`, `rollout` | `apps/ml-system/pyproject.toml` and `apps/ml-system/uv.lock` |
-| `serving` | `api` | `apps/api-serving/pyproject.toml` and `apps/api-serving/uv.lock` |
+| `online-feature-api` | `online_feature_api` | `apps/api-serving/online-feature-api/pyproject.toml` and its `uv.lock` |
+| `inference-api` | `inference_api` | `apps/api-serving/inference-api/pyproject.toml` and its `uv.lock` |
+| `rag-api` | `rag_api` | `apps/api-serving/rag-api/pyproject.toml` and its `uv.lock` |
+| `agentic` | `feature_rag_mcp`, `context_agent` | `apps/agentic/recsys-feature-rag-mcp/pyproject.toml` and its `uv.lock` |
 | `analytics` | `analytics` | `apps/analytics/pyproject.toml` and `apps/analytics/uv.lock` |
 | `demo` | `demo_web` | `apps/demo-web/backend/pyproject.toml` and its `uv.lock` |
 
@@ -269,12 +272,18 @@ Each resulting parallel branch passes the component name to
 the prepared environment, then `dispatch.sh` maps the name to exactly one
 `ci_<component>` function.
 
-For the two serving branches specifically:
+For the serving branches specifically:
 
-- `api` runs API-serving unit tests, serving and gateway contract tests, the
-  optional `tests/integration/api` directory, and coverage over inference API,
-  Feature API, feature client, ranking, Triton, A/B, shadow and shared serving
-  modules.
+- `online_feature_api` runs the shared serving, concurrency, split-service,
+  validation, and serving-contract suites with coverage over the Online
+  Feature API and shared runtime.
+- `inference_api` runs the same async/concurrency regression suites plus gateway
+  contracts, with coverage over inference, Triton, A/B, shadow, and shared
+  serving code.
+- `rag_api` runs the RAG API suite, docstring coverage, and RAG Helm
+  lint/template validation.
+- `feature_rag_mcp` and `demo_web` are dispatched by their agentic and demo CI
+  suites, using their own locked profiles.
 - `kserve` runs model-promotion and serving-contract tests, the optional
   `tests/integration/kserve` directory, and coverage over model-CD CLI, config,
   Helm-release, manifest and promotion-gate modules.
@@ -284,7 +293,10 @@ Reference code:
 [`RUN_* filtering and parallel branch construction`](../../../jenkins/pipeline/component_pipeline.groovy#L36-L59),
 [`per-branch profile activation`](../../../jenkins/scripts/entrypoints/component_ci.sh#L6-L29),
 [`component dispatcher`](../../../jenkins/scripts/ci/dispatch.sh#L3-L22), and
-[`API and KServe suites`](../../../jenkins/scripts/ci/serving.sh#L3-L20).
+[`serving suites`](../../../jenkins/scripts/ci/serving.sh),
+[`agentic suites`](../../../jenkins/scripts/ci/agentic.sh),
+[`demo suites`](../../../jenkins/scripts/ci/demo.sh), and the
+[`async serving code-reference index`](../../../apps/api-serving/README.md).
 
 Important execution boundary:
 
@@ -367,26 +379,29 @@ Reference code:
 [`catalog build, push and digest record`](../../../jenkins/scripts/build/engine.sh), and
 [`docker push with one auth-refresh retry`](../../../jenkins/scripts/build/engine.sh#L78-L94).
 
-#### API image boundary: API and Feature API share one artifact
+#### Serving image boundary: independently releasable services
 
-The `api` component declares only `recsys-api-serving`. Its catalog entry points
-to one Dockerfile, which copies the complete `apps/api-serving/src` tree. The
-same image digest is then assigned to two different Kubernetes Deployments:
+Online Feature, Inference, RAG, MCP, and Demo are separate components and image
+owners. A change to one service builds its image instead of rebuilding a
+combined API artifact. A shared serving-runtime change intentionally selects
+Online Feature, Inference, and RAG because all three consume that package.
 
-- `recsys-api-serving` starts `inference_api:app`;
-- `recsys-online-feature-api` starts `feature_api:app`.
+Each deploy unit maps an immutable image digest to its owning Helm value:
 
-Therefore the image is combined, but the runtime workloads are not: they have
-separate Deployments, commands, configuration, probes and scaling. Releasing
-either API source change rebuilds one artifact and the serving Helm upgrade
-rolls both workloads to the same immutable digest.
+- `recsys-online-feature-api` -> `recsys-online-feature-api`;
+- `recsys-inference-api` -> `recsys-inference-api`;
+- `recsys-rag-api` -> `recsys-rag-api`;
+- `recsys-feature-rag-mcp` -> `recsys-feature-rag-mcp`;
+- `recsys-demo-api` and `recsys-demo-web` -> `recsys-demo-web`.
 
 Reference code:
-[`api component image mapping`](../../../jenkins/config/components.json#L325-L357),
-[`image catalog entry`](../../../images/catalog.json#L74-L77),
-[`combined source copy and default command`](../../../images/serving/recsys-api-serving/Dockerfile#L25-L35),
-[`API and Feature API values`](../../../infra/helm/recsys-serving/values.yaml#L55-L113), and
-[`both digest assignments during deploy`](../../../jenkins/scripts/deploy/serving.sh#L3-L25).
+[`component image ownership`](../../../jenkins/config/components.json),
+[`image catalog entries`](../../../images/catalog.json),
+[`deploy-unit image mappings`](../../../jenkins/config/deploy-units.json),
+[`Online Feature Dockerfile`](../../../images/serving/recsys-online-feature-api/Dockerfile),
+[`Inference Dockerfile`](../../../images/serving/recsys-inference-api/Dockerfile),
+[`RAG Dockerfile`](../../../images/serving/recsys-rag-api/Dockerfile), and the
+[`async serving code-reference index`](../../../apps/api-serving/README.md).
 
 #### `[PACKAGE] Compile Kubeflow package`
 
@@ -528,8 +543,8 @@ The deploy dispatch is:
 | `data-config`, `data-lakehouse`, `source-store`, `event-stream`, `feature-store`, `kafka-connect`, `streaming`, `airflow` | Generic `deploy_helm_unit()`: `values-gcp.yaml`, `--reset-values`, and digest overrides from each unit's `imageValues` map. |
 | `mlflow` | `deploy_mlflow()`: atomic Helm upgrade with `--reuse-values`, immutable `recsys-mlflow`, production scheduling/resources, then workload rollout checks. |
 | `analytics` | `deploy_analytics()`: atomic Helm upgrade with `--reuse-values`, immutable DBT and Superset images, secret mode, then Deployment/StatefulSet checks. |
-| `serving` when `api` is selected | `deploy_api()`: atomic Helm upgrade of `recsys-serving` with `--reuse-values`; sets both `api.image` and `featureApi.image` to the same immutable `recsys-api-serving` digest, then waits for both Deployments. |
-| `serving` when `kserve` is selected | `deploy_kserve()`: runs the model-CD CLI using the promotion manifest. It is selected by the same serving unit, but this branch is not a direct `helm upgrade` in `release_deploy_unit.sh`. If both `api` and `kserve` are selected, both branches run sequentially inside the locked serving unit. |
+| `online-feature-api`, `inference-api`, `rag-api`, `feature-rag-mcp` | Generic `deploy_helm_unit()`: each independent chart receives only its owning immutable digest from `imageValues`, then Helm waits for that release. MCP additionally runs its agentic preflight. |
+| `kserve` | `deploy_kserve()`: runs the model-CD CLI using the promotion manifest and updates the separately owned `recsys-serving` Triton/KServe release. |
 | `demo-web` | `deploy_demo_web()`: atomic Helm upgrade with `values-gcp.yaml`, immutable frontend/backend images, then Deployment, ExternalSecret, certificate and ingress checks. |
 | `feature-registry` | Not Helm: starts a temporary pod from the immutable Feast image, executes `feast plan`, `feast apply` and registry verification, then removes the pod. |
 | `kubeflow-bst-package` | Not Helm: uploads the compiled KFP YAML and records the returned pipeline/version metadata. |
@@ -668,11 +683,18 @@ The deploy consumer/dependency graph is
 
 **Jenkins view:** `00 Main Auto Deploy`
 
-**Strategy:** this is the main monorepo CI/CD entrypoint. GitHub push or merge
-events trigger the Jenkins job through `/github-webhook/`. Jenkins checks out
+**Strategy:** this is the main monorepo CI/CD entrypoint. A push to a feature/PR
+branch and the push to `main` produced by a PR merge both trigger the Jenkins
+job through `/github-webhook/`. Jenkins checks out
 the repository, detects changed paths, enables only affected component branches,
 then runs CI, image build/push, and deploy/update for changed components on
 `main`.
+
+The trigger is declared by [`githubPush()` in the root Jenkinsfile](../../../Jenkinsfile#L20-L22).
+Image publication and deployment are gated by the checked-out revision being
+`main` in [`component_pipeline.groovy`](../../../jenkins/pipeline/component_pipeline.groovy#L84-L112).
+Therefore a PR-branch push produces CI/build proof only, while its merge push
+can publish immutable digests and deploy the affected release units.
 
 ![Main CI/CD Jenkins UI proof](../../pngs/main_cicd_ui.png)
 
@@ -1094,50 +1116,66 @@ definition after the redundant manual `Checkout` stage was removed.
 of `recsys-serving`, `InferenceService` readiness, predictor rollout success,
 and archived `.model-cd` artifacts.
 
-### FastAPI For Online Features And Model Serving
+### FastAPI For Online Features, Inference, RAG, MCP, And Demo
 
-**Jenkins component:** `api`
+**Jenkins components:** `online_feature_api`, `inference_api`, `rag_api`,
+`feature_rag_mcp`, and `demo_web`
 
-**Jenkins UI label:** `FastAPI Web API`
+**Jenkins UI labels:** `Online Feature API`, `Inference API`, `RAG Retrieval
+API`, `Feature RAG MCP`, and `Recommendation Demo Web`
 
-**Strategy:** run this CI/CD branch when API-serving source, ranking logic,
-online feature client, A/B testing, API schemas, Triton client, serving chart, or
-API tests change, especially `apps/api-serving/`,
-`infra/helm/recsys-serving/`, `tests/unit/api_serving/`,
-`tests/contract/test_serving_contracts.py`, and
-`tests/contract/test_gateway_contracts.py`.
+**Strategy:** path detection selects only the service whose runtime, chart, or
+tests changed. Shared serving-runtime changes select the three FastAPI serving
+services; MCP and Demo keep separate profiles, images, release units, and
+verification dependencies. The authoritative routing is
+[`components.json`](../../../jenkins/config/components.json), and the complete
+async implementation-to-test-to-Helm map is
+[`apps/api-serving/README.md`](../../../apps/api-serving/README.md).
 
 ![FastAPI Test Jenkins UI proof](../../pngs/api_cicd_ui.png)
 
-**Test:** `component_ci.sh api` runs API unit tests, serving contracts, gateway
-contracts, any matching integration suite that exists, and coverage for the FastAPI,
-online feature API, ranking, A/B, and Triton client modules.
+**Test:** the selected component entrypoint runs the service-specific unit and
+contract suites. Online Feature and Inference include the bounded concurrency,
+Redis `MGET`, async Triton, shadow cancellation, lifespan, and event-loop
+regressions; RAG validates bounded blocking SDK execution; MCP validates HTTP
+pool lifecycle; Demo validates async Psycopg transactions. Reference:
+[`serving.sh`](../../../jenkins/scripts/ci/serving.sh),
+[`test_concurrency.py`](../../../tests/unit/api_serving/test_concurrency.py),
+[`test_serving.py`](../../../tests/unit/api_serving/test_serving.py),
+[`RAG tests`](../../../tests/unit/api_serving/rag_api/),
+[`MCP tests`](../../../tests/unit/agentic/feature_rag_mcp/), and
+[`Demo repository tests`](../../../apps/demo-web/backend/tests/test_database.py).
 
 ![FastAPI Test Jenkins UI proof](../../pngs/cicd_api_test.png)
 
-**Figure: FastAPI Test proof.** Capture Jenkins `Component CI > FastAPI Web API`
-showing API unit/contract tests and coverage above the threshold.
+**Figure: FastAPI Test proof.** Capture the selected Online Feature, Inference,
+RAG, MCP, or Demo branch under `Component CI`, showing its unit/contract tests
+and coverage above the threshold.
 
-**Build:** the release plan builds, scans, and optionally publishes
-`recsys-api-serving:<git_commit>`, then resolves its immutable digest.
+**Build:** the release plan builds, scans, and optionally publishes the selected
+service images (`recsys-online-feature-api`, `recsys-inference-api`,
+`recsys-rag-api`, `recsys-feature-rag-mcp`, `recsys-demo-api`, and
+`recsys-demo-web`), then resolves immutable digests.
 
 ![FastAPI Build Jenkins UI proof](../../pngs/cicd_api_build.png)
 
-**Figure: FastAPI Build proof.** Capture Jenkins
-`Component Build And Publish > FastAPI Web API` showing Docker build/push and
-the release image manifest.
+**Figure: FastAPI Build proof.** Capture Jenkins `Component Build And Publish`
+showing the selected service image build/push and release image manifest.
 
-**Deploy:** the `serving` deploy unit calls
-[`deploy_api()`](../../../jenkins/scripts/deploy/serving.sh#L3), upgrades
-`recsys-serving` atomically, updates both `api.image` and
-`featureApi.image` with the resolved digest, then waits for
-`recsys-api-serving` and `recsys-online-feature-api` rollouts.
+**Deploy:** the release plan resolves independent deploy units and passes each
+new digest to its owning Helm release. Serving deployment code is in
+[`deploy/serving.sh`](../../../jenkins/scripts/deploy/serving.sh), RAG in
+[`deploy/rag.sh`](../../../jenkins/scripts/deploy/rag.sh), MCP in
+[`deploy/agentic.sh`](../../../jenkins/scripts/deploy/agentic.sh), and Demo in
+[`deploy/demo.sh`](../../../jenkins/scripts/deploy/demo.sh). The unit graph and
+verification dependencies are defined in
+[`deploy-units.json`](../../../jenkins/config/deploy-units.json).
 
 ![FastAPI Deploy Jenkins UI proof](../../pngs/cicd_api_deploy.png)
 
-**Figure: FastAPI Deploy proof.** Capture Jenkins
-`Component Deploy Or Update > FastAPI Web API` showing the Helm update and
-rollout status for both FastAPI services.
+**Figure: FastAPI Deploy proof.** Capture Jenkins `Component Deploy Or Update`
+showing the digest-pinned Helm update and rollout status for the selected
+services.
 
 ## CI/CD For Jobs
 

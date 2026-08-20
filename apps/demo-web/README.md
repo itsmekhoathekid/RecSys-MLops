@@ -10,7 +10,12 @@ routes and never receives the gateway Basic Auth credential.
 ## Components
 
 - `frontend/`: React, strict TypeScript, Vite, TanStack Query, generated OpenAPI types, and non-root NGINX image.
-- `backend/`: FastAPI, bounded Psycopg pool, transactional event/order writes, HTTPX dependency clients, Prometheus, and OTLP tracing.
+- `backend/`: FastAPI, Psycopg [`AsyncConnectionPool`](backend/app/database.py)
+  bounded to 1-8 connections with 5-second connect/pool timeouts,
+  transactional event/order writes, HTTPX dependency clients, Prometheus, and
+  OTLP tracing. Async pool lifecycle, commit, rollback, and timeout behavior are
+  covered by [`test_database.py`](backend/tests/test_database.py) and
+  [`test_demo_api.py`](backend/tests/test_demo_api.py).
 - `../../infra/helm/recsys-demo-web/`: atomic production release for both workloads, services, PDBs, ExternalSecret, GKE PodMonitoring (or optional ServiceMonitor), and apex ingress.
 
 ## Local verification
