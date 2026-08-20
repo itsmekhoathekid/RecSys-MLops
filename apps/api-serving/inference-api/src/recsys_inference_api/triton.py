@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from typing import Protocol
 
 import numpy as np
 
+from recsys_serving_common.concurrency import AsyncCapacityLimiter
 from recsys_serving_common.observability import observe_triton, span
 from recsys_inference_api.labels import ab_labels
 
 
 class RankerProtocol(Protocol):
-    def score(
+    async def score(
         self, payload: dict[str, np.ndarray]
     ) -> tuple[list[int], list[float]]: ...
 
@@ -24,19 +26,39 @@ class TritonRanker:
         model_version: str | None = None,
         ab_variant: str | None = None,
         ab_experiment_id: str | None = None,
+        timeout_seconds: float | None = None,
+        max_concurrency: int | None = None,
+        capacity_wait_seconds: float | None = None,
+        capacity_limiter: AsyncCapacityLimiter | None = None,
     ) -> None:
-        import tritonclient.grpc as grpcclient
+        import tritonclient.grpc as grpcclient  # type: ignore[import-untyped]
+        import tritonclient.grpc.aio as grpc_aio  # type: ignore[import-untyped]
 
         self.grpcclient = grpcclient
-        self.client = grpcclient.InferenceServerClient(
+        self.client = grpc_aio.InferenceServerClient(
             url=url or os.getenv("TRITON_URL", "localhost:8001")
         )
-        self.model_name = model_name or os.getenv("TRITON_MODEL_NAME", "bst_ensemble")
-        self.model_version = model_version or os.getenv("MODEL_VERSION", "latest")
+        self.model_name: str = (
+            model_name or os.getenv("TRITON_MODEL_NAME") or "bst_ensemble"
+        )
+        self.model_version: str = (
+            model_version or os.getenv("MODEL_VERSION") or "latest"
+        )
         self.ab_variant = ab_variant
         self.ab_experiment_id = ab_experiment_id
+        self.timeout_seconds = timeout_seconds or float(
+            os.getenv("TRITON_TIMEOUT_SECONDS", "5")
+        )
+        self._capacity = capacity_limiter or AsyncCapacityLimiter(
+            limit=max_concurrency or int(os.getenv("TRITON_MAX_CONCURRENCY", "16")),
+            wait_seconds=capacity_wait_seconds
+            or float(os.getenv("TRITON_CAPACITY_WAIT_SECONDS", "0.05")),
+            operation="triton_inference",
+        )
 
-    def score(self, payload: dict[str, np.ndarray]) -> tuple[list[int], list[float]]:
+    async def score(
+        self, payload: dict[str, np.ndarray]
+    ) -> tuple[list[int], list[float]]:
         start = time.perf_counter()
         inputs = []
         for name, values in payload.items():
@@ -51,9 +73,16 @@ class TritonRanker:
             with span(
                 "triton.infer", model_name=self.model_name, input_count=len(inputs)
             ):
-                result = self.client.infer(
-                    model_name=self.model_name, inputs=inputs, outputs=outputs
-                )
+                async with self._capacity.slot():
+                    result = await asyncio.wait_for(
+                        self.client.infer(
+                            model_name=self.model_name,
+                            inputs=inputs,
+                            outputs=outputs,
+                            client_timeout=self.timeout_seconds,
+                        ),
+                        timeout=self.timeout_seconds,
+                    )
             item_ids = (
                 result.as_numpy("candidate_item_id_out")
                 .astype(np.int64)
@@ -79,3 +108,6 @@ class TritonRanker:
                 ),
             )
             raise
+
+    async def aclose(self) -> None:
+        await self.client.close()

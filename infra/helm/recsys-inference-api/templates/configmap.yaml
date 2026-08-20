@@ -4,6 +4,9 @@ metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }}}
 data:
   TRITON_URL: {{ .Values.config.tritonUrl | quote }}
   TRITON_MODEL_NAME: {{ .Values.config.tritonModelName | quote }}
+  TRITON_TIMEOUT_SECONDS: {{ .Values.config.tritonTimeoutSeconds | quote }}
+  TRITON_MAX_CONCURRENCY: {{ .Values.config.tritonMaxConcurrency | quote }}
+  TRITON_CAPACITY_WAIT_SECONDS: {{ .Values.config.tritonCapacityWaitSeconds | quote }}
   FEATURE_API_URL: {{ .Values.config.featureApiUrl | quote }}
   FEATURE_API_TIMEOUT_SECONDS: {{ .Values.config.featureApiTimeoutSeconds | quote }}
   DEFAULT_TOP_K: {{ .Values.config.defaultTopK | quote }}

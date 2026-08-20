@@ -16,12 +16,16 @@ class RagClient(JsonApiClient):
         base_url: str,
         timeout_seconds: float,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_connections: int = 50,
+        max_keepalive_connections: int = 20,
     ) -> None:
         super().__init__(
             service="recsys-rag-api",
             base_url=base_url,
             timeout_seconds=timeout_seconds,
             transport=transport,
+            max_connections=max_connections,
+            max_keepalive_connections=max_keepalive_connections,
         )
 
     async def get_chunk(self, chunk_id: str) -> dict[str, object]:

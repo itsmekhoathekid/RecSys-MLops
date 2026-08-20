@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 
 from recsys_serving_common.env import bool_env, int_env
+from recsys_serving_common.concurrency import AsyncCapacityLimiter
 from recsys_serving_common.observability import METRICS
 from recsys_inference_api.labels import ab_labels
 from recsys_inference_api.triton import RankerProtocol, TritonRanker
@@ -62,13 +63,25 @@ class TritonABRouter:
         )
 
     @classmethod
-    def from_env(cls) -> "TritonABRouter":
+    def from_env(
+        cls,
+        *,
+        timeout_seconds: float | None = None,
+        max_concurrency: int | None = None,
+        capacity_wait_seconds: float | None = None,
+    ) -> "TritonABRouter":
         model_name = os.getenv("TRITON_MODEL_NAME", "bst_ensemble")
         control_version = os.getenv("AB_CONTROL_MODEL_VERSION") or os.getenv(
             "MODEL_VERSION", "latest"
-        )
+        ) or "latest"
         candidate_version = os.getenv("AB_CANDIDATE_MODEL_VERSION", "")
         experiment_id = os.getenv("AB_EXPERIMENT_ID", "default")
+        shared_capacity = AsyncCapacityLimiter(
+            limit=max_concurrency or int(os.getenv("TRITON_MAX_CONCURRENCY", "16")),
+            wait_seconds=capacity_wait_seconds
+            or float(os.getenv("TRITON_CAPACITY_WAIT_SECONDS", "0.05")),
+            operation="triton_inference",
+        )
         control_ranker = TritonRanker(
             url=os.getenv("AB_CONTROL_TRITON_URL")
             or os.getenv("TRITON_URL", "localhost:8001"),
@@ -76,6 +89,10 @@ class TritonABRouter:
             model_version=control_version,
             ab_variant="control",
             ab_experiment_id=experiment_id,
+            timeout_seconds=timeout_seconds,
+            max_concurrency=max_concurrency,
+            capacity_wait_seconds=capacity_wait_seconds,
+            capacity_limiter=shared_capacity,
         )
         candidate_ranker: TritonRanker | None = None
         ab_enabled = bool_env("AB_TEST_ENABLED")
@@ -87,6 +104,10 @@ class TritonABRouter:
                 model_version=candidate_version or control_version,
                 ab_variant="candidate" if ab_enabled else "shadow_candidate",
                 ab_experiment_id=experiment_id,
+                timeout_seconds=timeout_seconds,
+                max_concurrency=max_concurrency,
+                capacity_wait_seconds=capacity_wait_seconds,
+                capacity_limiter=shared_capacity,
             )
         return cls(
             control_ranker=control_ranker,
@@ -164,6 +185,18 @@ class TritonABRouter:
             ),
         )
         return route
+
+    async def aclose(self) -> None:
+        """Close each owned async Triton transport once."""
+
+        closed: set[int] = set()
+        for ranker in (self.control_ranker, self.candidate_ranker):
+            if ranker is None or id(ranker) in closed:
+                continue
+            closed.add(id(ranker))
+            close = getattr(ranker, "aclose", None)
+            if close is not None:
+                await close()
 
 
 def select_triton_route(

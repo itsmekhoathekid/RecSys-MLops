@@ -14,6 +14,11 @@ service:
 config:
   redisHost: redis.recsys-dataflow.svc.cluster.local
   redisPort: "6379"
+  redisMaxConnections: "32"
+  redisTimeoutSeconds: "1"
+  feastWorkers: "1"
+  feastQueueSize: "15"
+  capacityWaitSeconds: "0.05"
   feastRepoPath: /opt/recsys/apps/data-platform/feature-store/feature_repo
   feastRuntimeRepoPath: /tmp/recsys-feast-feature-repo
   feastApplyOnStartup: "0"

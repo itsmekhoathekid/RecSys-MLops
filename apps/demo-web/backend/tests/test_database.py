@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from datetime import datetime
 from decimal import Decimal
 
@@ -27,20 +27,20 @@ class ScriptedCursor:
         self.current: list[dict] = []
         self.executed: list[tuple[str, object]] = []
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, *_):
+    async def __aexit__(self, *_):
         return False
 
-    def execute(self, query: str, params=None) -> None:
+    async def execute(self, query: str, params=None) -> None:
         self.executed.append((" ".join(query.split()), params))
         self.current = (self.results.pop(0) if self.results else None) or []
 
-    def fetchone(self):
+    async def fetchone(self):
         return self.current[0] if self.current else None
 
-    def fetchall(self):
+    async def fetchall(self):
         return self.current
 
 
@@ -48,11 +48,12 @@ class ScriptedConnection:
     def __init__(self, results: list[list[dict] | None]) -> None:
         self.cursor_instance = ScriptedCursor(results)
         self.commits = 0
+        self.rollbacks = 0
 
     def cursor(self) -> ScriptedCursor:
         return self.cursor_instance
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         self.commits += 1
 
 
@@ -62,15 +63,19 @@ class ScriptedPool:
         self.opened = False
         self.closed = False
 
-    def open(self, wait: bool, timeout: float) -> None:
+    async def open(self, wait: bool, timeout: float) -> None:  # noqa: ASYNC109
         self.opened = wait and timeout > 0
 
-    def close(self) -> None:
+    async def close(self) -> None:
         self.closed = True
 
-    @contextmanager
-    def connection(self):
-        yield self.connection_instance
+    @asynccontextmanager
+    async def connection(self):
+        try:
+            yield self.connection_instance
+        except Exception:
+            self.connection_instance.rollbacks += 1
+            raise
 
 
 def repository(*results: list[dict] | None) -> tuple[DemoRepository, ScriptedPool]:
@@ -94,36 +99,39 @@ def test_event_id_is_random_without_an_idempotency_key() -> None:
     assert event_id_for(request()) != event_id_for(request())
 
 
-def test_pool_lifecycle_ping_and_catalog_queries() -> None:
+@pytest.mark.anyio
+async def test_pool_lifecycle_ping_and_catalog_queries() -> None:
     repo, pool = repository([{"ok": 1}], [{"total": 1}], [{"user_id": 1, "segment": "vip", "city": "HCMC"}])
-    repo.open()
-    repo.ping()
-    users, total = repo.users(10, 0)
-    repo.close()
+    await repo.open()
+    await repo.ping()
+    users, total = await repo.users(10, 0)
+    await repo.close()
     assert pool.opened and pool.closed
     assert total == 1 and users[0].segment == "vip"
 
     repo, _ = repository([{"total": 1}], [PRODUCT_ROW])
-    products, total = repo.products(10, 0)
+    products, total = await repo.products(10, 0)
     assert total == 1
     assert products[0].current_price == 19.99
 
 
-def test_entity_lookup_and_batch_hydration() -> None:
+@pytest.mark.anyio
+async def test_entity_lookup_and_batch_hydration() -> None:
     repo, _ = repository([{"user_id": 1}], [PRODUCT_ROW], [PRODUCT_ROW])
-    assert repo.user_exists(1)
-    assert repo.product(101).product_name == "Test Product"
-    assert repo.products_by_id([101])[101].brand_name == "Test Brand"
-    assert repo.products_by_id([]) == {}
+    assert await repo.user_exists(1)
+    assert (await repo.product(101)).product_name == "Test Product"
+    assert (await repo.products_by_id([101]))[101].brand_name == "Test Brand"
+    assert await repo.products_by_id([]) == {}
 
-    repo, _ = repository([], [])
-    assert not repo.user_exists(2)
-    assert repo.product(999) is None
+    repo, pool = repository([], [])
+    assert not await repo.user_exists(2)
+    assert await repo.product(999) is None
 
 
-def test_record_view_and_duplicate_are_idempotent() -> None:
+@pytest.mark.anyio
+async def test_record_view_and_duplicate_are_idempotent() -> None:
     repo, pool = repository([], [{"user_id": 1}], [PRODUCT_ROW], [], [], [])
-    row, duplicate = repo.record_event(request(), "event-1", "hash-1")
+    row, duplicate = await repo.record_event(request(), "event-1", "hash-1")
     assert not duplicate
     assert row["request_id"] == "web-event-event-1"
     assert pool.connection_instance.commits == 1
@@ -138,28 +146,31 @@ def test_record_view_and_duplicate_are_idempotent() -> None:
         "payload_hash": "hash-1",
     }
     repo, _ = repository([existing])
-    returned, duplicate = repo.record_event(request(), "event-1", "hash-1")
+    returned, duplicate = await repo.record_event(request(), "event-1", "hash-1")
     assert duplicate and returned == existing
 
     repo, _ = repository([{**existing, "payload_hash": "different"}])
     with pytest.raises(IdempotencyConflictError):
-        repo.record_event(request(), "event-1", "hash-1")
+        await repo.record_event(request(), "event-1", "hash-1")
 
 
-def test_record_event_validates_user_and_product() -> None:
-    repo, _ = repository([], [])
+@pytest.mark.anyio
+async def test_record_event_validates_user_and_product() -> None:
+    repo, pool = repository([], [])
     with pytest.raises(RecordNotFoundError, match="user"):
-        repo.record_event(request(), "event-1", "hash")
+        await repo.record_event(request(), "event-1", "hash")
+    assert pool.connection_instance.rollbacks == 1
 
     repo, _ = repository([], [{"user_id": 1}], [])
     with pytest.raises(RecordNotFoundError, match="product"):
-        repo.record_event(request(), "event-1", "hash")
+        await repo.record_event(request(), "event-1", "hash")
 
 
-def test_purchase_is_atomic_and_links_impression() -> None:
+@pytest.mark.anyio
+async def test_purchase_is_atomic_and_links_impression() -> None:
     repo, pool = repository([], [{"user_id": 1}], [PRODUCT_ROW], [], [], [], [], [], [], [])
     purchase = request("purchase", request_id="request-1", impression_id="impression-1")
-    row, duplicate = repo.record_event(purchase, "event-purchase", "purchase-hash")
+    row, duplicate = await repo.record_event(purchase, "event-purchase", "purchase-hash")
     assert not duplicate and row["request_id"] == "request-1"
     executed = [query for query, _ in pool.connection_instance.cursor_instance.executed]
     assert any("INSERT INTO orders" in query for query in executed)
@@ -168,7 +179,8 @@ def test_purchase_is_atomic_and_links_impression() -> None:
     assert pool.connection_instance.commits == 1
 
 
-def test_event_recommendation_request_and_impressions() -> None:
+@pytest.mark.anyio
+async def test_event_recommendation_request_and_impressions() -> None:
     event = {
         "event_id": "event-1",
         "event_timestamp": datetime.fromisoformat("2026-01-01T00:00:00+00:00"),
@@ -179,14 +191,29 @@ def test_event_recommendation_request_and_impressions() -> None:
         "impression_id": None,
     }
     repo, _ = repository([event])
-    assert repo.event("event-1") == event
+    assert await repo.event("event-1") == event
 
     repo, pool = repository([], [])
-    repo.record_recommendation_request(1, "session-1", "request-1")
+    await repo.record_recommendation_request(1, "session-1", "request-1")
     assert pool.connection_instance.commits == 1
 
     item = RecommendationItem(item_id=101, score=0.9, impression_id="impression-1", product=None)
     repo, pool = repository([])
-    repo.record_impressions("request-1", 1, "session-1", [item])
+    await repo.record_impressions("request-1", 1, "session-1", [item])
     assert pool.connection_instance.commits == 1
     assert "INSERT INTO impressions" in pool.connection_instance.cursor_instance.executed[0][0]
+
+
+@pytest.mark.anyio
+async def test_repository_propagates_pool_capacity_timeout() -> None:
+    class TimeoutPool(ScriptedPool):
+        @asynccontextmanager
+        async def connection(self):
+            if False:
+                yield self.connection_instance
+            raise TimeoutError("pool capacity exhausted")
+
+    repository = DemoRepository(pool=TimeoutPool([]))  # type: ignore[arg-type]
+
+    with pytest.raises(TimeoutError, match="pool capacity exhausted"):
+        await repository.users(1, 0)

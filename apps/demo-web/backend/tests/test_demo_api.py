@@ -56,13 +56,13 @@ class FakeRepository:
         self.impressions: list[RecommendationItem] = []
         self.fail_conflict = False
 
-    def ping(self) -> None:
+    async def ping(self) -> None:
         return None
 
-    def users(self, limit: int, offset: int):
+    async def users(self, limit: int, offset: int):
         return [User(user_id=1, segment="vip", city="HCMC")], 1
 
-    def products(self, limit: int, offset: int):
+    async def products(self, limit: int, offset: int):
         return [self.product(101)], 1
 
     def product(self, product_id: int):
@@ -77,13 +77,13 @@ class FakeRepository:
             price_bucket=2,
         )
 
-    def user_exists(self, user_id: int) -> bool:
+    async def user_exists(self, user_id: int) -> bool:
         return user_id == 1
 
-    def products_by_id(self, product_ids: list[int]):
+    async def products_by_id(self, product_ids: list[int]):
         return {product_id: self.product(product_id) for product_id in product_ids}
 
-    def record_event(self, request: EventRequest, event_id: str, payload_hash: str):
+    async def record_event(self, request: EventRequest, event_id: str, payload_hash: str):
         now = datetime.now(UTC)
         row = {
             "event_id": event_id,
@@ -99,13 +99,13 @@ class FakeRepository:
         self.events[event_id] = row
         return row, duplicate
 
-    def event(self, event_id: str):
+    async def event(self, event_id: str):
         return self.events.get(event_id)
 
-    def record_recommendation_request(self, user_id: int, session_id: str, request_id: str) -> None:
+    async def record_recommendation_request(self, user_id: int, session_id: str, request_id: str) -> None:
         return None
 
-    def record_impressions(self, request_id: str, user_id: int, session_id: str, items: list[RecommendationItem]):
+    async def record_impressions(self, request_id: str, user_id: int, session_id: str, items: list[RecommendationItem]):
         self.impressions.extend(items)
 
 

@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import sys
 import asyncio
-import time
 import types
 
 import numpy as np
 import pytest
 
-from recsys_online_feature_api import service as online_features
 from recsys_online_feature_api.service import (
     FeatureClient,
     get_online_features,
@@ -39,14 +37,17 @@ from recsys_inference_api.triton import TritonRanker
 
 
 def recommend(request, feature_client, ranker, model_version):
-    route = select_triton_route(ranker, request.user_id, model_version)
-    features = get_online_features(
-        request.user_id,
-        request.candidate_item_ids,
-        request.top_k,
-        feature_client,
-    )
-    return recommend_from_online_features(features, request.top_k, route)
+    async def run():
+        route = select_triton_route(ranker, request.user_id, model_version)
+        features = await get_online_features(
+            request.user_id,
+            request.candidate_item_ids,
+            request.top_k,
+            feature_client,
+        )
+        return await recommend_from_online_features(features, request.top_k, route)
+
+    return asyncio.run(run())
 
 
 def test_build_triton_payload_maps_feature_rows_to_tensors():
@@ -186,7 +187,7 @@ def test_recommend_uses_fallback_candidates_and_ranker_scores():
             return {"category_id": item_id, "brand_id": 1, "price_bucket": 2}
 
     class Ranker:
-        def score(self, payload):
+        async def score(self, payload):
             return payload["candidate_item_id"].tolist(), [0.1, 0.8]
 
     response = recommend(
@@ -305,16 +306,16 @@ def test_shadow_runner_records_success_error_timeout_and_drop():
     from recsys_inference_api.ab_testing import TritonRoute
 
     class SuccessRanker:
-        def score(self, payload):
+        async def score(self, payload):
             return [1, 2], [0.2, 0.8]
 
     class ErrorRanker:
-        def score(self, payload):
+        async def score(self, payload):
             raise RuntimeError("candidate unavailable")
 
     class SlowRanker:
-        def score(self, payload):
-            time.sleep(0.05)
+        async def score(self, payload):
+            await asyncio.sleep(0.05)
             return [1], [0.1]
 
     async def exercise():
@@ -361,6 +362,41 @@ def test_shadow_runner_records_success_error_timeout_and_drop():
     assert "recsys_api_shadow_score_mean" in text
 
 
+def test_shadow_timeout_keeps_max_concurrency_until_rpc_cancellation_finishes():
+    from recsys_inference_api.ab_testing import TritonRoute
+
+    class Ranker:
+        def __init__(self):
+            self.active = 0
+            self.max_active = 0
+
+        async def score(self, payload):
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            try:
+                await asyncio.sleep(1)
+            finally:
+                await asyncio.sleep(0.01)
+                self.active -= 1
+
+    async def exercise():
+        ranker = Ranker()
+        runner = ShadowRunner(
+            timeout_seconds=0.005,
+            max_pending=2,
+            max_concurrency=1,
+        )
+        route = TritonRoute(ranker, "candidate", "shadow_candidate", "bounded")
+        payload = {"candidate_item_id": np.asarray([1], dtype=np.int64)}
+        assert runner.submit(route, payload)
+        assert runner.submit(route, payload)
+        await runner.drain()
+        assert ranker.max_active == 1
+        assert ranker.active == 0
+
+    asyncio.run(exercise())
+
+
 def test_recommend_ab_router_returns_variant_metadata_and_metrics():
     class Features:
         def candidates(self, user_id, limit):
@@ -373,7 +409,7 @@ def test_recommend_ab_router_returns_variant_metadata_and_metrics():
             return {"category_id": item_id, "brand_id": 1, "price_bucket": 2}
 
     class Ranker:
-        def score(self, payload):
+        async def score(self, payload):
             return payload["candidate_item_id"].tolist(), [0.1, 0.8]
 
     router = TritonABRouter(
@@ -414,11 +450,13 @@ def test_get_online_features_reads_candidates_sequence_and_items():
         def item_features(self, item_id):
             return {"category_id": item_id, "brand_id": 1, "price_bucket": 2}
 
-    response = get_online_features(
-        user_id=1,
-        candidate_item_ids=None,
-        top_k=1,
-        feature_client=Features(),
+    response = asyncio.run(
+        get_online_features(
+            user_id=1,
+            candidate_item_ids=None,
+            top_k=1,
+            feature_client=Features(),
+        )
     )
 
     assert response.candidate_item_ids == [10, 11]
@@ -428,58 +466,34 @@ def test_get_online_features_reads_candidates_sequence_and_items():
 
 def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkeypatch):
     class BrokenRedis:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def get(self, key):
+        async def mget(self, keys):
             raise OSError("redis unavailable")
 
-        def zrevrange(self, key, start, end):
+        async def zrevrange(self, key, start, end):
             raise OSError("redis unavailable")
 
-    monkeypatch.setattr(
-        online_features,
-        "redis",
-        type("RedisModule", (), {"Redis": BrokenRedis}),
-        raising=False,
-    )
-
-    original_import = __import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "redis":
-            return type("RedisModule", (), {"Redis": BrokenRedis})
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", fake_import)
     client = FeatureClient(allow_fallback=True)
+    client.client = BrokenRedis()
 
-    assert client.user_sequence(1) == {}
-    assert client.item_features(1) == {}
-    assert client.candidates(1, 3) == [1, 2, 3]
+    async def exercise():
+        assert await client.user_sequence(1) == {}
+        assert await client.item_features(1) == {}
+        assert await client.candidates(1, 3) == [1, 2, 3]
+        await client.aclose()
+
+    asyncio.run(exercise())
 
 
 def test_feature_client_success_and_error_without_fallback(monkeypatch):
     class RedisClient:
-        def zrevrange(self, key, start, end):
+        async def mget(self, keys):
+            return [None, None]
+
+        async def zrevrange(self, key, start, end):
             return [b"10", "11"]
 
-    monkeypatch.setattr(
-        online_features,
-        "redis",
-        type("RedisModule", (), {"Redis": lambda *args, **kwargs: RedisClient()}),
-        raising=False,
-    )
-
-    original_import = __import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "redis":
-            return type("RedisModule", (), {"Redis": lambda *a, **k: RedisClient()})
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", fake_import)
     client = FeatureClient(allow_fallback=False)
+    client.client = RedisClient()
 
     def fake_get_online_features(features, entity_rows):
         if "user_id" in entity_rows[0]:
@@ -500,24 +514,23 @@ def test_feature_client_success_and_error_without_fallback(monkeypatch):
 
     monkeypatch.setattr(client, "_get_feast_online_features", fake_get_online_features)
 
-    assert client.user_sequence(1)["hist_item_ids"] == [1]
-    assert client.item_features(10)["category_id"] == 2
-    assert client.candidates(1, 2) == [10, 11]
+    async def exercise():
+        assert (await client.user_sequence(1))["hist_item_ids"] == [1]
+        assert (await client.item_features(10))["category_id"] == 2
+        assert await client.candidates(1, 2) == [10, 11]
+        with pytest.raises(RuntimeError, match="failed to fetch item features"):
+            await client.item_features(99)
+        await client.aclose()
 
-    try:
-        client.item_features(99)
-    except RuntimeError as exc:
-        assert "failed to fetch item features from Feast online store" in str(exc)
-    else:
-        raise AssertionError("expected item feature Redis failure")
+    asyncio.run(exercise())
 
 
-def test_feature_client_prefers_user_candidates_and_fills_from_global():
+def test_feature_client_uses_only_user_candidates_when_available():
     class RedisClient:
         def __init__(self):
             self.keys = []
 
-        def zrevrange(self, key, start, end):
+        async def zrevrange(self, key, start, end):
             self.keys.append(key)
             if key == "candidate:user:7":
                 return [b"21", b"10"]
@@ -529,13 +542,13 @@ def test_feature_client_prefers_user_candidates_and_fills_from_global():
     client.allow_fallback = False
     client.client = RedisClient()
 
-    assert client.candidates(7, 4) == [21, 10, 11, 12]
-    assert client.client.keys == ["candidate:user:7", "candidate:popular:global"]
+    assert asyncio.run(client.candidates(7, 4)) == [21, 10]
+    assert client.client.keys == ["candidate:user:7"]
 
 
 def test_feature_client_falls_back_to_global_candidates_for_new_user():
     class RedisClient:
-        def zrevrange(self, key, start, end):
+        async def zrevrange(self, key, start, end):
             if key == "candidate:popular:global":
                 return [b"10", b"11"]
             return []
@@ -544,7 +557,26 @@ def test_feature_client_falls_back_to_global_candidates_for_new_user():
     client.allow_fallback = False
     client.client = RedisClient()
 
-    assert client.candidates(99, 2) == [10, 11]
+    assert asyncio.run(client.candidates(99, 2)) == [10, 11]
+
+
+def test_feature_client_reads_realtime_sequence_with_one_mget():
+    class RedisClient:
+        def __init__(self):
+            self.keys = None
+
+        async def mget(self, keys):
+            self.keys = keys
+            return [b'{"item_ids":[10],"event_type_ids":[1]}', None]
+
+    client = object.__new__(FeatureClient)
+    client.allow_fallback = False
+    client.client = RedisClient()
+
+    sequence = asyncio.run(client.user_sequence(7))
+
+    assert sequence["hist_item_ids"] == [10]
+    assert client.client.keys == ["fs:user_sequence:7", "fs:user_aggregate:7"]
 
 
 def test_triton_ranker_scores_and_records_errors(monkeypatch):
@@ -574,7 +606,7 @@ def test_triton_ranker_scores_and_records_errors(monkeypatch):
         def __init__(self, url):
             self.url = url
 
-        def infer(self, model_name, inputs, outputs):
+        async def infer(self, model_name, inputs, outputs, client_timeout=None):
             if self.should_fail:
                 raise RuntimeError("triton down")
             assert model_name == "bst_ensemble"
@@ -582,30 +614,87 @@ def test_triton_ranker_scores_and_records_errors(monkeypatch):
             assert outputs[0].name == "candidate_item_id_out"
             return Result()
 
+        async def close(self):
+            return None
+
     grpc = types.SimpleNamespace(
         InferInput=InferInput,
         InferRequestedOutput=InferRequestedOutput,
-        InferenceServerClient=Client,
     )
+    grpc_aio = types.SimpleNamespace(InferenceServerClient=Client)
+    grpc.aio = grpc_aio
     monkeypatch.setitem(sys.modules, "tritonclient", types.SimpleNamespace(grpc=grpc))
     monkeypatch.setitem(sys.modules, "tritonclient.grpc", grpc)
+    monkeypatch.setitem(sys.modules, "tritonclient.grpc.aio", grpc_aio)
 
     ranker = TritonRanker(
         url="localhost:9000", model_name="bst_ensemble", model_version="v1"
     )
-    item_ids, scores = ranker.score(
-        {"candidate_item_id": np.asarray([1, 2], dtype=np.int64)}
+    item_ids, scores = asyncio.run(
+        ranker.score({"candidate_item_id": np.asarray([1, 2], dtype=np.int64)})
     )
     assert item_ids == [1, 2]
     assert len(scores) == 2
 
     Client.should_fail = True
     try:
-        ranker.score({"candidate_item_id": np.asarray([1], dtype=np.int64)})
+        asyncio.run(
+            ranker.score({"candidate_item_id": np.asarray([1], dtype=np.int64)})
+        )
     except RuntimeError as exc:
         assert "triton down" in str(exc)
     else:
         raise AssertionError("expected triton failure")
+
+
+def test_triton_timeout_cancels_rpc_and_client_closes(monkeypatch):
+    cancelled = []
+    closed = []
+
+    class InferInput:
+        def __init__(self, name, shape, dtype):
+            pass
+
+        def set_data_from_numpy(self, values):
+            pass
+
+    class InferRequestedOutput:
+        def __init__(self, name):
+            pass
+
+    class Client:
+        def __init__(self, url):
+            pass
+
+        async def infer(self, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(True)
+                raise
+
+        async def close(self):
+            closed.append(True)
+
+    grpc = types.SimpleNamespace(
+        InferInput=InferInput,
+        InferRequestedOutput=InferRequestedOutput,
+    )
+    grpc_aio = types.SimpleNamespace(InferenceServerClient=Client)
+    grpc.aio = grpc_aio
+    monkeypatch.setitem(sys.modules, "tritonclient", types.SimpleNamespace(grpc=grpc))
+    monkeypatch.setitem(sys.modules, "tritonclient.grpc", grpc)
+    monkeypatch.setitem(sys.modules, "tritonclient.grpc.aio", grpc_aio)
+    ranker = TritonRanker(timeout_seconds=0.01)
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(
+            ranker.score({"candidate_item_id": np.asarray([1], dtype=np.int64)})
+        )
+    asyncio.run(ranker.aclose())
+
+    assert cancelled == [True]
+    assert closed == [True]
 
 
 def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
@@ -633,6 +722,7 @@ def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
     assert router.experiment_id == "exp-env"
     assert created[0]["model_version"] == "stable-v1"
     assert created[1]["model_version"] == "candidate-v1"
+    assert created[0]["capacity_limiter"] is created[1]["capacity_limiter"]
 
 
 def test_ab_router_from_env_builds_shadow_candidate_with_zero_user_weight(monkeypatch):

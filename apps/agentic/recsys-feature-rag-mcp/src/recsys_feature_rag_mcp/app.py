@@ -29,10 +29,14 @@ def create_app(
     feature_client = feature_client or OnlineFeatureClient(
         base_url=settings.online_feature_api_url,
         timeout_seconds=settings.online_feature_timeout_seconds,
+        max_connections=settings.downstream_max_connections,
+        max_keepalive_connections=settings.downstream_max_keepalive_connections,
     )
     rag_client = rag_client or RagClient(
         base_url=settings.rag_api_url,
         timeout_seconds=settings.rag_timeout_seconds,
+        max_connections=settings.downstream_max_connections,
+        max_keepalive_connections=settings.downstream_max_keepalive_connections,
     )
     mcp = create_mcp_server(
         feature_client,
@@ -44,10 +48,12 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         """Start MCP sessions and close pooled downstream HTTP clients."""
 
-        async with mcp.session_manager.run():
-            yield
-        await feature_client.aclose()
-        await rag_client.aclose()
+        try:
+            async with mcp.session_manager.run():
+                yield
+        finally:
+            await feature_client.aclose()
+            await rag_client.aclose()
 
     app = FastAPI(
         title="RecSys Feature and RAG MCP",

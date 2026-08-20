@@ -72,7 +72,7 @@ class ShadowRunner:
             async with self._semaphore:
                 inference_start = time.perf_counter()
                 _, scores = await asyncio.wait_for(
-                    asyncio.to_thread(route.ranker.score, payload),
+                    route.ranker.score(payload),
                     timeout=self.timeout_seconds,
                 )
                 inference_duration = time.perf_counter() - inference_start

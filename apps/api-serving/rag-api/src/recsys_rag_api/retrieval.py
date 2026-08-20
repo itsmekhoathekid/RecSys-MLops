@@ -219,9 +219,12 @@ class MilvusCandidateSearch:
         "average_rating",
     )
 
-    def __init__(self, client: object, *, project: str = "recsys_rag") -> None:
+    def __init__(
+        self, client: object, *, project: str = "recsys_rag", timeout_seconds: float = 5.0
+    ) -> None:
         self.client = client
         self.project = project
+        self.timeout_seconds = timeout_seconds
         self._loaded: set[str] = set()
         self._load_lock = threading.Lock()
 
@@ -239,7 +242,9 @@ class MilvusCandidateSearch:
         if collection_name not in self._loaded:
             with self._load_lock:
                 if collection_name not in self._loaded:
-                    self.client.load_collection(collection_name=collection_name)
+                    self.client.load_collection(
+                        collection_name=collection_name, timeout=self.timeout_seconds
+                    )
                     self._loaded.add(collection_name)
         results = self.client.search(
             collection_name=collection_name,
@@ -248,6 +253,7 @@ class MilvusCandidateSearch:
             search_params={"metric_type": "COSINE", "params": {}},
             limit=top_k,
             output_fields=list(self.OUTPUT_FIELDS),
+            timeout=self.timeout_seconds,
         )
         hits = results[0] if results else []
         return [self._candidate(hit) for hit in hits]

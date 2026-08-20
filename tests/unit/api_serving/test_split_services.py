@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-import pytest
+import asyncio
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi.testclient import TestClient
 
 from recsys_online_feature_api.app import create_app as create_feature_app
@@ -34,7 +38,7 @@ class DeterministicFeatureClient:
 
 
 class DeterministicRanker:
-    def score(self, payload):
+    async def score(self, payload):
         return payload["candidate_item_id"].tolist(), [0.1, 0.9, 0.3]
 
 
@@ -115,7 +119,7 @@ def test_inference_api_returns_control_while_shadow_candidate_runs() -> None:
             self.scores = scores
             self.calls = 0
 
-        def score(self, payload):
+        async def score(self, payload):
             self.calls += 1
             return payload["candidate_item_id"].tolist(), self.scores
 
@@ -148,3 +152,37 @@ def test_inference_api_returns_control_while_shadow_candidate_runs() -> None:
     assert [item["item_id"] for item in response.json()["items"]] == [102, 103]
     assert control.calls == 1
     assert candidate.calls == 1
+
+
+def test_slow_recommendation_does_not_block_health_event_loop() -> None:
+    started = threading.Event()
+
+    class SlowRanker:
+        async def score(self, payload):
+            started.set()
+            await asyncio.sleep(0.1)
+            return payload["candidate_item_id"].tolist(), [0.9, 0.2, 0.1]
+
+    class Router:
+        def route(self, user_id):
+            return TritonRoute(SlowRanker(), "async-test")
+
+    app = create_inference_app(
+        inference_settings(),
+        feature_service=DeterministicFeatureService(),
+        router=Router(),
+    )
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as executor:
+        recommendation = executor.submit(
+            client.post,
+            "/recommendations",
+            json={"user_id": 42, "top_k": 2},
+        )
+        assert started.wait(timeout=1)
+        before = time.perf_counter()
+        health = client.get("/healthz")
+        elapsed = time.perf_counter() - before
+        assert recommendation.result(timeout=1).status_code == 200
+
+    assert health.status_code == 200
+    assert elapsed < 0.08

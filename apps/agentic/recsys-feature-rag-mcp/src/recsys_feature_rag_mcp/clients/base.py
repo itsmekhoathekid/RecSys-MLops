@@ -26,12 +26,18 @@ class JsonApiClient:
         base_url: str,
         timeout_seconds: float,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_connections: int = 50,
+        max_keepalive_connections: int = 20,
     ) -> None:
         self.service = service
         self.client = httpx.AsyncClient(
             base_url=base_url,
             timeout=httpx.Timeout(timeout_seconds),
             transport=transport,
+            limits=httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive_connections,
+            ),
         )
 
     async def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:

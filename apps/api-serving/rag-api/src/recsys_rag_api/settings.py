@@ -25,6 +25,10 @@ class RagApiSettings:
     embedding_revision: str
     embedding_dimension: int
     pointer_reload_seconds: float
+    sync_workers: int = 8
+    sync_queue_size: int = 16
+    capacity_wait_seconds: float = 0.1
+    storage_timeout_seconds: float = 5.0
 
     @classmethod
     def from_env(cls) -> "RagApiSettings":
@@ -66,4 +70,8 @@ class RagApiSettings:
             pointer_reload_seconds=float(
                 os.getenv("RAG_POINTER_RELOAD_SECONDS", "60")
             ),
+            sync_workers=int(os.getenv("RAG_SYNC_WORKERS", "8")),
+            sync_queue_size=int(os.getenv("RAG_SYNC_QUEUE_SIZE", "16")),
+            capacity_wait_seconds=float(os.getenv("RAG_CAPACITY_WAIT_SECONDS", "0.1")),
+            storage_timeout_seconds=float(os.getenv("RAG_STORAGE_TIMEOUT_SECONDS", "5")),
         )

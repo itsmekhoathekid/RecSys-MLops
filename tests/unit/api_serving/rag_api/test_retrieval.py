@@ -194,8 +194,8 @@ class MilvusClient:
         self.loaded = []
         self.calls = []
 
-    def load_collection(self, *, collection_name):
-        self.loaded.append(collection_name)
+    def load_collection(self, *, collection_name, timeout):
+        self.loaded.append((collection_name, timeout))
 
     def search(self, **kwargs):
         self.calls.append(kwargs)
@@ -231,6 +231,7 @@ def test_milvus_adapter_reuses_loaded_collection_and_omits_embedding_payload():
     )
     assert first[0].item_id == 1
     assert first[0].score == 0.92
-    assert client.loaded == ["recsys_rag_rag_item_chunks_blue"]
+    assert client.loaded == [("recsys_rag_rag_item_chunks_blue", 5.0)]
     assert "embedding" not in client.calls[0]["output_fields"]
     assert client.calls[0]["limit"] == 200
+    assert client.calls[0]["timeout"] == 5.0

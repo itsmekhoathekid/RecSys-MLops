@@ -7,15 +7,16 @@ compatible active pointer; serving errors preserve the last-known-good pointer.
 
 from __future__ import annotations
 
-import asyncio
 import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Callable
 
 import boto3
+from botocore.config import Config
 from fastapi import FastAPI, HTTPException, Path, Request
 
 from recsys_rag_runtime import OnnxE5Encoder
+from recsys_serving_common.concurrency import BoundedExecutor, CapacityExceeded
 from recsys_serving_common.runtime import configure_api, healthz, metrics, version_payload
 
 from recsys_rag_api.batching import BatchingTextEncoder
@@ -80,6 +81,11 @@ def _pointer_loader(settings: RagApiSettings) -> Callable[[], bytes]:
         aws_access_key_id=settings.minio_access_key,
         aws_secret_access_key=settings.minio_secret_key,
         region_name="us-east-1",
+        config=Config(
+            connect_timeout=settings.storage_timeout_seconds,
+            read_timeout=settings.storage_timeout_seconds,
+            retries={"max_attempts": 1},
+        ),
     )
 
     def load() -> bytes:
@@ -102,6 +108,18 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        request_executor = BoundedExecutor(
+            workers=settings.sync_workers,
+            queue_size=settings.sync_queue_size,
+            wait_seconds=settings.capacity_wait_seconds,
+            operation="rag_sync",
+        )
+        control_executor = BoundedExecutor(
+            workers=1,
+            queue_size=1,
+            wait_seconds=settings.capacity_wait_seconds,
+            operation="rag_control",
+        )
         batching_encoder: BatchingTextEncoder | None = None
         milvus_client: object | None = None
         exact_lookup = chunk_lookup_service
@@ -142,7 +160,9 @@ def create_app(
             service = RetrievalService(
                 encoder=batching_encoder,
                 search=MilvusCandidateSearch(
-                    milvus_client, project=feature_store.project
+                    milvus_client,
+                    project=feature_store.project,
+                    timeout_seconds=settings.storage_timeout_seconds,
                 ),
                 pointers=pointers,
             )
@@ -154,9 +174,13 @@ def create_app(
             service = retrieval_service
         app.state.retrieval_service = service
         app.state.chunk_lookup_service = exact_lookup
+        app.state.request_executor = request_executor
+        app.state.control_executor = control_executor
         try:
             yield
         finally:
+            await request_executor.aclose()
+            await control_executor.aclose()
             if batching_encoder is not None:
                 batching_encoder.close()
             if milvus_client is not None:
@@ -177,7 +201,7 @@ def create_app(
         """Require a model-compatible active pointer before accepting traffic."""
 
         try:
-            await asyncio.to_thread(
+            await request.app.state.control_executor.run(
                 request.app.state.retrieval_service.pointers.get
             )
         except Exception as exc:
@@ -213,9 +237,11 @@ def create_app(
         """Encode a Vietnamese/multilingual query and return unique ranked items."""
 
         try:
-            return await asyncio.to_thread(
+            return await request.app.state.request_executor.run(
                 request.app.state.retrieval_service.retrieve, payload
             )
+        except CapacityExceeded as exc:
+            raise HTTPException(status_code=503, detail="RAG capacity exhausted") from exc
         except Exception as exc:
             raise HTTPException(status_code=502, detail="RAG retrieval failed") from exc
 
@@ -230,7 +256,9 @@ def create_app(
         if service is None:
             raise HTTPException(status_code=503, detail="chunk lookup unavailable")
         try:
-            result = await asyncio.to_thread(service.get_many, [chunk_id])
+            result = await request.app.state.request_executor.run(service.get_many, [chunk_id])
+        except CapacityExceeded as exc:
+            raise HTTPException(status_code=503, detail="RAG capacity exhausted") from exc
         except RuntimeError as exc:
             raise HTTPException(
                 status_code=503, detail="active RAG index unavailable"
@@ -254,7 +282,9 @@ def create_app(
         if service is None:
             raise HTTPException(status_code=503, detail="chunk lookup unavailable")
         try:
-            return await asyncio.to_thread(service.get_many, payload.chunk_ids)
+            return await request.app.state.request_executor.run(service.get_many, payload.chunk_ids)
+        except CapacityExceeded as exc:
+            raise HTTPException(status_code=503, detail="RAG capacity exhausted") from exc
         except RuntimeError as exc:
             raise HTTPException(
                 status_code=503, detail="active RAG index unavailable"

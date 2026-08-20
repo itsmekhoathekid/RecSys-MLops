@@ -10,4 +10,6 @@ data:
   MCP_ALLOWED_HOSTS: {{ .Values.config.allowedHosts | quote }}
   ONLINE_FEATURE_TIMEOUT_SECONDS: {{ .Values.config.onlineFeatureTimeoutSeconds | quote }}
   RAG_TIMEOUT_SECONDS: {{ .Values.config.ragTimeoutSeconds | quote }}
+  DOWNSTREAM_MAX_CONNECTIONS: {{ .Values.config.downstreamMaxConnections | quote }}
+  DOWNSTREAM_MAX_KEEPALIVE_CONNECTIONS: {{ .Values.config.downstreamMaxKeepaliveConnections | quote }}
   RECSYS_IMAGE_REFERENCE: {{ .Values.image | quote }}

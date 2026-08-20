@@ -18,6 +18,10 @@ data:
   RAG_EMBEDDING_REVISION: {{ .Values.config.embeddingRevision | quote }}
   RAG_EMBEDDING_DIMENSION: {{ .Values.config.embeddingDimension | quote }}
   RAG_POINTER_RELOAD_SECONDS: {{ .Values.config.pointerReloadSeconds | quote }}
+  RAG_SYNC_WORKERS: {{ .Values.config.syncWorkers | quote }}
+  RAG_SYNC_QUEUE_SIZE: {{ .Values.config.syncQueueSize | quote }}
+  RAG_CAPACITY_WAIT_SECONDS: {{ .Values.config.capacityWaitSeconds | quote }}
+  RAG_STORAGE_TIMEOUT_SECONDS: {{ .Values.config.storageTimeoutSeconds | quote }}
   RECSYS_JSON_LOGS: {{ .Values.config.jsonLogs | quote }}
   RECSYS_OTEL_ENABLED: {{ .Values.config.otelEnabled | quote }}
   OTEL_SERVICE_NAME: recsys-rag-api

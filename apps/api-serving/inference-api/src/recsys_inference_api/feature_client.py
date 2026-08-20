@@ -20,7 +20,9 @@ class OnlineFeatureServiceClient:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.base_url = (
-            base_url or os.getenv("FEATURE_API_URL", "http://recsys-online-feature-api")
+            base_url
+            or os.getenv("FEATURE_API_URL")
+            or "http://recsys-online-feature-api"
         ).rstrip("/")
         self.timeout_seconds = timeout_seconds or float(
             os.getenv("FEATURE_API_TIMEOUT_SECONDS", "5")
@@ -30,6 +32,19 @@ class OnlineFeatureServiceClient:
     async def fetch(self, request: OnlineFeaturesRequest) -> OnlineFeaturesResponse:
         start = time.perf_counter()
         status = "error"
+        payload = request.model_dump(exclude_none=True)
+
+        async def fetch_response(client: httpx.AsyncClient) -> httpx.Response:
+            if request.candidate_item_ids is None:
+                return await client.get(
+                    f"{self.base_url}/online-features/{request.user_id}",
+                    params={"top_k": request.top_k},
+                )
+            return await client.post(
+                f"{self.base_url}/online-features",
+                json=payload,
+            )
+
         try:
             with span(
                 "feature_api.fetch_online_features",
@@ -40,15 +55,9 @@ class OnlineFeatureServiceClient:
                     async with httpx.AsyncClient(
                         timeout=self.timeout_seconds
                     ) as client:
-                        response = await client.post(
-                            f"{self.base_url}/online-features",
-                            json=request.model_dump(exclude_none=True),
-                        )
+                        response = await fetch_response(client)
                 else:
-                    response = await self.client.post(
-                        f"{self.base_url}/online-features",
-                        json=request.model_dump(exclude_none=True),
-                    )
+                    response = await fetch_response(self.client)
             response.raise_for_status()
             status = "success"
             return OnlineFeaturesResponse.model_validate(response.json())

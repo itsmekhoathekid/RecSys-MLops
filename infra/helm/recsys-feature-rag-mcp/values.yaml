@@ -13,6 +13,8 @@ config:
   allowedHosts: localhost:*,127.0.0.1:*,[::1]:*,recsys-feature-rag-mcp.kagent.svc.cluster.local:8080
   onlineFeatureTimeoutSeconds: "2"
   ragTimeoutSeconds: "5"
+  downstreamMaxConnections: "50"
+  downstreamMaxKeepaliveConnections: "20"
 resources:
   requests: {cpu: 100m, memory: 128Mi}
   limits: {cpu: "1", memory: 512Mi}

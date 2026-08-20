@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -10,6 +9,7 @@ from recsys_serving_common.contracts import (
     OnlineFeaturesRequest,
     OnlineFeaturesResponse,
 )
+from recsys_serving_common.concurrency import CapacityExceeded
 from recsys_serving_common.runtime import (
     configure_api,
     healthz,
@@ -32,11 +32,21 @@ def create_app(
         client = feature_client or FeatureClient(settings=settings)
         app.state.feature_client = client
         if settings.warmup_on_startup:
-            await asyncio.to_thread(client._feature_store)
+            warmup = getattr(client, "warmup", None)
+            if warmup is not None:
+                await warmup()
+            else:
+                client._feature_store()
         try:
             yield
         finally:
-            client.close()
+            close = getattr(client, "aclose", None)
+            if close is not None:
+                await close()
+            else:
+                sync_close = getattr(client, "close", None)
+                if sync_close is not None:
+                    sync_close()
 
     app = configure_api(
         FastAPI(title="RecSys Online Feature API", version="0.1.0", lifespan=lifespan)
@@ -68,13 +78,14 @@ def create_app(
         payload: OnlineFeaturesRequest, request: Request
     ) -> OnlineFeaturesResponse:
         try:
-            return await asyncio.to_thread(
-                get_online_features,
-                user_id=payload.user_id,
-                candidate_item_ids=payload.candidate_item_ids,
-                top_k=payload.top_k,
-                feature_client=request.app.state.feature_client,
+            return await get_online_features(
+                payload.user_id,
+                payload.candidate_item_ids,
+                payload.top_k,
+                request.app.state.feature_client,
             )
+        except CapacityExceeded as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(
                 status_code=502, detail=f"online feature fetch failed: {exc}"

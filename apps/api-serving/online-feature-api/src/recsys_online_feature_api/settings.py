@@ -17,6 +17,11 @@ class FeatureApiSettings:
     redis_port: int = 6379
     redis_db: int = 0
     feast_redis_connection_string: str = ""
+    redis_max_connections: int = 32
+    redis_timeout_seconds: float = 1.0
+    feast_workers: int = 1
+    feast_queue_size: int = 15
+    capacity_wait_seconds: float = 0.05
 
     @classmethod
     def from_env(cls) -> "FeatureApiSettings":
@@ -35,5 +40,16 @@ class FeatureApiSettings:
             redis_db=int(os.getenv("REDIS_DB", "0")),
             feast_redis_connection_string=os.getenv(
                 "FEAST_REDIS_CONNECTION_STRING", f"{redis_host}:{redis_port}"
+            ),
+            redis_max_connections=max(
+                1, int(os.getenv("FEATURE_REDIS_MAX_CONNECTIONS", "32"))
+            ),
+            redis_timeout_seconds=max(
+                0.001, float(os.getenv("FEATURE_REDIS_TIMEOUT_SECONDS", "1"))
+            ),
+            feast_workers=max(1, int(os.getenv("FEATURE_FEAST_WORKERS", "1"))),
+            feast_queue_size=max(0, int(os.getenv("FEATURE_FEAST_QUEUE_SIZE", "15"))),
+            capacity_wait_seconds=max(
+                0.001, float(os.getenv("FEATURE_CAPACITY_WAIT_SECONDS", "0.05"))
             ),
         )

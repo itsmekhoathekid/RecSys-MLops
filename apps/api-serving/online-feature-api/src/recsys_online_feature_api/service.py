@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import shutil
 import threading
@@ -7,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from recsys_serving_common.concurrency import BoundedExecutor, CapacityExceeded
 from recsys_serving_common.contracts import OnlineFeaturesResponse
 from recsys_serving_common.observability import METRICS, observe_redis, span
 from recsys_online_feature_api.settings import FeatureApiSettings
@@ -129,7 +132,7 @@ class FeatureClient:
         allow_fallback: bool | None = None,
         settings: FeatureApiSettings | None = None,
     ) -> None:
-        import redis
+        import redis.asyncio as redis
 
         settings = settings or FeatureApiSettings.from_env()
         if allow_fallback is None:
@@ -141,14 +144,33 @@ class FeatureClient:
         self.feast_redis_connection_string = settings.feast_redis_connection_string
         self._store: Any | None = None
         self._store_lock = threading.RLock()
+        self._feast_executor = BoundedExecutor(
+            workers=settings.feast_workers,
+            queue_size=settings.feast_queue_size,
+            wait_seconds=settings.capacity_wait_seconds,
+            operation="feast_online_features",
+        )
         self.client = redis.Redis(
             host=settings.redis_host,
             port=settings.redis_port,
             db=settings.redis_db,
+            max_connections=settings.redis_max_connections,
+            socket_connect_timeout=settings.redis_timeout_seconds,
+            socket_timeout=settings.redis_timeout_seconds,
         )
 
-    def close(self) -> None:
-        self.client.close()
+    async def warmup(self) -> None:
+        await self._feast_executor.run(self._feature_store)
+
+    async def aclose(self) -> None:
+        await self._feast_executor.aclose()
+        close = getattr(self.client, "aclose", None) or getattr(
+            self.client, "close", None
+        )
+        if close is not None:
+            result = close()
+            if inspect.isawaitable(result):
+                await result
 
     def _redis_connection_string(self) -> str:
         return self.feast_redis_connection_string
@@ -199,17 +221,27 @@ class FeatureClient:
                 .to_dict()
             )
 
-    def user_sequence(self, user_id: int) -> dict[str, Any]:
+    def _feast_user_sequence(self, user_id: int) -> dict[str, Any]:
+        return first_feature_row(
+            self._get_feast_online_features(
+                USER_SEQUENCE_FEATURE_REFS, [{"user_id": user_id}]
+            ),
+            {"user_id"},
+        )
+
+    async def user_sequence(self, user_id: int) -> dict[str, Any]:
         start = time.perf_counter()
         try:
             with span("redis.realtime_user_features", operation="user_features"):
                 try:
-                    realtime_sequence = parse_json_bytes(
-                        self.client.get(f"fs:user_sequence:{user_id}")
+                    values = await self.client.mget(
+                        [
+                            f"fs:user_sequence:{user_id}",
+                            f"fs:user_aggregate:{user_id}",
+                        ]
                     )
-                    realtime_aggregate = parse_json_bytes(
-                        self.client.get(f"fs:user_aggregate:{user_id}")
-                    )
+                    realtime_sequence = parse_json_bytes(values[0])
+                    realtime_aggregate = parse_json_bytes(values[1])
                 except Exception:
                     realtime_sequence = {}
                     realtime_aggregate = {}
@@ -219,11 +251,8 @@ class FeatureClient:
                 )
             else:
                 with span("feast.user_features", operation="user_features"):
-                    payload = first_feature_row(
-                        self._get_feast_online_features(
-                            USER_SEQUENCE_FEATURE_REFS, [{"user_id": user_id}]
-                        ),
-                        {"user_id"},
+                    payload = await self._feast_executor.run(
+                        self._feast_user_sequence, user_id
                     )
             observe_redis("user_sequence", time.perf_counter() - start)
             if not payload:
@@ -232,6 +261,8 @@ class FeatureClient:
                     labels={"feature": "user_sequence"},
                 )
             return payload
+        except CapacityExceeded:
+            raise
         except Exception as exc:
             observe_redis("user_sequence", time.perf_counter() - start, error=True)
             if self.allow_fallback:
@@ -240,31 +271,39 @@ class FeatureClient:
                 f"failed to fetch user features from Feast online store for user_id={user_id}"
             ) from exc
 
-    def item_features(self, item_id: int) -> dict[str, Any]:
-        return self.item_features_batch([item_id]).get(str(item_id), {})
+    async def item_features(self, item_id: int) -> dict[str, Any]:
+        return (await self.item_features_batch([item_id])).get(str(item_id), {})
 
-    def item_features_batch(self, item_ids: list[int]) -> dict[str, dict[str, Any]]:
+    def _item_features_batch_sync(
+        self, item_ids: list[int]
+    ) -> dict[str, dict[str, Any]]:
+        entity_rows = [{"product_id": item_id} for item_id in item_ids]
+        features = self._get_feast_online_features(ITEM_FEATURE_REFS, entity_rows)
+        rows: dict[str, dict[str, Any]] = {}
+        for index, item_id in enumerate(item_ids):
+            row = {}
+            for name, values in features.items():
+                if name == "product_id" or index >= len(values):
+                    continue
+                value = normalize_feature_value(values[index])
+                if value is not None:
+                    row[name] = value
+            rows[str(item_id)] = row
+        return rows
+
+    async def item_features_batch(
+        self, item_ids: list[int]
+    ) -> dict[str, dict[str, Any]]:
         start = time.perf_counter()
         try:
-            entity_rows = [{"product_id": item_id} for item_id in item_ids]
             with span(
                 "feast.item_features",
                 operation="item_features",
                 item_count=len(item_ids),
             ):
-                features = self._get_feast_online_features(
-                    ITEM_FEATURE_REFS, entity_rows
+                rows = await self._feast_executor.run(
+                    self._item_features_batch_sync, item_ids
                 )
-            rows: dict[str, dict[str, Any]] = {}
-            for index, item_id in enumerate(item_ids):
-                row = {}
-                for name, values in features.items():
-                    if name == "product_id" or index >= len(values):
-                        continue
-                    value = normalize_feature_value(values[index])
-                    if value is not None:
-                        row[name] = value
-                rows[str(item_id)] = row
             observe_redis("item_features", time.perf_counter() - start)
             if not rows:
                 METRICS.inc(
@@ -272,6 +311,8 @@ class FeatureClient:
                     labels={"feature": "item_features"},
                 )
             return rows
+        except CapacityExceeded:
+            raise
         except Exception as exc:
             observe_redis("item_features", time.perf_counter() - start, error=True)
             if self.allow_fallback:
@@ -280,22 +321,22 @@ class FeatureClient:
                 "failed to fetch item features from Feast online store"
             ) from exc
 
-    def candidates(self, user_id: int, limit: int) -> list[int]:
+    async def candidates(self, user_id: int, limit: int) -> list[int]:
         start = time.perf_counter()
         try:
             with span(
                 "redis.candidates", operation="candidates", user_id=user_id, limit=limit
             ):
-                personalized = self.client.zrevrange(
+                personalized = await self.client.zrevrange(
                     f"candidate:user:{user_id}",
                     0,
                     max(limit - 1, 0),
                 )
                 global_candidates = (
-                    self.client.zrevrange(
+                    await self.client.zrevrange(
                         "candidate:popular:global", 0, max(limit - 1, 0)
                     )
-                    if len(personalized) < limit
+                    if not personalized
                     else []
                 )
             candidates: list[int] = []
@@ -323,25 +364,40 @@ class FeatureClient:
             raise RuntimeError("failed to fetch candidate item IDs from Redis") from exc
 
 
-def get_online_features(
+async def _resolve(value: Any) -> Any:
+    return await value if inspect.isawaitable(value) else value
+
+
+async def get_online_features(
     user_id: int,
     candidate_item_ids: list[int] | None,
     top_k: int,
     feature_client: FeatureClient,
 ) -> OnlineFeaturesResponse:
-    candidates = candidate_item_ids or feature_client.candidates(
-        user_id, max(top_k * 5, top_k)
+    candidates = candidate_item_ids or await _resolve(
+        feature_client.candidates(user_id, max(top_k * 5, top_k))
     )
     if hasattr(feature_client, "item_features_batch"):
-        item_rows = feature_client.item_features_batch(candidates)
+        item_operation = _resolve(feature_client.item_features_batch(candidates))
     else:
-        item_rows = {
-            str(item_id): feature_client.item_features(item_id)
-            for item_id in candidates
-        }
+
+        async def fetch_items() -> dict[str, dict[str, Any]]:
+            rows = await asyncio.gather(
+                *(
+                    _resolve(feature_client.item_features(item_id))
+                    for item_id in candidates
+                )
+            )
+            return {str(item_id): row for item_id, row in zip(candidates, rows)}
+
+        item_operation = fetch_items()
+    item_rows, user_sequence = await asyncio.gather(
+        item_operation,
+        _resolve(feature_client.user_sequence(user_id)),
+    )
     return OnlineFeaturesResponse(
         user_id=user_id,
         candidate_item_ids=candidates,
-        user_sequence=feature_client.user_sequence(user_id),
+        user_sequence=user_sequence,
         item_features=item_rows,
     )

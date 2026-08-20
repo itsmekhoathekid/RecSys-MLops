@@ -18,6 +18,8 @@ class McpSettings:
     online_feature_timeout_seconds: float = 2.0
     rag_timeout_seconds: float = 5.0
     image_reference: str = "unknown"
+    downstream_max_connections: int = 50
+    downstream_max_keepalive_connections: int = 20
 
     @classmethod
     def from_env(cls) -> McpSettings:
@@ -56,4 +58,10 @@ class McpSettings:
             ),
             rag_timeout_seconds=float(os.getenv("RAG_TIMEOUT_SECONDS", "5")),
             image_reference=os.getenv("RECSYS_IMAGE_REFERENCE", "unknown"),
+            downstream_max_connections=int(
+                os.getenv("DOWNSTREAM_MAX_CONNECTIONS", "50")
+            ),
+            downstream_max_keepalive_connections=int(
+                os.getenv("DOWNSTREAM_MAX_KEEPALIVE_CONNECTIONS", "20")
+            ),
         )

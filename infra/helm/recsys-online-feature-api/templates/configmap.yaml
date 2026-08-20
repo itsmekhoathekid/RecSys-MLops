@@ -6,6 +6,11 @@ metadata:
 data:
   REDIS_HOST: {{ .Values.config.redisHost | quote }}
   REDIS_PORT: {{ .Values.config.redisPort | quote }}
+  FEATURE_REDIS_MAX_CONNECTIONS: {{ .Values.config.redisMaxConnections | quote }}
+  FEATURE_REDIS_TIMEOUT_SECONDS: {{ .Values.config.redisTimeoutSeconds | quote }}
+  FEATURE_FEAST_WORKERS: {{ .Values.config.feastWorkers | quote }}
+  FEATURE_FEAST_QUEUE_SIZE: {{ .Values.config.feastQueueSize | quote }}
+  FEATURE_CAPACITY_WAIT_SECONDS: {{ .Values.config.capacityWaitSeconds | quote }}
   FEAST_REPO_PATH: {{ .Values.config.feastRepoPath | quote }}
   FEAST_RUNTIME_REPO_PATH: {{ .Values.config.feastRuntimeRepoPath | quote }}
   FEAST_REDIS_CONNECTION_STRING: "{{ .Values.config.redisHost }}:{{ .Values.config.redisPort }}"

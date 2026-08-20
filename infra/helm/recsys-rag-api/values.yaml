@@ -23,6 +23,10 @@ config:
   embeddingRevision: 03415a4be176a1620747c692ed433219fabc3def
   embeddingDimension: "384"
   pointerReloadSeconds: "60"
+  syncWorkers: "8"
+  syncQueueSize: "16"
+  capacityWaitSeconds: "0.1"
+  storageTimeoutSeconds: "5"
   jsonLogs: "1"
   otelEnabled: "1"
   otelEndpoint: http://recsys-tempo.observability.svc.cluster.local:4317

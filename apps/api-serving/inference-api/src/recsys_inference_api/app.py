@@ -7,6 +7,7 @@ from typing import AsyncIterator
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 
+from recsys_serving_common.concurrency import CapacityExceeded
 from recsys_serving_common.contracts import OnlineFeaturesRequest
 from recsys_serving_common.observability import METRICS, observe_model_prediction
 from recsys_serving_common.runtime import (
@@ -47,7 +48,11 @@ def create_app(
                 client=http_client,
             )
         app.state.feature_service = service
-        app.state.ranker = router or TritonABRouter.from_env()
+        app.state.ranker = router or TritonABRouter.from_env(
+            timeout_seconds=settings.triton_timeout_seconds,
+            max_concurrency=settings.triton_max_concurrency,
+            capacity_wait_seconds=settings.triton_capacity_wait_seconds,
+        )
         app.state.shadow_runner = shadow_runner or ShadowRunner(
             timeout_seconds=settings.shadow_timeout_seconds,
             max_pending=settings.shadow_queue_size,
@@ -57,6 +62,9 @@ def create_app(
             yield
         finally:
             await app.state.shadow_runner.drain()
+            close_rankers = getattr(app.state.ranker, "aclose", None)
+            if close_rankers is not None:
+                await close_rankers()
             if http_client is not None:
                 await http_client.aclose()
 
@@ -112,7 +120,7 @@ def create_app(
                     top_k=payload.top_k,
                 )
             )
-            response = recommend_from_online_features(
+            response = await recommend_from_online_features(
                 online_features=online_features,
                 top_k=payload.top_k,
                 route=route,
@@ -131,6 +139,8 @@ def create_app(
             if response.items:
                 confidence = max(item.score for item in response.items)
             return response
+        except CapacityExceeded as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(
                 status_code=502, detail=f"inference failed: {exc}"

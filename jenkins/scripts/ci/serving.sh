@@ -3,6 +3,7 @@
 ci_online_feature_api() {
   tests=(
     tests/unit/api_serving/test_serving.py
+    tests/unit/api_serving/test_concurrency.py
     tests/unit/api_serving/test_split_services.py
     tests/unit/api_serving/test_validation_verification.py
     tests/contract/test_serving_contracts.py
@@ -15,6 +16,7 @@ ci_online_feature_api() {
 ci_inference_api() {
   tests=(
     tests/unit/api_serving/test_serving.py
+    tests/unit/api_serving/test_concurrency.py
     tests/unit/api_serving/test_split_services.py
     tests/unit/api_serving/test_validation_verification.py
     tests/contract/test_serving_contracts.py

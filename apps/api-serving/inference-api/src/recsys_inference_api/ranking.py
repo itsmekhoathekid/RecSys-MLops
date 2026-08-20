@@ -144,7 +144,7 @@ def format_top_k(
     )
 
 
-def recommend_from_online_features(
+async def recommend_from_online_features(
     online_features: OnlineFeaturesResponse,
     top_k: int,
     route: TritonRoute,
@@ -175,7 +175,7 @@ def recommend_from_online_features(
         payload = build_triton_payload(sequence_row, item_rows, candidate_item_ids)
     if payload_observer is not None:
         payload_observer(payload)
-    _, scores = route.ranker.score(payload)
+    _, scores = await route.ranker.score(payload)
     if scores:
         METRICS.observe(
             "recsys_api_score_mean", float(np.mean(scores)), labels=metric_labels

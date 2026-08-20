@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 
 from app.models import EventRequest, Product, RecommendationItem, User
 
@@ -44,8 +44,8 @@ def event_id_for(request: EventRequest, header_key: str | None = None) -> str:
 
 
 class DemoRepository:
-    def __init__(self, pool: ConnectionPool | None = None) -> None:
-        self.pool = pool or ConnectionPool(
+    def __init__(self, pool: AsyncConnectionPool | None = None) -> None:
+        self.pool = pool or AsyncConnectionPool(
             conninfo=(
                 f"host={os.getenv('POSTGRES_HOST', 'source-postgres.recsys-dataflow.svc.cluster.local')} "
                 f"port={os.getenv('POSTGRES_PORT', '5432')} "
@@ -61,22 +61,25 @@ class DemoRepository:
             kwargs={"row_factory": dict_row},
         )
 
-    def open(self) -> None:
-        self.pool.open(wait=True, timeout=float(os.getenv("POSTGRES_STARTUP_TIMEOUT_SECONDS", "15")))
+    async def open(self) -> None:
+        await self.pool.open(
+            wait=True,
+            timeout=float(os.getenv("POSTGRES_STARTUP_TIMEOUT_SECONDS", "15")),
+        )
 
-    def close(self) -> None:
-        self.pool.close()
+    async def close(self) -> None:
+        await self.pool.close()
 
-    def ping(self) -> None:
-        with self.pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            cursor.fetchone()
+    async def ping(self) -> None:
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
+            await cursor.execute("SELECT 1")
+            await cursor.fetchone()
 
-    def users(self, limit: int, offset: int) -> tuple[list[User], int]:
-        with self.pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT count(*) AS total FROM users WHERE is_active IS TRUE")
-            total = int(cursor.fetchone()["total"])
-            cursor.execute(
+    async def users(self, limit: int, offset: int) -> tuple[list[User], int]:
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
+            await cursor.execute("SELECT count(*) AS total FROM users WHERE is_active IS TRUE")
+            total = int((await cursor.fetchone())["total"])
+            await cursor.execute(
                 """
                 SELECT user_id, segment, city
                 FROM users
@@ -86,13 +89,13 @@ class DemoRepository:
                 """,
                 (limit, offset),
             )
-            return [User.model_validate(row) for row in cursor.fetchall()], total
+            return [User.model_validate(row) for row in await cursor.fetchall()], total
 
-    def products(self, limit: int, offset: int) -> tuple[list[Product], int]:
-        with self.pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT count(*) AS total FROM products WHERE is_active IS TRUE")
-            total = int(cursor.fetchone()["total"])
-            cursor.execute(
+    async def products(self, limit: int, offset: int) -> tuple[list[Product], int]:
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
+            await cursor.execute("SELECT count(*) AS total FROM products WHERE is_active IS TRUE")
+            total = int((await cursor.fetchone())["total"])
+            await cursor.execute(
                 """
                 SELECT product_id, product_name, category_id, category_code,
                        brand_id, brand_name, current_price, price_bucket
@@ -103,16 +106,16 @@ class DemoRepository:
                 """,
                 (limit, offset),
             )
-            return [self._product(row) for row in cursor.fetchall()], total
+            return [self._product(row) for row in await cursor.fetchall()], total
 
-    def user_exists(self, user_id: int) -> bool:
-        with self.pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT 1 FROM users WHERE user_id=%s AND is_active IS TRUE", (user_id,))
-            return cursor.fetchone() is not None
+    async def user_exists(self, user_id: int) -> bool:
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
+            await cursor.execute("SELECT 1 FROM users WHERE user_id=%s AND is_active IS TRUE", (user_id,))
+            return await cursor.fetchone() is not None
 
-    def product(self, product_id: int) -> Product | None:
-        with self.pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
+    async def product(self, product_id: int) -> Product | None:
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
+            await cursor.execute(
                 """
                 SELECT product_id, product_name, category_id, category_code,
                        brand_id, brand_name, current_price, price_bucket
@@ -120,14 +123,14 @@ class DemoRepository:
                 """,
                 (product_id,),
             )
-            row = cursor.fetchone()
+            row = await cursor.fetchone()
             return self._product(row) if row else None
 
-    def products_by_id(self, product_ids: list[int]) -> dict[int, Product]:
+    async def products_by_id(self, product_ids: list[int]) -> dict[int, Product]:
         if not product_ids:
             return {}
-        with self.pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
+            await cursor.execute(
                 """
                 SELECT product_id, product_name, category_id, category_code,
                        brand_id, brand_name, current_price, price_bucket
@@ -135,10 +138,10 @@ class DemoRepository:
                 """,
                 (product_ids,),
             )
-            products = [self._product(row) for row in cursor.fetchall()]
+            products = [self._product(row) for row in await cursor.fetchall()]
             return {product.product_id: product for product in products}
 
-    def record_event(
+    async def record_event(
         self,
         request: EventRequest,
         event_id: str,
@@ -146,9 +149,9 @@ class DemoRepository:
     ) -> tuple[dict[str, Any], bool]:
         now = utc_now()
         correlation_id = request.request_id or f"web-event-{event_id}"
-        with self.pool.connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
+        async with self.pool.connection() as connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute(
                     """
                     SELECT event_id, event_timestamp, request_id, payload_hash
                     FROM behavior_events WHERE event_id=%s
@@ -156,19 +159,19 @@ class DemoRepository:
                     """,
                     (event_id,),
                 )
-                existing = cursor.fetchone()
+                existing = await cursor.fetchone()
                 if existing:
                     if existing["payload_hash"] != payload_hash:
                         raise IdempotencyConflictError(event_id)
                     return existing, True
 
-                cursor.execute(
+                await cursor.execute(
                     "SELECT user_id FROM users WHERE user_id=%s AND is_active IS TRUE",
                     (request.user_id,),
                 )
-                if cursor.fetchone() is None:
+                if await cursor.fetchone() is None:
                     raise RecordNotFoundError(f"user {request.user_id}")
-                cursor.execute(
+                await cursor.execute(
                     """
                     SELECT product_id, product_name, category_id, category_code,
                            brand_id, brand_name, current_price, price_bucket
@@ -176,18 +179,18 @@ class DemoRepository:
                     """,
                     (request.product_id,),
                 )
-                product_row = cursor.fetchone()
+                product_row = await cursor.fetchone()
                 if product_row is None:
                     raise RecordNotFoundError(f"product {request.product_id}")
 
-                self._upsert_session(cursor, request.session_id, request.user_id, now)
+                await self._upsert_session(cursor, request.session_id, request.user_id, now)
                 order_id: str | None = None
                 if request.action == "purchase":
                     order_id = f"web-order-{event_id}"
-                    self._insert_purchase(cursor, order_id, request, product_row, now)
+                    await self._insert_purchase(cursor, order_id, request, product_row, now)
 
                 if request.impression_id:
-                    cursor.execute(
+                    await cursor.execute(
                         """
                         UPDATE impressions SET is_clicked=TRUE
                         WHERE impression_id=%s AND user_id=%s AND candidate_product_id=%s
@@ -195,7 +198,7 @@ class DemoRepository:
                         (request.impression_id, request.user_id, request.product_id),
                     )
 
-                cursor.execute(
+                await cursor.execute(
                     """
                     INSERT INTO behavior_events (
                       event_id, event_timestamp, created_ts, ingestion_ts, user_id,
@@ -240,11 +243,11 @@ class DemoRepository:
                         1.0,
                     ),
                 )
-                cursor.execute(
+                await cursor.execute(
                     "UPDATE users SET last_active_ts=%s, updated_ts=%s WHERE user_id=%s",
                     (now, now, request.user_id),
                 )
-            connection.commit()
+            await connection.commit()
         return {
             "event_id": event_id,
             "event_timestamp": now,
@@ -252,9 +255,9 @@ class DemoRepository:
             "payload_hash": payload_hash,
         }, False
 
-    def event(self, event_id: str) -> dict[str, Any] | None:
-        with self.pool.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
+    async def event(self, event_id: str) -> dict[str, Any] | None:
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
+            await cursor.execute(
                 """
                 SELECT event_id, event_timestamp, user_id, product_id, event_type,
                        request_id, impression_id
@@ -263,13 +266,13 @@ class DemoRepository:
                 """,
                 (event_id,),
             )
-            return cursor.fetchone()
+            return await cursor.fetchone()
 
-    def record_recommendation_request(self, user_id: int, session_id: str, request_id: str) -> None:
+    async def record_recommendation_request(self, user_id: int, session_id: str, request_id: str) -> None:
         now = utc_now()
-        with self.pool.connection() as connection, connection.cursor() as cursor:
-            self._upsert_session(cursor, session_id, user_id, now)
-            cursor.execute(
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
+            await self._upsert_session(cursor, session_id, user_id, now)
+            await cursor.execute(
                 """
                 INSERT INTO recommendation_requests (
                   request_id, user_id, session_id, request_timestamp, surface,
@@ -293,9 +296,9 @@ class DemoRepository:
                     2,
                 ),
             )
-            connection.commit()
+            await connection.commit()
 
-    def record_impressions(
+    async def record_impressions(
         self,
         request_id: str,
         user_id: int,
@@ -303,9 +306,9 @@ class DemoRepository:
         items: list[RecommendationItem],
     ) -> None:
         now = utc_now()
-        with self.pool.connection() as connection, connection.cursor() as cursor:
+        async with self.pool.connection() as connection, connection.cursor() as cursor:
             for rank, item in enumerate(items, start=1):
-                cursor.execute(
+                await cursor.execute(
                     """
                     INSERT INTO impressions (
                       impression_id, request_id, user_id, session_id,
@@ -332,7 +335,7 @@ class DemoRepository:
                         2,
                     ),
                 )
-            connection.commit()
+            await connection.commit()
 
     @staticmethod
     def _product(row: dict[str, Any]) -> Product:
@@ -341,8 +344,8 @@ class DemoRepository:
         return Product.model_validate(payload)
 
     @staticmethod
-    def _upsert_session(cursor: Any, session_id: str, user_id: int, now: datetime) -> None:
-        cursor.execute(
+    async def _upsert_session(cursor: Any, session_id: str, user_id: int, now: datetime) -> None:
+        await cursor.execute(
             """
             INSERT INTO sessions (
               session_id, user_id, session_start_ts, session_end_ts, entry_source,
@@ -367,7 +370,7 @@ class DemoRepository:
         )
 
     @staticmethod
-    def _insert_purchase(
+    async def _insert_purchase(
         cursor: Any,
         order_id: str,
         request: EventRequest,
@@ -376,7 +379,7 @@ class DemoRepository:
     ) -> None:
         unit_price = Decimal(product["current_price"])
         total = unit_price * request.quantity
-        cursor.execute(
+        await cursor.execute(
             """
             INSERT INTO orders (
               order_id, user_id, session_id, order_timestamp, status, gross_amount,
@@ -408,7 +411,7 @@ class DemoRepository:
                 1.0,
             ),
         )
-        cursor.execute(
+        await cursor.execute(
             """
             INSERT INTO order_items (
               order_item_id, order_id, product_id, quantity, unit_price,

@@ -55,19 +55,22 @@ def feature_url() -> str:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global downstream_client
-    await asyncio.to_thread(repository.open)
-    downstream_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(
-            connect=float(os.getenv("DOWNSTREAM_CONNECT_TIMEOUT_SECONDS", "2")),
-            read=float(os.getenv("DOWNSTREAM_READ_TIMEOUT_SECONDS", "15")),
-            write=5,
-            pool=5,
-        ),
-        limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
-    )
-    yield
-    await downstream_client.aclose()
-    await asyncio.to_thread(repository.close)
+    await repository.open()
+    try:
+        downstream_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=float(os.getenv("DOWNSTREAM_CONNECT_TIMEOUT_SECONDS", "2")),
+                read=float(os.getenv("DOWNSTREAM_READ_TIMEOUT_SECONDS", "15")),
+                write=5,
+                pool=5,
+            ),
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+        )
+        yield
+    finally:
+        if downstream_client is not None:
+            await downstream_client.aclose()
+        await repository.close()
 
 
 app = FastAPI(title="RecSys Demo API", version="1.0.0", lifespan=lifespan)
@@ -104,7 +107,7 @@ async def healthz() -> dict[str, str]:
 @app.get("/ready")
 async def ready() -> dict[str, str]:
     try:
-        await asyncio.to_thread(repository.ping)
+        await repository.ping()
         assert downstream_client is not None
         inference, features = await asyncio.gather(
             downstream_client.get(f"{inference_url()}/healthz"),
@@ -128,7 +131,7 @@ async def users(
     offset: int = Query(default=0, ge=0),
 ) -> UserPage:
     try:
-        items, total = await asyncio.to_thread(repository.users, limit, offset)
+        items, total = await repository.users(limit, offset)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="database unavailable") from exc
     return UserPage(items=items, total=total, limit=limit, offset=offset)
@@ -140,7 +143,7 @@ async def products(
     offset: int = Query(default=0, ge=0),
 ) -> ProductPage:
     try:
-        items, total = await asyncio.to_thread(repository.products, limit, offset)
+        items, total = await repository.products(limit, offset)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="database unavailable") from exc
     return ProductPage(items=items, total=total, limit=limit, offset=offset)
@@ -157,7 +160,7 @@ async def create_event(
     event_id = event_id_for(request, selected_key)
     payload_hash = canonical_payload_hash(request)
     try:
-        row, duplicate = await asyncio.to_thread(repository.record_event, request, event_id, payload_hash)
+        row, duplicate = await repository.record_event(request, event_id, payload_hash)
     except RecordNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"{exc} not found") from exc
     except IdempotencyConflictError as exc:
@@ -175,7 +178,7 @@ async def create_event(
 
 @app.get("/api/events/{event_id}/status", response_model=EventStatus)
 async def event_status(event_id: str) -> EventStatus:
-    row = await asyncio.to_thread(repository.event, event_id)
+    row = await repository.event(event_id)
     if row is None:
         raise HTTPException(status_code=404, detail="event not found")
     try:
@@ -201,12 +204,11 @@ async def event_status(event_id: str) -> EventStatus:
 @app.post("/api/recommendations", response_model=RecommendationResponse)
 async def recommendations(request: RecommendationRequest) -> RecommendationResponse:
     try:
-        if not await asyncio.to_thread(repository.user_exists, request.user_id):
+        if not await repository.user_exists(request.user_id):
             raise HTTPException(status_code=404, detail="user not found")
         session_id = request.session_id or f"web-session-{uuid.uuid4()}"
         request_id = f"web-recommendation-{uuid.uuid4()}"
-        await asyncio.to_thread(
-            repository.record_recommendation_request,
+        await repository.record_recommendation_request(
             request.user_id,
             session_id,
             request_id,
@@ -228,7 +230,7 @@ async def recommendations(request: RecommendationRequest) -> RecommendationRespo
         raise HTTPException(status_code=502, detail="recommendation service unavailable") from exc
 
     raw_items = payload.get("items") or []
-    product_map = await asyncio.to_thread(repository.products_by_id, [int(item["item_id"]) for item in raw_items])
+    product_map = await repository.products_by_id([int(item["item_id"]) for item in raw_items])
     items = [
         RecommendationItem(
             item_id=int(item["item_id"]),
@@ -239,8 +241,7 @@ async def recommendations(request: RecommendationRequest) -> RecommendationRespo
         for item in raw_items
     ]
     try:
-        await asyncio.to_thread(
-            repository.record_impressions,
+        await repository.record_impressions(
             request_id,
             request.user_id,
             session_id,

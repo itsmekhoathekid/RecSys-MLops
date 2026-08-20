@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 from recsys_online_feature_api.app import create_app as create_feature_app
 from recsys_online_feature_api.settings import FeatureApiSettings
 from recsys_inference_api import feature_client as feature_service_client
-from recsys_inference_api.ab_testing import TritonRoute, select_triton_route
+from recsys_inference_api.ab_testing import select_triton_route
 from recsys_inference_api.app import create_app as create_inference_app
 from recsys_inference_api.ranking import recommend_from_online_features
 from recsys_inference_api.schemas import RecommendationRequest
@@ -24,20 +24,23 @@ from recsys_serving_common.env import bool_env, int_env
 
 
 def recommend(request, feature_client, ranker, model_version):
-    route = select_triton_route(ranker, request.user_id, model_version)
-    candidates = request.candidate_item_ids or feature_client.candidates(
-        request.user_id, request.top_k
-    )
-    features = OnlineFeaturesResponse(
-        user_id=request.user_id,
-        candidate_item_ids=candidates,
-        user_sequence=feature_client.user_sequence(request.user_id),
-        item_features={
-            str(item_id): feature_client.item_features(item_id)
-            for item_id in candidates
-        },
-    )
-    return recommend_from_online_features(features, request.top_k, route)
+    async def run():
+        route = select_triton_route(ranker, request.user_id, model_version)
+        candidates = request.candidate_item_ids or feature_client.candidates(
+            request.user_id, request.top_k
+        )
+        features = OnlineFeaturesResponse(
+            user_id=request.user_id,
+            candidate_item_ids=candidates,
+            user_sequence=feature_client.user_sequence(request.user_id),
+            item_features={
+                str(item_id): feature_client.item_features(item_id)
+                for item_id in candidates
+            },
+        )
+        return await recommend_from_online_features(features, request.top_k, route)
+
+    return asyncio.run(run())
 
 
 class DeterministicFeatureClient:
@@ -71,7 +74,7 @@ class DeterministicFeatureClient:
 class DeterministicRanker:
     model_version = "deterministic-test"
 
-    def score(self, payload):
+    async def score(self, payload):
         candidate_count = len(payload["candidate_item_id"])
         return payload["candidate_item_id"].tolist(), [
             float(index) for index in range(candidate_count)
@@ -256,7 +259,7 @@ def test_api_error_paths_return_bad_gateway(monkeypatch: pytest.MonkeyPatch) -> 
             raise RuntimeError("feature store down")
 
     class BrokenRanker:
-        def score(self, payload):
+        async def score(self, payload):
             raise RuntimeError("triton down")
 
     broken_feature = BrokenFeatureClient()
@@ -376,6 +379,10 @@ def test_online_feature_service_client_fetches_and_validates_response(
             calls.append(("post", url, json))
             return FakeResponse()
 
+        async def get(self, url: str, params: dict) -> FakeResponse:
+            calls.append(("get", url, params))
+            return FakeResponse()
+
     monkeypatch.setattr(feature_service_client.httpx, "AsyncClient", FakeAsyncClient)
     client = feature_service_client.OnlineFeatureServiceClient(
         base_url="http://feature-api/",
@@ -391,16 +398,25 @@ def test_online_feature_service_client_fetches_and_validates_response(
             )
         )
     )
+    personalized_response = asyncio.run(
+        client.fetch(OnlineFeaturesRequest(user_id=7, top_k=2))
+    )
 
     assert response.user_id == 7
     assert response.candidate_item_ids == [101, 102]
     assert response.item_features["102"]["category_id"] == 12
+    assert personalized_response.candidate_item_ids == [101, 102]
     assert ("timeout", 1.5) in calls
     assert ("raise_for_status",) in calls
     assert (
         "post",
         "http://feature-api/online-features",
         {"user_id": 7, "candidate_item_ids": [101, 102], "top_k": 2},
+    ) in calls
+    assert (
+        "get",
+        "http://feature-api/online-features/7",
+        {"top_k": 2},
     ) in calls
 
 

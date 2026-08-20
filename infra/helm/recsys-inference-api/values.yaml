@@ -12,6 +12,9 @@ service: {port: 80, targetPort: 8080}
 config:
   tritonUrl: recsys-bst-triton-predictor.kserve-triton-inference.svc.cluster.local:9000
   tritonModelName: bst_ensemble
+  tritonTimeoutSeconds: "5"
+  tritonMaxConcurrency: "16"
+  tritonCapacityWaitSeconds: "0.05"
   featureApiUrl: http://recsys-online-feature-api.api-serving.svc.cluster.local
   featureApiTimeoutSeconds: "20"
   defaultTopK: "10"
