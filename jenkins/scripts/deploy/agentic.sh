@@ -287,11 +287,18 @@ def invoke(tool_name, prompt):
             f"responses={sorted(responses)}"
         )
     tool_response = responses[tool_name]
-    final_message = status.get("message", {})
+    answer_messages = [
+        message
+        for message in result.get("history", [])
+        if message.get("role") == "agent"
+    ]
+    if status.get("message"):
+        answer_messages.append(status["message"])
     final_text = " ".join(
         part.get("text", "")
-        for part in final_message.get("parts", [])
-        if part.get("kind") == "text"
+        for message in answer_messages
+        for part in message.get("parts", [])
+        if part.get("kind") == "text" and part.get("text")
     ).strip()
     if not final_text:
         raise SystemExit(f"{tool_name} completed without a final text answer")
