@@ -467,11 +467,11 @@ def test_full_jenkins_trigger_reuses_crumb_session_cookie():
     assert "online_feature_api,inference_api" in trigger
     assert ",api," not in trigger
     assert 'AGENTIC_SMOKE_CHUNK_ID=${agentic_smoke_chunk_id}' in trigger
-    assert "800078:review:rev_800078_01:0" in trigger
+    assert "800080:review:rev_800080_02:0" in trigger
     pipeline = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     assert (
         "name: 'AGENTIC_SMOKE_CHUNK_ID', "
-        "defaultValue: '800078:review:rev_800078_01:0'"
+        "defaultValue: '800080:review:rev_800080_02:0'"
     ) in pipeline
 
 

@@ -4,7 +4,7 @@ set -Eeuo pipefail
 namespace="${KAGENT_NAMESPACE:-kagent}"
 duration="${AGENTIC_LOAD_DURATION_SECONDS:-300}"
 rps="${AGENTIC_LOAD_RPS:-20}"
-chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800078:review:rev_800078_01:0}"
+chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
 poll_seconds="${AGENTIC_KEDA_POLL_SECONDS:-15}"
 decision_grace_seconds="${AGENTIC_SCALE_DECISION_GRACE_SECONDS:-15}"
 load_log="${AGENTIC_LOAD_LOG:-reports/agentic/autoscale-load.json}"

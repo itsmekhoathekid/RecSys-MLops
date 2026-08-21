@@ -66,7 +66,7 @@ chỉ còn sandbox identity. Backup và cleanup metadata được archive trong
 
 ```bash
 make test-agentic helm-agentic
-AGENTIC_SMOKE_CHUNK_ID='800078:review:rev_800078_01:0' make agentic-smoke
+AGENTIC_SMOKE_CHUNK_ID='800080:review:rev_800080_02:0' make agentic-smoke
 make agentic-autoscale-test
 make agentic-registry-smoke
 

@@ -15,7 +15,7 @@ pipeline {
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')
     string(name: 'RAG_SOURCE_RUN_ID', defaultValue: '', description: 'Complete canonical RAG item-document run consumed by index promotion.')
     string(name: 'RAG_PIPELINE_RUN_ID', defaultValue: '', description: 'Unique silver/gold/index run ID used by RAG promotion and rollback.')
-    string(name: 'AGENTIC_SMOKE_CHUNK_ID', defaultValue: '800078:review:rev_800078_01:0', description: 'Known active chunk ID required by the grounded SandboxAgent A2A smoke test.')
+    string(name: 'AGENTIC_SMOKE_CHUNK_ID', defaultValue: '800080:review:rev_800080_02:0', description: 'Known active chunk ID required by the grounded SandboxAgent A2A smoke test.')
     choice(name: 'DATAHUB_CUTOVER_MODE', choices: ['skip', 'plan', 'apply'], description: 'Optional one-time cleanup after static catalog deployment.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
     string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, including ci_config. Empty keeps path-based detection.')

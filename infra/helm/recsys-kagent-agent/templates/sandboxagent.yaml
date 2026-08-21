@@ -42,7 +42,7 @@ spec:
           name: Sandboxed exact chunk lookup
           description: Retrieve one grounded RAG chunk by its immutable chunk identifier in gVisor.
           tags: [recsys, rag, exact, sandbox]
-          examples: ["Get the exact evidence chunk with ID 800078:review:rev_800078_01:0."]
+          examples: ["Get the exact evidence chunk with ID 800080:review:rev_800080_02:0."]
         - id: rag-evidence
           name: Sandboxed semantic RAG evidence
           description: Retrieve semantic product evidence and composite user context in gVisor.
