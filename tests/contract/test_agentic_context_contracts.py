@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import subprocess
 import sys
@@ -16,10 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 MCP_SRC = ROOT / "apps/agentic/recsys-feature-rag-mcp/src"
 sys.path.insert(0, str(MCP_SRC))
 
-from recsys_feature_rag_mcp.server import (  # noqa: E402
-    TOOL_NAMES,
-    create_mcp_server,
-)
+server_module = importlib.import_module("recsys_feature_rag_mcp.server")
+TOOL_NAMES = server_module.TOOL_NAMES
+create_mcp_server = server_module.create_mcp_server
 
 
 class _UnusedClient:
