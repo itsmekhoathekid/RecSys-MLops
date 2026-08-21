@@ -228,6 +228,8 @@ def test_terraform_owns_platform_but_not_the_agent_application_release():
     assert "prevent_destroy = true" in terraform
     assert 'postrender {' in terraform
     assert "substrate_gke_postrender.py" in terraform
+    assert "substrate_crds_hpa_postrender.py" in terraform
+    assert "kagent_workerpool_hpa_postrender.py" in terraform
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
 
 

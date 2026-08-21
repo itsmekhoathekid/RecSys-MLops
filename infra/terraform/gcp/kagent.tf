@@ -32,6 +32,14 @@ resource "helm_release" "substrate_crds" {
   wait       = true
   timeout    = 600
 
+  # Substrate 0.0.6 exposes replicas through /scale but omits the selector
+  # required by HPA/KEDA. Keep the compatible runtime pin and backport the
+  # additive scale-selector fields that landed upstream after this release.
+  postrender {
+    binary_path = "${path.module}/../../../ops/helm/substrate_crds_hpa_postrender.py"
+    args        = ["workerpool-hpa-selector-v1"]
+  }
+
   depends_on = [kubernetes_namespace.ate_system]
 }
 
@@ -192,6 +200,11 @@ resource "helm_release" "kagent" {
   values = [
     file("${path.module}/../../../configs/kagent/values.yaml"),
   ]
+
+  postrender {
+    binary_path = "${path.module}/../../../ops/helm/kagent_workerpool_hpa_postrender.py"
+    args        = ["workerpool-hpa-selector-v1"]
+  }
 
   depends_on = [
     helm_release.kagent_crds,

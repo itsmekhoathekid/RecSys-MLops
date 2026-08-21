@@ -466,6 +466,8 @@ def test_full_jenkins_trigger_reuses_crumb_session_cookie():
     assert 'rm -f "${headers_file}" "${cookie_file}"' in trigger
     assert "online_feature_api,inference_api" in trigger
     assert ",api," not in trigger
+    assert 'AGENTIC_SMOKE_CHUNK_ID=${agentic_smoke_chunk_id}' in trigger
+    assert "800078:review:rev_800078_01:0" in trigger
 
 
 def test_api_verification_uses_metric_available_before_live_traffic():

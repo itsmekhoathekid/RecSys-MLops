@@ -13,6 +13,7 @@ components="${FORCE_COMPONENTS:-materialize,training,dp1,dp2,dp3,datahub_catalog
 datahub_cutover_mode="${DATAHUB_CUTOVER_MODE:-skip}"
 rag_source_run_id="${RAG_SOURCE_RUN_ID:-}"
 rag_pipeline_run_id="${RAG_PIPELINE_RUN_ID:-}"
+agentic_smoke_chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800078:review:rev_800078_01:0}"
 crumb_header=()
 headers_file="$(mktemp)"
 cookie_file="$(mktemp)"
@@ -51,6 +52,7 @@ curl -fsS \
   --data-urlencode "PROMOTION_MANIFEST_URI=${promotion_manifest_uri}" \
   --data-urlencode "RAG_SOURCE_RUN_ID=${rag_source_run_id}" \
   --data-urlencode "RAG_PIPELINE_RUN_ID=${rag_pipeline_run_id}" \
+  --data-urlencode "AGENTIC_SMOKE_CHUNK_ID=${agentic_smoke_chunk_id}" \
   --data-urlencode "DATAHUB_CUTOVER_MODE=${datahub_cutover_mode}" \
   --data-urlencode "FORCE_COMPONENTS=${components}"
 

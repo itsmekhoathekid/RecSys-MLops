@@ -43,6 +43,26 @@ agentic_preflight() {
   kubectl get --raw \
     /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-context-sandbox-pool/scale \
     >/dev/null
+  local scale_selector_path
+  scale_selector_path="$(
+    kubectl get crd workerpools.ate.dev \
+      -o jsonpath='{.spec.versions[?(@.name=="v1alpha1")].subresources.scale.labelSelectorPath}'
+  )"
+  [[ "${scale_selector_path}" == ".spec.scaleSelector" ]] || {
+    recsys_error \
+      "WorkerPool /scale is missing .spec.scaleSelector labelSelectorPath"
+    return 1
+  }
+  local worker_pool_selector
+  worker_pool_selector="$(
+    kubectl -n kagent get workerpool recsys-context-sandbox-pool \
+      -o jsonpath='{.spec.scaleSelector}'
+  )"
+  [[ "${worker_pool_selector}" == \
+    "ate.dev/worker-pool=recsys-context-sandbox-pool" ]] || {
+    recsys_error "WorkerPool scaleSelector does not match its generated pods"
+    return 1
+  }
   kubectl get clusterrole keda-operator -o json | python3 -c '
 import json, sys
 rules = json.load(sys.stdin)["rules"]

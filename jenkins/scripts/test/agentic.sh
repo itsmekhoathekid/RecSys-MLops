@@ -49,6 +49,9 @@ spec = payload["spec"]
 status = payload["status"]
 assert spec["replicas"] >= 2
 assert status["replicas"] >= 2
+assert spec["scaleSelector"] == (
+    "ate.dev/worker-pool=recsys-context-sandbox-pool"
+)
 assert "ateom-gvisor:v0.0.6" in spec["ateomImage"]
 '
   agentic_wait_for_regular_agent_removal

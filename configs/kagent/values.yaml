@@ -1,5 +1,5 @@
-# Keep the installation intentionally small while retaining one real Agent for
-# end-to-end verification of the shared ModelConfig.
+# Keep the installation intentionally small while retaining the real sandbox
+# WorkerPool used by the repository-owned SandboxAgent.
 kmcp:
   enabled: false
 
