@@ -43,8 +43,30 @@ agentic_preflight() {
   kubectl get --raw \
     /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-context-sandbox-pool/scale \
     >/dev/null
-  kubectl auth can-i update workerpools.ate.dev --subresource=scale -n kagent \
-    --as=system:serviceaccount:keda:keda-operator | grep -Fx yes >/dev/null
+  kubectl get clusterrole keda-operator -o json | python3 -c '
+import json, sys
+rules = json.load(sys.stdin)["rules"]
+assert any(
+    "*" in rule.get("apiGroups", [])
+    and "*/scale" in rule.get("resources", [])
+    and {"patch", "update"}.issubset(rule.get("verbs", []))
+    for rule in rules
+)
+'
+  kubectl get clusterrolebinding keda-operator -o json | python3 -c '
+import json, sys
+binding = json.load(sys.stdin)
+assert binding["roleRef"] == {
+    "apiGroup": "rbac.authorization.k8s.io",
+    "kind": "ClusterRole",
+    "name": "keda-operator",
+}
+assert {
+    "kind": "ServiceAccount",
+    "name": "keda-operator",
+    "namespace": "keda",
+} in binding["subjects"]
+'
   kubectl -n kagent wait --for=condition=Ready \
     externalsecret/recsys-feature-rag-mcp-auth --timeout="${timeout}"
   kubectl -n kagent get secret recsys-feature-rag-mcp-auth >/dev/null

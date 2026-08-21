@@ -118,8 +118,9 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert "deployment/recsys-context-sandbox-pool-deployment" in deploy
     assert 'arctl delete agent "${legacy_name}" --all-tags' in deploy
     assert "workerpools/recsys-context-sandbox-pool/scale" in deploy
-    assert "system:serviceaccount:keda:keda-operator" in deploy
-    assert "--subresource=scale" in deploy
+    assert "kubectl get clusterrole keda-operator -o json" in deploy
+    assert "kubectl get clusterrolebinding keda-operator -o json" in deploy
+    assert '"*/scale" in rule.get("resources", [])' in deploy
     assert 'a2a_path="api/a2a-sandboxes"' in deploy
     assert "local_port=$((local_port + 1))" not in deploy
 
