@@ -381,6 +381,9 @@ converts these values to the container arguments:
 --host 0.0.0.0
 --port 8000
 --ctx-size 16384
+--n-predict 768
+--reasoning-budget 256
+--reasoning-budget-message "Reasoning budget reached. Call the required tool or answer now."
 --parallel 1
 --threads 2
 --threads-batch 2

@@ -20,6 +20,11 @@ def test_qwen_llama_cpp_chart_is_cpu_scheduled_and_openai_compatible() -> None:
     assert "--hf-repo" in deployment
     assert "--alias" in deployment
     assert "--ctx-size" in deployment
+    assert "--n-predict" in deployment
+    assert "--reasoning-budget" in deployment
+    assert "--reasoning-budget-message" in deployment
+    assert "maxPredictedTokens: 768" in values
+    assert "reasoningBudget: 256" in values
     assert "--no-mmproj" in deployment
     assert "--metrics" in deployment
 

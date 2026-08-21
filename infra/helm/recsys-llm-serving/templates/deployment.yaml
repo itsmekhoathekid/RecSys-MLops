@@ -42,6 +42,12 @@ spec:
             - {{ .Values.service.port | quote }}
             - --ctx-size
             - {{ .Values.model.contextSize | quote }}
+            - --n-predict
+            - {{ .Values.model.maxPredictedTokens | quote }}
+            - --reasoning-budget
+            - {{ .Values.model.reasoningBudget | quote }}
+            - --reasoning-budget-message
+            - {{ .Values.model.reasoningBudgetMessage | quote }}
             - --parallel
             - {{ .Values.model.parallel | quote }}
             - --threads

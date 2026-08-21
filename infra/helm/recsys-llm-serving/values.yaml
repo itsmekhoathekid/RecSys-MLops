@@ -18,6 +18,12 @@ model:
   # Agent tool responses can exceed 8K tokens; keep headroom while remaining
   # well below Qwen3.5-0.8B's native 262K context window.
   contextSize: 16384
+  # Bound both hidden reasoning and total generation at the inference server.
+  # This is a defense-in-depth limit when an OpenAI-compatible client omits or
+  # fails to propagate its per-request max_tokens value.
+  maxPredictedTokens: 768
+  reasoningBudget: 256
+  reasoningBudgetMessage: "Reasoning budget reached. Call the required tool or answer now."
   parallel: 1
   threads: 2
   threadsBatch: 2
