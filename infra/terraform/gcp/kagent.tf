@@ -144,6 +144,11 @@ resource "kubernetes_namespace" "kagent" {
 
   metadata {
     name = "kagent"
+    labels = {
+      # Keep sidecar injection opt-in per workload; the MCP chart owns its pod
+      # annotation and the Substrate worker pool must not be mutated by Istio.
+      "istio-injection" = "disabled"
+    }
   }
 
   depends_on = [google_container_node_pool.ml_system]
