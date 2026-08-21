@@ -362,7 +362,7 @@ model:
   repository: ggml-org/Qwen3.5-0.8B-GGUF
   quantization: Q4_0
   alias: qwen3.5-0.8b
-  contextSize: 4096
+  contextSize: 16384
   parallel: 1
   threads: 2
   threadsBatch: 2
@@ -380,7 +380,7 @@ converts these values to the container arguments:
 --alias qwen3.5-0.8b
 --host 0.0.0.0
 --port 8000
---ctx-size 4096
+--ctx-size 16384
 --parallel 1
 --threads 2
 --threads-batch 2

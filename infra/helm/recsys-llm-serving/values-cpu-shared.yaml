@@ -13,7 +13,9 @@ model:
   repository: ggml-org/Qwen3.5-0.8B-GGUF
   quantization: Q4_0
   alias: qwen3.5-0.8b
-  contextSize: 4096
+  # Sized for grounded agent turns containing MCP payloads. The live 0.8B Q4
+  # pods retain ample space under their 3Gi memory limit at this setting.
+  contextSize: 16384
   parallel: 1
   threads: 2
   threadsBatch: 2

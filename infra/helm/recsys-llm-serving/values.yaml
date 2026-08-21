@@ -15,7 +15,9 @@ model:
   repository: ggml-org/Qwen3.5-0.8B-GGUF
   quantization: Q4_0
   alias: qwen3.5-0.8b
-  contextSize: 4096
+  # Agent tool responses can exceed 8K tokens; keep headroom while remaining
+  # well below Qwen3.5-0.8B's native 262K context window.
+  contextSize: 16384
   parallel: 1
   threads: 2
   threadsBatch: 2

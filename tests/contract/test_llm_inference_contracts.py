@@ -46,7 +46,7 @@ def test_shared_cpu_node_profile_fits_the_live_quota_constrained_topology() -> N
     assert "replicaCount: 2" in shared
     assert "cpu: 100m" in shared
     assert "memory: 1536Mi" in shared
-    assert "contextSize: 4096" in shared
+    assert "contextSize: 16384" in shared
     assert 'var.llm_node_pool_mode == "cpu-services-shared"' in terraform
     assert (
         'var.deploy_llm_inference && var.llm_node_pool_mode == "dedicated"'
@@ -82,7 +82,7 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     terraform = (ROOT / "infra/terraform/gcp/kagent.tf").read_text()
     values = (ROOT / "configs/kagent/values.yaml").read_text()
     agent = (
-        ROOT / "infra/helm/recsys-kagent-agent/templates/agent.yaml"
+        ROOT / "infra/helm/recsys-kagent-agent/templates/sandboxagent.yaml"
     ).read_text()
     for release in ("kagent_crds", "kagent"):
         assert f'resource "helm_release" "{release}"' in terraform
@@ -97,8 +97,9 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
         in values
     )
     assert "tls:" not in values
-    assert 'resource "helm_release" "recsys_kagent_agent"' in terraform
-    assert "modelConfig: {{ .Values.agent.modelConfig }}" in agent
+    assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
+    assert 'resource "helm_release" "substrate"' in terraform
+    assert "modelConfig: {{ .Values.sandbox.modelConfig }}" in agent
     assert "k8s-agent:\n  enabled: false" in values
 
 
