@@ -285,6 +285,7 @@ providers:
       X-Gateway-Base-Model-Name: llm-d-optimized-baseline
     config:
       baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
+      maxTokens: 256
 ```
 
 ![Global kagent ModelConfig source](../../pngs/kagent_global_model_config_source.png)
@@ -315,6 +316,7 @@ spec:
     X-Gateway-Base-Model-Name: llm-d-optimized-baseline
   openAI:
     baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
+    maxTokens: 256
 ```
 
 The fields have the following responsibilities:
@@ -326,6 +328,7 @@ The fields have the following responsibilities:
 | `apiKeySecret` | Names the Secret read by the Agent runtime. |
 | `apiKeySecretKey` | Names the key inside that Secret; it is not the key value. |
 | `openAI.baseUrl` | Sends inference through Agent Gateway rather than directly to `qwen35-gguf`. |
+| `openAI.maxTokens` | Caps each agent model turn at 256 output tokens so tool loops cannot monopolize a CPU inference slot. |
 | `defaultHeaders` | Adds the listed static headers to every model-provider request. |
 
 ### Why `defaultHeaders` is required

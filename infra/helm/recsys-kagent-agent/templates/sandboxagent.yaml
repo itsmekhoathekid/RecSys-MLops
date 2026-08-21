@@ -3,6 +3,8 @@ kind: SandboxAgent
 metadata:
   name: {{ .Values.sandbox.name }}
   namespace: {{ .Values.namespace }}
+  annotations:
+    recsys.ai/model-config-revision: {{ .Values.sandbox.modelConfigRevision | quote }}
   labels:
     {{- include "recsys-kagent-agent.labels" . | nindent 4 }}
 spec:

@@ -14,6 +14,9 @@ sandbox:
   name: recsys-context-agent-sandbox
   workerPool: recsys-context-sandbox-pool
   modelConfig: default-model-config
+  # Bump when ModelConfig generation semantics change so Substrate rebuilds
+  # the SandboxAgent golden snapshot instead of restoring stale model options.
+  modelConfigRevision: output-cap-v1
   imageRegistry: ""
   systemMessage: |
     You are the grounded RecSys context agent. Use MCP tools for every factual

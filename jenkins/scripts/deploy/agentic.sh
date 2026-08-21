@@ -236,6 +236,13 @@ def collect_chunk_ids(value):
     elif isinstance(value, list):
         for child in value:
             found.update(collect_chunk_ids(child))
+    elif isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            decoded = None
+        if decoded is not None and decoded != value:
+            found.update(collect_chunk_ids(decoded))
     return found
 
 
@@ -262,6 +269,9 @@ def invoke(tool_name, prompt):
     )
     with urllib.request.urlopen(request, timeout=180) as response:
         body = json.load(response)
+    evidence[tool_name] = body
+    with open(output_path, "w", encoding="utf-8") as stream:
+        json.dump(evidence, stream, indent=2, sort_keys=True)
     if body.get("error"):
         raise SystemExit(f"{tool_name} A2A error: {body['error']}")
     result = body.get("result", {})
@@ -314,6 +324,7 @@ def invoke(tool_name, prompt):
     return body
 
 
+evidence = {}
 body = {tool_name: invoke(tool_name, prompt) for tool_name, prompt in cases.items()}
 with open(output_path, "w", encoding="utf-8") as stream:
     json.dump(body, stream, indent=2, sort_keys=True)

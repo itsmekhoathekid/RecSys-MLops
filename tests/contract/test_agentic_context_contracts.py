@@ -96,6 +96,9 @@ def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
         "toolNames"
     ]
     assert tool_names == contract["tools"]
+    assert sandbox["metadata"]["annotations"]["recsys.ai/model-config-revision"] == (
+        "output-cap-v1"
+    )
     assert sandbox["spec"]["declarative"]["runtime"] == "go"
     assert sandbox["spec"]["platform"] == "substrate"
     assert sandbox["spec"]["sandbox"]["network"]["allowedDomains"] == [
