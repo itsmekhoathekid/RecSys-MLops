@@ -202,74 +202,109 @@ import urllib.request
 import uuid
 
 url, user_id, chunk_id, output_path = sys.argv[1:]
-request_id = str(uuid.uuid4())
-prompt = (
-    "Call each of these four MCP tools exactly once before answering: "
-    f"get_user_online_features(user_id={user_id}, "
-    "candidate_item_ids=[800078,800079], top_k=2); "
-    f"get_chunk_by_id(chunk_id={chunk_id}); "
-    "retrieve_rag_context(query='noise-cancelling headphones', top_k_items=2); "
-    f"build_user_rag_context(user_id={user_id}, "
-    "query='noise-cancelling headphones', "
-    "candidate_item_ids=[800078,800079], top_k=2, top_k_items=2). "
-    "Then answer directly, cite returned chunk_id values, and do not ask questions."
-)
-payload = {
-    "jsonrpc": "2.0",
-    "id": request_id,
-    "method": "message/send",
-    "params": {
-        "message": {
-            "messageId": request_id,
-            "contextId": request_id,
-            "role": "user",
-            "parts": [{"kind": "text", "text": prompt}],
+cases = {
+    "get_user_online_features": (
+        f"Call get_user_online_features with user_id={user_id}, "
+        "candidate_item_ids=[800078,800079], and top_k=2. Then answer "
+        f"directly and state user_id {user_id}; do not ask questions."
+    ),
+    "get_chunk_by_id": (
+        f"Call get_chunk_by_id with chunk_id={chunk_id}. Then answer directly "
+        f"and cite exact chunk_id {chunk_id}; do not ask questions."
+    ),
+    "retrieve_rag_context": (
+        "Call retrieve_rag_context for query 'noise-cancelling headphones' "
+        "with top_k_items=2. Then answer directly and cite returned chunk_id "
+        "values; do not ask questions."
+    ),
+    "build_user_rag_context": (
+        f"Call build_user_rag_context with user_id={user_id}, query "
+        "'noise-cancelling headphones', candidate_item_ids=[800078,800079], "
+        "top_k=2, and top_k_items=2. Then answer directly and cite returned "
+        "chunk_id values; do not ask questions."
+    ),
+}
+
+
+def collect_chunk_ids(value):
+    found = set()
+    if isinstance(value, dict):
+        if isinstance(value.get("chunk_id"), str):
+            found.add(value["chunk_id"])
+        for child in value.values():
+            found.update(collect_chunk_ids(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.update(collect_chunk_ids(child))
+    return found
+
+
+def invoke(tool_name, prompt):
+    request_id = str(uuid.uuid4())
+    payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": request_id,
+                "contextId": request_id,
+                "role": "user",
+                "parts": [{"kind": "text", "text": prompt}],
+            },
         },
-    },
-}
-request = urllib.request.Request(
-    url,
-    data=json.dumps(payload).encode(),
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
-with urllib.request.urlopen(request, timeout=180) as response:
-    body = json.load(response)
-if body.get("error"):
-    raise SystemExit(f"A2A returned error: {body['error']}")
-result = body.get("result", {})
-status = result.get("status", {})
-if status.get("state") != "completed":
-    raise SystemExit(
-        "grounded A2A task did not complete: "
-        + json.dumps(status, sort_keys=True)
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
-required_tools = {
-    "get_user_online_features",
-    "get_chunk_by_id",
-    "retrieve_rag_context",
-    "build_user_rag_context",
-}
-calls = set()
-responses = {}
-for message in result.get("history", []):
-    for part in message.get("parts", []):
-        metadata = part.get("metadata", {})
-        data = part.get("data", {})
-        if metadata.get("adk_type") == "function_call":
-            calls.add(data.get("name"))
-        elif metadata.get("adk_type") == "function_response":
-            responses[data.get("name")] = data.get("response")
-if not required_tools.issubset(calls):
-    raise SystemExit(f"A2A required tool calls missing: {sorted(calls)}")
-if not required_tools.issubset(responses):
-    raise SystemExit(f"A2A required tool responses missing: {sorted(responses)}")
-exact_chunk = json.dumps(responses["get_chunk_by_id"], sort_keys=True)
-if chunk_id not in exact_chunk:
-    raise SystemExit("get_chunk_by_id response does not contain requested chunk_id")
-final_message = json.dumps(status.get("message", {}), sort_keys=True)
-if chunk_id not in final_message:
-    raise SystemExit("completed A2A answer does not cite the requested chunk_id")
+    with urllib.request.urlopen(request, timeout=180) as response:
+        body = json.load(response)
+    if body.get("error"):
+        raise SystemExit(f"{tool_name} A2A error: {body['error']}")
+    result = body.get("result", {})
+    status = result.get("status", {})
+    if status.get("state") != "completed":
+        raise SystemExit(
+            f"{tool_name} A2A task did not complete: "
+            + json.dumps(status, sort_keys=True)
+        )
+    calls = set()
+    responses = {}
+    for message in result.get("history", []):
+        for part in message.get("parts", []):
+            metadata = part.get("metadata", {})
+            data = part.get("data", {})
+            if metadata.get("adk_type") == "function_call":
+                calls.add(data.get("name"))
+            elif metadata.get("adk_type") == "function_response":
+                responses[data.get("name")] = data.get("response")
+    if tool_name not in calls or tool_name not in responses:
+        raise SystemExit(
+            f"{tool_name} call/response missing: calls={sorted(calls)}, "
+            f"responses={sorted(responses)}"
+        )
+    tool_response = responses[tool_name]
+    final_message = json.dumps(status.get("message", {}), sort_keys=True)
+    if tool_name == "get_user_online_features":
+        if user_id not in json.dumps(tool_response, sort_keys=True):
+            raise SystemExit("user feature response does not contain user_id")
+        if user_id not in final_message:
+            raise SystemExit("user feature answer does not state user_id")
+    else:
+        chunk_ids = collect_chunk_ids(tool_response)
+        if tool_name == "get_chunk_by_id" and chunk_id not in chunk_ids:
+            raise SystemExit("exact chunk response does not contain chunk_id")
+        if not chunk_ids:
+            raise SystemExit(f"{tool_name} response has no grounded chunk_id")
+        if not any(value in final_message for value in chunk_ids):
+            raise SystemExit(f"{tool_name} answer does not cite a returned chunk_id")
+    return body
+
+
+body = {tool_name: invoke(tool_name, prompt) for tool_name, prompt in cases.items()}
 with open(output_path, "w", encoding="utf-8") as stream:
     json.dump(body, stream, indent=2, sort_keys=True)
 PY

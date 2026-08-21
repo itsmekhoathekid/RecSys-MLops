@@ -246,10 +246,13 @@ def test_a2a_smoke_requires_all_tools_and_a_completed_grounded_answer():
         encoding="utf-8"
     )
     assert 'status.get("state") != "completed"' in deploy
-    assert "required_tools.issubset(calls)" in deploy
-    assert "required_tools.issubset(responses)" in deploy
-    assert 'responses["get_chunk_by_id"]' in deploy
-    assert "completed A2A answer does not cite" in deploy
+    assert '"get_user_online_features": (' in deploy
+    assert '"get_chunk_by_id": (' in deploy
+    assert '"retrieve_rag_context": (' in deploy
+    assert '"build_user_rag_context": (' in deploy
+    assert "tool_name not in calls or tool_name not in responses" in deploy
+    assert "collect_chunk_ids(tool_response)" in deploy
+    assert "answer does not cite a returned chunk_id" in deploy
     assert "top_k_items=2" in deploy
 
 
