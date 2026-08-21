@@ -152,6 +152,7 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
     }
     trigger = sandbox_scaled["spec"]["triggers"][0]["metadata"]
     assert trigger["metricName"] == "recsys_context_sandbox_worker_cpu_cores"
+    assert trigger["threshold"] == "0.0005"
     assert 'container="ateom"' in trigger["query"]
     assert "recsys-context-sandbox-pool-deployment-.*" in trigger["query"]
     sandbox_pdb = _resource(

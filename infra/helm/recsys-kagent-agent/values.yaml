@@ -38,6 +38,9 @@ autoscaling:
   pollingInterval: 15
   cooldownPeriod: 120
   serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
-  cpuTarget: "0.004"
+  # Production 20-request A2A load measured ~0.002 cores in total across two
+  # ateom workers (~0.001 average per replica); idle is ~0.000052 total.
+  # A 0.0005 target remains well above idle while allowing the HPA to scale.
+  cpuTarget: "0.0005"
   scaleDownStabilizationSeconds: 60
   fallback: {failureThreshold: 3, replicas: 2}

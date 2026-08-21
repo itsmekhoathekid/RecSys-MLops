@@ -42,6 +42,9 @@ của `ate.dev/v1alpha1 WorkerPool`.
   2, max 6 và fallback 2 sau ba scaler failures.
 - Prometheus scaler đo CPU của container `ateom` trong các pod
   `recsys-context-sandbox-pool-deployment-*`.
+- CPU target là `0.0005` core per worker. Production load proof đo khoảng
+  `0.001` core per worker dưới 20 concurrent A2A requests, trong khi idle tổng
+  khoảng `0.000052`, nên scaler không scale khi rảnh nhưng vượt target khi tải.
 - PDB chọn label `ate.dev/worker-pool=recsys-context-sandbox-pool` và giữ tối
   thiểu một worker available khi có voluntary disruption.
 
