@@ -233,6 +233,14 @@ def test_terraform_owns_platform_but_not_the_agent_application_release():
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
 
 
+def test_runtime_verifier_accepts_keda_static_fallback_defaulting():
+    verifier = (ROOT / "jenkins/scripts/test/agentic.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'fallback.get("behavior", "static") == "static"' in verifier
+    assert 'payload["fallback"] ==' not in verifier
+
+
 def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
     bootstrap = (ROOT / "ops/gcp/bootstrap_vault.sh").read_text(encoding="utf-8")
     assert "agentregistry feature-rag-mcp" in bootstrap

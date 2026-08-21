@@ -39,7 +39,9 @@ assert payload["scaleTargetRef"] == {
     "name": "recsys-context-sandbox-pool",
 }
 assert (payload["minReplicaCount"], payload["maxReplicaCount"]) == (2, 6)
-assert payload["fallback"] == {"failureThreshold": 3, "replicas": 2}
+fallback = payload["fallback"]
+assert (fallback["failureThreshold"], fallback["replicas"]) == (3, 2)
+assert fallback.get("behavior", "static") == "static"
 '
   kubectl -n kagent get workerpool recsys-context-sandbox-pool -o json \
     | python3 -c '
