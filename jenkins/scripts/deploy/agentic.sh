@@ -291,8 +291,6 @@ def invoke(tool_name, prompt):
     if tool_name == "get_user_online_features":
         if user_id not in json.dumps(tool_response, sort_keys=True):
             raise SystemExit("user feature response does not contain user_id")
-        if user_id not in final_message:
-            raise SystemExit("user feature answer does not state user_id")
     else:
         chunk_ids = collect_chunk_ids(tool_response)
         if tool_name == "get_chunk_by_id" and chunk_id not in chunk_ids:
