@@ -30,6 +30,7 @@ spec:
     {{- end }}
     systemMessage: |
       {{- .Values.sandbox.systemMessage | nindent 6 }}
+      Runtime model configuration revision: {{ .Values.sandbox.modelConfigRevision }}.
     a2aConfig:
       skills:
         - id: user-personalization
