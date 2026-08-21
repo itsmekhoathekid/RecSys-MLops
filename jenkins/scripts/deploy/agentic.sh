@@ -204,9 +204,15 @@ import uuid
 url, user_id, chunk_id, output_path = sys.argv[1:]
 request_id = str(uuid.uuid4())
 prompt = (
-    f"Use tools to get user {user_id}, get exact chunk {chunk_id}, and build "
-    "user RAG context for query noise-cancelling headphones. Cite chunk_id values; "
-    "do not invent unavailable data."
+    "Call each of these four MCP tools exactly once before answering: "
+    f"get_user_online_features(user_id={user_id}, "
+    "candidate_item_ids=[800078,800079], top_k=2); "
+    f"get_chunk_by_id(chunk_id={chunk_id}); "
+    "retrieve_rag_context(query='noise-cancelling headphones', top_k_items=2); "
+    f"build_user_rag_context(user_id={user_id}, "
+    "query='noise-cancelling headphones', "
+    "candidate_item_ids=[800078,800079], top_k=2, top_k_items=2). "
+    "Then answer directly, cite returned chunk_id values, and do not ask questions."
 )
 payload = {
     "jsonrpc": "2.0",
@@ -229,11 +235,41 @@ request = urllib.request.Request(
 )
 with urllib.request.urlopen(request, timeout=180) as response:
     body = json.load(response)
-serialized = json.dumps(body, sort_keys=True)
 if body.get("error"):
     raise SystemExit(f"A2A returned error: {body['error']}")
-if chunk_id not in serialized:
-    raise SystemExit("grounded A2A response does not cite the requested chunk_id")
+result = body.get("result", {})
+status = result.get("status", {})
+if status.get("state") != "completed":
+    raise SystemExit(
+        "grounded A2A task did not complete: "
+        + json.dumps(status, sort_keys=True)
+    )
+required_tools = {
+    "get_user_online_features",
+    "get_chunk_by_id",
+    "retrieve_rag_context",
+    "build_user_rag_context",
+}
+calls = set()
+responses = {}
+for message in result.get("history", []):
+    for part in message.get("parts", []):
+        metadata = part.get("metadata", {})
+        data = part.get("data", {})
+        if metadata.get("adk_type") == "function_call":
+            calls.add(data.get("name"))
+        elif metadata.get("adk_type") == "function_response":
+            responses[data.get("name")] = data.get("response")
+if calls != required_tools:
+    raise SystemExit(f"A2A tool calls mismatch: {sorted(calls)}")
+if set(responses) != required_tools:
+    raise SystemExit(f"A2A tool responses mismatch: {sorted(responses)}")
+exact_chunk = json.dumps(responses["get_chunk_by_id"], sort_keys=True)
+if chunk_id not in exact_chunk:
+    raise SystemExit("get_chunk_by_id response does not contain requested chunk_id")
+final_message = json.dumps(status.get("message", {}), sort_keys=True)
+if chunk_id not in final_message:
+    raise SystemExit("completed A2A answer does not cite the requested chunk_id")
 with open(output_path, "w", encoding="utf-8") as stream:
     json.dump(body, stream, indent=2, sort_keys=True)
 PY

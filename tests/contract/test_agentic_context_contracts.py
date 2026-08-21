@@ -241,6 +241,18 @@ def test_runtime_verifier_accepts_keda_static_fallback_defaulting():
     assert 'payload["fallback"] ==' not in verifier
 
 
+def test_a2a_smoke_requires_all_tools_and_a_completed_grounded_answer():
+    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'status.get("state") != "completed"' in deploy
+    assert "calls != required_tools" in deploy
+    assert "set(responses) != required_tools" in deploy
+    assert 'responses["get_chunk_by_id"]' in deploy
+    assert "completed A2A answer does not cite" in deploy
+    assert "top_k_items=2" in deploy
+
+
 def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
     bootstrap = (ROOT / "ops/gcp/bootstrap_vault.sh").read_text(encoding="utf-8")
     assert "agentregistry feature-rag-mcp" in bootstrap
