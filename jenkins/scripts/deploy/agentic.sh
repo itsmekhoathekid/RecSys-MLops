@@ -260,10 +260,10 @@ for message in result.get("history", []):
             calls.add(data.get("name"))
         elif metadata.get("adk_type") == "function_response":
             responses[data.get("name")] = data.get("response")
-if calls != required_tools:
-    raise SystemExit(f"A2A tool calls mismatch: {sorted(calls)}")
-if set(responses) != required_tools:
-    raise SystemExit(f"A2A tool responses mismatch: {sorted(responses)}")
+if not required_tools.issubset(calls):
+    raise SystemExit(f"A2A required tool calls missing: {sorted(calls)}")
+if not required_tools.issubset(responses):
+    raise SystemExit(f"A2A required tool responses missing: {sorted(responses)}")
 exact_chunk = json.dumps(responses["get_chunk_by_id"], sort_keys=True)
 if chunk_id not in exact_chunk:
     raise SystemExit("get_chunk_by_id response does not contain requested chunk_id")

@@ -468,6 +468,11 @@ def test_full_jenkins_trigger_reuses_crumb_session_cookie():
     assert ",api," not in trigger
     assert 'AGENTIC_SMOKE_CHUNK_ID=${agentic_smoke_chunk_id}' in trigger
     assert "800078:review:rev_800078_01:0" in trigger
+    pipeline = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    assert (
+        "name: 'AGENTIC_SMOKE_CHUNK_ID', "
+        "defaultValue: '800078:review:rev_800078_01:0'"
+    ) in pipeline
 
 
 def test_api_verification_uses_metric_available_before_live_traffic():

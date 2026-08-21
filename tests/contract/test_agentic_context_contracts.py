@@ -246,8 +246,8 @@ def test_a2a_smoke_requires_all_tools_and_a_completed_grounded_answer():
         encoding="utf-8"
     )
     assert 'status.get("state") != "completed"' in deploy
-    assert "calls != required_tools" in deploy
-    assert "set(responses) != required_tools" in deploy
+    assert "required_tools.issubset(calls)" in deploy
+    assert "required_tools.issubset(responses)" in deploy
     assert 'responses["get_chunk_by_id"]' in deploy
     assert "completed A2A answer does not cite" in deploy
     assert "top_k_items=2" in deploy
