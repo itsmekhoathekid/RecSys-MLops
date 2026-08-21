@@ -137,7 +137,8 @@
         "Makefile",
         "infra/__init__.py",
         "tests/contract/test_repository_layout_contracts.py",
-        "tests/unit/test_feature_api_keep_post_renderer.py"
+        "tests/unit/test_feature_api_keep_post_renderer.py",
+        "tests/unit/test_substrate_workerpool_hpa_postrender.py"
       ]
     }
   },
