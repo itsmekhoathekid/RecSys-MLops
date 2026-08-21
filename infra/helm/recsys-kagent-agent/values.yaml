@@ -38,9 +38,9 @@ autoscaling:
   pollingInterval: 15
   cooldownPeriod: 120
   serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
-  # Production 20-request A2A load measured ~0.002 cores in total across two
-  # ateom workers (~0.001 average per replica); idle is ~0.000052 total.
-  # A 0.0005 target remains well above idle while allowing the HPA to scale.
-  cpuTarget: "0.0005"
+  # PromQL converts cores to microcores before KEDA returns the external metric.
+  # Kubernetes resource.Quantity rounds sub-millicore decimals, so keeping this
+  # target as an integer preserves the production-calibrated 0.0005-core value.
+  cpuTargetMicrocores: "500"
   scaleDownStabilizationSeconds: 60
   fallback: {failureThreshold: 3, replicas: 2}

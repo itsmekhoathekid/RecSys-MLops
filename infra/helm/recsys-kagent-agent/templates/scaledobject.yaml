@@ -25,7 +25,7 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: {{ .Values.autoscaling.serverAddress | quote }}
-        metricName: recsys_context_sandbox_worker_cpu_cores
-        threshold: {{ .Values.autoscaling.cpuTarget | quote }}
-        query: 'sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Values.namespace }}",pod=~"{{ .Values.sandbox.workerPool }}-deployment-.*",container="ateom"}[2m]))'
+        metricName: recsys_context_sandbox_worker_cpu_microcores
+        threshold: {{ .Values.autoscaling.cpuTargetMicrocores | quote }}
+        query: '1000000 * sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Values.namespace }}",pod=~"{{ .Values.sandbox.workerPool }}-deployment-.*",container="ateom"}[2m]))'
 {{- end }}
