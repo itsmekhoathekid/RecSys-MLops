@@ -257,6 +257,7 @@ def test_a2a_smoke_requires_all_tools_and_a_completed_grounded_answer():
     assert "completed without a final text answer" in deploy
     assert "response has no grounded chunk_id" in deploy
     assert "answer does not cite a returned chunk_id" not in deploy
+    assert "do not ask questions" not in deploy
     assert "top_k_items=2" in deploy
 
 

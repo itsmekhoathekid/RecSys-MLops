@@ -24,8 +24,8 @@ sandbox:
     within the 4,096-token model context: when IDs are supplied, pass only those
     candidate_item_ids and use top_k at most 2 and top_k_items at most 2. When a
     request explicitly names tools, call every named tool before answering.
-    After tool responses, answer directly; do not ask questions when the request
-    already supplies user_id, chunk_id, and query.
+    The supplied user_id, chunk_id, and query are complete. After tool responses,
+    immediately emit one concise final text answer.
   allowedDomains:
     - recsys-feature-rag-mcp.kagent.svc.cluster.local
 autoscaling:

@@ -206,22 +206,22 @@ cases = {
     "get_user_online_features": (
         f"Call get_user_online_features with user_id={user_id}, "
         "candidate_item_ids=[800078,800079], and top_k=2. Then answer "
-        f"directly and state user_id {user_id}; do not ask questions."
+        f"immediately with one concise final text stating user_id {user_id}."
     ),
     "get_chunk_by_id": (
         f"Call get_chunk_by_id with chunk_id={chunk_id}. Then answer directly "
-        f"and cite exact chunk_id {chunk_id}; do not ask questions."
+        f"with one concise final text citing exact chunk_id {chunk_id}."
     ),
     "retrieve_rag_context": (
         "Call retrieve_rag_context for query 'noise-cancelling headphones' "
         "with top_k_items=2. Then answer directly and cite returned chunk_id "
-        "values; do not ask questions."
+        "values in one concise final text."
     ),
     "build_user_rag_context": (
         f"Call build_user_rag_context with user_id={user_id}, query "
         "'noise-cancelling headphones', candidate_item_ids=[800078,800079], "
         "top_k=2, and top_k_items=2. Then answer directly and cite returned "
-        "chunk_id values; do not ask questions."
+        "chunk_id values in one concise final text."
     ),
 }
 
