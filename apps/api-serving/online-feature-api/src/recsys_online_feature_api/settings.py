@@ -21,7 +21,7 @@ class FeatureApiSettings:
     redis_timeout_seconds: float = 1.0
     feast_workers: int = 1
     feast_queue_size: int = 15
-    capacity_wait_seconds: float = 0.05
+    capacity_wait_seconds: float = 5.0
 
     @classmethod
     def from_env(cls) -> "FeatureApiSettings":
@@ -50,6 +50,6 @@ class FeatureApiSettings:
             feast_workers=max(1, int(os.getenv("FEATURE_FEAST_WORKERS", "1"))),
             feast_queue_size=max(0, int(os.getenv("FEATURE_FEAST_QUEUE_SIZE", "15"))),
             capacity_wait_seconds=max(
-                0.001, float(os.getenv("FEATURE_CAPACITY_WAIT_SECONDS", "0.05"))
+                0.001, float(os.getenv("FEATURE_CAPACITY_WAIT_SECONDS", "5"))
             ),
         )

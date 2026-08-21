@@ -307,11 +307,22 @@ def test_api_error_paths_return_bad_gateway(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_typed_settings_and_env_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TRITON_CAPACITY_WAIT_SECONDS", raising=False)
+    monkeypatch.delenv("FEATURE_CAPACITY_WAIT_SECONDS", raising=False)
+    assert InferenceApiSettings.from_env().triton_capacity_wait_seconds == 5.0
+    assert FeatureApiSettings.from_env().capacity_wait_seconds == 5.0
+
+    monkeypatch.setenv("TRITON_CAPACITY_WAIT_SECONDS", "5")
+    monkeypatch.setenv("FEATURE_CAPACITY_WAIT_SECONDS", "5")
     monkeypatch.setenv("FEATURE_FLAG", "yes")
     monkeypatch.setenv("BAD_INT", "not-an-int")
     monkeypatch.setenv("MODEL_VERSION", "settings-v1")
 
-    assert InferenceApiSettings.from_env().model_version == "settings-v1"
+    inference_settings = InferenceApiSettings.from_env()
+    feature_settings = FeatureApiSettings.from_env()
+    assert inference_settings.model_version == "settings-v1"
+    assert inference_settings.triton_capacity_wait_seconds == 5.0
+    assert feature_settings.capacity_wait_seconds == 5.0
     assert bool_env("FEATURE_FLAG") is True
     assert bool_env("MISSING_FLAG", default="off") is False
     assert int_env("BAD_INT", default=7) == 7

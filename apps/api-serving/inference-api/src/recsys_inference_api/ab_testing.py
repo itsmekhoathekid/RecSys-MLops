@@ -71,15 +71,17 @@ class TritonABRouter:
         capacity_wait_seconds: float | None = None,
     ) -> "TritonABRouter":
         model_name = os.getenv("TRITON_MODEL_NAME", "bst_ensemble")
-        control_version = os.getenv("AB_CONTROL_MODEL_VERSION") or os.getenv(
-            "MODEL_VERSION", "latest"
-        ) or "latest"
+        control_version = (
+            os.getenv("AB_CONTROL_MODEL_VERSION")
+            or os.getenv("MODEL_VERSION", "latest")
+            or "latest"
+        )
         candidate_version = os.getenv("AB_CANDIDATE_MODEL_VERSION", "")
         experiment_id = os.getenv("AB_EXPERIMENT_ID", "default")
         shared_capacity = AsyncCapacityLimiter(
             limit=max_concurrency or int(os.getenv("TRITON_MAX_CONCURRENCY", "16")),
             wait_seconds=capacity_wait_seconds
-            or float(os.getenv("TRITON_CAPACITY_WAIT_SECONDS", "0.05")),
+            or float(os.getenv("TRITON_CAPACITY_WAIT_SECONDS", "5")),
             operation="triton_inference",
         )
         control_ranker = TritonRanker(

@@ -100,15 +100,15 @@ class MetricsStore:
                 lines.append(f"{name}{_format_labels(labels)} {value}")
         for name in sorted(self.summaries):
             lines.append(f"# TYPE {name} summary")
-            for labels, values in sorted(self.summaries[name].items()):
+            for labels, summary_values in sorted(self.summaries[name].items()):
                 rendered = _format_labels(labels)
-                lines.append(f"{name}_count{rendered} {values['count']}")
-                lines.append(f"{name}_sum{rendered} {values['sum']}")
-                lines.append(f"{name}_max{rendered} {values['max']}")
+                lines.append(f"{name}_count{rendered} {summary_values['count']}")
+                lines.append(f"{name}_sum{rendered} {summary_values['sum']}")
+                lines.append(f"{name}_max{rendered} {summary_values['max']}")
         for name in sorted(self.histograms):
             lines.append(f"# TYPE {name} histogram")
-            for labels, values in sorted(self.histograms[name].items()):
-                for boundary, count in sorted(values["buckets"].items()):
+            for labels, histogram_values in sorted(self.histograms[name].items()):
+                for boundary, count in sorted(histogram_values["buckets"].items()):
                     bucket_labels = dict(labels)
                     bucket_labels["le"] = str(boundary)
                     lines.append(
@@ -117,11 +117,11 @@ class MetricsStore:
                 inf_labels = dict(labels)
                 inf_labels["le"] = "+Inf"
                 lines.append(
-                    f"{name}_bucket{_format_labels(_label_key(inf_labels))} {values['count']}"
+                    f"{name}_bucket{_format_labels(_label_key(inf_labels))} {histogram_values['count']}"
                 )
                 rendered = _format_labels(labels)
-                lines.append(f"{name}_count{rendered} {values['count']}")
-                lines.append(f"{name}_sum{rendered} {values['sum']}")
+                lines.append(f"{name}_count{rendered} {histogram_values['count']}")
+                lines.append(f"{name}_sum{rendered} {histogram_values['sum']}")
         return "\n".join(lines) + "\n"
 
 

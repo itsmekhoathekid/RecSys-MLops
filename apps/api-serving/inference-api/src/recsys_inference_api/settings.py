@@ -16,7 +16,7 @@ class InferenceApiSettings:
     shadow_max_concurrency: int
     triton_timeout_seconds: float = 5.0
     triton_max_concurrency: int = 16
-    triton_capacity_wait_seconds: float = 0.05
+    triton_capacity_wait_seconds: float = 5.0
 
     @classmethod
     def from_env(cls) -> "InferenceApiSettings":
@@ -36,6 +36,6 @@ class InferenceApiSettings:
             ),
             triton_max_concurrency=max(1, int_env("TRITON_MAX_CONCURRENCY", 16)),
             triton_capacity_wait_seconds=max(
-                0.001, float(os.getenv("TRITON_CAPACITY_WAIT_SECONDS", "0.05"))
+                0.001, float(os.getenv("TRITON_CAPACITY_WAIT_SECONDS", "5"))
             ),
         )

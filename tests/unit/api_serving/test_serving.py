@@ -595,6 +595,8 @@ def test_feature_client_reads_realtime_sequence_with_one_mget():
 
 
 def test_triton_ranker_scores_and_records_errors(monkeypatch):
+    monkeypatch.delenv("TRITON_CAPACITY_WAIT_SECONDS", raising=False)
+
     class InferInput:
         def __init__(self, name, shape, dtype):
             self.name = name
@@ -645,6 +647,7 @@ def test_triton_ranker_scores_and_records_errors(monkeypatch):
     ranker = TritonRanker(
         url="localhost:9000", model_name="bst_ensemble", model_version="v1"
     )
+    assert ranker._capacity.wait_seconds == 5.0
     item_ids, scores = asyncio.run(
         ranker.score({"candidate_item_id": np.asarray([1, 2], dtype=np.int64)})
     )
@@ -729,6 +732,7 @@ def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
     monkeypatch.setenv("AB_CANDIDATE_WEIGHT_PERCENT", "25")
     monkeypatch.setenv("AB_EXPERIMENT_ID", "exp-env")
     monkeypatch.setenv("MODEL_VERSION", "stable-v1")
+    monkeypatch.delenv("TRITON_CAPACITY_WAIT_SECONDS", raising=False)
 
     router = TritonABRouter.from_env()
 
@@ -738,6 +742,7 @@ def test_ab_router_from_env_builds_candidate_ranker(monkeypatch):
     assert created[0]["model_version"] == "stable-v1"
     assert created[1]["model_version"] == "candidate-v1"
     assert created[0]["capacity_limiter"] is created[1]["capacity_limiter"]
+    assert created[0]["capacity_limiter"].wait_seconds == 5.0
 
 
 def test_ab_router_from_env_builds_shadow_candidate_with_zero_user_weight(monkeypatch):

@@ -59,7 +59,9 @@ class ChunkService:
         return ChunkBatchResponse(
             pipeline_run_id="run-1",
             chunks=chunks,
-            missing_chunk_ids=[chunk_id for chunk_id in chunk_ids if chunk_id == "missing"],
+            missing_chunk_ids=[
+                chunk_id for chunk_id in chunk_ids if chunk_id == "missing"
+            ],
         )
 
 
@@ -99,7 +101,9 @@ def test_readiness_and_retrieval_failures_are_classified():
     with TestClient(create_app(settings(), Service(pointer_error=True))) as client:
         assert client.get("/ready").status_code == 503
     with TestClient(create_app(settings(), Service(retrieve_error=True))) as client:
-        assert client.post("/v1/rag/retrieve", json={"query": "test"}).status_code == 502
+        assert (
+            client.post("/v1/rag/retrieve", json={"query": "test"}).status_code == 502
+        )
 
 
 def test_exact_and_batch_chunk_lookup_contracts():
@@ -142,12 +146,15 @@ def test_chunk_lookup_validation_and_failures_are_classified():
 
 
 def test_settings_from_environment(monkeypatch):
+    monkeypatch.delenv("RAG_CAPACITY_WAIT_SECONDS", raising=False)
+    assert RagApiSettings.from_env().capacity_wait_seconds == 5.0
+
     monkeypatch.setenv("RAG_EMBEDDING_DIMENSION", "384")
     monkeypatch.setenv("RAG_POINTER_RELOAD_SECONDS", "15")
     monkeypatch.setenv("RAG_EMBEDDING_REVISION", "env-revision")
     monkeypatch.setenv("RAG_SYNC_WORKERS", "8")
     monkeypatch.setenv("RAG_SYNC_QUEUE_SIZE", "16")
-    monkeypatch.setenv("RAG_CAPACITY_WAIT_SECONDS", "0.1")
+    monkeypatch.setenv("RAG_CAPACITY_WAIT_SECONDS", "5")
     monkeypatch.setenv("RAG_STORAGE_TIMEOUT_SECONDS", "5")
     loaded = RagApiSettings.from_env()
     assert loaded.embedding_revision == "env-revision"
@@ -155,7 +162,7 @@ def test_settings_from_environment(monkeypatch):
     assert loaded.pointer_reload_seconds == 15
     assert loaded.sync_workers == 8
     assert loaded.sync_queue_size == 16
-    assert loaded.capacity_wait_seconds == 0.1
+    assert loaded.capacity_wait_seconds == 5.0
     assert loaded.storage_timeout_seconds == 5
 
 

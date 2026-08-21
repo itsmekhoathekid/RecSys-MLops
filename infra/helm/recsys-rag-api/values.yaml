@@ -25,7 +25,7 @@ config:
   pointerReloadSeconds: "60"
   syncWorkers: "8"
   syncQueueSize: "16"
-  capacityWaitSeconds: "0.1"
+  capacityWaitSeconds: "5"
   storageTimeoutSeconds: "5"
   jsonLogs: "1"
   otelEnabled: "1"

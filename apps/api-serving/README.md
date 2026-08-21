@@ -21,11 +21,16 @@ This document is the code-reference index for that runtime boundary.
 
 | Service | Defaults | Application settings | Helm source |
 | --- | --- | --- | --- |
-| Inference | Triton timeout `5s`, maximum concurrency `16`, capacity wait `0.05s` | [`settings.py`](inference-api/src/recsys_inference_api/settings.py) | [`configmap.yaml`](../../infra/helm/recsys-inference-api/templates/configmap.yaml), [`values.yaml`](../../infra/helm/recsys-inference-api/values.yaml) |
-| Online Feature | Redis connections `32`, socket/connect timeout `1s`; Feast workers `1`, queue `15`, capacity wait `0.05s` | [`settings.py`](online-feature-api/src/recsys_online_feature_api/settings.py) | [`configmap.yaml`](../../infra/helm/recsys-online-feature-api/templates/configmap.yaml), [`values.yaml`](../../infra/helm/recsys-online-feature-api/values.yaml) |
-| RAG | Sync workers `8`, queue `16`, capacity wait `0.1s`, storage timeout `5s` | [`settings.py`](rag-api/src/recsys_rag_api/settings.py) | [`configmap.yaml`](../../infra/helm/recsys-rag-api/templates/configmap.yaml), [`values.yaml`](../../infra/helm/recsys-rag-api/values.yaml) |
+| Inference | Triton timeout `5s`, maximum concurrency `16`, capacity wait `5s` | [`settings.py`](inference-api/src/recsys_inference_api/settings.py) | [`configmap.yaml`](../../infra/helm/recsys-inference-api/templates/configmap.yaml), [`values.yaml`](../../infra/helm/recsys-inference-api/values.yaml) |
+| Online Feature | Redis connections `32`, socket/connect timeout `1s`; Feast workers `1`, queue `15`, capacity wait `5s` | [`settings.py`](online-feature-api/src/recsys_online_feature_api/settings.py) | [`configmap.yaml`](../../infra/helm/recsys-online-feature-api/templates/configmap.yaml), [`values.yaml`](../../infra/helm/recsys-online-feature-api/values.yaml) |
+| RAG | Sync workers `8`, queue `16`, capacity wait `5s`, storage timeout `5s` | [`settings.py`](rag-api/src/recsys_rag_api/settings.py) | [`configmap.yaml`](../../infra/helm/recsys-rag-api/templates/configmap.yaml), [`values.yaml`](../../infra/helm/recsys-rag-api/values.yaml) |
 | MCP | Downstream connections `50`, keep-alive connections `20` | [`settings.py`](../agentic/recsys-feature-rag-mcp/src/recsys_feature_rag_mcp/settings.py) | [`configmap.yaml`](../../infra/helm/recsys-feature-rag-mcp/templates/configmap.yaml), [`values.yaml`](../../infra/helm/recsys-feature-rag-mcp/values.yaml) |
 | Demo | PostgreSQL pool `1-8`, pool/connect timeout `5s` | [`database.py`](../demo-web/backend/app/database.py) | [`values.yaml`](../../infra/helm/recsys-demo-web/values.yaml) |
+
+The `5s` capacity wait is only the maximum time a request may wait for a
+semaphore or bounded-executor slot. It does not replace the Triton, Redis, or
+storage operation timeouts; a request that still cannot acquire capacity after
+that wait continues to receive `503 Service Unavailable`.
 
 ## CI/CD Traceability
 

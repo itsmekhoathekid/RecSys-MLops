@@ -52,7 +52,7 @@ class TritonRanker:
         self._capacity = capacity_limiter or AsyncCapacityLimiter(
             limit=max_concurrency or int(os.getenv("TRITON_MAX_CONCURRENCY", "16")),
             wait_seconds=capacity_wait_seconds
-            or float(os.getenv("TRITON_CAPACITY_WAIT_SECONDS", "0.05")),
+            or float(os.getenv("TRITON_CAPACITY_WAIT_SECONDS", "5")),
             operation="triton_inference",
         )
 
