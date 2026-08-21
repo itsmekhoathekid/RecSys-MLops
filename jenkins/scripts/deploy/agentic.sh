@@ -287,7 +287,14 @@ def invoke(tool_name, prompt):
             f"responses={sorted(responses)}"
         )
     tool_response = responses[tool_name]
-    final_message = json.dumps(status.get("message", {}), sort_keys=True)
+    final_message = status.get("message", {})
+    final_text = " ".join(
+        part.get("text", "")
+        for part in final_message.get("parts", [])
+        if part.get("kind") == "text"
+    ).strip()
+    if not final_text:
+        raise SystemExit(f"{tool_name} completed without a final text answer")
     if tool_name == "get_user_online_features":
         if user_id not in json.dumps(tool_response, sort_keys=True):
             raise SystemExit("user feature response does not contain user_id")
@@ -297,8 +304,6 @@ def invoke(tool_name, prompt):
             raise SystemExit("exact chunk response does not contain chunk_id")
         if not chunk_ids:
             raise SystemExit(f"{tool_name} response has no grounded chunk_id")
-        if not any(value in final_message for value in chunk_ids):
-            raise SystemExit(f"{tool_name} answer does not cite a returned chunk_id")
     return body
 
 

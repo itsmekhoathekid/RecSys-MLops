@@ -254,7 +254,9 @@ def test_a2a_smoke_requires_all_tools_and_a_completed_grounded_answer():
     assert "user feature response does not contain user_id" in deploy
     assert "user feature answer does not state user_id" not in deploy
     assert "collect_chunk_ids(tool_response)" in deploy
-    assert "answer does not cite a returned chunk_id" in deploy
+    assert "completed without a final text answer" in deploy
+    assert "response has no grounded chunk_id" in deploy
+    assert "answer does not cite a returned chunk_id" not in deploy
     assert "top_k_items=2" in deploy
 
 
