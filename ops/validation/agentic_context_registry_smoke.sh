@@ -18,11 +18,19 @@ agentic_registry_open_tunnel
 
 arctl get mcp recsys/recsys-feature-rag-mcp --tag "${tag}" -o json \
   >reports/agentic/registry-mcp.json
-for name in recsys-context-agent recsys-context-agent-sandbox; do
-  arctl get agent "recsys/${name}" --tag "${tag}" -o json \
-    >"reports/agentic/registry-${name}.json"
-done
-python3 - "${version}" "${commit}" reports/agentic/registry-*.json <<'PY'
+arctl get agent recsys/recsys-context-agent-sandbox --tag "${tag}" -o json \
+  >reports/agentic/registry-recsys-context-agent-sandbox.json
+legacy_check="$(mktemp)"
+if agentic_registry_tagged_resource_exists agent recsys/recsys-context-agent \
+  "${legacy_check}"; then
+  rm -f "${legacy_check}"
+  echo "Legacy regular Agent still exists in Agent Registry." >&2
+  exit 1
+fi
+rm -f "${legacy_check}"
+python3 - "${version}" "${commit}" \
+  reports/agentic/registry-mcp.json \
+  reports/agentic/registry-recsys-context-agent-sandbox.json <<'PY'
 import json
 import sys
 
@@ -33,4 +41,4 @@ for path in paths:
     assert version in serialized, (path, version)
     assert commit in serialized, (path, commit)
 PY
-echo "Agent Registry contains MCP, regular Agent, and SandboxAgent at ${version} (${tag})."
+echo "Agent Registry contains MCP and SandboxAgent only at ${version} (${tag})."

@@ -36,9 +36,15 @@ agentic_registry_close_tunnel() {
 agentic_preflight() {
   local include_mcp="${1:-false}"
   local crd
-  for crd in agents.kagent.dev sandboxagents.kagent.dev remotemcpservers.kagent.dev workerpools.ate.dev; do
+  for crd in sandboxagents.kagent.dev remotemcpservers.kagent.dev \
+    workerpools.ate.dev scaledobjects.keda.sh; do
     kubectl get crd "${crd}" >/dev/null
   done
+  kubectl get --raw \
+    /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-context-sandbox-pool/scale \
+    >/dev/null
+  kubectl auth can-i update workerpools.ate.dev --subresource=scale -n kagent \
+    --as=system:serviceaccount:keda:keda-operator | grep -Fx yes >/dev/null
   kubectl -n kagent wait --for=condition=Ready \
     externalsecret/recsys-feature-rag-mcp-auth --timeout="${timeout}"
   kubectl -n kagent get secret recsys-feature-rag-mcp-auth >/dev/null
@@ -107,14 +113,9 @@ agentic_a2a_smoke() {
   local agent_name="$1"
   local chunk_id="${AGENTIC_SMOKE_CHUNK_ID:?AGENTIC_SMOKE_CHUNK_ID is required for grounded A2A smoke}"
   local user_id="${AGENTIC_SMOKE_USER_ID:-1001}"
-  local local_port="${AGENTIC_A2A_LOCAL_PORT:-18083}"
-  local a2a_path="api/a2a"
-  local card_path=".well-known/agent.json"
-  if [[ "${agent_name}" == *-sandbox ]]; then
-    a2a_path="api/a2a-sandboxes"
-    card_path=".well-known/agent-card.json"
-    local_port=$((local_port + 1))
-  fi
+  local local_port="${AGENTIC_A2A_LOCAL_PORT:-18084}"
+  local a2a_path="api/a2a-sandboxes"
+  local card_path=".well-known/agent-card.json"
   local base_url="http://127.0.0.1:${local_port}/${a2a_path}/kagent/${agent_name}"
   local log_file response_file pid card_ready=false
   mkdir -p reports/agentic
@@ -255,6 +256,24 @@ PY
   return 2
 }
 
+agentic_registry_tagged_resource_exists() {
+  local kind="$1"
+  local name="$2"
+  local output="$3"
+  arctl get "${kind}" "${name}" --all-tags -o json >"${output}" 2>/dev/null \
+    || return 1
+  python3 - "${output}" <<'PY' >/dev/null 2>&1
+import json
+import sys
+
+try:
+    payload = json.load(open(sys.argv[1], encoding="utf-8"))
+except (json.JSONDecodeError, OSError):
+    raise SystemExit(1)
+raise SystemExit(0 if isinstance(payload, list) and payload else 1)
+PY
+}
+
 agentic_write_registry_manifest() {
   local path="$1"
   local kind="$2"
@@ -362,6 +381,51 @@ with open(path, "w", encoding="utf-8") as stream:
 PY
 }
 
+agentic_wait_for_regular_agent_removal() {
+  local resource
+  for resource in \
+    agent/recsys-context-agent \
+    deployment/recsys-context-agent \
+    scaledobject/recsys-context-agent \
+    hpa/keda-hpa-recsys-context-agent; do
+    for _ in $(seq 1 120); do
+      if ! kubectl -n kagent get "${resource}" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 2
+    done
+    if kubectl -n kagent get "${resource}" >/dev/null 2>&1; then
+      recsys_error "legacy regular Agent resource still exists: ${resource}"
+      return 1
+    fi
+  done
+}
+
+agentic_write_context_registry_evidence() {
+  local path="$1"
+  local version="$2"
+  local commit="$3"
+  local active_artifact="$4"
+  local backup_path="$5"
+  local removed="$6"
+  python3 - "${path}" "${version}" "${commit}" "${active_artifact}" \
+    "${backup_path}" "${removed}" <<'PY'
+import json
+import sys
+
+path, version, commit, active, backup, removed = sys.argv[1:]
+payload = {
+    "version": version,
+    "git_commit": commit,
+    "artifacts": [active],
+    "removed_artifacts": (["recsys/recsys-context-agent@all-tags"] if removed == "true" else []),
+    "legacy_registry_backup": backup,
+}
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(payload, stream, indent=2, sort_keys=True)
+PY
+}
+
 publish_feature_rag_mcp_registry() {
   local version tag commit git_url registry_name manifest
   agentic_assert_registry_publish_branch || return 0
@@ -390,38 +454,59 @@ publish_feature_rag_mcp_registry() {
 }
 
 publish_context_agent_registry() {
-  local version tag commit git_url name registry_name manifest
+  local version tag commit git_url registry_name manifest
+  local legacy_name legacy_backup legacy_check legacy_present=false
   agentic_assert_registry_publish_branch || return 0
   agentic_preflight true
-  kubectl -n kagent wait --for=condition=Ready agent/recsys-context-agent \
-    --timeout="${timeout}"
-  kubectl -n kagent rollout status deployment/recsys-context-agent \
-    --timeout="${timeout}"
   kubectl -n kagent wait --for=condition=Ready \
     sandboxagent/recsys-context-agent-sandbox --timeout="${timeout}"
-  agentic_a2a_smoke recsys-context-agent
+  kubectl -n kagent rollout status \
+    deployment/recsys-context-sandbox-pool-deployment --timeout="${timeout}"
+  agentic_wait_for_regular_agent_removal
   agentic_a2a_smoke recsys-context-agent-sandbox
   agentic_registry_open_tunnel
   commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
   version="$(agentic_registry_version)"
   tag="$(agentic_registry_tag "${version}")"
   git_url="$(agentic_registry_git_url)"
-  for name in recsys-context-agent recsys-context-agent-sandbox; do
-    registry_name="recsys/${name}"
-    manifest="$(mktemp)"
-    agentic_write_registry_manifest "${manifest}" agent "${registry_name}" \
-      "${version}" "${tag}" "${commit}" "${git_url}"
-    if agentic_registry_publish_required agent "${registry_name}" "${tag}" \
-      "${version}" "${commit}"; then
-      arctl apply -f "${manifest}"
-    else
-      [[ "$?" == "1" ]]
-    fi
-    rm -f "${manifest}"
-    arctl get agent "${registry_name}" --tag "${tag}" -o json >/dev/null
-  done
-  agentic_write_registry_evidence \
+  registry_name="recsys/recsys-context-agent-sandbox"
+  manifest="$(mktemp)"
+  agentic_write_registry_manifest "${manifest}" agent "${registry_name}" \
+    "${version}" "${tag}" "${commit}" "${git_url}"
+  if agentic_registry_publish_required agent "${registry_name}" "${tag}" \
+    "${version}" "${commit}"; then
+    arctl apply -f "${manifest}"
+  else
+    [[ "$?" == "1" ]]
+  fi
+  rm -f "${manifest}"
+  arctl get agent "${registry_name}" --tag "${tag}" -o json >/dev/null
+
+  mkdir -p .ci-deploy
+  legacy_name="recsys/recsys-context-agent"
+  legacy_backup=".ci-deploy/recsys-context-agent-registry-backup.json"
+  if agentic_registry_tagged_resource_exists agent "${legacy_name}" \
+    "${legacy_backup}"; then
+    legacy_present=true
+    arctl delete agent "${legacy_name}" --all-tags
+  else
+    python3 - "${legacy_backup}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as stream:
+    json.dump([], stream, indent=2, sort_keys=True)
+PY
+  fi
+  legacy_check="$(mktemp)"
+  if agentic_registry_tagged_resource_exists agent "${legacy_name}" \
+    "${legacy_check}"; then
+    rm -f "${legacy_check}"
+    recsys_error "legacy regular Agent still exists in Agent Registry"
+    return 1
+  fi
+  rm -f "${legacy_check}"
+  agentic_write_context_registry_evidence \
     .ci-deploy/context-agent-registry.json "${version}" "${commit}" \
-    "recsys/recsys-context-agent@${tag}" \
-    "recsys/recsys-context-agent-sandbox@${tag}"
+    "${registry_name}@${tag}" "${legacy_backup}" "${legacy_present}"
 }

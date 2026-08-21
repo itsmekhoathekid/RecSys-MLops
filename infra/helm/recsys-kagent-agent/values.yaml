@@ -10,30 +10,17 @@ mcp:
     - get_chunk_by_id
     - retrieve_rag_context
     - build_user_rag_context
-agent:
-  name: recsys-context-agent
+sandbox:
+  name: recsys-context-agent-sandbox
+  workerPool: recsys-context-sandbox-pool
   modelConfig: default-model-config
-  replicas: 2
   imageRegistry: ""
-  nodeSelector: {}
-  tolerations: []
   systemMessage: |
     You are the grounded RecSys context agent. Use MCP tools for every factual
     claim about a user, item, or RAG chunk. Prefer build_user_rag_context when
     both personalization and semantic evidence are needed. Never invent data
     when a tool fails; state which source is unavailable. Keep answers concise
     and cite the returned chunk_id values used as evidence.
-  resources:
-    requests:
-      cpu: 25m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 256Mi
-sandbox:
-  enabled: true
-  name: recsys-context-agent-sandbox
-  workerPool: recsys-context-sandbox-pool
   allowedDomains:
     - recsys-feature-rag-mcp.kagent.svc.cluster.local
 autoscaling:

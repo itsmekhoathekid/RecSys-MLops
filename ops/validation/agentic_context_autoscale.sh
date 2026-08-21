@@ -167,7 +167,7 @@ kubectl -n "${namespace}" port-forward service/kagent-controller \
 a2a_pf_pid=$!
 for _ in $(seq 1 30); do
   if curl -fsS \
-    "http://127.0.0.1:${a2a_port}/api/a2a/kagent/recsys-context-agent/.well-known/agent.json" \
+    "http://127.0.0.1:${a2a_port}/api/a2a-sandboxes/kagent/recsys-context-agent-sandbox/.well-known/agent-card.json" \
     >/dev/null 2>&1; then
     break
   fi
@@ -182,7 +182,7 @@ import urllib.request
 import uuid
 
 port, count = sys.argv[1], int(sys.argv[2])
-url = f"http://127.0.0.1:{port}/api/a2a/kagent/recsys-context-agent/"
+url = f"http://127.0.0.1:{port}/api/a2a-sandboxes/kagent/recsys-context-agent-sandbox/"
 
 def invoke(index):
     request_id = str(uuid.uuid4())
@@ -221,32 +221,32 @@ if not all(outcomes):
 PY
 load_pid=$!
 
-agent_scaled=false
+sandbox_scaled=false
 for _ in 1 2; do
   sleep "${poll_seconds}"
-  replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-context-agent \
+  replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-context-sandbox-pool \
     -o jsonpath='{.status.desiredReplicas}')"
   if [[ "${replicas:-0}" -ge 3 ]]; then
-    agent_scaled=true
+    sandbox_scaled=true
     break
   fi
 done
-if [[ "${agent_scaled}" != "true" ]]; then
+if [[ "${sandbox_scaled}" != "true" ]]; then
   for _ in $(seq 1 "${decision_grace_seconds}"); do
     sleep 1
-    replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-context-agent \
+    replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-context-sandbox-pool \
       -o jsonpath='{.status.desiredReplicas}')"
     if [[ "${replicas:-0}" -ge 3 ]]; then
-      agent_scaled=true
+      sandbox_scaled=true
       break
     fi
   done
 fi
-[[ "${agent_scaled}" == "true" ]] || {
-  echo "Regular Agent did not scale to at least 3 replicas within two KEDA polling cycles." >&2
+[[ "${sandbox_scaled}" == "true" ]] || {
+  echo "Sandbox WorkerPool did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
 }
-wait_for_available_replicas recsys-context-agent 3
+wait_for_available_replicas recsys-context-sandbox-pool-deployment 3
 wait "${load_pid}"
 load_pid=""
 kill "${a2a_pf_pid}" >/dev/null 2>&1 || true
@@ -282,31 +282,31 @@ done
 restore_scaler
 trap cleanup EXIT
 
-original_agent_address="$(kubectl -n "${namespace}" get scaledobject recsys-context-agent \
+original_sandbox_address="$(kubectl -n "${namespace}" get scaledobject recsys-context-sandbox-pool \
   -o jsonpath='{.spec.triggers[0].metadata.serverAddress}')"
-restore_agent_scaler() {
-  kubectl -n "${namespace}" patch scaledobject recsys-context-agent --type json \
-    -p "[{\"op\":\"replace\",\"path\":\"/spec/triggers/0/metadata/serverAddress\",\"value\":\"${original_agent_address}\"}]" \
+restore_sandbox_scaler() {
+  kubectl -n "${namespace}" patch scaledobject recsys-context-sandbox-pool --type json \
+    -p "[{\"op\":\"replace\",\"path\":\"/spec/triggers/0/metadata/serverAddress\",\"value\":\"${original_sandbox_address}\"}]" \
     >/dev/null
 }
-trap 'restore_agent_scaler; cleanup' EXIT
-kubectl -n "${namespace}" patch scaledobject recsys-context-agent --type json \
+trap 'restore_sandbox_scaler; cleanup' EXIT
+kubectl -n "${namespace}" patch scaledobject recsys-context-sandbox-pool --type json \
   -p '[{"op":"replace","path":"/spec/triggers/0/metadata/serverAddress","value":"http://unreachable.invalid:9090"}]' \
   >/dev/null
-agent_fallback=false
+sandbox_fallback=false
 for _ in $(seq 1 6); do
   sleep "${poll_seconds}"
-  replicas="$(kubectl -n "${namespace}" get deployment recsys-context-agent \
+  replicas="$(kubectl -n "${namespace}" get deployment recsys-context-sandbox-pool-deployment \
     -o jsonpath='{.status.availableReplicas}')"
   if [[ "${replicas:-0}" == 2 ]]; then
-    agent_fallback=true
+    sandbox_fallback=true
     break
   fi
 done
-[[ "${agent_fallback}" == "true" ]] || {
-  echo "Regular Agent KEDA fallback did not converge to 2 replicas." >&2
+[[ "${sandbox_fallback}" == "true" ]] || {
+  echo "Sandbox WorkerPool KEDA fallback did not converge to 2 replicas." >&2
   exit 1
 }
-restore_agent_scaler
+restore_sandbox_scaler
 trap cleanup EXIT
-echo "Agentic MCP and regular Agent autoscale/fallback checks passed."
+echo "Agentic MCP and Sandbox WorkerPool autoscale/fallback checks passed."

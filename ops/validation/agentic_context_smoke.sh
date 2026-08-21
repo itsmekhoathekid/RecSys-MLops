@@ -10,11 +10,11 @@ mkdir -p reports/agentic
 
 agentic_preflight true
 agentic_mcp_protocol_smoke
-kubectl -n kagent wait --for=condition=Ready agent/recsys-context-agent \
-  --timeout="${timeout}"
 kubectl -n kagent wait --for=condition=Ready \
   sandboxagent/recsys-context-agent-sandbox --timeout="${timeout}"
-agentic_a2a_smoke recsys-context-agent
+kubectl -n kagent rollout status \
+  deployment/recsys-context-sandbox-pool-deployment --timeout="${timeout}"
+agentic_wait_for_regular_agent_removal
 agentic_a2a_smoke recsys-context-agent-sandbox
 
-echo "Agentic context smoke passed; evidence is in reports/agentic/."
+echo "Sandbox-only agentic context smoke passed; evidence is in reports/agentic/."

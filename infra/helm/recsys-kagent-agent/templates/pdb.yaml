@@ -1,7 +1,7 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ .Values.agent.name }}
+  name: {{ .Values.sandbox.workerPool }}
   namespace: {{ .Values.namespace }}
   labels:
     {{- include "recsys-kagent-agent.labels" . | nindent 4 }}
@@ -9,4 +9,4 @@ spec:
   minAvailable: 1
   selector:
     matchLabels:
-      recsys.ai/autoscale-target: {{ .Values.agent.name }}
+      ate.dev/worker-pool: {{ .Values.sandbox.workerPool }}

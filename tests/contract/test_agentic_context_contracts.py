@@ -16,7 +16,10 @@ ROOT = Path(__file__).resolve().parents[2]
 MCP_SRC = ROOT / "apps/agentic/recsys-feature-rag-mcp/src"
 sys.path.insert(0, str(MCP_SRC))
 
-from recsys_feature_rag_mcp.server import TOOL_NAMES, create_mcp_server
+from recsys_feature_rag_mcp.server import (  # noqa: E402
+    TOOL_NAMES,
+    create_mcp_server,
+)
 
 
 class _UnusedClient:
@@ -74,7 +77,7 @@ def test_mcp_tools_list_and_generated_input_schemas_match_contract():
     } == contract["inputSchemas"]
 
 
-def test_agent_and_sandbox_use_the_exact_remote_mcp_tool_contract():
+def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
     contract = _contract()
     documents = _render("recsys-kagent-agent")
 
@@ -84,19 +87,15 @@ def test_agent_and_sandbox_use_the_exact_remote_mcp_tool_contract():
     assert remote["spec"]["timeout"] == "10s"
     assert remote["spec"]["headersFrom"][0]["name"] == "Authorization"
 
-    for kind, name in (
-        ("Agent", "recsys-context-agent"),
-        ("SandboxAgent", "recsys-context-agent-sandbox"),
-    ):
-        resource = _resource(documents, kind, name)
-        tool_names = resource["spec"]["declarative"]["tools"][0]["mcpServer"][
-            "toolNames"
-        ]
-        assert tool_names == contract["tools"]
+    assert not any(item.get("kind") == "Agent" for item in documents)
 
     sandbox = _resource(
         documents, "SandboxAgent", "recsys-context-agent-sandbox"
     )
+    tool_names = sandbox["spec"]["declarative"]["tools"][0]["mcpServer"][
+        "toolNames"
+    ]
+    assert tool_names == contract["tools"]
     assert sandbox["spec"]["declarative"]["runtime"] == "go"
     assert sandbox["spec"]["platform"] == "substrate"
     assert sandbox["spec"]["sandbox"]["network"]["allowedDomains"] == [
@@ -127,11 +126,44 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
     assert scaled["spec"]["fallback"] == {"failureThreshold": 3, "replicas": 2}
     assert not any(item.get("kind") == "Ingress" for item in mcp_documents)
 
+    sandbox_documents = _render("recsys-kagent-agent")
+    assert not any(item.get("kind") == "Agent" for item in sandbox_documents)
+    assert sum(item.get("kind") == "SandboxAgent" for item in sandbox_documents) == 1
+    assert sum(item.get("kind") == "RemoteMCPServer" for item in sandbox_documents) == 1
+    sandbox_scaled = _resource(
+        sandbox_documents, "ScaledObject", "recsys-context-sandbox-pool"
+    )
+    assert sandbox_scaled["spec"]["scaleTargetRef"] == {
+        "apiVersion": "ate.dev/v1alpha1",
+        "kind": "WorkerPool",
+        "name": "recsys-context-sandbox-pool",
+    }
+    assert sandbox_scaled["spec"]["minReplicaCount"] == 2
+    assert sandbox_scaled["spec"]["maxReplicaCount"] == 6
+    assert sandbox_scaled["spec"]["fallback"] == {
+        "failureThreshold": 3,
+        "replicas": 2,
+    }
+    trigger = sandbox_scaled["spec"]["triggers"][0]["metadata"]
+    assert trigger["metricName"] == "recsys_context_sandbox_worker_cpu_cores"
+    assert 'container="ateom"' in trigger["query"]
+    assert "recsys-context-sandbox-pool-deployment-.*" in trigger["query"]
+    sandbox_pdb = _resource(
+        sandbox_documents, "PodDisruptionBudget", "recsys-context-sandbox-pool"
+    )
+    assert sandbox_pdb["spec"] == {
+        "minAvailable": 1,
+        "selector": {
+            "matchLabels": {
+                "ate.dev/worker-pool": "recsys-context-sandbox-pool"
+            }
+        },
+    }
 
-def test_gcp_agentic_workloads_use_the_ml_system_pool():
+
+def test_gcp_mcp_uses_ml_system_pool_and_sandbox_has_no_fake_scheduling_fields():
     for chart, kind, name in (
         ("recsys-feature-rag-mcp", "Deployment", "recsys-feature-rag-mcp"),
-        ("recsys-kagent-agent", "Agent", "recsys-context-agent"),
     ):
         output = subprocess.run(
             [
@@ -149,11 +181,7 @@ def test_gcp_agentic_workloads_use_the_ml_system_pool():
         ).stdout
         documents = [document for document in yaml.safe_load_all(output) if document]
         resource = _resource(documents, kind, name)
-        if kind == "Deployment":
-            pod_spec = resource["spec"]["template"]["spec"]
-        else:
-            pod_spec = resource["spec"]["declarative"]["deployment"]
-            assert pod_spec["imageRegistry"] == "ghcr.io"
+        pod_spec = resource["spec"]["template"]["spec"]
         assert pod_spec["nodeSelector"] == {"recsys.ai/pool": "ml-system"}
         assert pod_spec["tolerations"] == [
             {
@@ -163,6 +191,32 @@ def test_gcp_agentic_workloads_use_the_ml_system_pool():
                 "effect": "NoSchedule",
             }
         ]
+
+    sandbox_documents = [
+        document
+        for document in yaml.safe_load_all(
+            subprocess.run(
+                [
+                    "helm",
+                    "template",
+                    "contract-test",
+                    str(ROOT / "infra/helm/recsys-kagent-agent"),
+                    "-f",
+                    str(ROOT / "infra/helm/recsys-kagent-agent/values-gcp.yaml"),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+        )
+        if document
+    ]
+    sandbox = _resource(
+        sandbox_documents, "SandboxAgent", "recsys-context-agent-sandbox"
+    )
+    deployment = sandbox["spec"]["declarative"]["deployment"]
+    assert deployment == {"imageRegistry": "ghcr.io"}
 
 
 def test_terraform_owns_platform_but_not_the_agent_application_release():
@@ -200,7 +254,21 @@ def test_registry_uses_arctl_v04_declarative_resources():
     assert '"kind": "Agent"' in deploy
     assert 'arctl apply -f "${manifest}"' in deploy
     assert 'arctl get mcp "${registry_name}" --tag "${tag}"' in deploy
+    assert 'arctl delete agent "${legacy_name}" --all-tags' in deploy
+    assert "recsys/recsys-context-agent-sandbox" in deploy
+    assert "legacy_registry_backup" in deploy
     assert "${version/+/-}" in deploy
+    context_publish = deploy[deploy.index("publish_context_agent_registry()") :]
+    publish_sandbox = context_publish.index(
+        'arctl get agent "${registry_name}" --tag "${tag}" -o json'
+    )
+    backup_legacy = context_publish.index(
+        'if agentic_registry_tagged_resource_exists agent "${legacy_name}"'
+    )
+    delete_legacy = context_publish.index(
+        'arctl delete agent "${legacy_name}" --all-tags'
+    )
+    assert publish_sandbox < backup_legacy < delete_legacy
 
     ci_values = (ROOT / "infra/helm/recsys-ci/values.yaml").read_text(
         encoding="utf-8"
@@ -222,3 +290,4 @@ def test_a2a_smoke_payloads_use_protocol_v03_message_ids():
         assert '"params": {\n            "id": request_id' not in script
     assert 'a2a_path="api/a2a-sandboxes"' in deploy
     assert 'card_path=".well-known/agent-card.json"' in deploy
+    assert 'a2a_path="api/a2a"' not in deploy

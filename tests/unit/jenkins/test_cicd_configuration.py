@@ -115,8 +115,13 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert '"type": "streamable-http"' in deploy
     assert 'arctl apply -f "${manifest}"' in deploy
     assert "for attempt in 1 2 3" in deploy
-    assert "rollout status deployment/recsys-context-agent" in deploy
-    assert "local_port=$((local_port + 1))" in deploy
+    assert "deployment/recsys-context-sandbox-pool-deployment" in deploy
+    assert 'arctl delete agent "${legacy_name}" --all-tags' in deploy
+    assert "workerpools/recsys-context-sandbox-pool/scale" in deploy
+    assert "system:serviceaccount:keda:keda-operator" in deploy
+    assert "--subresource=scale" in deploy
+    assert 'a2a_path="api/a2a-sandboxes"' in deploy
+    assert "local_port=$((local_port + 1))" not in deploy
 
     autoscale = (
         ROOT / "ops/validation/agentic_context_autoscale.sh"
@@ -147,6 +152,29 @@ def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
     assert 'name: PYTHONWARNINGS, value: "ignore"' in deploy_script
     assert 'data.get("dry_run") is True' in deploy_script
     assert 'volume_yaml="          volumeMounts:' in deploy_script
+
+
+def test_agent_registry_all_tags_probe_parses_v04_output_instead_of_exit_code():
+    script = r'''
+set -Eeuo pipefail
+source jenkins/scripts/deploy/agentic.sh
+fixture=missing
+arctl() {
+  if [[ "${fixture}" == "present" ]]; then
+    printf '[{"metadata":{"name":"recsys-context-agent"}}]\n'
+  else
+    printf 'No tags of agent "recsys/recsys-context-agent" found.\n'
+  fi
+}
+output="$(mktemp)"
+trap 'rm -f "${output}"' EXIT
+if agentic_registry_tagged_resource_exists agent recsys/recsys-context-agent "${output}"; then
+  exit 11
+fi
+fixture=present
+agentic_registry_tagged_resource_exists agent recsys/recsys-context-agent "${output}"
+'''
+    subprocess.run(["bash", "-c", script], cwd=ROOT, check=True)
 
 
 def test_full_release_verification_orders_data_before_training(tmp_path):

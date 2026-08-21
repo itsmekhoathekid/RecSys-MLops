@@ -1,4 +1,3 @@
-{{- if .Values.sandbox.enabled }}
 apiVersion: kagent.dev/v1alpha2
 kind: SandboxAgent
 metadata:
@@ -21,20 +20,30 @@ spec:
       name: {{ .Values.sandbox.workerPool }}
   declarative:
     runtime: go
-    modelConfig: {{ .Values.agent.modelConfig }}
+    modelConfig: {{ .Values.sandbox.modelConfig }}
     stream: false
-    {{- with .Values.agent.imageRegistry }}
+    {{- with .Values.sandbox.imageRegistry }}
     deployment:
       imageRegistry: {{ . | quote }}
     {{- end }}
     systemMessage: |
-      {{- .Values.agent.systemMessage | nindent 6 }}
+      {{- .Values.sandbox.systemMessage | nindent 6 }}
     a2aConfig:
       skills:
-        - id: sandboxed-recsys-context
-          name: Sandboxed RecSys context
-          description: Retrieve grounded personalization and RAG evidence in gVisor.
-          tags: [recsys, rag, sandbox]
+        - id: user-personalization
+          name: Sandboxed user personalization
+          description: Retrieve materialized online features for a user and candidates in gVisor.
+          tags: [recsys, feast, personalization, sandbox]
+          examples: ["Summarize the preferences for user 1001."]
+        - id: exact-chunk
+          name: Sandboxed exact chunk lookup
+          description: Retrieve one grounded RAG chunk by its immutable chunk identifier in gVisor.
+          tags: [recsys, rag, exact, sandbox]
+          examples: ["Get the exact evidence chunk with ID 800078:review:rev_800078_01:0."]
+        - id: rag-evidence
+          name: Sandboxed semantic RAG evidence
+          description: Retrieve semantic product evidence and composite user context in gVisor.
+          tags: [recsys, rag, evidence, sandbox]
           examples: ["Build grounded context for user 1001 buying headphones."]
     tools:
       - type: McpServer
@@ -44,4 +53,3 @@ spec:
           name: {{ .Values.mcp.name }}
           toolNames:
             {{- toYaml .Values.mcp.tools | nindent 12 }}
-{{- end }}
