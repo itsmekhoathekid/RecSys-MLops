@@ -250,7 +250,9 @@ payload = {
         "role": "user",
         "parts": [{"kind": "text", "text": (
             "Recommend top 3 items for user_id=" + user_id
-            + ". Call get_personalized_recommendations exactly once and preserve ranking."
+            + ". Call get_personalized_recommendations exactly once with tool "
+            + "arguments {\"user_id\": " + user_id
+            + ", \"candidate_item_ids\": null, \"top_k\": 3}. Preserve ranking."
         )}],
     }},
 }

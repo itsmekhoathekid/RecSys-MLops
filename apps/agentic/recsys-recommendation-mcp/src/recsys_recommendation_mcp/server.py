@@ -43,7 +43,16 @@ def create_mcp_server(
         candidate_item_ids: CandidateItemIds = None,
         top_k: TopK = 10,
     ) -> dict[str, object]:
-        """Get model-ranked Top-K items without changing order or scores."""
+        """Get model-ranked Top-K items without changing order or scores.
+
+        Args:
+            user_id: Required positive integer copied from the user's request.
+            candidate_item_ids: Optional list of 1-500 candidate item IDs, or null.
+            top_k: Requested result count from 1-100; defaults to 10.
+
+        Always provide ``user_id`` in the tool arguments. For example, a request
+        for three items for user 1001 uses ``{"user_id": 1001, "top_k": 3}``.
+        """
 
         with TOOL_DURATION.time():
             try:

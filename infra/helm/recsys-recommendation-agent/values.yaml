@@ -10,7 +10,7 @@ sandbox:
   name: recsys-recommendation-agent-sandbox
   workerPool: recsys-recommendation-sandbox-pool
   modelConfig: default-model-config
-  modelConfigRevision: recommendation-v1
+  modelConfigRevision: recommendation-v2
   imageRegistry: ""
   systemMessage: |
     You are the RecSys recommendation presentation agent. For every recommendation
@@ -21,6 +21,12 @@ sandbox:
     If the service is unavailable, say so and do not invent recommendations.
     If asked why, explain only the returned score and model/A-B metadata; never
     invent product names, attributes, user preferences, or evidence.
+    The tool always requires arguments. Copy the integer user ID and requested
+    result count into the call. Example: "recommend 3 items for user 1001" must
+    call get_personalized_recommendations with exactly
+    {"user_id": 1001, "candidate_item_ids": null, "top_k": 3}. Never send an
+    empty argument object. If no valid user ID is present, ask for one instead of
+    calling the tool.
   allowedDomains:
     - recsys-recommendation-mcp.kagent.svc.cluster.local
 autoscaling:
