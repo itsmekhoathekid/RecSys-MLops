@@ -6,6 +6,22 @@
 
 rag_wait_job() {
   local namespace="$1" job="$2" timeout="${3:-1800s}"
+  local visible=false
+  # `kubectl apply` can return before a subsequent request routed through a
+  # different managed API-server cache observes the new Job. Bound the
+  # read-after-write retry so a transient NotFound does not fail an otherwise
+  # healthy release, while a genuinely missing Job still fails quickly.
+  for _ in $(seq 1 30); do
+    if kubectl -n "${namespace}" get "job/${job}" >/dev/null 2>&1; then
+      visible=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${visible}" != "true" ]]; then
+    echo "Job ${namespace}/${job} was not visible after creation" >&2
+    return 1
+  fi
   if ! kubectl -n "${namespace}" wait --for=condition=complete "job/${job}" --timeout="${timeout}"; then
     kubectl -n "${namespace}" logs "job/${job}" --all-containers=true || true
     return 1

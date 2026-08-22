@@ -314,6 +314,17 @@ def test_rag_promotion_contract_gate_uses_the_required_python_runtime():
     assert "supported_embedding_contracts" in contract_gate
 
 
+def test_rag_job_wait_retries_api_visibility_before_condition_wait():
+    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
+    wait_job = deployment.split("rag_wait_job()", 1)[1].split("\n}", 1)[0]
+
+    assert "for _ in $(seq 1 30)" in wait_job
+    assert 'get "job/${job}"' in wait_job
+    assert "sleep 1" in wait_job
+    assert 'wait --for=condition=complete "job/${job}"' in wait_job
+    assert "was not visible after creation" in wait_job
+
+
 def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
     deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
     tunnel = deployment.split("rag_start_api_port_forward()", 1)[1].split(
