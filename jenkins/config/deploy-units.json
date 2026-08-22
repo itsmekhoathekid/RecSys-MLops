@@ -255,6 +255,50 @@
       "dependsOn": ["context-agent", "feature-rag-mcp-registry"]
     },
     {
+      "name": "recommendation-mcp",
+      "kind": "helm",
+      "release": "recsys-recommendation-mcp",
+      "namespace": "kagent",
+      "chart": "infra/helm/recsys-recommendation-mcp",
+      "components": ["recommendation_mcp"],
+      "consumesImages": ["recsys-recommendation-mcp"],
+      "imageValues": {"recsys-recommendation-mcp": "image"},
+      "consumesArtifacts": [],
+      "dependsOn": ["inference-api"]
+    },
+    {
+      "name": "recommendation-agent",
+      "kind": "helm",
+      "release": "recsys-recommendation-agent",
+      "namespace": "kagent",
+      "chart": "infra/helm/recsys-recommendation-agent",
+      "components": ["recommendation_agent"],
+      "consumesImages": [],
+      "imageValues": {},
+      "consumesArtifacts": [],
+      "dependsOn": ["recommendation-mcp"]
+    },
+    {
+      "name": "recommendation-mcp-registry",
+      "kind": "jenkins-action",
+      "release": "recsys-recommendation-mcp-registry",
+      "namespace": "agentregistry",
+      "components": ["recommendation_mcp"],
+      "consumesImages": ["recsys-recommendation-mcp"],
+      "consumesArtifacts": [],
+      "dependsOn": ["recommendation-mcp", "recommendation-agent"]
+    },
+    {
+      "name": "recommendation-agent-registry",
+      "kind": "jenkins-action",
+      "release": "recsys-recommendation-agent-registry",
+      "namespace": "agentregistry",
+      "components": ["recommendation_agent"],
+      "consumesImages": [],
+      "consumesArtifacts": [],
+      "dependsOn": ["recommendation-agent", "recommendation-mcp-registry"]
+    },
+    {
       "name": "streaming",
       "kind": "helm",
       "release": "recsys-streaming",

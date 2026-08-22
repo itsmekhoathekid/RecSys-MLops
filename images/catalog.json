@@ -91,6 +91,11 @@
       "context": ".",
       "dependencies": []
     },
+    "recsys-recommendation-mcp": {
+      "dockerfile": "images/agentic/recsys-recommendation-mcp/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
     "recsys-demo-api": {
       "dockerfile": "images/demo/recsys-demo-api/Dockerfile",
       "context": ".",

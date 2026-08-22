@@ -59,6 +59,31 @@ async def verify_tools():
 asyncio.run(verify_tools())
 '
     ;;
+  recsys-recommendation-mcp)
+    docker run --rm "${image}" python -c '
+import asyncio
+import importlib.util
+
+from fastapi.testclient import TestClient
+from recsys_recommendation_mcp.app import app
+from recsys_recommendation_mcp.server import TOOL_NAMES, create_mcp_server
+
+assert app.title == "RecSys Recommendation MCP"
+for module in ("feast", "pymilvus", "redis", "tritonclient"):
+    assert importlib.util.find_spec(module) is None, module
+with TestClient(app) as client:
+    assert client.get("/healthz").status_code == 200
+    assert client.get("/version").json()["downstream"] == "recsys-inference-api"
+
+async def verify_tools():
+    tools = await create_mcp_server(object()).list_tools()
+    assert tuple(tool.name for tool in tools) == TOOL_NAMES == (
+        "get_personalized_recommendations",
+    )
+
+asyncio.run(verify_tools())
+'
+    ;;
   *)
     printf 'unsupported serving image: %s\n' "${service}" >&2
     exit 2

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "recsys-recommendation-mcp.labels" . | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/name: {{ .Values.name }}}
+  ports: [{name: http, port: {{ .Values.service.port }}, targetPort: http}]

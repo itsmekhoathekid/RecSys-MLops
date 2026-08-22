@@ -1,0 +1,12 @@
+# The empty selector permits placement on either production node. The toleration
+# also permits the ML-system node when it has spare capacity.
+nodeSelector: {}
+tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+    effect: NoSchedule
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 3
+  fallback: {failureThreshold: 3, replicas: 1}

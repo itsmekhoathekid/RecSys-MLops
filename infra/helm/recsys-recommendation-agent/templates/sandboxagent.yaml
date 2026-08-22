@@ -1,0 +1,48 @@
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: {{ .Values.sandbox.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    recsys.ai/model-config-revision: {{ .Values.sandbox.modelConfigRevision | quote }}
+  labels:
+    {{- include "recsys-recommendation-agent.labels" . | nindent 4 }}
+spec:
+  type: Declarative
+  platform: substrate
+  description: gVisor-isolated agent that only presents inference-service rankings.
+  sandbox:
+    network:
+      allowedDomains:
+        {{- toYaml .Values.sandbox.allowedDomains | nindent 8 }}
+  substrate:
+    workerPoolRef:
+      apiGroup: ate.dev
+      kind: WorkerPool
+      name: {{ .Values.sandbox.workerPool }}
+  declarative:
+    runtime: go
+    modelConfig: {{ .Values.sandbox.modelConfig }}
+    stream: false
+    {{- with .Values.sandbox.imageRegistry }}
+    deployment:
+      imageRegistry: {{ . | quote }}
+    {{- end }}
+    systemMessage: |
+      {{- .Values.sandbox.systemMessage | nindent 6 }}
+      Runtime model configuration revision: {{ .Values.sandbox.modelConfigRevision }}.
+    a2aConfig:
+      skills:
+        - id: personalized-recommendations
+          name: Sandboxed personalized recommendations
+          description: Return model-ranked Top-K items from the RecSys inference service.
+          tags: [recsys, recommendation, bst, sandbox]
+          examples: ["Recommend five items for user 1001."]
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: {{ .Values.mcp.name }}
+          toolNames:
+            {{- toYaml .Values.mcp.tools | nindent 12 }}

@@ -1,0 +1,31 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }}}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: {{ .Values.name }} }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.namespace }}}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.observabilityNamespace }}}
+      ports: [{protocol: TCP, port: {{ .Values.service.targetPort }}}]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.apiServingNamespace }}}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: recsys-inference-api}
+      ports: [{protocol: TCP, port: 80}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.observabilityNamespace }}}
+      ports: [{protocol: TCP, port: 4317}, {protocol: TCP, port: 9090}]
+{{- end }}

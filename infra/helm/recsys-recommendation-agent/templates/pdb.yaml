@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.sandbox.workerPool }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "recsys-recommendation-agent.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      ate.dev/worker-pool: {{ .Values.sandbox.workerPool }}

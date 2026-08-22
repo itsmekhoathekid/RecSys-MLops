@@ -1,0 +1,36 @@
+namespace: kagent
+name: recsys-recommendation-mcp
+image: registry.example.invalid/recsys/recsys-recommendation-mcp:required
+imagePullPolicy: IfNotPresent
+replicas: 1
+existingSecret: recsys-recommendation-mcp-auth
+service: {port: 8080, targetPort: 8080}
+rollout: {maxSurge: 1, maxUnavailable: 0, minReadySeconds: 10, progressDeadlineSeconds: 600}
+config:
+  inferenceApiUrl: http://recsys-inference-api.api-serving.svc.cluster.local
+  allowedOrigins: http://kagent-ui.kagent.svc.cluster.local
+  allowedHosts: localhost:*,127.0.0.1:*,[::1]:*,recsys-recommendation-mcp.kagent.svc.cluster.local:8080
+  requestTimeoutSeconds: "7"
+  totalDeadlineSeconds: "15"
+  downstreamMaxConnections: "50"
+  downstreamMaxKeepaliveConnections: "20"
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: "1", memory: 512Mi}
+nodeSelector: {}
+tolerations: []
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  pollingInterval: 15
+  cooldownPeriod: 120
+  serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
+  requestRateTarget: "1"
+  scaleDownStabilizationSeconds: 60
+  fallback: {failureThreshold: 3, replicas: 1}
+observability: {serviceMonitor: {enabled: true, interval: 15s}}
+networkPolicy:
+  enabled: true
+  apiServingNamespace: api-serving
+  observabilityNamespace: observability

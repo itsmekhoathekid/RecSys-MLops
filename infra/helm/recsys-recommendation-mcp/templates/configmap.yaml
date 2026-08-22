@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }}}
+data:
+  INFERENCE_API_URL: {{ .Values.config.inferenceApiUrl | quote }}
+  MCP_ALLOWED_ORIGINS: {{ .Values.config.allowedOrigins | quote }}
+  MCP_ALLOWED_HOSTS: {{ .Values.config.allowedHosts | quote }}
+  INFERENCE_REQUEST_TIMEOUT_SECONDS: {{ .Values.config.requestTimeoutSeconds | quote }}
+  INFERENCE_TOTAL_DEADLINE_SECONDS: {{ .Values.config.totalDeadlineSeconds | quote }}
+  DOWNSTREAM_MAX_CONNECTIONS: {{ .Values.config.downstreamMaxConnections | quote }}
+  DOWNSTREAM_MAX_KEEPALIVE_CONNECTIONS: {{ .Values.config.downstreamMaxKeepaliveConnections | quote }}
+  RECSYS_IMAGE_REFERENCE: {{ .Values.image | quote }}

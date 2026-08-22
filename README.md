@@ -355,6 +355,7 @@ Source: tab **`rubic final-coursework (final -llm)`**.
 | [Deploy Agent Registry](<docs/submission/rubric-final-coursework-(final-llm)/agent_registry.md>) | Vault-backed Agent Registry `0.4.0`, persistent pgvector, namespace-scoped kagent deployment RBAC, and live UI/API proof. |
 | [RAG](<docs/submission/rubric-final-coursework-(final-llm)/rag.md>) | Feast/Milvus-backed ingestion and retrieval pipeline, promoted-index serving, validation, observability, and runtime evidence. |
 | [User and Chunk Retrieval MCP Tool + Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_pull_data.md>) | FastAPI/Pydantic APIs, four-tool Streamable HTTP MCP server, SandboxAgent, KEDA WorkerPool/MCP autoscaling, registry governance, and kagent UI proof. |
+| [Recommendation MCP Tool + SandboxAgent](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation.md>) | Recommendation-only MCP facade over the inference API, isolated gVisor SandboxAgent, dedicated KEDA WorkerPool, immutable ranking, registry governance, and no context/RAG A2A dependency. |
 | Real-Time Drift Detection MCP Tool + Agent | Work in progress. |
 | Demonstrate Basic Understanding of Agents | Work in progress. |
 | Deploy a Coordinator Agent | Work in progress. |

@@ -218,3 +218,73 @@ resource "helm_release" "kagent" {
     kubernetes_secret_v1.kagent_agent_gateway,
   ]
 }
+
+# A dedicated pool keeps recommendation traffic and its KEDA lifecycle isolated
+# from the context/RAG sandbox. KEDA owns the /scale subresource; Terraform owns
+# immutable runtime/security fields and deliberately ignores live replica drift.
+resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  manifest = {
+    apiVersion = "ate.dev/v1alpha1"
+    kind       = "WorkerPool"
+    metadata = {
+      name      = "recsys-recommendation-sandbox-pool"
+      namespace = kubernetes_namespace.kagent[0].metadata[0].name
+      labels = {
+        "app.kubernetes.io/part-of" = "recsys-agentic"
+      }
+    }
+    spec = {
+      replicas      = 1
+      ateomImage    = "ghcr.io/kagent-dev/substrate/ateom-gvisor:v${var.agent_substrate_version}"
+      scaleSelector = "ate.dev/worker-pool=recsys-recommendation-sandbox-pool"
+    }
+  }
+
+  computed_fields = ["spec.replicas"]
+
+  depends_on = [helm_release.kagent]
+}
+
+resource "kubernetes_cluster_role_v1" "keda_workerpool_scaler" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  metadata {
+    name = "keda-ate-workerpool-scaler"
+  }
+
+  rule {
+    api_groups = ["ate.dev"]
+    resources  = ["workerpools"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = ["ate.dev"]
+    resources  = ["workerpools/scale"]
+    verbs      = ["get", "patch", "update"]
+  }
+}
+
+resource "kubernetes_cluster_role_binding_v1" "keda_workerpool_scaler" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  metadata {
+    name = "keda-ate-workerpool-scaler"
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role_v1.keda_workerpool_scaler[0].metadata[0].name
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = "keda-operator"
+    namespace = "keda"
+  }
+
+  depends_on = [helm_release.keda]
+}

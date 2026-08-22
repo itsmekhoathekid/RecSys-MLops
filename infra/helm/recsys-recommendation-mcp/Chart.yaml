@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-recommendation-mcp
+description: Stateless MCP facade for the existing RecSys inference API.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

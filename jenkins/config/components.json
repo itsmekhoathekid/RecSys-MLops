@@ -540,6 +540,58 @@
       "migrationPolicy": "none"
     },
     {
+      "name": "recommendation_mcp",
+      "flag": "RUN_RECOMMENDATION_MCP",
+      "label": "Recommendation MCP",
+      "ciProfile": "recommendation-agentic",
+      "changeDetection": {
+        "groups": ["python-common", "jenkins-shared-runtime"],
+        "prefixes": [
+          "apps/agentic/recsys-recommendation-mcp/",
+          "infra/helm/recsys-recommendation-mcp/",
+          "tests/integration/recommendation_agentic/",
+          "tests/unit/agentic/recommendation_mcp/"
+        ],
+        "files": [
+          "images/agentic/recsys-recommendation-mcp/Dockerfile",
+          "configs/agentic/recsys-recommendation-agent/tools-contract.json",
+          "apps/api-serving/inference-api/src/recsys_inference_api/schemas.py",
+          "jenkins/scripts/ci/agentic.sh",
+          "jenkins/scripts/deploy/agentic.sh",
+          "jenkins/scripts/test/agentic.sh",
+          "tests/contract/test_recommendation_agentic_contracts.py"
+        ]
+      },
+      "buildImages": ["recsys-recommendation-mcp"],
+      "buildArtifacts": [],
+      "verifyDependsOn": ["inference_api"],
+      "migrationPolicy": "none"
+    },
+    {
+      "name": "recommendation_agent",
+      "flag": "RUN_RECOMMENDATION_AGENT",
+      "label": "Recommendation Sandbox Agent",
+      "ciProfile": "recommendation-agentic",
+      "changeDetection": {
+        "groups": ["jenkins-shared-runtime"],
+        "prefixes": [
+          "infra/helm/recsys-recommendation-agent/",
+          "tests/e2e/recommendation_agentic/"
+        ],
+        "files": [
+          "configs/agentic/recsys-recommendation-agent/tools-contract.json",
+          "jenkins/scripts/ci/agentic.sh",
+          "jenkins/scripts/deploy/agentic.sh",
+          "jenkins/scripts/test/agentic.sh",
+          "tests/contract/test_recommendation_agentic_contracts.py"
+        ]
+      },
+      "buildImages": [],
+      "buildArtifacts": [],
+      "verifyDependsOn": ["recommendation_mcp"],
+      "migrationPolicy": "none"
+    },
+    {
       "name": "inference_api",
       "flag": "RUN_INFERENCE_API",
       "label": "Inference API",

@@ -54,3 +54,45 @@ ci_context_agent() {
     tests/e2e/agentic_context
   agentic_helm_gate infra/helm/recsys-kagent-agent
 }
+
+recommendation_agentic_static_checks() {
+  local source_root="apps/agentic/recsys-recommendation-mcp/src"
+  PYTHONPATH="${source_root}" "${ci_environment}/bin/ruff" check \
+    "${source_root}" tests/unit/agentic/recommendation_mcp \
+    tests/contract/test_recommendation_agentic_contracts.py
+  PYTHONPATH="${source_root}" "${ci_environment}/bin/mypy" \
+    "${source_root}/recsys_recommendation_mcp"
+  "${ci_python}" -m compileall -q "${source_root}"
+  "${ci_environment}/bin/interrogate" \
+    --fail-under 90 \
+    --ignore-init-method \
+    --ignore-private \
+    --ignore-semiprivate \
+    --ignore-property-decorators \
+    "${source_root}/recsys_recommendation_mcp"
+}
+
+ci_recommendation_mcp() {
+  tests=(
+    tests/unit/agentic/recommendation_mcp
+    tests/contract/test_recommendation_agentic_contracts.py
+  )
+  append_integration_dir recommendation_agentic
+  cov_paths=(recsys_recommendation_mcp)
+  run_configured_component_tests \
+    "${component}" \
+    "apps/agentic/recsys-recommendation-mcp/src"
+  recommendation_agentic_static_checks
+  bash jenkins/scripts/ci/recommendation_mutation.sh "${ci_environment}"
+  agentic_helm_gate infra/helm/recsys-recommendation-mcp
+  agentic_helm_gate infra/helm/recsys-recommendation-agent
+}
+
+ci_recommendation_agent() {
+  run_plain_pytest_with_pythonpath_override \
+    "${component}" \
+    "apps/agentic/recsys-recommendation-mcp/src" \
+    tests/contract/test_recommendation_agentic_contracts.py \
+    tests/e2e/recommendation_agentic
+  agentic_helm_gate infra/helm/recsys-recommendation-agent
+}

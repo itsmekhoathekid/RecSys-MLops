@@ -20,6 +20,8 @@ run_component_verification() {
     rag_api) test_rag_api ;;
     feature_rag_mcp) test_feature_rag_mcp ;;
     context_agent) test_context_agent ;;
+    recommendation_mcp) test_recommendation_mcp ;;
+    recommendation_agent) test_recommendation_agent ;;
     online_feature_api) test_online_feature_api ;;
     inference_api) test_inference_api ;;
     kserve|kserve_model_cd) test_kserve ;;
@@ -37,6 +39,8 @@ run_component_verification() {
       test_training
       test_feature_rag_mcp
       test_context_agent
+      test_recommendation_mcp
+      test_recommendation_agent
       test_online_feature_api
       test_inference_api
       test_kserve

@@ -44,6 +44,7 @@ AGENTS.md
 .deploy-evidence/
 .vault-bootstrap/
 .hypothesis/
+mutants/
 /data_platform/
 output
 notebooks/models/

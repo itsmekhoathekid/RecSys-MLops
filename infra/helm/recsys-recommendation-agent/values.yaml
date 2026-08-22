@@ -1,0 +1,35 @@
+namespace: kagent
+mcp:
+  name: recsys-recommendation-mcp
+  url: http://recsys-recommendation-mcp.kagent.svc.cluster.local:8080/mcp
+  authSecret: recsys-recommendation-mcp-auth
+  authSecretKey: Authorization
+  timeout: 15s
+  tools: [get_personalized_recommendations]
+sandbox:
+  name: recsys-recommendation-agent-sandbox
+  workerPool: recsys-recommendation-sandbox-pool
+  modelConfig: default-model-config
+  modelConfigRevision: recommendation-v1
+  imageRegistry: ""
+  systemMessage: |
+    You are the RecSys recommendation presentation agent. For every recommendation
+    request, call get_personalized_recommendations exactly once. Do not call any
+    agent, context service, RAG tool, or feature tool. Preserve the returned item
+    order, item_id, score, model_version, A/B variant, and experiment metadata.
+    Never rerank with the language model. Empty items is a valid empty result.
+    If the service is unavailable, say so and do not invent recommendations.
+    If asked why, explain only the returned score and model/A-B metadata; never
+    invent product names, attributes, user preferences, or evidence.
+  allowedDomains:
+    - recsys-recommendation-mcp.kagent.svc.cluster.local
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  pollingInterval: 15
+  cooldownPeriod: 120
+  serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
+  cpuTargetMicrocores: "120"
+  scaleDownStabilizationSeconds: 60
+  fallback: {failureThreshold: 3, replicas: 1}

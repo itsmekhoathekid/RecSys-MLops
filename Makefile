@@ -34,6 +34,11 @@ help:
 	@echo "  make agentic-smoke                Run MCP and regular/sandbox A2A smoke tests"
 	@echo "  make agentic-autoscale-test       Run 20 RPS MCP scale/fallback validation"
 	@echo "  make agentic-registry-smoke       Verify published Registry versions"
+	@echo "  make test-recommendation-agentic  Run recommendation MCP/Agent tests"
+	@echo "  make helm-recommendation-agentic  Lint/render recommendation charts"
+	@echo "  make recommendation-agentic-smoke Validate deployed recommendation runtime"
+	@echo "  make recommendation-agentic-autoscale Prove MCP and WorkerPool 1 -> 3"
+	@echo "  make recommendation-agentic-registry Verify Registry Git SHA"
 	@echo "  make jenkins-full             Trigger the full production Jenkins CI/CD job"
 
 .PHONY: validate
@@ -156,3 +161,38 @@ agentic-autoscale-test:
 .PHONY: agentic-registry-smoke
 agentic-registry-smoke:
 	@bash ops/validation/agentic_context_registry_smoke.sh
+
+.PHONY: test-recommendation-agentic
+test-recommendation-agentic:
+	@uv run --project apps/agentic/recsys-recommendation-mcp pytest \
+	  tests/unit/agentic/recommendation_mcp \
+	  tests/integration/recommendation_agentic \
+	  tests/contract/test_recommendation_agentic_contracts.py \
+	  tests/e2e/recommendation_agentic -q
+
+.PHONY: helm-recommendation-agentic
+helm-recommendation-agentic:
+	@helm lint infra/helm/recsys-recommendation-mcp
+	@helm template validation infra/helm/recsys-recommendation-mcp >/dev/null
+	@helm lint infra/helm/recsys-recommendation-agent
+	@helm template validation infra/helm/recsys-recommendation-agent >/dev/null
+
+.PHONY: recommendation-agentic-preflight
+recommendation-agentic-preflight:
+	@bash -c 'source jenkins/scripts/lib/common.sh; source jenkins/scripts/deploy/agentic.sh; timeout=10m; recommendation_agentic_preflight true'
+
+.PHONY: recommendation-agentic-smoke
+recommendation-agentic-smoke:
+	@bash ops/validation/recommendation_agentic_smoke.sh
+
+.PHONY: recommendation-agentic-autoscale
+recommendation-agentic-autoscale:
+	@bash ops/validation/recommendation_agentic_autoscale.sh all
+
+.PHONY: recommendation-agentic-registry
+recommendation-agentic-registry:
+	@bash ops/validation/recommendation_agentic_registry_smoke.sh
+
+.PHONY: recommendation-agentic-latency
+recommendation-agentic-latency:
+	@bash ops/validation/recommendation_agentic_latency.sh

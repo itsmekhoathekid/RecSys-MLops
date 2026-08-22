@@ -48,7 +48,7 @@ verify_deployed_component() {
     online_feature_api|inference_api|rag_api)
       namespace="${API_NAMESPACE:-api-serving}"
       ;;
-    feature_rag_mcp|context_agent)
+    feature_rag_mcp|context_agent|recommendation_mcp|recommendation_agent)
       namespace="${KAGENT_NAMESPACE:-kagent}"
       ;;
     kserve|kserve_model_cd)

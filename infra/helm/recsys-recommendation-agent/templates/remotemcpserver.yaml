@@ -1,0 +1,18 @@
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: {{ .Values.mcp.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "recsys-recommendation-agent.labels" . | nindent 4 }}
+spec:
+  description: Authenticated recommendation-only MCP facade for recsys-inference-api.
+  protocol: STREAMABLE_HTTP
+  url: {{ .Values.mcp.url | quote }}
+  timeout: {{ .Values.mcp.timeout }}
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: {{ .Values.mcp.authSecret }}
+        key: {{ .Values.mcp.authSecretKey }}

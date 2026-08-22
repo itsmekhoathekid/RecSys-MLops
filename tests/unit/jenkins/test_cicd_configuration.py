@@ -38,6 +38,8 @@ EXPECTED_LABELS = [
     "Online Feature API",
     "Feature RAG MCP",
     "RecSys Context Agent",
+    "Recommendation MCP",
+    "Recommendation Sandbox Agent",
     "Inference API",
     "KServe Inference Engine",
     "Progressive Model Rollout",
@@ -105,6 +107,30 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     ]
     assert units["feature-rag-mcp-registry"]["kind"] == "jenkins-action"
     assert units["context-agent-registry"]["kind"] == "jenkins-action"
+
+    assert components["recommendation_mcp"]["buildImages"] == [
+        "recsys-recommendation-mcp"
+    ]
+    assert components["recommendation_mcp"]["verifyDependsOn"] == [
+        "inference_api"
+    ]
+    assert components["recommendation_agent"]["buildImages"] == []
+    assert components["recommendation_agent"]["verifyDependsOn"] == [
+        "recommendation_mcp"
+    ]
+    assert "context_agent" not in components["recommendation_agent"]["verifyDependsOn"]
+    assert units["recommendation-mcp"]["dependsOn"] == ["inference-api"]
+    assert units["recommendation-agent"]["dependsOn"] == [
+        "recommendation-mcp"
+    ]
+    assert units["recommendation-mcp-registry"]["dependsOn"] == [
+        "recommendation-mcp",
+        "recommendation-agent",
+    ]
+    assert units["recommendation-agent-registry"]["dependsOn"] == [
+        "recommendation-agent",
+        "recommendation-mcp-registry",
+    ]
 
     deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
         encoding="utf-8"
@@ -688,6 +714,7 @@ def test_component_ci_profiles_use_repo_locks():
         "inference-api",
         "rag-api",
         "agentic",
+        "recommendation-agentic",
         "demo",
         "analytics",
     }

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contractVersion": "1.0.0",
+  "server": "recsys-recommendation-mcp",
+  "tools": [
+    {
+      "name": "get_personalized_recommendations",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_id": {"type": "integer", "minimum": 1},
+          "candidate_item_ids": {
+            "anyOf": [
+              {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 500,
+                "items": {"type": "integer"}
+              },
+              {"type": "null"}
+            ],
+            "default": null
+          },
+          "top_k": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10}
+        },
+        "required": ["user_id"]
+      }
+    }
+  ]
+}

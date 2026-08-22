@@ -45,6 +45,11 @@ externalSecrets:
     namespace: kagent
     secretName: recsys-feature-rag-mcp-auth
     vaultPath: feature-rag-mcp
+  recommendationMcp:
+    enabled: false
+    namespace: kagent
+    secretName: recsys-recommendation-mcp-auth
+    vaultPath: recommendation-mcp
   dataPlatform:
     namespace: recsys-dataflow
     secretName: recsys-data-platform-secret

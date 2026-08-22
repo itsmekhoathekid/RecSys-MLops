@@ -120,6 +120,153 @@ assert {
   fi
 }
 
+recommendation_agentic_preflight() {
+  local include_mcp="${1:-false}"
+  local crd endpoint_ready=false
+  for crd in sandboxagents.kagent.dev remotemcpservers.kagent.dev \
+    workerpools.ate.dev scaledobjects.keda.sh; do
+    kubectl get crd "${crd}" >/dev/null
+  done
+  kubectl get --raw \
+    /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-recommendation-sandbox-pool/scale \
+    >/dev/null
+  kubectl auth can-i get workerpools.ate.dev/scale \
+    --as=system:serviceaccount:keda:keda-operator -n kagent | grep -Fx yes
+  kubectl auth can-i update workerpools.ate.dev/scale \
+    --as=system:serviceaccount:keda:keda-operator -n kagent | grep -Fx yes
+  kubectl -n kagent get workerpool recsys-recommendation-sandbox-pool \
+    -o jsonpath='{.spec.scaleSelector}' \
+    | grep -Fx 'ate.dev/worker-pool=recsys-recommendation-sandbox-pool'
+  kubectl -n kagent wait --for=condition=Ready \
+    externalsecret/recsys-recommendation-mcp-auth --timeout="${timeout}"
+  kubectl -n kagent get secret recsys-recommendation-mcp-auth >/dev/null
+  kubectl -n api-serving get service recsys-inference-api >/dev/null
+  for _ in $(seq 1 60); do
+    if kubectl -n api-serving get endpointslice \
+      -l kubernetes.io/service-name=recsys-inference-api \
+      -o jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}' \
+      | grep -Eq '.+'; then
+      endpoint_ready=true
+      break
+    fi
+    sleep 2
+  done
+  [[ "${endpoint_ready}" == "true" ]] || {
+    recsys_error "recsys-inference-api has no Ready EndpointSlice address"
+    return 1
+  }
+  if [[ "${include_mcp}" == "true" ]]; then
+    kubectl -n kagent get service recsys-recommendation-mcp >/dev/null
+  fi
+}
+
+recommendation_mcp_protocol_smoke() {
+  kubectl -n kagent rollout status deployment/recsys-recommendation-mcp \
+    --timeout="${timeout}"
+  kubectl -n kagent exec deployment/recsys-recommendation-mcp -c mcp -- python -c '
+import asyncio
+import os
+import httpx
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+
+async def main():
+    headers = {"Authorization": "Bearer " + os.environ["MCP_AUTH_TOKEN"]}
+    async with httpx.AsyncClient(headers=headers) as http_client:
+        async with streamable_http_client(
+            "http://127.0.0.1:8080/mcp", http_client=http_client
+        ) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                assert [tool.name for tool in tools.tools] == [
+                    "get_personalized_recommendations"
+                ]
+                result = await session.call_tool(
+                    "get_personalized_recommendations",
+                    {"user_id": int(os.getenv("RECOMMENDATION_SMOKE_USER_ID", "1001")), "top_k": 1},
+                )
+                assert not result.isError
+
+asyncio.run(main())
+'
+}
+
+recommendation_a2a_smoke() {
+  local agent_name="recsys-recommendation-agent-sandbox"
+  local user_id="${RECOMMENDATION_SMOKE_USER_ID:-1001}"
+  local local_port="${RECOMMENDATION_A2A_LOCAL_PORT:-18085}"
+  local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
+  local log_file="reports/agentic/${agent_name}-port-forward.log"
+  local output_file="reports/agentic/${agent_name}-a2a.json"
+  local pid ready=false status=1
+  mkdir -p reports/agentic
+  kubectl -n kagent port-forward service/kagent-controller \
+    "${local_port}:8083" >"${log_file}" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 30); do
+    if curl -fsS "${base_url}/.well-known/agent-card.json" >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${ready}" == "true" ]]; then
+    python3 - "${base_url}/" "${user_id}" "${output_file}" <<'PY' && status=0
+import json
+import sys
+import urllib.request
+import uuid
+
+url, user_id, output_path = sys.argv[1:]
+request_id = str(uuid.uuid4())
+payload = {
+    "jsonrpc": "2.0",
+    "id": request_id,
+    "method": "message/send",
+    "params": {"message": {
+        "messageId": request_id,
+        "contextId": request_id,
+        "role": "user",
+        "parts": [{"kind": "text", "text": (
+            "Recommend top 3 items for user_id=" + user_id
+            + ". Call get_personalized_recommendations exactly once and preserve ranking."
+        )}],
+    }},
+}
+request = urllib.request.Request(
+    url, data=json.dumps(payload).encode(),
+    headers={"Content-Type": "application/json"}, method="POST",
+)
+with urllib.request.urlopen(request, timeout=180) as response:
+    body = json.load(response)
+with open(output_path, "w", encoding="utf-8") as stream:
+    json.dump(body, stream, indent=2, sort_keys=True)
+if body.get("error"):
+    raise SystemExit(body["error"])
+result = body.get("result", {})
+if result.get("status", {}).get("state") != "completed":
+    raise SystemExit("recommendation agent did not complete")
+calls = []
+responses = []
+for message in result.get("history", []):
+    for part in message.get("parts", []):
+        metadata, data = part.get("metadata", {}), part.get("data", {})
+        if metadata.get("adk_type") == "function_call":
+            calls.append(data.get("name"))
+        elif metadata.get("adk_type") == "function_response":
+            responses.append((data.get("name"), data.get("response")))
+assert calls == ["get_personalized_recommendations"], calls
+assert len(responses) == 1 and responses[0][0] == calls[0], responses
+serialized = json.dumps(responses[0][1], sort_keys=True)
+assert user_id in serialized and "model_version" in serialized and "items" in serialized
+PY
+  fi
+  kill "${pid}" >/dev/null 2>&1 || true
+  wait "${pid}" >/dev/null 2>&1 || true
+  return "${status}"
+}
+
 agentic_mcp_protocol_smoke() {
   kubectl -n kagent rollout status deployment/recsys-feature-rag-mcp \
     --timeout="${timeout}"
@@ -469,6 +616,39 @@ elif kind == "agent":
             }],
         },
     }
+elif kind == "recommendation-mcp":
+    metadata["labels"]["app.kubernetes.io/part-of"] = "recsys-recommendation-agentic"
+    resource = {
+        "apiVersion": "ar.dev/v1alpha1",
+        "kind": "MCPServer",
+        "metadata": metadata,
+        "spec": {
+            "title": "RecSys Recommendation MCP",
+            "description": "Recommendation-only facade for recsys-inference-api",
+            "remote": {
+                "type": "streamable-http",
+                "url": "http://recsys-recommendation-mcp.kagent.svc.cluster.local:8080/mcp",
+            },
+        },
+    }
+elif kind == "recommendation-agent":
+    metadata["labels"].update({
+        "app.kubernetes.io/part-of": "recsys-recommendation-agentic",
+        "recsys.dev/variant": "sandbox",
+    })
+    resource = {
+        "apiVersion": "ar.dev/v1alpha1",
+        "kind": "Agent",
+        "metadata": metadata,
+        "spec": {
+            "title": "RecSys Recommendation Agent (sandbox)",
+            "description": "gVisor agent that presents inference rankings without reranking",
+            "mcpServers": [{
+                "kind": "MCPServer", "namespace": namespace,
+                "name": "recsys-recommendation-mcp", "tag": tag,
+            }],
+        },
+    }
 else:
     raise SystemExit(f"unsupported registry resource kind: {kind}")
 with open(path, "w", encoding="utf-8") as stream:
@@ -643,4 +823,67 @@ PY
   agentic_write_context_registry_evidence \
     .ci-deploy/context-agent-registry.json "${version}" "${commit}" \
     "${registry_name}@${tag}" "${legacy_backup}" "${legacy_present}"
+}
+
+publish_recommendation_mcp_registry() {
+  local version tag commit git_url registry_name manifest
+  agentic_assert_registry_publish_branch || return 0
+  recommendation_agentic_preflight true
+  recommendation_mcp_protocol_smoke
+  agentic_registry_open_tunnel
+  commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
+  version="$(agentic_registry_version)"
+  tag="$(agentic_registry_tag "${version}")"
+  git_url="$(agentic_registry_git_url)"
+  registry_name="recsys/recsys-recommendation-mcp"
+  manifest="$(mktemp)"
+  agentic_write_registry_manifest "${manifest}" recommendation-mcp \
+    "${registry_name}" "${version}" "${tag}" "${commit}" "${git_url}"
+  if agentic_registry_publish_required mcp "${registry_name}" "${tag}" \
+    "${version}" "${commit}"; then
+    arctl apply -f "${manifest}"
+  else
+    [[ "$?" == "1" ]]
+  fi
+  rm -f "${manifest}"
+  arctl get mcp "${registry_name}" --tag "${tag}" -o json >/dev/null
+  agentic_write_registry_evidence \
+    .ci-deploy/recommendation-mcp-registry.json "${version}" "${commit}" \
+    "${registry_name}@${tag}"
+}
+
+publish_recommendation_agent_registry() {
+  local version tag commit git_url registry_name manifest
+  agentic_assert_registry_publish_branch || return 0
+  recommendation_agentic_preflight true
+  kubectl -n kagent wait --for=condition=Ready \
+    sandboxagent/recsys-recommendation-agent-sandbox --timeout="${timeout}"
+  kubectl -n kagent rollout status \
+    deployment/recsys-recommendation-sandbox-pool-deployment --timeout="${timeout}"
+  recommendation_a2a_smoke
+  agentic_registry_open_tunnel
+  commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
+  version="$(agentic_registry_version)"
+  tag="$(agentic_registry_tag "${version}")"
+  git_url="$(agentic_registry_git_url)"
+  registry_name="recsys/recsys-recommendation-agent-sandbox"
+  arctl get mcp recsys/recsys-recommendation-mcp \
+    --tag "${tag}" -o json >/dev/null || {
+    recsys_error "matching recommendation MCP registry version is required"
+    return 1
+  }
+  manifest="$(mktemp)"
+  agentic_write_registry_manifest "${manifest}" recommendation-agent \
+    "${registry_name}" "${version}" "${tag}" "${commit}" "${git_url}"
+  if agentic_registry_publish_required agent "${registry_name}" "${tag}" \
+    "${version}" "${commit}"; then
+    arctl apply -f "${manifest}"
+  else
+    [[ "$?" == "1" ]]
+  fi
+  rm -f "${manifest}"
+  arctl get agent "${registry_name}" --tag "${tag}" -o json >/dev/null
+  agentic_write_registry_evidence \
+    .ci-deploy/recommendation-agent-registry.json "${version}" "${commit}" \
+    "${registry_name}@${tag}"
 }

@@ -12,7 +12,7 @@ kms_keyring="${VAULT_KMS_KEYRING:-recsys-mlops-vault}"
 kms_key="${VAULT_KMS_KEY:-vault-unseal}"
 gcp_project="${VAULT_GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 
-service_secret_groups=(data-platform mlflow runtime kserve-minio gateway analytics jenkins-runtime agent-gateway agentregistry feature-rag-mcp)
+service_secret_groups=(data-platform mlflow runtime kserve-minio gateway analytics jenkins-runtime agent-gateway agentregistry feature-rag-mcp recommendation-mcp)
 
 for required_command in gcloud jq kubectl openssl; do
   if ! command -v "${required_command}" >/dev/null 2>&1; then
@@ -210,7 +210,7 @@ for secret_group in "${service_secret_groups[@]}"; do
       fi
       continue
     fi
-    if [[ "${secret_group}" == "feature-rag-mcp" ]]; then
+    if [[ "${secret_group}" == "feature-rag-mcp" || "${secret_group}" == "recommendation-mcp" ]]; then
       if vault_exec "${active_token}" kv metadata get -mount=recsys "${secret_group}" >/dev/null 2>&1; then
         echo "  ${secret_group}: legacy source absent; keeping the existing Vault version"
       else

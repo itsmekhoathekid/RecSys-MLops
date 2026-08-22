@@ -192,6 +192,7 @@ spec:
               - cluster.local/ns/api-serving/sa/default
               - cluster.local/ns/recsys-dataflow/sa/default
               - cluster.local/ns/kagent/sa/recsys-feature-rag-mcp
+              - cluster.local/ns/kagent/sa/recsys-recommendation-mcp
       to:
         - operation:
             ports: ["80", "8080"]

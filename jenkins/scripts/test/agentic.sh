@@ -38,6 +38,65 @@ assert payload["scaleTargetRef"] == {
     "kind": "WorkerPool",
     "name": "recsys-context-sandbox-pool",
 }
+
+test_recommendation_mcp() {
+  local expected_image
+  expected_image="$(resolve_release_image recsys-recommendation-mcp)"
+  component_test_wait_deployment kagent recsys-recommendation-mcp
+  kubectl -n kagent exec deployment/recsys-recommendation-mcp -c mcp -- \
+    python -c '
+import json
+import sys
+import urllib.request
+
+for path in ("/healthz", "/ready", "/version", "/metrics"):
+    with urllib.request.urlopen("http://127.0.0.1:8080" + path, timeout=15) as response:
+        assert response.status == 200
+        if path == "/version":
+            payload = json.load(response)
+            assert payload["image_reference"] == sys.argv[1]
+            assert payload["downstream"] == "recsys-inference-api"
+' "${expected_image}"
+  recommendation_mcp_protocol_smoke
+  kubectl -n kagent get scaledobject recsys-recommendation-mcp -o json \
+    | python3 -c '
+import json, sys
+spec = json.load(sys.stdin)["spec"]
+assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
+assert spec["fallback"]["replicas"] == 1
+assert spec["scaleTargetRef"] == {
+    "apiVersion": "apps/v1", "kind": "Deployment",
+    "name": "recsys-recommendation-mcp",
+}
+'
+}
+
+test_recommendation_agent() {
+  kubectl -n kagent wait --for=condition=Ready \
+    sandboxagent/recsys-recommendation-agent-sandbox \
+    --timeout="${COMPONENT_TEST_TIMEOUT:-600s}"
+  component_test_wait_deployment \
+    kagent recsys-recommendation-sandbox-pool-deployment
+  kubectl -n kagent get scaledobject recsys-recommendation-sandbox-pool -o json \
+    | python3 -c '
+import json, sys
+spec = json.load(sys.stdin)["spec"]
+assert spec["scaleTargetRef"] == {
+    "apiVersion": "ate.dev/v1alpha1", "kind": "WorkerPool",
+    "name": "recsys-recommendation-sandbox-pool",
+}
+assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
+assert spec["fallback"]["replicas"] == 1
+'
+  kubectl -n kagent get sandboxagent recsys-recommendation-agent-sandbox -o yaml \
+    | grep -Fq recsys-recommendation-mcp
+  if kubectl -n kagent get sandboxagent recsys-recommendation-agent-sandbox -o yaml \
+    | grep -Eq 'recsys-context-agent|recsys-feature-rag-mcp'; then
+    recsys_error "recommendation agent contains a forbidden context/RAG dependency"
+    return 1
+  fi
+  recommendation_a2a_smoke
+}
 assert (payload["minReplicaCount"], payload["maxReplicaCount"]) == (2, 6)
 fallback = payload["fallback"]
 assert (fallback["failureThreshold"], fallback["replicas"]) == (3, 2)
