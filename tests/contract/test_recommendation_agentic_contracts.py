@@ -156,3 +156,29 @@ def test_jenkins_preflight_verifies_keda_rbac_without_impersonated_ssar() -> Non
     assert "clusterrolebinding keda-ate-workerpool-scaler" in recommendation_preflight
     assert '"workerpools/scale"' in recommendation_preflight
     assert '{"get", "patch", "update"}' in recommendation_preflight
+
+
+def test_autoscale_and_smoke_proof_scripts_are_portable_and_bounded() -> None:
+    paths = [
+        ROOT / "ops/validation/recommendation_agentic_autoscale.sh",
+        ROOT / "ops/validation/recommendation_agentic_smoke.sh",
+    ]
+    for path in paths:
+        subprocess.run(
+            ["bash", "-n", str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    autoscale = paths[0].read_text(encoding="utf-8")
+    assert "%(" not in autoscale
+    assert 'wait "${mcp_load_pid}"' in autoscale
+    assert 'wait "${worker_load_pid}"' in autoscale
+    assert "RECOMMENDATION_MCP_LOAD_CONCURRENCY" in autoscale
+    assert "ThreadPoolExecutor(max_workers=4)" in autoscale
+
+    smoke = paths[1].read_text(encoding="utf-8")
+    assert "remotemcpserver/recsys-recommendation-mcp" in smoke
+    assert "sandboxagent/recsys-recommendation-agent-sandbox" in smoke
+    assert "workerpool/recsys-recommendation-sandbox-pool" in smoke

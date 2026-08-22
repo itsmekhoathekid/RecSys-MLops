@@ -12,9 +12,10 @@ kubectl -n "${namespace}" rollout status \
   deployment/recsys-recommendation-sandbox-pool-deployment --timeout="${timeout}"
 kubectl -n "${namespace}" get deployment recsys-recommendation-mcp \
   recsys-recommendation-sandbox-pool-deployment -o wide
-kubectl -n "${namespace}" get remotemcpserver recsys-recommendation-mcp \
-  sandboxagent recsys-recommendation-agent-sandbox \
-  workerpool recsys-recommendation-sandbox-pool
+kubectl -n "${namespace}" get \
+  remotemcpserver/recsys-recommendation-mcp \
+  sandboxagent/recsys-recommendation-agent-sandbox \
+  workerpool/recsys-recommendation-sandbox-pool
 kubectl -n "${namespace}" get scaledobject recsys-recommendation-mcp \
   recsys-recommendation-sandbox-pool
 
