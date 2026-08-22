@@ -143,3 +143,16 @@ def test_terraform_owns_dedicated_pool_and_ignores_keda_replica_drift() -> None:
     assert 'scaleSelector = "ate.dev/worker-pool=recsys-recommendation-sandbox-pool"' in terraform
     assert 'name      = "keda-operator"' in terraform
     assert 'resources  = ["workerpools/scale"]' in terraform
+
+
+def test_jenkins_preflight_verifies_keda_rbac_without_impersonated_ssar() -> None:
+    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(encoding="utf-8")
+    recommendation_preflight = deploy.split(
+        "recommendation_agentic_preflight()", maxsplit=1
+    )[1].split("recommendation_mcp_protocol_smoke()", maxsplit=1)[0]
+
+    assert "kubectl auth can-i" not in recommendation_preflight
+    assert "clusterrole keda-ate-workerpool-scaler" in recommendation_preflight
+    assert "clusterrolebinding keda-ate-workerpool-scaler" in recommendation_preflight
+    assert '"workerpools/scale"' in recommendation_preflight
+    assert '{"get", "patch", "update"}' in recommendation_preflight

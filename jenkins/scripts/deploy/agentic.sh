@@ -130,10 +130,30 @@ recommendation_agentic_preflight() {
   kubectl get --raw \
     /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-recommendation-sandbox-pool/scale \
     >/dev/null
-  kubectl auth can-i get workerpools.ate.dev/scale \
-    --as=system:serviceaccount:keda:keda-operator -n kagent | grep -Fx yes
-  kubectl auth can-i update workerpools.ate.dev/scale \
-    --as=system:serviceaccount:keda:keda-operator -n kagent | grep -Fx yes
+  kubectl get clusterrole keda-ate-workerpool-scaler -o json | python3 -c '
+import json, sys
+rules = json.load(sys.stdin)["rules"]
+assert any(
+    "ate.dev" in rule.get("apiGroups", [])
+    and "workerpools/scale" in rule.get("resources", [])
+    and {"get", "patch", "update"}.issubset(rule.get("verbs", []))
+    for rule in rules
+)
+'
+  kubectl get clusterrolebinding keda-ate-workerpool-scaler -o json | python3 -c '
+import json, sys
+binding = json.load(sys.stdin)
+assert binding["roleRef"] == {
+    "apiGroup": "rbac.authorization.k8s.io",
+    "kind": "ClusterRole",
+    "name": "keda-ate-workerpool-scaler",
+}
+assert {
+    "kind": "ServiceAccount",
+    "name": "keda-operator",
+    "namespace": "keda",
+} in binding["subjects"]
+'
   kubectl -n kagent get workerpool recsys-recommendation-sandbox-pool \
     -o jsonpath='{.spec.scaleSelector}' \
     | grep -Fx 'ate.dev/worker-pool=recsys-recommendation-sandbox-pool'
