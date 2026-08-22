@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contractVersion": "1.0.1",
+  "contractVersion": "1.0.2",
   "server": "recsys-recommendation-mcp",
   "tools": [
     {
