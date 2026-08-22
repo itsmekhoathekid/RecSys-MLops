@@ -30,10 +30,9 @@ export FEAST_POSTGRES_SSLMODE=${FEAST_POSTGRES_SSLMODE:-disable}
 export FEAST_SQL_REGISTRY_URL="$(python -m recsys_feature_store_runtime.sql_registry_state url)"
 """.strip()
 
-FEAST_MATERIALIZE_INCREMENTAL_COMMAND = f"""
+FEAST_MATERIALIZE_COMMAND = f"""
 {FEAST_ENV_EXPORTS}
-feast -c /opt/recsys/apps/data-platform/feature-store/feature_repo \
-  materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)
+python -m feature_store.materialize_online
 """.strip()
 
 VERIFY_REDIS_ONLINE_STORE_COMMAND = (
@@ -57,7 +56,7 @@ if DAG is not None:
         materialize_incremental = pod_task(
             "feast_materialize_incremental",
             FEATURE_STORE_IMAGE,
-            FEAST_MATERIALIZE_INCREMENTAL_COMMAND,
+            FEAST_MATERIALIZE_COMMAND,
         )
         validate_online_store = pod_task(
             "verify_redis_online_store_updated",
@@ -68,7 +67,8 @@ if DAG is not None:
             "publish_datahub_validation",
             DATA_INGESTION_IMAGE,
             datahub_validation_command("DP3", (REPORT_URI,), REDIS_DATASET_KEYS),
-            trigger_rule="all_done",
+            trigger_rule="all_success",
+            retries=2,
         )
 
         materialize_incremental >> validate_online_store >> publish_datahub_validation

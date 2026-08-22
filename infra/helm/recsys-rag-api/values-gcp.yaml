@@ -1,6 +1,12 @@
-nodeSelector:
-  recsys.ai/pool: cpu-services
-tolerations: []
+# The quota-capped production cluster has one CPU-services node and one
+# tainted ML-system node. Let the scheduler place RAG replicas on either node
+# instead of leaving scale-out replicas Pending when the CPU node is full.
+nodeSelector: {}
+tolerations:
+  - key: recsys.ai/workload
+    operator: Equal
+    value: ml-system
+    effect: NoSchedule
 
 # The quota-capped CPU pool cannot temporarily host two model pods. Replace the
 # old replica before scheduling the new one and reserve room for its Istio
@@ -10,5 +16,10 @@ rollout:
   maxUnavailable: 1
 resources:
   requests:
-    cpu: 300m
+    cpu: 150m
     memory: 768Mi
+
+# Production proof range: one idle replica and up to three under load.
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 3

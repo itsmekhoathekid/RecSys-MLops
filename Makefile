@@ -50,7 +50,10 @@ helm-validate:
 	@set -euo pipefail; \
 	for chart_file in infra/helm/*/Chart.yaml; do \
 	  chart_dir="$$(dirname "$${chart_file}")"; \
-	  if [[ -f "$${chart_dir}/values-gcp.yaml" ]]; then \
+	  if [[ "$${chart_dir}" == "infra/helm/recsys-rag-data" ]]; then \
+	    helm lint "$${chart_dir}" -f "$${chart_dir}/values-gcp.yaml" --set job.runId=validation; \
+	    helm template validation "$${chart_dir}" -f "$${chart_dir}/values-gcp.yaml" --set job.runId=validation >/dev/null; \
+	  elif [[ -f "$${chart_dir}/values-gcp.yaml" ]]; then \
 	    helm lint "$${chart_dir}" -f "$${chart_dir}/values-gcp.yaml"; \
 	    helm template validation "$${chart_dir}" -f "$${chart_dir}/values-gcp.yaml" >/dev/null; \
 	  elif [[ "$${chart_dir}" == "infra/helm/recsys-ci" ]]; then \

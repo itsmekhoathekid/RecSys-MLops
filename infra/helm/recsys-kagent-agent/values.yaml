@@ -33,14 +33,14 @@ sandbox:
     - recsys-feature-rag-mcp.kagent.svc.cluster.local
 autoscaling:
   enabled: true
-  minReplicas: 2
-  maxReplicas: 6
+  minReplicas: 1
+  maxReplicas: 3
   pollingInterval: 15
   cooldownPeriod: 120
   serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
   # PromQL converts cores to microcores before KEDA returns the external metric.
   # Kubernetes resource.Quantity rounds sub-millicore decimals, so keeping this
   # target as an integer preserves the production-calibrated 0.0005-core value.
-  cpuTargetMicrocores: "500"
+  cpuTargetMicrocores: "120"
   scaleDownStabilizationSeconds: 60
-  fallback: {failureThreshold: 3, replicas: 2}
+  fallback: {failureThreshold: 3, replicas: 1}

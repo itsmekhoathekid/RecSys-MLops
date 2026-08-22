@@ -255,6 +255,12 @@ a2a_pf_pid=""
 
 original_address="$(kubectl -n "${namespace}" get scaledobject recsys-feature-rag-mcp \
   -o jsonpath='{.spec.triggers[0].metadata.serverAddress}')"
+mcp_fallback_replicas="$(kubectl -n "${namespace}" get scaledobject recsys-feature-rag-mcp \
+  -o jsonpath='{.spec.fallback.replicas}')"
+[[ -n "${mcp_fallback_replicas}" ]] || {
+  echo "MCP ScaledObject does not define spec.fallback.replicas." >&2
+  exit 1
+}
 restore_scaler() {
   kubectl -n "${namespace}" patch scaledobject recsys-feature-rag-mcp --type json \
     -p "[{\"op\":\"replace\",\"path\":\"/spec/triggers/0/metadata/serverAddress\",\"value\":\"${original_address}\"}]" \
@@ -270,13 +276,13 @@ for _ in $(seq 1 6); do
   sleep "${poll_seconds}"
   replicas="$(kubectl -n "${namespace}" get deployment recsys-feature-rag-mcp \
     -o jsonpath='{.status.availableReplicas}')"
-  if [[ "${replicas:-0}" == 2 ]]; then
+  if [[ "${replicas:-0}" == "${mcp_fallback_replicas}" ]]; then
     fallback=true
     break
   fi
 done
 [[ "${fallback}" == "true" ]] || {
-  echo "KEDA fallback did not converge to 2 replicas." >&2
+  echo "KEDA fallback did not converge to ${mcp_fallback_replicas} replicas." >&2
   exit 1
 }
 restore_scaler
@@ -284,6 +290,12 @@ trap cleanup EXIT
 
 original_sandbox_address="$(kubectl -n "${namespace}" get scaledobject recsys-context-sandbox-pool \
   -o jsonpath='{.spec.triggers[0].metadata.serverAddress}')"
+sandbox_fallback_replicas="$(kubectl -n "${namespace}" get scaledobject recsys-context-sandbox-pool \
+  -o jsonpath='{.spec.fallback.replicas}')"
+[[ -n "${sandbox_fallback_replicas}" ]] || {
+  echo "Sandbox WorkerPool ScaledObject does not define spec.fallback.replicas." >&2
+  exit 1
+}
 restore_sandbox_scaler() {
   kubectl -n "${namespace}" patch scaledobject recsys-context-sandbox-pool --type json \
     -p "[{\"op\":\"replace\",\"path\":\"/spec/triggers/0/metadata/serverAddress\",\"value\":\"${original_sandbox_address}\"}]" \
@@ -298,13 +310,13 @@ for _ in $(seq 1 6); do
   sleep "${poll_seconds}"
   replicas="$(kubectl -n "${namespace}" get deployment recsys-context-sandbox-pool-deployment \
     -o jsonpath='{.status.availableReplicas}')"
-  if [[ "${replicas:-0}" == 2 ]]; then
+  if [[ "${replicas:-0}" == "${sandbox_fallback_replicas}" ]]; then
     sandbox_fallback=true
     break
   fi
 done
 [[ "${sandbox_fallback}" == "true" ]] || {
-  echo "Sandbox WorkerPool KEDA fallback did not converge to 2 replicas." >&2
+  echo "Sandbox WorkerPool KEDA fallback did not converge to ${sandbox_fallback_replicas} replicas." >&2
   exit 1
 }
 restore_sandbox_scaler

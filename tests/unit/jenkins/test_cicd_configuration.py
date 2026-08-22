@@ -327,10 +327,13 @@ def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
     assert 'port-forward "pod/${ready_pod}"' in tunnel
     assert 'rollout status deployment/recsys-rag-api' in tunnel
     assert "for _ in $(seq 1 30)" in tunnel
-    assert "recsys.ai/pool: cpu-services" in gcp_values
+    assert "nodeSelector: {}" in gcp_values
+    assert "recsys.ai/pool: cpu-services" not in gcp_values
+    assert "key: recsys.ai/workload" in gcp_values
+    assert "value: ml-system" in gcp_values
     assert "maxSurge: 0" in gcp_values
     assert "maxUnavailable: 1" in gcp_values
-    assert "cpu: 300m" in gcp_values
+    assert "cpu: 150m" in gcp_values
     assert "memory: 768Mi" in gcp_values
 
 

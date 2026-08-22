@@ -72,7 +72,8 @@ if DAG is not None:
             "publish_datahub_validation",
             DATA_INGESTION_IMAGE,
             datahub_validation_command("RAG_ITEMS", (REPORT_URI,), RAG_DATASET_KEYS),
-            trigger_rule="all_done",
+            trigger_rule="all_success",
+            retries=2,
         )
 
         (

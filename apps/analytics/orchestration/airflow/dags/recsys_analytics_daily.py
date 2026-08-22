@@ -24,6 +24,7 @@ DATA_INGESTION_IMAGE = os.getenv(
     "DATA_INGESTION_IMAGE",
     "registry.example.invalid/recsys/recsys-data-ingestion:required",
 )
+ANALYTICS_NODE_SELECTOR = os.getenv("ANALYTICS_NODE_SELECTOR", "")
 REPORT_URI = (
     "s3://recsys-lakehouse/governance-validation/ANALYTICS/{{ ts_nodash }}/staging.json"
 )
@@ -62,6 +63,42 @@ def analytics_env_from():
     ]
 
 
+def parse_node_selector(value: str) -> dict[str, str]:
+    selectors: dict[str, str] = {}
+    for item in (value or "").split(","):
+        if not item.strip():
+            continue
+        key, _, raw = item.partition("=")
+        if not key.strip() or not raw.strip():
+            raise ValueError(f"Invalid node selector item: {item}")
+        selectors[key.strip()] = raw.strip()
+    return selectors
+
+
+def shared_task_tolerations():
+    if k8s is None:
+        return []
+    return [
+        k8s.V1Toleration(
+            key="recsys.ai/workload",
+            operator="Equal",
+            value="ml-system",
+            effect="NoSchedule",
+        )
+    ]
+
+
+def task_resources():
+    if k8s is None:
+        return None
+    return k8s.V1ResourceRequirements(
+        requests={
+            "cpu": os.getenv("AIRFLOW_TASK_REQUEST_CPU", "50m"),
+            "memory": os.getenv("AIRFLOW_TASK_REQUEST_MEMORY", "256Mi"),
+        }
+    )
+
+
 def analytics_task(
     task_id: str,
     image: str,
@@ -79,7 +116,9 @@ def analytics_task(
         arguments=arguments,
         env_from=analytics_env_from(),
         annotations={"sidecar.istio.io/inject": "false"},
-        node_selector={"recsys.ai/pool": "cpu-services"},
+        node_selector=parse_node_selector(ANALYTICS_NODE_SELECTOR),
+        tolerations=shared_task_tolerations(),
+        container_resources=task_resources(),
         image_pull_policy=os.getenv("ANALYTICS_IMAGE_PULL_POLICY", "IfNotPresent"),
         get_logs=True,
         # Keep failed pods for diagnosis; delete a successful pod only after the
@@ -151,6 +190,6 @@ if DAG is not None:
                 ),
                 "--strict",
             ],
-            trigger_rule="all_done",
+            trigger_rule="all_success",
         )
         sync_silver >> dbt_build >> publish_datahub_validation

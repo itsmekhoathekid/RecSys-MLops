@@ -46,9 +46,17 @@ def _without_titles(value: Any) -> Any:
     return value
 
 
-def _render(chart: str) -> list[dict[str, Any]]:
+def _render(chart: str, values: str | None = None) -> list[dict[str, Any]]:
+    command = [
+        "helm",
+        "template",
+        "contract-test",
+        str(ROOT / "infra/helm" / chart),
+    ]
+    if values is not None:
+        command.extend(["-f", str(ROOT / "infra/helm" / chart / values)])
     output = subprocess.run(
-        ["helm", "template", "contract-test", str(ROOT / "infra/helm" / chart)],
+        command,
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -144,15 +152,15 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
         "kind": "WorkerPool",
         "name": "recsys-context-sandbox-pool",
     }
-    assert sandbox_scaled["spec"]["minReplicaCount"] == 2
-    assert sandbox_scaled["spec"]["maxReplicaCount"] == 6
+    assert sandbox_scaled["spec"]["minReplicaCount"] == 1
+    assert sandbox_scaled["spec"]["maxReplicaCount"] == 3
     assert sandbox_scaled["spec"]["fallback"] == {
         "failureThreshold": 3,
-        "replicas": 2,
+        "replicas": 1,
     }
     trigger = sandbox_scaled["spec"]["triggers"][0]["metadata"]
     assert trigger["metricName"] == "recsys_context_sandbox_worker_cpu_microcores"
-    assert trigger["threshold"] == "500"
+    assert trigger["threshold"] == "120"
     assert trigger["query"].startswith("1000000 * sum(")
     assert 'container="ateom"' in trigger["query"]
     assert "recsys-context-sandbox-pool-deployment-.*" in trigger["query"]
@@ -169,7 +177,41 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
     }
 
 
-def test_gcp_mcp_uses_ml_system_pool_and_sandbox_has_no_fake_scheduling_fields():
+def test_production_autoscale_ranges_fit_the_quota_capped_cluster():
+    rag_documents = _render("recsys-rag-api", "values-gcp.yaml")
+    rag_scaled = _resource(rag_documents, "ScaledObject", "recsys-rag-api")
+    assert rag_scaled["spec"]["minReplicaCount"] == 1
+    assert rag_scaled["spec"]["maxReplicaCount"] == 3
+    assert rag_scaled["spec"]["advanced"] == {
+        "horizontalPodAutoscalerConfig": {
+            "behavior": {"scaleDown": {"stabilizationWindowSeconds": 60}}
+        }
+    }
+
+    mcp_documents = _render("recsys-feature-rag-mcp", "values-gcp.yaml")
+    mcp_scaled = _resource(
+        mcp_documents, "ScaledObject", "recsys-feature-rag-mcp"
+    )
+    assert mcp_scaled["spec"]["minReplicaCount"] == 1
+    assert mcp_scaled["spec"]["maxReplicaCount"] == 3
+    assert mcp_scaled["spec"]["fallback"] == {
+        "failureThreshold": 3,
+        "replicas": 1,
+    }
+
+    agent_documents = _render("recsys-kagent-agent", "values-gcp.yaml")
+    worker_scaled = _resource(
+        agent_documents, "ScaledObject", "recsys-context-sandbox-pool"
+    )
+    assert worker_scaled["spec"]["minReplicaCount"] == 1
+    assert worker_scaled["spec"]["maxReplicaCount"] == 3
+    assert worker_scaled["spec"]["fallback"] == {
+        "failureThreshold": 3,
+        "replicas": 1,
+    }
+
+
+def test_gcp_mcp_can_use_both_node_pools_and_sandbox_has_no_fake_scheduling_fields():
     for chart, kind, name in (
         ("recsys-feature-rag-mcp", "Deployment", "recsys-feature-rag-mcp"),
     ):
@@ -190,7 +232,7 @@ def test_gcp_mcp_uses_ml_system_pool_and_sandbox_has_no_fake_scheduling_fields()
         documents = [document for document in yaml.safe_load_all(output) if document]
         resource = _resource(documents, kind, name)
         pod_spec = resource["spec"]["template"]["spec"]
-        assert pod_spec["nodeSelector"] == {"recsys.ai/pool": "ml-system"}
+        assert pod_spec["nodeSelector"] == {}
         assert pod_spec["tolerations"] == [
             {
                 "key": "recsys.ai/workload",
@@ -279,7 +321,7 @@ def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
     assert 'Authorization: ("Bearer " + $token)' in bootstrap
     assert "keeping the existing Vault version" in bootstrap
     values = (ROOT / "configs/kagent/values.yaml").read_text(encoding="utf-8")
-    assert "replicas: 2" in values
+    assert "replicas: 1" in values
     assert "ateom-gvisor:v0.0.6" in values
     assert "sandboxClass: gvisor" in values
 

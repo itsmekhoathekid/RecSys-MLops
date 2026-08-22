@@ -39,3 +39,16 @@ def test_task_dependencies_and_rag_runtime_parameters_are_preserved():
     assert '"mode": "incremental"' in rag
     assert "--mode '{{{{ params.mode }}}}'" in rag
     assert not (root / "recsys_rag_item_reconciliation.py").exists()
+
+
+def test_operational_dag_commands_use_testable_runtime_modules():
+    root = Path("apps/data-platform/src/orchestration/airflow/dags")
+    drift = (root / "recsys_feature_drift_monitoring.py").read_text()
+    feast = (root / "recsys_feast_materialize.py").read_text()
+
+    assert "python -c" not in drift
+    assert "python -m monitoring.push_drift_report_metrics" in drift
+    assert '--pipeline-version-id "${KFP_PIPELINE_VERSION_ID:-}"' in drift
+    assert "python -m feature_store.materialize_online" in feast
+    assert "materialize-incremental $(date" not in feast
+    assert "retries=2" in feast

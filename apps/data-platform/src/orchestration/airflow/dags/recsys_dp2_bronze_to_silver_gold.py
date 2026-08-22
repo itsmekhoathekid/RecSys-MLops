@@ -77,7 +77,8 @@ if DAG is not None:
             "publish_datahub_validation",
             DATA_INGESTION_IMAGE,
             datahub_validation_command("DP2", (REPORT_URI,), DP2_DATASET_KEYS),
-            trigger_rule="all_done",
+            trigger_rule="all_success",
+            retries=2,
         )
 
         ingest_stage >> optimize_stage >> validate_stage >> publish_datahub_validation

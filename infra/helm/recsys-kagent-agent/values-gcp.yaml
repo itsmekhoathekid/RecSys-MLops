@@ -1,2 +1,14 @@
 sandbox:
   imageRegistry: ghcr.io
+autoscaling:
+  # Keep one idle gVisor worker and scale to at most three on the quota-capped
+  # two-node production cluster.
+  minReplicas: 1
+  maxReplicas: 3
+  # Observed idle usage is roughly 34 microcores across two workers and 70
+  # across three. A 120-microcore target keeps one worker at idle while
+  # observed A2A load (~351) still drives the WorkerPool to three.
+  cpuTargetMicrocores: "120"
+  fallback:
+    failureThreshold: 3
+    replicas: 1

@@ -190,3 +190,4 @@ def test_drift_retrain_dag_fails_on_kfp_error_and_uses_mtls():
     assert "--fail-on-trigger-error" in dag
     assert "source_run_path=" not in dag
     assert dag.count("istio_inject=True") == 3
+    assert "python -m monitoring.push_drift_report_metrics" in dag

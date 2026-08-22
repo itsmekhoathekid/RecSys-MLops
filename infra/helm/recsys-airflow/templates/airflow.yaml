@@ -16,6 +16,8 @@ spec:
     metadata:
       annotations:
         checksum/runtime-images: {{ printf "%s|%s|%s|%s|%s" .Values.images.dataIngestion .Values.images.featureStore .Values.images.driftRetrain .Values.images.spark .Values.images.analyticsDbt | sha256sum }}
+        sidecar.istio.io/proxyCPU: {{ default "50m" .Values.airflow.istioProxyCPU | quote }}
+        sidecar.istio.io/proxyMemory: {{ default "64Mi" .Values.airflow.istioProxyMemory | quote }}
       labels:
         app: airflow-webserver
     spec:
@@ -88,6 +90,8 @@ spec:
     metadata:
       annotations:
         checksum/runtime-images: {{ printf "%s|%s|%s|%s|%s" .Values.images.dataIngestion .Values.images.featureStore .Values.images.driftRetrain .Values.images.spark .Values.images.analyticsDbt | sha256sum }}
+        sidecar.istio.io/proxyCPU: {{ default "50m" .Values.airflow.istioProxyCPU | quote }}
+        sidecar.istio.io/proxyMemory: {{ default "64Mi" .Values.airflow.istioProxyMemory | quote }}
       labels:
         app: airflow-scheduler
     spec:

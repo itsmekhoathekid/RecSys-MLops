@@ -353,8 +353,8 @@ Source: tab **`rubic final-coursework (final -llm)`**.
 | [Deploy LLM Inference Platform + Setup Custom Model](<docs/submission/rubric-final-coursework-(final-llm)/llm_inference_platform.md>) | llama.cpp custom model serving, llm-d Agent Gateway routing, benchmark comparison, and load-aware optimization evidence. |
 | [Deploy a Global Model Config](<docs/submission/rubric-final-coursework-(final-llm)/global_model_config.md>) | Shared kagent `ModelConfig`, Agent Gateway routing, Secret reference, applied resource evidence, and end-to-end Agent inference. |
 | [Deploy Agent Registry](<docs/submission/rubric-final-coursework-(final-llm)/agent_registry.md>) | Vault-backed Agent Registry `0.4.0`, persistent pgvector, namespace-scoped kagent deployment RBAC, and live UI/API proof. |
-| RAG | Work in progress. |
-| User and Chunk Retrieval MCP Tool + Agent | Work in progress. |
+| [RAG](<docs/submission/rubric-final-coursework-(final-llm)/rag.md>) | Feast/Milvus-backed ingestion and retrieval pipeline, promoted-index serving, validation, observability, and runtime evidence. |
+| [User and Chunk Retrieval MCP Tool + Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_pull_data.md>) | FastAPI/Pydantic APIs, four-tool Streamable HTTP MCP server, SandboxAgent, KEDA WorkerPool/MCP autoscaling, registry governance, and kagent UI proof. |
 | Real-Time Drift Detection MCP Tool + Agent | Work in progress. |
 | Demonstrate Basic Understanding of Agents | Work in progress. |
 | Deploy a Coordinator Agent | Work in progress. |

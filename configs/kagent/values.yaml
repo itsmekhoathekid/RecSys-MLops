@@ -35,8 +35,8 @@ substrateWorkerPool:
   create: true
   name: recsys-context-sandbox-pool
   # Terraform/kagent owns this required baseline. The application-owned KEDA
-  # ScaledObject reconciles the WorkerPool /scale subresource between 2 and 6.
-  replicas: 2
+  # ScaledObject reconciles the WorkerPool /scale subresource between 1 and 3.
+  replicas: 1
   ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.6
   sandboxClass: gvisor
 

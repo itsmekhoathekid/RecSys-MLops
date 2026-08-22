@@ -76,7 +76,8 @@ if DAG is not None:
                 (ICEBERG_REPORT_URI, POSTGRES_REPORT_URI),
                 DP3_OFFLINE_DATASET_KEYS,
             ),
-            trigger_rule="all_done",
+            trigger_rule="all_success",
+            retries=2,
         )
 
         ingest_stage >> validate_stage >> publish_datahub_validation

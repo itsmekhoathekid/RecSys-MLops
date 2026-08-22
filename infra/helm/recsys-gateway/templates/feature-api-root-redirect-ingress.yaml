@@ -6,6 +6,8 @@ metadata:
   name: recsys-online-feature-api-root-redirect
   namespace: {{ .Values.featureApi.namespace }}
   annotations:
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+    nginx.ingress.kubernetes.io/upstream-vhost: {{ .Values.featureApi.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.featureApi.service.name .Values.featureApi.namespace) | quote }}
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/permanent-redirect: {{ printf "%s://%s%s" (ternary "https" "http" .Values.tls.enabled) .Values.featureApi.host ($featureApiRootRedirect.path | default "/docs") | quote }}
     {{- if .Values.tls.enabled }}

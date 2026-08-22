@@ -33,7 +33,7 @@ DRIFT_RETRAIN_IMAGE = os.getenv(
 )
 DATAFLOW_NODE_SELECTOR = os.getenv(
     "DATAFLOW_NODE_SELECTOR",
-    "recsys.ai/pool=cpu-services",
+    "",
 )
 COMMON_ENV = {
     # KPO env vars override the image-level PYTHONPATH, so every source-backed
@@ -106,6 +106,30 @@ def parse_node_selector(value: str) -> dict[str, str]:
     return selectors
 
 
+def shared_task_tolerations():
+    if k8s is None:
+        return []
+    return [
+        k8s.V1Toleration(
+            key="recsys.ai/workload",
+            operator="Equal",
+            value="ml-system",
+            effect="NoSchedule",
+        )
+    ]
+
+
+def task_resources():
+    if k8s is None:
+        return None
+    return k8s.V1ResourceRequirements(
+        requests={
+            "cpu": os.getenv("AIRFLOW_TASK_REQUEST_CPU", "50m"),
+            "memory": os.getenv("AIRFLOW_TASK_REQUEST_MEMORY", "256Mi"),
+        }
+    )
+
+
 def pod_task(
     task_id: str,
     image: str,
@@ -113,7 +137,20 @@ def pod_task(
     *,
     istio_inject: bool = False,
     trigger_rule: str = "all_success",
+    retries: int = 0,
 ):
+    annotations = {"sidecar.istio.io/inject": str(istio_inject).lower()}
+    if istio_inject:
+        annotations.update(
+            {
+                "sidecar.istio.io/proxyCPU": os.getenv(
+                    "AIRFLOW_ISTIO_PROXY_CPU", "50m"
+                ),
+                "sidecar.istio.io/proxyMemory": os.getenv(
+                    "AIRFLOW_ISTIO_PROXY_MEMORY", "64Mi"
+                ),
+            }
+        )
     return KubernetesPodOperator(
         task_id=task_id,
         name=task_id.replace("_", "-"),
@@ -123,13 +160,16 @@ def pod_task(
         arguments=[f"set -euo pipefail; {command}"],
         env_vars=COMMON_ENV,
         env_from=pod_env_from(),
-        annotations={"sidecar.istio.io/inject": str(istio_inject).lower()},
+        annotations=annotations,
         node_selector=parse_node_selector(DATAFLOW_NODE_SELECTOR),
+        tolerations=shared_task_tolerations(),
+        container_resources=task_resources(),
         get_logs=True,
         on_finish_action="delete_succeeded_pod",
         in_cluster=True,
         startup_timeout_seconds=600,
         trigger_rule=trigger_rule,
+        retries=retries,
     )
 
 
