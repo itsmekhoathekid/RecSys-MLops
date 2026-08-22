@@ -114,6 +114,8 @@ modelRolloutWatcher:
   image: registry.example.invalid/recsys/recsys-mlops-training:required
   imagePullPolicy: IfNotPresent
   replicas: 1
+  nodeSelector: {}
+  tolerations: []
   mlflowTrackingUri: http://mlflow.experiment-tracking.svc.cluster.local:5000
   registeredModelName: recsys_bst_ranker
   candidateTagKey: candidate

@@ -391,6 +391,7 @@ cases = {
         "chunk_id values in one concise final text."
     ),
 }
+context_id = str(uuid.uuid4())
 
 
 def collect_chunk_ids(value):
@@ -422,7 +423,7 @@ def invoke(tool_name, prompt):
         "params": {
             "message": {
                 "messageId": request_id,
-                "contextId": request_id,
+                "contextId": context_id,
                 "role": "user",
                 "parts": [{"kind": "text", "text": prompt}],
             },

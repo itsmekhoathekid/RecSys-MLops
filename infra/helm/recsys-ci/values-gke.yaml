@@ -49,5 +49,12 @@ modelRolloutWatcher:
   enabled: true
   image: asia-southeast1-docker.pkg.dev/recsys-mlops/recsys/recsys-mlops-training:gcp
   imagePullPolicy: Always
+  nodeSelector:
+    recsys.ai/pool: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
   autoProgressiveEnabled: true
   progressiveWeights: "10,25,50"

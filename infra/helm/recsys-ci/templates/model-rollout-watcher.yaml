@@ -22,6 +22,14 @@ spec:
         app.kubernetes.io/name: recsys-model-rollout-watcher
         app.kubernetes.io/part-of: recsys-ci
     spec:
+      {{- with .Values.modelRolloutWatcher.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.modelRolloutWatcher.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: watcher
           image: {{ .Values.modelRolloutWatcher.image }}

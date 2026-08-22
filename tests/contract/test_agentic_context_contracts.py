@@ -366,9 +366,12 @@ def test_a2a_smoke_payloads_use_protocol_v03_message_ids():
     autoscale = (
         ROOT / "ops/validation/agentic_context_autoscale.sh"
     ).read_text(encoding="utf-8")
+    assert '"messageId": request_id' in deploy
+    assert 'context_id = str(uuid.uuid4())' in deploy
+    assert '"contextId": context_id' in deploy
+    assert '"messageId": request_id' in autoscale
+    assert '"contextId": request_id' in autoscale
     for script in (deploy, autoscale):
-        assert '"messageId": request_id' in script
-        assert '"contextId": request_id' in script
         assert '"params": {\n            "id": request_id' not in script
     assert 'a2a_path="api/a2a-sandboxes"' in deploy
     assert 'card_path=".well-known/agent-card.json"' in deploy
