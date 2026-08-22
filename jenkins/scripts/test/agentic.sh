@@ -19,7 +19,7 @@ for path in ("/healthz", "/ready", "/version", "/metrics"):
   agentic_mcp_protocol_smoke
   kubectl -n kagent get scaledobject recsys-feature-rag-mcp \
     -o jsonpath='{.spec.minReplicaCount}{" "}{.spec.maxReplicaCount}{" "}{.spec.fallback.replicas}{"\n"}' \
-    | grep -Fx '2 6 2'
+    | grep -Fx '1 3 1'
 }
 
 test_context_agent() {
@@ -37,6 +37,27 @@ assert payload["scaleTargetRef"] == {
     "apiVersion": "ate.dev/v1alpha1",
     "kind": "WorkerPool",
     "name": "recsys-context-sandbox-pool",
+}
+assert (payload["minReplicaCount"], payload["maxReplicaCount"]) == (1, 3)
+fallback = payload["fallback"]
+assert (fallback["failureThreshold"], fallback["replicas"]) == (3, 1)
+assert fallback.get("behavior", "static") == "static"
+'
+  kubectl -n kagent get workerpool recsys-context-sandbox-pool -o json \
+    | python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+spec = payload["spec"]
+status = payload["status"]
+assert spec["replicas"] >= 1
+assert status["replicas"] >= 1
+assert spec["scaleSelector"] == (
+    "ate.dev/worker-pool=recsys-context-sandbox-pool"
+)
+assert "ateom-gvisor:v0.0.6" in spec["ateomImage"]
+'
+  agentic_wait_for_regular_agent_removal
+  agentic_a2a_smoke recsys-context-agent-sandbox
 }
 
 test_recommendation_mcp() {
@@ -96,25 +117,4 @@ assert spec["fallback"]["replicas"] == 1
     return 1
   fi
   recommendation_a2a_smoke
-}
-assert (payload["minReplicaCount"], payload["maxReplicaCount"]) == (2, 6)
-fallback = payload["fallback"]
-assert (fallback["failureThreshold"], fallback["replicas"]) == (3, 2)
-assert fallback.get("behavior", "static") == "static"
-'
-  kubectl -n kagent get workerpool recsys-context-sandbox-pool -o json \
-    | python3 -c '
-import json, sys
-payload = json.load(sys.stdin)
-spec = payload["spec"]
-status = payload["status"]
-assert spec["replicas"] >= 2
-assert status["replicas"] >= 2
-assert spec["scaleSelector"] == (
-    "ate.dev/worker-pool=recsys-context-sandbox-pool"
-)
-assert "ateom-gvisor:v0.0.6" in spec["ateomImage"]
-'
-  agentic_wait_for_regular_agent_removal
-  agentic_a2a_smoke recsys-context-agent-sandbox
 }

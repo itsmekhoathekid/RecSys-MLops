@@ -164,6 +164,20 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert "arctlSha256" in jenkins_chart
 
 
+def test_agentic_shell_entrypoints_are_syntactically_valid() -> None:
+    for relative_path in (
+        "jenkins/scripts/ci/agentic.sh",
+        "jenkins/scripts/deploy/agentic.sh",
+        "jenkins/scripts/test/agentic.sh",
+    ):
+        subprocess.run(
+            ["bash", "-n", str(ROOT / relative_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+
 def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
     pipeline = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     assert "choices: ['skip', 'plan', 'apply']" in pipeline
