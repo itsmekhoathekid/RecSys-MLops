@@ -325,6 +325,21 @@ def test_rag_job_wait_retries_api_visibility_before_condition_wait():
     assert "was not visible after creation" in wait_job
 
 
+def test_analytics_reuses_deployed_digests_for_images_not_built_in_release():
+    deployment = (ROOT / "jenkins/scripts/deploy/analytics.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "analytics_release_image()" in deployment
+    assert 'item.get("status") == "deployed"' in deployment
+    assert '--revision "${deployed_revision}"' in deployment
+    assert "registry_resolve_digest_reference" in deployment
+    assert "analytics_release_image recsys-spark images.spark" in deployment
+    assert "analytics_release_image recsys-analytics-dbt images.dbt" in deployment
+    assert "analytics_release_image recsys-analytics-superset images.superset" in deployment
+    assert "resolve_release_image recsys-analytics-superset" not in deployment
+
+
 def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
     deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
     tunnel = deployment.split("rag_start_api_port_forward()", 1)[1].split(
