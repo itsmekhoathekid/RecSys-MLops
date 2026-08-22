@@ -12,12 +12,8 @@ productionTarget:
 
 jenkins:
   nodeSelector:
-    recsys.ai/workload: ml-system
-  tolerations:
-    - key: recsys.ai/workload
-      operator: Equal
-      value: ml-system
-      effect: NoSchedule
+    recsys.ai/pool: cpu-services
+  tolerations: []
   resources:
     requests:
       cpu: 50m
