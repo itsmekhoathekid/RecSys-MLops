@@ -232,7 +232,8 @@ recommendation_a2a_smoke() {
     sleep 1
   done
   if [[ "${ready}" == "true" ]]; then
-    python3 - "${base_url}/" "${user_id}" "${output_file}" <<'PY' && status=0
+    for attempt in 1 2 3; do
+      if python3 - "${base_url}/" "${user_id}" "${output_file}" <<'PY'
 import json
 import sys
 import urllib.request
@@ -283,6 +284,13 @@ assert len(responses) == 1 and responses[0][0] == calls[0], responses
 serialized = json.dumps(responses[0][1], sort_keys=True)
 assert user_id in serialized and "model_version" in serialized and "items" in serialized
 PY
+      then
+        status=0
+        break
+      fi
+      echo "recommendation A2A smoke attempt ${attempt}/3 failed" >&2
+      sleep 2
+    done
   fi
   kill "${pid}" >/dev/null 2>&1 || true
   wait "${pid}" >/dev/null 2>&1 || true

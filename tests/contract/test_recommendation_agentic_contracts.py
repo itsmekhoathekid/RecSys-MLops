@@ -157,6 +157,12 @@ def test_jenkins_preflight_verifies_keda_rbac_without_impersonated_ssar() -> Non
     assert '"workerpools/scale"' in recommendation_preflight
     assert '{"get", "patch", "update"}' in recommendation_preflight
 
+    recommendation_smoke = deploy.split(
+        "recommendation_a2a_smoke()", maxsplit=1
+    )[1].split("agentic_mcp_protocol_smoke()", maxsplit=1)[0]
+    assert "for attempt in 1 2 3" in recommendation_smoke
+    assert "recommendation A2A smoke attempt ${attempt}/3 failed" in recommendation_smoke
+
 
 def test_autoscale_and_smoke_proof_scripts_are_portable_and_bounded() -> None:
     paths = [
