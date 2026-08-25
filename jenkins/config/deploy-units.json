@@ -61,6 +61,7 @@
       "release": "recsys-datahub-catalog",
       "namespace": "datahub",
       "components": ["datahub_catalog"],
+      "requiresExplicitComponent": true,
       "consumesImages": ["recsys-data-ingestion"],
       "consumesArtifacts": [],
       "dependsOn": ["data-config"]
@@ -162,7 +163,7 @@
       "release": "recsys-milvus",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-milvus",
-      "components": ["rag_index"],
+      "components": ["rag_index", "rag_api"],
       "consumesImages": [],
       "imageValues": {},
       "consumesArtifacts": [],
@@ -173,7 +174,7 @@
       "kind": "kubernetes-action",
       "release": "recsys-rag-feature-registry",
       "namespace": "recsys-dataflow",
-      "components": ["rag_index"],
+      "components": ["rag_index", "rag_api"],
       "consumesImages": ["recsys-data-ingestion"],
       "consumesArtifacts": [],
       "dependsOn": ["feature-store", "milvus-credentials"]
@@ -183,7 +184,7 @@
       "kind": "kubernetes-action",
       "release": "recsys-milvus-credentials",
       "namespace": "recsys-dataflow",
-      "components": ["rag_index"],
+      "components": ["rag_index", "rag_api"],
       "consumesImages": ["recsys-data-ingestion"],
       "consumesArtifacts": [],
       "dependsOn": ["milvus"]
@@ -206,6 +207,7 @@
       "release": "recsys-rag-index-promotion",
       "namespace": "recsys-dataflow",
       "components": ["rag_index"],
+      "requiresExplicitComponent": true,
       "consumesImages": ["recsys-data-ingestion"],
       "consumesArtifacts": [],
       "dependsOn": ["rag-feature-registry", "rag-api"]

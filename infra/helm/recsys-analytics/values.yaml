@@ -37,6 +37,9 @@ superset:
   storage: 5Gi
   storageClassName: standard
 
+dashboardBootstrap:
+  enabled: true
+
 objectStorage:
   endpoint: http://data-platform-minio.recsys-dataflow.svc.cluster.local:9000
   region: us-east-1

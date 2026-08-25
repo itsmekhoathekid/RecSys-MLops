@@ -49,7 +49,10 @@ resource "kubernetes_namespace" "datahub" {
 }
 
 resource "kubernetes_namespace" "kserve_triton_inference" {
-  count = var.deploy_serving ? 1 : 0
+  # Keep the namespace and its ExternalSecret available while model CD is
+  # intentionally deferred; the online/inference APIs still depend on the
+  # KServe control plane and Jenkins later installs the predictor here.
+  count = var.deploy_serving || var.deploy_model_serving ? 1 : 0
 
   metadata {
     labels = {

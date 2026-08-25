@@ -356,6 +356,7 @@ Source: tab **`rubic final-coursework (final -llm)`**.
 | [RAG](<docs/submission/rubric-final-coursework-(final-llm)/rag.md>) | Feast/Milvus-backed ingestion and retrieval pipeline, promoted-index serving, validation, observability, and runtime evidence. |
 | [User and Chunk Retrieval MCP Tool + Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_pull_data.md>) | FastAPI/Pydantic APIs, four-tool Streamable HTTP MCP server, SandboxAgent, KEDA WorkerPool/MCP autoscaling, registry governance, and kagent UI proof. |
 | [Recommendation MCP Tool + SandboxAgent](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation.md>) | Recommendation-only MCP facade over the inference API, isolated gVisor SandboxAgent, dedicated KEDA WorkerPool, immutable ranking, registry governance, and no context/RAG A2A dependency. |
+| [Recommendation Service Agent — Detailed Runtime Proof](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation_servicce.md>) | Figure-by-figure FastAPI, inference API, MCP, KEDA autoscaling, gVisor WorkerPool, Agent Registry, and kagent UI evidence with reproducible verification commands. |
 | Real-Time Drift Detection MCP Tool + Agent | Work in progress. |
 | Demonstrate Basic Understanding of Agents | Work in progress. |
 | Deploy a Coordinator Agent | Work in progress. |

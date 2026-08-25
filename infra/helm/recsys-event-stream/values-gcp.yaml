@@ -1,9 +1,12 @@
-storageClassName: standard
+storageClassName: standard-rwo
 
 kafka:
+  retentionHours: "24"
+  segmentBytes: "268435456"
+  retentionCheckIntervalMs: "60000"
   persistence:
     enabled: true
-    storage: 20Gi
+    storage: 60Gi
 
 zookeeper:
   persistence:

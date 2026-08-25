@@ -105,9 +105,9 @@ def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
     ]
     assert tool_names == contract["tools"]
     assert sandbox["metadata"]["annotations"]["recsys.ai/model-config-revision"] == (
-        "output-cap-v1"
+        "output-cap-v3"
     )
-    assert "Runtime model configuration revision: output-cap-v1." in sandbox["spec"][
+    assert "Runtime model configuration revision: output-cap-v3." in sandbox["spec"][
         "declarative"
     ]["systemMessage"]
     assert sandbox["spec"]["declarative"]["runtime"] == "go"

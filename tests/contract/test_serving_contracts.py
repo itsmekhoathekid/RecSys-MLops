@@ -143,6 +143,9 @@ def test_serving_chart_renders_expected_namespaces():
         api_scaledobject["spec"]["advanced"]["horizontalPodAutoscalerConfig"]["name"]
         == "recsys-inference-api"
     )
+    assert api_scaledobject["spec"]["advanced"]["horizontalPodAutoscalerConfig"][
+        "behavior"
+    ]["scaleDown"]["stabilizationWindowSeconds"] == 60
     assert [trigger["type"] for trigger in api_scaledobject["spec"]["triggers"]] == [
         "prometheus",
         "prometheus",
@@ -422,7 +425,7 @@ def test_model_cd_writes_shadow_and_explicit_rollback_values(tmp_path):
     )
     assert shadow_values["rollout"]["maxUnavailable"] == 0
     assert shadow_values["rollout"]["maxSurge"] == 1
-    assert shadow_values["autoscaling"]["minReplicas"] == 2
+    assert shadow_values["autoscaling"]["minReplicas"] == 1
 
     rollback_path = config.write_values(
         control,
@@ -851,6 +854,7 @@ def test_model_cd_deploy_uses_atomic_helm_upgrade(monkeypatch, tmp_path):
     assert upgrades[0][upgrades[0].index("--timeout") + 1] == "90s"
     assert "autoscaling.kserveResource.enabled=false" in upgrades[0]
     assert "autoscaling.kserveResource.enabled=true" in upgrades[1]
+    assert all("kserve.namespace.create=false" in command for command in upgrades[:2])
 
 
 def test_model_cd_deploy_can_disable_atomic(monkeypatch, tmp_path):

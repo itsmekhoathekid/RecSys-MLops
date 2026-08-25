@@ -28,10 +28,17 @@ entrypoint:
   gpusPerTrial: 0
 
 head:
-  cpuRequest: 500m
-  cpuLimit: "1"
+  cpuRequest: "1"
+  cpuLimit: "2"
   memoryRequest: 1Gi
-  memoryLimit: 2Gi
+  memoryLimit: 3Gi
+  rayNumCpus: "1"
+  dashboardAgentGrpcPort: "52366"
+  runtimeEnvAgentPort: "52367"
+  rayMemoryBytes: "1073741824"
+  objectStoreMemoryBytes: "268435456"
+  nodeSelector: {}
+  tolerations: []
 
 worker:
   replicas: 1
@@ -39,6 +46,12 @@ worker:
   cpuLimit: "2"
   memoryRequest: 2Gi
   memoryLimit: 4Gi
+  dashboardAgentGrpcPort: "52366"
+  runtimeEnvAgentPort: "52367"
+  rayMemoryBytes: "2147483648"
+  objectStoreMemoryBytes: "536870912"
+  nodeSelector: {}
+  tolerations: []
 
 gpu:
   enabled: false

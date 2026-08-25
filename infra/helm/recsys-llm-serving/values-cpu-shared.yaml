@@ -1,6 +1,6 @@
-# Two lightweight llama.cpp replicas share the existing n2-standard-8
-# recsys-mlops-cpu node. Low requests fit the busy data-platform pool while
-# two-core limits let each replica accelerate when CPU is available.
+# Two lightweight llama.cpp replicas share the two existing e2-standard-8
+# recsys-mlops-cpu nodes. Required hostname spreading keeps one model replica
+# on each node while two-core limits let them accelerate when CPU is available.
 replicaCount: 2
 
 image:
@@ -39,6 +39,12 @@ nodeSelector:
   cloud.google.com/gke-nodepool: recsys-mlops-cpu
 
 tolerations: []
+
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: DoNotSchedule
 
 cache:
   persistence:

@@ -1,0 +1,37 @@
+entrypoint:
+  trainingPercent: 0.1
+  numEpochs: 3
+  maxTrials: 2
+  parallelTrials: 1
+  cpusPerTrial: 1
+  gpusPerTrial: 0
+
+head:
+  cpuRequest: "1"
+  cpuLimit: "2"
+  memoryRequest: 1Gi
+  memoryLimit: 3Gi
+  nodeSelector:
+    recsys.ai/pool: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
+
+worker:
+  replicas: 1
+  cpuRequest: "1"
+  cpuLimit: "2"
+  memoryRequest: 2Gi
+  memoryLimit: 4Gi
+  nodeSelector:
+    recsys.ai/pool: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
+
+gpu:
+  enabled: false

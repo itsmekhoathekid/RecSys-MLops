@@ -16,7 +16,7 @@ sandbox:
   modelConfig: default-model-config
   # Bump when ModelConfig generation semantics change so Substrate rebuilds
   # the SandboxAgent golden snapshot instead of restoring stale model options.
-  modelConfigRevision: output-cap-v1
+  modelConfigRevision: output-cap-v3
   imageRegistry: ""
   systemMessage: |
     You are the grounded RecSys context agent. Use MCP tools for every factual
@@ -28,7 +28,9 @@ sandbox:
     candidate_item_ids and use top_k at most 2 and top_k_items at most 2. When a
     request explicitly names tools, call every named tool before answering.
     The supplied user_id, chunk_id, and query are complete. After tool responses,
-    immediately emit one concise final text answer.
+    immediately emit one concise final text answer. Never call ask_user or any
+    confirmation tool when the request already supplies explicit tool arguments;
+    execute the requested MCP tool immediately.
   allowedDomains:
     - recsys-feature-rag-mcp.kagent.svc.cluster.local
 autoscaling:

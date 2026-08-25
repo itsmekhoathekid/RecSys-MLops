@@ -107,10 +107,18 @@ def test_event_stream_persists_kafka_and_zookeeper_state():
     }
 
     kafka_pvc = by_kind_name[("PersistentVolumeClaim", "kafka-data")]
+    kafka = by_kind_name[("Deployment", "kafka")]
     zookeeper_pvc = by_kind_name[("PersistentVolumeClaim", "zookeeper-data")]
-    assert kafka_pvc["spec"]["storageClassName"] == "standard"
-    assert zookeeper_pvc["spec"]["storageClassName"] == "standard"
-    assert kafka_pvc["spec"]["resources"]["requests"]["storage"] == "20Gi"
+    assert kafka_pvc["spec"]["storageClassName"] == "standard-rwo"
+    assert zookeeper_pvc["spec"]["storageClassName"] == "standard-rwo"
+    kafka_env = {
+        item["name"]: item["value"]
+        for item in kafka["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert kafka_pvc["spec"]["resources"]["requests"]["storage"] == "60Gi"
+    assert kafka_env["KAFKA_LOG_RETENTION_HOURS"] == "24"
+    assert kafka_env["KAFKA_LOG_SEGMENT_BYTES"] == "268435456"
+    assert kafka_env["KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS"] == "60000"
     assert zookeeper_pvc["spec"]["resources"]["requests"]["storage"] == "5Gi"
 
     kafka = by_kind_name[("Deployment", "kafka")]

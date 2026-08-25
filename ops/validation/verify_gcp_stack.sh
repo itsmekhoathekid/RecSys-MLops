@@ -31,13 +31,21 @@ static_verify() {
     echo "Skipping terraform fmt/validate because terraform is not installed."
   fi
 
-  section "Helm render: Triton GPU serving"
+  section "Helm render: Triton CPU and GPU serving"
+  helm template recsys-serving-cpu "${ROOT_DIR}/infra/helm/recsys-serving" \
+    --namespace kserve-triton-inference \
+    -f "${ROOT_DIR}/infra/helm/recsys-serving/values-gcp-cpu.yaml" >/tmp/recsys-serving-gcp-cpu.yaml
+  rg 'kind: InferenceService|kind: ScaledObject' /tmp/recsys-serving-gcp-cpu.yaml
   helm template recsys-serving "${ROOT_DIR}/infra/helm/recsys-serving" \
     --namespace kserve-triton-inference \
     -f "${ROOT_DIR}/infra/helm/recsys-serving/values-gcp-gpu.yaml" >/tmp/recsys-serving-gcp.yaml
   rg 'nvidia.com/gpu|cloud.google.com/gke-accelerator|kind: InferenceService|kind: ScaledObject' /tmp/recsys-serving-gcp.yaml
 
-  section "Helm render: Ray GPU training"
+  section "Helm render: Ray CPU and GPU training"
+  helm template recsys-ray-cpu "${ROOT_DIR}/infra/helm/ray-cluster" \
+    --namespace kubeflow \
+    -f "${ROOT_DIR}/infra/helm/ray-cluster/values-gcp-cpu.yaml" >/tmp/recsys-ray-gcp-cpu.yaml
+  rg 'recsys.ai/pool: ml-system|--gpus-per-trial 0|kind: RayJob' /tmp/recsys-ray-gcp-cpu.yaml
   helm template recsys-ray-gpu "${ROOT_DIR}/infra/helm/ray-cluster" \
     --namespace kubeflow \
     -f "${ROOT_DIR}/infra/helm/ray-cluster/values-gcp-gpu.yaml" >/tmp/recsys-ray-gcp.yaml
@@ -71,9 +79,19 @@ static_verify() {
 live_verify() {
   require_cmd kubectl
 
+  local compute_mode="${ML_COMPUTE_MODE:-}"
+  if [[ -z "${compute_mode}" ]] && command -v terraform >/dev/null 2>&1; then
+    compute_mode="$(terraform -chdir="${TF_DIR}" output -raw ml_compute_mode 2>/dev/null || true)"
+  fi
+  compute_mode="${compute_mode:-cpu}"
+
   section "Nodes"
   kubectl get nodes -L cloud.google.com/gke-accelerator,recsys.ai/pool
-  kubectl get nodes -l cloud.google.com/gke-accelerator --no-headers | awk 'END { if (NR < 1) exit 1 }'
+  if [[ "${compute_mode}" == "gpu" ]]; then
+    kubectl get nodes -l cloud.google.com/gke-accelerator --no-headers | awk 'END { if (NR < 1) exit 1 }'
+  else
+    kubectl get nodes -l recsys.ai/pool=ml-system --no-headers | awk 'END { if (NR < 1) exit 1 }'
+  fi
 
   section "Core rollouts"
   kubectl rollout status deploy/ml-pipeline -n kubeflow --timeout=300s

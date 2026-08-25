@@ -24,7 +24,11 @@ resource "google_project_iam_member" "jenkins_workload_identity_artifact_registr
   role    = "roles/artifactregistry.writer"
   member  = "principal://iam.googleapis.com/projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${var.project_id}.svc.id.goog/subject/ns/ci/sa/recsys-jenkins"
 
-  depends_on = [google_project_service.required]
+  # The principal namespace is only materialized after GKE creates the
+  # project's managed Workload Identity pool. Depending on the API alone can
+  # race the cluster creation on a fresh project and return "Identity Pool does
+  # not exist" from IAM.
+  depends_on = [google_container_cluster.recsys]
 }
 
 resource "google_container_cluster" "recsys" {
@@ -247,6 +251,7 @@ resource "google_container_node_pool" "ml_system" {
 }
 
 resource "google_container_node_pool" "gpu" {
+  count    = var.enable_gpu_pool ? 1 : 0
   provider = google-beta
 
   name       = "${var.name_prefix}-gpu"

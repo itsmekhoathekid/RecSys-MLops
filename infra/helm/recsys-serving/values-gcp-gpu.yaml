@@ -8,7 +8,9 @@ kserve:
   sharedMemory: {sizeLimit: 1Gi}
 autoscaling:
   kserveResource:
-    enabled: true
+    # See values-gcp-cpu.yaml: the predictor Deployment does not exist when the
+    # chart is first admitted on a fresh cluster.
+    enabled: false
     minReplicas: 1
     maxReplicas: 3
     pollingInterval: 15

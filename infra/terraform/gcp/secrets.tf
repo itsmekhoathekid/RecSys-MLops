@@ -57,3 +57,8 @@ resource "random_password" "datahub_encryption_key" {
   length  = 48
   special = false
 }
+
+resource "random_password" "gateway_basic_auth" {
+  length  = 32
+  special = false
+}

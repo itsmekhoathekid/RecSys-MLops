@@ -681,7 +681,7 @@ Code and configuration references:
 
 ### Image proof
 
-![FastAPI and Kubernetes healthcheck proof](<../../pngs/Screenshot 2026-08-22 at 00.47.04.png>)
+![FastAPI and Kubernetes healthcheck proof](../../pngs/agent-pull-data-fastapi-kubernetes-healthchecks.png)
 
 **Figure 1 — FastAPI and Kubernetes healthcheck proof.** The production MCP
 Deployment uses `RollingUpdate` with zero unavailable and one surge pod. The
@@ -782,14 +782,14 @@ Code references:
 
 ### Runtime image proof
 
-![RAG API OpenAPI surface](<../../pngs/Screenshot 2026-08-22 at 00.54.27.png>)
+![RAG API OpenAPI surface](../../pngs/agent-pull-data-rag-openapi-surface.png)
 
 **Figure 2 — RAG API surface.** FastAPI Swagger UI exposes Kubernetes health,
 readiness, metrics, and version endpoints plus semantic retrieval, exact
 `chunk_id` lookup, and batch chunk lookup. This is the runtime API surface
 consumed by the MCP RAG client.
 
-![Exact RAG chunk lookup](<../../pngs/Screenshot 2026-08-22 at 00.57.27.png>)
+![Exact RAG chunk lookup](../../pngs/agent-pull-data-rag-exact-chunk-lookup.png)
 
 **Figure 3 — Exact chunk lookup.** A live request retrieves the promoted chunk
 `800080:review:rev_800080_02:0` and returns its text, item metadata,
@@ -797,25 +797,25 @@ consumed by the MCP RAG client.
 is the active test chunk at capture time and is retained as immutable evidence,
 not as a guarantee that the current active blue/green pointer still selects it.
 
-![Semantic RAG request validation](<../../pngs/Screenshot 2026-08-22 at 01.01.14.png>)
+![Semantic RAG request validation](../../pngs/agent-pull-data-rag-request-validation.png)
 
 **Figure 4 — Validated semantic request.** Swagger renders the Pydantic request
 contract for `/v1/rag/retrieve`, including `query`, bounded `top_k_items`, and
 typed `filters`, using the query `noise-cancelling headphones`.
 
-![Grounded semantic RAG response](<../../pngs/Screenshot 2026-08-22 at 01.02.10.png>)
+![Grounded semantic RAG response](../../pngs/agent-pull-data-rag-grounded-response.png)
 
 **Figure 5 — Grounded semantic response.** The successful response contains the
 query, `pipeline_run_id`, ranked item metadata, score, and evidence with a
 concrete `chunk_id` and source text. Together, Figures 4 and 5 prove validated
 request-to-grounded-response behavior.
 
-![RAG API baseline at one replica](<../../pngs/Screenshot 2026-08-22 at 15.27.30.png>)
+![RAG API baseline at one replica](../../pngs/agent-pull-data-rag-baseline-1-replica.png)
 
 **Figure 6 — RAG baseline.** K9s shows one Ready `recsys-rag-api` pod in the
 `api-serving` namespace before the autoscale workload.
 
-![RAG API scaled to three replicas](<../../pngs/Screenshot 2026-08-22 at 15.48.08.png>)
+![RAG API scaled to three replicas](../../pngs/agent-pull-data-rag-scaleout-3-replicas.png)
 
 **Figure 7 — RAG scale-out.** Under load, K9s shows three Ready RAG API pods,
 distributed across pod IPs/nodes. Paired with Figure 6, this is the production
@@ -934,7 +934,7 @@ fallback data.
 
 ### Image proof
 
-![Historical MCP RollingUpdate KEDA and PDB proof](<../../pngs/Screenshot 2026-08-22 at 01.15.24.png>)
+![Historical MCP RollingUpdate KEDA and PDB proof](../../pngs/agent-pull-data-mcp-deployment-policy-historical.png)
 
 **Figure 8 — Historical deployment-policy proof (superseded bounds).** This
 earlier capture proves that the MCP release had `RollingUpdate`, KEDA/HPA,
@@ -943,13 +943,13 @@ were the pre-capacity-calibration baseline and have been superseded by the
 current `1–3–1` values in the referenced Helm production values. It must not be
 used as evidence of the current replica limits.
 
-![MCP server baseline at one replica](<../../pngs/Screenshot 2026-08-22 at 16.03.41.png>)
+![MCP server baseline at one replica](../../pngs/agent-pull-data-mcp-baseline-1-replica.png)
 
 **Figure 9 — MCP baseline.** K9s shows one Ready MCP pod before load. `2/2`
 means the FastAPI/MCP container and its Istio sidecar are both Ready; it does not
 mean two application replicas.
 
-![MCP server scaled to three replicas](<../../pngs/Screenshot 2026-08-22 at 16.53.02.png>)
+![MCP server scaled to three replicas](../../pngs/agent-pull-data-mcp-scaleout-3-replicas.png)
 
 **Figure 10 — Current MCP scale-out proof.** K9s shows three Ready
 `recsys-feature-rag-mcp` pods after load. Paired with Figure 9 and the current
@@ -1085,14 +1085,14 @@ own a Deployment and is not scaled directly.
 
 ### Autoscale image proof
 
-![Sandbox WorkerPool baseline at one replica](<../../pngs/Screenshot 2026-08-22 at 15.59.03.png>)
+![Sandbox WorkerPool baseline at one replica](../../pngs/agent-pull-data-workerpool-baseline-1-replica.png)
 
 **Figure 11 — Sandbox WorkerPool baseline.** K9s shows the single Ready
 WorkerPool-generated pod before the sandbox A2A load. The scalable runtime is
 the `WorkerPool`; the declarative `SandboxAgent` CR is an agent profile and does
 not own a Deployment.
 
-![Sandbox WorkerPool scaled to three replicas](<../../pngs/Screenshot 2026-08-22 at 16.03.25.png>)
+![Sandbox WorkerPool scaled to three replicas](../../pngs/agent-pull-data-workerpool-scaleout-3-replicas.png)
 
 **Figure 12 — Sandbox WorkerPool scale-out.** K9s shows three Ready
 `recsys-context-sandbox-pool-deployment` worker pods. Paired with Figure 11,
@@ -1222,7 +1222,7 @@ feature-rag-mcp
 
 ### Image proof
 
-![Published MCP server and version history](<../../pngs/Screenshot 2026-08-22 at 16.58.12.png>)
+![Published MCP server and version history](../../pngs/agent-pull-data-registry-mcp-version-history.png)
 
 **Figure 13 — Governed MCP artifact.** Agent Registry lists
 `recsys-feature-rag-mcp`, its Git-derived current tag
@@ -1230,7 +1230,7 @@ feature-rag-mcp
 The retained version history makes the published server auditable and supports
 rollback without overwriting earlier metadata.
 
-![Published SandboxAgent and version history](<../../pngs/Screenshot 2026-08-22 at 16.58.29.png>)
+![Published SandboxAgent and version history](../../pngs/agent-pull-data-registry-sandbox-agent-version-history.png)
 
 **Figure 14 — Governed SandboxAgent artifact.** Agent Registry lists only the
 sandbox identity `recsys-context-agent-sandbox` with the matching current
@@ -1283,7 +1283,7 @@ answers that do not contain grounded `chunk_id` evidence.
 
 ### Image proof
 
-![SandboxAgent and four MCP tools in kagent UI](<../../pngs/Screenshot 2026-08-22 at 17.04.58.png>)
+![SandboxAgent and four MCP tools in kagent UI](../../pngs/agent-pull-data-kagent-ui-sandbox-agent-tools.png)
 
 **Figure 15 — kagent SandboxAgent UI binding.** The selected agent is
 `kagent/recsys-context-agent-sandbox`, described as the gVisor-isolated variant

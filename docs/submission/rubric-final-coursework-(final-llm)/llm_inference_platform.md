@@ -7,17 +7,19 @@ the platform is benchmarked before and after routing optimization.
 
 The active deployment is:
 
-- GCP project: `recsys-mlops`.
+- GCP project: `recsys-mlops-506406`.
 - Namespace: `llm-inference`.
 - Runtime: `llama.cpp` HTTP server.
 - Model: `ggml-org/Qwen3.5-0.8B-GGUF:Q4_0`.
 - Replicas: `2`.
-- Placement: existing `recsys-mlops-cpu` node pool (`n2-standard-8`).
+- Placement: two-node `recsys-mlops-cpu` pool (`2 x e2-standard-8`), with one
+  model replica per node.
 - Gateway: agentgateway with llm-d Router Gateway.
 - Historical baseline treatment: unoptimized direct-Service routing and the
   router's `random-picker` profile.
-- Active treatment: load-aware scheduling using
-  `inflight-load-producer` and `token-load-scorer`.
+- Available optimized treatment: load-aware scheduling using
+  `inflight-load-producer` and `token-load-scorer`; production currently keeps
+  the lower-overhead `baseline` router profile.
 - Prefix-aware scheduling: intentionally disabled in both treatments because
   this deployment uses llama.cpp rather than the vLLM prefix-cache integration.
 
@@ -30,13 +32,14 @@ The deployment switch is stored in
 
 ```hcl
 llm_node_pool_mode       = "cpu-services-shared"
-llm_optimization_profile = "optimized"
+llm_optimization_profile = "baseline"
 deploy_llm_inference     = true
 ```
 
 `cpu-services-shared` means that Terraform does not create the optional
 `recsys-mlops-llm-cpu` node pool. The model Pods instead use the existing
-`recsys-mlops-cpu` pool. `optimized` selects the load-aware router configuration.
+`recsys-mlops-cpu` pool. `baseline` keeps the random-picker router and avoids
+the extra load-scoring components in the cost-saving production profile.
 
 The accepted values and their validation are defined in
 [`infra/terraform/gcp/variables.tf`](../../../infra/terraform/gcp/variables.tf):

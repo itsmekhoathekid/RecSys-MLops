@@ -78,7 +78,7 @@ providers:
       baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
       # Bound CPU inference latency and prevent small-model repetition loops
       # from consuming the entire llama.cpp context window.
-      maxTokens: 256
+      maxTokens: 768
 
 # Agents are deployed by the repository-owned recsys-kagent-agent chart. The
 # upstream demo Agents and MCP servers are disabled to avoid unnecessary GKE

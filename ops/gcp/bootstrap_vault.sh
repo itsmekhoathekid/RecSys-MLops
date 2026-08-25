@@ -174,6 +174,48 @@ vault_exec "${active_token}" write auth/kubernetes/role/recsys-external-secrets 
 echo "Copying service secret groups into Vault KV v2 without printing values..."
 for secret_group in "${service_secret_groups[@]}"; do
   if ! kubectl get secret "${secret_group}" -n external-secrets >/dev/null 2>&1; then
+    if [[ "${secret_group}" == "analytics" ]]; then
+      if vault_exec "${active_token}" kv metadata get -mount=recsys "${secret_group}" >/dev/null 2>&1; then
+        echo "  ${secret_group}: legacy source absent; keeping the existing Vault version"
+        continue
+      fi
+      payload_file="${bootstrap_tmp}/${secret_group}.json"
+      analytics_source_file="${bootstrap_tmp}/analytics-data-platform.json"
+      kubectl get secret data-platform -n external-secrets -o json | \
+        jq '{data: (.data | with_entries(.value |= @base64d))}' >"${analytics_source_file}"
+      catalog_password="$(openssl rand -hex 32)"
+      superset_database_password="$(openssl rand -hex 32)"
+      superset_secret_key="$(openssl rand -hex 48)"
+      superset_admin_password="$(openssl rand -hex 32)"
+      jq \
+        --arg catalog_password "${catalog_password}" \
+        --arg superset_database_password "${superset_database_password}" \
+        --arg superset_secret_key "${superset_secret_key}" \
+        --arg superset_admin_password "${superset_admin_password}" \
+        '{data: {
+          ANALYTICS_CATALOG_USER: "iceberg",
+          ANALYTICS_CATALOG_PASSWORD: $catalog_password,
+          ANALYTICS_CATALOG_JDBC_URI: "jdbc:postgresql://recsys-analytics-catalog-postgres:5432/iceberg_catalog",
+          CATALOG_POSTGRES_DB: "iceberg_catalog",
+          CATALOG_POSTGRES_USER: "iceberg",
+          CATALOG_POSTGRES_PASSWORD: $catalog_password,
+          SUPERSET_DATABASE_USER: "superset",
+          SUPERSET_DATABASE_PASSWORD: $superset_database_password,
+          SUPERSET_DATABASE_NAME: "superset",
+          SUPERSET_SECRET_KEY: $superset_secret_key,
+          SUPERSET_ADMIN_USERNAME: "admin",
+          SUPERSET_ADMIN_PASSWORD: $superset_admin_password,
+          AWS_ACCESS_KEY_ID: .data.AWS_ACCESS_KEY_ID,
+          AWS_SECRET_ACCESS_KEY: .data.AWS_SECRET_ACCESS_KEY,
+          MINIO_ROOT_USER: .data.MINIO_ROOT_USER,
+          MINIO_ROOT_PASSWORD: .data.MINIO_ROOT_PASSWORD
+        }}' "${analytics_source_file}" >"${payload_file}"
+      unset catalog_password superset_database_password superset_secret_key superset_admin_password
+      vault_exec_with_payload "${active_token}" "${payload_file}" \
+        write "recsys/data/${secret_group}" - >/dev/null
+      echo "  ${secret_group}: generated and stored 16 keys"
+      continue
+    fi
     if [[ "${secret_group}" == "agent-gateway" ]]; then
       if vault_exec "${active_token}" kv metadata get -mount=recsys "${secret_group}" >/dev/null 2>&1; then
         echo "  ${secret_group}: legacy source absent; keeping the existing Vault version"

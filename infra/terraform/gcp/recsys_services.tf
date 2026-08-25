@@ -382,7 +382,7 @@ resource "helm_release" "recsys_inference_api" {
 }
 
 resource "helm_release" "recsys_serving" {
-  count = var.deploy_serving ? 1 : 0
+  count = var.deploy_model_serving ? 1 : 0
 
   name             = "recsys-serving"
   chart            = "${local.helm_dir}/recsys-serving"
@@ -392,7 +392,7 @@ resource "helm_release" "recsys_serving" {
   timeout          = 1200
 
   values = [
-    file("${local.helm_dir}/recsys-serving/values-gcp-cpu.yaml"),
+    file(var.enable_gpu_pool ? "${local.helm_dir}/recsys-serving/values-gcp-gpu.yaml" : "${local.helm_dir}/recsys-serving/values-gcp-cpu.yaml"),
   ]
 
   dynamic "set" {
@@ -431,7 +431,7 @@ resource "helm_release" "recsys_ray_gpu" {
   timeout          = 600
 
   values = [
-    file("${local.helm_dir}/ray-cluster/values-gcp-gpu.yaml"),
+    file(var.enable_gpu_pool ? "${local.helm_dir}/ray-cluster/values-gcp-gpu.yaml" : "${local.helm_dir}/ray-cluster/values-gcp-cpu.yaml"),
   ]
 
   dynamic "set" {
@@ -558,6 +558,13 @@ resource "helm_release" "recsys_gateway" {
   set_sensitive {
     name  = "auth.htpasswd"
     value = local.gateway_htpasswd
+  }
+
+  lifecycle {
+    # bcrypt() salts on every evaluation and Helm marks sensitive set values
+    # unknown during planning. Keep the deployed credential stable; rotations
+    # must be performed explicitly instead of occurring on an unrelated apply.
+    ignore_changes = [set_sensitive]
   }
 
   depends_on = [

@@ -1,10 +1,9 @@
 nodeSelectors:
-  # The CPU-services pool is at its quota ceiling in the production cluster.
-  # Place only the query engines and short-lived bootstrap hook on the existing
-  # ml-system node; stateful stores and Superset remain on cpu-services.
+  # These CPU-only query services do not tolerate the dedicated ML taint. Keep
+  # them with the stateful analytics services on the untainted CPU pool.
   lakehouseThrift:
-    recsys.ai/pool: ml-system
+    recsys.ai/pool: cpu-services
   trino:
-    recsys.ai/pool: ml-system
+    recsys.ai/pool: cpu-services
   supersetDashboardBootstrap:
-    recsys.ai/pool: ml-system
+    recsys.ai/pool: cpu-services
