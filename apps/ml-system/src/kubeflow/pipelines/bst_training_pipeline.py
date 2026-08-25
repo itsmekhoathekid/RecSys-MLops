@@ -312,7 +312,7 @@ def recsys_bst_pipeline(
     distributed_num_epochs: int = 1,
     distributed_worker_replicas: int = 2,
     distributed_num_workers: int = 2,
-    head_ray_num_cpus: str = "0",
+    head_ray_num_cpus: str = "1",
     ray_node_selector: str = "recsys.ai/pool=ml-system",
     ray_toleration: str = "recsys.ai/workload:ml-system:NoSchedule",
     ray_ttl_seconds_after_finished: int = 60,

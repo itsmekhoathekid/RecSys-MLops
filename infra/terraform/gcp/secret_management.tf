@@ -1,6 +1,6 @@
 locals {
   external_secret_source_namespace = "external-secrets"
-  gateway_htpasswd                 = coalesce(var.gateway_htpasswd, "recsys:!set-TF_VAR_gateway_htpasswd")
+  gateway_htpasswd                 = coalesce(var.gateway_htpasswd, "recsys:${bcrypt(random_password.gateway_basic_auth.result)}")
 
   external_secret_payloads = {
     data-platform = {

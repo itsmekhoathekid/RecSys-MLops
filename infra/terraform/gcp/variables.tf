@@ -194,6 +194,12 @@ variable "gpu_machine_type" {
   default     = "n1-standard-8"
 }
 
+variable "enable_gpu_pool" {
+  description = "Create the T4 node pool and use GPU Ray/KServe values. Disable for the supported CPU fallback profile."
+  type        = bool
+  default     = true
+}
+
 variable "gpu_accelerator_type" {
   description = "GKE accelerator type for Ray training and Triton inference."
   type        = string
@@ -279,13 +285,19 @@ variable "scale_optional_kfp_components" {
 }
 
 variable "deploy_ray_job" {
-  description = "Deploy the Ray GPU training RayJob."
+  description = "Deploy a standalone bootstrap RayJob. Keep false for production drift-triggered KFP retraining."
+  type        = bool
+  default     = false
+}
+
+variable "deploy_serving" {
+  description = "Deploy the online-feature and recommendation inference APIs."
   type        = bool
   default     = true
 }
 
-variable "deploy_serving" {
-  description = "Deploy the KServe/Triton GPU serving chart. Disable when GPU billing/quota is unavailable."
+variable "deploy_model_serving" {
+  description = "Deploy the KServe/Triton model release. Keep false until training has promoted a model into the serving object-store prefix."
   type        = bool
   default     = true
 }

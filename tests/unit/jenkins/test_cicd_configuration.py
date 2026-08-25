@@ -707,12 +707,12 @@ def test_github_webhook_trigger_uses_pipeline_job_property() -> None:
 def test_gcp_production_target_is_strict_and_self_consistent():
     target = configuration.load_gcp_production()
     assert target == {
-        "projectId": "recsys-mlops",
+        "projectId": "recsys-mlops-506406",
         "region": "asia-southeast1",
         "zone": "asia-southeast1-b",
         "cluster": "recsys-mlops-gke",
-        "context": "gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke",
-        "imageRegistry": "asia-southeast1-docker.pkg.dev/recsys-mlops/recsys",
+        "context": "gke_recsys-mlops-506406_asia-southeast1-b_recsys-mlops-gke",
+        "imageRegistry": "asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys",
     }
 
 

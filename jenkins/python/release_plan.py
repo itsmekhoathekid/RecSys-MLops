@@ -73,7 +73,7 @@ def load_deploy_config(path: Path = CONFIG_DIR / "deploy-units.json") -> dict[st
         missing = REQUIRED_UNIT_FIELDS - unit.keys()
         if missing:
             raise ValueError(f"deploy unit is missing fields: {sorted(missing)}")
-        allowed = REQUIRED_UNIT_FIELDS | (
+        allowed = REQUIRED_UNIT_FIELDS | {"requiresExplicitComponent"} | (
             {"chart", "imageValues"} if unit.get("kind") == "helm" else set()
         )
         unknown_fields = set(unit) - allowed
@@ -98,6 +98,10 @@ def load_deploy_config(path: Path = CONFIG_DIR / "deploy-units.json") -> dict[st
             raise ValueError(
                 f"deploy unit {name} references unknown components: "
                 f"{sorted(set(unit['components']) - components)}"
+            )
+        if not isinstance(unit.get("requiresExplicitComponent", False), bool):
+            raise ValueError(
+                f"deploy unit {name} requiresExplicitComponent must be a boolean"
             )
         if set(unit["consumesImages"]) - images:
             raise ValueError(
@@ -224,16 +228,23 @@ def create_release_plan(
     build_images = topological_order(image_specs, closure)
 
     units = deploy_config["units"]
-    selected_units = {
-        unit["name"]
-        for unit in units
-        if set(unit["components"]) & set(component_names)
-        or (
-            not unit["consumesArtifacts"]
-            and set(unit["consumesImages"]) & deploy_trigger_images
+    selected_units = set()
+    for unit in units:
+        explicitly_selected = bool(
+            set(unit["components"]) & set(component_names)
         )
-        or set(unit["consumesArtifacts"]) & set(build_artifacts)
-    }
+        dependency_triggered = (
+            not unit.get("requiresExplicitComponent", False)
+            and (
+                (
+                    not unit["consumesArtifacts"]
+                    and bool(set(unit["consumesImages"]) & deploy_trigger_images)
+                )
+                or bool(set(unit["consumesArtifacts"]) & set(build_artifacts))
+            )
+        )
+        if explicitly_selected or dependency_triggered:
+            selected_units.add(unit["name"])
     for unit in units:
         chart = unit.get("chart")
         if chart and any(

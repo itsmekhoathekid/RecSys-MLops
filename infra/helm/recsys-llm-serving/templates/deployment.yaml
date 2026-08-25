@@ -27,6 +27,15 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.topologySpread.topologyKey | quote }}
+          whenUnsatisfiable: {{ .Values.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "recsys-llm-serving.selectorLabels" . | nindent 14 }}
+      {{- end }}
       containers:
         - name: llama-server
           image: {{ include "recsys-llm-serving.image" . | quote }}

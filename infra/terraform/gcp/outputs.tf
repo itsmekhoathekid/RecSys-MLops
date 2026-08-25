@@ -27,13 +27,25 @@ output "kubectl_get_credentials_command" {
 }
 
 output "gpu_pool_summary" {
-  value = {
+  value = var.enable_gpu_pool ? {
+    name             = google_container_node_pool.gpu[0].name
     machine_type     = var.gpu_machine_type
     accelerator_type = var.gpu_accelerator_type
     min_nodes        = var.gpu_min_nodes
     max_nodes        = var.gpu_max_nodes
     spot             = var.gpu_spot
-  }
+  } : null
+}
+
+output "ml_compute_mode" {
+  description = "Selected compute mode for Ray training and KServe/Triton serving."
+  value       = var.enable_gpu_pool ? "gpu" : "cpu"
+}
+
+output "gateway_basic_auth_password" {
+  description = "Generated password for the recsys gateway user. Null when gateway_htpasswd is supplied explicitly."
+  value       = var.gateway_htpasswd == null ? random_password.gateway_basic_auth.result : null
+  sensitive   = true
 }
 
 output "llm_cpu_pool_summary" {

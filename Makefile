@@ -4,6 +4,8 @@ export UV_CACHE_DIR
 
 GCP_POWER_SCRIPT := ops/gcp/services_power.sh
 GCP_VERIFY_SCRIPT := ops/validation/verify_gcp_stack.sh
+GCP_FULL_VERIFY_SCRIPT := ops/validation/verify_gcp_full_stack.sh
+GCP_TRAIN_SCRIPT := ops/gcp/train_model.sh
 LLM_SMOKE_SCRIPT := ops/validation/llm_inference_smoke.sh
 LLM_BENCHMARK_SCRIPT := ops/validation/llm_inference_benchmark.sh
 KFP_PACKAGE := pipelines/kubeflow/compiled/bst_training_pipeline.yaml
@@ -19,6 +21,7 @@ help:
 	@echo "  make terraform-validate       Format-check and validate Terraform when initialized"
 	@echo "  make full-cicd-preflight      Run the complete local preflight for Jenkins CI/CD"
 	@echo "  make verify-gcp               Run static GCP/Helm verification"
+	@echo "  make gcp-full-check           Run static/preflight/live/all full-stack checklist"
 	@echo ""
 	@echo "Artifacts and operations:"
 	@echo "  make compile-kfp              Compile the BST Kubeflow pipeline package"
@@ -40,6 +43,7 @@ help:
 	@echo "  make recommendation-agentic-autoscale Prove MCP and WorkerPool 1 -> 3"
 	@echo "  make recommendation-agentic-registry Verify Registry Git SHA"
 	@echo "  make jenkins-full             Trigger the full production Jenkins CI/CD job"
+	@echo "  make gcp-train-model          Run drift DAG, trigger retraining, and wait for KFP"
 
 .PHONY: validate
 validate:
@@ -102,6 +106,17 @@ compile-kfp:
 .PHONY: verify-gcp
 verify-gcp:
 	@bash "$(GCP_VERIFY_SCRIPT)" static
+
+.PHONY: gcp-full-check
+gcp-full-check:
+	@if [ -f "$(CURDIR)/.env" ]; then . "$(CURDIR)/.env"; fi; \
+		GCP_CHECK_BASIC_AUTH_USER="$${GATEWAY_AUTH_USER:-$${GATEWAY_USER:-}}" \
+		GCP_CHECK_BASIC_AUTH_PASSWORD="$${GATEWAY_AUTH_PASSWORD:-$${GATEWAY_PASSWORD:-}}" \
+		bash "$(GCP_FULL_VERIFY_SCRIPT)" "$${GCP_CHECK_MODE:-all}"
+
+.PHONY: gcp-train-model
+gcp-train-model:
+	@bash "$(GCP_TRAIN_SCRIPT)"
 
 .PHONY: gcp-services-down
 gcp-services-down:

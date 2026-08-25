@@ -178,8 +178,9 @@ Observed result:
 
 ```text
 NAME                                                  STATUS   VERSION               WORKLOAD        POOL           INSTANCE-TYPE
-gke-recsys-mlops-gke-recsys-mlops-cpu-d4791f44-714z   Ready    v1.35.5-gke.1163012   data-platform   cpu-services   e2-standard-8
-gke-recsys-mlops-gke-recsys-mlops-ml--f31561e0-ltbt   Ready    v1.35.5-gke.1163012   ml-system       ml-system      e2-standard-4
+gke-recsys-mlops-gke-recsys-mlops-cpu-2224da7a-961g   Ready    v1.35.6-gke.1710000   data-platform   cpu-services   e2-standard-8
+gke-recsys-mlops-gke-recsys-mlops-cpu-2224da7a-j33x   Ready    v1.35.6-gke.1710000   data-platform   cpu-services   e2-standard-8
+gke-recsys-mlops-gke-recsys-mlops-ml--7de3a9d8-1nsc   Ready    v1.35.6-gke.1710000   ml-system       ml-system      e2-standard-4
 ```
 
 Node pool service placement:
@@ -193,6 +194,7 @@ by their pod `nodeSelector`/toleration policy.
 | --- | --- | --- | --- |
 | `cpu-services` | Data ingestion and feature data platform | `source-postgres`, `airflow-postgres`, `feature-postgres`, `data-platform-minio`, `kafka`, `kafka-connect`, `redis`, `flink-jobmanager`, `flink-taskmanager`, `airflow-webserver`, `airflow-scheduler`, `realtime-event-producer`, `realtime-flink-online-store`, `realtime-flink-offline-store` | Keeps streaming, batch orchestration, feature-store writes, and data-generator traffic on the larger CPU data-platform node. |
 | `cpu-services` | Observability, gateway, governance, CI/CD, and control plane | `recsys-grafana`, `recsys-prometheus`, `recsys-loki`, `recsys-tempo`, `recsys-pushgateway`, exporters, `datahub-frontend`, `datahub-gms`, Jenkins `recsys-jenkins`, in-cluster registry `recsys-registry`, NGINX ingress controller, KEDA, cert-manager, KServe controller, Istio control plane, Kubeflow Pipelines control services | These are platform/control-plane services. They support the whole stack and do not need to consume capacity on the isolated ML serving node. |
+| `cpu-services` | Shared LLM inference and agent routing | Two `qwen35-gguf` llama.cpp replicas, llm-d router, Agent Gateway, MCP servers and agent workloads | Required hostname spreading places one Qwen replica on each CPU node, avoiding the cost of a dedicated LLM pool while retaining replica availability. |
 | `ml-system` | Experiment tracking and model store | MLflow service `mlflow`, MLflow Postgres service `postgres`, MLflow MinIO service `minio`, MinIO bucket init job | Terraform applies the shared `ml-system` node selector/toleration to the MLflow Helm release so experiment tracking and model artifacts stay close to model serving. |
 | `ml-system` | Online serving APIs | FastAPI recommendation service `recsys-api-serving`, FastAPI online feature service `recsys-online-feature-api`, KEDA HTTP targets/ScaledObjects for those services | API pods are pinned to the tainted ML node so online inference traffic is isolated from Kafka/Flink/Airflow load. |
 | `ml-system` | Model inference runtime | KServe `InferenceService` `recsys-bst-triton`, optional candidate `recsys-bst-triton-candidate`, predictor services `recsys-bst-triton-predictor` and `recsys-bst-triton-candidate-predictor` exposing Triton HTTP and gRPC ports | Triton/KServe predictor pods are pinned to the ML node. The recommendation API calls Triton through the predictor service gRPC port `9000` and receives promoted model updates from the KServe CD flow. |

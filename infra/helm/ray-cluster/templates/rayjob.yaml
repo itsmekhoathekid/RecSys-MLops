@@ -25,9 +25,21 @@ spec:
       serviceType: ClusterIP
       rayStartParams:
         dashboard-host: "0.0.0.0"
-        num-cpus: "0"
+        dashboard-agent-grpc-port: {{ .Values.head.dashboardAgentGrpcPort | quote }}
+        runtime-env-agent-port: {{ .Values.head.runtimeEnvAgentPort | quote }}
+        num-cpus: {{ .Values.head.rayNumCpus | quote }}
+        memory: {{ .Values.head.rayMemoryBytes | quote }}
+        object-store-memory: {{ .Values.head.objectStoreMemoryBytes | quote }}
       template:
         spec:
+          {{- with .Values.head.nodeSelector }}
+          nodeSelector:
+{{ toYaml . | indent 12 }}
+          {{- end }}
+          {{- with .Values.head.tolerations }}
+          tolerations:
+{{ toYaml . | indent 12 }}
+          {{- end }}
           containers:
             - name: ray-head
               image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
@@ -54,7 +66,11 @@ spec:
         replicas: {{ .Values.worker.replicas }}
         minReplicas: {{ .Values.worker.replicas }}
         maxReplicas: {{ .Values.worker.replicas }}
-        rayStartParams: {}
+        rayStartParams:
+          dashboard-agent-grpc-port: {{ .Values.worker.dashboardAgentGrpcPort | quote }}
+          runtime-env-agent-port: {{ .Values.worker.runtimeEnvAgentPort | quote }}
+          memory: {{ .Values.worker.rayMemoryBytes | quote }}
+          object-store-memory: {{ .Values.worker.objectStoreMemoryBytes | quote }}
         template:
           spec:
             {{- if .Values.gpu.enabled }}
@@ -64,6 +80,15 @@ spec:
               - key: nvidia.com/gpu
                 operator: Exists
                 effect: NoSchedule
+            {{- else }}
+            {{- with .Values.worker.nodeSelector }}
+            nodeSelector:
+{{ toYaml . | indent 14 }}
+            {{- end }}
+            {{- with .Values.worker.tolerations }}
+            tolerations:
+{{ toYaml . | indent 14 }}
+            {{- end }}
             {{- end }}
             containers:
               - name: ray-worker

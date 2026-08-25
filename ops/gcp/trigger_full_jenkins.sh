@@ -9,11 +9,18 @@ max_parallel="${COMPONENT_CI_MAX_PARALLEL:-3}"
 coverage_min="${COVERAGE_MIN:-90}"
 gateway_credentials_id="${GATEWAY_SMOKE_CREDENTIALS_ID:-}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
-components="${FORCE_COMPONENTS:-materialize,training,dp1,dp2,dp3,datahub_catalog,online_feature_api,inference_api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,rag_index,rag_api,ci_config}"
+components="${FORCE_COMPONENTS:-materialize,training,dp1,dp2,dp3,online_feature_api,inference_api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,rag_api,feature_rag_mcp,context_agent,recommendation_mcp,recommendation_agent,ci_config}"
 datahub_cutover_mode="${DATAHUB_CUTOVER_MODE:-skip}"
 rag_source_run_id="${RAG_SOURCE_RUN_ID:-}"
 rag_pipeline_run_id="${RAG_PIPELINE_RUN_ID:-}"
 agentic_smoke_chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
+if [[ "${INCLUDE_DATA_DEPENDENT_COMPONENTS:-0}" == "1" ]]; then
+  [[ -n "${rag_source_run_id}" && -n "${rag_pipeline_run_id}" ]] || {
+    echo "RAG_SOURCE_RUN_ID and RAG_PIPELINE_RUN_ID are required when INCLUDE_DATA_DEPENDENT_COMPONENTS=1" >&2
+    exit 2
+  }
+  components="${components},datahub_catalog,rag_index"
+fi
 crumb_header=()
 headers_file="$(mktemp)"
 cookie_file="$(mktemp)"

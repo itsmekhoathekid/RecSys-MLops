@@ -117,9 +117,24 @@ locals {
     }
   )
 
-  ray_sets = {
-    "image.repository"                                      = local.images.training_repository
-    "image.tag"                                             = var.image_tag
-    "gpu.nodeSelector.cloud\\.google\\.com/gke-accelerator" = var.gpu_accelerator_type
-  }
+  ray_sets = merge(
+    {
+      "image.repository" = local.images.training_repository
+      "image.tag"        = var.image_tag
+    },
+    var.enable_gpu_pool ? {
+      "gpu.nodeSelector.cloud\\.google\\.com/gke-accelerator" = var.gpu_accelerator_type
+      } : {
+      "head.nodeSelector.recsys\\.ai/pool"   = "ml-system"
+      "head.tolerations[0].key"              = "recsys.ai/workload"
+      "head.tolerations[0].operator"         = "Equal"
+      "head.tolerations[0].value"            = "ml-system"
+      "head.tolerations[0].effect"           = "NoSchedule"
+      "worker.nodeSelector.recsys\\.ai/pool" = "ml-system"
+      "worker.tolerations[0].key"            = "recsys.ai/workload"
+      "worker.tolerations[0].operator"       = "Equal"
+      "worker.tolerations[0].value"          = "ml-system"
+      "worker.tolerations[0].effect"         = "NoSchedule"
+    }
+  )
 }

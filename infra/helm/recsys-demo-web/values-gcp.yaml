@@ -1,5 +1,5 @@
 frontend:
-  image: asia-southeast1-docker.pkg.dev/recsys-mlops/recsys/recsys-demo-web:gcp
+  image: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-demo-web:gcp
   imagePullPolicy: Always
   replicas: 2
   nodeSelector:
@@ -12,7 +12,7 @@ frontend:
       effect: NoSchedule
 
 backend:
-  image: asia-southeast1-docker.pkg.dev/recsys-mlops/recsys/recsys-demo-api:gcp
+  image: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-demo-api:gcp
   imagePullPolicy: Always
   replicas: 2
   nodeSelector:

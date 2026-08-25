@@ -63,6 +63,7 @@ deploy_analytics() {
     --set "namespace=${namespace_analytics}" \
     --set "secrets.create=${secret_create}" \
     --set "externalSecret.enabled=${external_secret_enabled}" \
+    --set "dashboardBootstrap.enabled=${ANALYTICS_DASHBOARD_BOOTSTRAP_ENABLED:-true}" \
     --set "images.pullPolicy=Always" \
     --set-string "images.spark=${spark_image}" \
     --set-string "images.dbt=${dbt_image}" \

@@ -128,6 +128,10 @@ def test_mcp_and_workerpool_scale_one_to_three_with_fallback_one() -> None:
         worker_scaled["spec"]["maxReplicaCount"],
         worker_scaled["spec"]["fallback"]["replicas"],
     ) == (1, 3, 1)
+    assert worker_scaled["spec"]["advanced"]["horizontalPodAutoscalerConfig"][
+        "behavior"
+    ]["scaleDown"]["stabilizationWindowSeconds"] == 60
+    assert worker_scaled["spec"]["triggers"][0]["metadata"]["threshold"] == "400"
     pdb = _resource(
         agent_documents, "PodDisruptionBudget", "recsys-recommendation-sandbox-pool"
     )
@@ -182,7 +186,10 @@ def test_autoscale_and_smoke_proof_scripts_are_portable_and_bounded() -> None:
     assert 'wait "${mcp_load_pid}"' in autoscale
     assert 'wait "${worker_load_pid}"' in autoscale
     assert "RECOMMENDATION_MCP_LOAD_CONCURRENCY" in autoscale
-    assert "ThreadPoolExecutor(max_workers=4)" in autoscale
+    assert "RECOMMENDATION_MCP_REQUEST_TIMEOUT_SECONDS" in autoscale
+    assert "RECOMMENDATION_AGENT_LOAD_REQUESTS" in autoscale
+    assert "timeout=httpx.Timeout(timeout_seconds)" in autoscale
+    assert "max_workers=min(concurrency, requests)" in autoscale
 
     smoke = paths[1].read_text(encoding="utf-8")
     assert "remotemcpserver/recsys-recommendation-mcp" in smoke

@@ -10,7 +10,11 @@ spec:
   cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod }}
   advanced:
     restoreToOriginalReplicaCount: {{ .Values.autoscaling.restoreToOriginalReplicaCount }}
-    horizontalPodAutoscalerConfig: {name: {{ .Values.autoscaling.hpaName }}}
+    horizontalPodAutoscalerConfig:
+      name: {{ .Values.autoscaling.hpaName }}
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDownStabilizationSeconds }}
   triggers:
     - type: prometheus
       metadata:

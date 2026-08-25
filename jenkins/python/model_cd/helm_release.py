@@ -163,6 +163,8 @@ def _deploy_kserve(values_path: Path, timeout: str, candidate: bool) -> None:
         timeout,
         "--set",
         "autoscaling.kserveResource.enabled=false",
+        "--set",
+        "kserve.namespace.create=false",
     )
     _wait_stable(timeout)
     if candidate:
@@ -175,6 +177,8 @@ def _deploy_kserve(values_path: Path, timeout: str, candidate: bool) -> None:
         timeout,
         "--set",
         "autoscaling.kserveResource.enabled=true",
+        "--set",
+        "kserve.namespace.create=false",
     )
 
 

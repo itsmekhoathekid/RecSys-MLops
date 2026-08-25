@@ -13,8 +13,11 @@ kafka:
   name: kafka
   bootstrapServers: kafka:29092
   topicPartitions: 4
+  retentionHours: "24"
+  segmentBytes: "268435456"
+  retentionCheckIntervalMs: "60000"
   persistence:
     enabled: true
-    storage: 20Gi
+    storage: 60Gi
 realtimeFlinkConsumer:
   topic: cdc.behavior_events

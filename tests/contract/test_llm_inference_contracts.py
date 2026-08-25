@@ -47,11 +47,26 @@ def test_shared_cpu_node_profile_fits_the_live_quota_constrained_topology() -> N
     ).read_text()
     terraform = (ROOT / "infra/terraform/gcp/llm_inference.tf").read_text()
     gke = (ROOT / "infra/terraform/gcp/gke.tf").read_text()
+    deployment = (
+        ROOT / "infra/helm/recsys-llm-serving/templates/deployment.yaml"
+    ).read_text()
+    production = (ROOT / "infra/terraform/gcp/terraform.tfvars.example").read_text()
     assert "cloud.google.com/gke-nodepool: recsys-mlops-cpu" in shared
     assert "replicaCount: 2" in shared
     assert "cpu: 100m" in shared
     assert "memory: 1536Mi" in shared
     assert "contextSize: 16384" in shared
+    assert "topologySpread:" in shared
+    assert "whenUnsatisfiable: DoNotSchedule" in shared
+    assert "topologySpreadConstraints:" in deployment
+    assert 'llm_node_pool_mode   = "cpu-services-shared"' in production
+    assert 'cpu_machine_type = "e2-standard-8"' in production
+    assert "cpu_min_nodes    = 2" in production
+    assert "cpu_max_nodes    = 2" in production
+    assert 'ml_machine_type = "e2-standard-4"' in production
+    assert "ml_min_nodes    = 1" in production
+    assert "ml_max_nodes    = 1" in production
+    assert "enable_gpu_pool       = false" in production
     assert 'var.llm_node_pool_mode == "cpu-services-shared"' in terraform
     assert (
         'var.deploy_llm_inference && var.llm_node_pool_mode == "dedicated"'
@@ -101,7 +116,7 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
         "http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1"
         in values
     )
-    assert "maxTokens: 256" in values
+    assert "maxTokens: 768" in values
     assert "tls:" not in values
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
     assert 'resource "helm_release" "substrate"' in terraform
@@ -176,3 +191,9 @@ def test_power_management_tracks_the_llm_pool() -> None:
     assert "record_pool_state LLM_CPU" in script
     assert 'scale_pool_down LLM_CPU "${LLM_CPU_NODE_POOL}"' in script
     assert 'scale_pool_up LLM_CPU "${LLM_CPU_POOL}"' in script
+    assert 'DEFAULT_CPU_NODES="${GCP_CPU_NODES:-2}"' in script
+    assert 'DEFAULT_CPU_MAX_NODES="${GCP_CPU_MAX_NODES:-2}"' in script
+    assert 'DEFAULT_ML_NODES="${GCP_ML_NODES:-1}"' in script
+    assert 'DEFAULT_ML_MAX_NODES="${GCP_ML_MAX_NODES:-1}"' in script
+    assert 'DEFAULT_LLM_CPU_NODES="${GCP_LLM_CPU_NODES:-0}"' in script
+    assert 'DEFAULT_LLM_CPU_MAX_NODES="${GCP_LLM_CPU_MAX_NODES:-0}"' in script

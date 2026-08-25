@@ -57,6 +57,12 @@ resources:
 nodeSelector: {}
 tolerations: []
 
+topologySpread:
+  enabled: false
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: DoNotSchedule
+
 cache:
   persistence:
     enabled: false

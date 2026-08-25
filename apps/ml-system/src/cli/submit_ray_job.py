@@ -242,6 +242,8 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
                     "serviceType": "ClusterIP",
                     "rayStartParams": {
                         "dashboard-host": "0.0.0.0",
+                        "dashboard-agent-grpc-port": "52366",
+                        "runtime-env-agent-port": "52367",
                         "num-cpus": args.head_ray_num_cpus,
                         "memory": args.head_ray_memory_bytes,
                         "object-store-memory": args.head_object_store_memory_bytes,
@@ -277,6 +279,8 @@ def build_rayjob(args: argparse.Namespace) -> dict[str, Any]:
                 "minReplicas": args.worker_replicas,
                 "maxReplicas": args.worker_replicas,
                 "rayStartParams": {
+                    "dashboard-agent-grpc-port": "52366",
+                    "runtime-env-agent-port": "52367",
                     "memory": args.worker_ray_memory_bytes,
                     "object-store-memory": args.worker_object_store_memory_bytes,
                 },
@@ -437,7 +441,7 @@ def main() -> int:
     parser.add_argument("--gpus-per-trial", type=float, default=0.0)
     parser.add_argument("--worker-replicas", type=int_arg, default=1)
     parser.add_argument("--num-workers", type=int_arg, default=0)
-    parser.add_argument("--head-ray-num-cpus", default="0")
+    parser.add_argument("--head-ray-num-cpus", default="1")
     parser.add_argument("--head-cpu-request", default="50m")
     parser.add_argument("--head-cpu-limit", default="2")
     parser.add_argument("--head-memory-request", default="768Mi")

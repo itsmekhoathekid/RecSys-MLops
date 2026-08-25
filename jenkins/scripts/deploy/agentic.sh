@@ -401,9 +401,6 @@ cases = {
         "chunk_id values in one concise final text."
     ),
 }
-context_id = str(uuid.uuid4())
-
-
 def collect_chunk_ids(value):
     found = set()
     if isinstance(value, dict):
@@ -426,6 +423,7 @@ def collect_chunk_ids(value):
 
 def invoke(tool_name, prompt):
     request_id = str(uuid.uuid4())
+    context_id = str(uuid.uuid4())
     payload = {
         "jsonrpc": "2.0",
         "id": request_id,

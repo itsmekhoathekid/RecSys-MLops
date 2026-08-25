@@ -3,12 +3,12 @@ namespace:
 
 productionTarget:
   enabled: true
-  projectId: recsys-mlops
+  projectId: recsys-mlops-506406
   region: asia-southeast1
   zone: asia-southeast1-b
   cluster: recsys-mlops-gke
-  context: gke_recsys-mlops_asia-southeast1-b_recsys-mlops-gke
-  imageRegistry: asia-southeast1-docker.pkg.dev/recsys-mlops/recsys
+  context: gke_recsys-mlops-506406_asia-southeast1-b_recsys-mlops-gke
+  imageRegistry: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys
 
 jenkins:
   nodeSelector:
@@ -20,7 +20,10 @@ jenkins:
       memory: 512Mi
     limits:
       cpu: "1"
-      memory: 2Gi
+      # Full KFP package compilation briefly peaks above 2 GiB while uv links
+      # the locked ML environment. Keep enough headroom to avoid cgroup
+      # allocation failures without increasing the scheduler reservation.
+      memory: 8Gi
   runtimeCredentialsSecret:
     enabled: true
   dind:
@@ -43,7 +46,7 @@ jenkins:
 
 modelRolloutWatcher:
   enabled: true
-  image: asia-southeast1-docker.pkg.dev/recsys-mlops/recsys/recsys-mlops-training:gcp
+  image: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-mlops-training:gcp
   imagePullPolicy: Always
   nodeSelector:
     recsys.ai/pool: ml-system

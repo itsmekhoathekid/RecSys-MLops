@@ -9,7 +9,11 @@ kserve:
   sharedMemory: {sizeLimit: 512Mi}
 autoscaling:
   kserveResource:
-    enabled: true
+    # KEDA validates scaleTargetRef at admission time, while KServe creates the
+    # predictor Deployment asynchronously from the InferenceService. Enable
+    # this after the first predictor is Ready (the Jenkins serving rollout does
+    # that); bootstrap uses KServe's native autoscaler.
+    enabled: false
     minReplicas: 1
     maxReplicas: 3
     pollingInterval: 15

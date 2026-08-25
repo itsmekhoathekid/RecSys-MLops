@@ -56,7 +56,7 @@ def write_values(
             "progressDeadlineSeconds": 300,
         },
         "config": {"modelVersion": control["model_version"]},
-        "autoscaling": {"minReplicas": 2},
+        "autoscaling": {"minReplicas": 1},
         "abTest": {
             "enabled": ab_enabled,
             "experimentId": experiment_id,
