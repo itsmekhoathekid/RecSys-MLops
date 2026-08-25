@@ -42,6 +42,11 @@ help:
 	@echo "  make recommendation-agentic-smoke Validate deployed recommendation runtime"
 	@echo "  make recommendation-agentic-autoscale Prove MCP and WorkerPool 1 -> 3"
 	@echo "  make recommendation-agentic-registry Verify Registry Git SHA"
+	@echo "  make test-coordinator-agentic     Run coordinator Helm/contract/E2E tests"
+	@echo "  make helm-coordinator-agentic     Lint/render the coordinator chart"
+	@echo "  make coordinator-agentic-smoke   Validate coordinator A2A and MCP routing"
+	@echo "  make coordinator-agentic-autoscale Prove coordinator WorkerPool 1 -> 3 -> 1"
+	@echo "  make coordinator-agentic-registry Verify coordinator registry dependencies"
 	@echo "  make jenkins-full             Trigger the full production Jenkins CI/CD job"
 	@echo "  make gcp-train-model          Run drift DAG, trigger retraining, and wait for KFP"
 
@@ -211,3 +216,32 @@ recommendation-agentic-registry:
 .PHONY: recommendation-agentic-latency
 recommendation-agentic-latency:
 	@bash ops/validation/recommendation_agentic_latency.sh
+
+.PHONY: test-coordinator-agentic
+test-coordinator-agentic:
+	@uv run --project apps/agentic/recsys-feature-rag-mcp pytest \
+	  tests/contract/test_coordinator_agentic_contracts.py \
+	  tests/e2e/coordinator_agentic -q
+
+.PHONY: helm-coordinator-agentic
+helm-coordinator-agentic:
+	@helm lint infra/helm/recsys-coordinator-agent \
+	  -f infra/helm/recsys-coordinator-agent/values-gcp.yaml
+	@helm template validation infra/helm/recsys-coordinator-agent \
+	  -f infra/helm/recsys-coordinator-agent/values-gcp.yaml >/dev/null
+
+.PHONY: coordinator-agentic-preflight
+coordinator-agentic-preflight:
+	@bash -c 'source jenkins/scripts/lib/common.sh; source jenkins/scripts/deploy/agentic.sh; timeout=10m; coordinator_agentic_preflight true'
+
+.PHONY: coordinator-agentic-smoke
+coordinator-agentic-smoke:
+	@bash ops/validation/coordinator_agentic_smoke.sh
+
+.PHONY: coordinator-agentic-autoscale
+coordinator-agentic-autoscale:
+	@bash ops/validation/coordinator_agentic_autoscale.sh
+
+.PHONY: coordinator-agentic-registry
+coordinator-agentic-registry:
+	@bash ops/validation/coordinator_agentic_registry_smoke.sh

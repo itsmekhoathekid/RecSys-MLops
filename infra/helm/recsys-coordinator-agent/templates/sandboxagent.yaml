@@ -1,0 +1,66 @@
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: {{ .Values.sandbox.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    recsys.ai/model-config-revision: {{ .Values.sandbox.modelConfigRevision | quote }}
+  labels:
+    {{- include "recsys-coordinator-agent.labels" . | nindent 4 }}
+spec:
+  type: Declarative
+  platform: substrate
+  description: Intent-routing RecSys coordinator with sandboxed A2A and MCP access.
+  sandbox:
+    network:
+      allowedDomains:
+        {{- toYaml .Values.sandbox.allowedDomains | nindent 8 }}
+  substrate:
+    workerPoolRef:
+      apiGroup: ate.dev
+      kind: WorkerPool
+      name: {{ .Values.sandbox.workerPool }}
+  declarative:
+    runtime: go
+    modelConfig: {{ .Values.sandbox.modelConfig }}
+    stream: false
+    {{- with .Values.sandbox.imageRegistry }}
+    deployment:
+      imageRegistry: {{ . | quote }}
+    {{- end }}
+    systemMessage: |
+      {{- .Values.sandbox.systemMessage | nindent 6 }}
+      Runtime model configuration revision: {{ .Values.sandbox.modelConfigRevision }}.
+    a2aConfig:
+      skills:
+        - id: coordinated-personalized-recommendation
+          name: Coordinated personalized recommendation
+          description: Route recommendation and grounded context work to the appropriate RecSys specialists.
+          tags: [recsys, coordinator, recommendation, rag, sandbox]
+          examples:
+            - "Recommend three items for user 1001 and explain them with grounded evidence."
+    tools:
+      - type: Agent
+        agent:
+          apiGroup: {{ .Values.agents.context.apiGroup }}
+          kind: {{ .Values.agents.context.kind }}
+          name: {{ .Values.agents.context.name }}
+      - type: Agent
+        agent:
+          apiGroup: {{ .Values.agents.recommendation.apiGroup }}
+          kind: {{ .Values.agents.recommendation.kind }}
+          name: {{ .Values.agents.recommendation.name }}
+      - type: McpServer
+        mcpServer:
+          apiGroup: {{ .Values.mcpServers.context.apiGroup }}
+          kind: {{ .Values.mcpServers.context.kind }}
+          name: {{ .Values.mcpServers.context.name }}
+          toolNames:
+            {{- toYaml .Values.mcpServers.context.tools | nindent 12 }}
+      - type: McpServer
+        mcpServer:
+          apiGroup: {{ .Values.mcpServers.recommendation.apiGroup }}
+          kind: {{ .Values.mcpServers.recommendation.kind }}
+          name: {{ .Values.mcpServers.recommendation.name }}
+          toolNames:
+            {{- toYaml .Values.mcpServers.recommendation.tools | nindent 12 }}

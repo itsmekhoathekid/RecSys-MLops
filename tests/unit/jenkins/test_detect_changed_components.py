@@ -270,6 +270,21 @@ def test_agentic_change_routing_and_release_order_matrix():
     assert units.index("rag-api") < units.index("feature-rag-mcp")
 
 
+def test_coordinator_change_selects_its_helm_and_registry_units_in_order():
+    coordinator = detect(
+        ["infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml"]
+    )
+    assert coordinator.component_names == ("coordinator_agent",)
+    assert coordinator.release_plan["buildImages"] == []
+    assert coordinator.release_plan["deployUnits"] == [
+        "coordinator-agent",
+        "coordinator-agent-registry",
+    ]
+
+    validation = detect(["ops/validation/coordinator_agentic_autoscale.sh"])
+    assert validation.component_names == ("coordinator_agent",)
+
+
 def test_rag_change_detection_and_release_dependency_order():
     index = detect(["apps/data-platform/src/rag_data/semantic_chunker.py"])
     assert index.component_names == ("rag_index",)

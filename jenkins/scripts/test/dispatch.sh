@@ -22,6 +22,7 @@ run_component_verification() {
     context_agent) test_context_agent ;;
     recommendation_mcp) test_recommendation_mcp ;;
     recommendation_agent) test_recommendation_agent ;;
+    coordinator_agent) test_coordinator_agent ;;
     online_feature_api) test_online_feature_api ;;
     inference_api) test_inference_api ;;
     kserve|kserve_model_cd) test_kserve ;;
@@ -41,6 +42,7 @@ run_component_verification() {
       test_context_agent
       test_recommendation_mcp
       test_recommendation_agent
+      test_coordinator_agent
       test_online_feature_api
       test_inference_api
       test_kserve

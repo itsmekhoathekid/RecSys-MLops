@@ -40,6 +40,7 @@ EXPECTED_LABELS = [
     "RecSys Context Agent",
     "Recommendation MCP",
     "Recommendation Sandbox Agent",
+    "RecSys Coordinator Sandbox Agent",
     "Inference API",
     "KServe Inference Engine",
     "Progressive Model Rollout",
@@ -129,6 +130,23 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     ]
     assert units["recommendation-agent-registry"]["dependsOn"] == [
         "recommendation-agent",
+        "recommendation-mcp-registry",
+    ]
+
+    assert components["coordinator_agent"]["buildImages"] == []
+    assert components["coordinator_agent"]["verifyDependsOn"] == [
+        "context_agent",
+        "recommendation_agent",
+    ]
+    assert units["coordinator-agent"]["dependsOn"] == [
+        "context-agent",
+        "recommendation-agent",
+    ]
+    assert units["coordinator-agent-registry"]["dependsOn"] == [
+        "coordinator-agent",
+        "context-agent-registry",
+        "recommendation-agent-registry",
+        "feature-rag-mcp-registry",
         "recommendation-mcp-registry",
     ]
 

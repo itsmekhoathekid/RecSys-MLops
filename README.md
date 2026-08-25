@@ -359,7 +359,7 @@ Source: tab **`rubic final-coursework (final -llm)`**.
 | [Recommendation Service Agent — Detailed Runtime Proof](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation_servicce.md>) | Figure-by-figure FastAPI, inference API, MCP, KEDA autoscaling, gVisor WorkerPool, Agent Registry, and kagent UI evidence with reproducible verification commands. |
 | Real-Time Drift Detection MCP Tool + Agent | Work in progress. |
 | Demonstrate Basic Understanding of Agents | Work in progress. |
-| Deploy a Coordinator Agent | Work in progress. |
+| [Deploy a Coordinator Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>) | Intent-routed A2A coordination, direct MCP verification, dedicated gVisor WorkerPool, KEDA `1 -> 3` autoscaling with fallback, and governed Agent Registry publication. |
 | Agent Warm-Up | Work in progress. |
 | Validation & Verification | Work in progress. |
 | Improve the Data Generator | Work in progress. |

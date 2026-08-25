@@ -96,3 +96,12 @@ ci_recommendation_agent() {
     tests/e2e/recommendation_agentic
   agentic_helm_gate infra/helm/recsys-recommendation-agent
 }
+
+ci_coordinator_agent() {
+  run_plain_pytest_with_pythonpath_override \
+    "${component}" \
+    "apps/agentic/recsys-feature-rag-mcp/src" \
+    tests/contract/test_coordinator_agentic_contracts.py \
+    tests/e2e/coordinator_agentic
+  agentic_helm_gate infra/helm/recsys-coordinator-agent
+}

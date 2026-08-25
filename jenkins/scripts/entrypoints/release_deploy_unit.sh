@@ -273,7 +273,7 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
 }
 
 case "${unit_name}" in
-  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api|milvus|rag-api|feature-rag-mcp|context-agent|recommendation-mcp|recommendation-agent)
+  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api|milvus|rag-api|feature-rag-mcp|context-agent|recommendation-mcp|recommendation-agent|coordinator-agent)
     if [[ "${unit_name}" == "feature-rag-mcp" ]]; then
       agentic_preflight false
     elif [[ "${unit_name}" == "context-agent" ]]; then
@@ -282,6 +282,8 @@ case "${unit_name}" in
       recommendation_agentic_preflight false
     elif [[ "${unit_name}" == "recommendation-agent" ]]; then
       recommendation_agentic_preflight true
+    elif [[ "${unit_name}" == "coordinator-agent" ]]; then
+      coordinator_agentic_preflight false
     fi
     deploy_helm_unit
     ;;
@@ -311,6 +313,9 @@ case "${unit_name}" in
     ;;
   recommendation-agent-registry)
     publish_recommendation_agent_registry
+    ;;
+  coordinator-agent-registry)
+    publish_coordinator_agent_registry
     ;;
   mlflow)
     deploy_mlflow

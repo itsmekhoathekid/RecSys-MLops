@@ -1,0 +1,35 @@
+{
+  "agents": [
+    {
+      "apiGroup": "kagent.dev",
+      "kind": "SandboxAgent",
+      "name": "recsys-context-agent-sandbox"
+    },
+    {
+      "apiGroup": "kagent.dev",
+      "kind": "SandboxAgent",
+      "name": "recsys-recommendation-agent-sandbox"
+    }
+  ],
+  "mcpServers": [
+    {
+      "apiGroup": "kagent.dev",
+      "kind": "RemoteMCPServer",
+      "name": "recsys-feature-rag-mcp",
+      "tools": [
+        "get_user_online_features",
+        "get_chunk_by_id",
+        "retrieve_rag_context",
+        "build_user_rag_context"
+      ]
+    },
+    {
+      "apiGroup": "kagent.dev",
+      "kind": "RemoteMCPServer",
+      "name": "recsys-recommendation-mcp",
+      "tools": [
+        "get_personalized_recommendations"
+      ]
+    }
+  ]
+}

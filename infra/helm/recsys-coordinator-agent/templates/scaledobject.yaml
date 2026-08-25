@@ -1,0 +1,33 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.sandbox.workerPool }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "recsys-coordinator-agent.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: ate.dev/v1alpha1
+    kind: WorkerPool
+    name: {{ .Values.sandbox.workerPool }}
+  minReplicaCount: {{ .Values.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
+  pollingInterval: {{ .Values.autoscaling.pollingInterval }}
+  cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod }}
+  fallback:
+    failureThreshold: {{ .Values.autoscaling.fallback.failureThreshold }}
+    replicas: {{ .Values.autoscaling.fallback.replicas }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDownStabilizationSeconds }}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.autoscaling.serverAddress | quote }}
+        metricName: recsys_coordinator_sandbox_worker_cpu_microcores
+        threshold: {{ .Values.autoscaling.cpuTargetMicrocores | quote }}
+        query: '1000000 * sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Values.namespace }}",pod=~"{{ .Values.sandbox.workerPool }}-deployment-.*",container="ateom"}[2m]))'
+{{- end }}

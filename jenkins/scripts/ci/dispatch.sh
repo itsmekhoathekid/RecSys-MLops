@@ -14,6 +14,7 @@ run_component_ci() {
     context_agent) ci_context_agent ;;
     recommendation_mcp) ci_recommendation_mcp ;;
     recommendation_agent) ci_recommendation_agent ;;
+    coordinator_agent) ci_coordinator_agent ;;
     online_feature_api) ci_online_feature_api ;;
     inference_api) ci_inference_api ;;
     kserve) ci_kserve ;;

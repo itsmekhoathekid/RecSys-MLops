@@ -118,3 +118,33 @@ assert spec["fallback"]["replicas"] == 1
   fi
   recommendation_a2a_smoke
 }
+
+test_coordinator_agent() {
+  coordinator_agentic_preflight true
+  kubectl -n kagent get scaledobject recsys-coordinator-sandbox-pool -o json \
+    | python3 -c '
+import json, sys
+spec = json.load(sys.stdin)["spec"]
+assert spec["scaleTargetRef"] == {
+    "apiVersion": "ate.dev/v1alpha1", "kind": "WorkerPool",
+    "name": "recsys-coordinator-sandbox-pool",
+}
+assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
+assert spec["fallback"]["failureThreshold"] == 3
+assert spec["fallback"]["replicas"] == 1
+assert spec["triggers"][0]["metadata"]["threshold"] == "400"
+'
+  kubectl -n kagent get sandboxagent recsys-coordinator-agent-sandbox -o json \
+    | python3 -c '
+import json, sys
+tools = json.load(sys.stdin)["spec"]["declarative"]["tools"]
+agents = [item["agent"]["name"] for item in tools if item["type"] == "Agent"]
+mcps = [item["mcpServer"]["name"] for item in tools if item["type"] == "McpServer"]
+assert agents == [
+    "recsys-context-agent-sandbox",
+    "recsys-recommendation-agent-sandbox",
+]
+assert mcps == ["recsys-feature-rag-mcp", "recsys-recommendation-mcp"]
+'
+  coordinator_a2a_smoke
+}

@@ -592,6 +592,34 @@
       "migrationPolicy": "none"
     },
     {
+      "name": "coordinator_agent",
+      "flag": "RUN_COORDINATOR_AGENT",
+      "label": "RecSys Coordinator Sandbox Agent",
+      "ciProfile": "agentic",
+      "changeDetection": {
+        "groups": ["jenkins-shared-runtime"],
+        "prefixes": [
+          "infra/helm/recsys-coordinator-agent/",
+          "tests/e2e/coordinator_agentic/"
+        ],
+        "files": [
+          "configs/agentic/recsys-coordinator-agent/tools-contract.json",
+          "infra/terraform/gcp/kagent.tf",
+          "jenkins/scripts/ci/agentic.sh",
+          "jenkins/scripts/deploy/agentic.sh",
+          "jenkins/scripts/test/agentic.sh",
+          "ops/validation/coordinator_agentic_autoscale.sh",
+          "ops/validation/coordinator_agentic_registry_smoke.sh",
+          "ops/validation/coordinator_agentic_smoke.sh",
+          "tests/contract/test_coordinator_agentic_contracts.py"
+        ]
+      },
+      "buildImages": [],
+      "buildArtifacts": [],
+      "verifyDependsOn": ["context_agent", "recommendation_agent"],
+      "migrationPolicy": "none"
+    },
+    {
       "name": "inference_api",
       "flag": "RUN_INFERENCE_API",
       "label": "Inference API",

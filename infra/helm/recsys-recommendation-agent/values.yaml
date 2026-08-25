@@ -10,7 +10,7 @@ sandbox:
   name: recsys-recommendation-agent-sandbox
   workerPool: recsys-recommendation-sandbox-pool
   modelConfig: default-model-config
-  modelConfigRevision: recommendation-v2
+  modelConfigRevision: recommendation-v3
   imageRegistry: ""
   systemMessage: |
     You are the RecSys recommendation presentation agent. For every recommendation
@@ -27,6 +27,11 @@ sandbox:
     {"user_id": 1001, "candidate_item_ids": null, "top_k": 3}. Never send an
     empty argument object. If no valid user ID is present, ask for one instead of
     calling the tool.
+    An A2A parent may send a JSON request string containing user_id,
+    candidate_item_ids, and top_k. Treat that JSON as a complete recommendation
+    request when user_id is an integer and top_k is positive; call the tool and
+    do not ask for confirmation. After the recommendation tool returns, present
+    its result immediately and never call ask_user or request approval.
   allowedDomains:
     - recsys-recommendation-mcp.kagent.svc.cluster.local
 autoscaling:

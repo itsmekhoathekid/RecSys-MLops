@@ -180,6 +180,57 @@ assert {
   fi
 }
 
+coordinator_agentic_preflight() {
+  local include_runtime="${1:-false}"
+  local endpoint_ready service worker_pool_selector
+  agentic_preflight true
+  recommendation_agentic_preflight true
+  kubectl get --raw \
+    /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-coordinator-sandbox-pool/scale \
+    >/dev/null
+  worker_pool_selector="$(
+    kubectl -n kagent get workerpool recsys-coordinator-sandbox-pool \
+      -o jsonpath='{.spec.scaleSelector}'
+  )"
+  [[ "${worker_pool_selector}" == \
+    "ate.dev/worker-pool=recsys-coordinator-sandbox-pool" ]] || {
+    recsys_error "coordinator WorkerPool scaleSelector does not match its pods"
+    return 1
+  }
+  kubectl -n kagent wait --for=condition=Ready \
+    sandboxagent/recsys-context-agent-sandbox \
+    sandboxagent/recsys-recommendation-agent-sandbox \
+    --timeout="${timeout}"
+  kubectl -n kagent wait --for=condition=Accepted \
+    remotemcpserver/recsys-feature-rag-mcp \
+    remotemcpserver/recsys-recommendation-mcp \
+    --timeout="${timeout}"
+  for service in recsys-feature-rag-mcp recsys-recommendation-mcp; do
+    endpoint_ready=false
+    for _ in $(seq 1 60); do
+      if kubectl -n kagent get endpointslice \
+        -l "kubernetes.io/service-name=${service}" \
+        -o jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}' \
+        | grep -Eq '.+'; then
+        endpoint_ready=true
+        break
+      fi
+      sleep 2
+    done
+    [[ "${endpoint_ready}" == "true" ]] || {
+      recsys_error "${service} has no Ready EndpointSlice address"
+      return 1
+    }
+  done
+  if [[ "${include_runtime}" == "true" ]]; then
+    kubectl -n kagent wait --for=condition=Ready \
+      sandboxagent/recsys-coordinator-agent-sandbox --timeout="${timeout}"
+    kubectl -n kagent rollout status \
+      deployment/recsys-coordinator-sandbox-pool-deployment \
+      --timeout="${timeout}"
+  fi
+}
+
 recommendation_mcp_protocol_smoke() {
   kubectl -n kagent rollout status deployment/recsys-recommendation-mcp \
     --timeout="${timeout}"
@@ -290,6 +341,201 @@ PY
       fi
       echo "recommendation A2A smoke attempt ${attempt}/3 failed" >&2
       sleep 2
+    done
+  fi
+  kill "${pid}" >/dev/null 2>&1 || true
+  wait "${pid}" >/dev/null 2>&1 || true
+  return "${status}"
+}
+
+coordinator_a2a_smoke() {
+  local agent_name="recsys-coordinator-agent-sandbox"
+  local user_id="${COORDINATOR_SMOKE_USER_ID:-1001}"
+  local chunk_id="${COORDINATOR_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
+  local local_port="${COORDINATOR_A2A_LOCAL_PORT:-18086}"
+  local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-420}"
+  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents,direct_mcps,partial_result}"
+  local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
+  local log_file="reports/agentic/${agent_name}-port-forward.log"
+  local output_file="${COORDINATOR_A2A_EVIDENCE_FILE:-reports/agentic/${agent_name}-a2a.json}"
+  local pid ready=false status=1
+  mkdir -p reports/agentic
+  kubectl -n kagent port-forward service/kagent-controller \
+    "${local_port}:8083" >"${log_file}" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 30); do
+    if curl -fsS "${base_url}/.well-known/agent-card.json" >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${ready}" == "true" ]]; then
+    for attempt in 1 2 3; do
+      if python3 - "${base_url}/" "${user_id}" "${chunk_id}" \
+        "${request_timeout}" "${selected_cases}" \
+        "${output_file}" <<'PY'
+import json
+import sys
+import urllib.request
+import uuid
+
+url, user_id, chunk_id, request_timeout, selected_cases, output_path = sys.argv[1:]
+request_timeout = int(request_timeout)
+cases = {
+    "context_agent": (
+        "Use only the context specialist agent to summarize preferences for "
+        f"user {user_id}. Do not call recommendation or direct MCP tools."
+    ),
+    "recommendation_agent": (
+        "Delegate through A2A to SandboxAgent "
+        "recsys-recommendation-agent-sandbox to recommend one item "
+        f"for user_id={user_id}, with candidate_item_ids=null and top_k=1. "
+        "Give the specialist all three values and tell it not to ask for "
+        "confirmation. Use no other source."
+    ),
+    "composite_agents": (
+        "Use both specialist agents to recommend three "
+        f"items for user {user_id} and explain them with grounded evidence. "
+        f"Give the recommendation specialist user_id={user_id}, "
+        "candidate_item_ids=null, and top_k=3 without asking for confirmation. "
+        "Preserve the recommendation order and cite returned chunk_id values."
+    ),
+    "direct_mcps": (
+        "For independent verification, directly call get_chunk_by_id with "
+        f"chunk_id={chunk_id} and get_personalized_recommendations with "
+        f"arguments {{\"user_id\":{user_id},\"candidate_item_ids\":null,"
+        "\"top_k\":1}}. Do not delegate to an agent."
+    ),
+    "partial_result": (
+        "Directly call get_chunk_by_id with the deliberately nonexistent "
+        "chunk_id=coordinator-smoke-missing-chunk and also call "
+        "get_personalized_recommendations with arguments "
+        f"{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}. "
+        "Do not delegate or retry. Keep the valid recommendation, repeat its "
+        "first item_id exactly, and explicitly say 'context source unavailable'."
+    ),
+}
+requested = [name.strip() for name in selected_cases.split(",") if name.strip()]
+unknown = set(requested) - set(cases)
+if unknown:
+    raise SystemExit(f"unknown coordinator smoke cases: {sorted(unknown)}")
+cases = {name: cases[name] for name in requested}
+
+evidence = {}
+
+
+def invoke(case_name, prompt):
+    request_id = str(uuid.uuid4())
+    payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "message/send",
+        "params": {"message": {
+            "messageId": request_id,
+            "contextId": str(uuid.uuid4()),
+            "role": "user",
+            "parts": [{"kind": "text", "text": prompt}],
+        }},
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=request_timeout) as response:
+        body = json.load(response)
+    evidence[case_name] = body
+    with open(output_path, "w", encoding="utf-8") as stream:
+        json.dump(evidence, stream, indent=2, sort_keys=True)
+    if body.get("error"):
+        raise SystemExit(f"{case_name}: {body['error']}")
+    result = body.get("result", {})
+    if result.get("status", {}).get("state") != "completed":
+        raise SystemExit(
+            f"{case_name} did not complete: "
+            + json.dumps(result.get("status", {}), sort_keys=True)
+        )
+    calls = []
+    responses = {}
+    for message in result.get("history", []):
+        for part in message.get("parts", []):
+            metadata, data = part.get("metadata", {}), part.get("data", {})
+            if metadata.get("adk_type") == "function_call":
+                calls.append(data.get("name", ""))
+            elif metadata.get("adk_type") == "function_response":
+                responses[data.get("name", "")] = data.get("response")
+    if not calls or set(calls) - set(responses):
+        raise SystemExit(
+            f"{case_name} missing call/response: calls={calls}, responses={responses}"
+        )
+    if case_name == "context_agent":
+        assert any("context_agent_sandbox" in name for name in calls), calls
+        assert not any("recommendation_agent_sandbox" in name for name in calls), calls
+        assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
+    elif case_name == "recommendation_agent":
+        assert any("recommendation_agent_sandbox" in name for name in calls), calls
+        assert not any("context_agent_sandbox" in name for name in calls), calls
+        assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
+    elif case_name == "composite_agents":
+        assert any("context_agent_sandbox" in name for name in calls), calls
+        assert any("recommendation_agent_sandbox" in name for name in calls), calls
+        assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
+    elif case_name == "direct_mcps":
+        assert "get_chunk_by_id" in calls, calls
+        assert "get_personalized_recommendations" in calls, calls
+        assert not any("agent_sandbox" in name for name in calls), calls
+        assert calls.count("get_chunk_by_id") == 1, calls
+        assert calls.count("get_personalized_recommendations") == 1, calls
+    else:
+        assert "get_chunk_by_id" in calls, calls
+        assert "get_personalized_recommendations" in calls, calls
+        assert not any("agent_sandbox" in name for name in calls), calls
+        assert calls.count("get_chunk_by_id") == 1, calls
+        assert calls.count("get_personalized_recommendations") == 1, calls
+        answer_messages = [
+            message
+            for message in result.get("history", [])
+            if message.get("role") == "agent"
+        ]
+        if result.get("status", {}).get("message"):
+            answer_messages.append(result["status"]["message"])
+        final_text = " ".join(
+            part.get("text", "")
+            for message in answer_messages
+            for part in message.get("parts", [])
+            if part.get("kind") == "text" and part.get("text")
+        ).strip()
+        assert "context source unavailable" in final_text.lower(), final_text
+
+        def collect_item_ids(value):
+            found = []
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    if key == "item_id" and child is not None:
+                        found.append(str(child))
+                    found.extend(collect_item_ids(child))
+            elif isinstance(value, list):
+                for child in value:
+                    found.extend(collect_item_ids(child))
+            return found
+
+        item_ids = collect_item_ids(responses["get_personalized_recommendations"])
+        assert item_ids, responses["get_personalized_recommendations"]
+        assert item_ids[0] in final_text, final_text
+    return body
+
+
+for name, prompt in cases.items():
+    invoke(name, prompt)
+PY
+      then
+        status=0
+        break
+      fi
+      echo "coordinator A2A smoke attempt ${attempt}/3 failed" >&2
+      sleep $((attempt * 5))
     done
   fi
   kill "${pid}" >/dev/null 2>&1 || true
@@ -566,6 +812,36 @@ PY
   return 2
 }
 
+agentic_registry_require_dependency() {
+  local kind="$1"
+  local name="$2"
+  local tag="$3"
+  local version="$4"
+  local commit="$5"
+  local output
+  output="$(mktemp)"
+  if ! arctl get "${kind}" "${name}" --tag "${tag}" -o json >"${output}"; then
+    rm -f "${output}"
+    recsys_error "matching registry dependency is required: ${kind} ${name}@${tag}"
+    return 1
+  fi
+  if ! python3 - "${output}" "${version}" "${commit}" <<'PY'
+import json
+import sys
+
+path, version, commit = sys.argv[1:]
+payload = json.load(open(path, encoding="utf-8"))
+serialized = json.dumps(payload, sort_keys=True)
+raise SystemExit(0 if version in serialized and commit in serialized else 1)
+PY
+  then
+    rm -f "${output}"
+    recsys_error "registry dependency metadata does not match ${commit}: ${name}@${tag}"
+    return 1
+  fi
+  rm -f "${output}"
+}
+
 agentic_registry_tagged_resource_exists() {
   local kind="$1"
   local name="$2"
@@ -676,6 +952,41 @@ elif kind == "recommendation-agent":
                 "kind": "MCPServer", "namespace": namespace,
                 "name": "recsys-recommendation-mcp", "tag": tag,
             }],
+        },
+    }
+elif kind == "coordinator-agent":
+    metadata["labels"].update({
+        "app.kubernetes.io/part-of": "recsys-coordinator-agentic",
+        "recsys.dev/variant": "sandbox",
+    })
+    metadata["annotations"]["recsys.dev/a2a-dependencies"] = ",".join([
+        f"recsys/recsys-context-agent-sandbox@{tag}",
+        f"recsys/recsys-recommendation-agent-sandbox@{tag}",
+    ])
+    resource = {
+        "apiVersion": "ar.dev/v1alpha1",
+        "kind": "Agent",
+        "metadata": metadata,
+        "spec": {
+            "title": "RecSys Coordinator Agent (sandbox)",
+            "description": (
+                "Intent-routing gVisor coordinator for context, RAG, and "
+                "recommendation specialists"
+            ),
+            "mcpServers": [
+                {
+                    "kind": "MCPServer",
+                    "namespace": namespace,
+                    "name": "recsys-feature-rag-mcp",
+                    "tag": tag,
+                },
+                {
+                    "kind": "MCPServer",
+                    "namespace": namespace,
+                    "name": "recsys-recommendation-mcp",
+                    "tag": tag,
+                },
+            ],
         },
     }
 else:
@@ -915,4 +1226,45 @@ publish_recommendation_agent_registry() {
   agentic_write_registry_evidence \
     .ci-deploy/recommendation-agent-registry.json "${version}" "${commit}" \
     "${registry_name}@${tag}"
+}
+
+publish_coordinator_agent_registry() {
+  local version tag commit git_url registry_name manifest
+  agentic_assert_registry_publish_branch || return 0
+  coordinator_agentic_preflight true
+  agentic_mcp_protocol_smoke
+  recommendation_mcp_protocol_smoke
+  coordinator_a2a_smoke
+  agentic_registry_open_tunnel
+  commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
+  version="$(agentic_registry_version)"
+  tag="$(agentic_registry_tag "${version}")"
+  git_url="$(agentic_registry_git_url)"
+  registry_name="recsys/recsys-coordinator-agent-sandbox"
+  agentic_registry_require_dependency mcp \
+    recsys/recsys-feature-rag-mcp "${tag}" "${version}" "${commit}"
+  agentic_registry_require_dependency mcp \
+    recsys/recsys-recommendation-mcp "${tag}" "${version}" "${commit}"
+  agentic_registry_require_dependency agent \
+    recsys/recsys-context-agent-sandbox "${tag}" "${version}" "${commit}"
+  agentic_registry_require_dependency agent \
+    recsys/recsys-recommendation-agent-sandbox "${tag}" "${version}" "${commit}"
+  manifest="$(mktemp)"
+  agentic_write_registry_manifest "${manifest}" coordinator-agent \
+    "${registry_name}" "${version}" "${tag}" "${commit}" "${git_url}"
+  if agentic_registry_publish_required agent "${registry_name}" "${tag}" \
+    "${version}" "${commit}"; then
+    arctl apply -f "${manifest}"
+  else
+    [[ "$?" == "1" ]]
+  fi
+  rm -f "${manifest}"
+  arctl get agent "${registry_name}" --tag "${tag}" -o json >/dev/null
+  agentic_write_registry_evidence \
+    .ci-deploy/coordinator-agent-registry.json "${version}" "${commit}" \
+    "${registry_name}@${tag}" \
+    "recsys/recsys-context-agent-sandbox@${tag}" \
+    "recsys/recsys-recommendation-agent-sandbox@${tag}" \
+    "recsys/recsys-feature-rag-mcp@${tag}" \
+    "recsys/recsys-recommendation-mcp@${tag}"
 }

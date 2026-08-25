@@ -301,6 +301,34 @@
       "dependsOn": ["recommendation-agent", "recommendation-mcp-registry"]
     },
     {
+      "name": "coordinator-agent",
+      "kind": "helm",
+      "release": "recsys-coordinator-agent",
+      "namespace": "kagent",
+      "chart": "infra/helm/recsys-coordinator-agent",
+      "components": ["coordinator_agent"],
+      "consumesImages": [],
+      "imageValues": {},
+      "consumesArtifacts": [],
+      "dependsOn": ["context-agent", "recommendation-agent"]
+    },
+    {
+      "name": "coordinator-agent-registry",
+      "kind": "jenkins-action",
+      "release": "recsys-coordinator-agent-registry",
+      "namespace": "agentregistry",
+      "components": ["coordinator_agent"],
+      "consumesImages": [],
+      "consumesArtifacts": [],
+      "dependsOn": [
+        "coordinator-agent",
+        "context-agent-registry",
+        "recommendation-agent-registry",
+        "feature-rag-mcp-registry",
+        "recommendation-mcp-registry"
+      ]
+    },
+    {
       "name": "streaming",
       "kind": "helm",
       "release": "recsys-streaming",

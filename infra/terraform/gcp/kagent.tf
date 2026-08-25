@@ -247,6 +247,34 @@ resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool" {
   depends_on = [helm_release.kagent]
 }
 
+# The coordinator has a dedicated pool so its orchestration load and KEDA
+# lifecycle cannot consume the context or recommendation agents' warm workers.
+# Terraform owns the immutable gVisor runtime fields while KEDA owns replicas.
+resource "kubernetes_manifest" "recsys_coordinator_sandbox_pool" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  manifest = {
+    apiVersion = "ate.dev/v1alpha1"
+    kind       = "WorkerPool"
+    metadata = {
+      name      = "recsys-coordinator-sandbox-pool"
+      namespace = kubernetes_namespace.kagent[0].metadata[0].name
+      labels = {
+        "app.kubernetes.io/part-of" = "recsys-agentic"
+      }
+    }
+    spec = {
+      replicas      = 1
+      ateomImage    = "ghcr.io/kagent-dev/substrate/ateom-gvisor:v${var.agent_substrate_version}"
+      scaleSelector = "ate.dev/worker-pool=recsys-coordinator-sandbox-pool"
+    }
+  }
+
+  computed_fields = ["spec.replicas"]
+
+  depends_on = [helm_release.kagent]
+}
+
 resource "kubernetes_cluster_role_v1" "keda_workerpool_scaler" {
   count = var.deploy_llm_inference ? 1 : 0
 
