@@ -57,7 +57,14 @@ project's state bucket.
   microcores) until the `0.0.11` A2A compatibility blocker is resolved.
 - [ ] Substrate control-plane/ATE is `0.0.6`, but Valkey remains pinned to
   `9.1` so it can read AOF files written during the failed upgrade; do not
-  downgrade Valkey to `8.0` without restoring compatible PD snapshots.
+  downgrade Valkey to `8.0` without restoring compatible PD snapshots. Verify
+  every Valkey `nodes.conf` `myself` address equals the current Pod IP; the GKE
+  post-renderer must inject `POD_IP` and `--cluster-announce-ip`.
+- [ ] Before publishing `recsys/recsys-coordinator-agent` or retiring the
+  legacy sandbox registry artifact, require context-only, recommendation-only,
+  composite, direct-MCP, and partial-failure coordinator gates to pass. On the
+  2026-08-26 run, composite routing and partial-failure handling remained red;
+  registry cutover was intentionally withheld.
 - [ ] Both Qwen replicas are Ready on different `recsys-mlops-cpu` nodes.
 - [ ] Observability/CI: Prometheus, Grafana, Loki, Tempo, Promtail, Pushgateway,
   exporters and Jenkins.

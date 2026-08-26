@@ -76,9 +76,15 @@ providers:
       X-Gateway-Base-Model-Name: llm-d-optimized-baseline
     config:
       baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
-      # Bound CPU inference latency and prevent small-model repetition loops
-      # from consuming the entire llama.cpp context window.
-      maxTokens: 768
+      # Keep the small CPU model deterministic and bound each tool turn. A
+      # larger cap allowed repeated tool calls to hold a Sandbox worker long
+      # enough for the fixed kagent Agent-tool timeout to expire.
+      # The inference server reserves up to 256 tokens for Qwen reasoning; keep
+      # 128 additional tokens so a tool call or concise final answer is never
+      # starved after the reasoning budget is consumed.
+      maxTokens: 384
+      temperature: "0"
+      seed: 42
 
 # Agents are deployed by the repository-owned recsys-kagent-agent chart. The
 # upstream demo Agents and MCP servers are disabled to avoid unnecessary GKE

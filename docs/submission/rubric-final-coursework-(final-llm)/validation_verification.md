@@ -95,7 +95,12 @@ storage image remains pinned to `9.1` because the upgraded AOF base files are
 not readable by Valkey `8.0`. This is an intentional storage-compatibility pin,
 not a partial Substrate runtime upgrade.
 
-Valkey returned to `cluster_state:ok` with all `16384` slots. Six ephemeral
+Valkey returned to `cluster_state:ok` with all `16384` slots. After the GKE
+node recreation, each persisted `nodes.conf` still advertised its former Pod
+IP even though the cluster reported healthy slots. The Substrate post-renderer
+now injects the Downward API `POD_IP` and starts Valkey with
+`--cluster-announce-ip`, preventing `GetActor` from following stale topology.
+Six ephemeral
 `worker:*` keys written by the incompatible runtime were removed after being
 enumerated, and clean `0.0.6` worker registrations were recreated. No disk
 snapshot restore was required.
@@ -120,11 +125,23 @@ The 13 RecSys CDC/Kafka Connect topic IDs were then restored from their
 persisted `partition.metadata` values. Kafka `ListOffsets` recovered and Kafka
 Connect loaded `recsys-postgres-cdc` from its compacted config topic without
 deleting a log directory, topic, or PVC. The internal `__consumer_offsets`
-topic has the same mismatch and still requires a separately approved repair;
-until then Flink reports `NOT_COORDINATOR`, candidate keys cannot be
-repopulated, and the recommendation smoke remains HTTP 502. Kafka and Kafka
-Connect are Ready, and the GCP event producer is returned to its configured
-zero replicas.
+topic ID was also restored from its persisted 50-partition metadata. The
+realtime producer was enabled temporarily, repopulated `92` candidate keys and
+`160` global candidates, and returned to its configured zero replicas. Direct
+Recommendation MCP smoke now passes.
+
+The regular coordinator uses deterministic Qwen settings (`temperature=0`,
+`seed=42`, `maxTokens=384`) and remains fixed at one replica. Isolated
+context-only and recommendation-only A2A routing gates pass, as do direct MCP
+protocol checks. The composite gate remains red on kagent `0.9.9`: after the
+Recommendation SandboxAgent returns, Qwen may call the coordinator's direct
+RAG MCP tool instead of the required Context SandboxAgent. The partial-failure
+gate is also red: after a direct RAG lookup returns the expected non-retryable
+HTTP 404 while the recommendation call succeeds, Qwen repeats both tools rather
+than returning the usable recommendation with a partial-result warning. Because
+the full routing contract is not green, the new regular-agent registry artifact
+was not published and the legacy sandbox registry artifact was deliberately
+retained.
 
 The restored CPU autoscaler itself is healthy. A final context-only A2A load
 made KEDA/HPA move the Context WorkerPool from one to three replicas with
@@ -144,7 +161,11 @@ kagent                      0.9.9
 Substrate                   0.0.6
 specialist autoscaling      CPU-based KEDA, 1..3, fallback 1
 coordinator                 regular Agent, fixed replica 1
-recommendation data smoke   blocked by Kafka/Zookeeper topic-ID recovery
+recommendation data smoke   pass
+coordinator simple routing  context-only and recommendation-only pass
+coordinator composite       blocked: 0.8B model bypasses Context Agent
+coordinator partial failure blocked: 0.8B model repeats failed tool pair
+registry cutover            withheld; legacy artifact retained
 ```
 
 Historical `0.0.6` specialist scale screenshots remain valid for the restored

@@ -16,7 +16,7 @@ sandbox:
   modelConfig: default-model-config
   # Bump when ModelConfig generation semantics change so Substrate rebuilds
   # the SandboxAgent golden snapshot instead of restoring stale model options.
-  modelConfigRevision: output-cap-v3
+  modelConfigRevision: deterministic-tools-v7
   imageRegistry: ""
   systemMessage: |
     You are the grounded RecSys context agent. Use MCP tools for every factual
@@ -27,6 +27,18 @@ sandbox:
     within the 4,096-token model context: when IDs are supplied, pass only those
     candidate_item_ids and use top_k at most 2 and top_k_items at most 2. When a
     request explicitly names tools, call every named tool before answering.
+    For "summarize preferences for user_id=<id>" requests, immediately call
+    get_user_online_features exactly once with
+    {"user_id":<id>,"candidate_item_ids":null,"top_k":2}.
+    When a tool is named, your next action must be that function call with the
+    supplied arguments; do not emit prose first and never omit its JSON args.
+    Canonical calls are get_user_online_features with
+    {"user_id":<int>,"candidate_item_ids":<array-or-null>,"top_k":<int>},
+    get_chunk_by_id with {"chunk_id":"<string>"}, retrieve_rag_context with
+    {"query":"<string>","top_k_items":<int>,"filters":null}, and
+    build_user_rag_context with
+    {"user_id":<int>,"query":"<string>","candidate_item_ids":<array-or-null>,
+    "top_k":<int>,"top_k_items":<int>,"filters":null}.
     The supplied user_id, chunk_id, and query are complete. After tool responses,
     immediately emit one concise final text answer. Never call ask_user or any
     confirmation tool when the request already supplies explicit tool arguments;

@@ -116,7 +116,9 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
         "http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1"
         in values
     )
-    assert "maxTokens: 768" in values
+    assert "maxTokens: 384" in values
+    assert 'temperature: "0"' in values
+    assert "seed: 42" in values
     assert "tls:" not in values
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
     assert 'resource "helm_release" "substrate"' in terraform

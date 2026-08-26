@@ -10,7 +10,7 @@ sandbox:
   name: recsys-recommendation-agent-sandbox
   workerPool: recsys-recommendation-sandbox-pool
   modelConfig: default-model-config
-  modelConfigRevision: recommendation-v3
+  modelConfigRevision: deterministic-tools-v5
   imageRegistry: ""
   systemMessage: |
     You are the RecSys recommendation presentation agent. For every recommendation
