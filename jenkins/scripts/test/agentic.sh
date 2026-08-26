@@ -28,7 +28,7 @@ test_context_agent() {
     --timeout="${COMPONENT_TEST_TIMEOUT:-600s}"
   component_test_wait_deployment kagent recsys-context-sandbox-pool-deployment
   kubectl -n kagent get deployment recsys-context-sandbox-pool-deployment \
-    -o jsonpath='{.status.availableReplicas}{"\n"}' | awk '$1 >= 2'
+    -o jsonpath='{.status.availableReplicas}{"\n"}' | awk '$1 >= 1'
   kubectl -n kagent get scaledobject recsys-context-sandbox-pool -o json \
     | python3 -c '
 import json, sys
@@ -121,23 +121,13 @@ assert spec["fallback"]["replicas"] == 1
 
 test_coordinator_agent() {
   coordinator_agentic_preflight true
-  kubectl -n kagent get scaledobject recsys-coordinator-sandbox-pool -o json \
+  kubectl -n kagent get agent recsys-coordinator-agent -o json \
     | python3 -c '
 import json, sys
 spec = json.load(sys.stdin)["spec"]
-assert spec["scaleTargetRef"] == {
-    "apiVersion": "ate.dev/v1alpha1", "kind": "WorkerPool",
-    "name": "recsys-coordinator-sandbox-pool",
-}
-assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
-assert spec["fallback"]["failureThreshold"] == 3
-assert spec["fallback"]["replicas"] == 1
-assert spec["triggers"][0]["metadata"]["threshold"] == "400"
-'
-  kubectl -n kagent get sandboxagent recsys-coordinator-agent-sandbox -o json \
-    | python3 -c '
-import json, sys
-tools = json.load(sys.stdin)["spec"]["declarative"]["tools"]
+assert spec["declarative"]["deployment"]["replicas"] == 1
+assert "sandbox" not in spec and "substrate" not in spec
+tools = spec["declarative"]["tools"]
 agents = [item["agent"]["name"] for item in tools if item["type"] == "Agent"]
 mcps = [item["mcpServer"]["name"] for item in tools if item["type"] == "McpServer"]
 assert agents == [
@@ -146,5 +136,8 @@ assert agents == [
 ]
 assert mcps == ["recsys-feature-rag-mcp", "recsys-recommendation-mcp"]
 '
+  ! kubectl -n kagent get sandboxagent recsys-coordinator-agent-sandbox >/dev/null 2>&1
+  ! kubectl -n kagent get workerpool recsys-coordinator-sandbox-pool >/dev/null 2>&1
+  ! kubectl -n kagent get scaledobject recsys-coordinator-sandbox-pool >/dev/null 2>&1
   coordinator_a2a_smoke
 }

@@ -1,5 +1,11 @@
 # Sandbox Agent Pulls Online Features and RAG Context
 
+> **Runtime status (2026-08-26):** a Substrate `0.0.11` canary proved native
+> assigned-worker metrics, but the production kagent `0.9.9` A2A compatibility
+> gate failed. This specialist therefore remains on Substrate `0.0.6` and its
+> documented CPU-based KEDA query. Assigned-worker scaling evidence is not
+> claimed. See [validation and rollback](validation_verification.md).
+
 This document provides source-code, configuration, deployment, and runtime
 evidence for the following coursework requirements:
 

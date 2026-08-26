@@ -35,17 +35,19 @@ help:
 	@echo "  make helm-agentic                 Lint/render the MCP and kagent charts"
 	@echo "  make agentic-preflight            Validate agentic platform prerequisites"
 	@echo "  make agentic-smoke                Run MCP and regular/sandbox A2A smoke tests"
-	@echo "  make agentic-autoscale-test       Run 20 RPS MCP scale/fallback validation"
+	@echo "  make agent-substrate-warmup-benchmark Benchmark warm actor restore/snapshot latency"
+	@echo "  make substrate-gke-compatibility Check 0.0.11 certificate projections before upgrade"
+	@echo "  make agentic-autoscale-test       Prove context CPU-based WorkerPool scale/fallback"
 	@echo "  make agentic-registry-smoke       Verify published Registry versions"
 	@echo "  make test-recommendation-agentic  Run recommendation MCP/Agent tests"
 	@echo "  make helm-recommendation-agentic  Lint/render recommendation charts"
 	@echo "  make recommendation-agentic-smoke Validate deployed recommendation runtime"
-	@echo "  make recommendation-agentic-autoscale Prove MCP and WorkerPool 1 -> 3"
+	@echo "  make recommendation-agentic-autoscale Prove MCP and CPU-based WorkerPool 1 -> 3"
 	@echo "  make recommendation-agentic-registry Verify Registry Git SHA"
 	@echo "  make test-coordinator-agentic     Run coordinator Helm/contract/E2E tests"
 	@echo "  make helm-coordinator-agentic     Lint/render the coordinator chart"
 	@echo "  make coordinator-agentic-smoke   Validate coordinator A2A and MCP routing"
-	@echo "  make coordinator-agentic-autoscale Prove coordinator WorkerPool 1 -> 3 -> 1"
+	@echo "  make coordinator-agentic-concurrency Prove coordinator stays at one replica under load"
 	@echo "  make coordinator-agentic-registry Verify coordinator registry dependencies"
 	@echo "  make jenkins-full             Trigger the full production Jenkins CI/CD job"
 	@echo "  make gcp-train-model          Run drift DAG, trigger retraining, and wait for KFP"
@@ -174,6 +176,14 @@ agentic-preflight:
 agentic-smoke:
 	@bash ops/validation/agentic_context_smoke.sh
 
+.PHONY: agent-substrate-warmup-benchmark
+agent-substrate-warmup-benchmark:
+	@bash ops/validation/agent_substrate_warmup_benchmark.sh
+
+.PHONY: substrate-gke-compatibility
+substrate-gke-compatibility:
+	@bash ops/validation/substrate_gke_compatibility.sh
+
 .PHONY: agentic-autoscale-test
 agentic-autoscale-test:
 	@bash ops/validation/agentic_context_autoscale.sh
@@ -238,9 +248,9 @@ coordinator-agentic-preflight:
 coordinator-agentic-smoke:
 	@bash ops/validation/coordinator_agentic_smoke.sh
 
-.PHONY: coordinator-agentic-autoscale
-coordinator-agentic-autoscale:
-	@bash ops/validation/coordinator_agentic_autoscale.sh
+.PHONY: coordinator-agentic-concurrency
+coordinator-agentic-concurrency:
+	@bash ops/validation/coordinator_agentic_concurrency.sh
 
 .PHONY: coordinator-agentic-registry
 coordinator-agentic-registry:

@@ -1,42 +1,33 @@
 apiVersion: kagent.dev/v1alpha2
-kind: SandboxAgent
+kind: Agent
 metadata:
-  name: {{ .Values.sandbox.name }}
+  name: {{ .Values.agent.name }}
   namespace: {{ .Values.namespace }}
   annotations:
-    recsys.ai/model-config-revision: {{ .Values.sandbox.modelConfigRevision | quote }}
+    recsys.ai/model-config-revision: {{ .Values.agent.modelConfigRevision | quote }}
   labels:
     {{- include "recsys-coordinator-agent.labels" . | nindent 4 }}
 spec:
   type: Declarative
-  platform: substrate
-  description: Intent-routing RecSys coordinator with sandboxed A2A and MCP access.
-  sandbox:
-    network:
-      allowedDomains:
-        {{- toYaml .Values.sandbox.allowedDomains | nindent 8 }}
-  substrate:
-    workerPoolRef:
-      apiGroup: ate.dev
-      kind: WorkerPool
-      name: {{ .Values.sandbox.workerPool }}
+  description: Intent-routing RecSys coordinator with A2A and MCP access.
   declarative:
     runtime: go
-    modelConfig: {{ .Values.sandbox.modelConfig }}
+    modelConfig: {{ .Values.agent.modelConfig }}
     stream: false
-    {{- with .Values.sandbox.imageRegistry }}
     deployment:
+      replicas: {{ .Values.agent.replicas }}
+      {{- with .Values.agent.imageRegistry }}
       imageRegistry: {{ . | quote }}
-    {{- end }}
+      {{- end }}
     systemMessage: |
-      {{- .Values.sandbox.systemMessage | nindent 6 }}
-      Runtime model configuration revision: {{ .Values.sandbox.modelConfigRevision }}.
+      {{- .Values.agent.systemMessage | nindent 6 }}
+      Runtime model configuration revision: {{ .Values.agent.modelConfigRevision }}.
     a2aConfig:
       skills:
         - id: coordinated-personalized-recommendation
           name: Coordinated personalized recommendation
           description: Route recommendation and grounded context work to the appropriate RecSys specialists.
-          tags: [recsys, coordinator, recommendation, rag, sandbox]
+          tags: [recsys, coordinator, recommendation, rag]
           examples:
             - "Recommend three items for user 1001 and explain them with grounded evidence."
     tools:

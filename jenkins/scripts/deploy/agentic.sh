@@ -182,21 +182,9 @@ assert {
 
 coordinator_agentic_preflight() {
   local include_runtime="${1:-false}"
-  local endpoint_ready service worker_pool_selector
+  local endpoint_ready service
   agentic_preflight true
   recommendation_agentic_preflight true
-  kubectl get --raw \
-    /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-coordinator-sandbox-pool/scale \
-    >/dev/null
-  worker_pool_selector="$(
-    kubectl -n kagent get workerpool recsys-coordinator-sandbox-pool \
-      -o jsonpath='{.spec.scaleSelector}'
-  )"
-  [[ "${worker_pool_selector}" == \
-    "ate.dev/worker-pool=recsys-coordinator-sandbox-pool" ]] || {
-    recsys_error "coordinator WorkerPool scaleSelector does not match its pods"
-    return 1
-  }
   kubectl -n kagent wait --for=condition=Ready \
     sandboxagent/recsys-context-agent-sandbox \
     sandboxagent/recsys-recommendation-agent-sandbox \
@@ -224,10 +212,12 @@ coordinator_agentic_preflight() {
   done
   if [[ "${include_runtime}" == "true" ]]; then
     kubectl -n kagent wait --for=condition=Ready \
-      sandboxagent/recsys-coordinator-agent-sandbox --timeout="${timeout}"
+      agent/recsys-coordinator-agent --timeout="${timeout}"
     kubectl -n kagent rollout status \
-      deployment/recsys-coordinator-sandbox-pool-deployment \
+      deployment/recsys-coordinator-agent \
       --timeout="${timeout}"
+    [[ "$(kubectl -n kagent get deployment recsys-coordinator-agent \
+      -o jsonpath='{.spec.replicas}')" == "1" ]]
   fi
 }
 
@@ -349,13 +339,13 @@ PY
 }
 
 coordinator_a2a_smoke() {
-  local agent_name="recsys-coordinator-agent-sandbox"
+  local agent_name="recsys-coordinator-agent"
   local user_id="${COORDINATOR_SMOKE_USER_ID:-1001}"
   local chunk_id="${COORDINATOR_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
   local local_port="${COORDINATOR_A2A_LOCAL_PORT:-18086}"
   local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-420}"
   local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents,direct_mcps,partial_result}"
-  local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
+  local base_url="http://127.0.0.1:${local_port}/api/a2a/kagent/${agent_name}"
   local log_file="reports/agentic/${agent_name}-port-forward.log"
   local output_file="${COORDINATOR_A2A_EVIDENCE_FILE:-reports/agentic/${agent_name}-a2a.json}"
   local pid ready=false status=1
@@ -579,6 +569,7 @@ agentic_a2a_smoke() {
   local chunk_id="${AGENTIC_SMOKE_CHUNK_ID:?AGENTIC_SMOKE_CHUNK_ID is required for grounded A2A smoke}"
   local user_id="${AGENTIC_SMOKE_USER_ID:-1001}"
   local local_port="${AGENTIC_A2A_LOCAL_PORT:-18084}"
+  local request_timeout="${AGENTIC_A2A_REQUEST_TIMEOUT_SECONDS:-240}"
   local a2a_path="api/a2a-sandboxes"
   local card_path=".well-known/agent-card.json"
   local base_url="http://127.0.0.1:${local_port}/${a2a_path}/kagent/${agent_name}"
@@ -618,13 +609,15 @@ PY
   local attempt
   for attempt in 1 2 3; do
     smoke_status=0
-    python3 - "${base_url}/" "${user_id}" "${chunk_id}" "${response_file}" <<'PY' || smoke_status=$?
+    python3 - "${base_url}/" "${user_id}" "${chunk_id}" \
+      "${request_timeout}" "${response_file}" <<'PY' || smoke_status=$?
 import json
 import sys
 import urllib.request
 import uuid
 
-url, user_id, chunk_id, output_path = sys.argv[1:]
+url, user_id, chunk_id, request_timeout, output_path = sys.argv[1:]
+request_timeout = int(request_timeout)
 cases = {
     "get_user_online_features": (
         f"Call get_user_online_features with user_id={user_id}, "
@@ -689,7 +682,7 @@ def invoke(tool_name, prompt):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=180) as response:
+    with urllib.request.urlopen(request, timeout=request_timeout) as response:
         body = json.load(response)
     evidence[tool_name] = body
     with open(output_path, "w", encoding="utf-8") as stream:
@@ -957,7 +950,7 @@ elif kind == "recommendation-agent":
 elif kind == "coordinator-agent":
     metadata["labels"].update({
         "app.kubernetes.io/part-of": "recsys-coordinator-agentic",
-        "recsys.dev/variant": "sandbox",
+        "recsys.dev/variant": "regular",
     })
     metadata["annotations"]["recsys.dev/a2a-dependencies"] = ",".join([
         f"recsys/recsys-context-agent-sandbox@{tag}",
@@ -968,9 +961,9 @@ elif kind == "coordinator-agent":
         "kind": "Agent",
         "metadata": metadata,
         "spec": {
-            "title": "RecSys Coordinator Agent (sandbox)",
+            "title": "RecSys Coordinator Agent",
             "description": (
-                "Intent-routing gVisor coordinator for context, RAG, and "
+                "Intent-routing coordinator for context, RAG, and "
                 "recommendation specialists"
             ),
             "mcpServers": [
@@ -1229,7 +1222,7 @@ publish_recommendation_agent_registry() {
 }
 
 publish_coordinator_agent_registry() {
-  local version tag commit git_url registry_name manifest
+  local version tag commit git_url registry_name manifest legacy_name legacy_backup
   agentic_assert_registry_publish_branch || return 0
   coordinator_agentic_preflight true
   agentic_mcp_protocol_smoke
@@ -1240,7 +1233,7 @@ publish_coordinator_agent_registry() {
   version="$(agentic_registry_version)"
   tag="$(agentic_registry_tag "${version}")"
   git_url="$(agentic_registry_git_url)"
-  registry_name="recsys/recsys-coordinator-agent-sandbox"
+  registry_name="recsys/recsys-coordinator-agent"
   agentic_registry_require_dependency mcp \
     recsys/recsys-feature-rag-mcp "${tag}" "${version}" "${commit}"
   agentic_registry_require_dependency mcp \
@@ -1260,6 +1253,14 @@ publish_coordinator_agent_registry() {
   fi
   rm -f "${manifest}"
   arctl get agent "${registry_name}" --tag "${tag}" -o json >/dev/null
+  legacy_name="recsys/recsys-coordinator-agent-sandbox"
+  legacy_backup=".ci-deploy/recsys-coordinator-agent-sandbox-registry-backup.json"
+  if agentic_registry_tagged_resource_exists agent "${legacy_name}" \
+    "${legacy_backup}"; then
+    arctl delete agent "${legacy_name}" --all-tags
+  else
+    printf '[]\n' >"${legacy_backup}"
+  fi
   agentic_write_registry_evidence \
     .ci-deploy/coordinator-agent-registry.json "${version}" "${commit}" \
     "${registry_name}@${tag}" \

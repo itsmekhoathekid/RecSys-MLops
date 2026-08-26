@@ -2,6 +2,12 @@
 
 Production target: `recsys-mlops-506406`, `asia-southeast1-b`, `recsys-mlops.site`.
 
+Current agent-platform compatibility baseline (validated 2026-08-26): GKE
+`1.35.7-gke.1027000`, kagent `0.9.9`, and Substrate `0.0.6`. The PodCertificate
+and ClusterTrustBundle beta APIs are enabled and cannot be disabled. Substrate
+`0.0.11` must not be promoted again until a canary plus production A2A gate
+passes; certificate projection and metric availability alone are not enough.
+
 Run `make gcp-full-check GCP_CHECK_MODE=preflight` before provisioning and
 `make gcp-full-check GCP_CHECK_MODE=all` after deployment. The command writes
 machine-readable results to `reports/gcp/full-stack-check.json`.
@@ -31,6 +37,12 @@ project's state bucket.
   Istio, ingress-nginx, Kubeflow Pipelines, KServe, KubeRay, Prometheus operator.
 - [ ] Data: config, MinIO lakehouse, source Postgres, Kafka, Kafka Connect,
   feature Postgres/Redis, Flink streaming and Airflow.
+- [ ] After any node-pool recreation, verify Zookeeper did not load an empty
+  snapshot: Kafka `/cluster/id` and every persisted `partition.metadata`
+  `topic_id` must match Zookeeper before restarting Connect/Flink. Do not delete
+  Kafka log directories to resolve an ID mismatch. The production source
+  Postgres PVC was expanded online to `30Gi` on 2026-08-26; keep at least 20%
+  free before enabling the realtime producer.
 - [ ] ML/serving: MLflow/Postgres/MinIO, runtime PVC/Secret, Ray, KServe/Triton,
   online-feature API, inference API and progressive rollout watcher.
 - [ ] RAG/analytics/demo: Milvus, RAG API/index, Trino, dbt, Superset, demo API
@@ -38,6 +50,14 @@ project's state bucket.
 - [ ] Security/full optional: Vault HA/KMS unseal, DataHub, Substrate, kagent,
   llm-d, Agent Gateway, Agent Registry, feature-RAG MCP/context agent and
   recommendation MCP/agent.
+- [ ] Coordinator is `Agent/recsys-coordinator-agent` with Deployment `1/1`;
+  no coordinator SandboxAgent, WorkerPool, ScaledObject, HPA, or PDB exists.
+- [ ] Specialist WorkerPools use `ateom-gvisor:v0.0.6`, the CRD compatibility
+  post-renderers are active, and their KEDA queries are CPU based (`120`/`400`
+  microcores) until the `0.0.11` A2A compatibility blocker is resolved.
+- [ ] Substrate control-plane/ATE is `0.0.6`, but Valkey remains pinned to
+  `9.1` so it can read AOF files written during the failed upgrade; do not
+  downgrade Valkey to `8.0` without restoring compatible PD snapshots.
 - [ ] Both Qwen replicas are Ready on different `recsys-mlops-cpu` nodes.
 - [ ] Observability/CI: Prometheus, Grafana, Loki, Tempo, Promtail, Pushgateway,
   exporters and Jenkins.

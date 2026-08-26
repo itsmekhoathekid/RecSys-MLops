@@ -1,10 +1,10 @@
 namespace: kagent
 
-sandbox:
-  name: recsys-coordinator-agent-sandbox
-  workerPool: recsys-coordinator-sandbox-pool
+agent:
+  name: recsys-coordinator-agent
   modelConfig: default-model-config
-  modelConfigRevision: coordinator-v1
+  modelConfigRevision: regular-agent-v2
+  replicas: 1
   imageRegistry: ""
   systemMessage: |
     You are the RecSys coordinator agent. Route each request to the smallest
@@ -52,11 +52,6 @@ sandbox:
     keep any valid result from the other sources, name the unavailable
     dependency, and clearly distinguish partial results from complete ones.
     Do not retry the same dependency or replace missing data with guesses.
-  allowedDomains:
-    - kagent-controller.kagent
-    - recsys-feature-rag-mcp.kagent.svc.cluster.local
-    - recsys-recommendation-mcp.kagent.svc.cluster.local
-
 agents:
   context:
     name: recsys-context-agent-sandbox
@@ -83,16 +78,3 @@ mcpServers:
     apiGroup: kagent.dev
     tools:
       - get_personalized_recommendations
-
-autoscaling:
-  enabled: true
-  minReplicas: 1
-  maxReplicas: 3
-  pollingInterval: 15
-  cooldownPeriod: 120
-  serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
-  cpuTargetMicrocores: "400"
-  scaleDownStabilizationSeconds: 60
-  fallback:
-    failureThreshold: 3
-    replicas: 1

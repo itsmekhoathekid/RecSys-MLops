@@ -1,0 +1,6 @@
+apiVersion: v2
+name: substrate-mtls-bootstrap
+description: Preserved CA/JWT pools required by Substrate 0.0.11 mTLS mode.
+type: application
+version: 0.1.0
+appVersion: "0.0.11"

@@ -1,10 +1,2 @@
-sandbox:
+agent:
   imageRegistry: ghcr.io
-
-autoscaling:
-  minReplicas: 1
-  maxReplicas: 3
-  cpuTargetMicrocores: "400"
-  fallback:
-    failureThreshold: 3
-    replicas: 1

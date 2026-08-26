@@ -1,5 +1,11 @@
 # Sandboxed Recommendation Agent Uses the Recommendation Service
 
+> **Runtime status (2026-08-26):** a Substrate `0.0.11` canary proved native
+> assigned-worker metrics, but the production kagent `0.9.9` A2A compatibility
+> gate failed. This specialist therefore remains on Substrate `0.0.6` and its
+> documented CPU-based KEDA query. Assigned-worker scaling evidence is not
+> claimed. See [validation and rollback](validation_verification.md).
+
 This submission section proves that the recommendation flow:
 
 - exposes the existing `POST /recommendations` serving boundary through a

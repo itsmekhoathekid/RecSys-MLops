@@ -127,6 +127,15 @@ resource "helm_release" "substrate" {
     )
   }
 
+  # Substrate 0.0.11 upgraded the persistent AOF format. Keep the 9.1 storage
+  # engine after rolling the control plane back to 0.0.6; Valkey 8.0 cannot
+  # read the resulting appendonly.aof.11.base.rdb files. This avoids restoring
+  # the six PD snapshots solely to downgrade the storage binary.
+  set {
+    name  = "images.valkey"
+    value = "valkey/valkey:9.1@sha256:4963247afc4cd33c7d3b2d2816b9f7f8eeebab148d29056c2ca4d7cbc966f2d9"
+  }
+
   postrender {
     binary_path = "${path.module}/../../../ops/helm/substrate_gke_postrender.py"
     args        = ["gke-public-oidc-v1"]
@@ -247,33 +256,6 @@ resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool" {
   depends_on = [helm_release.kagent]
 }
 
-# The coordinator has a dedicated pool so its orchestration load and KEDA
-# lifecycle cannot consume the context or recommendation agents' warm workers.
-# Terraform owns the immutable gVisor runtime fields while KEDA owns replicas.
-resource "kubernetes_manifest" "recsys_coordinator_sandbox_pool" {
-  count = var.deploy_llm_inference ? 1 : 0
-
-  manifest = {
-    apiVersion = "ate.dev/v1alpha1"
-    kind       = "WorkerPool"
-    metadata = {
-      name      = "recsys-coordinator-sandbox-pool"
-      namespace = kubernetes_namespace.kagent[0].metadata[0].name
-      labels = {
-        "app.kubernetes.io/part-of" = "recsys-agentic"
-      }
-    }
-    spec = {
-      replicas      = 1
-      ateomImage    = "ghcr.io/kagent-dev/substrate/ateom-gvisor:v${var.agent_substrate_version}"
-      scaleSelector = "ate.dev/worker-pool=recsys-coordinator-sandbox-pool"
-    }
-  }
-
-  computed_fields = ["spec.replicas"]
-
-  depends_on = [helm_release.kagent]
-}
 
 resource "kubernetes_cluster_role_v1" "keda_workerpool_scaler" {
   count = var.deploy_llm_inference ? 1 : 0

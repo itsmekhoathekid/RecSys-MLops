@@ -594,7 +594,7 @@
     {
       "name": "coordinator_agent",
       "flag": "RUN_COORDINATOR_AGENT",
-      "label": "RecSys Coordinator Sandbox Agent",
+      "label": "RecSys Coordinator Agent",
       "ciProfile": "agentic",
       "changeDetection": {
         "groups": ["jenkins-shared-runtime"],
@@ -608,7 +608,7 @@
           "jenkins/scripts/ci/agentic.sh",
           "jenkins/scripts/deploy/agentic.sh",
           "jenkins/scripts/test/agentic.sh",
-          "ops/validation/coordinator_agentic_autoscale.sh",
+          "ops/validation/coordinator_agentic_concurrency.sh",
           "ops/validation/coordinator_agentic_registry_smoke.sh",
           "ops/validation/coordinator_agentic_smoke.sh",
           "tests/contract/test_coordinator_agentic_contracts.py"

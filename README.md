@@ -357,9 +357,9 @@ Source: tab **`rubic final-coursework (final -llm)`**.
 | [User and Chunk Retrieval MCP Tool + Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_pull_data.md>) | FastAPI/Pydantic APIs, four-tool Streamable HTTP MCP server, SandboxAgent, KEDA WorkerPool/MCP autoscaling, registry governance, and kagent UI proof. |
 | [Recommendation Service Agent — Detailed Runtime Proof](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation_servicce.md>) | Figure-by-figure FastAPI, inference API, MCP, KEDA autoscaling, gVisor WorkerPool, Agent Registry, and kagent UI evidence with reproducible verification commands. |
 | [Demonstrate Basic Understanding of Agents](<docs/submission/rubric-final-coursework-(final-llm)/agent_notebooks.md>) | Jupyter experiments showing raw A2A requests, MCP `function_call`/`function_response` history, successful recommendation execution, and grounded RAG retrieval. |
-| [Deploy a Coordinator Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>) | Intent-routed A2A coordination, direct MCP verification, dedicated gVisor WorkerPool, KEDA `1 -> 3` autoscaling with fallback, and governed Agent Registry publication. |
+| [Deploy a Coordinator Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>) | Intent-routed regular Agent, two specialist A2A tools, two direct MCP providers, fixed one-replica concurrency proof, and governed Registry migration. |
 | Agent Warm-Up | Work in progress. |
-| Validation & Verification | Work in progress. |
+| [Validation & Verification](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md>) | Substrate `0.0.11` canary proof, production compatibility failure, safe `0.0.6` rollback, and coordinator regular-Agent evidence. |
 | Improve the Data Generator | Work in progress. |
 | CI/CD | Work in progress. |
 | Routing & Gateway (NGINX Ingress Controller) | Work in progress. |

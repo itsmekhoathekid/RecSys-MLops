@@ -40,7 +40,7 @@ EXPECTED_LABELS = [
     "RecSys Context Agent",
     "Recommendation MCP",
     "Recommendation Sandbox Agent",
-    "RecSys Coordinator Sandbox Agent",
+    "RecSys Coordinator Agent",
     "Inference API",
     "KServe Inference Engine",
     "Progressive Model Rollout",
