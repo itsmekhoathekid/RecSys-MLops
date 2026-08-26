@@ -21,6 +21,13 @@ The deployment was verified on 14 August 2026: both Helm releases were
 `SecretSynced/True`, pgvector reported version `0.8.6`, and both the UI and
 OpenAPI endpoints returned HTTP `200`.
 
+Artifact status was rechecked on 26 August 2026. The live coordinator is now
+the regular Kubernetes `Agent/recsys-coordinator-agent`, but the target catalog
+identity `recsys/recsys-coordinator-agent` has not been published. Composite
+routing and partial-failure gates remained red with Qwen 0.8B, so the legacy
+`recsys/recsys-coordinator-agent-sandbox` artifact is intentionally retained.
+Runtime deployment and Registry publication are separate gates.
+
 ## What Agent Registry Is
 
 [Agent Registry](https://aregistry.ai/docs/about/) is a centralized catalog for
@@ -420,3 +427,13 @@ The existing `global-model-config-smoke` Agent was created directly by the
 repository-owned kagent Helm release, so it does not automatically become a
 catalog entry. An Agent must be published through `arctl` before Agent Registry
 can display and deploy that artifact.
+
+For the RecSys coordinator, use the repository's governed command only after
+all routing gates pass and all dependencies share the same immutable commit:
+
+```bash
+make coordinator-agentic-registry
+```
+
+The command verifies the regular artifact before retiring the legacy sandbox
+identity. Do not run a manual `arctl delete` as a shortcut around that gate.

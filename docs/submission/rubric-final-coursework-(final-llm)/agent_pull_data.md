@@ -1265,7 +1265,9 @@ providers:
     model: qwen3.5-0.8b
     config:
       baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
-      maxTokens: 256
+      maxTokens: 384
+      temperature: "0"
+      seed: 42
 ```
 
 References:

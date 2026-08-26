@@ -9,6 +9,15 @@ The following Jupyter notebooks are end-to-end experiments with agents running o
 
 The experiments verify that a local notebook can communicate directly with a kagent `SandboxAgent` through its A2A endpoint and that the agent uses MCP tool calls to execute functions. Each notebook returns and displays the unmodified JSON-RPC/A2A response. No parser or intermediary helper file removes information from the execution trace.
 
+> **Evidence status (2026-08-26):** these notebooks still target the two
+> specialist SandboxAgents, which remain the production identities. Their
+> captured output predates the current deterministic global ModelConfig
+> (`maxTokens=384`, `temperature=0`, `seed=42`). Token counts and retry behavior
+> in the saved cells are historical evidence; current rollout status is tracked
+> in [Validation & Verification](validation_verification.md). The regular
+> coordinator uses `/api/a2a/kagent/recsys-coordinator-agent/` and is validated
+> by the separate coordinator smoke/concurrency scripts, not these notebooks.
+
 ## 2. Execution Path
 
 ```text
@@ -55,7 +64,7 @@ items: [800075, 800145, 800015]
 model_version: 20260823155004
 ```
 
-This result demonstrates that the agent did not generate the recommendations directly with the LLM. The item IDs, scores, and model version appear in the `function_response` before the agent produces its presentation text. The final text is truncated at `candidatesTokenCount=256`, but the raw tool response contains all three items, so MCP execution completed successfully.
+This historical result demonstrates that the agent did not generate the recommendations directly with the LLM. The item IDs, scores, and model version appear in the `function_response` before the agent produces its presentation text. The captured final text is truncated at `candidatesTokenCount=256`, but the raw tool response contains all three items, so MCP execution completed successfully. The live ModelConfig now permits 384 output tokens.
 
 Related code and configuration:
 

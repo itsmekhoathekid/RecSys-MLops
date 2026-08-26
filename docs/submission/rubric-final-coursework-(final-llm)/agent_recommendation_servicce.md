@@ -890,7 +890,10 @@ verified in Technical or Raw metadata; it is not claimed as visible here.
 
 The Terraform-owned kagent installation supplies the UI and global
 `default-model-config` backed by `qwen3.5-0.8b`. The application chart supplies
-the recommendation SandboxAgent profile and its one-tool MCP binding.
+the recommendation SandboxAgent profile and its one-tool MCP binding. The
+current shared model settings are deterministic (`temperature=0`, `seed=42`,
+`maxTokens=384`); older screenshots that show a 256-token completion cap are
+retained as historical evidence rather than the live configuration.
 
 The acceptance conversation is:
 

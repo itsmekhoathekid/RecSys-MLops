@@ -36,7 +36,7 @@ help:
 	@echo "  make agentic-preflight            Validate agentic platform prerequisites"
 	@echo "  make agentic-smoke                Run MCP and regular/sandbox A2A smoke tests"
 	@echo "  make agent-substrate-warmup-benchmark Benchmark warm actor restore/snapshot latency"
-	@echo "  make substrate-gke-compatibility Check 0.0.11 certificate projections before upgrade"
+	@echo "  make substrate-gke-compatibility Check 0.0.11 cert prerequisites (canary only; A2A gate still required)"
 	@echo "  make agentic-autoscale-test       Prove context CPU-based WorkerPool scale/fallback"
 	@echo "  make agentic-registry-smoke       Verify published Registry versions"
 	@echo "  make test-recommendation-agentic  Run recommendation MCP/Agent tests"

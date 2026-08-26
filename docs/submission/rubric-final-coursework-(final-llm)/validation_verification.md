@@ -173,6 +173,32 @@ CPU configuration. Any draft assigned-worker `1 -> 2 -> 3 -> 1` claim is
 superseded by this failed compatibility gate because that load test was never
 authorized to run after the gate turned red.
 
+## Worker warm-up benchmark
+
+The repository keeps a version-aware benchmark for an already-ready specialist
+WorkerPool:
+
+```bash
+make agent-substrate-warmup-benchmark
+```
+
+It defaults to the Recommendation SandboxAgent, verifies the SandboxAgent and
+WorkerPool are Ready, runs three A2A iterations, records per-request latency,
+and captures the ActorTemplate, WorkerPool, worker Pods, ScaledObject, ATE API
+logs, and raw responses under `reports/agentic/substrate-warmup-<UTC run ID>/`.
+Context can be selected explicitly:
+
+```bash
+SUBSTRATE_BENCHMARK_AGENT=recsys-context-agent-sandbox \
+SUBSTRATE_BENCHMARK_WORKER_POOL=recsys-context-sandbox-pool \
+make agent-substrate-warmup-benchmark
+```
+
+Warm-up output must always record the active runtime version. On the current
+production baseline it measures Substrate `0.0.6`; it does not validate the
+rejected `0.0.11` A2A path and must not be used as assigned-worker autoscaling
+evidence.
+
 ## Reproduction and rollback entrypoints
 
 - [enable the one-way GKE APIs](../../../ops/gcp/enable_substrate_cert_beta_apis.sh)

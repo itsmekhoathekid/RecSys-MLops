@@ -347,18 +347,25 @@ Source: tab **`rubic final-coursework (final -`**.
 
 Source: tab **`rubic final-coursework (final -llm)`**.
 
+Current GCP agent baseline, validated 26 August 2026: the coordinator is a
+regular one-replica kagent `Agent`; the two specialists remain Substrate
+`0.0.6` `SandboxAgent`s with CPU-based KEDA. Substrate `0.0.11` and its native
+assigned-worker metric passed the mTLS canary but failed the production kagent
+`0.9.9` A2A compatibility gate, so they are not the active production
+autoscaling path. See Validation & Verification for the rollback evidence.
+
 | Rubric area | Coverage |
 | --- | --- |
 | [README and High-Level System Design](README.md) | Business domain, repository structure, table of contents, and deployable-unit architecture. |
 | [Deploy LLM Inference Platform + Setup Custom Model](<docs/submission/rubric-final-coursework-(final-llm)/llm_inference_platform.md>) | llama.cpp custom model serving, llm-d Agent Gateway routing, benchmark comparison, and load-aware optimization evidence. |
 | [Deploy a Global Model Config](<docs/submission/rubric-final-coursework-(final-llm)/global_model_config.md>) | Shared kagent `ModelConfig`, Agent Gateway routing, Secret reference, applied resource evidence, and end-to-end Agent inference. |
-| [Deploy Agent Registry](<docs/submission/rubric-final-coursework-(final-llm)/agent_registry.md>) | Vault-backed Agent Registry `0.4.0`, persistent pgvector, namespace-scoped kagent deployment RBAC, and live UI/API proof. |
+| [Deploy Agent Registry](<docs/submission/rubric-final-coursework-(final-llm)/agent_registry.md>) | Vault-backed Agent Registry `0.4.0`, persistent pgvector, namespace-scoped kagent deployment RBAC, live UI/API proof, and the gated coordinator artifact cutover. |
 | [RAG](<docs/submission/rubric-final-coursework-(final-llm)/rag.md>) | Feast/Milvus-backed ingestion and retrieval pipeline, promoted-index serving, validation, observability, and runtime evidence. |
 | [User and Chunk Retrieval MCP Tool + Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_pull_data.md>) | FastAPI/Pydantic APIs, four-tool Streamable HTTP MCP server, SandboxAgent, KEDA WorkerPool/MCP autoscaling, registry governance, and kagent UI proof. |
 | [Recommendation Service Agent — Detailed Runtime Proof](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation_servicce.md>) | Figure-by-figure FastAPI, inference API, MCP, KEDA autoscaling, gVisor WorkerPool, Agent Registry, and kagent UI evidence with reproducible verification commands. |
 | [Demonstrate Basic Understanding of Agents](<docs/submission/rubric-final-coursework-(final-llm)/agent_notebooks.md>) | Jupyter experiments showing raw A2A requests, MCP `function_call`/`function_response` history, successful recommendation execution, and grounded RAG retrieval. |
 | [Deploy a Coordinator Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>) | Intent-routed regular Agent, two specialist A2A tools, two direct MCP providers, fixed one-replica concurrency proof, and governed Registry migration. |
-| Agent Warm-Up | Work in progress. |
+| [Agent Warm-Up](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md#worker-warm-up-benchmark>) | Reproducible specialist actor warm-up benchmark; results must name the active Substrate version and are not assigned-worker scale evidence. |
 | [Validation & Verification](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md>) | Substrate `0.0.11` canary proof, production compatibility failure, safe `0.0.6` rollback, and coordinator regular-Agent evidence. |
 | Improve the Data Generator | Work in progress. |
 | CI/CD | Work in progress. |

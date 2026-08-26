@@ -21,7 +21,8 @@ Agent/recsys-coordinator-agent (Deployment replicas=1)
 The public interfaces are:
 
 - A2A: `/api/a2a/kagent/recsys-coordinator-agent/`
-- Registry: `recsys/recsys-coordinator-agent`
+- Target Registry identity: `recsys/recsys-coordinator-agent` (publication is
+  currently gated; see Registry publication below)
 
 The Helm chart renders only one regular `Agent`; it renders no coordinator
 `SandboxAgent`, `WorkerPool`, `ScaledObject`, or PodDisruptionBudget.
@@ -115,20 +116,21 @@ Agent artifacts and both MCP artifacts at the same immutable Git SHA. It then
 verifies the new artifact before retiring
 `recsys/recsys-coordinator-agent-sandbox`.
 
-The 2026-08-26 live Registry inspection found the dependency set only at commit
-`8e82cfdbb42d5c94fc6bd58ef19fd75af0d9478b`, while the regular coordinator
-change was still uncommitted. Publishing was therefore deliberately withheld:
-using the current `HEAD` would claim source provenance that does not contain the
-regular Agent manifest. After these changes are committed and the four
-dependencies are published at that SHA, run:
+The regular coordinator migration is committed in `ae09f78`, with follow-up
+runtime stabilization in `c09ce07`. Publication is still deliberately
+withheld because the 2026-08-26 composite routing gate and partial-failure gate
+remained red with Qwen 0.8B. A new artifact must not be published merely because
+the manifest is committed: first publish all four dependencies at the same
+immutable SHA and make context-only, recommendation-only, composite,
+direct-MCP, and partial-failure routing green. Then run:
 
 ```bash
 make coordinator-agentic-registry
 ```
 
 The legacy sandbox artifact must remain until that command verifies the new
-regular artifact. This is a release gate, not a runtime blocker; the live
-regular Agent and its A2A route are already healthy.
+regular artifact. Context-only and recommendation-only routes are healthy, but
+the full release gate is not green; the legacy artifact was therefore retained.
 
 Reference: [registry publish and dependency gates](../../../jenkins/scripts/deploy/agentic.sh).
 
