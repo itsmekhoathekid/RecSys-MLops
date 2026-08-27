@@ -162,6 +162,13 @@ agentic_write_registry_manifest "$1" coordinator-agent \
 
 
 def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
+    deploy_script = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "Pass the Recommendation Agent exactly this complete JSON request" in (
+        deploy_script
+    )
+    assert 'candidate_item_ids\\\":null,\\\"top_k\\\":1' in deploy_script
     components = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
     )["components"]
