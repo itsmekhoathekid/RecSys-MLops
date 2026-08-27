@@ -338,6 +338,8 @@ recommendation_a2a_smoke() {
   local agent_name="recsys-recommendation-agent-sandbox"
   local user_id="${RECOMMENDATION_SMOKE_USER_ID:-1001}"
   local local_port="${RECOMMENDATION_A2A_LOCAL_PORT:-18085}"
+  local request_timeout="${RECOMMENDATION_A2A_REQUEST_TIMEOUT_SECONDS:-600}"
+  local max_attempts="${RECOMMENDATION_A2A_MAX_ATTEMPTS:-1}"
   local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
   local log_file="reports/agentic/${agent_name}-port-forward.log"
   local output_file="reports/agentic/${agent_name}-a2a.json"
@@ -354,14 +356,15 @@ recommendation_a2a_smoke() {
     sleep 1
   done
   if [[ "${ready}" == "true" ]]; then
-    for attempt in 1 2 3; do
-      if python3 - "${base_url}/" "${user_id}" "${output_file}" <<'PY'
+    for attempt in $(seq 1 "${max_attempts}"); do
+      if python3 - "${base_url}/" "${user_id}" "${request_timeout}" "${output_file}" <<'PY'
 import json
 import sys
 import urllib.request
 import uuid
 
-url, user_id, output_path = sys.argv[1:]
+url, user_id, request_timeout, output_path = sys.argv[1:]
+request_timeout = int(request_timeout)
 request_id = str(uuid.uuid4())
 payload = {
     "jsonrpc": "2.0",
@@ -384,7 +387,7 @@ request = urllib.request.Request(
     headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
     method="POST",
 )
-with urllib.request.urlopen(request, timeout=180) as response:
+with urllib.request.urlopen(request, timeout=request_timeout) as response:
     body = json.load(response)
 with open(output_path, "w", encoding="utf-8") as stream:
     json.dump(body, stream, indent=2, sort_keys=True)
@@ -421,7 +424,7 @@ PY
         status=0
         break
       fi
-      echo "recommendation A2A smoke attempt ${attempt}/3 failed" >&2
+      echo "recommendation A2A smoke attempt ${attempt}/${max_attempts} failed" >&2
       sleep 2
     done
   fi
@@ -707,7 +710,8 @@ agentic_a2a_smoke() {
   local chunk_id="${AGENTIC_SMOKE_CHUNK_ID:?AGENTIC_SMOKE_CHUNK_ID is required for grounded A2A smoke}"
   local user_id="${AGENTIC_SMOKE_USER_ID:-1001}"
   local local_port="${AGENTIC_A2A_LOCAL_PORT:-18084}"
-  local request_timeout="${AGENTIC_A2A_REQUEST_TIMEOUT_SECONDS:-240}"
+  local request_timeout="${AGENTIC_A2A_REQUEST_TIMEOUT_SECONDS:-600}"
+  local max_attempts="${AGENTIC_A2A_MAX_ATTEMPTS:-1}"
   local a2a_path="api/a2a-sandboxes"
   local card_path=".well-known/agent-card.json"
   local base_url="http://127.0.0.1:${local_port}/${a2a_path}/kagent/${agent_name}"
@@ -745,7 +749,7 @@ PY
   fi
   local smoke_status=1
   local attempt
-  for attempt in 1 2 3; do
+  for attempt in $(seq 1 "${max_attempts}"); do
     smoke_status=0
     python3 - "${base_url}/" "${user_id}" "${chunk_id}" \
       "${request_timeout}" "${response_file}" <<'PY' || smoke_status=$?

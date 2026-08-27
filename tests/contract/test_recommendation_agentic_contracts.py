@@ -203,8 +203,9 @@ def test_jenkins_preflight_verifies_keda_rbac_without_impersonated_ssar() -> Non
     recommendation_smoke = deploy.split(
         "recommendation_a2a_smoke()", maxsplit=1
     )[1].split("agentic_mcp_protocol_smoke()", maxsplit=1)[0]
-    assert "for attempt in 1 2 3" in recommendation_smoke
-    assert "recommendation A2A smoke attempt ${attempt}/3 failed" in recommendation_smoke
+    assert "RECOMMENDATION_A2A_REQUEST_TIMEOUT_SECONDS:-600" in recommendation_smoke
+    assert "RECOMMENDATION_A2A_MAX_ATTEMPTS:-1" in recommendation_smoke
+    assert 'for attempt in $(seq 1 "${max_attempts}")' in recommendation_smoke
 
 
 def test_autoscale_and_smoke_proof_scripts_are_portable_and_bounded() -> None:

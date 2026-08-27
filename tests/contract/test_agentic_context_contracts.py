@@ -422,3 +422,5 @@ def test_a2a_smoke_payloads_use_protocol_v03_message_ids():
     assert 'a2a_path="api/a2a-sandboxes"' in deploy
     assert 'card_path=".well-known/agent-card.json"' in deploy
     assert 'a2a_path="api/a2a"' not in deploy
+    assert "AGENTIC_A2A_REQUEST_TIMEOUT_SECONDS:-600" in deploy
+    assert "AGENTIC_A2A_MAX_ATTEMPTS:-1" in deploy
