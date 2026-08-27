@@ -22,7 +22,7 @@ SandboxAgent/recsys-coordinator-agent-sandbox
 - Registry: `recsys/recsys-coordinator-agent-sandbox`
 - WorkerPool: `recsys-coordinator-sandbox-pool`
 - Model configuration revision:
-  `substrate-0.0.11-kagent-e6df917-assigned-workers-v19`
+  `substrate-0.0.11-kagent-e6df917-assigned-workers-v21`
 - kagent compatibility image: `0.10.0-e6df917-substrate0011-v6`
 
 The Helm release renders a `SandboxAgent`, `ScaledObject`, and
@@ -87,6 +87,12 @@ The smoke covers context-only, recommendation-only, composite, direct MCP, and
 partial-specialist-failure cases through the sandbox A2A endpoint using
 `SendMessage` and `A2A-Version: 1.0`.
 
+Both specialist Agent tools set `isolateSessions: true`. Every delegation gets
+a fresh child A2A context, so a previous `INPUT_REQUIRED` or failed child task
+cannot contaminate a later coordinator request. The production smoke uses one
+bounded attempt; its 1,800-second timeout accommodates measured local-model
+latency without starting duplicate server-side work.
+
 The v6 runtime adds a per-invocation exact-call guard for this Coordinator. An
 explicitly requested specialist or direct MCP tool executes once, tool results
 survive model retries, and a composite request advances from Recommendation to
@@ -114,12 +120,16 @@ v6 kagent compatibility image. The Coordinator WorkerPool proved
 `1 -> 2 -> 3 -> 2 -> 1`; an intentionally invalid Prometheus endpoint made
 KEDA report fallback while desired/available replicas remained `1/1`, and the
 endpoint was restored automatically. The full v19 routing suite passed all
-five cases, with the composite evidence showing exactly
+six cases and remains the complete-suite baseline, with composite evidence showing exactly
 `Recommendation Agent -> Context Agent`, once each. Substrate control-plane,
 Valkey, RustFS, the three SandboxAgents, WorkerPools, ScaledObjects, and HPAs
 were healthy after restoration.
 
-The machine-readable A2A evidence is
+Coordinator v21 targeted production evidence additionally proves a fresh child
+session, exact parent JSON `top_k=1`, exact child MCP `top_k=1`, no `ask_user`,
+and `TASK_STATE_COMPLETED` in
+`reports/agentic/recsys-coordinator-agent-sandbox-recommendation-v24.json`.
+The v19 full-suite evidence remains
 `reports/agentic/recsys-coordinator-agent-sandbox-a2a-v19.json`; autoscale load
 evidence is `reports/agentic/coordinator-autoscale-load.json`.
 

@@ -3,7 +3,10 @@
 > **Runtime status (updated 2026-08-27):** production runs the custom kagent v6
 > compatibility image with Substrate `0.0.11`; values select assigned-worker
 > KEDA. Recommendation proved `1 -> 2 -> 3 -> 2 -> 1`, completed `2187/2187`
-> load requests, and proved fallback to one. CPU mode remains only for rollback.
+> load requests, and proved fallback to one. Revision v9 copies `user_id`,
+> `candidate_item_ids`, and `top_k` exactly from each request, then emits final
+> text immediately after the single MCP response without calling `ask_user`.
+> CPU mode remains only for rollback.
 
 This submission section proves that the recommendation flow:
 

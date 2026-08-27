@@ -66,8 +66,11 @@ project's state bucket.
 - [ ] Before publishing `recsys/recsys-coordinator-agent-sandbox` or retiring
   the regular registry artifact, require context-only, recommendation-only,
   composite, direct-MCP, and partial-failure coordinator gates to pass. The
-  production v19 suite passed all five cases on the v6 kagent compatibility
-  image. The earlier regular-Coordinator routing failure is retained only as
+  production suite covers six cases on the v6 kagent compatibility image.
+  Coordinator v21 must compile both specialist tools with
+  `isolate_sessions=true`; Recommendation v9 must copy `user_id`, candidates,
+  and `top_k` exactly and never continue to `ask_user` after the MCP response.
+  The earlier regular-Coordinator routing failure is retained only as
   superseded history in Validation & Verification.
 - [ ] Do not run the three autoscale load tests while Valkey reports
   `cluster_state:fail` or ATE API is CrashLooping. Recover quorum first, then

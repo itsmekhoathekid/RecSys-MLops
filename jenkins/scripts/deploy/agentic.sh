@@ -441,7 +441,7 @@ coordinator_a2a_smoke() {
   # A timed-out nested A2A request keeps running server-side. Retrying the
   # entire six-case suite immediately creates orphan work and amplifies load,
   # so the production registry gate defaults to one longer bounded attempt.
-  local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-900}"
+  local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800}"
   local max_attempts="${COORDINATOR_A2A_MAX_ATTEMPTS:-1}"
   local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents,direct_context_mcp,direct_recommendation_mcp,partial_result}"
   local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"

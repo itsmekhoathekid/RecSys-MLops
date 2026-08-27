@@ -3,7 +3,9 @@
 > **Runtime status (updated 2026-08-27):** production runs the custom kagent v6
 > compatibility image with Substrate `0.0.11`; values select assigned-worker
 > KEDA. Context proved `1 -> 2 -> 3 -> 2 -> 1` and fallback to one. The chart
-> retains `metricMode: cpu | assignedWorkers` only for values-based rollback.
+> runs model revision v8; revision changes rebuild a single current
+> ActorTemplate after removing stale generations. The chart retains
+> `metricMode: cpu | assignedWorkers` only for values-based rollback.
 > See [validation and rollback](validation_verification.md).
 
 This document provides source-code, configuration, deployment, and runtime

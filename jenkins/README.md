@@ -117,6 +117,23 @@ exact path ownership and CI profiles remain authoritative in
 [`components.json`](config/components.json) and
 [`ci-environments.json`](config/ci-environments.json).
 
+## Agentic production gate
+
+The three agent components are Context, Recommendation, and Coordinator
+`SandboxAgent`s backed by independent Substrate WorkerPools. Coordinator v21
+sets `isolateSessions: true` on both specialist tools; Recommendation v9 copies
+the current A2A arguments exactly and stops after its single MCP response.
+Specialist smokes use a 600-second single attempt and the six-case Coordinator
+suite uses a 1,800-second single attempt. A client timeout must never trigger a
+whole-suite retry because the A2A task can still be running server-side.
+
+Run their dependency-closed production release with:
+
+```text
+FORCE_COMPONENTS=feature_rag_mcp,context_agent,recommendation_mcp,recommendation_agent,coordinator_agent,ci_config
+FORCE_DEPLOY=true
+```
+
 ## Stage Contract
 
 Each changed component follows the same sequence:

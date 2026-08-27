@@ -158,7 +158,9 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert '"remote": {' in deploy
     assert '"type": "streamable-http"' in deploy
     assert 'arctl apply -f "${manifest}"' in deploy
-    assert "for attempt in 1 2 3" in deploy
+    assert "RECOMMENDATION_A2A_MAX_ATTEMPTS:-1" in deploy
+    assert "AGENTIC_A2A_MAX_ATTEMPTS:-1" in deploy
+    assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "deployment/recsys-context-sandbox-pool" in deploy
     assert "deployment/recsys-coordinator-sandbox-pool" in deploy
     assert "/api/a2a-sandboxes/kagent/${agent_name}" in deploy

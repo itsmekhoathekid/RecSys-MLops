@@ -354,9 +354,11 @@ The custom kagent compatibility image is
 `0.10.0-e6df917-substrate0011-v6`; the Coordinator public identity is
 `recsys-coordinator-agent-sandbox`. Production validation is green: all three
 pools proved `1 -> 2 -> 3 -> 1`, scaler failure fallback held one replica, and
-the Coordinator v19 suite passed context-only, recommendation-only, composite,
-direct-MCP, and partial-failure routing. See Validation & Verification for the
-current evidence and the explicitly superseded `0.0.6`/CPU history.
+the Coordinator routing suite passed context-only, recommendation-only,
+composite, direct-MCP, and partial-failure routing. Coordinator v21 isolates
+every specialist A2A session; Recommendation v9 copies all request arguments
+exactly and terminates after its MCP response. See Validation & Verification
+for current evidence and the explicitly superseded `0.0.6`/CPU history.
 
 | Rubric area | Coverage |
 | --- | --- |

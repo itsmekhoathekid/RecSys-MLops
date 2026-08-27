@@ -29,7 +29,8 @@ state labels. WorkerPool `/scale` reported spec/status replicas and a native
 | Recommendation assigned-worker scale | `1 -> 2 -> 3 -> 2 -> 1`; 2,187/2,187 requests completed |
 | Coordinator assigned-worker scale | `1 -> 2 -> 3 -> 2 -> 1`; load generator recorded 240 offers |
 | Missing-Prometheus behavior | all three ScaledObjects reached `Fallback=True` and held one replica; endpoints were restored |
-| Coordinator v19 routing | context-only, recommendation-only, composite, both direct MCP cases, and partial failure passed |
+| Coordinator full routing baseline | v19 passed all six cases: context-only, recommendation-only, composite, both direct MCP cases, and partial failure |
+| Coordinator v21 isolated Recommendation gate | fresh child session, exact `top_k=1` at parent and child MCP, no `ask_user`, `TASK_STATE_COMPLETED` |
 | Composite exact-call contract | `Recommendation Agent -> Context Agent`, exactly once each |
 
 The v6 kagent patch uses a stateful per-invocation duplicate-call guard and a
@@ -38,12 +39,19 @@ wire-format/retry interaction without changing generic tool routing. Clean
 source tests passed for `./adk/pkg/agent` and
 `./core/pkg/sandboxbackend/substrate`; repository contract tests also passed.
 
-The production model revisions are Context v8, Recommendation v7, and
-Coordinator v19. Routing evidence is stored in
-`reports/agentic/recsys-coordinator-agent-sandbox-a2a-v19.json`; autoscale
-helpers captured metric, ScaledObject, HPA, WorkerPool, generated Deployment,
-pod, scale-down, and fallback state. Historical evidence follows and is
-retained for rollback/audit purposes, but it no longer describes production.
+The production model revisions are Context v8, Recommendation v9, and
+Coordinator v21. Recommendation v9 copies the current request arguments exactly
+and treats its MCP response as terminal. Coordinator v21 compiles both Agent
+tools with `isolate_sessions=true`; the rebuild helper deletes every stale
+ActorTemplate generation before accepting the new Ready snapshot. Full-suite
+v19 evidence is stored in
+`reports/agentic/recsys-coordinator-agent-sandbox-a2a-v19.json`; the current
+targeted gate is
+`reports/agentic/recsys-coordinator-agent-sandbox-recommendation-v24.json`.
+Autoscale helpers captured metric, ScaledObject, HPA, WorkerPool, generated
+Deployment, pod, scale-down, and fallback state. Historical evidence follows
+and is retained for rollback/audit purposes, but it no longer describes
+production.
 
 ## Historical, superseded Substrate 0.0.11 gate and rollback evidence
 
