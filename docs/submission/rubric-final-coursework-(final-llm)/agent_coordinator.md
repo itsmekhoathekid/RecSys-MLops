@@ -92,6 +92,10 @@ a fresh child A2A context, so a previous `INPUT_REQUIRED` or failed child task
 cannot contaminate a later coordinator request. The production smoke uses one
 bounded attempt; its 1,800-second timeout accommodates measured local-model
 latency without starting duplicate server-side work.
+For delegated cases, the gate also inspects the child Agent response and rejects
+typed downstream failures such as `http_422`, tool-execution errors, or a
+silently degraded "source unavailable" answer. A completed parent task alone
+is therefore not sufficient evidence of successful specialist routing.
 
 The v6 runtime adds a per-invocation exact-call guard for this Coordinator. An
 explicitly requested specialist or direct MCP tool executes once, tool results

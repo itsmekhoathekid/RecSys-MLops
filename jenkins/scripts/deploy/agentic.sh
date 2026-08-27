@@ -590,12 +590,29 @@ def invoke(case_name, prompt):
         raise SystemExit(
             f"{case_name} missing call/response: calls={calls}, responses={responses}"
         )
+
+    def assert_usable_agent_response(tool_name):
+        serialized = json.dumps(responses[tool_name], sort_keys=True).lower()
+        rejected = (
+            "http_422",
+            "tool execution failed",
+            "source unavailable",
+            "source is unavailable",
+        )
+        assert not any(marker in serialized for marker in rejected), serialized
+
     if case_name == "context_agent":
-        assert any("context_agent_sandbox" in name for name in calls), calls
+        context_tool = next(
+            name for name in calls if "context_agent_sandbox" in name
+        )
+        assert_usable_agent_response(context_tool)
         assert not any("recommendation_agent_sandbox" in name for name in calls), calls
         assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
     elif case_name == "recommendation_agent":
-        assert any("recommendation_agent_sandbox" in name for name in calls), calls
+        recommendation_tool = next(
+            name for name in calls if "recommendation_agent_sandbox" in name
+        )
+        assert_usable_agent_response(recommendation_tool)
         assert not any("context_agent_sandbox" in name for name in calls), calls
         assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
     elif case_name == "composite_agents":
@@ -603,6 +620,8 @@ def invoke(case_name, prompt):
             "kagent__NS__recsys_recommendation_agent_sandbox",
             "kagent__NS__recsys_context_agent_sandbox",
         ], calls
+        for tool_name in calls:
+            assert_usable_agent_response(tool_name)
         assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
     elif case_name == "direct_context_mcp":
         assert "get_chunk_by_id" in calls, calls

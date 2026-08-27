@@ -182,6 +182,8 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert 'candidate_item_ids\\\":null,\\\"top_k\\\":1' in deploy_script
     assert 'COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800' in deploy_script
     assert 'COORDINATOR_A2A_MAX_ATTEMPTS:-1' in deploy_script
+    assert '"http_422"' in deploy_script
+    assert "assert_usable_agent_response" in deploy_script
     coordinator_smoke = deploy_script.split("coordinator_a2a_smoke()", 1)[1].split(
         "agentic_mcp_protocol_smoke()", 1
     )[0]
