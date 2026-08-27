@@ -936,8 +936,9 @@ def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
     )
 
     assert "sandbox_agent_rebuild_golden_if_revision_changed" in agentic
-    assert 'delete actortemplate "${template_name}" --wait=true' in agentic
-    assert '"${candidate_uid}" != "${old_uid}"' in agentic
+    assert 'delete actortemplate "${old_templates[@]}" --wait=true' in agentic
+    assert 'old_uids+="${candidate_uid} "' in agentic
+    assert '"${old_uids}" != *" ${candidate_uid} "*' in agentic
     for agent_name in (
         "recsys-context-agent-sandbox",
         "recsys-recommendation-agent-sandbox",

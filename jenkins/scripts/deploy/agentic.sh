@@ -12,7 +12,10 @@ sandbox_agent_model_revision() {
 sandbox_agent_rebuild_golden_if_revision_changed() {
   local agent_name="$1"
   local previous_revision="$2"
-  local current_revision template_name old_uid candidate candidate_uid ready
+  local current_revision template_name candidate candidate_uid ready
+  local old_uids=" "
+  local -a old_templates=()
+  local -a candidates=()
   local attempts="${SANDBOX_AGENT_GOLDEN_REBUILD_ATTEMPTS:-120}"
 
   current_revision="$(sandbox_agent_model_revision "${agent_name}")"
@@ -24,28 +27,34 @@ sandbox_agent_rebuild_golden_if_revision_changed() {
     return 0
   fi
 
-  template_name="$(
+  mapfile -t old_templates < <(
     kubectl -n kagent get actortemplate \
       -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-      | grep -E "^${agent_name}-" | head -n 1
-  )"
-  [[ -n "${template_name}" ]] || {
+      | grep -E "^${agent_name}-" || true
+  )
+  [[ "${#old_templates[@]}" -gt 0 ]] || {
     recsys_error "ActorTemplate for ${agent_name} was not created"
     return 1
   }
-  old_uid="$(
-    kubectl -n kagent get actortemplate "${template_name}" \
-      -o jsonpath='{.metadata.uid}'
-  )"
-  kubectl -n kagent delete actortemplate "${template_name}" --wait=true
+  for template_name in "${old_templates[@]}"; do
+    candidate_uid="$(
+      kubectl -n kagent get actortemplate "${template_name}" \
+        -o jsonpath='{.metadata.uid}'
+    )"
+    old_uids+="${candidate_uid} "
+  done
+  # Every ActorTemplate with this SandboxAgent prefix is controller-owned.
+  # Remove all stale generations together; otherwise an older Ready template
+  # can make the rebuild gate pass before the desired revision is compiled.
+  kubectl -n kagent delete actortemplate "${old_templates[@]}" --wait=true
 
   for _ in $(seq 1 "${attempts}"); do
-    candidate="$(
+    mapfile -t candidates < <(
       kubectl -n kagent get actortemplate \
         -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-        | grep -E "^${agent_name}-" | head -n 1 || true
-    )"
-    if [[ -n "${candidate}" ]]; then
+        | grep -E "^${agent_name}-" || true
+    )
+    for candidate in "${candidates[@]}"; do
       candidate_uid="$(
         kubectl -n kagent get actortemplate "${candidate}" \
           -o jsonpath='{.metadata.uid}'
@@ -54,12 +63,12 @@ sandbox_agent_rebuild_golden_if_revision_changed() {
         kubectl -n kagent get actortemplate "${candidate}" \
           -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
       )"
-      if [[ "${candidate_uid}" != "${old_uid}" && "${ready}" == "True" ]]; then
+      if [[ "${old_uids}" != *" ${candidate_uid} "* && "${ready}" == "True" ]]; then
         kubectl -n kagent wait --for=condition=Ready \
           "sandboxagent/${agent_name}" --timeout="${timeout}"
         return 0
       fi
-    fi
+    done
     sleep 5
   done
   recsys_error "${agent_name} golden snapshot did not rebuild for revision ${current_revision}"
