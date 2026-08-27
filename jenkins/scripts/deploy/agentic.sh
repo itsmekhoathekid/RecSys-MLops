@@ -463,11 +463,12 @@ cases = {
         "after the Context Agent returns."
     ),
     "recommendation_agent": (
-        "Delegate through A2A to SandboxAgent "
-        "recsys-recommendation-agent-sandbox to recommend one item "
-        f"for user_id={user_id}, with candidate_item_ids=null and top_k=1. "
-        "Give the specialist all three values and tell it not to ask for "
-        "confirmation. Use no other source."
+        "Call exactly one tool: "
+        "kagent__NS__recsys_recommendation_agent_sandbox. Its request field "
+        "must be exactly this JSON object with no surrounding prose: "
+        f"'{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}'. "
+        "Do not call ask_user, the Context Agent, or any MCP tool directly. "
+        "Answer immediately after the Recommendation Agent returns."
     ),
     "composite_agents": (
         "Use exactly these two specialist Agent tools in order: first "

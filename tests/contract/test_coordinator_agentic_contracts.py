@@ -80,8 +80,14 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         "only allowed",
         "Never forward the original composite user prompt",
         "permits exactly one call to each function",
+        "MUST contain only this JSON object",
+        "must not call ask_user",
     ):
         assert requirement in prompt
+    assert (
+        agent["metadata"]["annotations"]["recsys.ai/model-config-revision"]
+        == "substrate-0.0.11-kagent-e6df917-assigned-workers-v20"
+    )
     skills = agent["spec"]["declarative"]["a2aConfig"]["skills"]
     assert [skill["id"] for skill in skills] == [
         "coordinated-personalized-recommendation"
