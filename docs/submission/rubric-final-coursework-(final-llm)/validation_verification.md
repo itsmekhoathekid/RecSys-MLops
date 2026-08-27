@@ -6,7 +6,7 @@ The current source target supersedes the regular-Coordinator/CPU topology
 described in the historical incident record below:
 
 ```text
-kagent                      0.10.0-e6df917-substrate0011-v6
+kagent                      0.10.0-e6df917-substrate0011-v7
 Substrate                   0.0.11 mTLS
 Context                     SandboxAgent + assigned-worker KEDA 1..3
 Recommendation              SandboxAgent + assigned-worker KEDA 1..3
@@ -33,9 +33,11 @@ state labels. WorkerPool `/scale` reported spec/status replicas and a native
 | Coordinator v21 isolated Recommendation gate | fresh child session, exact `top_k=1` at parent and child MCP, no `ask_user`, `TASK_STATE_COMPLETED` |
 | Composite exact-call contract | `Recommendation Agent -> Context Agent`, exactly once each |
 
-The v6 kagent patch uses a stateful per-invocation duplicate-call guard and a
-Coordinator-only explicit-selection state machine. This resolves the earlier
-wire-format/retry interaction without changing generic tool routing. Clean
+The v7 kagent patch uses a stateful per-invocation duplicate-call guard and a
+Coordinator-only explicit-selection state machine. It also retains sequential
+direct-tool responses so a partial-result fallback preserves the successful
+recommendation when Context fails. This resolves the earlier wire-format/retry
+interaction without changing generic tool routing. Clean
 source tests passed for `./adk/pkg/agent` and
 `./core/pkg/sandboxbackend/substrate`; repository contract tests also passed.
 
@@ -292,7 +294,7 @@ make agent-substrate-warmup-benchmark
 ```
 
 Warm-up output must always record the active runtime version. The current
-production baseline is Substrate `0.0.11` with kagent v6. Warm-up latency alone
+production baseline is Substrate `0.0.11` with kagent v7. Warm-up latency alone
 is still not assigned-worker autoscaling evidence; the scaler proof must also
 capture the metric, HPA, WorkerPool, generated Deployment, and fallback state.
 

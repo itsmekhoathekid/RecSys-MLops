@@ -319,7 +319,7 @@ def test_terraform_owns_platform_but_not_the_agent_application_release():
     assert "prevent_destroy = true" in terraform
     assert 'default     = "0.0.11"' in terraform
     assert 'default     = "0.10.0-e6df917"' in terraform
-    assert 'kagent_image_version    = "0.10.0-e6df917-substrate0011-v6"' in terraform
+    assert 'kagent_image_version    = "0.10.0-e6df917-substrate0011-v7"' in terraform
     assert 'postrender {' in terraform
     assert "substrate_gke_postrender.py" in terraform
     assert "substrate_crds_hpa_postrender.py" not in terraform

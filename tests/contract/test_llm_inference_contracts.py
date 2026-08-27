@@ -109,13 +109,13 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     assert 'default     = "0.10.0-e6df917"' in terraform
     assert 'kagent_source_commit    = "e6df917e9fa8"' in terraform
     assert (
-        'kagent_image_version    = "0.10.0-e6df917-substrate0011-v6"'
+        'kagent_image_version    = "0.10.0-e6df917-substrate0011-v7"'
         in terraform
     )
     cloudbuild = (ROOT / "ops/gcp/cloudbuild_kagent_source.yaml").read_text()
     assert "build-push-controller" in cloudbuild
     assert "build-push-golang-adk" in cloudbuild
-    assert "0.10.0-e6df917-substrate0011-v6" in cloudbuild
+    assert "0.10.0-e6df917-substrate0011-v7" in cloudbuild
     compatibility_patch = (
         ROOT / "ops/gcp/patches/kagent-e6df917-substrate0011.patch"
     ).read_text()

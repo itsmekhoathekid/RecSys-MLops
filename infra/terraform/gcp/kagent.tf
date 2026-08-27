@@ -13,7 +13,7 @@ variable "agent_substrate_version" {
 locals {
   kagent_source_commit    = "e6df917e9fa8"
   kagent_artifact_prefix  = "kagent-e6df917"
-  kagent_image_version    = "0.10.0-e6df917-substrate0011-v6"
+  kagent_image_version    = "0.10.0-e6df917-substrate0011-v7"
   kagent_registry         = "${var.region}-docker.pkg.dev"
   kagent_image_repository = "${var.project_id}/${var.artifact_registry_repository}/${local.kagent_artifact_prefix}"
   kagent_chart_repository = "oci://${local.image_repo}/${local.kagent_artifact_prefix}/helm"

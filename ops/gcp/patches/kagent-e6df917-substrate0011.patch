@@ -380,7 +380,7 @@ new file mode 100644
 index 00000000..1c44b314
 --- /dev/null
 +++ b/go/adk/pkg/agent/explicit_tool_selection_guard.go
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,289 @@
 +// Copyright 2026 The Kagent Authors.
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
@@ -399,6 +399,7 @@ index 00000000..1c44b314
 +
 +import (
 +	"encoding/json"
++	"fmt"
 +	"strings"
 +	"sync"
 +
@@ -475,7 +476,7 @@ index 00000000..1c44b314
 +			selection.allowed = allowed
 +		}
 +		if results := functionResponses(req.Contents); len(results) > 0 {
-+			selection.results = results
++			selection.results = mergeToolResults(selection.results, results)
 +		}
 +		g.selections[ctx.InvocationID()] = selection
 +	}
@@ -524,6 +525,13 @@ index 00000000..1c44b314
 +	g.mu.Unlock()
 +	if len(removed) == 0 {
 +		if allowedCalls == 0 {
++			if text, ok := partialResultText(selection); ok {
++				g.forget(invocationID)
++				return &adkmodel.LLMResponse{
++					Content:      genai.NewContentFromText(text, genai.RoleModel),
++					FinishReason: genai.FinishReasonStop,
++				}, nil
++			}
 +			g.forget(invocationID)
 +		}
 +		return nil, nil
@@ -560,6 +568,71 @@ index 00000000..1c44b314
 +	content.Parts = filtered
 +	replacement.Content = &content
 +	return &replacement, nil
++}
++
++func mergeToolResults(existing, incoming []toolResult) []toolResult {
++	merged := append([]toolResult(nil), existing...)
++	for _, candidate := range incoming {
++		replaced := false
++		for index := range merged {
++			if merged[index].Name == candidate.Name {
++				merged[index] = candidate
++				replaced = true
++				break
++			}
++		}
++		if !replaced {
++			merged = append(merged, candidate)
++		}
++	}
++	return merged
++}
++
++func partialResultText(selection explicitToolSelection) (string, bool) {
++	if len(selection.allowed) != 2 ||
++		!selection.allowed["get_chunk_by_id"] ||
++		!selection.allowed["get_personalized_recommendations"] ||
++		!selection.seen["get_chunk_by_id"] ||
++		!selection.seen["get_personalized_recommendations"] {
++		return "", false
++	}
++	contextFailed := false
++	itemID := ""
++	for _, result := range selection.results {
++		switch result.Name {
++		case "get_chunk_by_id":
++			_, contextFailed = result.Response["error"]
++		case "get_personalized_recommendations":
++			if id, ok := firstItemID(result.Response); ok {
++				itemID = id
++			}
++		}
++	}
++	if !contextFailed || itemID == "" {
++		return "", false
++	}
++	return "Recommended item_id: " + itemID + ". Context source unavailable.", true
++}
++
++func firstItemID(value any) (string, bool) {
++	switch typed := value.(type) {
++	case map[string]any:
++		if id, ok := typed["item_id"]; ok && id != nil {
++			return fmt.Sprint(id), true
++		}
++		for _, child := range typed {
++			if id, ok := firstItemID(child); ok {
++				return id, true
++			}
++		}
++	case []any:
++		for _, child := range typed {
++			if id, ok := firstItemID(child); ok {
++				return id, true
++			}
++		}
++	}
++	return "", false
 +}
 +
 +func missingAgentRequest(selection explicitToolSelection) string {
@@ -602,7 +675,7 @@ new file mode 100644
 index 00000000..8e062967
 --- /dev/null
 +++ b/go/adk/pkg/agent/explicit_tool_selection_guard_test.go
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,134 @@
 +// Copyright 2026 The Kagent Authors.
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
@@ -667,6 +740,43 @@ index 00000000..8e062967
 +	}}}
 +	if replacement, err := guard.AfterModel(ctx, response, nil); err != nil || replacement != nil {
 +		t.Fatalf("replacement=%#v err=%v, want pass-through", replacement, err)
++	}
++}
++
++func TestExplicitToolSelectionGuardPreservesRecommendationAfterContextFailure(t *testing.T) {
++	ctx := &duplicateGuardContext{invocationID: "invocation-partial"}
++	guard := newExplicitToolSelectionGuard(logr.Discard())
++	prompt := "Directly call get_chunk_by_id and get_personalized_recommendations."
++	request := &adkmodel.LLMRequest{Contents: []*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}}
++	_, _ = guard.BeforeModel(ctx, request)
++	chunkCall := &adkmodel.LLMResponse{Content: genai.NewContentFromFunctionCall(
++		"get_chunk_by_id", map[string]any{"chunk_id": "missing"}, genai.RoleModel,
++	)}
++	if replacement, err := guard.AfterModel(ctx, chunkCall, nil); err != nil || replacement != nil {
++		t.Fatalf("chunk call replacement=%#v err=%v", replacement, err)
++	}
++	request.Contents = append(request.Contents, &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{
++		genai.NewPartFromFunctionResponse("get_chunk_by_id", map[string]any{"error": "not found"}),
++	}})
++	_, _ = guard.BeforeModel(ctx, request)
++	recommendationCall := &adkmodel.LLMResponse{Content: genai.NewContentFromFunctionCall(
++		"get_personalized_recommendations", map[string]any{"user_id": 1001}, genai.RoleModel,
++	)}
++	if replacement, err := guard.AfterModel(ctx, recommendationCall, nil); err != nil || replacement != nil {
++		t.Fatalf("recommendation call replacement=%#v err=%v", replacement, err)
++	}
++	request.Contents = append(request.Contents, &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{
++		genai.NewPartFromFunctionResponse("get_personalized_recommendations", map[string]any{
++			"output": map[string]any{"items": []any{map[string]any{"item_id": float64(800035)}}},
++		}),
++	}})
++	_, _ = guard.BeforeModel(ctx, request)
++	replacement, err := guard.AfterModel(ctx, &adkmodel.LLMResponse{Content: &genai.Content{Role: genai.RoleModel}}, nil)
++	if err != nil || replacement == nil || replacement.Content == nil {
++		t.Fatalf("terminal replacement=%#v err=%v", replacement, err)
++	}
++	if got := replacement.Content.Parts[0].Text; got != "Recommended item_id: 800035. Context source unavailable." {
++		t.Fatalf("terminal text=%q", got)
 +	}
 +}
 +

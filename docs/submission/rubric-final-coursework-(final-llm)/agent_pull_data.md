@@ -1,6 +1,6 @@
 # Sandbox Agent Pulls Online Features and RAG Context
 
-> **Runtime status (updated 2026-08-27):** production runs the custom kagent v6
+> **Runtime status (updated 2026-08-28):** production runs the custom kagent v7
 > compatibility image with Substrate `0.0.11`; values select assigned-worker
 > KEDA. Context proved `1 -> 2 -> 3 -> 2 -> 1` and fallback to one. The chart
 > runs model revision v8; revision changes rebuild a single current

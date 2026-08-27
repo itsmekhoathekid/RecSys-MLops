@@ -23,7 +23,7 @@ SandboxAgent/recsys-coordinator-agent-sandbox
 - WorkerPool: `recsys-coordinator-sandbox-pool`
 - Model configuration revision:
   `substrate-0.0.11-kagent-e6df917-assigned-workers-v22`
-- kagent compatibility image: `0.10.0-e6df917-substrate0011-v6`
+- kagent compatibility image: `0.10.0-e6df917-substrate0011-v7`
 
 The Helm release renders a `SandboxAgent`, `ScaledObject`, and
 `PodDisruptionBudget`. Terraform owns the WorkerPool's immutable runtime fields;
@@ -97,10 +97,12 @@ typed downstream failures such as `http_422`, tool-execution errors, or a
 silently degraded "source unavailable" answer. A completed parent task alone
 is therefore not sufficient evidence of successful specialist routing.
 
-The v6 runtime adds a per-invocation exact-call guard for this Coordinator. An
+The v7 runtime adds a per-invocation exact-call guard for this Coordinator. An
 explicitly requested specialist or direct MCP tool executes once, tool results
 survive model retries, and a composite request advances from Recommendation to
-Context instead of repeating the first specialist. Generic prompts remain
+Context instead of repeating the first specialist. It accumulates sequential
+direct-tool responses and synthesizes the required partial result if the small
+model emits an empty or duplicate terminal turn. Generic prompts remain
 model-routed and are not forced into a tool call.
 
 Coordinator v22 makes the partial-result response deterministic. After a
@@ -125,7 +127,7 @@ production verification step, not a Helm render substitute.
 ## Current production evidence status
 
 The 27 August 2026 production run is green on Substrate `0.0.11` mTLS and the
-v6 kagent compatibility image. The Coordinator WorkerPool proved
+v7 kagent compatibility image. The Coordinator WorkerPool proved
 `1 -> 2 -> 3 -> 2 -> 1`; an intentionally invalid Prometheus endpoint made
 KEDA report fallback while desired/available replicas remained `1/1`, and the
 endpoint was restored automatically. The full v19 routing suite passed all

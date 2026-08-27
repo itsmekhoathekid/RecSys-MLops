@@ -351,7 +351,7 @@ Current repository target, updated 27 August 2026: Context, Recommendation, and
 Coordinator are Substrate `0.0.11` `SandboxAgent`s with independent WorkerPools
 and assigned-worker KEDA (`AverageValue=0.7`, replicas `1..3`, fallback `1`).
 The custom kagent compatibility image is
-`0.10.0-e6df917-substrate0011-v6`; the Coordinator public identity is
+`0.10.0-e6df917-substrate0011-v7`; the Coordinator public identity is
 `recsys-coordinator-agent-sandbox`. Production validation is green: all three
 pools proved `1 -> 2 -> 3 -> 1`, scaler failure fallback held one replica, and
 the Coordinator routing suite passed context-only, recommendation-only,

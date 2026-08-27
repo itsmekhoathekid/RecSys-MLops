@@ -98,6 +98,6 @@ steps:
 
 substitutions:
   _IMAGE_PREFIX: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/kagent-e6df917
-  _VERSION: 0.10.0-e6df917-substrate0011-v6
+  _VERSION: 0.10.0-e6df917-substrate0011-v7
   _SOURCE_COMMIT: e6df917e9fa8
-  _BUILD_DATE: "2026-08-27"
+  _BUILD_DATE: "2026-08-28"

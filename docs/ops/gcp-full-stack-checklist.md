@@ -66,7 +66,7 @@ project's state bucket.
 - [ ] Before publishing `recsys/recsys-coordinator-agent-sandbox` or retiring
   the regular registry artifact, require context-only, recommendation-only,
   composite, direct-MCP, and partial-failure coordinator gates to pass. The
-  production suite covers six cases on the v6 kagent compatibility image.
+  production suite covers six cases on the v7 kagent compatibility image.
   Coordinator v22 must compile both specialist tools with
   `isolate_sessions=true`; Recommendation v9 must copy `user_id`, candidates,
   and `top_k` exactly and never continue to `ask_user` after the MCP response.

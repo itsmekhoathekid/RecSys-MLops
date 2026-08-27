@@ -1,6 +1,6 @@
 # Sandboxed Recommendation Agent Uses the Recommendation Service
 
-> **Runtime status (updated 2026-08-27):** production runs the custom kagent v6
+> **Runtime status (updated 2026-08-28):** production runs the custom kagent v7
 > compatibility image with Substrate `0.0.11`; values select assigned-worker
 > KEDA. Recommendation proved `1 -> 2 -> 3 -> 2 -> 1`, completed `2187/2187`
 > load requests, and proved fallback to one. Revision v9 copies `user_id`,

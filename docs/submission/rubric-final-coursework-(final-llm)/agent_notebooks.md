@@ -13,7 +13,7 @@ The experiments verify that a local notebook can communicate directly with a kag
 > specialist SandboxAgents, which remain the production identities. Their
 > captured output predates the current deterministic global ModelConfig
 > (`maxTokens=384`, `temperature=0`, `seed=42`). Token counts and retry behavior
-> in the saved cells are historical evidence. Current production runs kagent v6
+> in the saved cells are historical evidence. Current production runs kagent v7
 > with Substrate `0.0.11`; all three SandboxAgents passed assigned-worker scale
 > and fallback. The coordinator uses isolated specialist sessions at revision
 > v22; Recommendation v9 preserves exact A2A request arguments, and partial
