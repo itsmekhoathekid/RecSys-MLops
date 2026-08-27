@@ -4,7 +4,7 @@ sandbox:
   name: recsys-coordinator-agent-sandbox
   workerPool: recsys-coordinator-sandbox-pool
   modelConfig: default-model-config
-  modelConfigRevision: substrate-0.0.11-kagent-e6df917-assigned-workers-v20
+  modelConfigRevision: substrate-0.0.11-kagent-e6df917-assigned-workers-v21
   systemMessage: |
     You are the RecSys coordinator agent. Route each request to the smallest
     set of specialist agents or MCP tools that can answer it correctly.

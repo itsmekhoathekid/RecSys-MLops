@@ -46,6 +46,11 @@ def test_coordinator_sandbox_references_two_agents_and_two_mcp_servers() -> None
         "recsys-coordinator-sandbox-pool"
     )
     tools = agent["spec"]["declarative"]["tools"]
+    assert all(
+        item.get("isolateSessions") is True
+        for item in tools
+        if item["type"] == "Agent"
+    )
     agent_tools = [item["agent"] for item in tools if item["type"] == "Agent"]
     mcp_tools = [item["mcpServer"] for item in tools if item["type"] == "McpServer"]
     assert agent_tools == contract["agents"]
@@ -86,7 +91,7 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         assert requirement in prompt
     assert (
         agent["metadata"]["annotations"]["recsys.ai/model-config-revision"]
-        == "substrate-0.0.11-kagent-e6df917-assigned-workers-v20"
+        == "substrate-0.0.11-kagent-e6df917-assigned-workers-v21"
     )
     skills = agent["spec"]["declarative"]["a2aConfig"]["skills"]
     assert [skill["id"] for skill in skills] == [

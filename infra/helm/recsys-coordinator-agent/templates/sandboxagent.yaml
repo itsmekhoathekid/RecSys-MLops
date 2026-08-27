@@ -36,11 +36,13 @@ spec:
             - "Recommend three items for user 1001 and explain them with grounded evidence."
     tools:
       - type: Agent
+        isolateSessions: true
         agent:
           apiGroup: {{ .Values.agents.context.apiGroup }}
           kind: {{ .Values.agents.context.kind }}
           name: {{ .Values.agents.context.name }}
       - type: Agent
+        isolateSessions: true
         agent:
           apiGroup: {{ .Values.agents.recommendation.apiGroup }}
           kind: {{ .Values.agents.recommendation.kind }}
