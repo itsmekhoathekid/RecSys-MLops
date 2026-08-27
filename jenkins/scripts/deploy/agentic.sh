@@ -521,12 +521,15 @@ cases = {
         "immediately after it returns."
     ),
     "partial_result": (
-        "Directly call get_chunk_by_id with the deliberately nonexistent "
-        "chunk_id=coordinator-smoke-missing-chunk and also call "
+        "Call exactly two tools in this order. First, directly call "
+        "get_chunk_by_id with the deliberately nonexistent "
+        "chunk_id=coordinator-smoke-missing-chunk. Second, directly call "
         "get_personalized_recommendations with arguments "
         f"{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}. "
-        "Do not delegate or retry. Keep the valid recommendation, repeat its "
-        "first item_id exactly, and explicitly say 'context source unavailable'."
+        "Do not delegate or retry. After both responses, answer exactly: "
+        "'Recommended item_id: <first returned item_id>. Context source "
+        "unavailable.' Replace the placeholder with the first item_id from the "
+        "successful recommendation response and do not omit it."
     ),
 }
 requested = [name.strip() for name in selected_cases.split(",") if name.strip()]

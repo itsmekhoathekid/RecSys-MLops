@@ -16,7 +16,8 @@ The experiments verify that a local notebook can communicate directly with a kag
 > in the saved cells are historical evidence. Current production runs kagent v6
 > with Substrate `0.0.11`; all three SandboxAgents passed assigned-worker scale
 > and fallback. The coordinator uses isolated specialist sessions at revision
-> v21 and Recommendation v9 preserves exact A2A request arguments. Its endpoint is
+> v22; Recommendation v9 preserves exact A2A request arguments, and partial
+> results keep valid recommendation IDs. Its endpoint is
 > `/api/a2a-sandboxes/kagent/recsys-coordinator-agent-sandbox/` and its v19
 > routing evidence is produced by the separate smoke/autoscale scripts, not by
 > rewriting these historical notebook outputs. See

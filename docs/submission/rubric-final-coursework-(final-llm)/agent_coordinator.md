@@ -22,7 +22,7 @@ SandboxAgent/recsys-coordinator-agent-sandbox
 - Registry: `recsys/recsys-coordinator-agent-sandbox`
 - WorkerPool: `recsys-coordinator-sandbox-pool`
 - Model configuration revision:
-  `substrate-0.0.11-kagent-e6df917-assigned-workers-v21`
+  `substrate-0.0.11-kagent-e6df917-assigned-workers-v22`
 - kagent compatibility image: `0.10.0-e6df917-substrate0011-v6`
 
 The Helm release renders a `SandboxAgent`, `ScaledObject`, and
@@ -102,6 +102,11 @@ explicitly requested specialist or direct MCP tool executes once, tool results
 survive model retries, and a composite request advances from Recommendation to
 Context instead of repeating the first specialist. Generic prompts remain
 model-routed and are not forced into a tool call.
+
+Coordinator v22 makes the partial-result response deterministic. After a
+missing Context chunk and a successful Recommendation call, the final answer
+must retain the first returned `item_id` and explicitly label Context
+unavailable. Jenkins rejects a completed task that drops either part.
 
 ## Registry and Jenkins release gate
 

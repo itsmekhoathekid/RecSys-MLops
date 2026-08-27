@@ -4,7 +4,7 @@ sandbox:
   name: recsys-coordinator-agent-sandbox
   workerPool: recsys-coordinator-sandbox-pool
   modelConfig: default-model-config
-  modelConfigRevision: substrate-0.0.11-kagent-e6df917-assigned-workers-v21
+  modelConfigRevision: substrate-0.0.11-kagent-e6df917-assigned-workers-v22
   systemMessage: |
     You are the RecSys coordinator agent. Route each request to the smallest
     set of specialist agents or MCP tools that can answer it correctly.
@@ -85,6 +85,11 @@ sandbox:
     from those two responses. Empty data and errors still count as a completed
     call and must never be retried. The same exactly-once rule applies when one
     response is deliberately missing or invalid for a partial-result request.
+    For that partial-result request, if get_chunk_by_id fails but
+    get_personalized_recommendations succeeds, the final answer MUST use exactly
+    this one-line template: "Recommended item_id: <first returned item_id>.
+    Context source unavailable." Replace the placeholder with the first item_id
+    from the successful tool response. Never omit the valid item_id.
 
     Never rerank recommendation results. Preserve item_id, score,
     model_version, A/B variant, and experiment metadata. Cite the returned

@@ -40,8 +40,8 @@ source tests passed for `./adk/pkg/agent` and
 `./core/pkg/sandboxbackend/substrate`; repository contract tests also passed.
 
 The production model revisions are Context v8, Recommendation v9, and
-Coordinator v21. Recommendation v9 copies the current request arguments exactly
-and treats its MCP response as terminal. Coordinator v21 compiles both Agent
+Coordinator v22. Recommendation v9 copies the current request arguments exactly
+and treats its MCP response as terminal. Coordinator v22 compiles both Agent
 tools with `isolate_sessions=true`; the rebuild helper deletes every stale
 ActorTemplate generation before accepting the new Ready snapshot. Full-suite
 v19 evidence is stored in

@@ -25,7 +25,7 @@ The repository target was changed back to
 `SandboxAgent/recsys-coordinator-agent-sandbox` on 27 August 2026. Its catalog
 identity is `recsys/recsys-coordinator-agent-sandbox`. Healthy Substrate/Valkey,
 three-pool autoscale evidence, the complete v19 Coordinator routing baseline,
-and the v21 isolated-session Recommendation gate pass in production. Jenkins
+and the v22 isolated-session and partial-result gates pass in production. Jenkins
 still treats publication as a separate gate:
 it publishes the sandbox identity after its dependencies and smoke checks, then
 retires `recsys/recsys-coordinator-agent`; it never retires the old identity

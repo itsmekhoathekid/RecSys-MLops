@@ -87,11 +87,12 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         "permits exactly one call to each function",
         "MUST contain only this JSON object",
         "must not call ask_user",
+        "Recommended item_id: <first returned item_id>",
     ):
         assert requirement in prompt
     assert (
         agent["metadata"]["annotations"]["recsys.ai/model-config-revision"]
-        == "substrate-0.0.11-kagent-e6df917-assigned-workers-v21"
+        == "substrate-0.0.11-kagent-e6df917-assigned-workers-v22"
     )
     skills = agent["spec"]["declarative"]["a2aConfig"]["skills"]
     assert [skill["id"] for skill in skills] == [
@@ -184,6 +185,7 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert 'COORDINATOR_A2A_MAX_ATTEMPTS:-1' in deploy_script
     assert '"http_422"' in deploy_script
     assert "assert_usable_agent_response" in deploy_script
+    assert "Recommended item_id: <first returned item_id>" in deploy_script
     coordinator_smoke = deploy_script.split("coordinator_a2a_smoke()", 1)[1].split(
         "agentic_mcp_protocol_smoke()", 1
     )[0]
