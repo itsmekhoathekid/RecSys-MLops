@@ -555,6 +555,11 @@ Code references:
 
 The MCP package calls both public APIs with pooled HTTP clients. It does not
 import or access Redis, Feast, or Milvus runtime objects directly.
+At the MCP boundary, an empty `candidate_item_ids` array emitted by a model is
+normalized to `null`. Both forms mean that no candidate filter was supplied,
+while the online-feature API intentionally rejects an empty candidate filter.
+This keeps delegated Coordinator requests equivalent to direct Context-agent
+requests without weakening the downstream API contract.
 
 ```python
 return await self.request(

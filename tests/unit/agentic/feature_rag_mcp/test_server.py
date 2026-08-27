@@ -11,8 +11,10 @@ from recsys_feature_rag_mcp.server import TOOL_NAMES, create_mcp_server
 class FeatureClient:
     def __init__(self, error: DownstreamError | None = None):
         self.error = error
+        self.calls = []
 
     async def get_features(self, **kwargs):
+        self.calls.append(kwargs)
         if self.error:
             raise self.error
         return {"user_id": kwargs["user_id"], "candidate_item_ids": []}
@@ -41,6 +43,24 @@ async def test_mcp_lists_exact_contract_tools_and_calls_them():
 
     result = await mcp.call_tool("get_chunk_by_id", {"chunk_id": "chunk-1"})
     assert "chunk-1" in result[0][0].text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool_name", ["get_user_online_features", "build_user_rag_context"]
+)
+async def test_empty_candidate_ids_are_normalized_to_optional_field(tool_name):
+    feature_client = FeatureClient()
+    mcp = create_mcp_server(feature_client, RagClient())
+    arguments = {"user_id": 7, "candidate_item_ids": [], "top_k": 2}
+    if tool_name == "build_user_rag_context":
+        arguments.update({"query": "headphones", "top_k_items": 2})
+
+    await mcp.call_tool(tool_name, arguments)
+
+    assert feature_client.calls == [
+        {"user_id": 7, "candidate_item_ids": None, "top_k": 2}
+    ]
 
 
 @pytest.mark.asyncio
