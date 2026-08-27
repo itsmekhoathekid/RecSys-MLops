@@ -85,7 +85,7 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     assert sandbox["apiVersion"] == "kagent.dev/v1alpha3"
     assert "platform" not in sandbox["spec"]
     assert sandbox["metadata"]["annotations"]["recsys.ai/model-config-revision"] == (
-        "substrate-0.0.11-kagent-e6df917-pool-label-v8"
+        "substrate-0.0.11-kagent-e6df917-pool-label-v9"
     )
     tools = sandbox["spec"]["declarative"]["tools"]
     assert len(tools) == 1
@@ -97,6 +97,9 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     assert sandbox["spec"]["sandbox"]["network"]["allowedDomains"] == [
         "recsys-recommendation-mcp.kagent.svc.cluster.local"
     ]
+    prompt = sandbox["spec"]["declarative"]["systemMessage"]
+    assert "copy its\nuser_id, candidate_item_ids, and top_k values exactly" in prompt
+    assert "Never substitute a default" in prompt
 
 
 def test_mcp_and_workerpool_scale_one_to_three_with_fallback_one() -> None:

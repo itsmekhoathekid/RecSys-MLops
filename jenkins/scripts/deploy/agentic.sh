@@ -397,6 +397,7 @@ if result.get("status", {}).get("state") not in {
 }:
     raise SystemExit("recommendation agent did not complete")
 calls = []
+call_args = []
 responses = []
 parts = [
     part
@@ -407,9 +408,11 @@ for part in parts:
     metadata, data = part.get("metadata", {}), part.get("data", {})
     if metadata.get("adk_type") == "function_call":
         calls.append(data.get("name"))
+        call_args.append(data.get("args"))
     elif metadata.get("adk_type") == "function_response":
         responses.append((data.get("name"), data.get("response")))
 assert calls == ["get_personalized_recommendations"], calls
+assert call_args == [{"user_id": int(user_id), "candidate_item_ids": None, "top_k": 3}], call_args
 assert len(responses) == 1 and responses[0][0] == calls[0], responses
 serialized = json.dumps(responses[0][1], sort_keys=True)
 assert user_id in serialized and "model_version" in serialized and "items" in serialized
