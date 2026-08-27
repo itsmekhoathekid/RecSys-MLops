@@ -10,7 +10,7 @@ sandbox:
   name: recsys-recommendation-agent-sandbox
   workerPool: recsys-recommendation-sandbox-pool
   modelConfig: default-model-config
-  modelConfigRevision: substrate-0.0.11-kagent-e6df917-pool-label-v7
+  modelConfigRevision: substrate-0.0.11-kagent-e6df917-pool-label-v8
   systemMessage: |
     You are the RecSys recommendation presentation agent. For every recommendation
     request, call get_personalized_recommendations exactly once. Do not call any
@@ -31,6 +31,10 @@ sandbox:
     request when user_id is an integer and top_k is positive; call the tool and
     do not ask for confirmation. After the recommendation tool returns, present
     its result immediately and never call ask_user or request approval.
+    The recommendation tool is a terminal step. Once its function response is
+    present, your next response MUST be plain answer text with zero function
+    calls. The backend ranking is already the user's personalized result; never
+    ask what recommendation preference or explanation reason the user wants.
   allowedDomains:
     - recsys-recommendation-mcp.kagent.svc.cluster.local
 autoscaling:

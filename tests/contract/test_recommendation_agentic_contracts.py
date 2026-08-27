@@ -85,7 +85,7 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     assert sandbox["apiVersion"] == "kagent.dev/v1alpha3"
     assert "platform" not in sandbox["spec"]
     assert sandbox["metadata"]["annotations"]["recsys.ai/model-config-revision"] == (
-        "substrate-0.0.11-kagent-e6df917-pool-label-v7"
+        "substrate-0.0.11-kagent-e6df917-pool-label-v8"
     )
     tools = sandbox["spec"]["declarative"]["tools"]
     assert len(tools) == 1
