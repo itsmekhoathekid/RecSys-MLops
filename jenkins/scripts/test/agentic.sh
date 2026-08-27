@@ -150,7 +150,10 @@ assert spec["scaleTargetRef"] == {
     "name": "recsys-coordinator-sandbox-pool",
 }
 assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
-assert spec["fallback"] == {"failureThreshold": 3, "replicas": 1}
+fallback = spec["fallback"]
+assert fallback["failureThreshold"] == 3
+assert fallback["replicas"] == 1
+assert fallback.get("behavior", "static") == "static"
 trigger = spec["triggers"][0]
 assert trigger["metricType"] == "AverageValue"
 assert trigger["metadata"]["threshold"] == "0.7"

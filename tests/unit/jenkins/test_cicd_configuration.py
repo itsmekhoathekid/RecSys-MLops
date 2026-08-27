@@ -962,6 +962,10 @@ def test_coordinator_release_verifier_uses_current_sandboxagent_schema() -> None
         'spec["substrate"]["workerPoolRef"]["name"] '
         '== "recsys-coordinator-sandbox-pool"'
     ) in verifier
+    assert 'fallback["failureThreshold"] == 3' in verifier
+    assert 'fallback["replicas"] == 1' in verifier
+    assert 'fallback.get("behavior", "static") == "static"' in verifier
+    assert 'spec["fallback"] ==' not in verifier
 
 
 def test_jenkins_allows_the_recovery_bootstrap_bundle_checkout() -> None:
