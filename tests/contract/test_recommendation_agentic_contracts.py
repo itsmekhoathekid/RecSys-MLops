@@ -82,6 +82,11 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     sandbox = _resource(
         documents, "SandboxAgent", "recsys-recommendation-agent-sandbox"
     )
+    assert sandbox["apiVersion"] == "kagent.dev/v1alpha3"
+    assert "platform" not in sandbox["spec"]
+    assert sandbox["metadata"]["annotations"]["recsys.ai/model-config-revision"] == (
+        "substrate-0.0.11-kagent-e6df917-pool-label-v7"
+    )
     tools = sandbox["spec"]["declarative"]["tools"]
     assert len(tools) == 1
     assert tools[0]["type"] == "McpServer"
@@ -130,8 +135,12 @@ def test_mcp_and_workerpool_scale_one_to_three_with_fallback_one() -> None:
     ) == (1, 3, 1)
     assert worker_scaled["spec"]["advanced"]["horizontalPodAutoscalerConfig"][
         "behavior"
-    ]["scaleDown"]["stabilizationWindowSeconds"] == 60
-    assert worker_scaled["spec"]["triggers"][0]["metadata"]["threshold"] == "400"
+    ]["scaleDown"]["stabilizationWindowSeconds"] == 300
+    trigger = worker_scaled["spec"]["triggers"][0]
+    assert trigger["metricType"] == "AverageValue"
+    assert trigger["metadata"]["threshold"] == "400"
+    assert trigger["metadata"]["ignoreNullValues"] == "false"
+    assert trigger["metadata"]["query"].startswith("1000000 * max(")
     pdb = _resource(
         agent_documents, "PodDisruptionBudget", "recsys-recommendation-sandbox-pool"
     )
@@ -140,11 +149,38 @@ def test_mcp_and_workerpool_scale_one_to_three_with_fallback_one() -> None:
     }
 
 
+def test_assigned_worker_metric_is_a_renderable_supported_mode() -> None:
+    output = subprocess.run(
+        [
+            "helm",
+            "template",
+            "contract-test",
+            str(ROOT / "infra/helm/recsys-recommendation-agent"),
+            "-f",
+            str(ROOT / "infra/helm/recsys-recommendation-agent/values-gcp.yaml"),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    scaled = _resource(
+        [document for document in yaml.safe_load_all(output) if document],
+        "ScaledObject",
+        "recsys-recommendation-sandbox-pool",
+    )
+    metadata = scaled["spec"]["triggers"][0]["metadata"]
+    assert scaled["spec"]["triggers"][0]["metricType"] == "AverageValue"
+    assert metadata["threshold"] == "0.7"
+    assert 'ate_worker_state="assigned"' in metadata["query"]
+    assert "or vector(0)" not in metadata["query"]
+
+
 def test_terraform_owns_dedicated_pool_and_ignores_keda_replica_drift() -> None:
     terraform = (ROOT / "infra/terraform/gcp/kagent.tf").read_text(encoding="utf-8")
     assert 'resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool"' in terraform
     assert 'computed_fields = ["spec.replicas"]' in terraform
-    assert 'scaleSelector = "ate.dev/worker-pool=recsys-recommendation-sandbox-pool"' in terraform
+    assert "scaleSelector" not in terraform
     assert 'name      = "keda-operator"' in terraform
     assert 'resources  = ["workerpools/scale"]' in terraform
 

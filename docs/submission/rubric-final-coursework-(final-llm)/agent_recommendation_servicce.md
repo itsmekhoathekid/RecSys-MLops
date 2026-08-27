@@ -1,10 +1,9 @@
 # Sandboxed Recommendation Agent Uses the Recommendation Service
 
-> **Runtime status (2026-08-26):** a Substrate `0.0.11` canary proved native
-> assigned-worker metrics, but the production kagent `0.9.9` A2A compatibility
-> gate failed. This specialist therefore remains on Substrate `0.0.6` and its
-> documented CPU-based KEDA query. Assigned-worker scaling evidence is not
-> claimed. See [validation and rollback](validation_verification.md).
+> **Runtime status (updated 2026-08-27):** production runs the custom kagent v6
+> compatibility image with Substrate `0.0.11`; values select assigned-worker
+> KEDA. Recommendation proved `1 -> 2 -> 3 -> 2 -> 1`, completed `2187/2187`
+> load requests, and proved fallback to one. CPU mode remains only for rollback.
 
 This submission section proves that the recommendation flow:
 
@@ -62,8 +61,8 @@ profile. Multi-replica execution is supplied by its dedicated WorkerPool.
 All three scalable runtime layers follow the same native Kubernetes loop:
 
 ```text
-Application completes work
-  -> Prometheus counter/rate or worker CPU increases
+Application completes work or Substrate assigns a sandbox worker
+  -> Prometheus application rate or assigned-worker gauge increases
   -> ServiceMonitor exposes the metric to Prometheus
   -> KEDA queries Prometheus every polling interval
   -> KEDA external metric is consumed by an HPA
@@ -212,6 +211,12 @@ maxReplicaCount: 3
 fallback:
   failureThreshold: 3
   replicas: 1
+triggers:
+  - type: prometheus
+    metricType: AverageValue
+    metadata:
+      threshold: "0.7"
+      query: max(ate_workerpool_workers{ate_workerpool_namespace="kagent",ate_workerpool_name="recsys-recommendation-sandbox-pool",ate_worker_state="assigned"})
 ```
 
 FastMCP is configured with `stateless_http=True` and `json_response=True`, so
@@ -237,7 +242,7 @@ References:
 
 ### 1.4 Recommendation SandboxAgent autoscaling stages
 
-#### Stage 1: A2A work raises gVisor worker CPU
+#### Stage 1: A2A sessions assign gVisor workers
 
 The declarative agent profile binds to the dedicated WorkerPool:
 
@@ -253,18 +258,17 @@ spec:
 
 Reference: [Recommendation SandboxAgent](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml).
 
-#### Stage 2: Prometheus measures total `ateom` CPU
+#### Stage 2: Prometheus measures assigned workers
 
 ```promql
-1000000 * sum(rate(container_cpu_usage_seconds_total{
-  namespace="kagent",
-  pod=~"recsys-recommendation-sandbox-pool-deployment-.*",
-  container="ateom"
-}[2m]))
+max(ate_workerpool_workers{
+  ate_workerpool_namespace="kagent",
+  ate_workerpool_name="recsys-recommendation-sandbox-pool",
+  ate_worker_state="assigned"
+})
 ```
 
-The value is converted to microcores and compared with the production target
-of `120` microcores.
+KEDA compares the maximum assigned-worker gauge with `AverageValue=0.7`.
 
 #### Stage 3: HPA targets the WorkerPool `/scale` subresource
 
@@ -284,7 +288,8 @@ References:
 
 - [WorkerPool ScaledObject](../../../infra/helm/recsys-recommendation-agent/templates/scaledobject.yaml)
 - [WorkerPool production values](../../../infra/helm/recsys-recommendation-agent/values-gcp.yaml)
-- [WorkerPool `/scale` CRD compatibility](../../../ops/helm/substrate_crds_hpa_postrender.py)
+- Substrate `0.0.11` supplies the native WorkerPool `/scale` selector through
+  `.status.selector`; the `0.0.6` compatibility post-renderer was removed.
 
 #### Stage 4: Substrate reconciles the generated gVisor Deployment
 
@@ -292,7 +297,7 @@ References:
 KEDA-generated HPA
   -> WorkerPool/recsys-recommendation-sandbox-pool /scale
   -> Substrate WorkerPool controller
-  -> recsys-recommendation-sandbox-pool-deployment
+  -> recsys-recommendation-sandbox-pool
   -> 1..3 ateom-gvisor worker pods
 ```
 
@@ -749,8 +754,7 @@ resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool" {
     }
     spec = {
       replicas      = 1
-      ateomImage    = "ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.6"
-      scaleSelector = "ate.dev/worker-pool=recsys-recommendation-sandbox-pool"
+      ateomImage = "ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.11"
     }
   }
   computed_fields = ["spec.replicas"]
@@ -767,9 +771,10 @@ References:
 
 ```yaml
 autoscaling:
+  metricMode: assignedWorkers
   minReplicas: 1
   maxReplicas: 3
-  cpuTargetMicrocores: "400"
+  assignedWorkersPerReplica: "0.7"
   fallback:
     failureThreshold: 3
     replicas: 1
@@ -825,7 +830,7 @@ References:
 
 ```text
 SandboxAgent platform=substrate
-  -> WorkerPool ateomImage=ateom-gvisor:v0.0.6
+  -> WorkerPool ateomImage=ateom-gvisor:v0.0.11
   -> MCP container UID/GID 10001
   -> read-only root filesystem
   -> all Linux capabilities dropped
@@ -842,10 +847,16 @@ References:
 ### Runtime image-proof status
 
 Capture the live SandboxAgent `allowedDomains`, WorkerPool `ateomImage` and
-`scaleSelector`, and MCP pod security context together. The RemoteMCPServer may
+native `status.selector`, and MCP pod security context together. The RemoteMCPServer may
 show the Secret **reference**, but Secret values must be redacted. Pair this
 with one successful recommendation call and, if demonstrated separately, one
 denied external-domain request.
+
+The final production autoscale run completed `2187/2187` concurrent A2A load
+requests without error and proved `1 -> 2 -> 3 -> 2 -> 1`. Breaking the
+Prometheus endpoint made KEDA report `Fallback=True` with desired replicas at
+one; the validation trap restored the original endpoint and the scaler returned
+to `Ready=True`, `Active=False`, `Fallback=False`.
 
 ## 7. Agent Registry and Governance
 

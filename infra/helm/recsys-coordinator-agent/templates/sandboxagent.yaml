@@ -1,33 +1,37 @@
-apiVersion: kagent.dev/v1alpha2
-kind: Agent
+apiVersion: kagent.dev/v1alpha3
+kind: SandboxAgent
 metadata:
-  name: {{ .Values.agent.name }}
+  name: {{ .Values.sandbox.name }}
   namespace: {{ .Values.namespace }}
   annotations:
-    recsys.ai/model-config-revision: {{ .Values.agent.modelConfigRevision | quote }}
+    recsys.ai/model-config-revision: {{ .Values.sandbox.modelConfigRevision | quote }}
   labels:
     {{- include "recsys-coordinator-agent.labels" . | nindent 4 }}
 spec:
   type: Declarative
-  description: Intent-routing RecSys coordinator with A2A and MCP access.
+  description: Intent-routing RecSys coordinator with sandboxed A2A and MCP access.
+  sandbox:
+    network:
+      allowedDomains:
+        {{- toYaml .Values.sandbox.allowedDomains | nindent 8 }}
+  substrate:
+    workerPoolRef:
+      apiGroup: ate.dev
+      kind: WorkerPool
+      name: {{ .Values.sandbox.workerPool }}
   declarative:
     runtime: go
-    modelConfig: {{ .Values.agent.modelConfig }}
+    modelConfig: {{ .Values.sandbox.modelConfig }}
     stream: false
-    deployment:
-      replicas: {{ .Values.agent.replicas }}
-      {{- with .Values.agent.imageRegistry }}
-      imageRegistry: {{ . | quote }}
-      {{- end }}
     systemMessage: |
-      {{- .Values.agent.systemMessage | nindent 6 }}
-      Runtime model configuration revision: {{ .Values.agent.modelConfigRevision }}.
+      {{- .Values.sandbox.systemMessage | nindent 6 }}
+      Runtime model configuration revision: {{ .Values.sandbox.modelConfigRevision }}.
     a2aConfig:
       skills:
         - id: coordinated-personalized-recommendation
           name: Coordinated personalized recommendation
           description: Route recommendation and grounded context work to the appropriate RecSys specialists.
-          tags: [recsys, coordinator, recommendation, rag]
+          tags: [recsys, coordinator, recommendation, rag, sandbox]
           examples:
             - "Recommend three items for user 1001 and explain them with grounded evidence."
     tools:

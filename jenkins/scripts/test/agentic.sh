@@ -26,8 +26,8 @@ test_context_agent() {
   kubectl -n kagent wait --for=condition=Ready \
     sandboxagent/recsys-context-agent-sandbox \
     --timeout="${COMPONENT_TEST_TIMEOUT:-600s}"
-  component_test_wait_deployment kagent recsys-context-sandbox-pool-deployment
-  kubectl -n kagent get deployment recsys-context-sandbox-pool-deployment \
+  component_test_wait_deployment kagent recsys-context-sandbox-pool
+  kubectl -n kagent get deployment recsys-context-sandbox-pool \
     -o jsonpath='{.status.availableReplicas}{"\n"}' | awk '$1 >= 1'
   kubectl -n kagent get scaledobject recsys-context-sandbox-pool -o json \
     | python3 -c '
@@ -51,10 +51,8 @@ spec = payload["spec"]
 status = payload["status"]
 assert spec["replicas"] >= 1
 assert status["replicas"] >= 1
-assert spec["scaleSelector"] == (
-    "ate.dev/worker-pool=recsys-context-sandbox-pool"
-)
-assert "ateom-gvisor:v0.0.6" in spec["ateomImage"]
+assert status["selector"]
+assert "ateom-gvisor:v0.0.11" in spec["ateomImage"]
 '
   agentic_wait_for_regular_agent_removal
   agentic_a2a_smoke recsys-context-agent-sandbox
@@ -97,7 +95,7 @@ test_recommendation_agent() {
     sandboxagent/recsys-recommendation-agent-sandbox \
     --timeout="${COMPONENT_TEST_TIMEOUT:-600s}"
   component_test_wait_deployment \
-    kagent recsys-recommendation-sandbox-pool-deployment
+    kagent recsys-recommendation-sandbox-pool
   kubectl -n kagent get scaledobject recsys-recommendation-sandbox-pool -o json \
     | python3 -c '
 import json, sys
@@ -121,12 +119,12 @@ assert spec["fallback"]["replicas"] == 1
 
 test_coordinator_agent() {
   coordinator_agentic_preflight true
-  kubectl -n kagent get agent recsys-coordinator-agent -o json \
+  kubectl -n kagent get sandboxagent recsys-coordinator-agent-sandbox -o json \
     | python3 -c '
 import json, sys
 spec = json.load(sys.stdin)["spec"]
-assert spec["declarative"]["deployment"]["replicas"] == 1
-assert "sandbox" not in spec and "substrate" not in spec
+assert spec["platform"] == "substrate"
+assert spec["substrate"]["workerPoolRef"]["name"] == "recsys-coordinator-sandbox-pool"
 tools = spec["declarative"]["tools"]
 agents = [item["agent"]["name"] for item in tools if item["type"] == "Agent"]
 mcps = [item["mcpServer"]["name"] for item in tools if item["type"] == "McpServer"]
@@ -136,8 +134,29 @@ assert agents == [
 ]
 assert mcps == ["recsys-feature-rag-mcp", "recsys-recommendation-mcp"]
 '
-  ! kubectl -n kagent get sandboxagent recsys-coordinator-agent-sandbox >/dev/null 2>&1
-  ! kubectl -n kagent get workerpool recsys-coordinator-sandbox-pool >/dev/null 2>&1
-  ! kubectl -n kagent get scaledobject recsys-coordinator-sandbox-pool >/dev/null 2>&1
+  kubectl -n kagent get workerpool recsys-coordinator-sandbox-pool -o json \
+    | python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+assert payload["status"]["selector"]
+assert payload["spec"]["replicas"] >= 1
+'
+  kubectl -n kagent get scaledobject recsys-coordinator-sandbox-pool -o json \
+    | python3 -c '
+import json, sys
+spec = json.load(sys.stdin)["spec"]
+assert spec["scaleTargetRef"] == {
+    "apiVersion": "ate.dev/v1alpha1", "kind": "WorkerPool",
+    "name": "recsys-coordinator-sandbox-pool",
+}
+assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
+assert spec["fallback"] == {"failureThreshold": 3, "replicas": 1}
+trigger = spec["triggers"][0]
+assert trigger["metricType"] == "AverageValue"
+assert trigger["metadata"]["threshold"] == "0.7"
+assert "ate_workerpool_workers" in trigger["metadata"]["query"]
+assert "ate_worker_state=\"assigned\"" in trigger["metadata"]["query"]
+'
+  ! kubectl -n kagent get agent recsys-coordinator-agent >/dev/null 2>&1
   coordinator_a2a_smoke
 }

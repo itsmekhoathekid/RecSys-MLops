@@ -274,6 +274,24 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
 
 case "${unit_name}" in
   data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api|milvus|rag-api|feature-rag-mcp|context-agent|recommendation-mcp|recommendation-agent|coordinator-agent)
+    sandbox_agent_name=""
+    sandbox_agent_previous_revision=""
+    case "${unit_name}" in
+      context-agent)
+        sandbox_agent_name="recsys-context-agent-sandbox"
+        ;;
+      recommendation-agent)
+        sandbox_agent_name="recsys-recommendation-agent-sandbox"
+        ;;
+      coordinator-agent)
+        sandbox_agent_name="recsys-coordinator-agent-sandbox"
+        ;;
+    esac
+    if [[ -n "${sandbox_agent_name}" ]]; then
+      sandbox_agent_previous_revision="$(
+        sandbox_agent_model_revision "${sandbox_agent_name}"
+      )"
+    fi
     if [[ "${unit_name}" == "feature-rag-mcp" ]]; then
       agentic_preflight false
     elif [[ "${unit_name}" == "context-agent" ]]; then
@@ -286,6 +304,10 @@ case "${unit_name}" in
       coordinator_agentic_preflight false
     fi
     deploy_helm_unit
+    if [[ -n "${sandbox_agent_name}" ]]; then
+      sandbox_agent_rebuild_golden_if_revision_changed \
+        "${sandbox_agent_name}" "${sandbox_agent_previous_revision}"
+    fi
     ;;
   feature-registry)
     feast_registry_apply "$(resolve_release_image recsys-feature-store)"

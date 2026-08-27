@@ -7,6 +7,8 @@ kind: ScaledObject
 metadata:
   name: {{ .Values.sandbox.workerPool }}
   namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "recsys-coordinator-agent.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: ate.dev/v1alpha1
@@ -28,12 +30,8 @@ spec:
           stabilizationWindowSeconds: 0
           selectPolicy: Max
           policies:
-            - type: Percent
-              value: 100
-              periodSeconds: 15
-            - type: Pods
-              value: 10
-              periodSeconds: 15
+            - {type: Percent, value: 100, periodSeconds: 15}
+            - {type: Pods, value: 10, periodSeconds: 15}
   triggers:
     - type: prometheus
       metricType: AverageValue
@@ -41,11 +39,11 @@ spec:
         serverAddress: {{ .Values.autoscaling.serverAddress | quote }}
         ignoreNullValues: "false"
         {{- if eq .Values.autoscaling.metricMode "assignedWorkers" }}
-        metricName: recsys_context_sandbox_assigned_workers
+        metricName: recsys_coordinator_sandbox_assigned_workers
         threshold: {{ .Values.autoscaling.assignedWorkersPerReplica | quote }}
         query: 'max(ate_workerpool_workers{ate_workerpool_namespace="{{ .Values.namespace }}",ate_workerpool_name="{{ .Values.sandbox.workerPool }}",ate_worker_state="assigned"})'
         {{- else }}
-        metricName: recsys_context_sandbox_worker_cpu_microcores
+        metricName: recsys_coordinator_sandbox_worker_cpu_microcores
         threshold: {{ .Values.autoscaling.cpuTargetMicrocores | quote }}
         query: '1000000 * max(rate(container_cpu_usage_seconds_total{namespace="{{ .Values.namespace }}",pod=~"{{ .Values.sandbox.workerPool }}-deployment-.*",container="ateom"}[2m]))'
         {{- end }}

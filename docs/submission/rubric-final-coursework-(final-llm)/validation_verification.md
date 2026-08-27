@@ -1,6 +1,54 @@
-# Substrate 0.0.11 Canary, Production Gate, and Rollback Evidence
+# Substrate 0.0.11 rollout and assigned-worker validation
 
-Date: 2026-08-26. Production project: `recsys-mlops-506406`.
+## Current production result (27 August 2026)
+
+The current source target supersedes the regular-Coordinator/CPU topology
+described in the historical incident record below:
+
+```text
+kagent                      0.10.0-e6df917-substrate0011-v6
+Substrate                   0.0.11 mTLS
+Context                     SandboxAgent + assigned-worker KEDA 1..3
+Recommendation              SandboxAgent + assigned-worker KEDA 1..3
+Coordinator                 SandboxAgent + assigned-worker KEDA 1..3
+assigned threshold          AverageValue 0.7
+scale-down/fallback         300 seconds / 1 replica after 3 failures
+```
+
+The compatibility and production gates are green. Substrate control plane,
+RustFS, Valkey `9.1`, all three SandboxAgents, WorkerPools, ScaledObjects, HPAs,
+and generated worker Deployments returned Ready after the tests. The native
+ATE endpoint and Prometheus both exposed
+`ate_workerpool_workers{ate_worker_state="assigned"}` with namespace, pool, and
+state labels. WorkerPool `/scale` reported spec/status replicas and a native
+`.status.selector`.
+
+| Production proof | Result |
+| --- | --- |
+| Context assigned-worker scale | `1 -> 2 -> 3 -> 2 -> 1`; 6,195 offers, 7 grounded completions, 6,188 expected backpressure responses |
+| Recommendation assigned-worker scale | `1 -> 2 -> 3 -> 2 -> 1`; 2,187/2,187 requests completed |
+| Coordinator assigned-worker scale | `1 -> 2 -> 3 -> 2 -> 1`; load generator recorded 240 offers |
+| Missing-Prometheus behavior | all three ScaledObjects reached `Fallback=True` and held one replica; endpoints were restored |
+| Coordinator v19 routing | context-only, recommendation-only, composite, both direct MCP cases, and partial failure passed |
+| Composite exact-call contract | `Recommendation Agent -> Context Agent`, exactly once each |
+
+The v6 kagent patch uses a stateful per-invocation duplicate-call guard and a
+Coordinator-only explicit-selection state machine. This resolves the earlier
+wire-format/retry interaction without changing generic tool routing. Clean
+source tests passed for `./adk/pkg/agent` and
+`./core/pkg/sandboxbackend/substrate`; repository contract tests also passed.
+
+The production model revisions are Context v8, Recommendation v7, and
+Coordinator v19. Routing evidence is stored in
+`reports/agentic/recsys-coordinator-agent-sandbox-a2a-v19.json`; autoscale
+helpers captured metric, ScaledObject, HPA, WorkerPool, generated Deployment,
+pod, scale-down, and fallback state. Historical evidence follows and is
+retained for rollback/audit purposes, but it no longer describes production.
+
+## Historical, superseded Substrate 0.0.11 gate and rollback evidence
+
+Date: 2026-08-26, revalidated 2026-08-27. Production project:
+`recsys-mlops-506406`.
 
 ## Outcome
 
@@ -19,6 +67,15 @@ The rollout stopped at the compatibility gate and rolled back safely.
   scaling was not deployed or claimed as production evidence.
 - The coordinator migration was independent and remains live as regular
   `Agent/recsys-coordinator-agent`, fixed at one replica.
+
+The 2026-08-27 retry observed the assigned-worker series for all three planned
+pool names, but stopped before deploying assigned-worker ScaledObjects because
+the same A2A wire-format gate failed. The rollback kept the two specialists as
+SandboxAgents on CPU scaling. The attempted Coordinator SandboxAgent could not
+be recovered safely: its 0.0.11 golden-snapshot prefix was empty and kagent's
+cleanup/reconcile path hit incompatible persisted actor records. Per the
+coordinator-specific fallback, production returned to the regular one-replica
+Coordinator and removed its sandbox pool/scaler resources.
 
 ## Canary evidence
 
@@ -87,7 +144,7 @@ The rollback restored:
   post-renderers;
 - context and recommendation `ateom-gvisor:v0.0.6` images;
 - original model configuration revisions;
-- CPU PromQL thresholds (`120` microcores for context and `400` for
+- CPU PromQL thresholds (`200` microcores for context and `400` for
   recommendation).
 
 The Substrate control-plane/ATE images returned to `0.0.6`, while the Valkey
@@ -113,6 +170,21 @@ Post-rollback smokes proved healthy Substrate transport and application paths:
   the Deployment remained `1/1`;
 - no coordinator SandboxAgent, WorkerPool, ScaledObject, HPA, or PDB remains.
 
+On the 2026-08-27 evidence run, Context and Recommendation A2A smokes passed
+again. The regular Coordinator passed readiness, direct MCP, and A2A transport,
+but its full five-case routing assertion did not pass after three attempts:
+one attempt bypassed the specialist for direct RAG MCP, one duplicated the RAG
+call, and one recommendation-specialist request timed out. This is an
+application routing gate failure, not a Substrate rollback-health failure.
+Jenkins and registry publication were intentionally not run.
+
+Terraform state cleanup removed only the four temporary `0.0.11` entries
+(`substrate-mtls-bootstrap`, the Coordinator sandbox WorkerPool, certificate
+controller namespace ownership, and the immutable-migration marker) without
+deleting live CA secrets. A new production plan reported `0 to destroy`; its
+remaining in-place drift includes an unrelated Cloud Logging import plus Helm
+provider reconciliation, so the mixed plan was deliberately not applied whole.
+
 The final recommendation MCP smoke then exposed a separate data-plane incident
 caused by the GKE node rotation. Zookeeper mounted its existing PVC but loaded
 an empty `zxid 0x0` snapshot. Kafka retained its PVC and rejected the new
@@ -130,8 +202,10 @@ realtime producer was enabled temporarily, repopulated `92` candidate keys and
 `160` global candidates, and returned to its configured zero replicas. Direct
 Recommendation MCP smoke now passes.
 
-The regular coordinator uses deterministic Qwen settings (`temperature=0`,
-`seed=42`, `maxTokens=384`) and remains fixed at one replica. Isolated
+The repository target uses deterministic Qwen settings (`temperature=0`,
+`seed=42`, `maxTokens=384`), while the restored kagent Helm revision still
+reported its pre-rollout `maxTokens=768` value. The regular coordinator remains
+fixed at one replica. Isolated
 context-only and recommendation-only A2A routing gates pass, as do direct MCP
 protocol checks. The composite gate remains red on kagent `0.9.9`: after the
 Recommendation SandboxAgent returns, Qwen may call the coordinator's direct
@@ -149,10 +223,25 @@ made KEDA/HPA move the Context WorkerPool from one to three replicas with
 supported CPU path; it is not evidence for the rejected `0.0.11`
 assigned-worker design.
 
-## Current supported state
+The 2026-08-27 rollback calibration found that summing worker CPU creates a
+replica-count feedback loop because every idle gVisor worker contributes roughly
+93–185 microcores. The supported CPU query now uses the hottest worker
+(`max(rate(...))`) with `AverageValue`; production targets are 200 microcores
+for Context and 400 for Recommendation. Context then scaled `3 -> 2 -> 1` after
+the configured 300-second stabilization. Fresh concurrent A2A loads drove both
+specialists from `1 -> 3`; Context recorded one grounded completion and 19
+backpressure rejections, while Recommendation completed 20/20 requests. Both
+capture helpers now allow a 60-second post-load KEDA decision grace so a short
+successful load is not reported as a false negative. At the one-replica
+baseline, both specialists entered `Fallback=True` after three Prometheus
+failures while HPA desired remained `1`; each test restored the original
+endpoint automatically. The verification timeout is now 420 seconds so the
+same proof can coexist with an active 300-second scale-down history.
 
-Until a newer kagent/Substrate pair passes the same canary and production A2A
-gate, the supported production state is:
+## Historical supported state after the failed 0.0.11 gate (superseded)
+
+The following table records the temporary rollback state before the v6 build
+passed the same production A2A gate. It is not the current supported state:
 
 ```text
 GKE                         1.35.7-gke.1027000
@@ -194,17 +283,18 @@ SUBSTRATE_BENCHMARK_WORKER_POOL=recsys-context-sandbox-pool \
 make agent-substrate-warmup-benchmark
 ```
 
-Warm-up output must always record the active runtime version. On the current
-production baseline it measures Substrate `0.0.6`; it does not validate the
-rejected `0.0.11` A2A path and must not be used as assigned-worker autoscaling
-evidence.
+Warm-up output must always record the active runtime version. The current
+production baseline is Substrate `0.0.11` with kagent v6. Warm-up latency alone
+is still not assigned-worker autoscaling evidence; the scaler proof must also
+capture the metric, HPA, WorkerPool, generated Deployment, and fallback state.
 
 ## Reproduction and rollback entrypoints
 
 - [enable the one-way GKE APIs](../../../ops/gcp/enable_substrate_cert_beta_apis.sh)
 - [certificate compatibility preflight](../../../ops/validation/substrate_gke_compatibility.sh)
 - [mTLS preparation helper](../../../ops/gcp/prepare_substrate_mtls.sh)
-- [coordinator fixed-replica concurrency](../../../ops/validation/coordinator_agentic_concurrency.sh)
+- [coordinator assigned-worker autoscale proof](../../../ops/validation/coordinator_agentic_autoscale.sh)
+- [coordinator routing smoke](../../../ops/validation/coordinator_agentic_smoke.sh)
 - [Terraform GCP wrapper](../../../ops/gcp/terraform_gcp.sh)
 
 Do not attempt to disable the beta APIs or downgrade production GKE as part of

@@ -33,7 +33,7 @@ branch and live GCP agent stack on 26 August 2026.
 | GCP infrastructure | [`infra/terraform/gcp`](../../infra/terraform/gcp) |
 | Global kagent model configuration | [`configs/kagent/values.yaml`](../../configs/kagent/values.yaml) |
 | Context and recommendation specialist Agents | [`recsys-kagent-agent`](../../infra/helm/recsys-kagent-agent), [`recsys-recommendation-agent`](../../infra/helm/recsys-recommendation-agent) |
-| Regular coordinator Agent | [`recsys-coordinator-agent`](../../infra/helm/recsys-coordinator-agent) |
+| Autoscaled coordinator SandboxAgent | [`recsys-coordinator-agent`](../../infra/helm/recsys-coordinator-agent) |
 | Current agent rollout/rollback evidence | [`validation_verification.md`](<rubric-final-coursework-(final-llm)/validation_verification.md>) |
 
 The data platform is no longer one Helm release. Production ownership is split
@@ -41,9 +41,10 @@ across `recsys-data-config`, `recsys-data-lakehouse`,
 `recsys-source-store`, `recsys-event-stream`, `recsys-feature-store`,
 `recsys-kafka-connect`, `recsys-streaming`, and `recsys-airflow`.
 
-The current agent baseline is kagent `0.9.9` with Substrate `0.0.6` for the two
-specialist WorkerPools and CPU-based KEDA. The coordinator is a regular kagent
-`Agent` fixed at one replica. Substrate `0.0.11` assigned-worker scaling is
-canary evidence only: production failed the A2A compatibility gate and was
-rolled back. Historical screenshots and output remain evidence of their stated
-run, but do not override this baseline.
+The repository target is a custom kagent build paired with Substrate `0.0.11`.
+Context, Recommendation, and Coordinator are SandboxAgents with independent
+WorkerPools and assigned-worker KEDA. The production v6 compatibility build
+and v19 Coordinator revision passed the complete routing suite; all three pools
+proved `1 -> 2 -> 3 -> 1` plus fallback to one. Historical `0.0.6`/CPU and
+regular-Coordinator screenshots remain evidence of their stated runs but are
+superseded by the current topology.

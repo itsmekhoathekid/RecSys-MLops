@@ -138,7 +138,7 @@
         "infra/__init__.py",
         "tests/contract/test_repository_layout_contracts.py",
         "tests/unit/test_feature_api_keep_post_renderer.py",
-        "tests/unit/test_substrate_workerpool_hpa_postrender.py"
+        "tests/unit/test_substrate_gke_postrender.py"
       ]
     }
   },
@@ -594,7 +594,7 @@
     {
       "name": "coordinator_agent",
       "flag": "RUN_COORDINATOR_AGENT",
-      "label": "RecSys Coordinator Agent",
+      "label": "RecSys Coordinator Sandbox Agent",
       "ciProfile": "agentic",
       "changeDetection": {
         "groups": ["jenkins-shared-runtime"],
@@ -608,7 +608,7 @@
           "jenkins/scripts/ci/agentic.sh",
           "jenkins/scripts/deploy/agentic.sh",
           "jenkins/scripts/test/agentic.sh",
-          "ops/validation/coordinator_agentic_concurrency.sh",
+          "ops/validation/coordinator_agentic_autoscale.sh",
           "ops/validation/coordinator_agentic_registry_smoke.sh",
           "ops/validation/coordinator_agentic_smoke.sh",
           "tests/contract/test_coordinator_agentic_contracts.py"

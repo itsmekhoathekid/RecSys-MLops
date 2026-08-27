@@ -9,21 +9,24 @@ The following Jupyter notebooks are end-to-end experiments with agents running o
 
 The experiments verify that a local notebook can communicate directly with a kagent `SandboxAgent` through its A2A endpoint and that the agent uses MCP tool calls to execute functions. Each notebook returns and displays the unmodified JSON-RPC/A2A response. No parser or intermediary helper file removes information from the execution trace.
 
-> **Evidence status (2026-08-26):** these notebooks still target the two
+> **Evidence status (updated 2026-08-27):** these notebooks still target the two
 > specialist SandboxAgents, which remain the production identities. Their
 > captured output predates the current deterministic global ModelConfig
 > (`maxTokens=384`, `temperature=0`, `seed=42`). Token counts and retry behavior
-> in the saved cells are historical evidence; current rollout status is tracked
-> in [Validation & Verification](validation_verification.md). The regular
-> coordinator uses `/api/a2a/kagent/recsys-coordinator-agent/` and is validated
-> by the separate coordinator smoke/concurrency scripts, not these notebooks.
+> in the saved cells are historical evidence. Current production runs kagent v6
+> with Substrate `0.0.11`; all three SandboxAgents passed assigned-worker scale
+> and fallback. The coordinator uses
+> `/api/a2a-sandboxes/kagent/recsys-coordinator-agent-sandbox/` and its v19
+> routing evidence is produced by the separate smoke/autoscale scripts, not by
+> rewriting these historical notebook outputs. See
+> [Validation & Verification](validation_verification.md).
 
 ## 2. Execution Path
 
 ```text
 Local Jupyter notebook
   -> kubectl port-forward service/kagent-controller
-  -> JSON-RPC message/send to /api/a2a-sandboxes/kagent/<agent>/
+  -> JSON-RPC SendMessage to /api/a2a-sandboxes/kagent/<agent>/
   -> kagent SandboxAgent on a Substrate worker pool
   -> RemoteMCPServer bound to the SandboxAgent
   -> MCP function

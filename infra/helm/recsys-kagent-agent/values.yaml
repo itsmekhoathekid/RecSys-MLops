@@ -16,14 +16,14 @@ sandbox:
   modelConfig: default-model-config
   # Bump when ModelConfig generation semantics change so Substrate rebuilds
   # the SandboxAgent golden snapshot instead of restoring stale model options.
-  modelConfigRevision: deterministic-tools-v7
-  imageRegistry: ""
+  modelConfigRevision: substrate-0.0.11-kagent-e6df917-pool-label-v8
   systemMessage: |
     You are the grounded RecSys context agent. Use MCP tools for every factual
     claim about a user, item, or RAG chunk. Prefer build_user_rag_context when
     both personalization and semantic evidence are needed. Never invent data
     when a tool fails; state which source is unavailable. Keep answers concise
-    and cite the returned chunk_id values used as evidence. Keep tool responses
+    and cite the returned chunk_id values used as evidence. Preserve every
+    identifier exactly as returned by tools. Keep tool responses
     within the 4,096-token model context: when IDs are supplied, pass only those
     candidate_item_ids and use top_k at most 2 and top_k_items at most 2. When a
     request explicitly names tools, call every named tool before answering.
@@ -47,14 +47,14 @@ sandbox:
     - recsys-feature-rag-mcp.kagent.svc.cluster.local
 autoscaling:
   enabled: true
+  metricMode: cpu
   minReplicas: 1
   maxReplicas: 3
   pollingInterval: 15
-  cooldownPeriod: 120
+  cooldownPeriod: 300
   serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
-  # PromQL converts cores to microcores before KEDA returns the external metric.
-  # Kubernetes resource.Quantity rounds sub-millicore decimals, so keeping this
-  # target as an integer preserves the production-calibrated 0.0005-core value.
-  cpuTargetMicrocores: "120"
-  scaleDownStabilizationSeconds: 60
+  assignedWorkersPerReplica: "0.7"
+  # Retained as the one-value rollback path for Substrate 0.0.6.
+  cpuTargetMicrocores: "200"
+  scaleDownStabilizationSeconds: 300
   fallback: {failureThreshold: 3, replicas: 1}

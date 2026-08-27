@@ -107,7 +107,7 @@ for _ in range(int(agent_count)):
         f"http://127.0.0.1:{a2a_port}/api/a2a-sandboxes/kagent/recsys-recommendation-agent-sandbox/",
         {"jsonrpc": "2.0", "id": request_id, "method": "message/send", "params": {
             "message": {"messageId": request_id, "contextId": request_id,
-                        "role": "user", "parts": [{"kind": "text", "text":
+                        "role": "ROLE_USER", "parts": [{"kind": "text", "text":
                         f"Recommend 2 items for user_id={user_id} from candidates 800080 and 800081."}]},
         }},
     )

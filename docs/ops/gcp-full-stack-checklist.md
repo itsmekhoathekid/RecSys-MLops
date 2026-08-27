@@ -2,11 +2,12 @@
 
 Production target: `recsys-mlops-506406`, `asia-southeast1-b`, `recsys-mlops.site`.
 
-Current agent-platform compatibility baseline (validated 2026-08-26): GKE
-`1.35.7-gke.1027000`, kagent `0.9.9`, and Substrate `0.0.6`. The PodCertificate
-and ClusterTrustBundle beta APIs are enabled and cannot be disabled. Substrate
-`0.0.11` must not be promoted again until a canary plus production A2A gate
-passes; certificate projection and metric availability alone are not enough.
+Current repository target (updated 2026-08-27): GKE
+`1.35.7-gke.1027000`, custom kagent build `e6df917`, and Substrate `0.0.11`.
+The PodCertificate and ClusterTrustBundle beta APIs are enabled and cannot be
+disabled. Production validation must remain paused while Valkey quorum or ATE
+API health is red; certificate projection and metric availability alone are
+not enough to authorize traffic or Registry cutover.
 
 Run `make gcp-full-check GCP_CHECK_MODE=preflight` before provisioning and
 `make gcp-full-check GCP_CHECK_MODE=all` after deployment. The command writes
@@ -50,21 +51,28 @@ project's state bucket.
 - [ ] Security/full optional: Vault HA/KMS unseal, DataHub, Substrate, kagent,
   llm-d, Agent Gateway, Agent Registry, feature-RAG MCP/context agent and
   recommendation MCP/agent.
-- [ ] Coordinator is `Agent/recsys-coordinator-agent` with Deployment `1/1`;
-  no coordinator SandboxAgent, WorkerPool, ScaledObject, HPA, or PDB exists.
-- [ ] Specialist WorkerPools use `ateom-gvisor:v0.0.6`, the CRD compatibility
-  post-renderers are active, and their KEDA queries are CPU based (`120`/`400`
-  microcores) until the `0.0.11` A2A compatibility blocker is resolved.
-- [ ] Substrate control-plane/ATE is `0.0.6`, but Valkey remains pinned to
-  `9.1` so it can read AOF files written during the failed upgrade; do not
-  downgrade Valkey to `8.0` without restoring compatible PD snapshots. Verify
+- [ ] Context, Recommendation, and Coordinator are `SandboxAgent`s with the
+  dedicated WorkerPools `recsys-context-sandbox-pool`,
+  `recsys-recommendation-sandbox-pool`, and
+  `recsys-coordinator-sandbox-pool`; the regular Coordinator Agent is absent.
+- [ ] All three production values select `metricMode: assignedWorkers` and the
+  exact `ate_workerpool_workers{ate_worker_state="assigned"}` query with
+  threshold `0.7`, range `1..3`, 300-second scale-down, and fallback `1`.
+- [ ] Substrate control-plane/ATE and WorkerPool images are `0.0.11`, use the
+  native `.status.selector` `/scale` contract, and no `scaleSelector` or `0.0.6`
+  HPA post-renderer remains. Valkey stays pinned to `9.1`. Verify
   every Valkey `nodes.conf` `myself` address equals the current Pod IP; the GKE
   post-renderer must inject `POD_IP` and `--cluster-announce-ip`.
-- [ ] Before publishing `recsys/recsys-coordinator-agent` or retiring the
-  legacy sandbox registry artifact, require context-only, recommendation-only,
-  composite, direct-MCP, and partial-failure coordinator gates to pass. On the
-  2026-08-26 run, composite routing and partial-failure handling remained red;
-  registry cutover was intentionally withheld.
+- [ ] Before publishing `recsys/recsys-coordinator-agent-sandbox` or retiring
+  the regular registry artifact, require context-only, recommendation-only,
+  composite, direct-MCP, and partial-failure coordinator gates to pass. The
+  production v19 suite passed all five cases on the v6 kagent compatibility
+  image. The earlier regular-Coordinator routing failure is retained only as
+  superseded history in Validation & Verification.
+- [ ] Do not run the three autoscale load tests while Valkey reports
+  `cluster_state:fail` or ATE API is CrashLooping. Recover quorum first, then
+  test Context, Recommendation, and Coordinator sequentially and attach the
+  metric, WorkerPool, HPA, ScaledObject, pod, fallback, and routing evidence.
 - [ ] Both Qwen replicas are Ready on different `recsys-mlops-cpu` nodes.
 - [ ] Observability/CI: Prometheus, Grafana, Loki, Tempo, Promtail, Pushgateway,
   exporters and Jenkins.
@@ -100,4 +108,6 @@ project's state bucket.
 - [ ] Let’s Encrypt certificates are Ready; unauthenticated protected requests
   are rejected and authenticated HTTPS checks succeed.
 - [ ] Final Terraform detailed plan returns exit code 0.
+- [ ] Do not apply an otherwise mixed Terraform plan merely to converge the
+  agent stack; review and isolate unrelated resources such as Cloud Logging.
 - [ ] Full checklist JSON contains no FAIL entries.

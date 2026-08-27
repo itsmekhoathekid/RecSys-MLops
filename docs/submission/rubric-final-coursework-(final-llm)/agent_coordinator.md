@@ -1,154 +1,127 @@
-# Coordinator Regular Agent with A2A and MCP Routing
+# Coordinator SandboxAgent with assigned-worker autoscaling
 
-`recsys-coordinator-agent` is a declarative kagent `Agent` with exactly one
-replica. It is intentionally not a `SandboxAgent`: orchestration concurrency is
-handled by the regular Agent Deployment while the context and recommendation
-specialists remain isolated in their own Substrate WorkerPools.
+The repository target is `SandboxAgent/recsys-coordinator-agent-sandbox`. It
+has a dedicated Substrate `0.0.11` WorkerPool and the same assigned-worker KEDA
+policy as the Context and Recommendation specialists.
 
 ```text
-kagent Chat UI / A2A client
+kagent Chat UI / sandbox A2A client
               |
               v
-Agent/recsys-coordinator-agent (Deployment replicas=1)
-  |-- A2A --> recsys-context-agent-sandbox
-  |-- A2A --> recsys-recommendation-agent-sandbox
-  |-- MCP --> recsys-feature-rag-mcp
-  `-- MCP --> recsys-recommendation-mcp
+SandboxAgent/recsys-coordinator-agent-sandbox
+  |-- WorkerPool --> recsys-coordinator-sandbox-pool (1..3)
+  |-- A2A --------> recsys-context-agent-sandbox
+  |-- A2A --------> recsys-recommendation-agent-sandbox
+  |-- MCP --------> recsys-feature-rag-mcp
+  `-- MCP --------> recsys-recommendation-mcp
 ```
 
-## Runtime contract
+## Runtime and public interfaces
 
-The public interfaces are:
+- A2A: `/api/a2a-sandboxes/kagent/recsys-coordinator-agent-sandbox/`
+- Registry: `recsys/recsys-coordinator-agent-sandbox`
+- WorkerPool: `recsys-coordinator-sandbox-pool`
+- Model configuration revision:
+  `substrate-0.0.11-kagent-e6df917-assigned-workers-v19`
+- kagent compatibility image: `0.10.0-e6df917-substrate0011-v6`
 
-- A2A: `/api/a2a/kagent/recsys-coordinator-agent/`
-- Target Registry identity: `recsys/recsys-coordinator-agent` (publication is
-  currently gated; see Registry publication below)
-
-The Helm chart renders only one regular `Agent`; it renders no coordinator
-`SandboxAgent`, `WorkerPool`, `ScaledObject`, or PodDisruptionBudget.
-
-```yaml
-apiVersion: kagent.dev/v1alpha2
-kind: Agent
-metadata:
-  name: recsys-coordinator-agent
-  namespace: kagent
-spec:
-  type: Declarative
-  declarative:
-    modelConfig: default-model-config
-    deployment:
-      replicas: 1
-    tools:
-      - type: Agent
-        agent:
-          apiGroup: kagent.dev
-          kind: SandboxAgent
-          name: recsys-context-agent-sandbox
-      - type: Agent
-        agent:
-          apiGroup: kagent.dev
-          kind: SandboxAgent
-          name: recsys-recommendation-agent-sandbox
-      - type: McpServer
-        mcpServer:
-          name: recsys-feature-rag-mcp
-      - type: McpServer
-        mcpServer:
-          name: recsys-recommendation-mcp
-```
+The Helm release renders a `SandboxAgent`, `ScaledObject`, and
+`PodDisruptionBudget`. Terraform owns the WorkerPool's immutable runtime fields;
+KEDA owns `.spec.replicas` through the native WorkerPool `/scale` subresource.
+The previous regular `Agent/recsys-coordinator-agent` topology and its fixed
+one-replica concurrency proof are superseded in source control.
 
 References:
 
-- [regular Agent template](../../../infra/helm/recsys-coordinator-agent/templates/agent.yaml)
-- [prompt and provider configuration](../../../infra/helm/recsys-coordinator-agent/values.yaml)
+- [SandboxAgent template](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml)
+- [assigned-worker scaler](../../../infra/helm/recsys-coordinator-agent/templates/scaledobject.yaml)
+- [prompt and values](../../../infra/helm/recsys-coordinator-agent/values.yaml)
 - [tool contract](../../../configs/agentic/recsys-coordinator-agent/tools-contract.json)
 
-## Routing behavior
+## Autoscaling contract
 
-The prompt keeps the existing routing rules:
+Production values select `metricMode: assignedWorkers`. The CPU mode remains
+available only as a values-only rollback path.
 
-```text
-Context, feature, exact-chunk, or RAG request
-  -> context specialist over A2A
-
-Ranked recommendation request
-  -> recommendation specialist over A2A
-
-Recommendation plus grounded explanation
-  -> both specialists, then combine without reranking
-
-Explicit raw-tool or independent-verification request
-  -> invoke the requested MCP provider directly
-
-Unavailable dependency
-  -> retain valid partial results, identify the failed source, never guess
+```promql
+max(
+  ate_workerpool_workers{
+    ate_workerpool_namespace="kagent",
+    ate_workerpool_name="recsys-coordinator-sandbox-pool",
+    ate_worker_state="assigned"
+  }
+)
 ```
 
-The coordinator preserves the recommendation service's ordering, scores,
-model version, and experiment metadata. Grounded claims cite the specialist's
-returned chunk identifiers.
+The scaler uses `AverageValue=0.7`, replicas `1..3`, polling every 15 seconds,
+immediate scale-up, a 300-second scale-down stabilization/cooldown, and fallback
+to one replica after three Prometheus failures. `ignoreNullValues=false` and the
+query intentionally has no `or vector(0)`, so a missing metric remains visible.
 
-## Fixed-replica concurrency proof
-
-Coordinator autoscaling was removed. The replacement validation sends
-concurrent A2A requests while sampling the Deployment and fails if desired or
-ready replicas differ from one:
+Run the production proof only after Substrate, Valkey, all three WorkerPools,
+and Prometheus are healthy:
 
 ```bash
-make coordinator-agentic-concurrency
+make coordinator-agentic-autoscale
 ```
 
-The production run on 2026-08-26 completed eight requests at concurrency four
-and kept the coordinator Deployment at `1/1`. The normal smoke also returned
-`COORDINATOR-OK` through the regular A2A endpoint.
+The script captures idle `1`, assigned-work scale-out `1 -> 2 -> 3`, return to
+`1` after the cooldown, and the one-replica KEDA fallback. It restores the
+Prometheus endpoint even when the validation fails.
 
-References:
+## Routing behavior and smoke test
 
-- [concurrency validation](../../../ops/validation/coordinator_agentic_concurrency.sh)
-- [A2A and MCP smoke](../../../ops/validation/coordinator_agentic_smoke.sh)
-- [runtime contract tests](../../../tests/contract/test_coordinator_agentic_contracts.py)
+The prompt retains these routing rules:
 
-## Registry publication
+- context, feature, exact-chunk, or RAG requests use the Context specialist;
+- ranked recommendations use the Recommendation specialist;
+- grounded recommendations use both specialists without reranking;
+- explicitly requested raw/verification operations may call MCP directly;
+- partial failures preserve valid results and identify the unavailable source.
 
-Jenkins publishes the regular identity only after it verifies both specialist
-Agent artifacts and both MCP artifacts at the same immutable Git SHA. It then
-verifies the new artifact before retiring
-`recsys/recsys-coordinator-agent-sandbox`.
+```bash
+make coordinator-agentic-smoke
+```
 
-The regular coordinator migration is committed in `ae09f78`, with follow-up
-runtime stabilization in `c09ce07`. Publication is still deliberately
-withheld because the 2026-08-26 composite routing gate and partial-failure gate
-remained red with Qwen 0.8B. A new artifact must not be published merely because
-the manifest is committed: first publish all four dependencies at the same
-immutable SHA and make context-only, recommendation-only, composite,
-direct-MCP, and partial-failure routing green. Then run:
+The smoke covers context-only, recommendation-only, composite, direct MCP, and
+partial-specialist-failure cases through the sandbox A2A endpoint using
+`SendMessage` and `A2A-Version: 1.0`.
+
+The v6 runtime adds a per-invocation exact-call guard for this Coordinator. An
+explicitly requested specialist or direct MCP tool executes once, tool results
+survive model retries, and a composite request advances from Recommendation to
+Context instead of repeating the first specialist. Generic prompts remain
+model-routed and are not forced into a tool call.
+
+## Registry and Jenkins release gate
+
+Jenkins publishes the sandbox coordinator only after both specialist artifacts
+and both MCP artifacts exist at the same immutable Git SHA and routing smoke is
+green. Only then may it retire `recsys/recsys-coordinator-agent`.
 
 ```bash
 make coordinator-agentic-registry
 ```
 
-The legacy sandbox artifact must remain until that command verifies the new
-regular artifact. Context-only and recommendation-only routes are healthy, but
-the full release gate is not green; the legacy artifact was therefore retained.
+The component contract now waits for the Coordinator SandboxAgent, WorkerPool,
+ScaledObject, HPA, and native WorkerPool Deployment. The autoscale proof is a
+production verification step, not a Helm render substitute.
 
-Reference: [registry publish and dependency gates](../../../jenkins/scripts/deploy/agentic.sh).
+## Current production evidence status
 
-## Substrate 0.0.11 rollout result
+The 27 August 2026 production run is green on Substrate `0.0.11` mTLS and the
+v6 kagent compatibility image. The Coordinator WorkerPool proved
+`1 -> 2 -> 3 -> 2 -> 1`; an intentionally invalid Prometheus endpoint made
+KEDA report fallback while desired/available replicas remained `1/1`, and the
+endpoint was restored automatically. The full v19 routing suite passed all
+five cases, with the composite evidence showing exactly
+`Recommendation Agent -> Context Agent`, once each. Substrate control-plane,
+Valkey, RustFS, the three SandboxAgents, WorkerPools, ScaledObjects, and HPAs
+were healthy after restoration.
 
-The coordinator migration succeeded independently of the Substrate upgrade.
-The same maintenance window proved on a canary that GKE beta certificate APIs,
-mTLS projected credentials, trust bundles, and
-`ate_workerpool_workers` work with Substrate `0.0.11`. Production then failed
-the kagent `0.9.9` compatibility gate with:
+The machine-readable A2A evidence is
+`reports/agentic/recsys-coordinator-agent-sandbox-a2a-v19.json`; autoscale load
+evidence is `reports/agentic/coordinator-autoscale-load.json`.
 
-```text
-grpc: error unmarshalling request: proto: cannot parse invalid wire-format data
-```
-
-Per the rollback plan, production specialists returned to Substrate `0.0.6`
-and CPU-based WorkerPool autoscaling. The GKE `1.35.7` upgrade and one-way beta
-API enablement remain. The coordinator stays a regular fixed-replica Agent and
-does not depend on either Substrate version.
-
-See [rollout validation and rollback evidence](validation_verification.md).
+Historical `0.0.6`, regular-Coordinator, and failed `0.0.11` evidence remains in
+[Validation and Verification](validation_verification.md) as superseded history.

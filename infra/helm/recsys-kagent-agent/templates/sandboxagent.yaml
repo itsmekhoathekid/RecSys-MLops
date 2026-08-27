@@ -1,4 +1,4 @@
-apiVersion: kagent.dev/v1alpha2
+apiVersion: kagent.dev/v1alpha3
 kind: SandboxAgent
 metadata:
   name: {{ .Values.sandbox.name }}
@@ -9,7 +9,6 @@ metadata:
     {{- include "recsys-kagent-agent.labels" . | nindent 4 }}
 spec:
   type: Declarative
-  platform: substrate
   description: gVisor-isolated variant of the grounded RecSys context agent.
   sandbox:
     network:
@@ -24,10 +23,6 @@ spec:
     runtime: go
     modelConfig: {{ .Values.sandbox.modelConfig }}
     stream: false
-    {{- with .Values.sandbox.imageRegistry }}
-    deployment:
-      imageRegistry: {{ . | quote }}
-    {{- end }}
     systemMessage: |
       {{- .Values.sandbox.systemMessage | nindent 6 }}
       Runtime model configuration revision: {{ .Values.sandbox.modelConfigRevision }}.

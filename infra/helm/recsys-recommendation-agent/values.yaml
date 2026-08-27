@@ -10,8 +10,7 @@ sandbox:
   name: recsys-recommendation-agent-sandbox
   workerPool: recsys-recommendation-sandbox-pool
   modelConfig: default-model-config
-  modelConfigRevision: deterministic-tools-v5
-  imageRegistry: ""
+  modelConfigRevision: substrate-0.0.11-kagent-e6df917-pool-label-v7
   systemMessage: |
     You are the RecSys recommendation presentation agent. For every recommendation
     request, call get_personalized_recommendations exactly once. Do not call any
@@ -36,11 +35,14 @@ sandbox:
     - recsys-recommendation-mcp.kagent.svc.cluster.local
 autoscaling:
   enabled: true
+  metricMode: cpu
   minReplicas: 1
   maxReplicas: 3
   pollingInterval: 15
-  cooldownPeriod: 120
+  cooldownPeriod: 300
   serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
+  assignedWorkersPerReplica: "0.7"
+  # Retained as the one-value rollback path for Substrate 0.0.6.
   cpuTargetMicrocores: "400"
-  scaleDownStabilizationSeconds: 60
+  scaleDownStabilizationSeconds: 300
   fallback: {failureThreshold: 3, replicas: 1}

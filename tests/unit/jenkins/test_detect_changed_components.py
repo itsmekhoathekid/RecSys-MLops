@@ -272,7 +272,7 @@ def test_agentic_change_routing_and_release_order_matrix():
 
 def test_coordinator_change_selects_its_helm_and_registry_units_in_order():
     coordinator = detect(
-        ["infra/helm/recsys-coordinator-agent/templates/agent.yaml"]
+        ["infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml"]
     )
     assert coordinator.component_names == ("coordinator_agent",)
     assert coordinator.release_plan["buildImages"] == []
@@ -281,7 +281,7 @@ def test_coordinator_change_selects_its_helm_and_registry_units_in_order():
         "coordinator-agent-registry",
     ]
 
-    validation = detect(["ops/validation/coordinator_agentic_concurrency.sh"])
+    validation = detect(["ops/validation/coordinator_agentic_autoscale.sh"])
     assert validation.component_names == ("coordinator_agent",)
 
 

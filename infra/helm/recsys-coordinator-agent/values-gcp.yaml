@@ -1,2 +1,2 @@
-agent:
-  imageRegistry: ghcr.io
+autoscaling:
+  metricMode: assignedWorkers

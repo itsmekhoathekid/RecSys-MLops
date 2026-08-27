@@ -98,6 +98,7 @@ data:
               names:
                 - {{ .Values.targets.apiNamespace }}
                 - {{ .Values.targets.agenticNamespace }}
+                - {{ .Values.targets.substrateNamespace }}
                 - {{ .Values.targets.dataNamespace }}
                 - {{ .Values.targets.kserveNamespace }}
                 - {{ .Values.targets.mlflowNamespace }}
@@ -215,7 +216,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/prometheus-config: {{ printf "%s-%s-%s-%s" .Values.targets.apiNamespace .Values.targets.kserveNamespace .Values.images.prometheus "pod-scrape-v2" | sha256sum | quote }}
+        checksum/prometheus-config: {{ printf "%s-%s-%s-%s-%s" .Values.targets.apiNamespace .Values.targets.kserveNamespace .Values.targets.substrateNamespace .Values.images.prometheus "pod-scrape-v3" | sha256sum | quote }}
       labels:
         app: recsys-prometheus
     spec:

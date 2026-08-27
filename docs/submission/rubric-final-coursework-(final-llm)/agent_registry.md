@@ -21,12 +21,14 @@ The deployment was verified on 14 August 2026: both Helm releases were
 `SecretSynced/True`, pgvector reported version `0.8.6`, and both the UI and
 OpenAPI endpoints returned HTTP `200`.
 
-Artifact status was rechecked on 26 August 2026. The live coordinator is now
-the regular Kubernetes `Agent/recsys-coordinator-agent`, but the target catalog
-identity `recsys/recsys-coordinator-agent` has not been published. Composite
-routing and partial-failure gates remained red with Qwen 0.8B, so the legacy
-`recsys/recsys-coordinator-agent-sandbox` artifact is intentionally retained.
-Runtime deployment and Registry publication are separate gates.
+The repository target was changed back to
+`SandboxAgent/recsys-coordinator-agent-sandbox` on 27 August 2026. Its catalog
+identity is `recsys/recsys-coordinator-agent-sandbox`. Healthy Substrate/Valkey,
+three-pool autoscale evidence, and the complete v19 Coordinator routing suite
+now pass in production. Jenkins still treats publication as a separate gate:
+it publishes the sandbox identity after its dependencies and smoke checks, then
+retires `recsys/recsys-coordinator-agent`; it never retires the old identity
+before the new artifact is verified.
 
 ## What Agent Registry Is
 

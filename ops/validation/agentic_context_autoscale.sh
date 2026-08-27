@@ -7,6 +7,7 @@ rps="${AGENTIC_LOAD_RPS:-20}"
 chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
 poll_seconds="${AGENTIC_KEDA_POLL_SECONDS:-15}"
 decision_grace_seconds="${AGENTIC_SCALE_DECISION_GRACE_SECONDS:-15}"
+fallback_wait_seconds="${AGENTIC_FALLBACK_WAIT_SECONDS:-420}"
 load_log="${AGENTIC_LOAD_LOG:-reports/agentic/autoscale-load.json}"
 load_ready_log="${load_log%.json}.ready"
 load_pid=""
@@ -189,12 +190,12 @@ def invoke(index):
     payload = {
         "jsonrpc": "2.0",
         "id": request_id,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
                 "messageId": request_id,
                 "contextId": request_id,
-                "role": "user",
+                "role": "ROLE_USER",
                 "parts": [{
                     "kind": "text",
                     "text": f"Reply with exactly OK-{index}; do not call tools.",
@@ -205,7 +206,7 @@ def invoke(index):
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=180) as response:
@@ -246,7 +247,7 @@ fi
   echo "Sandbox WorkerPool did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
 }
-wait_for_available_replicas recsys-context-sandbox-pool-deployment 3
+wait_for_available_replicas recsys-context-sandbox-pool 3
 wait "${load_pid}"
 load_pid=""
 kill "${a2a_pf_pid}" >/dev/null 2>&1 || true
@@ -272,7 +273,7 @@ kubectl -n "${namespace}" patch scaledobject recsys-feature-rag-mcp --type json 
   >/dev/null
 
 fallback=false
-for _ in $(seq 1 6); do
+for _ in $(seq 1 $((fallback_wait_seconds / poll_seconds))); do
   sleep "${poll_seconds}"
   replicas="$(kubectl -n "${namespace}" get deployment recsys-feature-rag-mcp \
     -o jsonpath='{.status.availableReplicas}')"
@@ -306,9 +307,9 @@ kubectl -n "${namespace}" patch scaledobject recsys-context-sandbox-pool --type 
   -p '[{"op":"replace","path":"/spec/triggers/0/metadata/serverAddress","value":"http://unreachable.invalid:9090"}]' \
   >/dev/null
 sandbox_fallback=false
-for _ in $(seq 1 6); do
+for _ in $(seq 1 $((fallback_wait_seconds / poll_seconds))); do
   sleep "${poll_seconds}"
-  replicas="$(kubectl -n "${namespace}" get deployment recsys-context-sandbox-pool-deployment \
+  replicas="$(kubectl -n "${namespace}" get deployment recsys-context-sandbox-pool \
     -o jsonpath='{.status.availableReplicas}')"
   if [[ "${replicas:-0}" == "${sandbox_fallback_replicas}" ]]; then
     sandbox_fallback=true

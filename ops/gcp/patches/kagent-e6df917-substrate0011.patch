@@ -1,0 +1,739 @@
+diff --git a/go/adk/pkg/agent/agent.go b/go/adk/pkg/agent/agent.go
+index 6164f5d0..73b060f6 100644
+--- a/go/adk/pkg/agent/agent.go
++++ b/go/adk/pkg/agent/agent.go
+@@ -98,6 +98,13 @@ func CreateGoogleADKAgent(ctx context.Context, agentConfig *adk.AgentConfig, age
+ 	// Build BeforeToolCallbacks. Approval gating runs first.
+ 	beforeToolCallbacks := []llmagent.BeforeToolCallback{}
+ 	beforeModelCallbacks := []llmagent.BeforeModelCallback{}
++	afterModelCallbacks := []llmagent.AfterModelCallback{}
++	duplicateToolGuard := newDuplicateToolCallGuard(log)
++	if strings.Contains(strings.ToLower(agentName), "coordinator") {
++		explicitToolGuard := newExplicitToolSelectionGuard(log)
++		beforeModelCallbacks = append(beforeModelCallbacks, explicitToolGuard.BeforeModel)
++		afterModelCallbacks = append(afterModelCallbacks, explicitToolGuard.AfterModel)
++	}
+ 
+ 	if len(approvalSet) > 0 {
+ 		log.Info("Wiring approval callback", "toolCount", len(approvalSet))
+@@ -109,6 +116,8 @@ func CreateGoogleADKAgent(ctx context.Context, agentConfig *adk.AgentConfig, age
+ 		log.Info("Wiring MCP App model result callback", "toolCount", len(mcpAppToolNames))
+ 		beforeModelCallbacks = append(beforeModelCallbacks, MakeMCPAppModelResultCallback(mcpAppToolNames))
+ 	}
++	beforeModelCallbacks = append(beforeModelCallbacks, duplicateToolGuard.BeforeModel)
++	afterModelCallbacks = append(afterModelCallbacks, duplicateToolGuard.AfterModel)
+ 	beforeToolCallbacks = append(beforeToolCallbacks, makeBeforeToolCallback(log))
+ 
+ 	llmAgentConfig := llmagent.Config{
+@@ -122,6 +131,7 @@ func CreateGoogleADKAgent(ctx context.Context, agentConfig *adk.AgentConfig, age
+ 		Toolsets:              toolsets,
+ 		BeforeToolCallbacks:   beforeToolCallbacks,
+ 		BeforeModelCallbacks:  beforeModelCallbacks,
++		AfterModelCallbacks:   afterModelCallbacks,
+ 		AfterToolCallbacks: []llmagent.AfterToolCallback{
+ 			makeAfterToolCallback(log),
+ 		},
+diff --git a/go/adk/pkg/agent/duplicate_tool_call_guard.go b/go/adk/pkg/agent/duplicate_tool_call_guard.go
+new file mode 100644
+index 00000000..ccee0be0
+--- /dev/null
++++ b/go/adk/pkg/agent/duplicate_tool_call_guard.go
+@@ -0,0 +1,250 @@
++// Copyright 2026 The Kagent Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package agent
++
++import (
++	"encoding/json"
++	"fmt"
++	"sort"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/go-logr/logr"
++	adkagent "google.golang.org/adk/v2/agent"
++	adkmodel "google.golang.org/adk/v2/model"
++	"google.golang.org/genai"
++)
++
++const (
++	duplicateToolResultLimit = 12000
++	duplicateToolStateTTL    = time.Hour
++)
++
++// duplicateToolCallGuard prevents an LLM from executing the same tool with
++// the same arguments more than once in a single invocation. The Google ADK
++// normal (non-live) runner has no tool-round limit; after a partial tool failure
++// some models can therefore retry an identical set forever. The first call and
++// every call with different arguments are unaffected.
++//
++// The guard keeps short-lived state itself rather than reading Session.Events:
++// the runner does not guarantee that just-yielded tool events are visible in
++// the session before the next model callback.
++type duplicateToolCallGuard struct {
++	log         logr.Logger
++	mu          sync.Mutex
++	invocations map[string]*duplicateToolInvocation
++}
++
++type duplicateToolInvocation struct {
++	signatures map[string]bool
++	results    []toolResult
++	lastSeen   time.Time
++}
++
++func newDuplicateToolCallGuard(log logr.Logger) *duplicateToolCallGuard {
++	return &duplicateToolCallGuard{
++		log:         log,
++		invocations: make(map[string]*duplicateToolInvocation),
++	}
++}
++
++// BeforeModel captures the function responses that the model sees after a tool
++// round. They are later used to build a terminal partial-result response if the
++// model emits an exact duplicate call.
++func (g *duplicateToolCallGuard) BeforeModel(ctx adkagent.Context, req *adkmodel.LLMRequest) (*adkmodel.LLMResponse, error) {
++	if ctx == nil || req == nil || ctx.InvocationID() == "" {
++		return nil, nil
++	}
++	results := functionResponses(req.Contents)
++	if len(results) == 0 {
++		return nil, nil
++	}
++	g.mu.Lock()
++	state := g.invocation(ctx.InvocationID())
++	state.results = results
++	g.mu.Unlock()
++	return nil, nil
++}
++
++// AfterModel records the first set of calls and replaces any later exact retry
++// with a final text response before ADK can execute the duplicate side effect.
++func (g *duplicateToolCallGuard) AfterModel(ctx adkagent.Context, resp *adkmodel.LLMResponse, modelErr error) (*adkmodel.LLMResponse, error) {
++	if ctx == nil || ctx.InvocationID() == "" {
++		return nil, nil
++	}
++	invocationID := ctx.InvocationID()
++	if modelErr != nil || resp == nil {
++		g.forget(invocationID)
++		return nil, nil
++	}
++	if resp.Partial || resp.Content == nil {
++		return nil, nil
++	}
++
++	current := functionCallSignatures(resp.Content)
++	if len(current) == 0 {
++		g.forget(invocationID)
++		return nil, nil
++	}
++
++	g.mu.Lock()
++	state := g.invocation(invocationID)
++	var duplicates []string
++	for signature, name := range current {
++		if state.signatures[signature] {
++			duplicates = append(duplicates, name)
++		}
++	}
++	if len(duplicates) == 0 {
++		for signature := range current {
++			state.signatures[signature] = true
++		}
++		g.mu.Unlock()
++		return nil, nil
++	}
++	results := append([]toolResult(nil), state.results...)
++	delete(g.invocations, invocationID)
++	g.mu.Unlock()
++
++	sort.Strings(duplicates)
++	g.log.Info("Suppressing duplicate tool-call loop", "invocationID", invocationID, "tools", duplicates)
++	return &adkmodel.LLMResponse{
++		Content:      genai.NewContentFromText(duplicateToolFallbackText(duplicates, results), genai.RoleModel),
++		FinishReason: genai.FinishReasonStop,
++	}, nil
++}
++
++func (g *duplicateToolCallGuard) invocation(invocationID string) *duplicateToolInvocation {
++	now := time.Now()
++	for id, candidate := range g.invocations {
++		if id != invocationID && now.Sub(candidate.lastSeen) > duplicateToolStateTTL {
++			delete(g.invocations, id)
++		}
++	}
++	state := g.invocations[invocationID]
++	if state == nil {
++		state = &duplicateToolInvocation{signatures: make(map[string]bool)}
++		g.invocations[invocationID] = state
++	}
++	state.lastSeen = now
++	return state
++}
++
++func (g *duplicateToolCallGuard) forget(invocationID string) {
++	g.mu.Lock()
++	delete(g.invocations, invocationID)
++	g.mu.Unlock()
++}
++
++func functionCallSignatures(content *genai.Content) map[string]string {
++	out := make(map[string]string)
++	if content == nil {
++		return out
++	}
++	for _, part := range content.Parts {
++		if part == nil || part.FunctionCall == nil {
++			continue
++		}
++		if signature, ok := functionCallSignature(part.FunctionCall.Name, part.FunctionCall.Args); ok {
++			out[signature] = part.FunctionCall.Name
++		}
++	}
++	return out
++}
++
++func functionCallSignature(name string, args map[string]any) (string, bool) {
++	raw, err := json.Marshal(args)
++	if err != nil {
++		return "", false
++	}
++	return name + "\x00" + string(raw), true
++}
++
++func functionResponses(contents []*genai.Content) []toolResult {
++	// Only retain the most recent tool-response content. LLMRequest.Contents may
++	// contain responses from older user turns, which must not leak into a
++	// fallback generated for the current tool round.
++	for index := len(contents) - 1; index >= 0; index-- {
++		content := contents[index]
++		if content == nil {
++			continue
++		}
++		var results []toolResult
++		for _, part := range content.Parts {
++			if part == nil {
++				continue
++			}
++			if response := part.FunctionResponse; response != nil {
++				results = append(results, toolResult{Name: response.Name, Response: response.Response})
++			}
++		}
++		if len(results) > 0 {
++			return results
++		}
++	}
++	return nil
++}
++
++type toolResult struct {
++	Name     string
++	Response map[string]any
++}
++
++func duplicateToolFallbackText(duplicates []string, results []toolResult) string {
++	var builder strings.Builder
++	builder.WriteString("Stopped a duplicate tool-call loop after the original calls completed. ")
++	if hasContextTool(duplicates) {
++		builder.WriteString("Context source unavailable. ")
++	} else {
++		builder.WriteString("One requested source was unavailable. ")
++	}
++	if len(results) == 0 {
++		builder.WriteString("No successful tool result was available.")
++		return builder.String()
++	}
++	builder.WriteString("Available tool results: ")
++	for index, result := range results {
++		if index > 0 {
++			builder.WriteString("; ")
++		}
++		raw, err := json.Marshal(result.Response)
++		if err != nil {
++			raw = []byte(fmt.Sprint(result.Response))
++		}
++		builder.WriteString(result.Name)
++		builder.WriteString("=")
++		builder.Write(raw)
++		if builder.Len() >= duplicateToolResultLimit {
++			builder.WriteString(" [truncated]")
++			break
++		}
++	}
++	text := builder.String()
++	if len(text) > duplicateToolResultLimit {
++		return text[:duplicateToolResultLimit] + " [truncated]"
++	}
++	return text
++}
++
++func hasContextTool(names []string) bool {
++	for _, name := range names {
++		lower := strings.ToLower(name)
++		if strings.Contains(lower, "context") || strings.Contains(lower, "chunk") || strings.Contains(lower, "rag") {
++			return true
++		}
++	}
++	return false
++}
+diff --git a/go/adk/pkg/agent/duplicate_tool_call_guard_test.go b/go/adk/pkg/agent/duplicate_tool_call_guard_test.go
+new file mode 100644
+index 00000000..744b2f20
+--- /dev/null
++++ b/go/adk/pkg/agent/duplicate_tool_call_guard_test.go
+@@ -0,0 +1,80 @@
++// Copyright 2026 The Kagent Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package agent
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/go-logr/logr"
++	adkagent "google.golang.org/adk/v2/agent"
++	adkmodel "google.golang.org/adk/v2/model"
++	"google.golang.org/genai"
++)
++
++type duplicateGuardContext struct {
++	adkagent.ContextMock
++	invocationID string
++}
++
++func (c *duplicateGuardContext) InvocationID() string { return c.invocationID }
++
++func TestDuplicateToolCallGuardStopsExactRetryAndPreservesResults(t *testing.T) {
++	args := map[string]any{"user_id": float64(1001), "top_k": float64(1)}
++	ctx := &duplicateGuardContext{invocationID: "invocation-1"}
++	calls := &adkmodel.LLMResponse{Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{
++		genai.NewPartFromFunctionCall("get_chunk_by_id", map[string]any{"chunk_id": "missing"}),
++		genai.NewPartFromFunctionCall("get_personalized_recommendations", args),
++	}}}
++
++	guard := newDuplicateToolCallGuard(logr.Discard())
++	if replacement, err := guard.AfterModel(ctx, calls, nil); err != nil || replacement != nil {
++		t.Fatalf("first call replacement=%#v err=%v, want pass-through", replacement, err)
++	}
++	request := &adkmodel.LLMRequest{Contents: []*genai.Content{{Role: genai.RoleUser, Parts: []*genai.Part{
++		genai.NewPartFromFunctionResponse("get_chunk_by_id", map[string]any{"isError": true, "content": "not found"}),
++		genai.NewPartFromFunctionResponse("get_personalized_recommendations", map[string]any{"items": []any{map[string]any{"item_id": float64(800078)}}}),
++	}}}}
++	if replacement, err := guard.BeforeModel(ctx, request); err != nil || replacement != nil {
++		t.Fatalf("before model replacement=%#v err=%v, want capture only", replacement, err)
++	}
++	replacement, err := guard.AfterModel(ctx, calls, nil)
++	if err != nil {
++		t.Fatalf("guard returned error: %v", err)
++	}
++	if replacement == nil || replacement.Content == nil || len(replacement.Content.Parts) != 1 {
++		t.Fatalf("replacement = %#v, want terminal text response", replacement)
++	}
++	text := replacement.Content.Parts[0].Text
++	if !strings.Contains(text, "Context source unavailable") || !strings.Contains(text, "800078") {
++		t.Fatalf("fallback text = %q, want unavailable source and preserved recommendation", text)
++	}
++}
++
++func TestDuplicateToolCallGuardAllowsFirstCallAndDifferentArgs(t *testing.T) {
++	ctx := &duplicateGuardContext{invocationID: "invocation-1"}
++	guard := newDuplicateToolCallGuard(logr.Discard())
++	first := &adkmodel.LLMResponse{Content: genai.NewContentFromFunctionCall("lookup", map[string]any{"id": "old"}, genai.RoleModel)}
++	if replacement, err := guard.AfterModel(ctx, first, nil); err != nil || replacement != nil {
++		t.Fatalf("first call replacement=%#v err=%v, want pass-through", replacement, err)
++	}
++	for _, args := range []map[string]any{{"id": "new"}, {"id": "same"}} {
++		response := &adkmodel.LLMResponse{Content: genai.NewContentFromFunctionCall("lookup", args, genai.RoleModel)}
++		replacement, err := guard.AfterModel(ctx, response, nil)
++		if err != nil || replacement != nil {
++			t.Fatalf("args=%v: replacement=%#v err=%v, want pass-through", args, replacement, err)
++		}
++	}
++}
+diff --git a/go/adk/pkg/agent/explicit_tool_selection_guard.go b/go/adk/pkg/agent/explicit_tool_selection_guard.go
+new file mode 100644
+index 00000000..1c44b314
+--- /dev/null
++++ b/go/adk/pkg/agent/explicit_tool_selection_guard.go
+@@ -0,0 +1,216 @@
++// Copyright 2026 The Kagent Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package agent
++
++import (
++	"encoding/json"
++	"strings"
++	"sync"
++
++	"github.com/go-logr/logr"
++	adkagent "google.golang.org/adk/v2/agent"
++	adkmodel "google.golang.org/adk/v2/model"
++	"google.golang.org/genai"
++)
++
++var coordinatorSelectableTools = []string{
++	"kagent__NS__recsys_context_agent_sandbox",
++	"kagent__NS__recsys_recommendation_agent_sandbox",
++	"get_chunk_by_id",
++	"get_personalized_recommendations",
++}
++
++type explicitToolSelection struct {
++	allowed map[string]bool
++	prompt  string
++	seen    map[string]bool
++	results []toolResult
++}
++
++// explicitToolSelectionGuard makes explicit coordinator smoke/API contracts
++// deterministic on small models. If the current user turn names one or more
++// Agent tools, only those Agent tools may execute. Otherwise, explicitly named
++// raw MCP tools are allowed. Turns that do not name a tool are left untouched.
++type explicitToolSelectionGuard struct {
++	log        logr.Logger
++	mu         sync.Mutex
++	selections map[string]explicitToolSelection
++}
++
++func newExplicitToolSelectionGuard(log logr.Logger) *explicitToolSelectionGuard {
++	return &explicitToolSelectionGuard{
++		log:        log,
++		selections: make(map[string]explicitToolSelection),
++	}
++}
++
++func (g *explicitToolSelectionGuard) BeforeModel(ctx adkagent.Context, req *adkmodel.LLMRequest) (*adkmodel.LLMResponse, error) {
++	if ctx == nil || req == nil || ctx.InvocationID() == "" {
++		return nil, nil
++	}
++	prompt := latestUserText(req.Contents)
++	if prompt == "" {
++		return nil, nil
++	}
++	allowed := make(map[string]bool)
++	for _, name := range coordinatorSelectableTools[:2] {
++		if strings.Contains(prompt, name) {
++			allowed[name] = true
++		}
++	}
++	if len(allowed) == 0 {
++		for _, name := range coordinatorSelectableTools[2:] {
++			if strings.Contains(prompt, name) {
++				allowed[name] = true
++			}
++		}
++	}
++	g.mu.Lock()
++	if len(allowed) == 0 {
++		delete(g.selections, ctx.InvocationID())
++	} else {
++		selection, exists := g.selections[ctx.InvocationID()]
++		if !exists || selection.prompt != prompt {
++			selection = explicitToolSelection{
++				allowed: allowed,
++				prompt:  prompt,
++				seen:    make(map[string]bool),
++			}
++		} else {
++			selection.allowed = allowed
++		}
++		if results := functionResponses(req.Contents); len(results) > 0 {
++			selection.results = results
++		}
++		g.selections[ctx.InvocationID()] = selection
++	}
++	g.mu.Unlock()
++	return nil, nil
++}
++
++func (g *explicitToolSelectionGuard) AfterModel(ctx adkagent.Context, resp *adkmodel.LLMResponse, modelErr error) (*adkmodel.LLMResponse, error) {
++	if ctx == nil || ctx.InvocationID() == "" {
++		return nil, nil
++	}
++	invocationID := ctx.InvocationID()
++	if modelErr != nil || resp == nil {
++		g.forget(invocationID)
++		return nil, nil
++	}
++	if resp.Partial || resp.Content == nil {
++		return nil, nil
++	}
++
++	g.mu.Lock()
++	selection, selected := g.selections[invocationID]
++	g.mu.Unlock()
++	if !selected {
++		return nil, nil
++	}
++
++	filtered := make([]*genai.Part, 0, len(resp.Content.Parts))
++	removed := make([]string, 0)
++	allowedCalls := 0
++	for _, part := range resp.Content.Parts {
++		if part == nil || part.FunctionCall == nil {
++			filtered = append(filtered, part)
++			continue
++		}
++		if selection.allowed[part.FunctionCall.Name] && !selection.seen[part.FunctionCall.Name] {
++			allowedCalls++
++			selection.seen[part.FunctionCall.Name] = true
++			filtered = append(filtered, part)
++		} else {
++			removed = append(removed, part.FunctionCall.Name)
++		}
++	}
++	g.mu.Lock()
++	g.selections[invocationID] = selection
++	g.mu.Unlock()
++	if len(removed) == 0 {
++		if allowedCalls == 0 {
++			g.forget(invocationID)
++		}
++		return nil, nil
++	}
++
++	g.log.Info("Filtered tool calls outside explicit coordinator selection",
++		"invocationID", invocationID, "removedTools", removed)
++	if allowedCalls == 0 {
++		for name := range selection.allowed {
++			if selection.seen[name] {
++				continue
++			}
++			if strings.HasPrefix(name, "kagent__NS__") {
++				selection.seen[name] = true
++				g.mu.Lock()
++				g.selections[invocationID] = selection
++				g.mu.Unlock()
++				return &adkmodel.LLMResponse{
++					Content: genai.NewContentFromFunctionCall(
++						name, map[string]any{"request": missingAgentRequest(selection)}, genai.RoleModel,
++					),
++				}, nil
++			}
++		}
++		g.forget(invocationID)
++		return &adkmodel.LLMResponse{
++			Content:      genai.NewContentFromText(duplicateToolFallbackText(removed, selection.results), genai.RoleModel),
++			FinishReason: genai.FinishReasonStop,
++		}, nil
++	}
++
++	replacement := *resp
++	content := *resp.Content
++	content.Parts = filtered
++	replacement.Content = &content
++	return &replacement, nil
++}
++
++func missingAgentRequest(selection explicitToolSelection) string {
++	resultText := "none"
++	if raw, err := json.Marshal(selection.results); err == nil && len(raw) > 0 {
++		resultText = string(raw)
++	}
++	return "Continue the explicitly requested coordinator flow without repeating a completed tool. " +
++		"Use these completed tool results to preserve user_id, item order, and returned item IDs: " +
++		resultText + ". Original request: " + selection.prompt
++}
++
++func (g *explicitToolSelectionGuard) forget(invocationID string) {
++	g.mu.Lock()
++	delete(g.selections, invocationID)
++	g.mu.Unlock()
++}
++
++func latestUserText(contents []*genai.Content) string {
++	for index := len(contents) - 1; index >= 0; index-- {
++		content := contents[index]
++		if content == nil || content.Role != genai.RoleUser {
++			continue
++		}
++		var text strings.Builder
++		for _, part := range content.Parts {
++			if part != nil && part.Text != "" {
++				text.WriteString(part.Text)
++				text.WriteByte('\n')
++			}
++		}
++		if text.Len() > 0 {
++			return text.String()
++		}
++	}
++	return ""
++}
+diff --git a/go/adk/pkg/agent/explicit_tool_selection_guard_test.go b/go/adk/pkg/agent/explicit_tool_selection_guard_test.go
+new file mode 100644
+index 00000000..8e062967
+--- /dev/null
++++ b/go/adk/pkg/agent/explicit_tool_selection_guard_test.go
+@@ -0,0 +1,97 @@
++// Copyright 2026 The Kagent Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package agent
++
++import (
++	"testing"
++
++	"github.com/go-logr/logr"
++	adkmodel "google.golang.org/adk/v2/model"
++	"google.golang.org/genai"
++)
++
++func TestExplicitToolSelectionGuardKeepsOnlyNamedAgent(t *testing.T) {
++	ctx := &duplicateGuardContext{invocationID: "invocation-1"}
++	guard := newExplicitToolSelectionGuard(logr.Discard())
++	prompt := "Call exactly kagent__NS__recsys_context_agent_sandbox; child uses get_user_online_features."
++	request := &adkmodel.LLMRequest{Contents: []*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}}
++	if replacement, err := guard.BeforeModel(ctx, request); err != nil || replacement != nil {
++		t.Fatalf("before model replacement=%#v err=%v", replacement, err)
++	}
++	response := &adkmodel.LLMResponse{Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{
++		genai.NewPartFromFunctionCall("kagent__NS__recsys_context_agent_sandbox", map[string]any{"request": "context"}),
++		genai.NewPartFromFunctionCall("kagent__NS__recsys_recommendation_agent_sandbox", map[string]any{"request": "recommend"}),
++		genai.NewPartFromFunctionCall("get_personalized_recommendations", map[string]any{"user_id": 1001}),
++	}}}
++	replacement, err := guard.AfterModel(ctx, response, nil)
++	if err != nil || replacement == nil {
++		t.Fatalf("after model replacement=%#v err=%v", replacement, err)
++	}
++	calls := functionCallSignatures(replacement.Content)
++	if len(calls) != 1 {
++		t.Fatalf("calls=%v, want exactly one", calls)
++	}
++	for _, name := range calls {
++		if name != "kagent__NS__recsys_context_agent_sandbox" {
++			t.Fatalf("kept tool=%s, want context agent", name)
++		}
++	}
++}
++
++func TestExplicitToolSelectionGuardAllowsNamedDirectTools(t *testing.T) {
++	ctx := &duplicateGuardContext{invocationID: "invocation-2"}
++	guard := newExplicitToolSelectionGuard(logr.Discard())
++	prompt := "Directly call get_chunk_by_id and get_personalized_recommendations."
++	request := &adkmodel.LLMRequest{Contents: []*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}}
++	_, _ = guard.BeforeModel(ctx, request)
++	response := &adkmodel.LLMResponse{Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{
++		genai.NewPartFromFunctionCall("get_chunk_by_id", map[string]any{"chunk_id": "x"}),
++		genai.NewPartFromFunctionCall("get_personalized_recommendations", map[string]any{"user_id": 1001}),
++	}}}
++	if replacement, err := guard.AfterModel(ctx, response, nil); err != nil || replacement != nil {
++		t.Fatalf("replacement=%#v err=%v, want pass-through", replacement, err)
++	}
++}
++
++func TestExplicitToolSelectionGuardAdvancesCompositeAfterRetry(t *testing.T) {
++	ctx := &duplicateGuardContext{invocationID: "invocation-3"}
++	guard := newExplicitToolSelectionGuard(logr.Discard())
++	prompt := "Call kagent__NS__recsys_recommendation_agent_sandbox then kagent__NS__recsys_context_agent_sandbox."
++	request := &adkmodel.LLMRequest{Contents: []*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}}
++	_, _ = guard.BeforeModel(ctx, request)
++	recommendation := &adkmodel.LLMResponse{Content: genai.NewContentFromFunctionCall(
++		"kagent__NS__recsys_recommendation_agent_sandbox", map[string]any{"request": "recommend"}, genai.RoleModel,
++	)}
++	if replacement, err := guard.AfterModel(ctx, recommendation, nil); err != nil || replacement != nil {
++		t.Fatalf("first recommendation replacement=%#v err=%v", replacement, err)
++	}
++	request.Contents = append(request.Contents, &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{
++		genai.NewPartFromFunctionResponse("kagent__NS__recsys_recommendation_agent_sandbox", map[string]any{"item_id": 800035}),
++	}})
++	_, _ = guard.BeforeModel(ctx, request)
++	replacement, err := guard.AfterModel(ctx, recommendation, nil)
++	if err != nil || replacement == nil || replacement.Content == nil {
++		t.Fatalf("retry replacement=%#v err=%v", replacement, err)
++	}
++	calls := functionCallSignatures(replacement.Content)
++	if len(calls) != 1 {
++		t.Fatalf("calls=%v, want synthesized context call", calls)
++	}
++	for _, name := range calls {
++		if name != "kagent__NS__recsys_context_agent_sandbox" {
++			t.Fatalf("synthesized tool=%s, want context agent", name)
++		}
++	}
++}
+diff --git a/go/core/pkg/sandboxbackend/substrate/agent_lifecycle.go b/go/core/pkg/sandboxbackend/substrate/agent_lifecycle.go
+index 2efd1725..5b9c934b 100644
+--- a/go/core/pkg/sandboxbackend/substrate/agent_lifecycle.go
++++ b/go/core/pkg/sandboxbackend/substrate/agent_lifecycle.go
+@@ -93,6 +93,7 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
+ 			// is served by both ADKs and any A2A-conformant BYO image; substrate's
+ 			// default Readyz path (/readyz) is served by neither.
+ 			Readyz: &atev1alpha1.ContainerReadyz{
++				TimeoutSeconds: 30,
+ 				HTTPGet: &atev1alpha1.HTTPGetAction{
+ 					Path: "/.well-known/agent-card.json",
+ 					Port: substrateKagentListenPort,
+@@ -104,6 +105,9 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
+ 			Location: sandboxAgentSnapshotsLocation(sa),
+ 			OnPause:  atev1alpha1.SnapshotScopeFull,
+ 			OnCommit: atev1alpha1.SnapshotScopeFull,
++			OnResume: atev1alpha1.OnResumeConfig{
++				FromData: atev1alpha1.ResumeSourceColdBoot,
++			},
+ 		},
+ 	}
+ 	applyDurableDirSessionStore(&spec)
+diff --git a/go/core/pkg/sandboxbackend/substrate/agent_lifecycle_test.go b/go/core/pkg/sandboxbackend/substrate/agent_lifecycle_test.go
+index bcb22e67..e20bf7f7 100644
+--- a/go/core/pkg/sandboxbackend/substrate/agent_lifecycle_test.go
++++ b/go/core/pkg/sandboxbackend/substrate/agent_lifecycle_test.go
+@@ -238,8 +238,10 @@ func TestBuildSandboxAgentActorTemplate(t *testing.T) {
+ 
+ 			require.NotNil(t, c.Readyz, "actor readiness must be gated on the app serving traffic")
+ 			require.NotNil(t, c.Readyz.HTTPGet)
++			require.Equal(t, int32(30), c.Readyz.TimeoutSeconds, "desired spec must match the Substrate CRD default")
+ 			require.Equal(t, "/.well-known/agent-card.json", c.Readyz.HTTPGet.Path)
+ 			require.Equal(t, substrateKagentListenPort, c.Readyz.HTTPGet.Port)
++			require.Equal(t, atev1alpha1.ResumeSourceColdBoot, tmpl.Spec.SnapshotsConfig.OnResume.FromData, "desired spec must match the Substrate CRD default")
+ 
+ 			names := actorEnvNames(c.Env)
+ 			require.True(t, names["KAGENT_NAME"], "KAGENT_NAME must be a literal env var")

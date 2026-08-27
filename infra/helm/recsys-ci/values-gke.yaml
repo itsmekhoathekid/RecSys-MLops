@@ -46,7 +46,9 @@ jenkins:
 
 modelRolloutWatcher:
   enabled: true
-  image: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-mlops-training:gcp
+  # Keep the last verified immutable watcher image; the mutable `gcp` tag is
+  # not published in Artifact Registry and makes a CI-only Helm upgrade stall.
+  image: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-mlops-training:a7ce4e4ec31e0fea5c1e4558c35012aee7b87cac
   imagePullPolicy: Always
   nodeSelector:
     recsys.ai/pool: ml-system

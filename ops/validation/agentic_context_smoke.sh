@@ -13,7 +13,7 @@ agentic_mcp_protocol_smoke
 kubectl -n kagent wait --for=condition=Ready \
   sandboxagent/recsys-context-agent-sandbox --timeout="${timeout}"
 kubectl -n kagent rollout status \
-  deployment/recsys-context-sandbox-pool-deployment --timeout="${timeout}"
+  deployment/recsys-context-sandbox-pool --timeout="${timeout}"
 agentic_wait_for_regular_agent_removal
 agentic_a2a_smoke recsys-context-agent-sandbox
 

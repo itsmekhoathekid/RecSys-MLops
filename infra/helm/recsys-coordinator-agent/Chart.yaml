@@ -1,6 +1,6 @@
 apiVersion: v2
 name: recsys-coordinator-agent
-description: Fixed-replica RecSys coordinator Agent with A2A and MCP tools.
+description: Intent-routing RecSys coordinator SandboxAgent with A2A, MCP, and assigned-worker autoscaling.
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

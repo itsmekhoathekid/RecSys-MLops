@@ -1,13 +1,22 @@
 variable "kagent_version" {
-  description = "Pinned kagent CRD and application chart version."
+  description = "Pinned source-built kagent CRD and application chart version."
   type        = string
-  default     = "0.9.9"
+  default     = "0.10.0-e6df917"
 }
 
 variable "agent_substrate_version" {
   description = "Pinned Agent Substrate CRD and application chart version."
   type        = string
-  default     = "0.0.6"
+  default     = "0.0.11"
+}
+
+locals {
+  kagent_source_commit    = "e6df917e9fa8"
+  kagent_artifact_prefix  = "kagent-e6df917"
+  kagent_image_version    = "0.10.0-e6df917-substrate0011-v6"
+  kagent_registry         = "${var.region}-docker.pkg.dev"
+  kagent_image_repository = "${var.project_id}/${var.artifact_registry_repository}/${local.kagent_artifact_prefix}"
+  kagent_chart_repository = "oci://${local.image_repo}/${local.kagent_artifact_prefix}/helm"
 }
 
 resource "kubernetes_namespace" "ate_system" {
@@ -18,6 +27,39 @@ resource "kubernetes_namespace" "ate_system" {
   }
 
   depends_on = [google_container_node_pool.ml_system]
+}
+
+resource "kubernetes_namespace" "podcertificate_controller_system" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  metadata {
+    name = "podcertificate-controller-system"
+    labels = {
+      "app.kubernetes.io/managed-by" = "Helm"
+    }
+    annotations = {
+      "meta.helm.sh/release-name"      = "substrate"
+      "meta.helm.sh/release-namespace" = "ate-system"
+    }
+  }
+
+  depends_on = [google_container_node_pool.ml_system]
+}
+
+resource "helm_release" "substrate_mtls_bootstrap" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  name      = "substrate-mtls-bootstrap"
+  chart     = "${path.module}/../../helm/substrate-mtls-bootstrap"
+  namespace = kubernetes_namespace.ate_system[0].metadata[0].name
+  atomic    = true
+  wait      = true
+  timeout   = 300
+
+  depends_on = [
+    kubernetes_namespace.ate_system,
+    kubernetes_namespace.podcertificate_controller_system,
+  ]
 }
 
 resource "helm_release" "substrate_crds" {
@@ -32,20 +74,12 @@ resource "helm_release" "substrate_crds" {
   wait       = true
   timeout    = 600
 
-  # Substrate 0.0.6 exposes replicas through /scale but omits the selector
-  # required by HPA/KEDA. Keep the compatible runtime pin and backport the
-  # additive scale-selector fields that landed upstream after this release.
-  postrender {
-    binary_path = "${path.module}/../../../ops/helm/substrate_crds_hpa_postrender.py"
-    args        = ["workerpool-hpa-selector-v1"]
-  }
-
   depends_on = [kubernetes_namespace.ate_system]
 }
 
-# Substrate 0.0.6 does not expose storageClassName values for its RustFS PVC or
-# Valkey volumeClaimTemplates. Pre-creating the exact claims keeps the platform
-# on quota-safe pd-standard disks instead of consuming the regional SSD quota.
+# Substrate does not expose storageClassName values for its RustFS PVC or Valkey
+# volumeClaimTemplates. Pre-creating the exact claims keeps the platform on
+# quota-safe pd-standard disks instead of consuming the regional SSD quota.
 resource "kubernetes_persistent_volume_claim_v1" "substrate_rustfs" {
   count = var.deploy_llm_inference ? 1 : 0
 
@@ -114,6 +148,11 @@ resource "helm_release" "substrate" {
   wait       = true
   timeout    = 900
 
+  set {
+    name  = "auth.mode"
+    value = "mtls"
+  }
+
   # GKE projected service-account tokens use the cluster OIDC issuer rather
   # than Kubernetes' generic in-cluster URL. Substrate must validate the same
   # issuer used by kagent and the ActorTemplate controller tokens.
@@ -127,6 +166,19 @@ resource "helm_release" "substrate" {
     )
   }
 
+  # Valkey is served with the service-DNS certificate in mTLS mode. ateapi
+  # authenticates with its pod-identity bundle while validating that stable
+  # service name instead of a StatefulSet pod address.
+  set {
+    name  = "redis.clientCert"
+    value = "/run/podidentity.podcert.ate.dev/credential-bundle.pem"
+  }
+
+  set {
+    name  = "redis.tlsServerName"
+    value = "valkey-cluster-service.ate-system.svc"
+  }
+
   # Substrate 0.0.11 upgraded the persistent AOF format. Keep the 9.1 storage
   # engine after rolling the control plane back to 0.0.6; Valkey 8.0 cannot
   # read the resulting appendonly.aof.11.base.rdb files. This avoids restoring
@@ -136,13 +188,29 @@ resource "helm_release" "substrate" {
     value = "valkey/valkey:9.1@sha256:4963247afc4cd33c7d3b2d2816b9f7f8eeebab148d29056c2ca4d7cbc966f2d9"
   }
 
+  # The chart's gateways/routes schema is normalized by the GKE post-renderer;
+  # retain the 0.0.11-bundled image for PodCertificate ECDSA support.
+  set {
+    name  = "images.agentgateway"
+    value = "cr.agentgateway.dev/agentgateway:v1.4.1"
+  }
+
+  # Sandbox images live in the private regional Artifact Registry. atelet
+  # performs the pull itself (outside kubelet), so it must use GCP ADC from
+  # the node/workload identity instead of making an anonymous registry call.
+  set {
+    name  = "atelet.gcpAuthForImagePulls"
+    value = "true"
+  }
+
   postrender {
     binary_path = "${path.module}/../../../ops/helm/substrate_gke_postrender.py"
-    args        = ["gke-public-oidc-v1"]
+    args        = ["gke-mtls-0011-v1"]
   }
 
   depends_on = [
     helm_release.substrate_crds,
+    helm_release.substrate_mtls_bootstrap,
     kubernetes_persistent_volume_claim_v1.substrate_rustfs,
     kubernetes_persistent_volume_claim_v1.substrate_valkey,
   ]
@@ -182,7 +250,7 @@ resource "helm_release" "kagent_crds" {
   count = var.deploy_llm_inference ? 1 : 0
 
   name       = "kagent-crds"
-  repository = "oci://ghcr.io/kagent-dev/kagent/helm"
+  repository = local.kagent_chart_repository
   chart      = "kagent-crds"
   version    = var.kagent_version
   namespace  = kubernetes_namespace.kagent[0].metadata[0].name
@@ -202,7 +270,7 @@ resource "helm_release" "kagent" {
   count = var.deploy_llm_inference ? 1 : 0
 
   name       = "kagent"
-  repository = "oci://ghcr.io/kagent-dev/kagent/helm"
+  repository = local.kagent_chart_repository
   chart      = "kagent"
   version    = var.kagent_version
   namespace  = kubernetes_namespace.kagent[0].metadata[0].name
@@ -213,9 +281,42 @@ resource "helm_release" "kagent" {
     file("${path.module}/../../../configs/kagent/values.yaml"),
   ]
 
-  postrender {
-    binary_path = "${path.module}/../../../ops/helm/kagent_workerpool_hpa_postrender.py"
-    args        = ["workerpool-hpa-selector-v1"]
+  set {
+    name  = "registry"
+    value = local.kagent_registry
+  }
+
+  set {
+    name  = "tag"
+    value = local.kagent_image_version
+  }
+
+  # Also records the compatibility build on the pod template. Besides making
+  # provenance visible, this forces Helm to reconcile if an interrupted OCI
+  # pull ever advances Terraform state without updating the live release.
+  set {
+    name  = "controller.podAnnotations.recsys\\.ai/compatibility-build"
+    value = local.kagent_image_version
+  }
+
+  set {
+    name  = "controller.image.repository"
+    value = "${local.kagent_image_repository}/controller"
+  }
+
+  set {
+    name  = "controller.goAgentImage.repository"
+    value = "${local.kagent_image_repository}/golang-adk"
+  }
+
+  set {
+    name  = "controller.skillsInitImage.repository"
+    value = "${local.kagent_image_repository}/skills-init"
+  }
+
+  set {
+    name  = "ui.image.repository"
+    value = "${local.kagent_image_repository}/ui"
   }
 
   depends_on = [
@@ -242,20 +343,60 @@ resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool" {
       namespace = kubernetes_namespace.kagent[0].metadata[0].name
       labels = {
         "app.kubernetes.io/part-of" = "recsys-agentic"
+        "ate.dev/worker-pool"       = "recsys-recommendation-sandbox-pool"
+        "kagent.dev/worker-pool"    = "recsys-recommendation-sandbox-pool"
       }
     }
     spec = {
-      replicas      = 1
-      ateomImage    = "ghcr.io/kagent-dev/substrate/ateom-gvisor:v${var.agent_substrate_version}"
-      scaleSelector = "ate.dev/worker-pool=recsys-recommendation-sandbox-pool"
+      replicas   = 1
+      ateomImage = "ghcr.io/kagent-dev/substrate/ateom-gvisor:v${var.agent_substrate_version}"
     }
   }
 
   computed_fields = ["spec.replicas"]
 
+  # Terraform owns the immutable runtime image. Operational replica changes
+  # are ignored above, while stale kubectl field ownership must not block a
+  # pinned Substrate upgrade.
+  field_manager {
+    force_conflicts = true
+  }
+
   depends_on = [helm_release.kagent]
 }
 
+# The coordinator has a dedicated pool so orchestration traffic cannot consume
+# the two specialist pools. KEDA owns replicas through WorkerPool /scale while
+# Terraform owns the immutable Substrate runtime and scheduler labels.
+resource "kubernetes_manifest" "recsys_coordinator_sandbox_pool" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  manifest = {
+    apiVersion = "ate.dev/v1alpha1"
+    kind       = "WorkerPool"
+    metadata = {
+      name      = "recsys-coordinator-sandbox-pool"
+      namespace = kubernetes_namespace.kagent[0].metadata[0].name
+      labels = {
+        "app.kubernetes.io/part-of" = "recsys-agentic"
+        "ate.dev/worker-pool"       = "recsys-coordinator-sandbox-pool"
+        "kagent.dev/worker-pool"    = "recsys-coordinator-sandbox-pool"
+      }
+    }
+    spec = {
+      replicas   = 1
+      ateomImage = "ghcr.io/kagent-dev/substrate/ateom-gvisor:v${var.agent_substrate_version}"
+    }
+  }
+
+  computed_fields = ["spec.replicas"]
+
+  field_manager {
+    force_conflicts = true
+  }
+
+  depends_on = [helm_release.kagent]
+}
 
 resource "kubernetes_cluster_role_v1" "keda_workerpool_scaler" {
   count = var.deploy_llm_inference ? 1 : 0

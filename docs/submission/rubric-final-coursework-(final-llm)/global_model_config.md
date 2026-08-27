@@ -8,7 +8,7 @@ llama.cpp model Service directly.
 The live GKE deployment was completed and functionally verified on 2026-08-13.
 The then-current verification Agent returned `GLOBAL_MODEL_CONFIG_READY`
 through its A2A endpoint. That standalone smoke Agent was later superseded by
-the specialist SandboxAgents and `Agent/recsys-coordinator-agent`; its captured
+the three specialist/coordinator SandboxAgents; its captured
 output below is retained as historical ModelConfig evidence.
 
 The production configuration was revalidated on 2026-08-26 with
@@ -21,7 +21,7 @@ the current source of truth; older 256-token screenshots are historical.
 **Illustrative flow:** derived from the ModelConfig source at
 [`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55),
 the Agent reference at
-the current [`coordinator agent.yaml`](../../../infra/helm/recsys-coordinator-agent/templates/agent.yaml),
+the current [`coordinator sandboxagent.yaml`](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml),
 and the llm-d route at
 [`router-llama-cpp-cpu-optimized-values.yaml`, lines 1–41](../../../configs/llm-d/router-llama-cpp-cpu-optimized-values.yaml#L1-L41).
 
@@ -416,13 +416,13 @@ agent:
 
 The Agent and ModelConfig are both in the `kagent` namespace. kagent requires a
 declarative Agent's `modelConfig` reference to resolve in the same namespace.
-The current regular consumer is
-[`Agent/recsys-coordinator-agent`](../../../infra/helm/recsys-coordinator-agent/templates/agent.yaml),
+The current coordinator consumer is
+[`SandboxAgent/recsys-coordinator-agent-sandbox`](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml),
 while both specialist SandboxAgents also reference `default-model-config`.
 Other resources in this namespace can use the same configuration by setting:
 
 **Reusable manifest pattern:** the concrete implementation is
-[`coordinator agent.yaml`](../../../infra/helm/recsys-coordinator-agent/templates/agent.yaml).
+[`coordinator sandboxagent.yaml`](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml).
 
 ```yaml
 spec:
@@ -548,7 +548,7 @@ minimal Agent release and disabled the upstream demo Agent/tool server.
 
 The commands and output in this section record the original 2026-08-13 smoke
 Agent. For the current deployment, replace `global-model-config-smoke` with
-`recsys-coordinator-agent` and also inspect the two SandboxAgents.
+`recsys-coordinator-agent-sandbox` and inspect all three SandboxAgents.
 
 **Verification commands:** inspect the resources sourced from
 the current [`kagent.tf`](../../../infra/terraform/gcp/kagent.tf),
@@ -560,15 +560,15 @@ helm list -n kagent
 
 kubectl get pods -n kagent -o wide
 
-kubectl get modelconfig,agent -n kagent -o wide
+kubectl get modelconfig,sandboxagent -n kagent -o wide
 
 kubectl get modelconfig default-model-config -n kagent -o yaml
 
 kubectl get agent global-model-config-smoke -n kagent -o yaml
 
-# Current production consumers
-kubectl get agent recsys-coordinator-agent -n kagent -o yaml
+# Repository-target consumers
 kubectl get sandboxagent \
+  recsys-coordinator-agent-sandbox \
   recsys-context-agent-sandbox \
   recsys-recommendation-agent-sandbox \
   -n kagent -o wide
@@ -652,7 +652,7 @@ curl -fsS --max-time 300 \
     "method": "message/send",
     "params": {
       "message": {
-        "role": "user",
+        "role": "ROLE_USER",
         "parts": [
           {
             "kind": "text",

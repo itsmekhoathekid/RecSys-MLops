@@ -106,7 +106,29 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     ).read_text()
     for release in ("kagent_crds", "kagent"):
         assert f'resource "helm_release" "{release}"' in terraform
-    assert 'default     = "0.9.9"' in terraform
+    assert 'default     = "0.10.0-e6df917"' in terraform
+    assert 'kagent_source_commit    = "e6df917e9fa8"' in terraform
+    assert (
+        'kagent_image_version    = "0.10.0-e6df917-substrate0011-v6"'
+        in terraform
+    )
+    cloudbuild = (ROOT / "ops/gcp/cloudbuild_kagent_source.yaml").read_text()
+    assert "build-push-controller" in cloudbuild
+    assert "build-push-golang-adk" in cloudbuild
+    assert "0.10.0-e6df917-substrate0011-v6" in cloudbuild
+    compatibility_patch = (
+        ROOT / "ops/gcp/patches/kagent-e6df917-substrate0011.patch"
+    ).read_text()
+    assert "TimeoutSeconds: 30" in compatibility_patch
+    assert "ResumeSourceColdBoot" in compatibility_patch
+    assert "newDuplicateToolCallGuard" in compatibility_patch
+    assert "duplicateToolGuard.BeforeModel" in compatibility_patch
+    assert "newExplicitToolSelectionGuard" in compatibility_patch
+    assert "Suppressing duplicate tool-call loop" in compatibility_patch
+    assert "desired spec must match the Substrate CRD default" in compatibility_patch
+    assert '"kagent.dev/worker-pool"' in terraform
+    assert '"recsys-recommendation-sandbox-pool"' in terraform
+    assert '"recsys-coordinator-sandbox-pool"' in terraform
     assert "helm_release.llm_d_router" in terraform
     assert "model: qwen3.5-0.8b" in values
     assert "provider: OpenAI" in values

@@ -34,10 +34,15 @@ controller:
 substrateWorkerPool:
   create: true
   name: recsys-context-sandbox-pool
+  # Keep both scheduler labels during the e6df917/0.0.11 migration. Upstream
+  # e6df917 selects kagent.dev; the compatibility image briefly emitted
+  # ate.dev, and worker labels are immutable after registration.
+  labels:
+    ate.dev/worker-pool: recsys-context-sandbox-pool
   # Terraform/kagent owns this required baseline. The application-owned KEDA
   # ScaledObject reconciles the WorkerPool /scale subresource between 1 and 3.
   replicas: 1
-  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.6
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.11
   sandboxClass: gvisor
 
 ui:

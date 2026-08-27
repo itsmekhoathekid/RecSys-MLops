@@ -1,11 +1,10 @@
 namespace: kagent
 
-agent:
-  name: recsys-coordinator-agent
+sandbox:
+  name: recsys-coordinator-agent-sandbox
+  workerPool: recsys-coordinator-sandbox-pool
   modelConfig: default-model-config
-  modelConfigRevision: deterministic-tools-v7
-  replicas: 1
-  imageRegistry: ""
+  modelConfigRevision: substrate-0.0.11-kagent-e6df917-assigned-workers-v19
   systemMessage: |
     You are the RecSys coordinator agent. Route each request to the smallest
     set of specialist agents or MCP tools that can answer it correctly.
@@ -20,6 +19,26 @@ agent:
     after only one specialist. Give Context the user_id, the returned item IDs,
     query="recommended items", top_k=2, top_k_items=2, and filters=null, and
     instruct it to call build_user_rag_context exactly once.
+    A composite request has exactly two specialist calls total: Recommendation
+    exactly once, then Context exactly once. After the Context Agent returns,
+    you MUST NOT call any agent or MCP tool again. Immediately produce the final
+    answer from those two responses. If the Context response is incomplete or
+    unusable, keep the Recommendation result and label Context unavailable;
+    never retry Context and never replace it with a direct MCP call.
+    More precisely, after the Recommendation Agent response, the only allowed
+    next function name is kagent__NS__recsys_context_agent_sandbox. Direct
+    functions such as retrieve_rag_context, build_user_rag_context,
+    get_user_online_features, get_chunk_by_id, and
+    get_personalized_recommendations are forbidden during a composite request.
+    Never forward the original composite user prompt as the Context Agent's
+    request. Construct a new request that says: "Build grounded context for
+    user_id=<user_id> and candidate_item_ids=<returned item IDs>. Call
+    build_user_rag_context exactly once with arguments
+    {\"user_id\":<user_id>,\"query\":\"recommended items\",
+    \"candidate_item_ids\":<returned item IDs>,\"top_k\":2,
+    \"top_k_items\":2,\"filters\":null}. Do not ask for confirmation and
+    answer concisely." Pass that complete text in the Context Agent tool's
+    request field.
     The generated A2A Agent tool names are
     kagent__NS__recsys_context_agent_sandbox and
     kagent__NS__recsys_recommendation_agent_sandbox. Select those exact tools
@@ -65,6 +84,12 @@ agent:
     exactly and call every named tool. Do not start a second independent
     invocation of a dependency after its first invocation has completed with
     usable data. A2A protocol continuation of the same child task is allowed.
+    A direct request that names get_chunk_by_id and
+    get_personalized_recommendations permits exactly one call to each function.
+    After both return, you MUST NOT call any function again; immediately answer
+    from those two responses. Empty data and errors still count as a completed
+    call and must never be retried. The same exactly-once rule applies when one
+    response is deliberately missing or invalid for a partial-result request.
 
     Never rerank recommendation results. Preserve item_id, score,
     model_version, A/B variant, and experiment metadata. Cite the returned
@@ -75,6 +100,10 @@ agent:
     keep any valid result from the other sources, name the unavailable
     dependency, and clearly distinguish partial results from complete ones.
     Do not retry the same dependency or replace missing data with guesses.
+  allowedDomains:
+    - kagent-controller.kagent
+    - recsys-feature-rag-mcp.kagent.svc.cluster.local
+    - recsys-recommendation-mcp.kagent.svc.cluster.local
 agents:
   context:
     name: recsys-context-agent-sandbox
@@ -91,13 +120,25 @@ mcpServers:
     kind: RemoteMCPServer
     apiGroup: kagent.dev
     tools:
-      - get_user_online_features
       - get_chunk_by_id
-      - retrieve_rag_context
-      - build_user_rag_context
   recommendation:
     name: recsys-recommendation-mcp
     kind: RemoteMCPServer
     apiGroup: kagent.dev
     tools:
       - get_personalized_recommendations
+
+autoscaling:
+  enabled: true
+  metricMode: cpu
+  minReplicas: 1
+  maxReplicas: 3
+  pollingInterval: 15
+  cooldownPeriod: 300
+  serverAddress: http://recsys-prometheus.observability.svc.cluster.local:9090
+  assignedWorkersPerReplica: "0.7"
+  cpuTargetMicrocores: "400"
+  scaleDownStabilizationSeconds: 300
+  fallback:
+    failureThreshold: 3
+    replicas: 1

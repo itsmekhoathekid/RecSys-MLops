@@ -31,6 +31,18 @@ resource "google_project_iam_member" "jenkins_workload_identity_artifact_registr
   depends_on = [google_container_cluster.recsys]
 }
 
+resource "google_project_iam_member" "atelet_workload_identity_artifact_registry_reader" {
+  count = var.deploy_llm_inference ? 1 : 0
+
+  project = var.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "principal://iam.googleapis.com/projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${var.project_id}.svc.id.goog/subject/ns/ate-system/sa/atelet"
+
+  # When image-pull authentication is enabled, atelet exchanges its Kubernetes
+  # identity directly through Workload Identity instead of using the node SA.
+  depends_on = [google_container_cluster.recsys]
+}
+
 resource "google_container_cluster" "recsys" {
   provider = google-beta
 
@@ -43,6 +55,18 @@ resource "google_container_cluster" "recsys" {
   subnetwork               = google_compute_subnetwork.gke.id
   logging_service          = "logging.googleapis.com/kubernetes"
   monitoring_service       = "monitoring.googleapis.com/kubernetes"
+
+  # Grafana reads the in-cluster Prometheus instance, so keep only GKE's
+  # no-cost system metrics in Cloud Monitoring. Managed Prometheus previously
+  # duplicated collection and ingested tens of millions of billable samples
+  # per day without serving the Grafana dashboards.
+  monitoring_config {
+    enable_components = ["SYSTEM_COMPONENTS"]
+
+    managed_prometheus {
+      enabled = false
+    }
+  }
 
   release_channel {
     channel = var.release_channel

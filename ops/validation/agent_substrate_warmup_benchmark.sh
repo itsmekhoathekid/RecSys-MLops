@@ -142,7 +142,7 @@ for index in range(1, iterations + 1):
             "message": {
                 "messageId": request_id,
                 "contextId": context_id,
-                "role": "user",
+                "role": "ROLE_USER",
                 "parts": [
                     {
                         "kind": "text",

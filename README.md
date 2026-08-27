@@ -347,12 +347,16 @@ Source: tab **`rubic final-coursework (final -`**.
 
 Source: tab **`rubic final-coursework (final -llm)`**.
 
-Current GCP agent baseline, validated 26 August 2026: the coordinator is a
-regular one-replica kagent `Agent`; the two specialists remain Substrate
-`0.0.6` `SandboxAgent`s with CPU-based KEDA. Substrate `0.0.11` and its native
-assigned-worker metric passed the mTLS canary but failed the production kagent
-`0.9.9` A2A compatibility gate, so they are not the active production
-autoscaling path. See Validation & Verification for the rollback evidence.
+Current repository target, updated 27 August 2026: Context, Recommendation, and
+Coordinator are Substrate `0.0.11` `SandboxAgent`s with independent WorkerPools
+and assigned-worker KEDA (`AverageValue=0.7`, replicas `1..3`, fallback `1`).
+The custom kagent compatibility image is
+`0.10.0-e6df917-substrate0011-v6`; the Coordinator public identity is
+`recsys-coordinator-agent-sandbox`. Production validation is green: all three
+pools proved `1 -> 2 -> 3 -> 1`, scaler failure fallback held one replica, and
+the Coordinator v19 suite passed context-only, recommendation-only, composite,
+direct-MCP, and partial-failure routing. See Validation & Verification for the
+current evidence and the explicitly superseded `0.0.6`/CPU history.
 
 | Rubric area | Coverage |
 | --- | --- |
@@ -364,9 +368,9 @@ autoscaling path. See Validation & Verification for the rollback evidence.
 | [User and Chunk Retrieval MCP Tool + Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_pull_data.md>) | FastAPI/Pydantic APIs, four-tool Streamable HTTP MCP server, SandboxAgent, KEDA WorkerPool/MCP autoscaling, registry governance, and kagent UI proof. |
 | [Recommendation Service Agent — Detailed Runtime Proof](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation_servicce.md>) | Figure-by-figure FastAPI, inference API, MCP, KEDA autoscaling, gVisor WorkerPool, Agent Registry, and kagent UI evidence with reproducible verification commands. |
 | [Demonstrate Basic Understanding of Agents](<docs/submission/rubric-final-coursework-(final-llm)/agent_notebooks.md>) | Jupyter experiments showing raw A2A requests, MCP `function_call`/`function_response` history, successful recommendation execution, and grounded RAG retrieval. |
-| [Deploy a Coordinator Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>) | Intent-routed regular Agent, two specialist A2A tools, two direct MCP providers, fixed one-replica concurrency proof, and governed Registry migration. |
+| [Deploy a Coordinator Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>) | Intent-routed SandboxAgent, assigned-worker WorkerPool autoscaling, two specialist A2A tools, two direct MCP providers, and governed Registry migration. |
 | [Agent Warm-Up](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md#worker-warm-up-benchmark>) | Reproducible specialist actor warm-up benchmark; results must name the active Substrate version and are not assigned-worker scale evidence. |
-| [Validation & Verification](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md>) | Substrate `0.0.11` canary proof, production compatibility failure, safe `0.0.6` rollback, and coordinator regular-Agent evidence. |
+| [Validation & Verification](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md>) | Substrate `0.0.11` history, three-pool assigned-worker contracts, production safety gates, rollback evidence, and current validation status. |
 | Improve the Data Generator | Work in progress. |
 | CI/CD | Work in progress. |
 | Routing & Gateway (NGINX Ingress Controller) | Work in progress. |

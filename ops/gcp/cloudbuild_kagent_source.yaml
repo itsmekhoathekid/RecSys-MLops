@@ -1,0 +1,103 @@
+timeout: 3600s
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - id: build-push-golang-adk
+    name: gcr.io/cloud-builders/docker
+    env: [DOCKER_BUILDKIT=1]
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        image="${_IMAGE_PREFIX}/golang-adk:${_VERSION}"
+        docker build \
+          --build-arg BUILDPLATFORM=linux/amd64 \
+          --build-arg TARGETPLATFORM=linux/amd64 \
+          --build-arg TARGETOS=linux \
+          --build-arg TARGETARCH=amd64 \
+          --build-arg BUILD_PACKAGE=adk/cmd/main.go \
+          --build-arg VERSION="${_VERSION}" \
+          --build-arg "LDFLAGS=-X github.com/kagent-dev/kagent/go/core/internal/version.Version=${_VERSION} -X github.com/kagent-dev/kagent/go/core/internal/version.GitCommit=${_SOURCE_COMMIT} -X github.com/kagent-dev/kagent/go/core/internal/version.BuildDate=${_BUILD_DATE}" \
+          --tag "$${image}" \
+          --file go/Dockerfile \
+          ./go
+        docker push "$${image}"
+
+  - id: resolve-golang-adk-digest
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        image="${_IMAGE_PREFIX}/golang-adk:${_VERSION}"
+        digest="$$(gcloud artifacts docker images describe "$${image}" --format='value(image_summary.digest)')"
+        test -n "$${digest}"
+        printf '%s' "$${digest}" > /workspace/golang-adk.digest
+
+  - id: build-push-controller
+    name: gcr.io/cloud-builders/docker
+    env: [DOCKER_BUILDKIT=1]
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        digest="$$(cat /workspace/golang-adk.digest)"
+        image="${_IMAGE_PREFIX}/controller:${_VERSION}"
+        ldflags="-X github.com/kagent-dev/kagent/go/core/internal/version.Version=${_VERSION} -X github.com/kagent-dev/kagent/go/core/internal/version.GitCommit=${_SOURCE_COMMIT} -X github.com/kagent-dev/kagent/go/core/internal/version.BuildDate=${_BUILD_DATE} -X github.com/kagent-dev/kagent/go/core/internal/controller/translator/agent.GoADKImageDigest=$${digest}"
+        docker build \
+          --build-arg BUILDPLATFORM=linux/amd64 \
+          --build-arg TARGETPLATFORM=linux/amd64 \
+          --build-arg TARGETOS=linux \
+          --build-arg TARGETARCH=amd64 \
+          --build-arg BUILD_PACKAGE=core/cmd/controller/main.go \
+          --build-arg VERSION="${_VERSION}" \
+          --build-arg "LDFLAGS=$${ldflags}" \
+          --tag "$${image}" \
+          --file go/Dockerfile \
+          ./go
+        docker push "$${image}"
+
+  - id: build-push-ui
+    name: gcr.io/cloud-builders/docker
+    env: [DOCKER_BUILDKIT=1]
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        image="${_IMAGE_PREFIX}/ui:${_VERSION}"
+        docker build \
+          --build-arg BUILDPLATFORM=linux/amd64 \
+          --build-arg TARGETPLATFORM=linux/amd64 \
+          --build-arg VERSION="${_VERSION}" \
+          --tag "$${image}" \
+          --file ui/Dockerfile \
+          ./ui
+        docker push "$${image}"
+
+  - id: build-push-skills-init
+    name: gcr.io/cloud-builders/docker
+    env: [DOCKER_BUILDKIT=1]
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        image="${_IMAGE_PREFIX}/skills-init:${_VERSION}"
+        docker build \
+          --build-arg BUILDPLATFORM=linux/amd64 \
+          --build-arg TARGETPLATFORM=linux/amd64 \
+          --build-arg TARGETOS=linux \
+          --build-arg TARGETARCH=amd64 \
+          --build-arg "LDFLAGS=-X github.com/kagent-dev/kagent/go/core/internal/version.Version=${_VERSION} -X github.com/kagent-dev/kagent/go/core/internal/version.GitCommit=${_SOURCE_COMMIT} -X github.com/kagent-dev/kagent/go/core/internal/version.BuildDate=${_BUILD_DATE}" \
+          --tag "$${image}" \
+          --file docker/skills-init/Dockerfile \
+          ./go
+        docker push "$${image}"
+
+substitutions:
+  _IMAGE_PREFIX: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/kagent-e6df917
+  _VERSION: 0.10.0-e6df917-substrate0011-v6
+  _SOURCE_COMMIT: e6df917e9fa8
+  _BUILD_DATE: "2026-08-27"

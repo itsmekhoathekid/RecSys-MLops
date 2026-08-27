@@ -105,14 +105,15 @@ def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
     ]
     assert tool_names == contract["tools"]
     assert sandbox["metadata"]["annotations"]["recsys.ai/model-config-revision"] == (
-        "deterministic-tools-v7"
+        "substrate-0.0.11-kagent-e6df917-pool-label-v8"
     )
     assert (
-        "Runtime model configuration revision: deterministic-tools-v7."
+        "Runtime model configuration revision: substrate-0.0.11-kagent-e6df917-pool-label-v8."
         in sandbox["spec"]["declarative"]["systemMessage"]
     )
     assert sandbox["spec"]["declarative"]["runtime"] == "go"
-    assert sandbox["spec"]["platform"] == "substrate"
+    assert sandbox["apiVersion"] == "kagent.dev/v1alpha3"
+    assert "platform" not in sandbox["spec"]
     assert sandbox["spec"]["sandbox"]["network"]["allowedDomains"] == [
         "recsys-feature-rag-mcp.kagent.svc.cluster.local"
     ]
@@ -159,12 +160,20 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
         "failureThreshold": 3,
         "replicas": 1,
     }
-    trigger = sandbox_scaled["spec"]["triggers"][0]["metadata"]
-    assert trigger["metricName"] == "recsys_context_sandbox_worker_cpu_microcores"
-    assert trigger["threshold"] == "120"
-    assert trigger["query"].startswith("1000000 * sum(")
-    assert 'container="ateom"' in trigger["query"]
-    assert "recsys-context-sandbox-pool-deployment-.*" in trigger["query"]
+    trigger = sandbox_scaled["spec"]["triggers"][0]
+    assert trigger["metricType"] == "AverageValue"
+    metadata = trigger["metadata"]
+    assert metadata["metricName"] == "recsys_context_sandbox_worker_cpu_microcores"
+    assert metadata["threshold"] == "200"
+    assert metadata["ignoreNullValues"] == "false"
+    assert metadata["query"].startswith("1000000 * max(")
+    assert 'container="ateom"' in metadata["query"]
+    assert "recsys-context-sandbox-pool-deployment-.*" in metadata["query"]
+    behavior = sandbox_scaled["spec"]["advanced"][
+        "horizontalPodAutoscalerConfig"
+    ]["behavior"]
+    assert behavior["scaleDown"]["stabilizationWindowSeconds"] == 300
+    assert behavior["scaleUp"]["selectPolicy"] == "Max"
     sandbox_pdb = _resource(
         sandbox_documents, "PodDisruptionBudget", "recsys-context-sandbox-pool"
     )
@@ -210,6 +219,38 @@ def test_production_autoscale_ranges_fit_the_quota_capped_cluster():
         "failureThreshold": 3,
         "replicas": 1,
     }
+    trigger = worker_scaled["spec"]["triggers"][0]
+    assert trigger["metricType"] == "AverageValue"
+    assert trigger["metadata"]["threshold"] == "0.7"
+    assert 'ate_worker_state="assigned"' in trigger["metadata"]["query"]
+    assert "or vector(0)" not in trigger["metadata"]["query"]
+
+
+def test_assigned_worker_metric_is_a_renderable_supported_mode():
+    output = subprocess.run(
+        [
+            "helm",
+            "template",
+            "contract-test",
+            str(ROOT / "infra/helm/recsys-kagent-agent"),
+            "-f",
+            str(ROOT / "infra/helm/recsys-kagent-agent/values-gcp.yaml"),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    scaled = _resource(
+        [document for document in yaml.safe_load_all(output) if document],
+        "ScaledObject",
+        "recsys-context-sandbox-pool",
+    )
+    metadata = scaled["spec"]["triggers"][0]["metadata"]
+    assert scaled["spec"]["triggers"][0]["metricType"] == "AverageValue"
+    assert metadata["threshold"] == "0.7"
+    assert 'ate_worker_state="assigned"' in metadata["query"]
+    assert "or vector(0)" not in metadata["query"]
 
 
 def test_gcp_mcp_can_use_both_node_pools_and_sandbox_has_no_fake_scheduling_fields():
@@ -266,8 +307,7 @@ def test_gcp_mcp_can_use_both_node_pools_and_sandbox_has_no_fake_scheduling_fiel
     sandbox = _resource(
         sandbox_documents, "SandboxAgent", "recsys-context-agent-sandbox"
     )
-    deployment = sandbox["spec"]["declarative"]["deployment"]
-    assert deployment == {"imageRegistry": "ghcr.io"}
+    assert "deployment" not in sandbox["spec"]["declarative"]
 
 
 def test_terraform_owns_platform_but_not_the_agent_application_release():
@@ -277,10 +317,15 @@ def test_terraform_owns_platform_but_not_the_agent_application_release():
     assert 'resource "kubernetes_persistent_volume_claim_v1" "substrate_valkey"' in terraform
     assert 'storage_class_name = "standard"' in terraform
     assert "prevent_destroy = true" in terraform
+    assert 'default     = "0.0.11"' in terraform
+    assert 'default     = "0.10.0-e6df917"' in terraform
+    assert 'kagent_image_version    = "0.10.0-e6df917-substrate0011-v6"' in terraform
     assert 'postrender {' in terraform
     assert "substrate_gke_postrender.py" in terraform
-    assert "substrate_crds_hpa_postrender.py" in terraform
-    assert "kagent_workerpool_hpa_postrender.py" in terraform
+    assert "substrate_crds_hpa_postrender.py" not in terraform
+    assert "kagent_workerpool_hpa_postrender.py" not in terraform
+    assert 'value = "mtls"' in terraform
+    assert "valkey/valkey:9.1@sha256:" in terraform
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
 
 
@@ -323,7 +368,7 @@ def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
     assert "keeping the existing Vault version" in bootstrap
     values = (ROOT / "configs/kagent/values.yaml").read_text(encoding="utf-8")
     assert "replicas: 1" in values
-    assert "ateom-gvisor:v0.0.6" in values
+    assert "ateom-gvisor:v0.0.11" in values
     assert "sandboxClass: gvisor" in values
 
 

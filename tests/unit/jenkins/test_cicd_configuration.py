@@ -40,7 +40,7 @@ EXPECTED_LABELS = [
     "RecSys Context Agent",
     "Recommendation MCP",
     "Recommendation Sandbox Agent",
-    "RecSys Coordinator Agent",
+    "RecSys Coordinator Sandbox Agent",
     "Inference API",
     "KServe Inference Engine",
     "Progressive Model Rollout",
@@ -159,7 +159,9 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert '"type": "streamable-http"' in deploy
     assert 'arctl apply -f "${manifest}"' in deploy
     assert "for attempt in 1 2 3" in deploy
-    assert "deployment/recsys-context-sandbox-pool-deployment" in deploy
+    assert "deployment/recsys-context-sandbox-pool" in deploy
+    assert "deployment/recsys-coordinator-sandbox-pool" in deploy
+    assert "/api/a2a-sandboxes/kagent/${agent_name}" in deploy
     assert 'arctl delete agent "${legacy_name}" --all-tags' in deploy
     assert "workerpools/recsys-context-sandbox-pool/scale" in deploy
     assert "kubectl get clusterrole keda-operator -o json" in deploy
@@ -923,3 +925,42 @@ def test_prometheus_operator_is_pinned_and_operator_only():
     assert 'name  = "prometheus.enabled"' in source
     assert 'name  = "prometheusOperator.enabled"' in source
     assert 'name  = "prometheusOperator.tls.enabled"' in source
+
+
+def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
+    agentic = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
+        encoding="utf-8"
+    )
+    deploy = (ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "sandbox_agent_rebuild_golden_if_revision_changed" in agentic
+    assert 'delete actortemplate "${template_name}" --wait=true' in agentic
+    assert '"${candidate_uid}" != "${old_uid}"' in agentic
+    for agent_name in (
+        "recsys-context-agent-sandbox",
+        "recsys-recommendation-agent-sandbox",
+        "recsys-coordinator-agent-sandbox",
+    ):
+        assert agent_name in deploy
+    assert "sandbox_agent_previous_revision" in deploy
+    assert "sandbox_agent_rebuild_golden_if_revision_changed" in deploy
+
+
+def test_jenkins_allows_the_recovery_bootstrap_bundle_checkout() -> None:
+    values = (ROOT / "infra/helm/recsys-ci/values.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "-Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true" in values
+
+
+def test_gke_rollout_watcher_uses_a_published_immutable_image() -> None:
+    values = (ROOT / "infra/helm/recsys-ci/values-gke.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "recsys-mlops-training:gcp" not in values
+    assert (
+        "recsys-mlops-training:a7ce4e4ec31e0fea5c1e4558c35012aee7b87cac"
+        in values
+    )

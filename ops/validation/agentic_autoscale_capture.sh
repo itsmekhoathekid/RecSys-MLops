@@ -6,6 +6,8 @@ cd "$(dirname "$0")/../.."
 mode="${1:-status}"
 hold_seconds="${AGENTIC_CAPTURE_HOLD_SECONDS:-45}"
 wait_seconds="${AGENTIC_CAPTURE_WAIT_SECONDS:-300}"
+decision_grace_seconds="${AGENTIC_CAPTURE_DECISION_GRACE_SECONDS:-60}"
+fallback_wait_seconds="${AGENTIC_CAPTURE_FALLBACK_WAIT_SECONDS:-420}"
 confirm_prod="${AGENTIC_CAPTURE_CONFIRM_PROD:-}"
 reallocate="${AGENTIC_CAPTURE_REALLOCATE:-0}"
 run_fallback="${AGENTIC_CAPTURE_FALLBACK:-1}"
@@ -17,6 +19,7 @@ mcp_duration="${AGENTIC_CAPTURE_MCP_DURATION_SECONDS:-120}"
 mcp_rps="${AGENTIC_CAPTURE_MCP_RPS:-20}"
 agent_requests="${AGENTIC_CAPTURE_AGENT_REQUESTS:-1}"
 agent_concurrency="${AGENTIC_CAPTURE_AGENT_CONCURRENCY:-1}"
+agent_duration="${AGENTIC_CAPTURE_AGENT_DURATION_SECONDS:-180}"
 a2a_port="${AGENTIC_CAPTURE_A2A_PORT:-18096}"
 
 mkdir -p reports/agentic
@@ -46,6 +49,7 @@ Useful overrides:
   AGENTIC_CAPTURE_MCP_RPS=20
   AGENTIC_CAPTURE_AGENT_REQUESTS=1
   AGENTIC_CAPTURE_AGENT_CONCURRENCY=1
+  AGENTIC_CAPTURE_AGENT_DURATION_SECONDS=180
   # Optional admission/backpressure stress profile:
   AGENTIC_CAPTURE_AGENT_REQUESTS=20 AGENTIC_CAPTURE_AGENT_CONCURRENCY=20
 EOF
@@ -84,7 +88,9 @@ cleanup() {
   restore_scaler
   restore_capacity
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 wait_for_deployment() {
   local namespace="$1"
@@ -117,7 +123,8 @@ wait_for_scale_with_load() {
   local expected="$3"
   local stderr_log="$4"
   local attempts=$((wait_seconds / 5))
-  local desired available load_rc
+  local desired available load_rc load_finished=false
+  local grace_deadline=0
 
   for _ in $(seq 1 "${attempts}"); do
     desired="$(kubectl -n "${namespace}" get deployment "${deployment}" \
@@ -128,15 +135,25 @@ wait_for_scale_with_load() {
     if [[ "${desired:-0}" -ge "${expected}" && "${available:-0}" -ge "${expected}" ]]; then
       return 0
     fi
-    if ! kill -0 "${load_pid}" >/dev/null 2>&1; then
+    if [[ -n "${load_pid}" ]] && ! kill -0 "${load_pid}" >/dev/null 2>&1; then
       if wait "${load_pid}"; then
         load_rc=0
       else
         load_rc=$?
       fi
       load_pid=""
+      if [[ "${load_rc}" -ne 0 ]]; then
+        [[ -s "${stderr_log}" ]] && cat "${stderr_log}" >&2
+        echo "Load generator exited with code ${load_rc} before ${namespace}/${deployment} reached ${expected} replicas." >&2
+        return 1
+      fi
+      load_finished=true
+      grace_deadline=$((SECONDS + decision_grace_seconds))
+      echo "Load completed; allowing ${decision_grace_seconds}s for the KEDA polling/rate window."
+    fi
+    if [[ "${load_finished}" == "true" && "${SECONDS}" -ge "${grace_deadline}" ]]; then
       [[ -s "${stderr_log}" ]] && cat "${stderr_log}" >&2
-      echo "Load generator exited with code ${load_rc} before ${namespace}/${deployment} reached ${expected} replicas." >&2
+      echo "KEDA did not scale ${namespace}/${deployment} within the post-load grace window." >&2
       return 1
     fi
     sleep 5
@@ -144,6 +161,13 @@ wait_for_scale_with_load() {
   [[ -s "${stderr_log}" ]] && cat "${stderr_log}" >&2
   echo "${namespace}/${deployment} did not reach ${expected} replicas while load was active." >&2
   return 1
+}
+
+wait_for_load_completion() {
+  if [[ -n "${load_pid}" ]]; then
+    wait "${load_pid}"
+    load_pid=""
+  fi
 }
 
 capture_pause() {
@@ -163,7 +187,7 @@ show_status() {
   kubectl -n api-serving get deployment recsys-rag-api
   kubectl -n api-serving get hpa keda-hpa-recsys-rag-api
   kubectl -n kagent get deployment \
-    recsys-feature-rag-mcp recsys-context-sandbox-pool-deployment
+    recsys-feature-rag-mcp recsys-context-sandbox-pool
   kubectl -n kagent get hpa \
     keda-hpa-recsys-feature-rag-mcp \
     keda-hpa-recsys-context-sandbox-pool
@@ -202,7 +226,7 @@ prove_fallback() {
     -p='[{"op":"replace","path":"/spec/triggers/0/metadata/serverAddress","value":"http://unreachable.invalid:9090"}]' \
     >/dev/null
 
-  local attempts=$((wait_seconds / 5))
+  local attempts=$((fallback_wait_seconds / 5))
   local fallback available
   for _ in $(seq 1 "${attempts}"); do
     fallback="$(kubectl -n kagent get scaledobject "${scaledobject}" \
@@ -284,8 +308,7 @@ PY
   wait_for_scale_with_load api-serving recsys-rag-api 3 \
     reports/agentic/capture-rag-load.stderr.log
   capture_pause "RAG API scaled 1 -> 3 and all three replicas are Available"
-  wait "${load_pid}"
-  load_pid=""
+  wait_for_load_completion
   cat reports/agentic/capture-rag-load.json
   echo "Waiting for RAG API to return to the 1/1 baseline before restoring capacity."
   wait_for_deployment api-serving recsys-rag-api 1 exact
@@ -359,8 +382,7 @@ PY
   wait_for_scale_with_load kagent recsys-feature-rag-mcp 3 \
     reports/agentic/capture-mcp-load.stderr.log
   capture_pause "MCP scaled 1 -> 3 and all three replicas are Available"
-  wait "${load_pid}"
-  load_pid=""
+  wait_for_load_completion
   cat reports/agentic/capture-mcp-load.json
   if [[ "${run_fallback}" == "1" ]]; then
     prove_fallback recsys-feature-rag-mcp recsys-feature-rag-mcp 1
@@ -370,7 +392,7 @@ PY
 run_worker() {
   prepare_capacity
   echo "Waiting for Sandbox WorkerPool baseline 1/1."
-  wait_for_deployment kagent recsys-context-sandbox-pool-deployment 1 exact
+  wait_for_deployment kagent recsys-context-sandbox-pool 1 exact
 
   kubectl -n kagent port-forward service/kagent-controller \
     "${a2a_port}:8083" >reports/agentic/capture-a2a-port-forward.log 2>&1 &
@@ -383,40 +405,43 @@ run_worker() {
     sleep 1
   done
 
-  python3 - "${a2a_port}" "${agent_requests}" "${agent_concurrency}" "${agent_user_id}" \
+  python3 - "${a2a_port}" "${agent_requests}" "${agent_concurrency}" \
+    "${agent_user_id}" "${agent_duration}" \
     >reports/agentic/capture-agent-load.json \
     2>reports/agentic/capture-agent-load.stderr.log <<'PY' &
 import concurrent.futures
 import json
 import sys
+import time
 import urllib.request
 import uuid
 
-port, count, concurrency, user_id = (
-    sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+port, minimum_requests, concurrency, user_id, duration = (
+    sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4], int(sys.argv[5])
 )
 url = f"http://127.0.0.1:{port}/api/a2a-sandboxes/kagent/recsys-context-agent-sandbox/"
 
-def invoke(index):
+def invoke(worker_id, index):
     request_id = str(uuid.uuid4())
     payload = {
         "jsonrpc": "2.0",
         "id": request_id,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {"message": {
             "messageId": request_id,
             "contextId": request_id,
-            "role": "user",
+            "role": "ROLE_USER",
             "parts": [{"kind": "text", "text": (
                 f"Call get_user_online_features with user_id {user_id} and "
-                f"top_k 1. Then reply with the exact user_id. Request {index}."
+                f"top_k 1. Then reply with the exact user_id. "
+                f"Load worker {worker_id}, request {index}."
             )}],
         }},
     }
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
         method="POST",
     )
     try:
@@ -426,30 +451,47 @@ def invoke(index):
     except Exception:
         return False
 
+def load_worker(worker_id, deadline):
+    offered = completed = rejected = 0
+    while time.monotonic() < deadline or offered < minimum_requests:
+        offered += 1
+        if invoke(worker_id, offered):
+            completed += 1
+        else:
+            rejected += 1
+            # Substrate deliberately applies admission backpressure while all
+            # workers are assigned. Keep offering work so newly-created workers
+            # become assigned during the next KEDA polling window.
+            time.sleep(0.1)
+    return offered, completed, rejected
+
+deadline = time.monotonic() + duration
 with concurrent.futures.ThreadPoolExecutor(
-    max_workers=min(concurrency, count)
+    max_workers=concurrency
 ) as executor:
-    outcomes = list(executor.map(invoke, range(count)))
+    outcomes = list(executor.map(lambda worker_id: load_worker(worker_id, deadline), range(concurrency)))
 result = {
-    "offered_requests": count,
-    "grounded_completed_requests": sum(outcomes),
-    "backpressure_rejections": outcomes.count(False),
+    "offered_requests": sum(item[0] for item in outcomes),
+    "grounded_completed_requests": sum(item[1] for item in outcomes),
+    "backpressure_rejections": sum(item[2] for item in outcomes),
+    "duration_seconds": duration,
 }
 print(json.dumps(result, sort_keys=True))
-if not any(outcomes):
+if result["grounded_completed_requests"] == 0:
     raise SystemExit(1)
 PY
   load_pid="$!"
 
-  wait_for_scale_with_load kagent recsys-context-sandbox-pool-deployment 3 \
+  wait_for_scale_with_load kagent recsys-context-sandbox-pool 3 \
     reports/agentic/capture-agent-load.stderr.log
   capture_pause "Sandbox WorkerPool scaled 1 -> 3 and generated Deployment is 3/3"
-  wait "${load_pid}"
-  load_pid=""
+  wait_for_load_completion
   cat reports/agentic/capture-agent-load.json
+  echo "Waiting for assigned-worker metric scale-down to restore the 1/1 baseline."
+  wait_for_deployment kagent recsys-context-sandbox-pool 1 exact
   if [[ "${run_fallback}" == "1" ]]; then
     prove_fallback recsys-context-sandbox-pool \
-      recsys-context-sandbox-pool-deployment 1 150
+      recsys-context-sandbox-pool 1
   fi
   kill "${port_forward_pid}" >/dev/null 2>&1 || true
   port_forward_pid=""

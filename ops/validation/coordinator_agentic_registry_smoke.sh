@@ -18,7 +18,7 @@ trap agentic_registry_close_tunnel EXIT
 agentic_registry_open_tunnel
 
 for spec in \
-  "agent recsys/recsys-coordinator-agent coordinator" \
+  "agent recsys/recsys-coordinator-agent-sandbox coordinator" \
   "agent recsys/recsys-context-agent-sandbox context-agent" \
   "agent recsys/recsys-recommendation-agent-sandbox recommendation-agent" \
   "mcp recsys/recsys-feature-rag-mcp context-mcp" \

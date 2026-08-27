@@ -2,6 +2,70 @@
 
 agentic_registry_port_forward_pid=""
 
+sandbox_agent_model_revision() {
+  local agent_name="$1"
+  kubectl -n kagent get sandboxagent "${agent_name}" \
+    -o jsonpath='{.metadata.annotations.recsys\.ai/model-config-revision}' \
+    2>/dev/null || true
+}
+
+sandbox_agent_rebuild_golden_if_revision_changed() {
+  local agent_name="$1"
+  local previous_revision="$2"
+  local current_revision template_name old_uid candidate candidate_uid ready
+  local attempts="${SANDBOX_AGENT_GOLDEN_REBUILD_ATTEMPTS:-120}"
+
+  current_revision="$(sandbox_agent_model_revision "${agent_name}")"
+  [[ -n "${current_revision}" ]] || {
+    recsys_error "${agent_name} has no recsys.ai/model-config-revision"
+    return 1
+  }
+  if [[ -z "${previous_revision}" || "${previous_revision}" == "${current_revision}" ]]; then
+    return 0
+  fi
+
+  template_name="$(
+    kubectl -n kagent get actortemplate \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
+      | grep -E "^${agent_name}-" | head -n 1
+  )"
+  [[ -n "${template_name}" ]] || {
+    recsys_error "ActorTemplate for ${agent_name} was not created"
+    return 1
+  }
+  old_uid="$(
+    kubectl -n kagent get actortemplate "${template_name}" \
+      -o jsonpath='{.metadata.uid}'
+  )"
+  kubectl -n kagent delete actortemplate "${template_name}" --wait=true
+
+  for _ in $(seq 1 "${attempts}"); do
+    candidate="$(
+      kubectl -n kagent get actortemplate \
+        -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
+        | grep -E "^${agent_name}-" | head -n 1 || true
+    )"
+    if [[ -n "${candidate}" ]]; then
+      candidate_uid="$(
+        kubectl -n kagent get actortemplate "${candidate}" \
+          -o jsonpath='{.metadata.uid}'
+      )"
+      ready="$(
+        kubectl -n kagent get actortemplate "${candidate}" \
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      )"
+      if [[ "${candidate_uid}" != "${old_uid}" && "${ready}" == "True" ]]; then
+        kubectl -n kagent wait --for=condition=Ready \
+          "sandboxagent/${agent_name}" --timeout="${timeout}"
+        return 0
+      fi
+    fi
+    sleep 5
+  done
+  recsys_error "${agent_name} golden snapshot did not rebuild for revision ${current_revision}"
+  return 1
+}
+
 agentic_registry_open_tunnel() {
   local local_port="${AGENT_REGISTRY_LOCAL_PORT:-12121}"
   local log_file="reports/agentic/agentregistry-port-forward.log"
@@ -48,19 +112,18 @@ agentic_preflight() {
     kubectl get crd workerpools.ate.dev \
       -o jsonpath='{.spec.versions[?(@.name=="v1alpha1")].subresources.scale.labelSelectorPath}'
   )"
-  [[ "${scale_selector_path}" == ".spec.scaleSelector" ]] || {
+  [[ "${scale_selector_path}" == ".status.selector" ]] || {
     recsys_error \
-      "WorkerPool /scale is missing .spec.scaleSelector labelSelectorPath"
+      "WorkerPool /scale is missing native .status.selector labelSelectorPath"
     return 1
   }
   local worker_pool_selector
   worker_pool_selector="$(
     kubectl -n kagent get workerpool recsys-context-sandbox-pool \
-      -o jsonpath='{.spec.scaleSelector}'
+      -o jsonpath='{.status.selector}'
   )"
-  [[ "${worker_pool_selector}" == \
-    "ate.dev/worker-pool=recsys-context-sandbox-pool" ]] || {
-    recsys_error "WorkerPool scaleSelector does not match its generated pods"
+  [[ -n "${worker_pool_selector}" ]] || {
+    recsys_error "WorkerPool native status.selector is empty"
     return 1
   }
   kubectl get clusterrole keda-operator -o json | python3 -c '
@@ -155,8 +218,7 @@ assert {
 } in binding["subjects"]
 '
   kubectl -n kagent get workerpool recsys-recommendation-sandbox-pool \
-    -o jsonpath='{.spec.scaleSelector}' \
-    | grep -Fx 'ate.dev/worker-pool=recsys-recommendation-sandbox-pool'
+    -o jsonpath='{.status.selector}' | grep -Eq '.+'
   kubectl -n kagent wait --for=condition=Ready \
     externalsecret/recsys-recommendation-mcp-auth --timeout="${timeout}"
   kubectl -n kagent get secret recsys-recommendation-mcp-auth >/dev/null
@@ -212,12 +274,17 @@ coordinator_agentic_preflight() {
   done
   if [[ "${include_runtime}" == "true" ]]; then
     kubectl -n kagent wait --for=condition=Ready \
-      agent/recsys-coordinator-agent --timeout="${timeout}"
+      sandboxagent/recsys-coordinator-agent-sandbox --timeout="${timeout}"
+    kubectl get --raw \
+      /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-coordinator-sandbox-pool/scale \
+      >/dev/null
+    kubectl -n kagent get workerpool recsys-coordinator-sandbox-pool \
+      -o jsonpath='{.status.selector}' | grep -Eq '.+'
     kubectl -n kagent rollout status \
-      deployment/recsys-coordinator-agent \
+      deployment/recsys-coordinator-sandbox-pool \
       --timeout="${timeout}"
-    [[ "$(kubectl -n kagent get deployment recsys-coordinator-agent \
-      -o jsonpath='{.spec.replicas}')" == "1" ]]
+    kubectl -n kagent get scaledobject recsys-coordinator-sandbox-pool >/dev/null
+    kubectl -n kagent get hpa keda-hpa-recsys-coordinator-sandbox-pool >/dev/null
   fi
 }
 
@@ -285,11 +352,11 @@ request_id = str(uuid.uuid4())
 payload = {
     "jsonrpc": "2.0",
     "id": request_id,
-    "method": "message/send",
+    "method": "SendMessage",
     "params": {"message": {
         "messageId": request_id,
         "contextId": request_id,
-        "role": "user",
+        "role": "ROLE_USER",
         "parts": [{"kind": "text", "text": (
             "Recommend top 3 items for user_id=" + user_id
             + ". Call get_personalized_recommendations exactly once with tool "
@@ -300,7 +367,8 @@ payload = {
 }
 request = urllib.request.Request(
     url, data=json.dumps(payload).encode(),
-    headers={"Content-Type": "application/json"}, method="POST",
+    headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
+    method="POST",
 )
 with urllib.request.urlopen(request, timeout=180) as response:
     body = json.load(response)
@@ -308,18 +376,25 @@ with open(output_path, "w", encoding="utf-8") as stream:
     json.dump(body, stream, indent=2, sort_keys=True)
 if body.get("error"):
     raise SystemExit(body["error"])
-result = body.get("result", {})
-if result.get("status", {}).get("state") != "completed":
+wire_result = body.get("result", {})
+result = wire_result.get("task", wire_result)
+if result.get("status", {}).get("state") not in {
+    "completed", "TASK_STATE_COMPLETED",
+}:
     raise SystemExit("recommendation agent did not complete")
 calls = []
 responses = []
-for message in result.get("history", []):
-    for part in message.get("parts", []):
-        metadata, data = part.get("metadata", {}), part.get("data", {})
-        if metadata.get("adk_type") == "function_call":
-            calls.append(data.get("name"))
-        elif metadata.get("adk_type") == "function_response":
-            responses.append((data.get("name"), data.get("response")))
+parts = [
+    part
+    for container in [*result.get("history", []), *result.get("artifacts", [])]
+    for part in container.get("parts", [])
+]
+for part in parts:
+    metadata, data = part.get("metadata", {}), part.get("data", {})
+    if metadata.get("adk_type") == "function_call":
+        calls.append(data.get("name"))
+    elif metadata.get("adk_type") == "function_response":
+        responses.append((data.get("name"), data.get("response")))
 assert calls == ["get_personalized_recommendations"], calls
 assert len(responses) == 1 and responses[0][0] == calls[0], responses
 serialized = json.dumps(responses[0][1], sort_keys=True)
@@ -339,13 +414,13 @@ PY
 }
 
 coordinator_a2a_smoke() {
-  local agent_name="recsys-coordinator-agent"
+  local agent_name="recsys-coordinator-agent-sandbox"
   local user_id="${COORDINATOR_SMOKE_USER_ID:-1001}"
   local chunk_id="${COORDINATOR_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
   local local_port="${COORDINATOR_A2A_LOCAL_PORT:-18086}"
   local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-420}"
-  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents,direct_mcps,partial_result}"
-  local base_url="http://127.0.0.1:${local_port}/api/a2a/kagent/${agent_name}"
+  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents,direct_context_mcp,direct_recommendation_mcp,partial_result}"
+  local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
   local log_file="reports/agentic/${agent_name}-port-forward.log"
   local output_file="${COORDINATOR_A2A_EVIDENCE_FILE:-reports/agentic/${agent_name}-a2a.json}"
   local pid ready=false status=1
@@ -374,8 +449,14 @@ url, user_id, chunk_id, request_timeout, selected_cases, output_path = sys.argv[
 request_timeout = int(request_timeout)
 cases = {
     "context_agent": (
-        "Use only the context specialist agent to summarize preferences for "
-        f"user {user_id}. Do not call recommendation or direct MCP tools."
+        "Call exactly one tool: "
+        "kagent__NS__recsys_context_agent_sandbox. Pass it this complete "
+        f"request: 'Summarize preferences for user_id={user_id}. Call "
+        "get_user_online_features exactly once with arguments "
+        f"{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":2}}. "
+        "Do not ask for confirmation and answer concisely.' Do not call the "
+        "recommendation Agent or any MCP tool directly. Answer immediately "
+        "after the Context Agent returns."
     ),
     "recommendation_agent": (
         "Delegate through A2A to SandboxAgent "
@@ -385,17 +466,32 @@ cases = {
         "confirmation. Use no other source."
     ),
     "composite_agents": (
-        "Use both specialist agents to recommend three "
-        f"items for user {user_id} and explain them with grounded evidence. "
-        f"Give the recommendation specialist user_id={user_id}, "
-        "candidate_item_ids=null, and top_k=3 without asking for confirmation. "
+        "Use exactly these two specialist Agent tools in order: first "
+        "kagent__NS__recsys_recommendation_agent_sandbox, then "
+        "kagent__NS__recsys_context_agent_sandbox. Recommend one "
+        f"item for user {user_id} and explain it with grounded evidence. "
+        f"Give the Recommendation Agent user_id={user_id}, "
+        "candidate_item_ids=null, and top_k=1 without asking for confirmation. "
+        "After it returns, create a new Context Agent request that names "
+        "build_user_rag_context exactly once and includes user_id, the returned "
+        "item IDs as candidate_item_ids, query='recommended items', top_k=2, "
+        "top_k_items=2, and filters=null. Never forward this original prompt "
+        "as the Context Agent request and never let it ask for confirmation. "
+        "Never call retrieve_rag_context, build_user_rag_context, or any other "
+        "MCP tool directly. Call each specialist exactly once, then answer. "
         "Preserve the recommendation order and cite returned chunk_id values."
     ),
-    "direct_mcps": (
-        "For independent verification, directly call get_chunk_by_id with "
-        f"chunk_id={chunk_id} and get_personalized_recommendations with "
-        f"arguments {{\"user_id\":{user_id},\"candidate_item_ids\":null,"
-        "\"top_k\":1}}. Do not delegate to an agent."
+    "direct_context_mcp": (
+        "For independent verification, directly call get_chunk_by_id exactly "
+        f"once with chunk_id={chunk_id}. Do not call any other tool, do not "
+        "delegate to an agent, and answer immediately after it returns."
+    ),
+    "direct_recommendation_mcp": (
+        "For independent verification, directly call "
+        "get_personalized_recommendations exactly once with arguments "
+        f"{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}. "
+        "Do not call any other tool, do not delegate to an agent, and answer "
+        "immediately after it returns."
     ),
     "partial_result": (
         "Directly call get_chunk_by_id with the deliberately nonexistent "
@@ -420,18 +516,18 @@ def invoke(case_name, prompt):
     payload = {
         "jsonrpc": "2.0",
         "id": request_id,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {"message": {
             "messageId": request_id,
             "contextId": str(uuid.uuid4()),
-            "role": "user",
+            "role": "ROLE_USER",
             "parts": [{"kind": "text", "text": prompt}],
         }},
     }
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=request_timeout) as response:
@@ -441,21 +537,28 @@ def invoke(case_name, prompt):
         json.dump(evidence, stream, indent=2, sort_keys=True)
     if body.get("error"):
         raise SystemExit(f"{case_name}: {body['error']}")
-    result = body.get("result", {})
-    if result.get("status", {}).get("state") != "completed":
+    wire_result = body.get("result", {})
+    result = wire_result.get("task", wire_result)
+    if result.get("status", {}).get("state") not in {
+        "completed", "TASK_STATE_COMPLETED",
+    }:
         raise SystemExit(
             f"{case_name} did not complete: "
             + json.dumps(result.get("status", {}), sort_keys=True)
         )
     calls = []
     responses = {}
-    for message in result.get("history", []):
-        for part in message.get("parts", []):
-            metadata, data = part.get("metadata", {}), part.get("data", {})
-            if metadata.get("adk_type") == "function_call":
-                calls.append(data.get("name", ""))
-            elif metadata.get("adk_type") == "function_response":
-                responses[data.get("name", "")] = data.get("response")
+    parts = [
+        part
+        for container in [*result.get("history", []), *result.get("artifacts", [])]
+        for part in container.get("parts", [])
+    ]
+    for part in parts:
+        metadata, data = part.get("metadata", {}), part.get("data", {})
+        if metadata.get("adk_type") == "function_call":
+            calls.append(data.get("name", ""))
+        elif metadata.get("adk_type") == "function_response":
+            responses[data.get("name", "")] = data.get("response")
     if not calls or set(calls) - set(responses):
         raise SystemExit(
             f"{case_name} missing call/response: calls={calls}, responses={responses}"
@@ -469,15 +572,21 @@ def invoke(case_name, prompt):
         assert not any("context_agent_sandbox" in name for name in calls), calls
         assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
     elif case_name == "composite_agents":
-        assert any("context_agent_sandbox" in name for name in calls), calls
-        assert any("recommendation_agent_sandbox" in name for name in calls), calls
+        assert calls == [
+            "kagent__NS__recsys_recommendation_agent_sandbox",
+            "kagent__NS__recsys_context_agent_sandbox",
+        ], calls
         assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
-    elif case_name == "direct_mcps":
+    elif case_name == "direct_context_mcp":
         assert "get_chunk_by_id" in calls, calls
-        assert "get_personalized_recommendations" in calls, calls
         assert not any("agent_sandbox" in name for name in calls), calls
         assert calls.count("get_chunk_by_id") == 1, calls
+        assert len(calls) == 1, calls
+    elif case_name == "direct_recommendation_mcp":
+        assert "get_personalized_recommendations" in calls, calls
+        assert not any("agent_sandbox" in name for name in calls), calls
         assert calls.count("get_personalized_recommendations") == 1, calls
+        assert len(calls) == 1, calls
     else:
         assert "get_chunk_by_id" in calls, calls
         assert "get_personalized_recommendations" in calls, calls
@@ -487,17 +596,22 @@ def invoke(case_name, prompt):
         answer_messages = [
             message
             for message in result.get("history", [])
-            if message.get("role") == "agent"
+            if message.get("role") in {"agent", "ROLE_AGENT"}
         ]
+        answer_messages.extend(result.get("artifacts", []))
         if result.get("status", {}).get("message"):
             answer_messages.append(result["status"]["message"])
         final_text = " ".join(
             part.get("text", "")
             for message in answer_messages
             for part in message.get("parts", [])
-            if part.get("kind") == "text" and part.get("text")
+            if part.get("text")
         ).strip()
-        assert "context source unavailable" in final_text.lower(), final_text
+        normalized_text = final_text.lower()
+        assert (
+            "context source unavailable" in normalized_text
+            or "context source is unavailable" in normalized_text
+        ), final_text
 
         def collect_item_ids(value):
             found = []
@@ -666,12 +780,12 @@ def invoke(tool_name, prompt):
     payload = {
         "jsonrpc": "2.0",
         "id": request_id,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
                 "messageId": request_id,
                 "contextId": context_id,
-                "role": "user",
+                "role": "ROLE_USER",
                 "parts": [{"kind": "text", "text": prompt}],
             },
         },
@@ -679,7 +793,7 @@ def invoke(tool_name, prompt):
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=request_timeout) as response:
@@ -689,23 +803,28 @@ def invoke(tool_name, prompt):
         json.dump(evidence, stream, indent=2, sort_keys=True)
     if body.get("error"):
         raise SystemExit(f"{tool_name} A2A error: {body['error']}")
-    result = body.get("result", {})
+    wire_result = body.get("result", {})
+    result = wire_result.get("task", wire_result)
     status = result.get("status", {})
-    if status.get("state") != "completed":
+    if status.get("state") not in {"completed", "TASK_STATE_COMPLETED"}:
         raise SystemExit(
             f"{tool_name} A2A task did not complete: "
             + json.dumps(status, sort_keys=True)
         )
     calls = set()
     responses = {}
-    for message in result.get("history", []):
-        for part in message.get("parts", []):
-            metadata = part.get("metadata", {})
-            data = part.get("data", {})
-            if metadata.get("adk_type") == "function_call":
-                calls.add(data.get("name"))
-            elif metadata.get("adk_type") == "function_response":
-                responses[data.get("name")] = data.get("response")
+    parts = [
+        part
+        for container in [*result.get("history", []), *result.get("artifacts", [])]
+        for part in container.get("parts", [])
+    ]
+    for part in parts:
+        metadata = part.get("metadata", {})
+        data = part.get("data", {})
+        if metadata.get("adk_type") == "function_call":
+            calls.add(data.get("name"))
+        elif metadata.get("adk_type") == "function_response":
+            responses[data.get("name")] = data.get("response")
     if tool_name not in calls or tool_name not in responses:
         raise SystemExit(
             f"{tool_name} call/response missing: calls={sorted(calls)}, "
@@ -715,15 +834,16 @@ def invoke(tool_name, prompt):
     answer_messages = [
         message
         for message in result.get("history", [])
-        if message.get("role") == "agent"
+        if message.get("role") in {"agent", "ROLE_AGENT"}
     ]
+    answer_messages.extend(result.get("artifacts", []))
     if status.get("message"):
         answer_messages.append(status["message"])
     final_text = " ".join(
         part.get("text", "")
         for message in answer_messages
         for part in message.get("parts", [])
-        if part.get("kind") == "text" and part.get("text")
+        if part.get("text")
     ).strip()
     if not final_text:
         raise SystemExit(f"{tool_name} completed without a final text answer")
@@ -950,7 +1070,7 @@ elif kind == "recommendation-agent":
 elif kind == "coordinator-agent":
     metadata["labels"].update({
         "app.kubernetes.io/part-of": "recsys-coordinator-agentic",
-        "recsys.dev/variant": "regular",
+        "recsys.dev/variant": "sandbox",
     })
     metadata["annotations"]["recsys.dev/a2a-dependencies"] = ",".join([
         f"recsys/recsys-context-agent-sandbox@{tag}",
@@ -961,7 +1081,7 @@ elif kind == "coordinator-agent":
         "kind": "Agent",
         "metadata": metadata,
         "spec": {
-            "title": "RecSys Coordinator Agent",
+            "title": "RecSys Coordinator Agent (sandbox)",
             "description": (
                 "Intent-routing coordinator for context, RAG, and "
                 "recommendation specialists"
@@ -1108,7 +1228,7 @@ publish_context_agent_registry() {
   kubectl -n kagent wait --for=condition=Ready \
     sandboxagent/recsys-context-agent-sandbox --timeout="${timeout}"
   kubectl -n kagent rollout status \
-    deployment/recsys-context-sandbox-pool-deployment --timeout="${timeout}"
+    deployment/recsys-context-sandbox-pool --timeout="${timeout}"
   agentic_wait_for_regular_agent_removal
   agentic_a2a_smoke recsys-context-agent-sandbox
   agentic_registry_open_tunnel
@@ -1192,7 +1312,7 @@ publish_recommendation_agent_registry() {
   kubectl -n kagent wait --for=condition=Ready \
     sandboxagent/recsys-recommendation-agent-sandbox --timeout="${timeout}"
   kubectl -n kagent rollout status \
-    deployment/recsys-recommendation-sandbox-pool-deployment --timeout="${timeout}"
+    deployment/recsys-recommendation-sandbox-pool --timeout="${timeout}"
   recommendation_a2a_smoke
   agentic_registry_open_tunnel
   commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
@@ -1233,7 +1353,7 @@ publish_coordinator_agent_registry() {
   version="$(agentic_registry_version)"
   tag="$(agentic_registry_tag "${version}")"
   git_url="$(agentic_registry_git_url)"
-  registry_name="recsys/recsys-coordinator-agent"
+  registry_name="recsys/recsys-coordinator-agent-sandbox"
   agentic_registry_require_dependency mcp \
     recsys/recsys-feature-rag-mcp "${tag}" "${version}" "${commit}"
   agentic_registry_require_dependency mcp \
@@ -1253,8 +1373,8 @@ publish_coordinator_agent_registry() {
   fi
   rm -f "${manifest}"
   arctl get agent "${registry_name}" --tag "${tag}" -o json >/dev/null
-  legacy_name="recsys/recsys-coordinator-agent-sandbox"
-  legacy_backup=".ci-deploy/recsys-coordinator-agent-sandbox-registry-backup.json"
+  legacy_name="recsys/recsys-coordinator-agent"
+  legacy_backup=".ci-deploy/recsys-coordinator-agent-registry-backup.json"
   if agentic_registry_tagged_resource_exists agent "${legacy_name}" \
     "${legacy_backup}"; then
     arctl delete agent "${legacy_name}" --all-tags

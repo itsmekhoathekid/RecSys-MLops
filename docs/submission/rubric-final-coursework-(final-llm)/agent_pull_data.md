@@ -1,10 +1,10 @@
 # Sandbox Agent Pulls Online Features and RAG Context
 
-> **Runtime status (2026-08-26):** a Substrate `0.0.11` canary proved native
-> assigned-worker metrics, but the production kagent `0.9.9` A2A compatibility
-> gate failed. This specialist therefore remains on Substrate `0.0.6` and its
-> documented CPU-based KEDA query. Assigned-worker scaling evidence is not
-> claimed. See [validation and rollback](validation_verification.md).
+> **Runtime status (updated 2026-08-27):** production runs the custom kagent v6
+> compatibility image with Substrate `0.0.11`; values select assigned-worker
+> KEDA. Context proved `1 -> 2 -> 3 -> 2 -> 1` and fallback to one. The chart
+> retains `metricMode: cpu | assignedWorkers` only for values-based rollback.
+> See [validation and rollback](validation_verification.md).
 
 This document provides source-code, configuration, deployment, and runtime
 evidence for the following coursework requirements:
@@ -65,8 +65,8 @@ All three workloads use the same control-plane sequence, but they emit
 different signals and target different Kubernetes resources.
 
 ```text
-Traffic or worker load
-  -> application metric or cAdvisor container metric
+Traffic or worker assignment
+  -> application metric or Substrate assigned-worker metric
   -> Prometheus scrape and time-series storage
   -> KEDA Prometheus scaler exposes an external metric
   -> Kubernetes HPA calculates desired replicas
@@ -324,7 +324,7 @@ References:
 
 ### 1.4 Context SandboxAgent autoscaling stages
 
-#### Stage 1: A2A work raises gVisor worker CPU
+#### Stage 1: A2A sessions assign gVisor workers
 
 The `SandboxAgent` is a declarative profile, not a Deployment. Incoming A2A
 requests are executed by `ateom-gvisor` workers in the referenced WorkerPool.
@@ -346,21 +346,19 @@ References:
 - [SandboxAgent and WorkerPool binding](../../../infra/helm/recsys-kagent-agent/templates/sandboxagent.yaml#L1)
 - [Terraform-owned gVisor WorkerPool baseline](../../../configs/kagent/values.yaml#L34)
 
-#### Stage 2: Prometheus measures total `ateom` CPU
+#### Stage 2: Prometheus measures assigned workers
 
-The scaler uses Kubernetes/cAdvisor container CPU rather than an application
-counter. The two-minute rate is summed across every current worker and converted
-from CPU cores to microcores.
+Substrate `0.0.11` emits the WorkerPool state gauge used directly by KEDA.
 
 ```promql
-1000000 * sum(rate(container_cpu_usage_seconds_total{
-  namespace="kagent",
-  pod=~"recsys-context-sandbox-pool-deployment-.*",
-  container="ateom"
-}[2m]))
+max(ate_workerpool_workers{
+  ate_workerpool_namespace="kagent",
+  ate_workerpool_name="recsys-context-sandbox-pool",
+  ate_worker_state="assigned"
+})
 ```
 
-Reference: [WorkerPool CPU query](../../../infra/helm/recsys-kagent-agent/templates/scaledobject.yaml#L25).
+Reference: [WorkerPool assigned-worker query](../../../infra/helm/recsys-kagent-agent/templates/scaledobject.yaml#L25).
 
 #### Stage 3: HPA targets the WorkerPool `/scale` subresource
 
@@ -377,9 +375,11 @@ spec:
     replicas: 1
   triggers:
     - type: prometheus
+      metricType: AverageValue
       metadata:
-        metricName: recsys_context_sandbox_worker_cpu_microcores
-        threshold: "120"
+        metricName: recsys_context_sandbox_assigned_workers
+        threshold: "0.7"
+        query: max(ate_workerpool_workers{ate_workerpool_namespace="kagent",ate_workerpool_name="recsys-context-sandbox-pool",ate_worker_state="assigned"})
 ```
 
 The HPA never modifies `SandboxAgent/recsys-context-agent-sandbox`. It writes
@@ -391,7 +391,8 @@ References:
 - [WorkerPool-targeting ScaledObject](../../../infra/helm/recsys-kagent-agent/templates/scaledobject.yaml#L1)
 - [WorkerPool bounds, threshold, and fallback](../../../infra/helm/recsys-kagent-agent/values.yaml#L34)
 - [production WorkerPool override](../../../infra/helm/recsys-kagent-agent/values-gcp.yaml#L3)
-- [WorkerPool `/scale` CRD compatibility](../../../ops/helm/substrate_crds_hpa_postrender.py#L1)
+- Substrate `0.0.11` native WorkerPool `/scale` uses `.status.selector`; no
+  compatibility post-renderer is required.
 
 #### Stage 4: Substrate reconciles the generated gVisor Deployment
 
@@ -399,7 +400,7 @@ References:
 KEDA-generated HPA
   -> WorkerPool/recsys-context-sandbox-pool /scale
   -> Substrate WorkerPool controller
-  -> Deployment/recsys-context-sandbox-pool-deployment
+  -> Deployment/recsys-context-sandbox-pool
   -> 1..3 ateom-gvisor worker pods
 ```
 
@@ -1032,16 +1033,17 @@ substrateWorkerPool:
   create: true
   name: recsys-context-sandbox-pool
   replicas: 1
-  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.6
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.11
   sandboxClass: gvisor
 ```
 
 Platform references:
 
 - [kagent and WorkerPool values](../../../configs/kagent/values.yaml#L26)
-- [pinned kagent `0.9.9` and Substrate `0.0.6`](../../../infra/terraform/gcp/kagent.tf#L1)
-- [Terraform kagent release and WorkerPool post-render](../../../infra/terraform/gcp/kagent.tf#L194)
-- [WorkerPool CRD `/scale` compatibility post-render](../../../ops/helm/substrate_crds_hpa_postrender.py#L1)
+- [pinned custom kagent build and Substrate `0.0.11`](../../../infra/terraform/gcp/kagent.tf#L1)
+- [Terraform kagent release and WorkerPool](../../../infra/terraform/gcp/kagent.tf#L194)
+- Native `/scale` contract: `.spec.replicas`, `.status.replicas`, and
+  `.status.selector`.
 
 Terraform owns the required WorkerPool baseline. The application Helm release
 owns the SandboxAgent, RemoteMCPServer, WorkerPool PDB, and KEDA ScaledObject.
@@ -1066,13 +1068,9 @@ spec:
   triggers:
     - type: prometheus
       metadata:
-        metricName: recsys_context_sandbox_worker_cpu_microcores
-        threshold: "120"
-        query: >-
-          1000000 * sum(rate(container_cpu_usage_seconds_total{
-          namespace="kagent",
-          pod=~"recsys-context-sandbox-pool-deployment-.*",
-          container="ateom"}[2m]))
+        metricName: recsys_context_sandbox_assigned_workers
+        threshold: "0.7"
+        query: max(ate_workerpool_workers{ate_workerpool_namespace="kagent",ate_workerpool_name="recsys-context-sandbox-pool",ate_worker_state="assigned"})
 ```
 
 Helm and test references:
@@ -1101,7 +1099,7 @@ not own a Deployment.
 ![Sandbox WorkerPool scaled to three replicas](../../pngs/agent-pull-data-workerpool-scaleout-3-replicas.png)
 
 **Figure 12 — Sandbox WorkerPool scale-out.** K9s shows three Ready
-`recsys-context-sandbox-pool-deployment` worker pods. Paired with Figure 11,
+`recsys-context-sandbox-pool` worker pods. Paired with Figure 11,
 this proves KEDA scaling the gVisor WorkerPool from one to three workers rather
 than scaling a removed regular Agent Deployment.
 
@@ -1412,20 +1410,25 @@ then capture the corresponding HPA, ScaledObject, and generated Deployment at
 the same evidence set.
 
 The default WorkerPool capture sends one grounded
-`get_user_online_features(user_id=1001)` request; the observed gVisor/agent CPU
-is sufficient to drive the pool from one to three. For a separate admission
+`get_user_online_features(user_id=1001)` request and observes the native
+assigned-worker gauge. For a separate admission
 stress run, set both `AGENTIC_CAPTURE_AGENT_REQUESTS=20` and
 `AGENTIC_CAPTURE_AGENT_CONCURRENCY=20`. `backpressure_rejections` then records
 immediate JSON-RPC admission rejection rather than transport failure.
 After WorkerPool fallback reaches one replica, the script keeps the temporary
-fallback active for 150 seconds. This lets the CPU `rate[2m]` window cool before
-the original Prometheus address is restored and prevents an immediate 1-to-3
-scale rebound during capacity restoration.
+failure active long enough to capture KEDA fallback before restoring the
+original Prometheus address.
 
 The longer regression proof remains available as `make agentic-autoscale-test`.
-RAG, MCP, and WorkerPool HPAs use a 60-second scale-down stabilization window,
-so the capture script can restore the one-replica baseline without waiting for
-the Kubernetes default five-minute window.
+The production WorkerPool uses a 300-second scale-down stabilization/cooldown;
+the proof waits through that window before accepting the final one-replica
+state.
+
+The final production stress run recorded `6195` offers, `7` grounded
+completions, and `6188` expected admission backpressure responses while proving
+`1 -> 2 -> 3 -> 2 -> 1`. With the Prometheus endpoint intentionally broken,
+the ScaledObject reached `Fallback=True` and held desired/available replicas at
+`1/1`; cleanup restored Prometheus, both Qwen replicas, and the UI.
 
 ### 10.5 Registry governance
 

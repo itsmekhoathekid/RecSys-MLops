@@ -11,4 +11,4 @@ agentic_mcp_protocol_smoke
 recommendation_mcp_protocol_smoke
 coordinator_a2a_smoke
 
-echo "Coordinator regular Agent A2A and direct MCP smoke checks passed."
+echo "Coordinator SandboxAgent A2A and direct MCP smoke checks passed."
