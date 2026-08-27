@@ -27,7 +27,9 @@ sandbox_agent_rebuild_golden_if_revision_changed() {
     return 0
   fi
 
-  mapfile -t old_templates < <(
+  while IFS= read -r template_name; do
+    [[ -n "${template_name}" ]] && old_templates+=("${template_name}")
+  done < <(
     kubectl -n kagent get actortemplate \
       -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
       | grep -E "^${agent_name}-" || true
@@ -49,7 +51,10 @@ sandbox_agent_rebuild_golden_if_revision_changed() {
   kubectl -n kagent delete actortemplate "${old_templates[@]}" --wait=true
 
   for _ in $(seq 1 "${attempts}"); do
-    mapfile -t candidates < <(
+    candidates=()
+    while IFS= read -r candidate; do
+      [[ -n "${candidate}" ]] && candidates+=("${candidate}")
+    done < <(
       kubectl -n kagent get actortemplate \
         -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
         | grep -E "^${agent_name}-" || true
