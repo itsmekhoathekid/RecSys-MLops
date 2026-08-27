@@ -123,7 +123,7 @@ test_coordinator_agent() {
     | python3 -c '
 import json, sys
 spec = json.load(sys.stdin)["spec"]
-assert spec["platform"] == "substrate"
+assert "platform" not in spec
 assert spec["substrate"]["workerPoolRef"]["name"] == "recsys-coordinator-sandbox-pool"
 tools = spec["declarative"]["tools"]
 agents = [item["agent"]["name"] for item in tools if item["type"] == "Agent"]

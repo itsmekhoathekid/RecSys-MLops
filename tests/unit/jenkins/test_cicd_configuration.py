@@ -951,6 +951,19 @@ def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
     assert "sandbox_agent_rebuild_golden_if_revision_changed" in deploy
 
 
+def test_coordinator_release_verifier_uses_current_sandboxagent_schema() -> None:
+    verifier = (ROOT / "jenkins/scripts/test/agentic.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'assert "platform" not in spec' in verifier
+    assert 'spec["platform"]' not in verifier
+    assert (
+        'spec["substrate"]["workerPoolRef"]["name"] '
+        '== "recsys-coordinator-sandbox-pool"'
+    ) in verifier
+
+
 def test_jenkins_allows_the_recovery_bootstrap_bundle_checkout() -> None:
     values = (ROOT / "infra/helm/recsys-ci/values.yaml").read_text(
         encoding="utf-8"
