@@ -341,13 +341,13 @@ def test_a2a_smoke_requires_all_tools_and_a_completed_grounded_answer():
     deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
         encoding="utf-8"
     )
-    assert 'status.get("state") != "completed"' in deploy
+    assert 'status.get("state") not in {"completed", "TASK_STATE_COMPLETED"}' in deploy
     assert '"get_user_online_features": (' in deploy
     assert '"get_chunk_by_id": (' in deploy
     assert '"retrieve_rag_context": (' in deploy
     assert '"build_user_rag_context": (' in deploy
     assert "tool_name not in calls or tool_name not in responses" in deploy
-    assert 'message.get("role") == "agent"' in deploy
+    assert 'message.get("role") in {"agent", "ROLE_AGENT"}' in deploy
     assert 'answer_messages.append(status["message"])' in deploy
     assert "user feature response does not contain user_id" in deploy
     assert "user feature answer does not state user_id" not in deploy

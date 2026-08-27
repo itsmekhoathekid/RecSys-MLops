@@ -192,7 +192,7 @@ def load_worker(worker_id, deadline):
 
 deadline = time.monotonic() + duration
 with concurrent.futures.ThreadPoolExecutor(
-    max_workers=concurrency
+    max_workers=min(concurrency, requests)
 ) as pool:
     outcomes=list(pool.map(lambda worker_id: load_worker(worker_id, deadline), range(concurrency)))
 result={
