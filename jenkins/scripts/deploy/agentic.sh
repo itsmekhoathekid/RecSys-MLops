@@ -418,7 +418,11 @@ coordinator_a2a_smoke() {
   local user_id="${COORDINATOR_SMOKE_USER_ID:-1001}"
   local chunk_id="${COORDINATOR_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
   local local_port="${COORDINATOR_A2A_LOCAL_PORT:-18086}"
-  local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-420}"
+  # A timed-out nested A2A request keeps running server-side. Retrying the
+  # entire six-case suite immediately creates orphan work and amplifies load,
+  # so the production registry gate defaults to one longer bounded attempt.
+  local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-900}"
+  local max_attempts="${COORDINATOR_A2A_MAX_ATTEMPTS:-1}"
   local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents,direct_context_mcp,direct_recommendation_mcp,partial_result}"
   local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
   local log_file="reports/agentic/${agent_name}-port-forward.log"
@@ -436,7 +440,7 @@ coordinator_a2a_smoke() {
     sleep 1
   done
   if [[ "${ready}" == "true" ]]; then
-    for attempt in 1 2 3; do
+    for attempt in $(seq 1 "${max_attempts}"); do
       if python3 - "${base_url}/" "${user_id}" "${chunk_id}" \
         "${request_timeout}" "${selected_cases}" \
         "${output_file}" <<'PY'
@@ -640,7 +644,7 @@ PY
         status=0
         break
       fi
-      echo "coordinator A2A smoke attempt ${attempt}/3 failed" >&2
+      echo "coordinator A2A smoke attempt ${attempt}/${max_attempts} failed" >&2
       sleep $((attempt * 5))
     done
   fi

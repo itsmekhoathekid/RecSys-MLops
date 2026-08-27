@@ -169,6 +169,13 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
         deploy_script
     )
     assert 'candidate_item_ids\\\":null,\\\"top_k\\\":1' in deploy_script
+    assert 'COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-900' in deploy_script
+    assert 'COORDINATOR_A2A_MAX_ATTEMPTS:-1' in deploy_script
+    coordinator_smoke = deploy_script.split("coordinator_a2a_smoke()", 1)[1].split(
+        "agentic_mcp_protocol_smoke()", 1
+    )[0]
+    assert 'for attempt in $(seq 1 "${max_attempts}")' in coordinator_smoke
+    assert "for attempt in 1 2 3" not in coordinator_smoke
     components = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
     )["components"]
