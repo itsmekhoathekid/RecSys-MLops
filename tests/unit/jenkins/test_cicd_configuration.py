@@ -680,7 +680,7 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "skipDefaultCheckout" not in source
     assert "checkout scm" not in source
     assert "disableConcurrentBuilds()" in source
-    assert "triggers {\n    githubPush()\n  }" in source
+    assert "githubPush()" not in source
     assert "script: 'git rev-parse HEAD'" in source
     assert "values_args=(" not in source
     assert "source jenkins/scripts/" not in source
@@ -732,7 +732,7 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "[BUILD] Build image ${image_index}/${image_total}" in build_entrypoint
 
 
-def test_github_webhook_trigger_uses_pipeline_job_property() -> None:
+def test_github_webhook_trigger_is_owned_by_seeded_root_job() -> None:
     seed = (
         ROOT / "infra/helm/recsys-ci/templates/jenkins-init-configmap.yaml"
     ).read_text(encoding="utf-8")
@@ -742,6 +742,7 @@ def test_github_webhook_trigger_uses_pipeline_job_property() -> None:
     )
     assert seed.count(f"<{trigger_property}>") >= 2
     assert seed.count(f"</{trigger_property}>") >= 2
+    assert "githubPush()" not in (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
 
 
 def test_jenkins_seeds_four_dedicated_rag_and_agent_cicd_views() -> None:

@@ -20,10 +20,6 @@ pipeline {
     string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, including ci_config. Empty keeps path-based detection.')
   }
 
-  triggers {
-    githubPush()
-  }
-
   environment {
     UV_LINK_MODE = 'copy'
     DEPLOY_TARGET = 'gcp-production'

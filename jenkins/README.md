@@ -37,11 +37,12 @@ Content type: application/json
 Required event: push
 ```
 
-The Helm chart exposes only `/github-webhook/` through the ingress controller.
-The root pipeline declares [`githubPush()`](../Jenkinsfile#L20-L22). Merging a
-pull request creates a new push on `main`, which is the exact revision this job
-checks out. A separate `pull_request` delivery is not required and should not
-queue a duplicate build for the same commit.
+The Helm chart exposes only `/github-webhook/` through the ingress controller
+and assigns the GitHub push trigger only to the seeded root job. Dedicated RAG
+and agent proof jobs stay manual, even though they reuse the root `Jenkinsfile`.
+Merging a pull request creates a new push on `main`, which is the exact revision
+the root job checks out. A separate `pull_request` delivery is not required and
+should not queue a duplicate build for the same commit.
 
 ## Components
 
