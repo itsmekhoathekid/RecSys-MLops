@@ -220,9 +220,6 @@ def test_shared_serving_contract_change_also_rebuilds_the_mcp_facade():
         "recsys-feature-rag-mcp",
     ]
     assert result.release_plan["deployUnits"] == [
-        "milvus",
-        "milvus-credentials",
-        "rag-feature-registry",
         "rag-api",
         "feature-rag-mcp",
         "feature-rag-mcp-registry",
@@ -296,11 +293,7 @@ def test_rag_change_detection_and_release_dependency_order():
     assert api.component_names == ("rag_api",)
     assert api.release_plan["buildImages"] == ["recsys-rag-api"]
     api_units = api.release_plan["deployUnits"]
-    assert api_units.index("milvus") < api_units.index("milvus-credentials")
-    assert api_units.index("milvus-credentials") < api_units.index(
-        "rag-feature-registry"
-    )
-    assert api_units.index("rag-feature-registry") < api_units.index("rag-api")
+    assert api_units == ["rag-api"]
 
     shared = selected(
         ["apps/data-platform/rag-runtime/src/recsys_rag_runtime/embedding.py"]
@@ -333,9 +326,9 @@ def test_data_dependent_actions_require_explicit_components():
         ["dp1", "rag_api"],
         changed_images=["recsys-data-ingestion"],
     )
-    assert "milvus" in bootstrap["deployUnits"]
-    assert "milvus-credentials" in bootstrap["deployUnits"]
-    assert "rag-feature-registry" in bootstrap["deployUnits"]
+    assert "milvus" not in bootstrap["deployUnits"]
+    assert "milvus-credentials" not in bootstrap["deployUnits"]
+    assert "rag-feature-registry" not in bootstrap["deployUnits"]
     assert "datahub-catalog" not in bootstrap["deployUnits"]
     assert "rag-index-promotion" not in bootstrap["deployUnits"]
 

@@ -14,10 +14,21 @@ Run `make gcp-full-check GCP_CHECK_MODE=preflight` before provisioning and
 machine-readable results to `reports/gcp/full-stack-check.json`.
 
 Run Terraform mutations through `ops/gcp/terraform_gcp.sh`. The wrapper refuses
-the wrong gcloud account/project and selects the matching refreshable legacy
-credential instead of the stale machine ADC. It also uses a project-specific
-`TF_DATA_DIR`, so historical local workspaces are never migrated into this
-project's state bucket.
+the wrong gcloud account/project and requires the expected identity through
+`GCP_ACCOUNT`. It uses standard Application Default Credentials unless
+`GCP_TERRAFORM_CREDENTIAL_FILE` is explicitly supplied, and selects a
+project-specific `TF_DATA_DIR` so historical local workspaces are never
+migrated into another project's state bucket. Authenticate and run it with:
+
+```bash
+gcloud auth login <gcp-account>
+gcloud auth application-default login
+gcloud auth application-default set-quota-project recsys-mlops-506406
+gcloud config set project recsys-mlops-506406
+
+GCP_ACCOUNT=<gcp-account> \
+  ops/gcp/terraform_gcp.sh -chdir=infra/terraform/gcp plan
+```
 
 ## GCP foundation
 

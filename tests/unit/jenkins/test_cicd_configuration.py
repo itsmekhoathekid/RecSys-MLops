@@ -96,6 +96,11 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     }
     assert units["feature-rag-mcp"]["consumesImages"] == ["recsys-feature-rag-mcp"]
     assert units["context-agent"]["consumesImages"] == []
+    assert units["milvus"]["components"] == ["rag_index"]
+    assert units["milvus-credentials"]["components"] == ["rag_index"]
+    assert units["milvus-credentials"]["requiresExplicitComponent"] is True
+    assert units["rag-feature-registry"]["components"] == ["rag_index"]
+    assert units["rag-feature-registry"]["requiresExplicitComponent"] is True
     assert units["feature-rag-mcp"]["dependsOn"] == ["rag-api"]
     assert units["context-agent"]["dependsOn"] == ["feature-rag-mcp"]
     assert units["context-agent-registry"]["dependsOn"] == [
