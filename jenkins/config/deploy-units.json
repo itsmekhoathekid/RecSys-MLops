@@ -202,17 +202,6 @@
       "dependsOn": ["rag-feature-registry"]
     },
     {
-      "name": "rag-index-promotion",
-      "kind": "kubernetes-action",
-      "release": "recsys-rag-index-promotion",
-      "namespace": "recsys-dataflow",
-      "components": ["rag_index"],
-      "requiresExplicitComponent": true,
-      "consumesImages": ["recsys-data-ingestion"],
-      "consumesArtifacts": [],
-      "dependsOn": ["rag-feature-registry", "rag-api"]
-    },
-    {
       "name": "feature-rag-mcp",
       "kind": "helm",
       "release": "recsys-feature-rag-mcp",
@@ -469,6 +458,18 @@
       "imageValues": {
         "recsys-inference-api": "image"
       },
+      "consumesArtifacts": [],
+      "dependsOn": []
+    },
+    {
+      "name": "gateway",
+      "kind": "helm",
+      "release": "recsys-gateway",
+      "namespace": "api-serving",
+      "chart": "infra/helm/recsys-gateway",
+      "components": [],
+      "consumesImages": [],
+      "imageValues": {},
       "consumesArtifacts": [],
       "dependsOn": []
     },

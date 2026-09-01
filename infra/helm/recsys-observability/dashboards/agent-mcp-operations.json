@@ -1,0 +1,431 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "title": "Command Center",
+      "type": "link",
+      "url": "/d/recsys-ai-command"
+    },
+    {
+      "title": "Traces",
+      "type": "link",
+      "url": "/d/recsys-traces"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 18
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+            "expr": "sum(rate(recsys_agent_calls_total{agent=~\"$agent\",agent!=\"unknown\"}[5m])) by (agent) or vector(0)",
+          "legendFormat": "{{agent}}"
+        }
+      ],
+      "title": "Agent calls by coordinator / context / recommendation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+            "expr": "sum(increase(recsys_agent_calls_total{agent=~\"$agent\",agent!=\"unknown\"}[30m])) by (agent,status) or vector(0)",
+          "legendFormat": "{{agent}} {{status}}"
+        }
+      ],
+      "title": "Agent success / failure",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "targets": [
+        {
+            "expr": "histogram_quantile(0.95, sum(rate(recsys_agent_duration_seconds_bucket{agent=~\"$agent\",agent!=\"unknown\"}[5m])) by (le,agent)) or vector(0)",
+          "legendFormat": "{{agent}}"
+        }
+      ],
+      "title": "Agent p95 duration",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 4,
+      "targets": [
+        {
+            "expr": "sum(rate(recsys_agent_tool_calls_total{agent=~\"$agent\",agent!=\"unknown\",tool=~\"$tool\"}[5m])) by (agent,tool,status) or vector(0)",
+          "legendFormat": "{{agent}} → {{tool}} {{status}}"
+        }
+      ],
+      "title": "Agent tool calls",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_mcp_tool_calls_total[5m])) by (tool,status)",
+          "legendFormat": "feature-rag/{{tool}} {{status}}"
+        },
+        {
+          "expr": "sum(rate(recsys_recommendation_mcp_tool_calls_total[5m])) by (status)",
+          "legendFormat": "recommendation {{status}}"
+        }
+      ],
+      "title": "MCP calls by server / tool",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 15
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_mcp_tool_calls_total{status!=\"success\"}[5m])) / clamp_min(sum(rate(recsys_mcp_tool_calls_total[5m])),0.001) or vector(0)",
+          "legendFormat": "feature-rag"
+        },
+        {
+          "expr": "sum(rate(recsys_recommendation_mcp_tool_calls_total{status!=\"success\"}[5m])) / clamp_min(sum(rate(recsys_recommendation_mcp_tool_calls_total[5m])),0.001) or vector(0)",
+          "legendFormat": "recommendation"
+        }
+      ],
+      "title": "MCP failure ratio",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 6,
+        "y": 15
+      },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(recsys_mcp_tool_duration_seconds_bucket[5m])) by (le,tool)) or vector(0)",
+          "legendFormat": "feature-rag/{{tool}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(recsys_recommendation_mcp_tool_duration_seconds_bucket[5m])) by (le)) or vector(0)",
+          "legendFormat": "recommendation"
+        }
+      ],
+      "title": "MCP p95 duration",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 15
+      },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum(increase(recsys_recommendation_mcp_retries_total[30m])) by (reason) or vector(0)",
+          "legendFormat": "retry {{reason}}"
+        }
+      ],
+      "title": "Recommendation retries",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 15
+      },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "sum(increase(recsys_mcp_partial_results_total[30m])) or vector(0)"
+        }
+      ],
+      "title": "Feature-RAG partial results",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 22
+      },
+      "id": 10,
+      "targets": [
+        {
+            "expr": "sum(increase(recsys_agent_tool_calls_total{agent=~\"$agent\",agent!=\"unknown\",tool=~\"$tool\"}[30m])) by (agent,tool,status)",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "title": "Agent-to-tool matrix (trace exemplars on time-series panels)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "green",
+                  "text": "UP"
+                }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 22
+      },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "min by (job) (up{job=~\"recsys-otel-collector|recsys-kubernetes-pods\"})",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "title": "Agent / MCP telemetry health",
+      "type": "stat"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 40,
+  "tags": [
+    "recsys",
+    "agent",
+    "mcp",
+    "production"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "includeAll": true,
+        "multi": true,
+        "name": "namespace",
+        "query": {
+          "query": "label_values(up, namespace)",
+          "refId": "v1"
+        },
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "includeAll": true,
+        "multi": true,
+        "name": "agent",
+        "query": {
+          "query": "label_values(recsys_agent_calls_total, agent)",
+          "refId": "v2"
+        },
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "includeAll": true,
+        "multi": true,
+        "name": "model",
+        "query": {
+          "query": "label_values(up{job=\"recsys-llama-cpp\"}, model)",
+          "refId": "v3"
+        },
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "includeAll": true,
+        "multi": true,
+        "name": "tool",
+        "query": {
+          "query": "label_values(recsys_agent_tool_calls_total, tool)",
+          "refId": "v4"
+        },
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Agent & MCP Operations",
+  "uid": "recsys-agent-mcp",
+  "version": 1
+}

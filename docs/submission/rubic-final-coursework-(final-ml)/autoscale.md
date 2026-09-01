@@ -46,7 +46,7 @@ Runtime/configuration reference:
 - [API metric middleware and `/metrics`](../../../apps/api-serving/src/api_runtime.py#L18), [Prometheus 15-second scrape](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L40), and [annotated-pod discovery](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L94).
 - [KEDA 10-second polling and shared cooldown](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L6), [Recommendation API PromQL triggers](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L25), and [Online Feature API triggers](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L64).
 - [Triton CPU proof values](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L46), [resource `ScaledObject`](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L13), and [KServe external-autoscaler handoff](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L12).
-- [GKE CPU node-pool autoscaling](../../../infra/terraform/gcp/gke.tf#L97) and [node bounds](../../../infra/terraform/gcp/variables.tf#L79).
+- [GKE CPU node-pool autoscaling](../../../infra/terraform/gcp/modules/gke/main.tf#L97) and [node bounds](../../../infra/terraform/gcp/variables.tf#L79).
 
 Reference code:
 
@@ -56,7 +56,7 @@ Reference code:
 - [prometheus.yaml (line 94)](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L94): annotated-pod discovery and scraping.
 - [fastapi-prometheus-scaledobjects.yaml (line 1)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L1): API and feature-API KEDA Prometheus scalers.
 - [kserve-resource-scaledobject.yaml (line 1)](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L1): Triton KEDA CPU scaler.
-- [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97): independent GKE node-pool autoscaling.
+- [gke.tf (line 97)](../../../infra/terraform/gcp/modules/gke/main.tf#L97): independent GKE node-pool autoscaling.
 
 ### How Values Become Runtime Autoscalers
 
@@ -78,7 +78,7 @@ thresholds to become active; otherwise the base `values.yaml` thresholds remain 
 | Recommendation API | [Base API thresholds (line 190)](../../../infra/helm/recsys-serving/values.yaml#L190), [proof API thresholds (line 12)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L12) | [API `ScaledObject` template (line 2)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L2) targets the [API Deployment (line 9)](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L9) | Values define thresholds and replica bounds; the template converts them to KEDA triggers and an HPA target. |
 | Online Feature API | [Base feature-API thresholds (line 207)](../../../infra/helm/recsys-serving/values.yaml#L207), [proof feature-API thresholds (line 29)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L29) | [Feature-API `ScaledObject` template (line 40)](../../../infra/helm/recsys-serving/templates/fastapi-prometheus-scaledobjects.yaml#L40) targets the [feature Deployment (line 11)](../../../infra/helm/recsys-serving/templates/feature-api-deployment.yaml#L11) | The Deployment omits a fixed `replicas` field while Prometheus autoscaling is enabled, avoiding ownership conflict with HPA. |
 | Triton/KServe | [Base resource scaler (line 224)](../../../infra/helm/recsys-serving/values.yaml#L224), [proof CPU override (line 46)](../../../infra/helm/recsys-serving/values-gcp-autoscale-proof.yaml#L46) | [`kserve-resource-scaledobject.yaml` (line 1)](../../../infra/helm/recsys-serving/templates/kserve-resource-scaledobject.yaml#L1) targets the predictor Deployment created from [`inferenceservice.yaml` (line 12)](../../../infra/helm/recsys-serving/templates/inferenceservice.yaml#L12) | KServe delegates replica ownership to the external KEDA/HPA controller. CPU utilization is measured against the configured CPU request. |
-| GKE node pool | [Node bounds in `variables.tf` (line 79)](../../../infra/terraform/gcp/variables.tf#L79) | [`gke.tf` node-pool autoscaling (line 97)](../../../infra/terraform/gcp/gke.tf#L97) | This layer is Terraform-managed rather than Helm-managed; it adds nodes only after application autoscalers create unschedulable pods. |
+| GKE node pool | [Node bounds in `variables.tf` (line 79)](../../../infra/terraform/gcp/variables.tf#L79) | [`gke.tf` node-pool autoscaling (line 97)](../../../infra/terraform/gcp/modules/gke/main.tf#L97) | This layer is Terraform-managed rather than Helm-managed; it adds nodes only after application autoscalers create unschedulable pods. |
 
 > **Evidence note:** `values.yaml` and Helm templates prove the intended and rendered configuration.
 > They do not prove that scaling occurred. Runtime evidence must additionally show the live
@@ -466,7 +466,7 @@ resource "google_container_node_pool" "cpu" {
 }
 ```
 
-Reference code: [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97), [gke.tf (line 105)](../../../infra/terraform/gcp/gke.tf#L105), [variables.tf (line 79)](../../../infra/terraform/gcp/variables.tf#L79), [variables.tf (line 85)](../../../infra/terraform/gcp/variables.tf#L85).
+Reference code: [gke.tf (line 97)](../../../infra/terraform/gcp/modules/gke/main.tf#L97), [gke.tf (line 105)](../../../infra/terraform/gcp/modules/gke/main.tf#L105), [variables.tf (line 79)](../../../infra/terraform/gcp/variables.tf#L79), [variables.tf (line 85)](../../../infra/terraform/gcp/variables.tf#L85).
 
 > **Infrastructure note:** this part has no `values.yaml` or Helm template. Application-level Helm
 > autoscalers decide how many pods are needed; Terraform's GKE node-pool bounds decide whether the

@@ -126,7 +126,7 @@ def test_runtime_has_no_retired_spark_names_or_local_tag() -> None:
 
 
 def test_gke_node_pool_upgrade_strategy_matches_quota_and_availability_needs() -> None:
-    gke = (ROOT / "infra/terraform/gcp/gke.tf").read_text(encoding="utf-8")
+    gke = (ROOT / "infra/terraform/gcp/modules/gke/main.tf").read_text(encoding="utf-8")
     cpu = gke.split('resource "google_container_node_pool" "cpu"', 1)[1].split(
         'resource "google_container_node_pool" "llm_cpu"', 1
     )[0]

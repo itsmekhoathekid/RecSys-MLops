@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret-rotation-proof-key
+  namespace: kagent
+type: Opaque
+stringData:
+  # Non-production canary value. No real credential is retained in this proof.
+  PROOF_TOKEN: rotation-v1
+---
+apiVersion: kagent.dev/v1alpha3
+kind: ModelConfig
+metadata:
+  name: secret-rotation-proof
+  namespace: kagent
+spec:
+  provider: OpenAI
+  model: qwen3.5-0.8b
+  apiKeySecret: secret-rotation-proof-key
+  apiKeySecretKey: PROOF_TOKEN
+  defaultHeaders:
+    X-Gateway-Base-Model-Name: llm-d-optimized-baseline
+  openAI:
+    apiFormat: chatCompletions
+    baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
+    maxTokens: 64
+    temperature: "0"
+    seed: 42
+---
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: secret-rotation-proof
+  namespace: kagent
+  labels:
+    ate.dev/worker-pool: secret-rotation-proof
+    kagent.dev/worker-pool: secret-rotation-proof
+spec:
+  # Two temporary workers keep one slot free while a new golden is built after
+  # the intentional rotation. Production pools are not modified by this test.
+  replicas: 2
+  sandboxClass: gvisor
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.11
+  template:
+    nodeSelector:
+      cloud.google.com/gke-nodepool: recsys-mlops-cpu
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+---
+apiVersion: kagent.dev/v1alpha3
+kind: SandboxAgent
+metadata:
+  name: secret-rotation-proof
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Disposable canary for proving automatic restart after a referenced Secret update.
+  declarative:
+    runtime: go
+    modelConfig: secret-rotation-proof
+    stream: false
+    systemMessage: Return a concise response. This agent exists only for a secret-rotation proof.
+    a2aConfig:
+      skills:
+        - id: secret-rotation-proof
+          name: Secret rotation proof
+          description: Verify that the canary agent runtime is ready.
+          examples:
+            - Return a concise health response.
+          tags:
+            - proof
+  sandbox:
+    network:
+      allowedDomains:
+        - llm-d-inference-gateway.llm-inference.svc.cluster.local
+  substrate:
+    workerPoolRef:
+      apiGroup: ate.dev
+      kind: WorkerPool
+      name: secret-rotation-proof

@@ -312,7 +312,7 @@ def test_snapshot_from_another_project_cannot_override_production_target(tmp_pat
 
 def test_up_normalizes_istiod_without_weakening_mesh_readiness(tmp_path: Path) -> None:
     script = SCRIPT.read_text(encoding="utf-8")
-    terraform = (ROOT / "infra/terraform/gcp/dependencies.tf").read_text(
+    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf").read_text(
         encoding="utf-8"
     )
 

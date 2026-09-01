@@ -7,6 +7,26 @@ This stack provisions a GKE Standard cluster and deploys the RecSys data and ML 
 - Serving: KServe InferenceService backed by Triton on GPU, FastAPI gateway service, KEDA autoscaling.
 - Observability: Prometheus, Grafana, Loki, Tempo, Pushgateway.
 
+## Module Layout
+
+The root module keeps the GCS backend, provider wiring, public variables, and
+public outputs stable. Infrastructure resources are grouped by lifecycle and
+ownership under `modules/`:
+
+```text
+modules/
+├── project-services/       # Required Google APIs and project log exclusion
+├── network/                # VPC, subnet, Pod CIDR, and Service CIDR
+├── artifact-storage/       # Artifact Registry and backup buckets
+├── gke/                    # Cluster, node pools, node IAM, and service account
+└── kubernetes-platform/    # Namespaces, operators, secrets, and Helm workloads
+```
+
+`moved.tf` permanently records the former root resource addresses. Existing
+states therefore migrate to the child-module addresses without recreating
+cloud or Kubernetes objects. Do not remove those blocks unless every state
+using the legacy layout has completed the migration.
+
 ## Cost And Latency Defaults
 
 The defaults are tuned for moderate cost while keeping inference warm:
@@ -80,6 +100,36 @@ state: first change only the Cloud Build API instance to
 removes the API entry and Cloud Build IAM resources, and apply again. Do not
 skip the reviewed intermediate apply if the API must be disabled rather than
 merely unmanaged.
+
+## Langfuse coursework cost profile
+
+`langfuse_backend_mode = "managed"` preserves the HA production profile:
+Cloud SQL, Memorystore, GKE Backup, and a dedicated three-node Langfuse pool.
+`langfuse_backend_mode = "in_cluster"` keeps the public UI, OTEL export, GCS,
+and stable project keys but runs one PostgreSQL, Valkey, ClickHouse, Keeper,
+web, worker, and operator replica on the shared CPU pool. The coursework
+profile has no HA guarantee or recurring backup.
+
+The managed-to-in-cluster transition is intentionally staged:
+
+1. Export Cloud SQL, ClickHouse, and an encrypted copy of
+   `recsys-langfuse-runtime` to a timestamped GCS prefix and verify the objects.
+2. While the mode is still `managed`, set
+   `langfuse_managed_backend_deletion_protection = false`, review a targeted
+   plan for the Cloud SQL instance, and apply only that protection change.
+3. Stop Langfuse writers, uninstall the old `langfuse` release, and delete the
+   six old ClickHouse/Keeper PVCs only after the export is verified. Shrinking
+   a 100-GiB PVC to the coursework 20-GiB size is not supported in place.
+4. Set `langfuse_backend_mode = "in_cluster"` and target only the Langfuse and
+   ClickHouse-operator releases first. This leaves the managed stores and old
+   node pool available until the new release passes health and trace checks.
+5. Run a reviewed full plan/apply to retire Cloud SQL, Memorystore, Private
+   Service Access, GKE Backup, and the dedicated Langfuse node pool.
+
+The ClickHouse CRD in chart 2.0.1 requires a Keeper reference even for a
+single ClickHouse replica, so the coursework profile retains one small Keeper.
+Avoid running Spark, large Flink/DataHub ingestion, and heavy LLM traffic
+simultaneously while this cost-bounded profile is active.
 
 ## Deploy
 

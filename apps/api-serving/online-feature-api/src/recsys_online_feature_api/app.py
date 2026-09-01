@@ -95,7 +95,9 @@ def create_app(
     async def online_features_get(
         request: Request,
         user_id: int = Path(ge=1),
-        candidate_item_ids: list[int] | None = Query(default=None),
+        candidate_item_ids: list[int] | None = Query(
+            default=None, min_length=1, max_length=500
+        ),
         top_k: int = Query(default=10, ge=1, le=100),
     ) -> OnlineFeaturesResponse:
         return await online_features_post(

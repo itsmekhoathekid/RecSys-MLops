@@ -36,8 +36,8 @@ and cert-manager supplies each route's certificate.
 | DNS provider | Owns the public `A` records. DNS is evidenced in this document but is not managed by the current Terraform stack. |
 
 Relevant configuration sources are
-[dependencies.tf](../../../infra/terraform/gcp/dependencies.tf#L242),
-[recsys_services.tf](../../../infra/terraform/gcp/recsys_services.tf#L388),
+[dependencies.tf](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L242),
+[recsys_services.tf](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L388),
 [values.yaml](../../../infra/helm/recsys-gateway/values.yaml), and
 [values-gcp.yaml](../../../infra/helm/recsys-gateway/values-gcp.yaml).
 
@@ -116,7 +116,7 @@ NGINX `auth-type`, `auth-secret`, and `auth-realm` annotations. Production sets
 `auth.createSecret=false`, so the gateway chart will not render a competing
 Secret or place the htpasswd line in a Helm manifest. Terraform waits until both
 ExternalSecrets are Ready before dependent releases proceed. See
-[secret_management.tf](../../../infra/terraform/gcp/secret_management.tf) and
+[secret_management.tf](../../../infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf) and
 [externalsecrets.yaml](../../../infra/helm/recsys-security/templates/externalsecrets.yaml).
 
 ### TLS And DNS Setup
@@ -174,8 +174,8 @@ logs, and traces collection flow is documented in
 
 | Gateway layer | Clickable configuration reference | Purpose |
 | --- | --- | --- |
-| NGINX Ingress Controller | [dependencies.tf (line 242)](../../../infra/terraform/gcp/dependencies.tf#L242) | Installs the cluster-wide `ingress-nginx` controller that receives public traffic. |
-| Gateway Helm release | [recsys_services.tf (line 388)](../../../infra/terraform/gcp/recsys_services.tf#L388), [host/backend overrides (line 399)](../../../infra/terraform/gcp/recsys_services.tf#L399) | Deploys `recsys-gateway` and injects public hosts plus internal Kubernetes upstreams. |
+| NGINX Ingress Controller | [dependencies.tf (line 242)](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L242) | Installs the cluster-wide `ingress-nginx` controller that receives public traffic. |
+| Gateway Helm release | [recsys_services.tf (line 388)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L388), [host/backend overrides (line 399)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L399) | Deploys `recsys-gateway` and injects public hosts plus internal Kubernetes upstreams. |
 | Shared gateway policy | [values.yaml: ingress class and domain](../../../infra/helm/recsys-gateway/values.yaml#L1), [Basic Auth](../../../infra/helm/recsys-gateway/values.yaml#L5), [TLS/cert-manager](../../../infra/helm/recsys-gateway/values.yaml#L16) | Centralizes the NGINX class, authentication secret, TLS issuer, certificates, and per-route rate limits. |
 | Web API Pull Data route | [feature API values](../../../infra/helm/recsys-gateway/values.yaml#L46), [feature-api-ingress.yaml](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L1) | Routes the public API host to `recsys-online-feature-api` and applies Basic Auth, throttling, and TLS. |
 | Metric route | [Grafana values](../../../infra/helm/recsys-gateway/values.yaml#L60), [grafana-ingress.yaml](../../../infra/helm/recsys-gateway/templates/grafana-ingress.yaml#L1) | Routes the metric domain to the internal Grafana service. |
@@ -320,7 +320,7 @@ gateway. The production host is `https://api.recsys-mlops.site`.
 
 - [feature_api.py (line 13)](../../../apps/api-serving/src/feature_api.py#L13), [feature_api.py (line 77)](../../../apps/api-serving/src/feature_api.py#L77): `RecSys Online Feature API` and POST/GET online-feature routes.
 - [feature-api-ingress.yaml (line 1)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L1), [feature-api-ingress.yaml (line 45)](../../../infra/helm/recsys-gateway/templates/feature-api-ingress.yaml#L45): route, Basic Auth, rate limit, and TLS annotations.
-- [values.yaml (line 46)](../../../infra/helm/recsys-gateway/values.yaml#L46), [values.yaml (line 58)](../../../infra/helm/recsys-gateway/values.yaml#L58), [recsys_services.tf (line 388)](../../../infra/terraform/gcp/recsys_services.tf#L388), [recsys_services.tf (line 409)](../../../infra/terraform/gcp/recsys_services.tf#L409): enable the route and derive its host from `gateway_domain`.
+- [values.yaml (line 46)](../../../infra/helm/recsys-gateway/values.yaml#L46), [values.yaml (line 58)](../../../infra/helm/recsys-gateway/values.yaml#L58), [recsys_services.tf (line 388)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L388), [recsys_services.tf (line 409)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L409): enable the route and derive its host from `gateway_domain`.
 
 ### Basic Auth & Rate Limit Proof
 
@@ -344,3 +344,21 @@ return HTTP `429`.
 
 **Figure: Web API Pull Data HTTPS proof.** The FastAPI Swagger UI is loaded via
 `https://api.recsys-mlops.site/docs`.
+
+## Agent UIs and RAG API Documentation
+
+Three additional production surfaces are published through the same NGINX
+Ingress Controller and shared Vault-backed Basic Auth:
+
+| Public surface | Internal upstream | Public paths |
+| --- | --- | --- |
+| `https://agents.recsys-mlops.site` | `kagent-ui.kagent.svc.cluster.local:8080` | `/`, `/api/*`, `/a2a/*` for the streaming agent test UI |
+| `https://registry.recsys-mlops.site` | `agentregistry.agentregistry.svc.cluster.local:12121` | Agent Registry UI and its same-origin HTTP API |
+| `https://rag.recsys-mlops.site` | `recsys-rag-api.api-serving.svc.cluster.local:80` | `/docs*`, `/redoc*`, `/openapi.json`, `/v1/rag/*` |
+
+The Agent Registry MCP port `31313`, kagent controller ports `8083/8084`, and
+RAG operational endpoints `/metrics`, `/healthz`, `/ready`, and `/version`
+remain cluster-internal. The RAG hostname redirects its exact root to `/docs`,
+while Swagger requests can exercise only the explicitly exposed `/v1/rag/*`
+API routes. Each hostname has an independent Let's Encrypt certificate and
+points to the shared production ingress address `136.85.106.59`.

@@ -1,0 +1,371 @@
+resource "helm_release" "cert_manager" {
+  name             = "cert-manager"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  namespace        = "cert-manager"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  set {
+    name  = "installCRDs"
+    value = "true"
+  }
+
+}
+
+resource "helm_release" "keda" {
+  name             = "keda"
+  repository       = "https://kedacore.github.io/charts"
+  chart            = "keda"
+  namespace        = "keda"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+}
+
+resource "helm_release" "keda_http" {
+  name       = "keda-add-ons-http"
+  repository = "https://kedacore.github.io/charts"
+  chart      = "keda-add-ons-http"
+  namespace  = "keda"
+  wait       = true
+  timeout    = 600
+
+  # The chart's HA defaults reserve 2 CPU on a cluster whose free-trial quota
+  # is only 12 vCPU. One replica of each component remains fully functional
+  # for this single-cluster deployment and leaves room for Spark/KFP jobs.
+  set {
+    name  = "interceptor.replicas.min"
+    value = "1"
+  }
+
+  set {
+    name  = "interceptor.resources.requests.cpu"
+    value = "25m"
+  }
+
+  set {
+    name  = "scaler.replicas"
+    value = "1"
+  }
+
+  set {
+    name  = "scaler.resources.requests.cpu"
+    value = "25m"
+  }
+
+  set {
+    name  = "operator.resources.requests.cpu"
+    value = "25m"
+  }
+
+  depends_on = [helm_release.keda]
+}
+
+resource "helm_release" "external_secrets" {
+  count = var.config.deploy_service_mesh ? 1 : 0
+
+  name             = "external-secrets"
+  repository       = "https://charts.external-secrets.io"
+  chart            = "external-secrets"
+  namespace        = "external-secrets"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  set {
+    name  = "installCRDs"
+    value = "true"
+  }
+
+}
+
+resource "helm_release" "kuberay_operator" {
+  name             = "kuberay-operator"
+  repository       = "https://ray-project.github.io/kuberay-helm/"
+  chart            = "kuberay-operator"
+  namespace        = "kubeflow"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+}
+
+resource "helm_release" "prometheus_operator" {
+  name             = "recsys-prometheus-operator"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  version          = "87.19.2"
+  namespace        = "observability"
+  create_namespace = false
+  atomic           = true
+  cleanup_on_fail  = true
+  wait             = true
+  wait_for_jobs    = true
+  timeout          = 900
+  max_history      = 10
+
+  set {
+    name  = "defaultRules.create"
+    value = "false"
+  }
+
+  set {
+    name  = "alertmanager.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "grafana.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeApiServer.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubelet.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeControllerManager.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "coreDns.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeDns.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeEtcd.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeScheduler.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeProxy.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "kubeStateMetrics.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "nodeExporter.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheus.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheusOperator.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "prometheusOperator.admissionWebhooks.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheusOperator.tls.enabled"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheusOperator.serviceMonitor.selfMonitor"
+    value = "false"
+  }
+
+  set {
+    name  = "prometheusOperator.podAnnotations.sidecar\\.istio\\.io/inject"
+    value = "false"
+    type  = "string"
+  }
+
+  depends_on = [
+    kubernetes_namespace.observability,
+  ]
+}
+
+resource "helm_release" "istio_base" {
+  count = var.config.deploy_service_mesh ? 1 : 0
+
+  name             = "istio-base"
+  repository       = "https://istio-release.storage.googleapis.com/charts"
+  chart            = "base"
+  namespace        = "istio-system"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  depends_on = [
+  ]
+}
+
+resource "helm_release" "istiod" {
+  count = var.config.deploy_service_mesh ? 1 : 0
+
+  name       = "istiod"
+  repository = "https://istio-release.storage.googleapis.com/charts"
+  chart      = "istiod"
+  namespace  = "istio-system"
+  wait       = true
+  timeout    = 600
+
+  set {
+    name  = "global.configValidation"
+    value = "false"
+  }
+
+  # The two-node proof cluster needs control-plane headroom for KFP/Ray
+  # launchers. Live usage is single-digit millicores, so this retains a wide
+  # safety margin without reserving the chart default 500m CPU and 2Gi RAM.
+  set {
+    name  = "pilot.resources.requests.cpu"
+    value = "50m"
+  }
+
+  set {
+    name  = "pilot.resources.requests.memory"
+    value = "256Mi"
+  }
+
+  set {
+    name  = "pilot.resources.limits.cpu"
+    value = "500m"
+  }
+
+  set {
+    name  = "pilot.resources.limits.memory"
+    value = "1Gi"
+  }
+
+  depends_on = [
+    helm_release.istio_base,
+  ]
+}
+
+resource "helm_release" "ingress_nginx" {
+  count = var.config.deploy_gateway ? 1 : 0
+
+  name             = "ingress-nginx"
+  repository       = "https://kubernetes.github.io/ingress-nginx"
+  chart            = "ingress-nginx"
+  namespace        = "ingress-nginx"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  set {
+    name  = "controller.service.type"
+    value = "LoadBalancer"
+  }
+
+  set {
+    name  = "controller.podAnnotations.sidecar\\.istio\\.io/inject"
+    value = var.config.deploy_service_mesh ? "true" : "false"
+  }
+
+  set {
+    name  = "controller.podAnnotations.traffic\\.sidecar\\.istio\\.io/includeInboundPorts"
+    value = ""
+  }
+
+  set {
+    name  = "controller.config.limit-req-status-code"
+    value = "429"
+  }
+
+  set {
+    name  = "controller.config.limit-conn-status-code"
+    value = "429"
+  }
+
+  # The controller pod requests sidecar injection when the service mesh is
+  # enabled. Wait for the injector webhook; otherwise Helm can create the pod
+  # before istiod exists and leave NGINX unable to reach STRICT-mTLS upstreams.
+  depends_on = [
+    helm_release.istiod,
+  ]
+}
+
+resource "null_resource" "kubeflow_pipelines" {
+  count = var.config.install_kubeflow_pipelines ? 1 : 0
+
+  triggers = {
+    cluster_id = var.cluster.id
+    version    = var.config.kubeflow_pipelines_version
+  }
+
+  provisioner "local-exec" {
+    command     = <<-EOT
+      set -euo pipefail
+      kubectl apply -k "github.com/kubeflow/pipelines/manifests/kustomize/cluster-scoped-resources?ref=${var.config.kubeflow_pipelines_version}"
+      kubectl wait --for condition=established --timeout=120s crd/applications.app.k8s.io
+      kubectl apply -k "github.com/kubeflow/pipelines/manifests/kustomize/env/dev?ref=${var.config.kubeflow_pipelines_version}"
+      kubectl rollout status deploy/ml-pipeline -n kubeflow --timeout=600s
+      kubectl rollout status deploy/ml-pipeline-ui -n kubeflow --timeout=600s
+      kubectl rollout status deploy/workflow-controller -n kubeflow --timeout=600s
+      if [ "${var.config.scale_optional_kfp_components}" = "true" ]; then
+        kubectl scale deploy/metadata-writer -n kubeflow --replicas=0 >/dev/null 2>&1 || true
+        kubectl scale deploy/proxy-agent -n kubeflow --replicas=0 >/dev/null 2>&1 || true
+      fi
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  depends_on = [
+    helm_release.kuberay_operator,
+  ]
+}
+
+resource "null_resource" "kserve" {
+  count = var.config.install_kserve ? 1 : 0
+
+  triggers = {
+    cluster_id = var.cluster.id
+    version    = var.config.kserve_version
+  }
+
+  provisioner "local-exec" {
+    command     = <<-EOT
+      set -euo pipefail
+      kubectl apply --server-side --force-conflicts -f "https://github.com/kserve/kserve/releases/download/${var.config.kserve_version}/kserve.yaml"
+      kubectl rollout status deploy/kserve-controller-manager -n kserve --timeout=600s
+      for _ in $(seq 1 60); do
+        if kubectl get endpoints kserve-webhook-server-service -n kserve -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then
+          break
+        fi
+        sleep 2
+      done
+      kubectl apply --server-side --force-conflicts -f "https://github.com/kserve/kserve/releases/download/${var.config.kserve_version}/kserve-cluster-resources.yaml"
+      kubectl get clusterservingruntime kserve-tritonserver
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  depends_on = [
+    helm_release.cert_manager,
+  ]
+}

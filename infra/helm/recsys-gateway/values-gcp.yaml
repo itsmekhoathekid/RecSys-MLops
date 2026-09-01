@@ -23,6 +23,21 @@ logs:
 traces:
   host: traces.recsys-mlops.site
 
+agents:
+  enabled: true
+  host: agents.recsys-mlops.site
+
+registry:
+  enabled: true
+  host: registry.recsys-mlops.site
+
+rag:
+  enabled: true
+  host: rag.recsys-mlops.site
+  rootRedirect:
+    enabled: true
+    path: /docs
+
 tls:
   enabled: true
   clusterIssuerName: letsencrypt-prod

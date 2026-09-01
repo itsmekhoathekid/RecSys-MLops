@@ -83,6 +83,7 @@ pythonpath = [
     "apps/api-serving/shared/src",
     "apps/api-serving/online-feature-api/src",
     "apps/api-serving/inference-api/src",
+    "apps/api-serving/rag-api/src",
     "apps/data-platform/feature-store/runtime/src",
     "apps/data-platform/rag-runtime/src",
     "apps/ml-system/src",
@@ -93,3 +94,24 @@ pythonpath = [
 
 [tool.ruff]
 extend-exclude = ["notebooks/*.ipynb"]
+
+[tool.mutmut]
+source_paths = ["src"]
+only_mutate = [
+    "src/recsys_inference_api/schemas.py",
+    "src/recsys_inference_api/feature_client.py",
+    "src/recsys_inference_api/ranking.py",
+    "src/recsys_inference_api/ab_testing.py",
+    "src/recsys_inference_api/shadow.py",
+    "src/recsys_inference_api/triton.py",
+    "src/recsys_online_feature_api/service.py",
+    "src/recsys_serving_common/contracts.py",
+    "src/recsys_rag_api/contracts.py",
+    "src/recsys_rag_api/pointer.py",
+    "src/recsys_rag_api/batching.py",
+    "src/recsys_rag_api/chunk_lookup.py",
+    "src/recsys_rag_api/retrieval.py",
+]
+pytest_add_cli_args_test_selection = ["tests"]
+mutate_only_covered_lines = true
+use_setproctitle = false

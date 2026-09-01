@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: benchmark-workloads
+---
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: benchmark-ateom
+  namespace: benchmark-workloads
+  labels:
+    workload: benchmark-ateom
+spec:
+  replicas: 1
+  sandboxClass: gvisor
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.11
+---
+apiVersion: ate.dev/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: glutton-durdir-data
+  namespace: benchmark-workloads
+spec:
+  pauseImage: gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da
+  sandboxClass: gvisor
+  containers:
+    - name: glutton
+      image: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/substrate-benchmark-glutton:v0011-678bb80@sha256:a6eeb1df90738c8862be3511c8f6c98ba0f69f2e0582fc534cf09ce559f92c03
+      command:
+        - /ko-app/glutton
+        - --grpc-listen-addr=:80
+        - --metrics-listen-addr=:9090
+        - --data-dir=/var/lib/glutton
+        - --mode=http
+      readyz:
+        httpGet:
+          path: /readyz
+          port: 80
+      volumeMounts:
+        - name: data
+          mountPath: /var/lib/glutton
+  volumes:
+    - name: data
+      durableDir: {}
+  workerSelector:
+    matchLabels:
+      workload: benchmark-ateom
+  snapshotsConfig:
+    onPause: Full
+    onCommit: Data
+    onResume:
+      fromData: ColdBoot
+    location: gs://ate-snapshots/benchmark-workloads/glutton-durdir-data/

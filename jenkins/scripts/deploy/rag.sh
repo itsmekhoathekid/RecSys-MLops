@@ -22,11 +22,25 @@ rag_wait_job() {
     echo "Job ${namespace}/${job} was not visible after creation" >&2
     return 1
   fi
-  if ! kubectl -n "${namespace}" wait --for=condition=complete "job/${job}" --timeout="${timeout}"; then
-    kubectl -n "${namespace}" logs "job/${job}" --all-containers=true || true
-    return 1
-  fi
-  kubectl -n "${namespace}" logs "job/${job}" --all-containers=true
+  local timeout_seconds="${timeout%s}"
+  local deadline=$((SECONDS + timeout_seconds))
+  local conditions
+  while ((SECONDS < deadline)); do
+    conditions="$(kubectl -n "${namespace}" get "job/${job}" -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}' 2>/dev/null || true)"
+    if grep -qx 'Complete=True' <<<"${conditions}"; then
+      kubectl -n "${namespace}" logs "job/${job}" --all-containers=true
+      return 0
+    fi
+    if grep -qx 'Failed=True' <<<"${conditions}"; then
+      echo "Job ${namespace}/${job} reported Failed before timeout" >&2
+      kubectl -n "${namespace}" logs "job/${job}" --all-containers=true || true
+      return 1
+    fi
+    sleep 5
+  done
+  echo "Timed out after ${timeout} waiting for Job ${namespace}/${job}" >&2
+  kubectl -n "${namespace}" logs "job/${job}" --all-containers=true || true
+  return 1
 }
 
 rag_feature_registry_apply() {
@@ -307,6 +321,7 @@ EOF
     --golden configs/data-platform/rag/golden_queries.json \
     --report .ci-deploy/rag-retrieval-verification.json \
     --minimum-recall "${RAG_MINIMUM_RECALL_AT_10:-0.90}" \
+    --indexed-item-count "${expected_items}" \
     --maximum-p95-ms "${RAG_MAXIMUM_API_P95_MS:-750}" \
     --concurrency 10; then
     rag_stop_api_port_forward

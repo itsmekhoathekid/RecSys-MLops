@@ -1164,8 +1164,10 @@ agentic_assert_registry_publish_branch() {
   case "${branch}" in
     main|origin/main|refs/heads/main|refs/remotes/origin/main) ;;
     *)
-      if ! git rev-parse --verify origin/main^{commit} >/dev/null 2>&1 ||
-        [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+      if ! recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}" \
+        && ! recsys_is_true "${FORCE_DEPLOY:-0}" \
+        && { ! git rev-parse --verify origin/main^{commit} >/dev/null 2>&1 \
+          || [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; }; then
         recsys_log DEPLOY "skip Agent Registry publish on non-main branch ${branch:-detached}"
         return 1
       fi

@@ -69,6 +69,19 @@ vault_legacy_source_secrets_enabled = true
 # ingress-nginx LoadBalancer IP before enabling production certificates.
 # deploy_gateway             = true
 # gateway_domain             = "recsys-mlops.site"
+
+# Production Langfuse v4 reuses the existing GKE/VPC and adds managed data stores.
+deploy_langfuse            = false
+langfuse_backend_mode      = "managed"
+# Set false and apply once while mode is managed before an intentional
+# managed -> in_cluster cutover. Keep true for normal managed deployments.
+langfuse_managed_backend_deletion_protection = true
+langfuse_domain            = "langfuse.recsys-mlops.site"
+langfuse_chart_version     = "2.0.1"
+langfuse_app_version       = "4.17.0"
+langfuse_node_machine_type = "e2-standard-4"
+langfuse_node_count        = 3
+langfuse_retention_days    = 30
 # gateway_tls_enabled        = true
 # gateway_tls_cluster_issuer = "letsencrypt-prod"
 # gateway_tls_issuer_create  = true

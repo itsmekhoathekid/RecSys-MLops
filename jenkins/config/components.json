@@ -24,6 +24,7 @@
     ".idea/**",
     ".vscode/**",
     ".ci-image-manifest/**",
+    ".ci-deploy/**",
     ".ci-release-plan.json",
     "reports/**"
   ],
@@ -110,6 +111,12 @@
         "configs/data-platform/rag/",
         "scripts/models/"
       ]
+    },
+    "serving-mutation-common": {
+      "files": [
+        "jenkins/ServingMutation.Jenkinsfile",
+        "tests/mutation/api_serving/run.py"
+      ]
     }
   },
   "ciConfiguration": {
@@ -118,6 +125,7 @@
       "prefixes": [
         "configs/agentregistry/",
         "configs/kagent/",
+        "configs/langfuse/",
         "configs/llm-d/",
         "configs/vault/",
         "infra/terraform/",
@@ -128,12 +136,15 @@
         "jenkins/python/",
         "jenkins/scripts/",
         "tests/unit/jenkins/",
+        "tests/unit/observability/",
+        "tests/mutation/",
         "tests/contract/"
       ],
       "files": [
         ".dockerignore",
         ".gcloudignore",
         "Jenkinsfile",
+        "jenkins/ServingMutation.Jenkinsfile",
         "Makefile",
         "infra/__init__.py",
         "tests/contract/test_repository_layout_contracts.py",
@@ -417,13 +428,15 @@
         "groups": [
           "python-common",
           "jenkins-shared-runtime",
-          "rag-shared-runtime"
+          "rag-shared-runtime",
+          "serving-mutation-common"
         ],
         "prefixes": [
           "apps/api-serving/shared/",
           "apps/api-serving/rag-api/",
           "infra/helm/recsys-rag-api/",
-          "tests/unit/api_serving/rag_api/"
+          "tests/unit/api_serving/rag_api/",
+          "tests/mutation/api_serving/rag_api/"
         ],
         "files": [
           "jenkins/scripts/ci/serving.sh",
@@ -448,14 +461,16 @@
       "changeDetection": {
         "groups": [
           "python-common",
-          "jenkins-shared-runtime"
+          "jenkins-shared-runtime",
+          "serving-mutation-common"
         ],
         "prefixes": [
           "apps/api-serving/shared/",
           "apps/api-serving/online-feature-api/",
           "apps/data-platform/feature-store/runtime/",
           "infra/helm/recsys-online-feature-api/",
-          "tests/unit/api_serving/"
+          "tests/unit/api_serving/",
+          "tests/mutation/api_serving/online_feature_api/"
         ],
         "files": [
           "tests/contract/test_stream_online_serving_contract.py",
@@ -482,7 +497,8 @@
       "changeDetection": {
         "groups": [
           "python-common",
-          "jenkins-shared-runtime"
+          "jenkins-shared-runtime",
+          "serving-mutation-common"
         ],
         "prefixes": [
           "apps/agentic/recsys-feature-rag-mcp/",
@@ -604,7 +620,7 @@
         ],
         "files": [
           "configs/agentic/recsys-coordinator-agent/tools-contract.json",
-          "infra/terraform/gcp/kagent.tf",
+          "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf",
           "jenkins/scripts/ci/agentic.sh",
           "jenkins/scripts/deploy/agentic.sh",
           "jenkins/scripts/test/agentic.sh",
@@ -633,9 +649,9 @@
           "apps/api-serving/shared/",
           "apps/api-serving/inference-api/",
           "infra/helm/recsys-inference-api/",
-          "infra/helm/recsys-gateway/",
           "tests/e2e/",
-          "tests/unit/api_serving/"
+          "tests/unit/api_serving/",
+          "tests/mutation/api_serving/inference_api/"
         ],
         "files": [
           "jenkins/scripts/ci/serving.sh",

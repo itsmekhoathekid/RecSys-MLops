@@ -1,7 +1,7 @@
 # HashiCorp Vault and Agent Gateway Authentication
 
 This document records the HashiCorp Vault configuration used by the final LLM
-platform and provides safe capture commands for coursework evidence. The live
+platform and the sanitized coursework evidence. The live
 GKE deployment was rechecked on 2026-08-14: Vault was initialized and unsealed
 with HA Raft storage, `recsys-vault` was `Valid/Ready`, both Agent Gateway
 `ExternalSecret` resources were `SecretSynced/Ready`, and the strict
@@ -38,7 +38,7 @@ Secrets using their native configuration.
 
 | Responsibility | Repository source |
 |---|---|
-| Dedicated Vault GSA, KMS key, KMS IAM, Workload Identity, official Vault Helm release, and TokenReview RBAC | [`vault.tf`, lines 1–109](../../../infra/terraform/gcp/vault.tf#L1-L109) |
+| Dedicated Vault GSA, KMS key, KMS IAM, Workload Identity, official Vault Helm release, and TokenReview RBAC | [`vault.tf`, lines 1–109](../../../infra/terraform/gcp/modules/kubernetes-platform/vault.tf#L1-L109) |
 | Pinned chart `0.34.0`, three replicas, and 10 GiB storage defaults | [`variables.tf`, lines 347–380](../../../infra/terraform/gcp/variables.tf#L347-L380) |
 | Vault `2.0.3`, HA Raft, PVCs, internal HTTP listener, and GCP KMS seal | [`values.yaml.tftpl`, lines 1–107](../../../configs/vault/values.yaml.tftpl#L1-L107) |
 | Initialization, KV v2, policy, Kubernetes auth, API-key generation, encrypted bootstrap artifact, and root-token revocation | [`bootstrap_vault.sh`, lines 29–294](../../../ops/gcp/bootstrap_vault.sh#L29-L294) |
@@ -46,7 +46,7 @@ Secrets using their native configuration.
 | Generic namespace-level `ExternalSecret` renderer | [`externalsecrets.yaml`, lines 1–40](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L1-L40) |
 | Agent Gateway client/server and Agent Registry database secret paths | [`values.yaml`, lines 28–42](../../../infra/helm/recsys-security/values.yaml#L28-L42) |
 | Agent Gateway API-key generation/write, Agent Registry PostgreSQL generation/write, and generic migrated-group writer | [`bootstrap_vault.sh`, line 177](../../../ops/gcp/bootstrap_vault.sh#L177), [`bootstrap_vault.sh`, line 192](../../../ops/gcp/bootstrap_vault.sh#L192), [`bootstrap_vault.sh`, line 216](../../../ops/gcp/bootstrap_vault.sh#L216) |
-| Terraform enables both mappings and waits for both target Secrets | [`locals.tf`, lines 89–108](../../../infra/terraform/gcp/locals.tf#L89-L108), [`secret_management.tf`, lines 92–142](../../../infra/terraform/gcp/secret_management.tf#L92-L142) |
+| Terraform enables both mappings and waits for both target Secrets | [`locals.tf`, lines 89–108](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L89-L108), [`secret_management.tf`, lines 92–142](../../../infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf#L92-L142) |
 | Strict API-key enforcement at `PreRouting` | [`gateway-auth.yaml`, lines 1–19](../../../infra/helm/recsys-llm-serving/templates/gateway-auth.yaml#L1-L19), [`values.yaml`, lines 30–39](../../../infra/helm/recsys-llm-serving/values.yaml#L30-L39) |
 | Kagent reads the client copy and sends it to the internal Gateway | [`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55) |
 | Executable 401/401/success Gateway smoke test | [`llm_inference_smoke.sh`, lines 60–102](../../../ops/validation/llm_inference_smoke.sh#L60-L102) |
@@ -152,7 +152,7 @@ read-only token cannot perform those writes.
 
 The encrypted bootstrap artifact is mode `600` and gitignored. Plaintext exists
 only inside a mode-`700` temporary directory removed by the script's `EXIT`
-trap. Never capture or commit the decrypted artifact.
+trap. The decrypted artifact must never be committed.
 
 #### Vault path and write provenance
 
@@ -170,7 +170,7 @@ path `recsys/data/<group>`:
 | `recsys/kserve-minio` | [KServe path (line 60)](../../../infra/helm/recsys-security/values.yaml#L60) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) |
 | `recsys/gateway` | [gateway paths (line 69)](../../../infra/helm/recsys-security/values.yaml#L69) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) |
 | `recsys/analytics` | [analytics remote key (line 6)](../../../infra/helm/recsys-analytics/values.yaml#L6) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) |
-| `recsys/jenkins-runtime` | [runtime additional path (line 109)](../../../infra/terraform/gcp/locals.tf#L109) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) |
+| `recsys/jenkins-runtime` | [runtime additional path (line 109)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L109) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) |
 
 ### 3. ESO authentication and secret distribution
 
@@ -437,16 +437,10 @@ vault_exec kv rollback -mount=recsys \
   -version="${before_version}" agent-gateway
 ```
 
-## Capture Safety Checklist
+## Operational Safety
 
-- Capture `vault status`, metadata, key names, resource status, and boolean
-  comparisons only.
-- Never capture `vault kv get` without a filtering `jq`, an unfiltered
-  `kubectl get secret -o yaml`, decoded Secret values, the plaintext form of
-  `.vault-bootstrap/vault-init.json.enc`,
-  plaintext, recovery shares, or Vault tokens.
 - Keep `set -x` disabled while any token or API key exists in a shell variable.
-- Clear the terminal scrollback if a secret is accidentally rendered and rotate
-  that secret before using the evidence.
+- If a secret is accidentally rendered, clear the terminal scrollback and
+  rotate that secret.
 - The current HTTP-only scope provides authentication, not encryption in
   transit. TLS remains a required hardening step for a production/public path.

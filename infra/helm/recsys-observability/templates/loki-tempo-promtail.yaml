@@ -131,6 +131,8 @@ spec:
       app: recsys-promtail
   template:
     metadata:
+      annotations:
+        checksum/promtail-config: {{ default "local-chart" .Values.chartRevision | quote }}
       labels:
         app: recsys-promtail
     spec:
@@ -220,6 +222,21 @@ data:
           - targets: [localhost]
             labels:
               job: kubernetes-pods
+              namespace: {{ .Values.targets.agenticNamespace }}
+              __path__: /var/log/containers/*_{{ .Values.targets.agenticNamespace }}_*.log
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
+              namespace: {{ .Values.targets.llmNamespace }}
+              __path__: /var/log/containers/*_{{ .Values.targets.llmNamespace }}_*.log
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
+              namespace: {{ .Values.targets.agentgatewayNamespace }}
+              __path__: /var/log/containers/*_{{ .Values.targets.agentgatewayNamespace }}_*.log
+          - targets: [localhost]
+            labels:
+              job: kubernetes-pods
               namespace: {{ .Values.namespace.name }}
               __path__: /var/log/containers/*_{{ .Values.namespace.name }}_*.log
         pipeline_stages:
@@ -231,3 +248,24 @@ data:
               namespace:
               pod:
               container:
+          # Loki query execution logs echo the complete LogQL expression. Drop
+          # only those self-audit lines; warnings, errors and other Loki logs
+          # remain available for operations.
+          - match:
+              selector: '{container="loki"}'
+              stages:
+                - drop:
+                    expression: '(^| )query="'
+          # Redact application telemetry before Loki ingestion.
+          - replace:
+              expression: '(?i)[a-z0-9._%+-]+@[a-z0-9.-]+'
+              replace: '[REDACTED_EMAIL]'
+          - replace:
+              expression: '(?i)([0-9][ -]?){13,19}'
+              replace: '[REDACTED_PAYMENT_CARD]'
+          - replace:
+              expression: '(?i)[+]?[0-9]{1,3}[ .-]?[(]?[0-9]{3}[)]?[ .-]?[0-9]{3}[ .-]?[0-9]{4}'
+              replace: '[REDACTED_PHONE]'
+          - replace:
+              expression: '(?i)(ignore (all|any|the|your) (previous|prior|above) instructions|system prompt|jailbreak)'
+              replace: '[REDACTED_PROMPT_INJECTION]'

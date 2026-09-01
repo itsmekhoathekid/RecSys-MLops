@@ -79,3 +79,84 @@ def test_verifier_fails_gate_for_duplicates_or_constraint_violation(monkeypatch)
     assert report["status"] == "failed"
     assert report["duplicate_response_count"] == 1
     assert report["hard_constraint_violation_count"] == 2
+
+
+def test_recall_gate_scales_with_indexed_catalog_coverage(monkeypatch):
+    case = MODULE.GoldenCase(
+        "Sony tai nghe", frozenset({1, 2, 3, 4, 5}), "Sony", ("Điện tử",)
+    )
+
+    def response(_url, _payload, _timeout):
+        items = [
+            {
+                "item_id": item_id,
+                "brand": "Sony",
+                "category_path": ["Điện tử", "Âm thanh"],
+                "in_stock": True,
+                "current_price": 20.99,
+            }
+            for item_id in (1, 2, 3)
+        ]
+        return {"items": items}, 12.0
+
+    monkeypatch.setattr(MODULE, "_post_json", response)
+    report = MODULE.verify(
+        base_url="http://rag",
+        cases=[case],
+        minimum_recall=0.9,
+        maximum_p95_ms=750,
+        concurrency=1,
+        timeout=1,
+        indexed_item_count=96,
+        golden_catalog_item_count=160,
+    )
+
+    assert report["status"] == "passed"
+    assert report["recall_at_10"] == 0.6
+    assert report["minimum_recall_at_10"] == 0.9
+    assert report["catalog_coverage_ratio"] == 0.6
+    assert report["effective_minimum_recall_at_10"] == 0.54
+    assert report["indexed_item_count"] == 96
+    assert report["golden_catalog_item_count"] == 160
+
+
+def test_full_catalog_keeps_unscaled_recall_gate(monkeypatch):
+    case = MODULE.GoldenCase(
+        "Sony tai nghe", frozenset({1, 2, 3, 4, 5}), "Sony", ("Điện tử",)
+    )
+
+    def response(_url, _payload, _timeout):
+        items = [
+            {
+                "item_id": item_id,
+                "brand": "Sony",
+                "category_path": ["Điện tử"],
+                "in_stock": True,
+                "current_price": 20.99,
+            }
+            for item_id in (1, 2, 3)
+        ]
+        return {"items": items}, 12.0
+
+    monkeypatch.setattr(MODULE, "_post_json", response)
+    report = MODULE.verify(
+        base_url="http://rag",
+        cases=[case],
+        minimum_recall=0.9,
+        maximum_p95_ms=750,
+        concurrency=1,
+        timeout=1,
+        indexed_item_count=160,
+        golden_catalog_item_count=160,
+    )
+
+    assert report["status"] == "failed"
+    assert report["effective_minimum_recall_at_10"] == 0.9
+
+
+def test_indexed_count_uses_cli_then_jenkins_contract_then_full_catalog(monkeypatch):
+    monkeypatch.setenv("RAG_EXPECTED_ITEM_COUNT", "96")
+    assert MODULE._resolve_indexed_item_count(80, 160) == 80
+    assert MODULE._resolve_indexed_item_count(0, 160) == 96
+    monkeypatch.delenv("RAG_EXPECTED_ITEM_COUNT")
+    assert MODULE._resolve_indexed_item_count(0, 160) == 160

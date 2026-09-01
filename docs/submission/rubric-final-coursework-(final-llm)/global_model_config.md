@@ -21,7 +21,7 @@ the current source of truth; older 256-token screenshots are historical.
 **Illustrative flow:** derived from the ModelConfig source at
 [`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55),
 the Agent reference at
-the current [`coordinator sandboxagent.yaml`](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml),
+the current [`coordinator sandboxagent.yaml` (line 24)](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml#L24),
 and the llm-d route at
 [`router-llama-cpp-cpu-optimized-values.yaml`, lines 1–41](../../../configs/llm-d/router-llama-cpp-cpu-optimized-values.yaml#L1-L41).
 
@@ -50,18 +50,18 @@ downloaded from an external chart registry.
 
 ```text
 configs/kagent/values.yaml
-infra/terraform/gcp/kagent.tf
+infra/terraform/gcp/modules/kubernetes-platform/kagent.tf
 infra/helm/recsys-kagent-agent/
 tests/contract/test_llm_inference_contracts.py
 ```
 
 ## Step 1 — Pin and install kagent with Terraform
 
-[`infra/terraform/gcp/kagent.tf`](../../../infra/terraform/gcp/kagent.tf)
+[`infra/terraform/gcp/modules/kubernetes-platform/kagent.tf` (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L1)
 pins kagent `0.9.9` and installs the CRDs before the application chart:
 
-**Source:** [`kagent.tf`, lines 1–5](../../../infra/terraform/gcp/kagent.tf#L1-L5)
-and [`kagent.tf`, lines 39–57](../../../infra/terraform/gcp/kagent.tf#L39-L57).
+**Source:** [`kagent.tf`, lines 1–5](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L1-L5)
+and [`kagent.tf`, lines 39–57](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L39-L57).
 
 ```hcl
 variable "kagent_version" {
@@ -98,8 +98,8 @@ OCI references during Terraform plan/apply. They are version-pinned but not
 digest-pinned, so the registry tag is still the remote point of trust:
 
 **Derived references:** generated from
-[`kagent.tf`, lines 42–45](../../../infra/terraform/gcp/kagent.tf#L42-L45)
-and [`kagent.tf`, lines 62–65](../../../infra/terraform/gcp/kagent.tf#L62-L65).
+[`kagent.tf`, lines 42–45](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L42-L45)
+and [`kagent.tf`, lines 62–65](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L62-L65).
 
 ```text
 oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds:0.9.9
@@ -156,14 +156,14 @@ kagent follows an OCI pattern that already existed in the LLM stack:
 
 | Source type | Terraform releases | Repository reference |
 |---|---|---|
-| OCI | `agentgateway_crds`, `agentgateway` | [`llm_inference.tf`, lines 21–60](../../../infra/terraform/gcp/llm_inference.tf#L21-L60) |
-| OCI | `llm_d_router` | [`llm_inference.tf`, lines 92–117](../../../infra/terraform/gcp/llm_inference.tf#L92-L117) |
-| OCI | `kagent_crds`, `kagent` | [`kagent.tf`, lines 181–229](../../../infra/terraform/gcp/kagent.tf#L181) |
-| Local repository chart | `recsys_llm_serving` | [`llm_inference.tf`, lines 62–90](../../../infra/terraform/gcp/llm_inference.tf#L62-L90) |
-| Local repository charts | Context, Recommendation, and Coordinator Agents | [`infra/helm`](../../../infra/helm), deployed by [`agentic.sh`](../../../jenkins/scripts/deploy/agentic.sh) |
-| Local repository chart | 17 RecSys service releases | [`recsys_services.tf`, lines 1–590](../../../infra/terraform/gcp/recsys_services.tf#L1-L590) |
-| Classic HTTPS repository | DataHub charts | [`datahub.tf`, lines 64–103](../../../infra/terraform/gcp/datahub.tf#L64-L103) |
-| Classic HTTPS repository | cert-manager, KEDA, External Secrets, KubeRay, Prometheus, Istio, ingress-nginx | [`dependencies.tf`, lines 19–315](../../../infra/terraform/gcp/dependencies.tf#L19-L315) |
+| OCI | `agentgateway_crds`, `agentgateway` | [`llm_inference.tf`, lines 21–60](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L21-L60) |
+| OCI | `llm_d_router` | [`llm_inference.tf`, lines 92–117](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L92-L117) |
+| OCI | `kagent_crds`, `kagent` | [`kagent.tf`, lines 249–326](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L249-L326) |
+| Local repository chart | `recsys_llm_serving` | [`llm_inference.tf`, lines 62–90](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L62-L90) |
+| Local repository charts | Context, Recommendation, and Coordinator Agents | [`infra/helm`](../../../infra/helm), validated by [`agentic_preflight()` (line 114)](../../../jenkins/scripts/deploy/agentic.sh#L114) |
+| Local repository chart | 17 RecSys service releases | [`recsys_services.tf`, lines 1–590](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L1-L590) |
+| Classic HTTPS repository | DataHub charts | [`datahub.tf`, lines 64–103](../../../infra/terraform/gcp/modules/kubernetes-platform/datahub.tf#L64-L103) |
+| Classic HTTPS repository | cert-manager, KEDA, External Secrets, KubeRay, Prometheus, Istio, ingress-nginx | [`dependencies.tf`, lines 19–315](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L19-L315) |
 
 Therefore, five Terraform Helm releases use OCI in the current repository:
 the two agentgateway releases, the llm-d Router, and the two kagent releases.
@@ -177,7 +177,7 @@ Internet references:
 The `kagent` namespace has Istio sidecar injection disabled because this
 coursework path uses direct cluster-internal HTTP:
 
-**Source:** [`kagent.tf`, line 151](../../../infra/terraform/gcp/kagent.tf#L151).
+**Source:** [`kagent.tf`, line 151](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L151).
 
 ```hcl
 resource "kubernetes_namespace" "kagent" {
@@ -197,7 +197,7 @@ The application release depends on both the kagent CRDs and the existing llm-d
 router. Consequently, the chart cannot create the `ModelConfig` before its CRD
 exists or before the intended Gateway route is deployed:
 
-**Source:** [`kagent.tf`, line 201](../../../infra/terraform/gcp/kagent.tf#L201).
+**Source:** [`kagent.tf`, line 201](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L201).
 
 ```hcl
 resource "helm_release" "kagent" {
@@ -234,7 +234,7 @@ generated by the Vault bootstrap only when `recsys/agent-gateway` does not yet
 exist; it is written directly to Vault KV v2 and is not committed to Git or
 stored in Terraform state.
 
-**Source:** [`bootstrap_vault.sh`](../../../ops/gcp/bootstrap_vault.sh).
+**Source:** [`bootstrap_vault.sh` Agent Gateway branch (line 219)](../../../ops/gcp/bootstrap_vault.sh#L219).
 
 ```bash
 agent_gateway_api_key="agw-$(openssl rand -hex 32)"
@@ -275,7 +275,7 @@ terraform -chdir=infra/terraform/gcp state rm \
 
 ## Step 3 — Generate the global ModelConfig
 
-[`configs/kagent/values.yaml`](../../../configs/kagent/values.yaml) configures
+[`configs/kagent/values.yaml` (line 45)](../../../configs/kagent/values.yaml#L45) configures
 the upstream kagent chart to generate `default-model-config`:
 
 **Source:** [`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55).
@@ -366,7 +366,7 @@ X-Gateway-Base-Model-Name: llm-d-optimized-baseline
 the Agent request aligned with the deployed `llm-d-optimized-baseline`
 `HTTPRoute` and `InferencePool`. The same header is used by the repository's
 Gateway smoke test in
-[`ops/validation/llm_inference_smoke.sh`](../../../ops/validation/llm_inference_smoke.sh).
+[`ops/validation/llm_inference_smoke.sh` (line 65)](../../../ops/validation/llm_inference_smoke.sh#L65).
 
 Credentials must not be placed in `defaultHeaders`, because the header values
 are visible in the `ModelConfig` specification. Authentication material belongs
@@ -402,7 +402,7 @@ spec:
       {{- .Values.agent.systemMessage | nindent 6 }}
 ```
 
-[`infra/helm/recsys-kagent-agent/values.yaml`](../../../infra/helm/recsys-kagent-agent/values.yaml)
+[`infra/helm/recsys-kagent-agent/values.yaml` (line 14)](../../../infra/helm/recsys-kagent-agent/values.yaml#L14)
 now configures the Context SandboxAgent. The following values block is the
 historical smoke-Agent configuration retained to explain the captured proof:
 
@@ -417,12 +417,12 @@ agent:
 The Agent and ModelConfig are both in the `kagent` namespace. kagent requires a
 declarative Agent's `modelConfig` reference to resolve in the same namespace.
 The current coordinator consumer is
-[`SandboxAgent/recsys-coordinator-agent-sandbox`](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml),
+[`SandboxAgent/recsys-coordinator-agent-sandbox` (line 24)](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml#L24),
 while both specialist SandboxAgents also reference `default-model-config`.
 Other resources in this namespace can use the same configuration by setting:
 
 **Reusable manifest pattern:** the concrete implementation is
-[`coordinator sandboxagent.yaml`](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml).
+[`coordinator sandboxagent.yaml` (line 24)](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml#L24).
 
 ```yaml
 spec:
@@ -436,7 +436,7 @@ pipeline installs the repository-owned specialist and coordinator charts only
 after that platform dependency is Ready. The following Terraform block is
 historical ownership evidence for the original smoke Agent, not current IaC:
 
-**Historical source:** [`kagent.tf` at commit `8902ad1`, lines 82–96](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/terraform/gcp/kagent.tf#L82-L96).
+**Historical source:** [`kagent.tf` at commit `8902ad1`, lines 82–96](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L82-L96).
 
 ```hcl
 resource "helm_release" "recsys_kagent_agent" {
@@ -462,10 +462,10 @@ Internet reference:
 Run the following checks from the repository root:
 
 **Validation commands:** these render
-[`recsys-kagent-agent`](../../../infra/helm/recsys-kagent-agent/Chart.yaml),
+[`recsys-kagent-agent` chart (line 1)](../../../infra/helm/recsys-kagent-agent/Chart.yaml#L1),
 render the OCI kagent chart using
 [`configs/kagent/values.yaml`, lines 1–94](../../../configs/kagent/values.yaml#L1-L94),
-validate the current [`kagent.tf`](../../../infra/terraform/gcp/kagent.tf),
+validate the current [`kagent.tf` kagent releases (line 249)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L249),
 and execute the contract at
 [`test_llm_inference_contracts.py`, lines 81–102](../../../tests/contract/test_llm_inference_contracts.py#L81-L102).
 
@@ -501,7 +501,7 @@ Pytest: 10 passed
 ```
 
 The contract test in
-[`tests/contract/test_llm_inference_contracts.py`](../../../tests/contract/test_llm_inference_contracts.py)
+[`test_kagent_global_model_config_routes_through_agentgateway` (line 101)](../../../tests/contract/test_llm_inference_contracts.py#L101)
 asserts the pinned chart, model alias, internal Gateway URL, route header,
 absence of TLS configuration, deterministic output settings, and Agent
 references.
@@ -511,7 +511,7 @@ references.
 From `infra/terraform/gcp`, preview the changes and apply the reviewed plan:
 
 **Deployment commands:** apply the platform resources declared in the current
-[`kagent.tf`](../../../infra/terraform/gcp/kagent.tf). Repository-owned Agent
+[`kagent.tf` platform resources (line 219)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L219). Repository-owned Agent
 charts are subsequently deployed by the agentic release pipeline.
 
 ```bash
@@ -532,7 +532,7 @@ Apply complete! Resources: 4 added, 0 changed, 0 destroyed.
 The follow-up Agent release produced:
 
 **Historical Terraform output:** follow-up deployment result after adding the
-now-superseded [`recsys_kagent_agent` release](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/terraform/gcp/kagent.tf#L82-L96).
+now-superseded [`recsys_kagent_agent` release](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L82-L96).
 
 **Code block provenance:** output from applying the linked Terraform resource.
 
@@ -551,7 +551,7 @@ Agent. For the current deployment, replace `global-model-config-smoke` with
 `recsys-coordinator-agent-sandbox` and inspect all three SandboxAgents.
 
 **Verification commands:** inspect the resources sourced from
-the current [`kagent.tf`](../../../infra/terraform/gcp/kagent.tf),
+the current [`kagent.tf` platform resources (line 219)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L219),
 [`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55),
 and the [historical smoke Agent source](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/helm/recsys-kagent-agent/templates/agent.yaml).
 
@@ -606,7 +606,7 @@ The Pods captured in that historical verification were:
 
 **Observed Kubernetes output:** produced by `kubectl get pods -n kagent`; the
 platform releases are declared in the current
-[`kagent.tf`](../../../infra/terraform/gcp/kagent.tf).
+[`kagent.tf` kagent releases (line 249)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L249).
 
 ```text
 global-model-config-smoke   1/1   Running
@@ -629,7 +629,7 @@ also confirms that the resource is Helm-managed in the `kagent` namespace.
 Port-forward the controller:
 
 **Runtime command:** targets the controller installed by
-[`kagent.tf`, line 201](../../../infra/terraform/gcp/kagent.tf#L201).
+[`kagent.tf`, line 201](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L201).
 
 ```bash
 kubectl port-forward -n kagent service/kagent-controller 18083:8083

@@ -6,7 +6,8 @@
 > runs model revision v8; revision changes rebuild a single current
 > ActorTemplate after removing stale generations. The chart retains
 > `metricMode: cpu | assignedWorkers` only for values-based rollback.
-> See [validation and rollback](validation_verification.md).
+> See [Agent/WorkerPool Benchmark & HA](benchmark_ha.md) for validation and
+> rollback evidence.
 
 This document provides source-code, configuration, deployment, and runtime
 evidence for the following coursework requirements:
@@ -83,6 +84,17 @@ both the HPA recommendation and the target workload's available replicas.
 
 ### 1.2 RAG FastAPI autoscaling stages
 
+```mermaid
+flowchart LR
+    Request[POST /v1/rag/retrieve] --> API[RAG FastAPI pod]
+    API -->|increment recsys_api_requests_total| Metrics[Pod :8080/metrics]
+    Prometheus[recsys-prometheus] -->|scrape annotated pod every 15s| Metrics
+    KEDA[KEDA Prometheus scaler] -->|PromQL request rate| Prometheus
+    KEDA --> HPA[KEDA-generated HPA]
+    HPA -->|Deployment /scale| Deployment[recsys-rag-api Deployment]
+    Deployment -->|create or remove| Pods[1..3 Ready API pods]
+```
+
 #### Stage 1: completed FastAPI requests produce the signal
 
 The shared FastAPI middleware records the route, method, status, and duration
@@ -130,14 +142,35 @@ References:
 #### Stage 2: Prometheus scrapes and converts the counter to request rate
 
 ```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-spec:
-  endpoints:
-    - port: http
-      path: /metrics
-      interval: 15s
+# recsys-rag-api Deployment pod template
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8080"
+
+# recsys-prometheus scrape configuration
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: recsys-kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [api-serving]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
 ```
+
+The production Prometheus is the standalone `recsys-prometheus` Deployment.
+It discovers annotated pods directly; Operator-managed monitoring resources
+are not part of this active scrape path.
 
 ```promql
 sum(rate(recsys_api_requests_total{
@@ -149,7 +182,8 @@ sum(rate(recsys_api_requests_total{
 
 References:
 
-- [RAG ServiceMonitor](../../../infra/helm/recsys-rag-api/templates/servicemonitor.yaml#L1)
+- [RAG pod scrape annotations](../../../infra/helm/recsys-rag-api/templates/deployment.yaml#L20)
+- [standalone Prometheus pod-discovery job](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L192)
 - [RAG Prometheus query](../../../infra/helm/recsys-rag-api/templates/scaledobject.yaml#L12)
 
 #### Stage 3: KEDA supplies the metric and HPA selects `1..3`
@@ -216,6 +250,17 @@ References:
 
 ### 1.3 MCP server autoscaling stages
 
+```mermaid
+flowchart LR
+    Agent[Context SandboxAgent] --> MCP[Feature/RAG MCP pod]
+    MCP -->|increment recsys_mcp_tool_calls_total| Metrics[Pod :8080/metrics]
+    Prometheus[recsys-prometheus] -->|scrape annotated pod every 15s| Metrics
+    KEDA[KEDA Prometheus scaler] -->|PromQL tool-call rate| Prometheus
+    KEDA --> HPA[KEDA-generated HPA]
+    HPA -->|Deployment /scale| Deployment[recsys-feature-rag-mcp Deployment]
+    Deployment --> Pods[1..3 Ready MCP pods]
+```
+
 #### Stage 1: completed MCP tools produce the signal
 
 Every tool executes through one observation wrapper. Both successful and failed
@@ -248,13 +293,14 @@ References:
 #### Stage 2: Prometheus scrapes and KEDA queries tool-call rate
 
 ```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-spec:
-  endpoints:
-    - port: http
-      path: /metrics
-      interval: 15s
+# recsys-feature-rag-mcp Deployment pod template
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8080"
+
+# The shared recsys-kubernetes-pods job includes namespace kagent and rewrites
+# the target from pod IP plus prometheus.io/port.
 ```
 
 ```promql
@@ -263,7 +309,8 @@ sum(rate(recsys_mcp_tool_calls_total[1m]))
 
 References:
 
-- [MCP ServiceMonitor](../../../infra/helm/recsys-feature-rag-mcp/templates/servicemonitor.yaml#L1)
+- [MCP pod scrape annotations](../../../infra/helm/recsys-feature-rag-mcp/templates/deployment.yaml#L29)
+- [standalone Prometheus pod-discovery job](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L192)
 - [MCP Prometheus trigger](../../../infra/helm/recsys-feature-rag-mcp/templates/scaledobject.yaml#L20)
 
 #### Stage 3: KEDA/HPA scales the stateless MCP Deployment
@@ -326,16 +373,29 @@ References:
 
 ### 1.4 Context SandboxAgent autoscaling stages
 
+```mermaid
+flowchart LR
+    A2A[Incoming A2A session] --> ATE[ATE API assigns a worker]
+    ATE --> Worker[Context gVisor worker: assigned]
+    ATE -->|expose ate_workerpool_workers| Metrics[ate-api-server :9090/metrics]
+    Prometheus[recsys-prometheus] -->|scrape ate-system pods every 15s| Metrics
+    KEDA[KEDA assigned-worker scaler] -->|PromQL max assigned| Prometheus
+    KEDA --> HPA[KEDA-generated HPA]
+    HPA -->|WorkerPool /scale| Pool[recsys-context-sandbox-pool]
+    Pool --> Controller[Substrate WorkerPool controller]
+    Controller --> Workers[1..3 ateom-gvisor workers]
+```
+
 #### Stage 1: A2A sessions assign gVisor workers
 
 The `SandboxAgent` is a declarative profile, not a Deployment. Incoming A2A
 requests are executed by `ateom-gvisor` workers in the referenced WorkerPool.
 
 ```yaml
-apiVersion: kagent.dev/v1alpha2
+apiVersion: kagent.dev/v1alpha3
 kind: SandboxAgent
 spec:
-  platform: substrate
+  type: Declarative
   substrate:
     workerPoolRef:
       apiGroup: ate.dev
@@ -346,11 +406,33 @@ spec:
 References:
 
 - [SandboxAgent and WorkerPool binding](../../../infra/helm/recsys-kagent-agent/templates/sandboxagent.yaml#L1)
-- [Terraform-owned gVisor WorkerPool baseline](../../../configs/kagent/values.yaml#L34)
+- [kagent-owned gVisor WorkerPool baseline](../../../configs/kagent/values.yaml#L57)
 
 #### Stage 2: Prometheus measures assigned workers
 
-Substrate `0.0.11` emits the WorkerPool state gauge used directly by KEDA.
+Substrate `0.0.11` keeps the worker registry in `ate-api-server`. The upstream
+Substrate chart annotates each `ate-api-server` pod with
+`prometheus.io/scrape: "true"` and `prometheus.io/port: "9090"`; the metrics
+path defaults to `/metrics`. The standalone Prometheus job includes
+`ate-system`, scrapes both API replicas, and stores the WorkerPool state gauge.
+KEDA uses `max`, rather than `sum`, so the two identical control-plane replicas
+do not double-count the same worker state.
+
+```yaml
+# live ate-api-server pod template rendered by the Substrate chart
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+containers:
+  - name: ate-api-server
+    ports:
+      - name: prometheus
+        containerPort: 9090
+
+# recsys-prometheus discovers this namespace through the shared pod job
+targets:
+  substrateNamespace: ate-system
+```
 
 ```promql
 max(ate_workerpool_workers{
@@ -360,7 +442,12 @@ max(ate_workerpool_workers{
 })
 ```
 
-Reference: [WorkerPool assigned-worker query](../../../infra/helm/recsys-kagent-agent/templates/scaledobject.yaml#L25).
+References:
+
+- [Substrate chart installation](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L125)
+- [Prometheus `ate-system` target namespace](../../../infra/helm/recsys-observability/values.yaml#L75)
+- [standalone Prometheus pod-discovery job](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L192)
+- [WorkerPool assigned-worker query](../../../infra/helm/recsys-kagent-agent/templates/scaledobject.yaml#L43)
 
 #### Stage 3: HPA targets the WorkerPool `/scale` subresource
 
@@ -406,11 +493,9 @@ KEDA-generated HPA
   -> 1..3 ateom-gvisor worker pods
 ```
 
-The successful proof must show the HPA recommendation, WorkerPool desired and
-status replicas, and generated Deployment availability. HPA desired `3` with a
-third worker Pending is not successful scale-out. On three scaler failures,
-fallback returns the WorkerPool to one worker; the capture script restores the
-original Prometheus address through an EXIT trap.
+On three scaler failures, fallback returns the WorkerPool to one worker; the
+validation script restores the original Prometheus address through an EXIT
+trap.
 
 References:
 
@@ -908,7 +993,8 @@ Helm references:
 - [MCP ServiceAccount](../../../infra/helm/recsys-feature-rag-mcp/templates/serviceaccount.yaml#L1)
 - [MCP PDB](../../../infra/helm/recsys-feature-rag-mcp/templates/pdb.yaml#L1)
 - [MCP NetworkPolicy](../../../infra/helm/recsys-feature-rag-mcp/templates/networkpolicy.yaml#L1)
-- [MCP ServiceMonitor](../../../infra/helm/recsys-feature-rag-mcp/templates/servicemonitor.yaml#L1)
+- [MCP pod scrape annotations](../../../infra/helm/recsys-feature-rag-mcp/templates/deployment.yaml#L29)
+- [standalone Prometheus pod-discovery job](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L192)
 - [default and production values](../../../infra/helm/recsys-feature-rag-mcp/values.yaml#L1)
 
 ### 4.3 KEDA autoscale and scaler fallback
@@ -1033,6 +1119,88 @@ Helm references:
 - [Sandbox name, model, system message, and tools](../../../infra/helm/recsys-kagent-agent/values.yaml#L2)
 - [GCP-only image registry override](../../../infra/helm/recsys-kagent-agent/values-gcp.yaml#L1)
 
+#### System prompt and MCP tool context
+
+The Context Agent does not infer tool behavior from the tool name alone. kagent
+combines the declarative system prompt, the chart-owned tool allow-list, and the
+description and input schema returned by MCP `tools/list` before the model
+chooses a function call:
+
+```text
+systemMessage
+  + allowed toolNames
+  + MCP tools/list description
+  + generated inputSchema
+  -> model tool context
+```
+
+The following core excerpt is copied verbatim from the Context Agent's current
+`systemMessage`. It establishes grounding, preferred-tool, failure, evidence,
+and context-size behavior; the source reference below contains the complete
+runtime prompt.
+
+```text
+You are the grounded RecSys context agent. Use MCP tools for every factual
+claim about a user, item, or RAG chunk. Prefer build_user_rag_context when
+both personalization and semantic evidence are needed. Never invent data
+when a tool fails; state which source is unavailable. Keep answers concise
+and cite the returned chunk_id values used as evidence. Preserve every
+identifier exactly as returned by tools. Keep tool responses
+within the 4,096-token model context: when IDs are supplied, pass only those
+candidate_item_ids and use top_k at most 2 and top_k_items at most 2. When a
+request explicitly names tools, call every named tool before answering.
+```
+
+FastMCP derives the four `tools/list` descriptions from the function docstrings
+and derives each `inputSchema` from the annotated Python types. The executable
+function bodies are omitted here; the signatures and descriptions are copied
+from the registered tools.
+
+```python
+@mcp.tool()
+async def get_user_online_features(
+    user_id: UserId,
+    candidate_item_ids: CandidateItemIds = None,
+    top_k: FeatureTopK = 10,
+) -> dict[str, Any]:
+    """Get materialized user and candidate item features for one user ID."""
+    ...
+
+@mcp.tool()
+async def get_chunk_by_id(chunk_id: ChunkId) -> dict[str, Any]:
+    """Get one materialized RAG chunk from the active index by stable ID."""
+    ...
+
+@mcp.tool()
+async def retrieve_rag_context(
+    query: RagQuery,
+    top_k_items: RagTopK = 10,
+    filters: RagFilters = None,
+) -> dict[str, Any]:
+    """Retrieve item-grouped semantic evidence for a natural-language query."""
+    ...
+
+@mcp.tool()
+async def build_user_rag_context(
+    user_id: UserId,
+    query: RagQuery,
+    candidate_item_ids: CandidateItemIds = None,
+    top_k: FeatureTopK = 10,
+    top_k_items: RagTopK = 10,
+    filters: RagFilters = None,
+) -> dict[str, Any]:
+    """Build user features and semantic evidence concurrently for one answer."""
+    ...
+```
+
+Prompt and tool-context references:
+
+- [Complete Context Agent system prompt](../../../infra/helm/recsys-kagent-agent/values.yaml#L20)
+- [Context Agent MCP tool allow-list](../../../infra/helm/recsys-kagent-agent/values.yaml#L8)
+- [Four FastMCP tool implementations and descriptions](../../../apps/agentic/recsys-feature-rag-mcp/src/recsys_feature_rag_mcp/server.py#L76)
+- [Annotated types used to generate MCP input schemas](../../../apps/agentic/recsys-feature-rag-mcp/src/recsys_feature_rag_mcp/contracts.py#L9)
+- [Canonical four-tool JSON Schema contract](../../../configs/agentic/recsys-context-agent/tools-contract.json#L1)
+
 ### 5.3 Terraform-owned gVisor WorkerPool baseline
 
 ```yaml
@@ -1047,8 +1215,8 @@ substrateWorkerPool:
 Platform references:
 
 - [kagent and WorkerPool values](../../../configs/kagent/values.yaml#L26)
-- [pinned custom kagent build and Substrate `0.0.11`](../../../infra/terraform/gcp/kagent.tf#L1)
-- [Terraform kagent release and WorkerPool](../../../infra/terraform/gcp/kagent.tf#L194)
+- [pinned custom kagent build and Substrate `0.0.11`](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L1)
+- [Terraform kagent release and WorkerPool](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L194)
 - Native `/scale` contract: `.spec.replicas`, `.status.replicas`, and
   `.status.selector`.
 
@@ -1157,7 +1325,7 @@ References:
 - [gVisor WorkerPool configuration](../../../configs/kagent/values.yaml#L34)
 - [MCP non-root and read-only container security](../../../infra/helm/recsys-feature-rag-mcp/templates/deployment.yaml#L34)
 - [MCP NetworkPolicy](../../../infra/helm/recsys-feature-rag-mcp/templates/networkpolicy.yaml#L1)
-- [Vault-backed MCP ExternalSecret enablement](../../../infra/terraform/gcp/locals.tf#L104)
+- [Vault-backed MCP ExternalSecret enablement](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L104)
 - [bearer token injection into RemoteMCPServer](../../../infra/helm/recsys-kagent-agent/templates/remotemcpserver.yaml#L13)
 
 The gVisor proof is the Substrate WorkerPool `ateom-gvisor` image and
@@ -1172,11 +1340,7 @@ None of the supplied screenshots directly shows the live `allowedDomains`,
 WorkerPool `ateomImage`, and `sandboxClass` fields together, so this document
 does not reuse an unrelated screenshot as security proof. The code, Helm,
 Terraform, and contract-test references above are the current auditable
-evidence. For an additional runtime capture, show those three live fields and
-the RemoteMCPServer Secret **reference** with Secret data redacted. A stronger
-denied-egress capture should pair one successful MCP call with one denied
-non-allow-listed domain from the same SandboxAgent execution; a normal shell
-pod is not equivalent sandbox evidence.
+evidence.
 
 ## 7. Agent Registry and Governance
 
@@ -1197,7 +1361,7 @@ resource "helm_release" "agentregistry" {
 
 Platform references:
 
-- [Agent Registry Terraform release](../../../infra/terraform/gcp/agent_registry.tf#L49)
+- [Agent Registry Terraform release](../../../infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf#L49)
 - [private service, restricted namespaces, and external database values](../../../configs/agentregistry/values.yaml#L1)
 - [Vault and ExternalSecret configuration](../../../infra/helm/recsys-security/values.yaml#L38)
 
@@ -1278,7 +1442,7 @@ providers:
 References:
 
 - [kagent UI, global model, and WorkerPool values](../../../configs/kagent/values.yaml#L43)
-- [Terraform-owned kagent installation](../../../infra/terraform/gcp/kagent.tf#L194)
+- [Terraform-owned kagent installation](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L194)
 - [SandboxAgent system message and A2A skills](../../../infra/helm/recsys-kagent-agent/values.yaml#L13)
 - [sandbox A2A smoke entry point](../../../jenkins/scripts/deploy/agentic.sh#L154)
 - [four grounded UI-equivalent A2A test cases](../../../jenkins/scripts/deploy/agentic.sh#L194)
@@ -1373,58 +1537,11 @@ history for all four MCP tools.
 
 ### 10.4 Autoscale and fallback
 
-Use the capture-oriented script from one terminal while K9s is open in another.
-The script prints `CAPTURE NOW`, holds the scaled state for 60 seconds, and
-restores every temporary scaler or capacity change through shell traps.
-Its in-pod RAG and MCP generators use `kubectl exec -i` because their Python
-program is supplied on standard input with `python -`; omitting `-i` makes the
-generator exit without sending load while the outer script only appears to
-wait for scaling.
-
-```bash
-# Read-only preflight: verify the current context, HPAs, Deployments and Pending pods.
-./ops/validation/agentic_autoscale_capture.sh status
-
-# RAG API: 1 -> 3 replicas.
-AGENTIC_CAPTURE_CONFIRM_PROD=yes \
-AGENTIC_CAPTURE_REALLOCATE=1 \
-AGENTIC_CAPTURE_HOLD_SECONDS=60 \
-  ./ops/validation/agentic_autoscale_capture.sh rag
-
-# MCP server: 1 -> 3, then Prometheus-scaler fallback -> 1.
-AGENTIC_CAPTURE_CONFIRM_PROD=yes \
-AGENTIC_CAPTURE_REALLOCATE=1 \
-AGENTIC_CAPTURE_HOLD_SECONDS=60 \
-  ./ops/validation/agentic_autoscale_capture.sh mcp
-
-# Sandbox WorkerPool: 1 -> 3, then fallback -> 1.
-AGENTIC_CAPTURE_CONFIRM_PROD=yes \
-AGENTIC_CAPTURE_REALLOCATE=1 \
-AGENTIC_CAPTURE_HOLD_SECONDS=60 \
-  ./ops/validation/agentic_autoscale_capture.sh worker
-```
-
-`AGENTIC_CAPTURE_REALLOCATE=1` temporarily changes `qwen35-gguf` from two to
-one replicas and `kagent-ui` from one to zero so the quota-capped cluster has
-room for three serving pods. The EXIT/INT/TERM trap restores both Deployments.
-
-For the RAG proof, open K9s in namespace `api-serving`, use `:hpa` and `:dp`,
-and capture `keda-hpa-recsys-rag-api` plus `recsys-rag-api` at `3/3`. For MCP
-and WorkerPool proof, open namespace `kagent`, use `:hpa`, `:dp`, and `:so`,
-then capture the corresponding HPA, ScaledObject, and generated Deployment at
-`3/3`. For WorkerPool identity also use `:workerpools`; for agent readiness use
-`:sandboxagents`. Keep the terminal's load result and fallback success line in
-the same evidence set.
-
-The default WorkerPool capture sends one grounded
+The production WorkerPool validation sends one grounded
 `get_user_online_features(user_id=1001)` request and observes the native
-assigned-worker gauge. For a separate admission
-stress run, set both `AGENTIC_CAPTURE_AGENT_REQUESTS=20` and
-`AGENTIC_CAPTURE_AGENT_CONCURRENCY=20`. `backpressure_rejections` then records
-immediate JSON-RPC admission rejection rather than transport failure.
-After WorkerPool fallback reaches one replica, the script keeps the temporary
-failure active long enough to capture KEDA fallback before restoring the
-original Prometheus address.
+assigned-worker gauge. `backpressure_rejections` records immediate JSON-RPC
+admission rejection rather than transport failure. After WorkerPool fallback
+reaches one replica, the validation restores the original Prometheus address.
 
 The longer regression proof remains available as `make agentic-autoscale-test`.
 The production WorkerPool uses a 300-second scale-down stabilization/cooldown;
@@ -1461,8 +1578,3 @@ Agent Registry contains MCP and SandboxAgent only at <version> (<tag>).
   by a pod `runtimeClassName` that is absent from this implementation.
 - Say **Agent Registry provides governance and versioned discovery**, not that
   every chat request is routed through Agent Registry.
-- For autoscale proof, show both HPA desired replicas and generated Deployment
-  available replicas. A Pending third pod is not successful multi-replica
-  scale-up evidence.
-- Never capture bearer tokens, Vault values, Kubernetes Secret data, registry
-  credentials, or model gateway API keys.

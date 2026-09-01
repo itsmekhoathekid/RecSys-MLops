@@ -11,6 +11,9 @@ images:
   pushgateway: prom/pushgateway:v1.10.0
   redisExporter: oliver006/redis_exporter:v1.67.0
   postgresExporter: prometheuscommunity/postgres-exporter:v0.16.0
+  otelCollector: otel/opentelemetry-collector-contrib:0.159.0@sha256:1f2c54a30e713fac6b3ae77a1ec84010c2007e29ced8ec666214fc2f6739c1cc
+  # GCP overrides this with the repository-owned data-ingestion Python image.
+  probe: python:3.12-slim
 
 retention:
   prometheus: 7d
@@ -31,6 +34,39 @@ storage:
 persistence:
   prometheus:
     enabled: false
+    storageClassName: ""
+
+otelCollector:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+langfuse:
+  enabled: false
+  endpoint: http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel
+  authSecret:
+    name: recsys-langfuse-otel
+    key: authorization
+
+llmProbe:
+  enabled: true
+  namespace: llm-inference
+  schedule: "*/5 * * * *"
+  gatewayUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1/chat/completions
+  otelTracesUrl: http://recsys-otel-collector.observability.svc.cluster.local:4318/v1/traces
+  model: qwen3.5-0.8b
+  baseModel: llm-d-optimized-baseline
+  maxTokens: 8
+  timeoutSeconds: 240
+  apiKeySecret:
+    name: agentgateway-api-keys
+    key: AGENT_GATEWAY_API_KEY
 
 grafana:
   domain: grafana.example.invalid
@@ -44,3 +80,6 @@ targets:
   kserveNamespace: kserve-triton-inference
   mlflowNamespace: experiment-tracking
   kubeflowNamespace: kubeflow
+  llmNamespace: llm-inference
+  agentgatewayNamespace: agentgateway-system
+  langfuseNamespace: langfuse

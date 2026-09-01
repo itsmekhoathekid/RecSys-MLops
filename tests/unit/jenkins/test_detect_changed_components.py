@@ -325,7 +325,7 @@ def test_rag_change_detection_and_release_dependency_order():
     assert units.index("milvus") < units.index("milvus-credentials")
     assert units.index("milvus-credentials") < units.index("rag-feature-registry")
     assert units.index("rag-feature-registry") < units.index("rag-api")
-    assert units.index("rag-api") < units.index("rag-index-promotion")
+    assert "rag-index-promotion" not in units
 
 
 def test_data_dependent_actions_require_explicit_components():
@@ -341,7 +341,7 @@ def test_data_dependent_actions_require_explicit_components():
 
     data_ready = create_release_plan(["datahub_catalog", "rag_index"])
     assert "datahub-catalog" in data_ready["deployUnits"]
-    assert "rag-index-promotion" in data_ready["deployUnits"]
+    assert "rag-index-promotion" not in data_ready["deployUnits"]
 
 
 def test_kserve_only_change_builds_no_api_image():
@@ -358,6 +358,17 @@ def test_chart_only_change_deploys_exact_release_without_fake_component():
     assert result.component_names == ()
     assert result.flags["RUN_CI_CONFIG"] is True
     assert result.flags["RUN_COMPONENT_CI"] is False
+    assert result.flags["RUN_COMPONENT_BUILD"] is False
+    assert result.flags["RUN_COMPONENT_DEPLOY"] is True
+
+
+def test_gateway_chart_change_deploys_gateway_without_rebuilding_inference_api():
+    result = detect(["infra/helm/recsys-gateway/templates/rag-ingress.yaml"])
+
+    assert result.component_names == ()
+    assert result.release_plan["buildImages"] == []
+    assert result.release_plan["deployUnits"] == ["gateway"]
+    assert result.flags["RUN_CI_CONFIG"] is True
     assert result.flags["RUN_COMPONENT_BUILD"] is False
     assert result.flags["RUN_COMPONENT_DEPLOY"] is True
 

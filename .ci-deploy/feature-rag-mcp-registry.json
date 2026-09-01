@@ -1,0 +1,7 @@
+{
+  "artifacts": [
+    "recsys/recsys-feature-rag-mcp@0.1.0-8e82cfdbb42d"
+  ],
+  "git_commit": "8e82cfdbb42d5c94fc6bd58ef19fd75af0d9478b",
+  "version": "0.1.0+8e82cfdbb42d"
+}

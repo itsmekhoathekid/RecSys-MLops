@@ -35,6 +35,11 @@ externalSecrets:
     namespace: llm-inference
     secretName: agentgateway-api-keys
     vaultPath: agent-gateway
+  agentGatewayProbe:
+    enabled: false
+    namespace: observability
+    secretName: agentgateway-api-keys
+    vaultPath: agent-gateway
   agentRegistry:
     enabled: false
     namespace: agentregistry
@@ -89,6 +94,19 @@ externalSecrets:
     vaultPath: gateway
   gatewayObservability:
     namespace: observability
+    secretName: recsys-gateway-basic-auth
+    vaultPath: gateway
+  gatewayKagent:
+    namespace: kagent
+    secretName: recsys-gateway-basic-auth
+    vaultPath: gateway
+  gatewayAgentRegistry:
+    namespace: agentregistry
+    secretName: recsys-gateway-basic-auth
+    vaultPath: gateway
+  gatewayLangfuse:
+    enabled: false
+    namespace: langfuse
     secretName: recsys-gateway-basic-auth
     vaultPath: gateway
 

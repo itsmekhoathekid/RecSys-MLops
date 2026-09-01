@@ -5,9 +5,15 @@
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 2,
-  "refresh": "10s",
+  "refresh": "15s",
   "graphTooltip": 1,
   "time": { "from": "now-30m", "to": "now" },
+  "templating": {"list": [
+    {"name":"namespace","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(up, namespace)","refId":"v1"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"agent","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(recsys_agent_calls_total, agent)","refId":"v2"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"model","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(up{job=\"recsys-llama-cpp\"}, model)","refId":"v3"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"tool","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(recsys_agent_tool_calls_total, tool)","refId":"v4"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}}
+  ]},
   "panels": [
     {
       "id": 1,
@@ -100,6 +106,7 @@
       "gridPos": { "x": 14, "y": 4, "w": 10, "h": 8 },
       "targets": [
         { "expr": "sum(rate(recsys_api_request_duration_seconds_sum[5m])) / clamp_min(sum(rate(recsys_api_request_duration_seconds_count[5m])), 0.001)", "legendFormat": "api avg" },
+        { "expr": "max(recsys_api_request_duration_seconds_max) or vector(0)", "legendFormat": "api max" },
         { "expr": "sum(rate(recsys_api_redis_operation_duration_seconds_sum[5m])) by (operation) / clamp_min(sum(rate(recsys_api_redis_operation_duration_seconds_count[5m])) by (operation), 0.001)", "legendFormat": "redis {{operation}}" },
         { "expr": "sum(rate(recsys_api_triton_inference_duration_seconds_sum[5m])) by (model_name) / clamp_min(sum(rate(recsys_api_triton_inference_duration_seconds_count[5m])) by (model_name), 0.001)", "legendFormat": "triton {{model_name}}" }
       ],

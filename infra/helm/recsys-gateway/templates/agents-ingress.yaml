@@ -1,0 +1,48 @@
+{{- if .Values.agents.enabled }}
+{{- $rateLimit := .Values.agents.rateLimit | default dict }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recsys-agent-test-ui-gateway
+  namespace: {{ .Values.agents.namespace }}
+  annotations:
+    {{- if .Values.auth.enabled }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ .Values.auth.secretName }}
+    nginx.ingress.kubernetes.io/auth-realm: {{ .Values.auth.realm | quote }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+    nginx.ingress.kubernetes.io/upstream-vhost: {{ .Values.agents.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.agents.service.name .Values.agents.namespace) | quote }}
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.agents.proxy.readTimeoutSeconds | quote }}
+    nginx.ingress.kubernetes.io/proxy-send-timeout: {{ .Values.agents.proxy.sendTimeoutSeconds | quote }}
+    {{- if ($rateLimit.enabled | default false) }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ $rateLimit.rps | quote }}
+    nginx.ingress.kubernetes.io/limit-rpm: {{ $rateLimit.rpm | quote }}
+    nginx.ingress.kubernetes.io/limit-connections: {{ $rateLimit.connections | quote }}
+    nginx.ingress.kubernetes.io/limit-req-status-code: {{ $rateLimit.statusCode | quote }}
+    {{- end }}
+    {{- if .Values.tls.enabled }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: {{ .Values.tls.clusterIssuerName | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.gateway.ingressClassName }}
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.agents.host }}
+      secretName: {{ .Values.tls.secretNames.agents }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.agents.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.agents.service.name }}
+                port:
+                  number: {{ .Values.agents.service.port }}
+{{- end }}

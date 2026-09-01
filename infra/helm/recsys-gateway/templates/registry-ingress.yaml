@@ -1,0 +1,45 @@
+{{- if .Values.registry.enabled }}
+{{- $rateLimit := .Values.registry.rateLimit | default dict }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recsys-agent-registry-gateway
+  namespace: {{ .Values.registry.namespace }}
+  annotations:
+    {{- if .Values.auth.enabled }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ .Values.auth.secretName }}
+    nginx.ingress.kubernetes.io/auth-realm: {{ .Values.auth.realm | quote }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+    nginx.ingress.kubernetes.io/upstream-vhost: {{ .Values.registry.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.registry.service.name .Values.registry.namespace) | quote }}
+    {{- if ($rateLimit.enabled | default false) }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ $rateLimit.rps | quote }}
+    nginx.ingress.kubernetes.io/limit-rpm: {{ $rateLimit.rpm | quote }}
+    nginx.ingress.kubernetes.io/limit-connections: {{ $rateLimit.connections | quote }}
+    nginx.ingress.kubernetes.io/limit-req-status-code: {{ $rateLimit.statusCode | quote }}
+    {{- end }}
+    {{- if .Values.tls.enabled }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: {{ .Values.tls.clusterIssuerName | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.gateway.ingressClassName }}
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.registry.host }}
+      secretName: {{ .Values.tls.secretNames.registry }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.registry.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.registry.service.name }}
+                port:
+                  number: {{ .Values.registry.service.port }}
+{{- end }}

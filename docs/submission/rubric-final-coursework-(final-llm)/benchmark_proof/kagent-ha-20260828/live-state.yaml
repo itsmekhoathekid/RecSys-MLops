@@ -1,0 +1,58 @@
+capturedAt: "2026-08-28T12:43:06Z"
+cluster: recsys-mlops-gke
+namespace: kagent
+
+helm:
+  release: kagent
+  chart: kagent-0.10.0-e6df917
+  revision: 24
+  status: deployed
+
+controller:
+  deployment: kagent-controller
+  desiredReplicas: 3
+  updatedReplicas: 3
+  readyReplicas: 3
+  availableReplicas: 3
+  nodeSelector:
+    cloud.google.com/gke-nodepool: recsys-mlops-cpu
+  topologySpreadConstraint:
+    topologyKey: kubernetes.io/hostname
+    maxSkew: 1
+    whenUnsatisfiable: DoNotSchedule
+  pods:
+    - name: kagent-controller-69c748cc6f-4rd6g
+      ready: true
+      node: gke-recsys-mlops-gke-recsys-mlops-cpu-2224da7a-j33x
+    - name: kagent-controller-69c748cc6f-jjtjg
+      ready: true
+      node: gke-recsys-mlops-gke-recsys-mlops-cpu-2224da7a-961g
+    - name: kagent-controller-69c748cc6f-zvprn
+      ready: true
+      node: gke-recsys-mlops-gke-recsys-mlops-cpu-2224da7a-j33x
+
+pdb:
+  name: kagent-controller
+  maxUnavailable: 1
+  currentHealthy: 3
+  desiredHealthy: 2
+  disruptionsAllowed: 1
+  expectedPods: 3
+
+database:
+  deployment: kagent-postgresql
+  readyReplicas: 1
+  availableReplicas: 1
+  image: docker.io/library/postgres:18.3-alpine
+
+failover:
+  lease: 0e9f6799.kagent.dev
+  leaseDurationSeconds: 15
+  previousHolder: kagent-controller-69c748cc6f-gnh6z_4e95f47a-83c2-417f-933b-9c2433c7d49b
+  leaderPodKillingEvent: "2026-08-28T12:41:11Z"
+  newHolder: kagent-controller-69c748cc6f-jjtjg_754e65fb-5f43-4860-b9ea-140bc56ce7b3
+  newAcquireTime: "2026-08-28T12:41:59.443922Z"
+  observedTakeoverSeconds: 48.443922
+  leaseTransitionsAtCapture: 3
+  serviceHealthBefore: OK
+  serviceHealthAfter: OK

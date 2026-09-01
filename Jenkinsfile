@@ -9,12 +9,11 @@ pipeline {
 
   parameters {
     booleanParam(name: 'PUBLISH_IMAGES', defaultValue: true, description: 'Push images after successful component CI.')
-    booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'Allow deploy/update from a non-main branch.')
+    booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'One-run override for deploy/update from a non-main branch.')
+    booleanParam(name: 'DEPLOY_PULL_REQUESTS', defaultValue: false, description: 'Optional override to publish/deploy an unmerged pull-request branch; merged PR commits deploy through main by default.')
     string(name: 'COMPONENT_CI_MAX_PARALLEL', defaultValue: '3', description: 'Maximum component CI branches running in the Jenkins controller pod.')
     string(name: 'GATEWAY_SMOKE_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins username/password credential for authenticated demo web smoke.')
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')
-    string(name: 'RAG_SOURCE_RUN_ID', defaultValue: '', description: 'Complete canonical RAG item-document run consumed by index promotion.')
-    string(name: 'RAG_PIPELINE_RUN_ID', defaultValue: '', description: 'Unique silver/gold/index run ID used by RAG promotion and rollback.')
     string(name: 'AGENTIC_SMOKE_CHUNK_ID', defaultValue: '800080:review:rev_800080_02:0', description: 'Known active chunk ID required by the grounded SandboxAgent A2A smoke test.')
     choice(name: 'DATAHUB_CUTOVER_MODE', choices: ['skip', 'plan', 'apply'], description: 'Optional one-time cleanup after static catalog deployment.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
@@ -67,8 +66,8 @@ pipeline {
             }
           }
           echo "Selected components: ${env.CHANGED_COMPONENTS}"
-          env.SHOULD_PUBLISH_IMAGES = componentPipeline.shouldPublishImages() ? 'true' : 'false' // Pull requests build every selected image locally but never authenticate to or push into Artifact Registry.
-          env.SHOULD_DEPLOY_RELEASE = componentPipeline.shouldDeployRelease() ? 'true' : 'false' // Deploy only published component changes from main, unless FORCE_DEPLOY explicitly overrides the branch gate.
+          env.SHOULD_PUBLISH_IMAGES = componentPipeline.shouldPublishImages() ? 'true' : 'false' // Main, including merged PR commits, publishes; unmerged PR branches require DEPLOY_PULL_REQUESTS.
+          env.SHOULD_DEPLOY_RELEASE = componentPipeline.shouldDeployRelease() ? 'true' : 'false' // Main deploys automatically after CI; non-main remains an explicit opt-in.
           // ML test environments can exceed the GKE node's ephemeral-storage
           // eviction threshold. Keep disposable CI data on the existing
           // Jenkins PVC; the post action removes this build-scoped directory.
@@ -108,6 +107,8 @@ pipeline {
               uv pip install --python "${ci_config_venv}/bin/python" pytest
               "${ci_config_venv}/bin/python" -m pytest \
                 tests/unit/jenkins \
+                tests/unit/observability \
+                tests/contract/test_langfuse_infrastructure_contracts.py \
                 -q \
                 --junitxml=reports/junit/ci-config.xml
               python3 -m compileall -q jenkins/python jenkins/scripts
@@ -194,11 +195,11 @@ pipeline {
       when { expression { env.SHOULD_DEPLOY_RELEASE == 'true' } }
       steps {
         echo '[DEPLOY] Production preflight'
-        sh "IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' PUBLISH_IMAGES='${env.SHOULD_PUBLISH_IMAGES == 'true' ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' jenkins/scripts/entrypoints/release_deploy_preflight.sh .ci-release-plan.json" // Bind the approved GCP target and current commit before any production mutation.
+        sh "IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' PUBLISH_IMAGES='${env.SHOULD_PUBLISH_IMAGES == 'true' ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' jenkins/scripts/entrypoints/release_deploy_preflight.sh .ci-release-plan.json" // Bind the approved GCP target and current commit before any production mutation.
         script {
           echo '[DEPLOY] Deploy release'
           env.DEPLOY_STARTED = 'true' // Mark that the build crossed from validation into production-changing work.
-          def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' RAG_SOURCE_RUN_ID='${params.RAG_SOURCE_RUN_ID}' RAG_PIPELINE_RUN_ID='${params.RAG_PIPELINE_RUN_ID}' AGENTIC_SMOKE_CHUNK_ID='${params.AGENTIC_SMOKE_CHUNK_ID}'"
+          def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' AGENTIC_SMOKE_CHUNK_ID='${params.AGENTIC_SMOKE_CHUNK_ID}'"
           componentPipeline.deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json') // Respect dependency layers and serialize units sharing the same Jenkins lock.
           if (params.DATAHUB_CUTOVER_MODE != 'skip') {
             sh "${commandEnv} jenkins/scripts/entrypoints/datahub_cutover.sh plan .ci-deploy/datahub-dataset-lineage-cutover.json"

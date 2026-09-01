@@ -4,12 +4,6 @@ test_rag_index() {
   kubectl -n "${namespace_data}" get statefulset -l app.kubernetes.io/name=milvus
   kubectl -n "${namespace_data}" get pvc -l app.kubernetes.io/name=milvus
   kubectl -n "${namespace_data}" get job recsys-rag-feature-registry
-  kubectl -n "${namespace_data}" get job recsys-rag-index-promotion
-  if kubectl -n "${namespace_data}" logs job/recsys-rag-index-promotion --all-containers=true \
-    | grep -Ei 'ORCAROUTER_API_KEY|AWS_SECRET_ACCESS_KEY|MILVUS_PASSWORD'; then
-    recsys_error "RAG promotion log contains a secret variable name"
-    return 1
-  fi
 }
 
 test_rag_api() {

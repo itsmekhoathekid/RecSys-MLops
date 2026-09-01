@@ -811,10 +811,42 @@ index 00000000..8e062967
 +	}
 +}
 diff --git a/go/core/pkg/sandboxbackend/substrate/agent_lifecycle.go b/go/core/pkg/sandboxbackend/substrate/agent_lifecycle.go
-index 2efd1725..5b9c934b 100644
+index 2efd172..a1333e9 100644
 --- a/go/core/pkg/sandboxbackend/substrate/agent_lifecycle.go
 +++ b/go/core/pkg/sandboxbackend/substrate/agent_lifecycle.go
-@@ -93,6 +93,7 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
+@@ -40,12 +40,12 @@ const (
+ 	// mirroring it as an annotation) is what achieves that.
+ 	sandboxAgentTemplateNameMaxBase = 46
+ 
+-	// shapeHashAnnotation carries the hash of the rendered ActorTemplateSpec ("shape"). The
+-	// session actor id is keyed on it: soft config changes ride Secret contents and never touch
+-	// the spec, so sessions keep their actor (and durable dir) across config rollouts; anything
+-	// that does change the spec (image digest, command, scopes, literal env) fans out blue-green
+-	// to a new template + new actors, resetting session state (accepted, plan §4.2).
++	// shapeHashAnnotation carries the hash of the rendered ActorTemplateSpec ("shape"). A
++	// config revision is deliberately represented by a literal env var in the spec so Secret
++	// updates fan out blue-green to a new template + golden. Session actor IDs remain stable;
++	// durable data survives and cold resumes re-resolve the live config Secret.
+ 	actorTemplateHashAnnotation = "kagent.dev/actor-template-hash"
++	configRevisionEnvName       = "KAGENT_CONFIG_REVISION"
+ 
+ 	durableDataVolume = "data"
+ 	durableDataMount  = "/data"
+@@ -77,6 +77,13 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	configHash := shortConfigHash(podTemplate.Annotations[consts.ConfigHashAnnotation])
++	if configHash != "" {
++		// Secret contents are not part of an ActorTemplateSpec. Project the translator's
++		// deterministic config hash into a literal env var so a referenced Secret update
++		// changes the shape hash and builds a fresh golden actor automatically.
++		containerEnv = append([]corev1.EnvVar{{Name: configRevisionEnvName, Value: configHash}}, containerEnv...)
++	}
+ 
+ 	spec := atev1alpha1.ActorTemplateSpec{
+ 		PauseImage:   p.Defaults.PauseImage,
+@@ -93,6 +100,7 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
  			// is served by both ADKs and any A2A-conformant BYO image; substrate's
  			// default Readyz path (/readyz) is served by neither.
  			Readyz: &atev1alpha1.ContainerReadyz{
@@ -822,7 +854,7 @@ index 2efd1725..5b9c934b 100644
  				HTTPGet: &atev1alpha1.HTTPGetAction{
  					Path: "/.well-known/agent-card.json",
  					Port: substrateKagentListenPort,
-@@ -104,6 +105,9 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
+@@ -104,6 +112,9 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
  			Location: sandboxAgentSnapshotsLocation(sa),
  			OnPause:  atev1alpha1.SnapshotScopeFull,
  			OnCommit: atev1alpha1.SnapshotScopeFull,
@@ -832,6 +864,41 @@ index 2efd1725..5b9c934b 100644
  		},
  	}
  	applyDurableDirSessionStore(&spec)
+@@ -123,9 +134,8 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
+ 		desiredGenerationAnnotation: strconv.FormatInt(sa.GetGeneration(), 10),
+ 		actorTemplateHashAnnotation: actorTemplateHash,
+ 	}
+-	// The translator's config hash is kept as an informational annotation (it changes on soft
+-	// config rollouts while the template stays put; nothing keys on it anymore).
+-	if configHash := shortConfigHash(podTemplate.Annotations[consts.ConfigHashAnnotation]); configHash != "" {
++	// Mirror the rollout revision for operators as well as carrying it in the spec.
++	if configHash != "" {
+ 		annotations[consts.ConfigHashAnnotation] = configHash
+ 	}
+ 
+@@ -146,8 +156,8 @@ func (p *Lifecycle) buildSandboxAgentActorTemplate(
+ 
+ // actorTemplateShapeHash returns a short, deterministic hash of a rendered ActorTemplateSpec.
+ // It covers everything in the spec (image digest, command, env including secretKeyRef names,
+-// mounts, readyz, scopes, worker selector) and nothing outside it — Secret CONTENTS in
+-// particular are invisible, which is exactly what makes config rollouts soft.
++// mounts, readyz, scopes, worker selector) and nothing outside it. Secret CONTENTS are
++// represented indirectly by configRevisionEnvName so updates create a new golden revision.
+ func actorTemplateShapeHash(spec atev1alpha1.ActorTemplateSpec) (string, error) {
+ 	raw, err := json.Marshal(spec)
+ 	if err != nil {
+@@ -160,9 +170,8 @@ func actorTemplateShapeHash(spec atev1alpha1.ActorTemplateSpec) (string, error)
+ // applyDurableDirSessionStore mounts a durableDir volume at /data for the session sqlite DB
+ // and flips the suspend scope to Data: per-turn suspends then capture only the durable dir
+ // (KBs, not a full memory image), and every resume is a cold boot that re-resolves secretKeyRef
+-// env from the live Secret — the only config-refresh channel on resume, which is what lets soft
+-// config rollouts reach an existing session's actor (plan §4.2/§4.3). onPause stays Full so the
+-// golden build and any future warm-pause tier keep a full snapshot available.
++// env from the live Secret. That keeps existing session actors current while new sessions
++// resolve to the new golden. onPause stays Full so golden builds retain a full snapshot.
+ func applyDurableDirSessionStore(spec *atev1alpha1.ActorTemplateSpec) {
+ 	spec.Volumes = append(spec.Volumes, atev1alpha1.Volume{
+ 		Name:         durableDataVolume,
 diff --git a/go/core/pkg/sandboxbackend/substrate/agent_lifecycle_test.go b/go/core/pkg/sandboxbackend/substrate/agent_lifecycle_test.go
 index bcb22e67..e20bf7f7 100644
 --- a/go/core/pkg/sandboxbackend/substrate/agent_lifecycle_test.go
@@ -847,3 +914,46 @@ index bcb22e67..e20bf7f7 100644
  
  			names := actorEnvNames(c.Env)
  			require.True(t, names["KAGENT_NAME"], "KAGENT_NAME must be a literal env var")
+diff --git a/go/core/pkg/sandboxbackend/substrate/config_hash_test.go b/go/core/pkg/sandboxbackend/substrate/config_hash_test.go
+index a123827..33afaa8 100644
+--- a/go/core/pkg/sandboxbackend/substrate/config_hash_test.go
++++ b/go/core/pkg/sandboxbackend/substrate/config_hash_test.go
+@@ -91,14 +91,16 @@ func TestBuildActorTemplateShapeHashIdentity(t *testing.T) {
+ 	shapeHash := tmpl.Annotations[actorTemplateHashAnnotation]
+ 	require.NotEmpty(t, shapeHash)
+ 	require.Equal(t, "py-agent-"+shapeHash, tmpl.Name, "template name must carry the shape-hash suffix")
+-	require.Equal(t, "ff", tmpl.Annotations[consts.ConfigHashAnnotation], "config hash is kept as an informational annotation")
++	require.Equal(t, "ff", tmpl.Annotations[consts.ConfigHashAnnotation], "config hash is exposed for operators")
+ 
+-	// A soft config change (new config hash, same rendered shape) must keep the SAME template —
+-	// that is what lets existing sessions keep their actor (and durable dir) across rollouts.
+-	softChange, err := p.buildSandboxAgentActorTemplate(sa, wpKey, podFor("256", img1))
++	// A config change must fan out a fresh ActorTemplate + golden. Secret contents are otherwise
++	// invisible to the shape hash, so the literal config revision env is the rollout trigger.
++	configChange, err := p.buildSandboxAgentActorTemplate(sa, wpKey, podFor("256", img1))
+ 	require.NoError(t, err)
+-	require.Equal(t, tmpl.Name, softChange.Name, "config-only change must not fan out a new template")
+-	require.Equal(t, shapeHash, softChange.Annotations[actorTemplateHashAnnotation])
++	require.NotEqual(t, tmpl.Name, configChange.Name, "config-only change must produce a new template")
++	require.NotEqual(t, shapeHash, configChange.Annotations[actorTemplateHashAnnotation])
++	require.Equal(t, "100", configChange.Annotations[consts.ConfigHashAnnotation])
++	require.Equal(t, "100", actorEnvValue(configChange.Spec.Containers[0].Env, configRevisionEnvName))
+ 
+ 	// A actor template shape change (new image digest) must fan out a new template + golden.
+ 	shapeChange, err := p.buildSandboxAgentActorTemplate(sa, wpKey, podFor("256", img2))
+@@ -107,6 +109,15 @@ func TestBuildActorTemplateShapeHashIdentity(t *testing.T) {
+ 	require.NotEqual(t, shapeHash, shapeChange.Annotations[actorTemplateHashAnnotation])
+ }
+ 
++func actorEnvValue(env []atev1alpha1.EnvVar, name string) string {
++	for _, candidate := range env {
++		if candidate.Name == name && candidate.Value != nil {
++			return *candidate.Value
++		}
++	}
++	return ""
++}
++
+ // TestBuildSandboxReturnsActorTemplate: the config Secret is rendered and emitted by the
+ // translator (session_db_url baked in via Backend.SessionDBURL before rendering); BuildSandbox
+ // contributes only the ActorTemplate, which references that Secret by the agent's stable name.

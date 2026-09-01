@@ -21,7 +21,7 @@ The experiments verify that a local notebook can communicate directly with a kag
 > `/api/a2a-sandboxes/kagent/recsys-coordinator-agent-sandbox/` and its v19
 > routing evidence is produced by the separate smoke/autoscale scripts, not by
 > rewriting these historical notebook outputs. See
-> [Validation & Verification](validation_verification.md).
+> [Agent/WorkerPool Benchmark & HA](benchmark_ha.md).
 
 ## 2. Execution Path
 

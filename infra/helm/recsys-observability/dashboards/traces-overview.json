@@ -7,6 +7,12 @@
   "version": 2,
   "refresh": "15s",
   "time": { "from": "now-30m", "to": "now" },
+  "templating": {"list": [
+    {"name":"namespace","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(up, namespace)","refId":"v1"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"agent","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(recsys_agent_calls_total, agent)","refId":"v2"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"model","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(up{job=\"recsys-llama-cpp\"}, model)","refId":"v3"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"tool","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(recsys_agent_tool_calls_total, tool)","refId":"v4"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}}
+  ]},
   "panels": [
     {
       "id": 1,
@@ -59,6 +65,15 @@
       "datasource": { "type": "loki", "uid": "Loki" },
       "targets": [{ "expr": "{namespace=\"api-serving\"} |= \"trace_id\"" }],
       "options": { "showLabels": true, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    },
+    {
+      "id": 6,
+      "type": "traces",
+      "title": "Kagent agent chain (redacted)",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 10 },
+      "datasource": { "type": "tempo", "uid": "Tempo" },
+      "targets": [{ "refId": "A", "queryType": "traceqlSearch", "limit": 50, "tableType": "traces", "query": "{ resource.service.namespace = \"kagent\" }" }],
+      "options": {}
     }
   ]
 }

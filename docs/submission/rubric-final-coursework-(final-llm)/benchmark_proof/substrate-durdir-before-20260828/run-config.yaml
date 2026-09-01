@@ -1,0 +1,55 @@
+benchmark:
+  suite: substrate-durdir
+  phase: before
+  executedAt: "2026-08-28"
+  clusterContext: gke_recsys-mlops-506406_asia-southeast1-b_recsys-mlops-gke
+  kubernetesVersion: v1.35.7-gke.1027000
+
+substrate:
+  chartVersion: 0.0.11
+  apiImage: ghcr.io/kagent-dev/substrate/ateapi:v0.0.11
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.11
+  apiReplicas: 2
+  controllerReplicas: 1
+  routerReplicas: 1
+
+workerPool:
+  name: benchmark-ateom
+  namespace: benchmark-workloads
+  replicas: 1
+  readyBeforeMeasurement: true
+  autoscaling: disabled
+  sandboxClass: gvisor
+
+load:
+  users: 1
+  spawnRatePerSecond: 1
+  duration: 1m
+  stopTimeoutSeconds: 60
+  minWaitSeconds: 1
+  maxWaitSeconds: 1
+  durDirFileSizeBytes: 8388608
+  readMode: data
+  resumeMode: explicit
+  atespace: benchmark
+
+profile:
+  actorTemplate: glutton-durdir-data
+  snapshots:
+    onPause: Full
+    onCommit: Data
+    onResumeFromData: ColdBoot
+  purpose: comparable before latency baseline
+
+images:
+  locust: locustio/locust:2.32.7@sha256:a8d802c7f86ca834de82b0aca4015c30ecdc351d3765020d6496b94dfba7afb4
+  boomer: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/substrate-benchmark-boomer:durdir-backport-b8193a6-678bb80@sha256:63574b0ee235ee4764a08bb5f379dcb6c55433b317820b602a6bda759fd9613a
+  glutton: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/substrate-benchmark-glutton:v0011-678bb80@sha256:a6eeb1df90738c8862be3511c8f6c98ba0f69f2e0582fc534cf09ce559f92c03
+
+storage:
+  service: RustFS
+  image: rustfs/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358
+  replicas: 1
+  pvc: rustfs-data
+  pvcCapacity: 1Gi
+  bucket: ate-snapshots

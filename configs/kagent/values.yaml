@@ -7,6 +7,10 @@ kmcp:
 database:
   postgres:
     bundled:
+      # Explicitly retain the chart's default PostgreSQL backend. This shared
+      # database supports the three controller replicas, but the single bundled
+      # PostgreSQL Pod is not itself a highly available database.
+      enabled: true
       resources:
         requests:
           cpu: 25m
@@ -16,6 +20,25 @@ database:
           memory: 256Mi
 
 controller:
+  # Three replicas enable the chart's automatic Kubernetes Lease leader
+  # election. Keep one controller disruption at a time and spread replicas
+  # across the CPU node pool. Pinning the controller also keeps the tainted
+  # single ML-system node out of topology-domain calculations.
+  replicas: 3
+  nodeSelector:
+    cloud.google.com/gke-nodepool: recsys-mlops-cpu
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: kagent
+          app.kubernetes.io/instance: kagent
+          app.kubernetes.io/component: controller
   resources:
     requests:
       cpu: 50m
@@ -44,6 +67,18 @@ substrateWorkerPool:
   replicas: 1
   ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.11
   sandboxClass: gvisor
+  # Reserve CPU shares for snapshot compression/resume while retaining burst
+  # capacity. Pin warm workers to the production CPU node pool so placement is
+  # stable and does not contend with the tainted ML-system node.
+  template:
+    nodeSelector:
+      cloud.google.com/gke-nodepool: recsys-mlops-cpu
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+      limits:
+        memory: 2Gi
 
 ui:
   nodeSelector:
@@ -90,6 +125,26 @@ providers:
       maxTokens: 384
       temperature: "0"
       seed: 42
+
+# Native kagent/Google ADK telemetry is sent to the repository-owned Collector.
+# Content is inspected in memory for safety counters and then discarded/redacted
+# before Loki or Tempo persistence.
+otel:
+  tracing:
+    enabled: true
+    exporter:
+      otlp:
+        endpoint: http://recsys-otel-collector.observability.svc.cluster.local:4317
+        insecure: true
+        protocol: grpc
+        timeout: 15000
+  logging:
+    enabled: true
+    exporter:
+      otlp:
+        endpoint: http://recsys-otel-collector.observability.svc.cluster.local:4317
+        insecure: true
+        timeout: 15000
 
 # Agents are deployed by the repository-owned recsys-kagent-agent chart. The
 # upstream demo Agents and MCP servers are disabled to avoid unnecessary GKE

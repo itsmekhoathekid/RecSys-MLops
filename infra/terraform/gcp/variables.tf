@@ -474,3 +474,91 @@ variable "datahub_encryption_key_secret" {
   default     = null
   sensitive   = true
 }
+
+variable "kagent_version" {
+  description = "Pinned source-built kagent CRD and application chart version."
+  type        = string
+  default     = "0.10.0-e6df917"
+}
+
+variable "agent_substrate_version" {
+  description = "Pinned Agent Substrate CRD and application chart version."
+  type        = string
+  default     = "0.0.11"
+}
+
+variable "deploy_agent_registry" {
+  description = "Deploy the Agent Registry catalog with a persistent pgvector database."
+  type        = bool
+  default     = false
+}
+
+variable "agentregistry_version" {
+  description = "Pinned official Agent Registry OCI Helm chart version."
+  type        = string
+  default     = "0.4.0"
+}
+
+variable "deploy_langfuse" {
+  description = "Deploy the production Langfuse v4 observability backend on the existing GKE cluster."
+  type        = bool
+  default     = false
+}
+
+variable "langfuse_backend_mode" {
+  description = "Langfuse backend profile: managed uses Cloud SQL, Memorystore, GKE Backup, and a dedicated node pool; in_cluster uses coursework-sized PostgreSQL, Valkey, and ClickHouse on the shared CPU pool."
+  type        = string
+  default     = "managed"
+
+  validation {
+    condition     = contains(["managed", "in_cluster"], var.langfuse_backend_mode)
+    error_message = "langfuse_backend_mode must be managed or in_cluster."
+  }
+}
+
+variable "langfuse_managed_backend_deletion_protection" {
+  description = "Protect the managed Langfuse Cloud SQL instance. Set false and apply while backend_mode is managed before intentionally switching to in_cluster."
+  type        = bool
+  default     = true
+}
+
+variable "langfuse_domain" {
+  description = "Public HTTPS hostname for the Langfuse UI."
+  type        = string
+  default     = "langfuse.example.invalid"
+}
+
+variable "langfuse_chart_version" {
+  description = "Pinned Langfuse Kubernetes Helm chart version."
+  type        = string
+  default     = "2.0.1"
+}
+
+variable "langfuse_app_version" {
+  description = "Pinned Langfuse application version."
+  type        = string
+  default     = "4.17.0"
+}
+
+variable "langfuse_node_machine_type" {
+  description = "Machine type for the dedicated quota-compatible Langfuse/ClickHouse node pool."
+  type        = string
+  default     = "e2-standard-4"
+}
+
+variable "langfuse_node_count" {
+  description = "Fixed number of non-Spot nodes used by the HA Langfuse data plane."
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.langfuse_node_count >= 3
+    error_message = "langfuse_node_count must be at least 3 for the production HA profile."
+  }
+}
+
+variable "langfuse_retention_days" {
+  description = "Retention period for the production Langfuse project."
+  type        = number
+  default     = 30
+}

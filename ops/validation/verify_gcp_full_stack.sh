@@ -62,6 +62,27 @@ check_https_authenticated() {
   rm -f "${netrc_file}"
 }
 
+check_https_authenticated_status() {
+  local id="$1" description="$2" url="$3" expected_status="$4" host netrc_file status
+  if [[ -z "${GATEWAY_CHECK_USER}" || -z "${GATEWAY_CHECK_PASSWORD}" ]]; then
+    record "${id}" FAIL "${description}" "gateway basic-auth credentials are not configured"
+    return
+  fi
+  host="${url#https://}"
+  host="${host%%/*}"
+  netrc_file="$(mktemp)"
+  chmod 600 "${netrc_file}"
+  printf 'machine %s login %s password %s\n' \
+    "${host}" "${GATEWAY_CHECK_USER}" "${GATEWAY_CHECK_PASSWORD}" >"${netrc_file}"
+  status="$(curl -sS --netrc-file "${netrc_file}" --max-time 15 -o /dev/null -w '%{http_code}' "${url}" || true)"
+  rm -f "${netrc_file}"
+  if [[ "${status}" == "${expected_status}" ]]; then
+    record "${id}" PASS "${description}" "HTTP ${status}"
+  else
+    record "${id}" FAIL "${description}" "expected HTTP ${expected_status}, got ${status:-unreachable}"
+  fi
+}
+
 static_checks() {
   check_cmd repo-config "Jenkins/image production configuration is valid" \
     python3 "${ROOT_DIR}/jenkins/python/configuration.py" validate
@@ -85,6 +106,13 @@ static_checks() {
     helm template recsys-llm-serving "${ROOT_DIR}/infra/helm/recsys-llm-serving" -f "${ROOT_DIR}/infra/helm/recsys-llm-serving/values-gcp.yaml"
   check_cmd helm-llm-shared "Shared LLM cost profile renders" \
     helm template recsys-llm-serving "${ROOT_DIR}/infra/helm/recsys-llm-serving" -f "${ROOT_DIR}/infra/helm/recsys-llm-serving/values-cpu-shared.yaml"
+  check_cmd helm-gateway "Production gateway routes render" \
+    helm template recsys-gateway "${ROOT_DIR}/infra/helm/recsys-gateway" \
+      --namespace api-serving --kube-version 1.35.0 \
+      -f "${ROOT_DIR}/infra/helm/recsys-gateway/values-gcp.yaml"
+  check_cmd helm-security "Security secret replication renders" \
+    helm template recsys-security "${ROOT_DIR}/infra/helm/recsys-security" \
+      --namespace recsys-security --kube-version 1.35.0
   check_cmd topology-config "Production config selects the exact three-node CPU-only topology" \
     bash -c 'grep -Eq '\''^cpu_machine_type *= *"e2-standard-8"$'\'' "$1" && grep -Eq '\''^cpu_min_nodes *= *2$'\'' "$1" && grep -Eq '\''^cpu_max_nodes *= *2$'\'' "$1" && grep -Eq '\''^ml_machine_type *= *"e2-standard-4"$'\'' "$1" && grep -Eq '\''^ml_min_nodes *= *1$'\'' "$1" && grep -Eq '\''^ml_max_nodes *= *1$'\'' "$1" && grep -Eq '\''^enable_gpu_pool *= *false$'\'' "$1" && grep -Eq '\''^llm_node_pool_mode *= *"cpu-services-shared"$'\'' "$1"' _ "${TF_DIR}/terraform.tfvars"
   check_cmd inventory-images "Image catalog contains exactly 19 images" \
@@ -144,6 +172,8 @@ live_checks() {
     bash -c 'kubectl get pvc -A -o json | jq -e '\''(.items | length) > 0 and all(.items[]; .status.phase == "Bound")'\'''
   check_cmd external-secrets "All ExternalSecrets report Ready" \
     bash -c 'kubectl get externalsecret -A -o json | jq -e '\''(.items | length) > 0 and all(.items[]; any(.status.conditions[]?; .type == "Ready" and .status == "True"))'\'''
+  check_cmd public-ui-auth-secrets "Gateway Basic Auth is replicated to both UI namespaces" \
+    bash -c 'kubectl get secret recsys-gateway-basic-auth -n kagent >/dev/null && kubectl get secret recsys-gateway-basic-auth -n agentregistry >/dev/null'
 
   local release_specs=(
     "cert-manager:cert-manager" "keda:keda" "keda-add-ons-http:keda"
@@ -190,12 +220,24 @@ live_checks() {
     "https://api.recsys-mlops.site/docs" \
     "https://metrics.recsys-mlops.site/" \
     "https://logs.recsys-mlops.site/ready" \
-    "https://traces.recsys-mlops.site/ready"; do
+    "https://traces.recsys-mlops.site/ready" \
+    "https://agents.recsys-mlops.site/" \
+    "https://registry.recsys-mlops.site/" \
+    "https://rag.recsys-mlops.site/docs" \
+    "https://rag.recsys-mlops.site/openapi.json"; do
     url_hash="$(printf '%s' "${url}" | sha1sum | cut -c1-8)"
     check_https_unauthenticated "https-unauth-${url_hash}" \
       "Public HTTPS endpoint rejects missing basic auth: ${url}" "${url}"
     check_https_authenticated "https-${url_hash}" \
       "Public HTTPS endpoint responds with valid basic auth: ${url}" "${url}"
+  done
+
+  local private_path path_hash
+  for private_path in metrics healthz ready version; do
+    path_hash="$(printf '%s' "${private_path}" | sha1sum | cut -c1-8)"
+    check_https_authenticated_status "rag-private-${path_hash}" \
+      "RAG operational endpoint remains private: /${private_path}" \
+      "https://rag.recsys-mlops.site/${private_path}" "404"
   done
 }
 

@@ -63,7 +63,7 @@ Data Contracts without restoring job/process-instance lineage.
 ### Code Reference
 
 - [README.md](../../../README.md): top-level repository structure and navigation.
-- [gke.tf (line 1)](../../../infra/terraform/gcp/gke.tf#L1), [gke.tf (line 245)](../../../infra/terraform/gcp/gke.tf#L245): GKE cluster and node-pool infrastructure boundary.
+- [gke.tf (line 1)](../../../infra/terraform/gcp/modules/gke/main.tf#L1), [gke.tf (line 245)](../../../infra/terraform/gcp/modules/gke/main.tf#L245): GKE cluster and node-pool infrastructure boundary.
 - [api-deployment.yaml (line 1)](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L1), [api-deployment.yaml (line 85)](../../../infra/helm/recsys-serving/templates/api-deployment.yaml#L85): API serving deployment boundary.
 - [recsys-airflow chart](../../../infra/helm/recsys-airflow/) and [Airflow workloads](../../../infra/helm/recsys-airflow/templates/airflow.yaml): independently owned data-platform orchestration boundary.
 - [istio-authorization.yaml (line 1)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L1), [istio-authorization.yaml (line 235)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L235): security policy boundary.

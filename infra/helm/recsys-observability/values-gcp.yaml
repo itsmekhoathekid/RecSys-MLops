@@ -10,3 +10,18 @@ storage:
   grafana: 5Gi
   loki: 20Gi
   tempo: 10Gi
+
+persistence:
+  prometheus:
+    enabled: true
+    storageClassName: standard-rwo
+
+langfuse:
+  enabled: true
+  endpoint: http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel
+
+# Production observability enforces STRICT mTLS and has Istio injection
+# enabled. Run the probe here so its native sidecar can authenticate to the
+# Pushgateway without changing the intentionally mesh-disabled LLM namespace.
+llmProbe:
+  namespace: observability

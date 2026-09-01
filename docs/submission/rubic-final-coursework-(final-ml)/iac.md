@@ -36,42 +36,47 @@ infra/
     recsys-security/            # Istio mTLS and service-to-service authorization policies
     recsys-serving/             # KServe, Triton, FastAPI serving
   terraform/gcp/
-    apis.tf                     # Required Google APIs
-    datahub.tf                  # DataHub secrets, Kafka alias, Helm releases
-    gke.tf                      # GKE cluster and node pools
-    locals.tf                   # image paths, node placement, Helm overrides
-    namespaces.tf               # Kubernetes namespaces
-    network.tf                  # VPC and subnet
-    registry_storage.tf         # Artifact Registry and GCS buckets
-    recsys_services.tf          # Helm releases for the RecSys stack
-    secret_management.tf        # External Secrets and workload identity bindings
-    secrets.tf                  # Central secret payload resources
-    variables.tf                # deployment toggles and node sizing
+    main.tf                     # Root composition and module wiring
+    moved.tf                    # Legacy root address migration declarations
+    providers.tf                # Google, Kubernetes, and Helm providers
+    variables.tf                # Stable deployment inputs and node sizing
+    outputs.tf                  # Stable public outputs
+    modules/
+      project-services/         # Required Google APIs and logging policy
+      network/                  # VPC and subnet
+      artifact-storage/         # Artifact Registry and GCS buckets
+      gke/                      # GKE cluster, node pools, IAM, service account
+      kubernetes-platform/      # Operators, namespaces, secrets, and Helm releases
 ```
 
 Terraform provisions the cloud resources, installs required controllers, creates namespaces, and deploys local Helm charts. This makes the setup reproducible from IaC instead of relying on manual Kubernetes setup.
+
+The root input and output contract is unchanged by this layout. Existing
+resources are reassigned to the modules through declarative `moved` blocks;
+the migration apply recorded `0 added, 0 changed, 0 destroyed` and did not
+modify remote infrastructure.
 
 ### Component Configuration Reference
 
 | Component | Terraform deployment | Runtime configuration |
 | --- | --- | --- |
-| GCP APIs | [`apis.tf`](../../../infra/terraform/gcp/apis.tf) | Enables the Google APIs required by GKE, Artifact Registry, networking, storage, Secret Manager, and cluster dependencies. Cloud Build is retired. |
-| VPC and subnet | [network.tf (line 1)](../../../infra/terraform/gcp/network.tf#L1) | VPC, subnet, pod CIDR, and service CIDR are parameterized in [variables.tf (line 46)](../../../infra/terraform/gcp/variables.tf#L46). |
-| Artifact Registry and GCS | [registry_storage.tf (line 1)](../../../infra/terraform/gcp/registry_storage.tf#L1) | Stores container images plus lake and model backup objects. |
-| GKE cluster | [gke.tf (line 30)](../../../infra/terraform/gcp/gke.tf#L30) | Configures Workload Identity, IP allocation, HPA, persistent-disk CSI, logging, and monitoring. |
-| CPU node pool | [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97) | Uses the `cpu-services`/`data-platform` labels, autoscaling bounds, and machine type from Terraform variables. |
-| ML node pool | [gke.tf (line 142)](../../../infra/terraform/gcp/gke.tf#L142) | Uses the `ml-system` label and `recsys.ai/workload=ml-system:NoSchedule` taint. |
-| Kubernetes namespaces | [namespaces.tf (line 1)](../../../infra/terraform/gcp/namespaces.tf#L1) | Creates the observability, experiment-tracking, dataflow, DataHub, API-serving, and KServe runtime boundaries. |
-| Platform controllers | [dependencies.tf (line 18)](../../../infra/terraform/gcp/dependencies.tf#L18) | Installs cert-manager, KEDA, External Secrets, KubeRay, Istio, and NGINX Ingress. |
-| Kubeflow Pipelines and KServe | [dependencies.tf (line 165)](../../../infra/terraform/gcp/dependencies.tf#L165), [dependencies.tf (line 196)](../../../infra/terraform/gcp/dependencies.tf#L196) | Installs the KFP runtime and KServe controller after their dependencies are ready. |
-| Observability | [recsys_services.tf (line 1)](../../../infra/terraform/gcp/recsys_services.tf#L1) | [recsys-observability values](../../../infra/helm/recsys-observability/values.yaml#L1) configure Prometheus, Grafana, Loki, Tempo, Pushgateway, and exporters. |
-| MLflow, MinIO, and PostgreSQL | [recsys_services.tf (line 44)](../../../infra/terraform/gcp/recsys_services.tf#L44) | [mlflow-stack values](../../../infra/helm/mlflow-stack/values.yaml#L1) configure experiment tracking, model storage, and registry metadata. |
-| Kubeflow runtime resources | [recsys_services.tf (line 80)](../../../infra/terraform/gcp/recsys_services.tf#L80) | [recsys-runtime values](../../../infra/helm/recsys-runtime/values.yaml#L1) configure pipeline PVCs, runtime secrets, and supporting resources. |
-| Data platform | [`recsys_services.tf`](../../../infra/terraform/gcp/recsys_services.tf) | Eight split releases own shared config, lakehouse, source store, event stream, feature store, Kafka Connect, streaming, and Airflow. Their charts live under [`infra/helm/`](../../../infra/helm/). |
-| KServe and API serving | [recsys_services.tf (line 158)](../../../infra/terraform/gcp/recsys_services.tf#L158) | [recsys-serving values](../../../infra/helm/recsys-serving/values.yaml#L1) configure FastAPI, KServe/Triton, A/B routing, and autoscaling. |
-| Gateway | [recsys_services.tf (line 226)](../../../infra/terraform/gcp/recsys_services.tf#L226) | [recsys-gateway values](../../../infra/helm/recsys-gateway/values.yaml#L1) configure public hosts, internal backends, authentication, TLS, and rate limiting. |
-| Security mesh | [recsys_services.tf (line 309)](../../../infra/terraform/gcp/recsys_services.tf#L309) | [recsys-security values](../../../infra/helm/recsys-security/values.yaml#L1) configure External Secrets, Istio mTLS, and authorization policies. |
-| DataHub | [prerequisites release](../../../infra/terraform/gcp/datahub.tf#L64), [DataHub release](../../../infra/terraform/gcp/datahub.tf#L84) | [prerequisite values](../../../infra/helm/datahub-stack/prerequisites-values.yaml) and [DataHub values](../../../infra/helm/datahub-stack/datahub-values.yaml) configure metadata storage, Kafka integration, and DataHub services. |
+| GCP APIs | [`apis.tf`](../../../infra/terraform/gcp/modules/project-services/apis.tf) | Enables the Google APIs required by GKE, Artifact Registry, networking, storage, Secret Manager, and cluster dependencies. Cloud Build is retired. |
+| VPC and subnet | [network.tf (line 1)](../../../infra/terraform/gcp/modules/network/main.tf#L1) | VPC, subnet, pod CIDR, and service CIDR are parameterized in [variables.tf (line 46)](../../../infra/terraform/gcp/variables.tf#L46). |
+| Artifact Registry and GCS | [registry_storage.tf (line 1)](../../../infra/terraform/gcp/modules/artifact-storage/main.tf#L1) | Stores container images plus lake and model backup objects. |
+| GKE cluster | [gke.tf (line 30)](../../../infra/terraform/gcp/modules/gke/main.tf#L30) | Configures Workload Identity, IP allocation, HPA, persistent-disk CSI, logging, and monitoring. |
+| CPU node pool | [gke.tf (line 97)](../../../infra/terraform/gcp/modules/gke/main.tf#L97) | Uses the `cpu-services`/`data-platform` labels, autoscaling bounds, and machine type from Terraform variables. |
+| ML node pool | [gke.tf (line 142)](../../../infra/terraform/gcp/modules/gke/main.tf#L142) | Uses the `ml-system` label and `recsys.ai/workload=ml-system:NoSchedule` taint. |
+| Kubernetes namespaces | [namespaces.tf (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/namespaces.tf#L1) | Creates the observability, experiment-tracking, dataflow, DataHub, API-serving, and KServe runtime boundaries. |
+| Platform controllers | [dependencies.tf (line 18)](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L18) | Installs cert-manager, KEDA, External Secrets, KubeRay, Istio, and NGINX Ingress. |
+| Kubeflow Pipelines and KServe | [dependencies.tf (line 165)](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L165), [dependencies.tf (line 196)](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L196) | Installs the KFP runtime and KServe controller after their dependencies are ready. |
+| Observability | [recsys_services.tf (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L1) | [recsys-observability values](../../../infra/helm/recsys-observability/values.yaml#L1) configure Prometheus, Grafana, Loki, Tempo, Pushgateway, and exporters. |
+| MLflow, MinIO, and PostgreSQL | [recsys_services.tf (line 44)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L44) | [mlflow-stack values](../../../infra/helm/mlflow-stack/values.yaml#L1) configure experiment tracking, model storage, and registry metadata. |
+| Kubeflow runtime resources | [recsys_services.tf (line 80)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L80) | [recsys-runtime values](../../../infra/helm/recsys-runtime/values.yaml#L1) configure pipeline PVCs, runtime secrets, and supporting resources. |
+| Data platform | [`recsys_services.tf`](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf) | Eight split releases own shared config, lakehouse, source store, event stream, feature store, Kafka Connect, streaming, and Airflow. Their charts live under [`infra/helm/`](../../../infra/helm/). |
+| KServe and API serving | [recsys_services.tf (line 158)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L158) | [recsys-serving values](../../../infra/helm/recsys-serving/values.yaml#L1) configure FastAPI, KServe/Triton, A/B routing, and autoscaling. |
+| Gateway | [recsys_services.tf (line 226)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L226) | [recsys-gateway values](../../../infra/helm/recsys-gateway/values.yaml#L1) configure public hosts, internal backends, authentication, TLS, and rate limiting. |
+| Security mesh | [recsys_services.tf (line 309)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L309) | [recsys-security values](../../../infra/helm/recsys-security/values.yaml#L1) configure External Secrets, Istio mTLS, and authorization policies. |
+| DataHub | [prerequisites release](../../../infra/terraform/gcp/modules/kubernetes-platform/datahub.tf#L64), [DataHub release](../../../infra/terraform/gcp/modules/kubernetes-platform/datahub.tf#L84) | [prerequisite values](../../../infra/helm/datahub-stack/prerequisites-values.yaml) and [DataHub values](../../../infra/helm/datahub-stack/datahub-values.yaml) configure metadata storage, Kafka integration, and DataHub services. |
 
 Terraform continues to own the DataHub service. Jenkins separately runs an
 immutable, one-shot `datahub-catalog` deployment unit to synchronize static
@@ -130,6 +135,34 @@ recsys-flink:gcp            sha256:ca89c5f434828c619a37c79366943a0a49be98b38d8d3
 ## Terraform Proof
 
 Terraform was applied from `infra/terraform/gcp` against project `recsys-mlops`.
+
+### Module migration proof — 2026-08-31
+
+Before the migration, the remote state and its resource-address inventory were
+backed up outside the repository. The reviewed migration used a saved
+`refresh-only` plan so the existing logging and kagent configuration drift was
+not deployed while Terraform recorded the declarative `moved` addresses.
+
+Observed apply result:
+
+```text
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+```
+
+The post-migration plan contained no create or destroy actions. It retained the
+four pre-existing configuration updates—one logging exclusion and three kagent
+resources—plus a state-only dependency metadata update for
+`null_resource.cluster_credentials`; that plan was not applied.
+
+Live verification after the state migration confirmed:
+
+```text
+GKE cluster: recsys-mlops-gke  RUNNING  asia-southeast1-b
+Node pools:  recsys-mlops-cpu, recsys-mlops-ml-system  RUNNING
+Nodes:       3/3 Ready
+Terraform:   configuration valid
+Stack:       Live verification passed
+```
 
 Validation:
 
@@ -201,9 +234,9 @@ by their pod `nodeSelector`/toleration policy.
 
 The placement is defined in Terraform/Helm:
 
-- [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97), [gke.tf (line 191)](../../../infra/terraform/gcp/gke.tf#L191): defines the `cpu-services` and tainted `ml-system` node pools.
-- [locals.tf (line 40)](../../../infra/terraform/gcp/locals.tf#L40), [locals.tf (line 85)](../../../infra/terraform/gcp/locals.tf#L85): reusable ML node selectors and tolerations for ML and serving workloads.
-- [recsys_services.tf (line 44)](../../../infra/terraform/gcp/recsys_services.tf#L44), [recsys_services.tf (line 111)](../../../infra/terraform/gcp/recsys_services.tf#L111), [recsys_services.tf (line 158)](../../../infra/terraform/gcp/recsys_services.tf#L158), [recsys_services.tf (line 223)](../../../infra/terraform/gcp/recsys_services.tf#L223): applies ML placement to MLflow, APIs, KServe/Triton, and Ray releases.
+- [gke.tf (line 97)](../../../infra/terraform/gcp/modules/gke/main.tf#L97), [gke.tf (line 191)](../../../infra/terraform/gcp/modules/gke/main.tf#L191): defines the `cpu-services` and tainted `ml-system` node pools.
+- [locals.tf (line 40)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L40), [locals.tf (line 85)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L85): reusable ML node selectors and tolerations for ML and serving workloads.
+- [recsys_services.tf (line 44)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L44), [recsys_services.tf (line 111)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L111), [recsys_services.tf (line 158)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L158), [recsys_services.tf (line 223)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L223): applies ML placement to MLflow, APIs, KServe/Triton, and Ray releases.
 
 The `ml-system` node pool has a taint:
 
@@ -289,7 +322,7 @@ tree replaces it with `recsys-data-config`, `recsys-data-lakehouse`,
 `recsys-kafka-connect`, `recsys-streaming`, and `recsys-airflow`. Terraform
 bootstraps those releases and then ignores runtime mutations; Jenkins is the
 only release operator after bootstrap. See the authoritative release resources
-in [`recsys_services.tf`](../../../infra/terraform/gcp/recsys_services.tf) and
+in [`recsys_services.tf`](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf) and
 the migration contract in
 [`infra/terraform/gcp/README.md`](../../../infra/terraform/gcp/README.md).
 

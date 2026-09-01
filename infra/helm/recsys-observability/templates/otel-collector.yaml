@@ -1,0 +1,391 @@
+{{- if .Values.otelCollector.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: recsys-otel-collector
+  namespace: {{ .Values.namespace.name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-otel-collector-config
+  namespace: {{ .Values.namespace.name }}
+data:
+  collector.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 768
+        spike_limit_mib: 192
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+      transform/agent_normalize:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - 'set(span.attributes["agent"], span.attributes["gen_ai.agent.name"]) where span.attributes["gen_ai.agent.name"] != nil'
+              - 'set(span.attributes["agent"], span.attributes["kagent.agent.name"]) where span.attributes["agent"] == nil and span.attributes["kagent.agent.name"] != nil'
+              - 'set(span.attributes["agent"], span.attributes["kagent.app_name"]) where span.attributes["agent"] == nil and span.attributes["kagent.app_name"] != nil'
+              - 'set(span.attributes["agent"], "coordinator") where span.attributes["agent"] != nil and IsMatch(span.attributes["agent"], "(?i).*coordinator.*")'
+              - 'set(span.attributes["agent"], "context") where span.attributes["agent"] != nil and IsMatch(span.attributes["agent"], "(?i).*context.*")'
+              - 'set(span.attributes["agent"], "recommendation") where span.attributes["agent"] != nil and IsMatch(span.attributes["agent"], "(?i).*recommendation.*")'
+              - 'set(span.attributes["agent"], "coordinator") where span.attributes["agent"] == nil and IsMatch(span.name, "(?i).*coordinator.*")'
+              - 'set(span.attributes["agent"], "context") where span.attributes["agent"] == nil and IsMatch(span.name, "(?i).*context.*agent.*")'
+              - 'set(span.attributes["agent"], "recommendation") where span.attributes["agent"] == nil and IsMatch(span.name, "(?i).*recommendation.*agent.*")'
+              - 'set(span.attributes["agent"], "unknown") where span.attributes["agent"] == nil'
+              - 'set(span.attributes["recsys.safety.email"], true) where span.attributes["gcp.vertex.agent.llm_request"] != nil and IsMatch(span.attributes["gcp.vertex.agent.llm_request"], "(?i)[a-z0-9.!#$%&''*+/=?^_`{|}~-]+@[a-z0-9.-]+[.][a-z]{2,}")'
+              - 'set(span.attributes["recsys.safety.phone"], true) where span.attributes["gcp.vertex.agent.llm_request"] != nil and IsMatch(span.attributes["gcp.vertex.agent.llm_request"], "(?i)([+]?[0-9][0-9 .()_-]{7,}[0-9])")'
+              - 'set(span.attributes["recsys.safety.payment_card"], true) where span.attributes["gcp.vertex.agent.llm_request"] != nil and IsMatch(span.attributes["gcp.vertex.agent.llm_request"], "(?i)([0-9][ -]?){13,19}")'
+              - 'set(span.attributes["recsys.safety.prompt_injection"], true) where span.attributes["gcp.vertex.agent.llm_request"] != nil and IsMatch(span.attributes["gcp.vertex.agent.llm_request"], "(?i)(ignore (all|any|the|your) (previous|prior|above) instructions|system prompt|jailbreak)")'
+              - 'set(span.attributes["status"], "failure") where span.status.code == STATUS_CODE_ERROR'
+              - 'set(span.attributes["status"], "success") where span.attributes["status"] == nil'
+              - 'set(span.attributes["tool"], span.attributes["gen_ai.tool.name"]) where span.attributes["gen_ai.tool.name"] != nil'
+              - 'set(span.attributes["tool"], span.attributes["tool.name"]) where span.attributes["tool"] == nil and span.attributes["tool.name"] != nil'
+              - 'set(span.attributes["tool"], "unknown") where span.attributes["tool"] == nil and IsMatch(span.name, "(?i).*(execute_tool|tool).*" )'
+              - 'set(span.attributes["tool"], "none") where span.attributes["tool"] == nil'
+              - 'set(span.attributes["operation"], span.name)'
+      transform/operational_sanitize:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - 'keep_keys(span.attributes, ["agent", "status", "tool", "operation", "kagent.app_name", "gen_ai.agent.name", "kagent.agent.name", "gen_ai.tool.name", "tool.name", "recsys.safety.email", "recsys.safety.phone", "recsys.safety.payment_card", "recsys.safety.prompt_injection"])'
+          - context: resource
+            statements:
+              - 'keep_keys(resource.attributes, ["service.name", "service.namespace", "service.instance.id", "deployment.environment", "deployment.environment.name"])'
+      filter/langfuse_self:
+        error_mode: ignore
+        traces:
+          span:
+            - 'resource.attributes["recsys.telemetry.no_langfuse_export"] == true'
+            - 'resource.attributes["service.name"] == "langfuse-web"'
+            - 'resource.attributes["service.name"] == "langfuse-worker"'
+      transform/langfuse_semantic_redact:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - 'set(span.attributes["langfuse.environment"], "production")'
+              - 'set(span.attributes["langfuse.trace.name"], Concat(["recsys-", span.attributes["agent"]], "")) where span.attributes["agent"] != nil and span.attributes["agent"] != "unknown"'
+              - 'set(span.attributes["langfuse.observation.metadata.agent"], span.attributes["agent"]) where span.attributes["agent"] != nil'
+              - 'set(span.attributes["langfuse.observation.metadata.tool"], span.attributes["tool"]) where span.attributes["tool"] != nil'
+              - 'set(span.attributes["langfuse.observation.metadata.status"], span.attributes["status"]) where span.attributes["status"] != nil'
+              - 'set(span.attributes["langfuse.observation.metadata.operation"], span.attributes["operation"]) where span.attributes["operation"] != nil'
+              - 'set(span.attributes["langfuse.observation.type"], "agent") where span.attributes["agent"] != nil and span.attributes["agent"] != "unknown" and span.attributes["tool"] == "none"'
+              - 'set(span.attributes["langfuse.observation.type"], "tool") where span.attributes["tool"] != nil and span.attributes["tool"] != "none"'
+              - 'set(span.attributes["langfuse.observation.type"], "generation") where span.attributes["gen_ai.request.model"] != nil or span.attributes["gen_ai.response.model"] != nil or IsMatch(span.name, "(?i).*(generation|llm|chat completion|synthetic probe).*")'
+              - 'set(span.attributes["langfuse.observation.type"], "guardrail") where IsMatch(span.name, "(?i).*(guardrail|safety).*")'
+              - 'set(span.attributes["langfuse.observation.type"], "span") where span.attributes["langfuse.observation.type"] == nil'
+              - 'set(span.attributes["langfuse.observation.model.name"], span.attributes["gen_ai.request.model"]) where span.attributes["gen_ai.request.model"] != nil'
+              - 'set(span.attributes["langfuse.observation.model.name"], span.attributes["gen_ai.response.model"]) where span.attributes["langfuse.observation.model.name"] == nil and span.attributes["gen_ai.response.model"] != nil'
+              - 'set(span.attributes["langfuse.observation.input"], span.attributes["gcp.vertex.agent.llm_request"]) where span.attributes["gcp.vertex.agent.llm_request"] != nil'
+              - 'set(span.attributes["langfuse.observation.input"], span.attributes["gen_ai.prompt"]) where span.attributes["langfuse.observation.input"] == nil and span.attributes["gen_ai.prompt"] != nil'
+              - 'set(span.attributes["langfuse.observation.input"], span.attributes["gen_ai.input.messages"]) where span.attributes["langfuse.observation.input"] == nil and span.attributes["gen_ai.input.messages"] != nil'
+              - 'set(span.attributes["langfuse.observation.input"], span.attributes["tool.arguments"]) where span.attributes["langfuse.observation.input"] == nil and span.attributes["tool.arguments"] != nil'
+              - 'set(span.attributes["langfuse.observation.output"], span.attributes["gcp.vertex.agent.llm_response"]) where span.attributes["gcp.vertex.agent.llm_response"] != nil'
+              - 'set(span.attributes["langfuse.observation.output"], span.attributes["gen_ai.completion"]) where span.attributes["langfuse.observation.output"] == nil and span.attributes["gen_ai.completion"] != nil'
+              - 'set(span.attributes["langfuse.observation.output"], span.attributes["gen_ai.output.messages"]) where span.attributes["langfuse.observation.output"] == nil and span.attributes["gen_ai.output.messages"] != nil'
+              - 'set(span.attributes["langfuse.observation.output"], span.attributes["tool.result"]) where span.attributes["langfuse.observation.output"] == nil and span.attributes["tool.result"] != nil'
+              - 'replace_pattern(span.attributes["langfuse.observation.input"], "(?i)[a-z0-9.!#$%&''*+/=?^_`{|}~-]+@[a-z0-9.-]+[.][a-z]{2,}", "[REDACTED_EMAIL]") where span.attributes["langfuse.observation.input"] != nil'
+              - 'replace_pattern(span.attributes["langfuse.observation.input"], "(?i)[+]?[0-9][0-9 .()_-]{7,}[0-9]", "[REDACTED_PHONE]") where span.attributes["langfuse.observation.input"] != nil'
+              - 'replace_pattern(span.attributes["langfuse.observation.input"], "(?i)([0-9][ -]?){13,19}", "[REDACTED_CARD]") where span.attributes["langfuse.observation.input"] != nil'
+              - 'replace_pattern(span.attributes["langfuse.observation.input"], "(?i)(ignore (all|any|the|your) (previous|prior|above) instructions|system prompt|jailbreak)", "[REDACTED_PROMPT_INJECTION]") where span.attributes["langfuse.observation.input"] != nil'
+              - 'replace_pattern(span.attributes["langfuse.observation.output"], "(?i)[a-z0-9.!#$%&''*+/=?^_`{|}~-]+@[a-z0-9.-]+[.][a-z]{2,}", "[REDACTED_EMAIL]") where span.attributes["langfuse.observation.output"] != nil'
+              - 'replace_pattern(span.attributes["langfuse.observation.output"], "(?i)[+]?[0-9][0-9 .()_-]{7,}[0-9]", "[REDACTED_PHONE]") where span.attributes["langfuse.observation.output"] != nil'
+              - 'replace_pattern(span.attributes["langfuse.observation.output"], "(?i)([0-9][ -]?){13,19}", "[REDACTED_CARD]") where span.attributes["langfuse.observation.output"] != nil'
+              - 'replace_pattern(span.attributes["langfuse.observation.output"], "(?i)(ignore (all|any|the|your) (previous|prior|above) instructions|system prompt|jailbreak)", "[REDACTED_PROMPT_INJECTION]") where span.attributes["langfuse.observation.output"] != nil'
+              - 'keep_keys(span.attributes, ["langfuse.environment", "langfuse.trace.name", "langfuse.observation.type", "langfuse.observation.level", "langfuse.observation.status_message", "langfuse.observation.input", "langfuse.observation.output", "langfuse.observation.model.name", "langfuse.observation.model.parameters", "langfuse.observation.usage_details", "langfuse.observation.cost_details", "langfuse.observation.completion_start_time", "langfuse.observation.metadata.agent", "langfuse.observation.metadata.tool", "langfuse.observation.metadata.status", "langfuse.observation.metadata.operation", "gen_ai.request.model", "gen_ai.response.model", "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.usage.total_tokens", "recsys.safety.email", "recsys.safety.phone", "recsys.safety.payment_card", "recsys.safety.prompt_injection"])'
+          - context: resource
+            statements:
+              - 'keep_keys(resource.attributes, ["service.name", "service.namespace", "service.version", "deployment.environment", "deployment.environment.name"])'
+      transform/safety_redact:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              - 'set(log.attributes["recsys.safety.email"], true) where IsMatch(body, "(?i)[a-z0-9.!#$%&''*+/=?^_`{|}~-]+@[a-z0-9.-]+[.][a-z]{2,}")'
+              - 'set(log.attributes["recsys.safety.phone"], true) where IsMatch(body, "(?i)([+]?[0-9][0-9 .()_-]{7,}[0-9])")'
+              - 'set(log.attributes["recsys.safety.payment_card"], true) where IsMatch(body, "(?i)([0-9][ -]?){13,19}")'
+              - 'set(log.attributes["recsys.safety.prompt_injection"], true) where IsMatch(body, "(?i)(ignore (all|any|the|your) (previous|prior|above) instructions|system prompt|jailbreak)")'
+              - 'set(body, "kagent audit event [REDACTED]")'
+              - 'keep_keys(log.attributes, ["recsys.safety.email", "recsys.safety.phone", "recsys.safety.payment_card", "recsys.safety.prompt_injection"])'
+    connectors:
+      spanmetrics/agents:
+        namespace: recsys.agent.raw
+        histogram:
+          unit: s
+          explicit:
+            buckets: [0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s, 30s, 60s, 120s, 300s]
+        dimensions:
+          - name: agent
+            default: unknown
+          - name: status
+            default: success
+          - name: tool
+            default: none
+          - name: operation
+            default: unknown
+        aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+        aggregation_cardinality_limit: 2000
+        metrics_flush_interval: 15s
+        exemplars:
+          enabled: true
+          max_per_data_point: 5
+        resource_metrics_key_attributes:
+          - service.name
+          - service.namespace
+          - service.instance.id
+      count/safety:
+        spans:
+          recsys.prompt.safety.email:
+            description: Observe-only email pattern detections.
+            conditions: ['attributes["recsys.safety.email"] == true']
+          recsys.prompt.safety.phone:
+            description: Observe-only phone pattern detections.
+            conditions: ['attributes["recsys.safety.phone"] == true']
+          recsys.prompt.safety.payment_card:
+            description: Observe-only payment-card pattern detections.
+            conditions: ['attributes["recsys.safety.payment_card"] == true']
+          recsys.prompt.safety.prompt_injection:
+            description: Observe-only prompt-injection pattern detections.
+            conditions: ['attributes["recsys.safety.prompt_injection"] == true']
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:9464
+        enable_open_metrics: true
+      otlp/tempo:
+        endpoint: recsys-tempo.{{ .Values.namespace.name }}.svc.cluster.local:4317
+        tls:
+          insecure: true
+      otlp_http/loki:
+        endpoint: http://recsys-loki.{{ .Values.namespace.name }}.svc.cluster.local:3100/otlp
+        tls:
+          insecure: true
+{{- if .Values.langfuse.enabled }}
+      otlphttp/langfuse:
+        endpoint: {{ .Values.langfuse.endpoint | quote }}
+        headers:
+          Authorization: ${env:LANGFUSE_OTEL_AUTHORIZATION}
+          x-langfuse-ingestion-version: "4"
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 4096
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 10m
+{{- end }}
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces/operational:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/agent_normalize, transform/operational_sanitize, batch]
+          exporters: [spanmetrics/agents, count/safety, otlp/tempo]
+{{- if .Values.langfuse.enabled }}
+        traces/langfuse:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/langfuse_self, transform/agent_normalize, transform/langfuse_semantic_redact, batch]
+          exporters: [otlphttp/langfuse]
+{{- end }}
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/safety_redact, batch]
+          exporters: [otlp_http/loki]
+        metrics/derived:
+          receivers: [spanmetrics/agents, count/safety]
+          processors: [batch]
+          exporters: [prometheus]
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-otel-collector
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: {{ .Values.otelCollector.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: recsys-otel-collector
+  template:
+    metadata:
+      annotations:
+        checksum/collector-config: {{ printf "%s-%s-%v" .Values.images.otelCollector (.Values.chartRevision | default "local") .Values.langfuse.enabled | sha256sum | quote }}
+        sidecar.istio.io/inject: "false"
+      labels:
+        app: recsys-otel-collector
+    spec:
+      serviceAccountName: recsys-otel-collector
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: recsys-otel-collector
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otel-collector
+          image: {{ .Values.images.otelCollector }}
+          args: ["--config=/etc/otelcol-contrib/collector.yaml"]
+{{- if .Values.langfuse.enabled }}
+          env:
+            - name: LANGFUSE_OTEL_AUTHORIZATION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.langfuse.authSecret.name }}
+                  key: {{ .Values.langfuse.authSecret.key }}
+{{- end }}
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: otlp-http, containerPort: 4318}
+            - {name: prometheus, containerPort: 9464}
+            - {name: otel-internal, containerPort: 8888}
+            - {name: health, containerPort: 13133}
+          readinessProbe:
+            httpGet: {path: /, port: health}
+          livenessProbe:
+            httpGet: {path: /, port: health}
+          resources:
+{{ toYaml .Values.otelCollector.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol-contrib
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: recsys-otel-collector-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: recsys-otel-collector
+  namespace: {{ .Values.namespace.name }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: recsys-otel-collector
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-otel-collector
+  namespace: {{ .Values.namespace.name }}
+spec:
+  selector:
+    app: recsys-otel-collector
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: otlp-grpc}
+    - {name: otlp-http, port: 4318, targetPort: otlp-http}
+    - {name: prometheus, port: 9464, targetPort: prometheus}
+    - {name: otel-internal, port: 8888, targetPort: otel-internal}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recsys-otel-collector-ingress
+  namespace: {{ .Values.namespace.name }}
+spec:
+  podSelector:
+    matchLabels:
+      app: recsys-otel-collector
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kagent
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.targets.langfuseNamespace }}
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespace.name }}
+      ports:
+        - {protocol: TCP, port: 9464}
+        - {protocol: TCP, port: 8888}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recsys-otel-collector-egress
+  namespace: {{ .Values.namespace.name }}
+spec:
+  podSelector:
+    matchLabels:
+      app: recsys-otel-collector
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespace.name }}
+      ports:
+        - {protocol: TCP, port: 3100}
+        - {protocol: TCP, port: 4317}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.targets.langfuseNamespace }}
+          podSelector:
+            matchLabels:
+              app: web
+      ports:
+        - {protocol: TCP, port: 3000}
+{{- end }}

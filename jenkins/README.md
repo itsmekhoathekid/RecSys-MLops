@@ -2,7 +2,13 @@
 
 Root `Jenkinsfile` is the component-aware CI/CD entrypoint. It detects changed
 paths, runs only the affected component gates, pushes only the affected images,
-and updates only the affected deployed component on `main`.
+and updates only the affected deployed component. Pull-request branches run CI;
+the merge commit on `main` publishes and deploys by default.
+
+Serving mutation testing is intentionally isolated from the push/PR feedback
+loop. The standalone [`ServingMutation.Jenkinsfile`](ServingMutation.Jenkinsfile)
+runs nightly or manually, accepts an `inference`, `online-feature`, `rag`, or
+`all` scope, and archives the target-scoped JSON/text score reports.
 
 ## GitHub Webhook Flow
 
@@ -20,7 +26,8 @@ GitHub push (feature/PR branch or main)
   -> Detect Changed Components
   -> Component CI
   -> Component Build And Publish
-  -> Component Deploy Or Update only when branch is main
+  -> PR branch: stop after CI/build proof
+  -> PR merged to main: publish image and Component Deploy Or Update
 ```
 
 Webhook settings:
@@ -75,15 +82,15 @@ out to every application pipeline. Any non-documentation path without a routing 
 `Unmapped runtime path` error so a new component cannot silently run everything
 or skip validation.
 
-Analytics changes set `RUN_ANALYTICS=true` in the main webhook flow. The shared
+Analytics changes set `RUN_ANALYTICS=true` in the webhook flow. The shared
 pipeline runs analytics unit and contract tests plus Helm validation, publishes
 the unified Spark, dbt, Superset, and Airflow images, and upgrades the
-independently owned Airflow and analytics Helm releases on `main`.
+independently owned Airflow and analytics Helm releases after CI passes.
 
 Progressive rollout changes set `RUN_ROLLOUT=true`. The same main webhook flow
 tests the controller, model-CD contracts, Helm templates, and demo scripts;
 publishes the watcher image with the Git commit tag; and applies only the
-watcher Deployment on `main`. The deploy step runs the idempotent Jenkins seed
+watcher Deployment. The deploy step runs the idempotent Jenkins seed
 through `/scriptText`, updating rollout jobs without restarting the Jenkins
 controller. `RecSys-KServe-Model-CD` is Pipeline-from-SCM, so every runtime rollout
 stage checks out `jenkins/KServeModelCD.Jenkinsfile` and its scripts from the
@@ -143,13 +150,22 @@ Each changed component follows the same sequence:
 3. Existing contract tests relevant to the component.
 4. Docker build with the full `GIT_COMMIT` tag.
 5. Push to the production Artifact Registry and resolve an immutable digest.
-6. Deploy the digest to GKE only on `main`, unless `FORCE_DEPLOY=true`.
+6. Deploy the digest to GKE for `main`, including PR merge commits. An unmerged
+   PR requires `DEPLOY_PULL_REQUESTS=true` or the one-run `FORCE_DEPLOY=true`.
 7. Run component production smoke/workflow checks after all selected release
    layers are healthy.
 
 Component CI is executed in bounded batches. The default maximum is three
 parallel branches (`COMPONENT_CI_MAX_PARALLEL=3`) so the Jenkins controller pod
 does not launch all thirteen heavy Python/Node test processes at once.
+
+The RAG post-promotion recall gate is catalog-coverage aware. The configured
+full-catalog target remains `0.90`; the verifier multiplies it by
+`indexed_item_count / golden_catalog_item_count` when a complete reduced corpus
+is intentionally promoted. For the current 96/160 quota-fallback corpus the
+effective target is `0.54`. The evidence report records both thresholds and the
+coverage ratio, while latency, duplicate-response and hard-constraint gates are
+never relaxed.
 
 `jenkins/config/gcp-production.json` is the only production identity source.
 The Jenkins job has no project, registry, cluster, or kubeconfig override.

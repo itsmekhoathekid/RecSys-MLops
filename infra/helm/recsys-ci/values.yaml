@@ -31,7 +31,9 @@ jenkins:
   github:
     projectUrl: https://github.com/itsmekhoathekid/RecSys-MLops/
     repositoryUrl: https://github.com/itsmekhoathekid/RecSys-MLops.git
-    branchSpec: "*/main"
+    # Build pushes to main and pull-request/feature branches. The Jenkinsfile
+    # keeps the deploy behavior explicit through DEPLOY_PULL_REQUESTS.
+    branchSpec: "**"
   plugins:
     installOnStartup: true
     required:

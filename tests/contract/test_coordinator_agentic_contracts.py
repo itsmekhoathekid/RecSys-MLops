@@ -140,7 +140,7 @@ def test_production_coordinator_uses_assigned_worker_autoscaling() -> None:
 
 
 def test_terraform_owns_coordinator_pool_and_lets_keda_manage_replicas() -> None:
-    terraform = (ROOT / "infra/terraform/gcp/kagent.tf").read_text(encoding="utf-8")
+    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf").read_text(encoding="utf-8")
     assert 'resource "kubernetes_manifest" "recsys_coordinator_sandbox_pool"' in terraform
     assert 'name      = "recsys-coordinator-sandbox-pool"' in terraform
     assert 'computed_fields = ["spec.replicas"]' in terraform

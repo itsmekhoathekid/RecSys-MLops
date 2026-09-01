@@ -8,7 +8,9 @@ realtimeProducer:
   replicas: 0
 realtimeFlinkConsumer:
   istioInject: "true"
-  checkpointIntervalSeconds: "120"
+  # MinIO-backed RocksDB checkpoints can take several minutes under load.
+  # Avoid queueing overlapping checkpoint requests and unnecessary job failovers.
+  checkpointIntervalSeconds: "300"
   online:
     startingOffsets: committed-offsets
 flinkAutoscaler:

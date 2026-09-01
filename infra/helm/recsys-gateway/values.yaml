@@ -28,6 +28,9 @@ tls:
     grafana: recsys-grafana-tls
     logs: recsys-logs-tls
     traces: recsys-traces-tls
+    agents: recsys-agents-tls
+    registry: recsys-registry-tls
+    rag: recsys-rag-tls
 
 api:
   enabled: true
@@ -100,6 +103,59 @@ traces:
   service:
     name: recsys-tempo
     port: 3200
+  rateLimit:
+    enabled: true
+    rps: "5"
+    rpm: "120"
+    connections: "10"
+    statusCode: "429"
+
+agents:
+  enabled: false
+  namespace: kagent
+  host: agents.example.invalid
+  upstreamHost: kagent-ui.kagent.svc.cluster.local
+  service:
+    name: kagent-ui
+    port: 8080
+  proxy:
+    readTimeoutSeconds: "1800"
+    sendTimeoutSeconds: "1800"
+  rateLimit:
+    enabled: true
+    rps: "20"
+    rpm: "600"
+    connections: "20"
+    statusCode: "429"
+
+registry:
+  enabled: false
+  namespace: agentregistry
+  host: registry.example.invalid
+  upstreamHost: agentregistry.agentregistry.svc.cluster.local
+  service:
+    name: agentregistry
+    port: 12121
+  rateLimit:
+    enabled: true
+    rps: "20"
+    rpm: "600"
+    connections: "20"
+    statusCode: "429"
+
+rag:
+  enabled: false
+  namespace: api-serving
+  host: rag.example.invalid
+  upstreamHost: recsys-rag-api.api-serving.svc.cluster.local
+  ingressService:
+    name: recsys-rag-api-ingress-upstream
+  rootRedirect:
+    enabled: true
+    path: /docs
+  service:
+    name: recsys-rag-api
+    port: 80
   rateLimit:
     enabled: true
     rps: "5"

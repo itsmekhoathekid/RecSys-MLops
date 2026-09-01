@@ -28,7 +28,7 @@ The active deployment is:
 ### 1. Select the active deployment profile
 
 The deployment switch is stored in
-[`infra/terraform/gcp/terraform.tfvars`](../../../infra/terraform/gcp/terraform.tfvars):
+[`infra/terraform/gcp/terraform.tfvars` (line 26)](../../../infra/terraform/gcp/terraform.tfvars#L26):
 
 ```hcl
 llm_node_pool_mode       = "cpu-services-shared"
@@ -42,7 +42,7 @@ deploy_llm_inference     = true
 the extra load-scoring components in the cost-saving production profile.
 
 The accepted values and their validation are defined in
-[`infra/terraform/gcp/variables.tf`](../../../infra/terraform/gcp/variables.tf):
+[`infra/terraform/gcp/variables.tf` (line 139)](../../../infra/terraform/gcp/variables.tf#L139):
 
 ```hcl
 variable "llm_node_pool_mode" {
@@ -91,20 +91,20 @@ terraform.tfvars
 ```
 
 Terraform connects Helm directly to the GKE endpoint in
-[`infra/terraform/gcp/providers.tf`](../../../infra/terraform/gcp/providers.tf).
+[`infra/terraform/gcp/providers.tf` (line 19)](../../../infra/terraform/gcp/providers.tf#L19).
 Therefore, a Terraform apply is the deployment interface; the model Deployment,
 Service, Gateway, router, and route are not maintained with ad-hoc
 `kubectl apply` commands.
 
 The main orchestration file is
-[`infra/terraform/gcp/llm_inference.tf`](../../../infra/terraform/gcp/llm_inference.tf).
+[`infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf` (line 12)](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L12).
 
 ### 3. Identify local and downloaded artifacts
 
 Repository-owned files:
 
 ```text
-infra/terraform/gcp/llm_inference.tf
+infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf
 infra/terraform/gcp/terraform.tfvars
 infra/helm/recsys-llm-serving/
   Chart.yaml
@@ -138,9 +138,9 @@ Downloaded artifacts and the code that requests them:
 ### 4. Install Gateway API and GAIE CRDs
 
 Terraform invokes
-[`ops/gcp/install_llm_gateway_crds.sh`](../../../ops/gcp/install_llm_gateway_crds.sh)
+[`ops/gcp/install_llm_gateway_crds.sh` (line 7)](../../../ops/gcp/install_llm_gateway_crds.sh#L7)
 from `null_resource.llm_gateway_api_crds` in
-[`llm_inference.tf`](../../../infra/terraform/gcp/llm_inference.tf):
+[`llm_inference.tf` CRD bootstrap (line 12)](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L12):
 
 ```hcl
 provisioner "local-exec" {
@@ -183,7 +183,7 @@ This step installs the controller infrastructure. It does not yet create the
 application Gateway instance.
 
 Terraform downloads two OCI charts in
-[`llm_inference.tf`](../../../infra/terraform/gcp/llm_inference.tf):
+[`llm_inference.tf` Agent Gateway releases (line 32)](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L32):
 
 ```hcl
 resource "helm_release" "agentgateway_crds" {
@@ -226,7 +226,7 @@ Internet reference:
 
 This step creates one application Gateway from the already installed
 `agentgateway` GatewayClass. The source is
-[`templates/gateway.yaml`](../../../infra/helm/recsys-llm-serving/templates/gateway.yaml):
+[`templates/gateway.yaml` (line 1)](../../../infra/helm/recsys-llm-serving/templates/gateway.yaml#L1):
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
@@ -248,7 +248,7 @@ The distinction is:
 
 The repository also attaches a strict API-key policy to the entire Gateway:
 
-**Source:** [`gateway-auth.yaml`](../../../infra/helm/recsys-llm-serving/templates/gateway-auth.yaml).
+**Source:** [`gateway-auth.yaml` (line 1)](../../../infra/helm/recsys-llm-serving/templates/gateway-auth.yaml#L1).
 
 ```yaml
 apiVersion: agentgateway.dev/v1alpha1
@@ -275,7 +275,7 @@ Operator reconciles that Secret from Vault KV v2 path `recsys/agent-gateway`.
 The same Vault record is synced to `kagent/kagent-agent-gateway`, which supplies
 the client credential referenced by the global `ModelConfig`.
 
-The executable proof is [`llm_inference_smoke.sh`](../../../ops/validation/llm_inference_smoke.sh):
+The executable proof is [`llm_inference_smoke.sh` (line 65)](../../../ops/validation/llm_inference_smoke.sh#L65):
 it asserts that both a missing key and an invalid key return `401`, then reads
 the namespace-local Secret and verifies that an authenticated completion succeeds.
 
@@ -295,7 +295,7 @@ whose current llama.cpp/GGUF evidence is shown in Sections 7 and 8.
 ### 7. Configure the llama.cpp model-server Helm chart
 
 Terraform installs the repository-local chart in
-[`llm_inference.tf`](../../../infra/terraform/gcp/llm_inference.tf):
+[`llm_inference.tf` serving release (line 73)](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L73):
 
 ```hcl
 resource "helm_release" "recsys_llm_serving" {
@@ -319,7 +319,7 @@ resource "helm_release" "recsys_llm_serving" {
 ```
 
 The active runtime values are in
-[`values-cpu-shared.yaml`](../../../infra/helm/recsys-llm-serving/values-cpu-shared.yaml):
+[`values-cpu-shared.yaml` replica/image settings (line 4)](../../../infra/helm/recsys-llm-serving/values-cpu-shared.yaml#L4):
 
 ```yaml
 replicaCount: 2
@@ -358,7 +358,7 @@ Internet references:
 ### 8. Download and serve the Qwen GGUF model
 
 The model choice is explicit in
-[`values-cpu-shared.yaml`](../../../infra/helm/recsys-llm-serving/values-cpu-shared.yaml):
+[`values-cpu-shared.yaml` model settings (line 12)](../../../infra/helm/recsys-llm-serving/values-cpu-shared.yaml#L12):
 
 ```yaml
 model:
@@ -375,7 +375,7 @@ model:
   metrics: true
 ```
 
-[`templates/deployment.yaml`](../../../infra/helm/recsys-llm-serving/templates/deployment.yaml)
+[`templates/deployment.yaml` llama.cpp arguments (line 44)](../../../infra/helm/recsys-llm-serving/templates/deployment.yaml#L44)
 converts these values to the container arguments:
 
 ```text
@@ -515,20 +515,20 @@ Load-aware scheduling is configured through this three-file chain:
 
 | Role | Repository file | Relevant setting |
 |---|---|---|
-| Select the active treatment | [`terraform.tfvars`](../../../infra/terraform/gcp/terraform.tfvars) | `llm_optimization_profile = "optimized"` |
-| Select the matching Helm values | [`llm_inference.tf`](../../../infra/terraform/gcp/llm_inference.tf) | Chooses `router-llama-cpp-cpu-optimized-values.yaml` when the profile is `optimized` |
-| Define the EPP scheduling policy | [`router-llama-cpp-cpu-optimized-values.yaml`](../../../configs/llm-d/router-llama-cpp-cpu-optimized-values.yaml) | Enables `inflight-load-producer` and `token-load-scorer` |
+| Select the active treatment | [`terraform.tfvars` (line 27)](../../../infra/terraform/gcp/terraform.tfvars#L27) | `llm_optimization_profile = "optimized"` |
+| Select the matching Helm values | [`llm_inference.tf` (line 91)](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L91) | Chooses `router-llama-cpp-cpu-optimized-values.yaml` when the profile is `optimized` |
+| Define the EPP scheduling policy | [`router-llama-cpp-cpu-optimized-values.yaml` (line 26)](../../../configs/llm-d/router-llama-cpp-cpu-optimized-values.yaml#L26) | Enables `inflight-load-producer` and `token-load-scorer` |
 
 The active switch is stored in
-[`terraform.tfvars`](../../../infra/terraform/gcp/terraform.tfvars):
+[`terraform.tfvars` (line 27)](../../../infra/terraform/gcp/terraform.tfvars#L27):
 
 ```hcl
 llm_optimization_profile = "optimized"
 ```
 
 Terraform selects
-[`router-llama-cpp-cpu-optimized-values.yaml`](../../../configs/llm-d/router-llama-cpp-cpu-optimized-values.yaml)
-from [`llm_inference.tf`](../../../infra/terraform/gcp/llm_inference.tf). The
+[`router-llama-cpp-cpu-optimized-values.yaml` (line 26)](../../../configs/llm-d/router-llama-cpp-cpu-optimized-values.yaml#L26)
+from [`llm_inference.tf` (line 91)](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L91). The
 Endpoint Picker configuration is:
 
 ```yaml

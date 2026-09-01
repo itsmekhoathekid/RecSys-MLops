@@ -62,7 +62,7 @@ kagent Agent ----> global ModelConfig ----> Agent Gateway ----> llm-d
 ```
 
 **Code block provenance:** architecture derived from the deployed Terraform
-dependencies in [agent_registry.tf (line 33)](../../../infra/terraform/gcp/agent_registry.tf#L33)
+dependencies in [agent_registry.tf (line 33)](../../../infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf#L33)
 and the shared model configuration documented in
 [global_model_config.md](./global_model_config.md).
 
@@ -105,7 +105,7 @@ resource "kubernetes_namespace" "agentregistry" {
 }
 ```
 
-**Code reference:** [agent_registry.tf (line 1)](../../../infra/terraform/gcp/agent_registry.tf#L1).
+**Code reference:** [agent_registry.tf (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf#L1).
 
 The upstream Kubernetes page currently shows the older `v0.3.3` value schema.
 This repository instead pins the currently rendered OCI chart `0.4.0`. Its
@@ -136,8 +136,8 @@ bash ops/gcp/bootstrap_vault.sh
 **Code references:** [bootstrap_vault.sh (line 15)](../../../ops/gcp/bootstrap_vault.sh#L15)
 registers the group and [bootstrap_vault.sh (line 192)](../../../ops/gcp/bootstrap_vault.sh#L192)
 generates/writes its four values. The Terraform migration payload and random
-password are defined in [secret_management.tf (line 65)](../../../infra/terraform/gcp/secret_management.tf#L65)
-and [secrets.tf (line 26)](../../../infra/terraform/gcp/secrets.tf#L26).
+password are defined in [secret_management.tf (line 65)](../../../infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf#L65)
+and [secrets.tf (line 26)](../../../infra/terraform/gcp/modules/kubernetes-platform/secrets.tf#L26).
 
 ## Step 3 — Sync the Vault group into Kubernetes
 
@@ -155,7 +155,7 @@ Terraform changes `enabled` to `true` when `deploy_agent_registry=true`.
 
 **Helm values reference:** [recsys-security/values.yaml (line 38)](../../../infra/helm/recsys-security/values.yaml#L38)
 defines the Agent Registry value block. **Terraform values override reference:**
-[locals.tf (line 104)](../../../infra/terraform/gcp/locals.tf#L104) enables that
+[locals.tf (line 104)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L104) enables that
 block for the GCP release.
 
 The shared template creates an `ExternalSecret` using
@@ -182,7 +182,7 @@ values file.
 Terraform does not start PostgreSQL until the ExternalSecret is `Ready` and
 the target Kubernetes Secret exists.
 
-**Code reference:** [secret_management.tf (line 92)](../../../infra/terraform/gcp/secret_management.tf#L92).
+**Code reference:** [secret_management.tf (line 92)](../../../infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf#L92).
 
 ## Step 4 — Deploy persistent PostgreSQL with pgvector
 
@@ -300,9 +300,9 @@ resource "helm_release" "agentregistry" {
 ```
 
 **Terraform Helm release references:** local database chart installation at
-[agent_registry.tf (line 33)](../../../infra/terraform/gcp/agent_registry.tf#L33)
+[agent_registry.tf (line 33)](../../../infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf#L33)
 and official OCI chart installation at
-[agent_registry.tf (line 49)](../../../infra/terraform/gcp/agent_registry.tf#L49).
+[agent_registry.tf (line 49)](../../../infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf#L49).
 These are Terraform `helm_release` resources—the installers of the charts—not
 Helm chart or values files themselves.
 
@@ -336,7 +336,7 @@ The source types used in the table mean:
 
 | Deployment unit | Code reference | Source type | Applied responsibility |
 | --- | --- | --- | --- |
-| Official Agent Registry application | OCI artifact `oci://ghcr.io/agentregistry-dev/agentregistry/charts/agentregistry:0.4.0`, pinned by [agent_registry.tf](../../../infra/terraform/gcp/agent_registry.tf#L49) | **External Helm chart**, installed by a **Terraform Helm release** | Installs the Registry server, ServiceAccount, namespace-scoped RBAC, ConfigMap, Service, and Deployment. The upstream chart source is not copied into this repository. |
+| Official Agent Registry application | OCI artifact `oci://ghcr.io/agentregistry-dev/agentregistry/charts/agentregistry:0.4.0`, pinned by [agent_registry.tf](../../../infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf#L49) | **External Helm chart**, installed by a **Terraform Helm release** | Installs the Registry server, ServiceAccount, namespace-scoped RBAC, ConfigMap, Service, and Deployment. The upstream chart source is not copied into this repository. |
 | Official Agent Registry configuration | [configs/agentregistry/values.yaml](../../../configs/agentregistry/values.yaml#L1) | **Helm values** for the external official chart | Selects the external database Secret, private `ClusterIP`, watched namespaces, resource limits, and `ml-system` placement. |
 | Local pgvector chart identity | [recsys-agent-registry-postgres/Chart.yaml](../../../infra/helm/recsys-agent-registry-postgres/Chart.yaml#L1) | **Helm chart definition** | Declares local chart `recsys-agent-registry-postgres` and its pinned chart/app versions. |
 | Local pgvector configuration | [recsys-agent-registry-postgres/values.yaml](../../../infra/helm/recsys-agent-registry-postgres/values.yaml#L1) | **Helm values** for the local pgvector chart | Pins `pgvector/pgvector:0.8.6-pg16`, Secret keys, PVC size, security context, resources, and node placement. |
@@ -349,9 +349,9 @@ The source types used in the table mean:
 | Vault secret synchronization | [recsys-security/templates/externalsecrets.yaml](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L1) | **Helm template** in the local security chart | Renders the Vault-backed `ExternalSecret` before the database and Registry releases start. |
 
 The local database chart is installed by
-[agentregistry_postgres](../../../infra/terraform/gcp/agent_registry.tf#L33),
+[agentregistry_postgres](../../../infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf#L33),
 while the upstream registry chart is installed by
-[agentregistry](../../../infra/terraform/gcp/agent_registry.tf#L49). This split
+[agentregistry](../../../infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf#L49). This split
 keeps the official application chart unmodified while making its required
 external pgvector dependency reproducible in this repository.
 

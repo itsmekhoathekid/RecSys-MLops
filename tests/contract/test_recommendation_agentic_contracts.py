@@ -180,7 +180,7 @@ def test_assigned_worker_metric_is_a_renderable_supported_mode() -> None:
 
 
 def test_terraform_owns_dedicated_pool_and_ignores_keda_replica_drift() -> None:
-    terraform = (ROOT / "infra/terraform/gcp/kagent.tf").read_text(encoding="utf-8")
+    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf").read_text(encoding="utf-8")
     assert 'resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool"' in terraform
     assert 'computed_fields = ["spec.replicas"]' in terraform
     assert "scaleSelector" not in terraform

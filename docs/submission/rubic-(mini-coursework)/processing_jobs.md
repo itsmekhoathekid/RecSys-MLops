@@ -809,7 +809,7 @@ Terraform bootstraps the split data-platform releases with their GCP values
 files, then ignores runtime Helm mutations so Jenkins remains the release
 operator. Jenkins resolves the release plan into independently owned deploy
 units and injects immutable image digests before each atomic Helm upgrade. See
-[`recsys_services.tf`](../../../infra/terraform/gcp/recsys_services.tf),
+[`recsys_services.tf`](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf),
 [`deploy-units.json`](../../../jenkins/config/deploy-units.json), and the
 [generic Helm unit deployment](../../../jenkins/scripts/entrypoints/release_deploy_unit.sh#L121).
 
@@ -879,7 +879,7 @@ Spark application now scales between one and four executor pods. If those pods
 cannot be scheduled on existing nodes, the GKE Cluster Autoscaler can add a
 node to the `cpu-services` pool. Dynamic allocation controls executor demand,
 while node-pool autoscaling supplies the required cluster capacity. See
-[gke.tf](../../../infra/terraform/gcp/gke.tf#L97) and the node-pool bounds in
+[gke.tf](../../../infra/terraform/gcp/modules/gke/main.tf#L97) and the node-pool bounds in
 [variables.tf](../../../infra/terraform/gcp/variables.tf#L79).
 
 Each rubric DAG uses `max_active_runs=1`, and its stage dependencies remain

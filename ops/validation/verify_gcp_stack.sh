@@ -22,10 +22,10 @@ static_verify() {
   section "Terraform fmt"
   if command -v terraform >/dev/null 2>&1; then
     terraform -chdir="${TF_DIR}" fmt -check -recursive
-    if [ -d "${TF_DIR}/.terraform" ]; then
+    if [ -f "${TF_DIR}/.terraform/modules/modules.json" ]; then
       terraform -chdir="${TF_DIR}" validate
     else
-      echo "Skipping terraform validate because .terraform is not initialized."
+      echo "Skipping terraform validate because child modules are not initialized."
     fi
   else
     echo "Skipping terraform fmt/validate because terraform is not installed."
@@ -99,7 +99,7 @@ live_verify() {
   kubectl rollout status deploy/mlflow -n experiment-tracking --timeout=300s
   kubectl rollout status deploy/minio -n experiment-tracking --timeout=300s
   kubectl rollout status deploy/postgres -n experiment-tracking --timeout=300s
-  kubectl rollout status deploy/data-platform-minio -n recsys-dataflow --timeout=300s
+  kubectl rollout status statefulset/data-platform-minio -n recsys-dataflow --timeout=300s
   kubectl rollout status deploy/kafka -n recsys-dataflow --timeout=300s
   kubectl rollout status deploy/redis -n recsys-dataflow --timeout=300s
   kubectl rollout status deploy/airflow-webserver -n recsys-dataflow --timeout=300s

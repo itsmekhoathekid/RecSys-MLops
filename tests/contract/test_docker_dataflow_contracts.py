@@ -467,7 +467,7 @@ def test_release_planner_and_jenkins_use_one_global_plan():
 
 
 def test_terraform_bootstraps_split_releases_but_jenkins_owns_runtime_updates():
-    terraform = (ROOT / "infra/terraform/gcp/recsys_services.tf").read_text()
+    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf").read_text()
     for resource in (
         "recsys_data_config",
         "recsys_data_lakehouse",
@@ -483,7 +483,7 @@ def test_terraform_bootstraps_split_releases_but_jenkins_owns_runtime_updates():
     assert 'resource "helm_release" "recsys_online_feature_api"' in terraform
     assert 'resource "helm_release" "recsys_inference_api"' in terraform
     assert terraform.count("ignore_changes = all") >= 10
-    locals_source = (ROOT / "infra/terraform/gcp/locals.tf").read_text()
+    locals_source = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/locals.tf").read_text()
     assert '"secret.create"        = "false"' in locals_source
     assert '"kserve.secret.create"' in locals_source
     assert "local.images.online_feature_api" in locals_source

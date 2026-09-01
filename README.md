@@ -351,15 +351,17 @@ Current repository target, updated 27 August 2026: Context, Recommendation, and
 Coordinator are Substrate `0.0.11` `SandboxAgent`s with independent WorkerPools
 and assigned-worker KEDA (`AverageValue=0.7`, replicas `1..3`, fallback `1`).
 The custom kagent compatibility image is
-`0.10.0-e6df917-substrate0011-v7`; the Coordinator public identity is
+`0.10.0-e6df917-substrate0011-v8`; the Coordinator public identity is
 `recsys-coordinator-agent-sandbox`. Production validation is green: all three
 pools proved `1 -> 2 -> 3 -> 1`, scaler failure fallback held one replica, and
 the Coordinator routing suite passed context-only, recommendation-only,
 composite, direct-MCP, and partial-failure routing. Coordinator v22 isolates
 every specialist A2A session; Recommendation v9 copies all request arguments
 exactly and terminates after its MCP response. The partial-result contract keeps
-the valid recommendation item ID when Context is unavailable. See Validation & Verification
-for current evidence and the explicitly superseded `0.0.6`/CPU history.
+the valid recommendation item ID when Context is unavailable. See
+[Agent/WorkerPool Benchmark & HA](<docs/submission/rubric-final-coursework-(final-llm)/benchmark_ha.md>)
+for current operational evidence and the explicitly superseded `0.0.6`/CPU
+history.
 
 | Rubric area | Coverage |
 | --- | --- |
@@ -372,15 +374,15 @@ for current evidence and the explicitly superseded `0.0.6`/CPU history.
 | [Recommendation Service Agent — Detailed Runtime Proof](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation_servicce.md>) | Figure-by-figure FastAPI, inference API, MCP, KEDA autoscaling, gVisor WorkerPool, Agent Registry, and kagent UI evidence with reproducible verification commands. |
 | [Demonstrate Basic Understanding of Agents](<docs/submission/rubric-final-coursework-(final-llm)/agent_notebooks.md>) | Jupyter experiments showing raw A2A requests, MCP `function_call`/`function_response` history, successful recommendation execution, and grounded RAG retrieval. |
 | [Deploy a Coordinator Agent](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>) | Intent-routed SandboxAgent, assigned-worker WorkerPool autoscaling, two specialist A2A tools, two direct MCP providers, and governed Registry migration. |
-| [Agent Warm-Up](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md#worker-warm-up-benchmark>) | Reproducible specialist actor warm-up benchmark; results must name the active Substrate version and are not assigned-worker scale evidence. |
-| [Validation & Verification](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md>) | Substrate `0.0.11` history, three-pool assigned-worker contracts, production safety gates, rollback evidence, and current validation status. |
-| Improve the Data Generator | Work in progress. |
+| [Agent Warm-Up](<docs/submission/rubric-final-coursework-(final-llm)/benchmark_ha.md>) | Reproducible specialist actor warm-up, Substrate/WorkerPool HA, assigned-worker scaling, and rollback evidence. |
+| [Validation & Verification](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md>) | RAG API coverage, fixture/mock and parametrized EP/BVA design, property-based idempotency, mutation score, and Locust SLA evidence. |
+| [Improve the Data Generator](<docs/submission/rubic-final-coursework-(final-ml)/improve_data_generator.md>) | Gradual purchase-frequency drift simulation, PSI evidence, and PostgreSQL `ml_ranking_labels` generation for reproducible ranking training data. |
 | CI/CD | Work in progress. |
-| Routing & Gateway (NGINX Ingress Controller) | Work in progress. |
-| IaC | Work in progress. |
+| [Routing & Gateway (NGINX Ingress Controller)](<docs/submission/rubric-final-coursework-(final-llm)/routing_gateway.md>) | HTTPS routing for the Agent UI, Agent Registry, and RAG API with Basic Auth, TLS, rate limiting, DNS, and stable internal upstreams. |
+| [IaC](<docs/submission/rubric-final-coursework-(final-llm)/iac.md>) | Modular Terraform architecture for GCP, GKE, and the LLM platform, including Helm ownership and state-safe migration without resource recreation. |
 | Observability | Work in progress. |
 | A/B Testing | Work in progress. |
 | [Security](<docs/submission/rubric-final-coursework-(final-llm)/security.md>) | HashiCorp Vault HA/Raft with Cloud KMS auto-unseal, External Secrets synchronization, Agent Gateway API-key authentication, secret rotation, and verification evidence. |
-| Repository Design | Work in progress. |
-| Low-Level ML Design | Work in progress. |
+| [Repository Design](<docs/submission/rubric-final-coursework-(final-llm)/repository_design.md>) | Clean deployable boundaries and Composition Root/DI, Adapter, Strategy/State, Pipeline, and Composite patterns across the LLM, RAG, MCP, and agentic platform. |
+| [Low-Level ML Design](<docs/submission/rubic-final-coursework-(final-ml)/low_level_ml_design.md>) | Five core ML classes: `TrainingDataService`, `SplitService`, `recommenderDataset`, `BST`, and `ModelLifecycleService`. |
 | Novel Ideas | Work in progress. |

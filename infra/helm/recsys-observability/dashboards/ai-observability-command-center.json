@@ -1,0 +1,512 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "title": "LLM Runtime",
+      "type": "link",
+      "url": "/d/recsys-llm-runtime"
+    },
+    {
+      "title": "Agent & MCP Operations",
+      "type": "link",
+      "url": "/d/recsys-agent-mcp"
+    },
+    {
+      "title": "Safety & PII",
+      "type": "link",
+      "url": "/d/recsys-safety-pii"
+    },
+    {
+      "title": "Web API",
+      "type": "link",
+      "url": "/d/recsys-web-api"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "cyan",
+            "mode": "fixed"
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_api_requests_total[5m])) or vector(0)"
+        }
+      ],
+      "title": "API req/s",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "purple",
+            "mode": "fixed"
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(rate(agentgateway_requests_total{status=~\"2..\"}[5m])) or vector(0)"
+        }
+      ],
+      "title": "LLM req/s",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.02
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "recsys_llm_request_error_ratio or vector(0)"
+        }
+      ],
+      "title": "LLM error ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "purple",
+            "mode": "fixed"
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_agent_calls_total[5m])) or vector(0)"
+        }
+      ],
+      "title": "Agent calls/s",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "red",
+            "mode": "fixed"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum(recsys_mcp_tool_calls_total{status!=\"success\"}) + sum(recsys_recommendation_mcp_tool_calls_total{status!=\"success\"}) or vector(0)"
+        }
+      ],
+      "title": "MCP failures (cumulative)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "orange",
+            "mode": "fixed"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(recsys_prompt_safety_detections_total) or vector(0)"
+        }
+      ],
+      "title": "Safety detections / 30m",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 18,
+            "lineWidth": 2
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 4
+      },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "sum(rate(recsys_api_requests_total[5m])) or vector(0)",
+          "legendFormat": "API"
+        },
+        {
+          "expr": "sum(rate(recsys_agent_calls_total[5m])) or vector(0)",
+          "legendFormat": "Agent"
+        },
+        {
+          "expr": "sum(rate(agentgateway_requests_total{status=~\"2..\"}[5m])) or vector(0)",
+          "legendFormat": "LLM"
+        },
+        {
+          "expr": "sum(rate(recsys_mcp_tool_calls_total[5m])) + sum(rate(recsys_recommendation_mcp_tool_calls_total[5m])) or vector(0)",
+          "legendFormat": "MCP"
+        }
+      ],
+      "title": "Production traffic: API → Agent → LLM → MCP",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "unit": "cores"
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(container_cpu_usage_seconds_total{namespace=~\"api-serving|kagent|llm-inference|agentgateway-system\",container!=\"\"}[5m])) by (namespace,pod)) or vector(0)",
+          "legendFormat": "{{namespace}}/{{pod}}"
+        }
+      ],
+      "title": "Top AI workloads by CPU",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 13
+      },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "topk(10, sum(container_memory_working_set_bytes{namespace=~\"api-serving|kagent|llm-inference|agentgateway-system\",container!=\"\"}) by (namespace,pod)) or vector(0)",
+          "legendFormat": "{{namespace}}/{{pod}}"
+        }
+      ],
+      "title": "Top AI workloads by RAM",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 70
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "green",
+                  "text": "Normal"
+                },
+                "1": {
+                  "color": "red",
+                  "text": "Firing"
+                }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 13
+      },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "max by (alertname,severity) (ALERTS{alertstate=\"firing\"}) or vector(0)",
+          "legendFormat": "{{alertname}}"
+        }
+      ],
+      "title": "Active alert state",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "green",
+                  "text": "UP"
+                }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "min by (job) (up{job=~\"recsys-llama-cpp|recsys-agentgateway-.*|recsys-otel-collector|recsys-kubernetes-pods\"})",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "title": "AI telemetry target health",
+      "type": "stat"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 40,
+  "tags": [
+    "recsys",
+    "production",
+    "ai-observability"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "definition": "label_values(up, namespace)",
+        "includeAll": true,
+        "label": "Namespace",
+        "multi": true,
+        "name": "namespace",
+        "query": {
+          "query": "label_values(up, namespace)",
+          "refId": "var-namespace"
+        },
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "definition": "label_values(recsys_agent_calls_total, agent)",
+        "includeAll": true,
+        "label": "Agent",
+        "multi": true,
+        "name": "agent",
+        "query": {
+          "query": "label_values(recsys_agent_calls_total, agent)",
+          "refId": "var-agent"
+        },
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "definition": "label_values(up{job=\"recsys-llama-cpp\"}, model)",
+        "includeAll": true,
+        "label": "Model",
+        "multi": true,
+        "name": "model",
+        "query": {
+          "query": "label_values(up{job=\"recsys-llama-cpp\"}, model)",
+          "refId": "var-model"
+        },
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "definition": "label_values(recsys_agent_tool_calls_total, tool)",
+        "includeAll": true,
+        "label": "Tool",
+        "multi": true,
+        "name": "tool",
+        "query": {
+          "query": "label_values(recsys_agent_tool_calls_total, tool)",
+          "refId": "var-tool"
+        },
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AI Observability Command Center",
+  "uid": "recsys-ai-command",
+  "version": 1
+}

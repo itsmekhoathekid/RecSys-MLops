@@ -100,11 +100,15 @@ def isMainRevision() {
 }
 
 def shouldPublishImages() {
-  return params.PUBLISH_IMAGES && isMainRevision()
+  return params.PUBLISH_IMAGES && (
+    params.DEPLOY_PULL_REQUESTS ||
+    isMainRevision()
+  )
 }
 
 def shouldDeployRelease() {
   return params.PUBLISH_IMAGES && env.RUN_COMPONENT_DEPLOY == 'true' && (
+    params.DEPLOY_PULL_REQUESTS ||
     params.FORCE_DEPLOY ||
     isMainRevision()
   )

@@ -1,0 +1,786 @@
+{
+  "checks": [
+    {
+      "name": "native_llama",
+      "pass": true,
+      "query": "count({__name__=\"llamacpp:prompt_tokens_total\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 2.0
+    },
+    {
+      "name": "native_gateway",
+      "pass": true,
+      "query": "count(agentgateway_requests_total)",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 8.0
+    },
+    {
+      "name": "web_api",
+      "pass": true,
+      "query": "count(recsys_api_requests_total)",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 21.0
+    },
+    {
+      "name": "compute",
+      "pass": true,
+      "query": "count(container_cpu_usage_seconds_total{namespace=~\"api-serving|kagent|llm-inference|agentgateway-system\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 75.0
+    },
+    {
+      "name": "mcp_feature",
+      "pass": true,
+      "query": "sum(recsys_mcp_tool_calls_total)",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 25.0
+    },
+    {
+      "name": "mcp_recommendation",
+      "pass": true,
+      "query": "sum(recsys_recommendation_mcp_tool_calls_total)",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 25.0
+    },
+    {
+      "name": "mcp_failure",
+      "pass": true,
+      "query": "sum(recsys_mcp_tool_calls_total{status!=\"success\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 3.0
+    },
+    {
+      "name": "probe_success",
+      "pass": true,
+      "query": "recsys_llm_probe_success",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "probe_ttft",
+      "pass": true,
+      "query": "recsys_llm_probe_ttft_seconds",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 0.257250237
+    },
+    {
+      "name": "probe_round_trip",
+      "pass": true,
+      "query": "recsys_llm_probe_round_trip_seconds",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 0.304641983
+    },
+    {
+      "name": "probe_input_tokens",
+      "pass": true,
+      "query": "recsys_llm_probe_tokens{type=\"input\"}",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 16.0
+    },
+    {
+      "name": "probe_output_tokens",
+      "pass": true,
+      "query": "recsys_llm_probe_tokens{type=\"output\"}",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 2.0
+    },
+    {
+      "name": "probe_total_tokens",
+      "pass": true,
+      "query": "recsys_llm_probe_tokens{type=\"total\"}",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 18.0
+    },
+    {
+      "name": "agent_coordinator",
+      "pass": true,
+      "query": "sum(recsys_agent_calls_total{agent=\"coordinator\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "agent_context",
+      "pass": true,
+      "query": "sum(recsys_agent_calls_total{agent=\"context\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 2.0
+    },
+    {
+      "name": "agent_recommendation",
+      "pass": true,
+      "query": "sum(recsys_agent_calls_total{agent=\"recommendation\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 2.0
+    },
+    {
+      "name": "safety_email",
+      "pass": true,
+      "query": "sum(recsys_prompt_safety_detections_total{category=\"email\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "safety_phone",
+      "pass": true,
+      "query": "sum(recsys_prompt_safety_detections_total{category=\"phone\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 3.0
+    },
+    {
+      "name": "safety_payment_card",
+      "pass": true,
+      "query": "sum(recsys_prompt_safety_detections_total{category=\"payment_card\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 3.0
+    },
+    {
+      "name": "safety_prompt_injection",
+      "pass": true,
+      "query": "sum(recsys_prompt_safety_detections_total{category=\"prompt_injection\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "target_recsys-llama-cpp",
+      "pass": true,
+      "query": "min(up{job=\"recsys-llama-cpp\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "target_recsys-agentgateway-dataplane",
+      "pass": true,
+      "query": "min(up{job=\"recsys-agentgateway-dataplane\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "target_recsys-agentgateway-controlplane",
+      "pass": true,
+      "query": "min(up{job=\"recsys-agentgateway-controlplane\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "target_recsys-otel-collector",
+      "pass": true,
+      "query": "min(up{job=\"recsys-otel-collector\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "target_kubernetes-cadvisor",
+      "pass": true,
+      "query": "min(up{job=\"kubernetes-cadvisor\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1.0
+    },
+    {
+      "name": "agent_unknown_absent",
+      "pass": true,
+      "query": "sum(recsys_agent_calls_total{agent=\"unknown\"})",
+      "source": "prometheus",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 0.0
+    },
+    {
+      "name": "loki_redacted_0",
+      "pass": true,
+      "query": "sum(count_over_time({namespace=~\"kagent|observability|llm-inference\"} |= \"[REDACTED_FIXTURE]\" [90s]))",
+      "source": "loki",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 0.0
+    },
+    {
+      "name": "loki_redacted_1",
+      "pass": true,
+      "query": "sum(count_over_time({namespace=~\"kagent|observability|llm-inference\"} |= \"[REDACTED_FIXTURE]\" [90s]))",
+      "source": "loki",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 0.0
+    },
+    {
+      "name": "loki_redacted_2",
+      "pass": true,
+      "query": "sum(count_over_time({namespace=~\"kagent|observability|llm-inference\"} |= \"[REDACTED_FIXTURE]\" [90s]))",
+      "source": "loki",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 0.0
+    },
+    {
+      "name": "tempo_kagent_traces",
+      "pass": true,
+      "query": "kagent service-name search",
+      "source": "tempo",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 4
+    },
+    {
+      "name": "tempo_raw_pii_absent",
+      "pass": true,
+      "query": "downloaded matching traces scanned in memory",
+      "source": "tempo",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 0
+    },
+    {
+      "name": "dashboard_recsys-ai-command_provisioned",
+      "pass": true,
+      "query": "recsys-ai-command",
+      "source": "grafana",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1
+    },
+    {
+      "name": "dashboard_recsys-llm-runtime_provisioned",
+      "pass": true,
+      "query": "recsys-llm-runtime",
+      "source": "grafana",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1
+    },
+    {
+      "name": "dashboard_recsys-agent-mcp_provisioned",
+      "pass": true,
+      "query": "recsys-agent-mcp",
+      "source": "grafana",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1
+    },
+    {
+      "name": "dashboard_recsys-safety-pii_provisioned",
+      "pass": true,
+      "query": "recsys-safety-pii",
+      "source": "grafana",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1
+    },
+    {
+      "name": "dashboard_recsys-web-api_provisioned",
+      "pass": true,
+      "query": "recsys-web-api",
+      "source": "grafana",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1
+    },
+    {
+      "name": "dashboard_recsys-compute_provisioned",
+      "pass": true,
+      "query": "recsys-compute",
+      "source": "grafana",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1
+    },
+    {
+      "name": "dashboard_recsys-logs_provisioned",
+      "pass": true,
+      "query": "recsys-logs",
+      "source": "grafana",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1
+    },
+    {
+      "name": "dashboard_recsys-traces_provisioned",
+      "pass": true,
+      "query": "recsys-traces",
+      "source": "grafana",
+      "timestamp": "2026-08-30T22:04:09.627553+00:00",
+      "value": 1
+    }
+  ],
+  "generated_at": "2026-08-30T22:04:09.627553+00:00",
+  "pass": true,
+  "production_context": "recsys-mlops-gke",
+  "prometheus_panel_checks": [
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "API req/s",
+      "panel_id": 1,
+      "pass": true,
+      "query": "sum(rate(recsys_api_requests_total[5m])) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "LLM req/s",
+      "panel_id": 2,
+      "pass": true,
+      "query": "sum(rate(agentgateway_requests_total{status=~\"2..\"}[5m])) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "LLM error ratio",
+      "panel_id": 3,
+      "pass": true,
+      "query": "recsys_llm_request_error_ratio or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Agent calls/s",
+      "panel_id": 4,
+      "pass": true,
+      "query": "sum(rate(recsys_agent_calls_total[5m])) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "MCP failures (cumulative)",
+      "panel_id": 5,
+      "pass": true,
+      "query": "sum(recsys_mcp_tool_calls_total{status!=\"success\"}) + sum(recsys_recommendation_mcp_tool_calls_total{status!=\"success\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Safety detections / 30m",
+      "panel_id": 6,
+      "pass": true,
+      "query": "sum(recsys_prompt_safety_detections_total) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Production traffic: API \u2192 Agent \u2192 LLM \u2192 MCP",
+      "panel_id": 7,
+      "pass": true,
+      "query": "sum(rate(recsys_api_requests_total[5m])) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Production traffic: API \u2192 Agent \u2192 LLM \u2192 MCP",
+      "panel_id": 7,
+      "pass": true,
+      "query": "sum(rate(recsys_agent_calls_total[5m])) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Production traffic: API \u2192 Agent \u2192 LLM \u2192 MCP",
+      "panel_id": 7,
+      "pass": true,
+      "query": "sum(rate(agentgateway_requests_total{status=~\"2..\"}[5m])) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Production traffic: API \u2192 Agent \u2192 LLM \u2192 MCP",
+      "panel_id": 7,
+      "pass": true,
+      "query": "sum(rate(recsys_mcp_tool_calls_total[5m])) + sum(rate(recsys_recommendation_mcp_tool_calls_total[5m])) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Top AI workloads by CPU",
+      "panel_id": 8,
+      "pass": true,
+      "query": "topk(10, sum(rate(container_cpu_usage_seconds_total{namespace=~\"api-serving|kagent|llm-inference|agentgateway-system\",container!=\"\"}[5m])) by (namespace,pod)) or vector(0)",
+      "series": 11
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Top AI workloads by RAM",
+      "panel_id": 9,
+      "pass": true,
+      "query": "topk(10, sum(container_memory_working_set_bytes{namespace=~\"api-serving|kagent|llm-inference|agentgateway-system\",container!=\"\"}) by (namespace,pod)) or vector(0)",
+      "series": 11
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "Active alert state",
+      "panel_id": 10,
+      "pass": true,
+      "query": "max by (alertname,severity) (ALERTS{alertstate=\"firing\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-ai-command",
+      "error": null,
+      "panel": "AI telemetry target health",
+      "panel_id": 11,
+      "pass": true,
+      "query": "min by (job) (up{job=~\"recsys-llama-cpp|recsys-agentgateway-.*|recsys-otel-collector|recsys-kubernetes-pods\"})",
+      "series": 5
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Input / output token throughput",
+      "panel_id": 1,
+      "pass": true,
+      "query": "recsys_llm_input_tokens_per_second or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Input / output token throughput",
+      "panel_id": 1,
+      "pass": true,
+      "query": "recsys_llm_output_tokens_per_second or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Avg input tokens/request",
+      "panel_id": 2,
+      "pass": true,
+      "query": "recsys_llm_input_tokens_per_request or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Avg output tokens/request",
+      "panel_id": 3,
+      "pass": true,
+      "query": "recsys_llm_output_tokens_per_request or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Latest exact probe tokens",
+      "panel_id": 4,
+      "pass": true,
+      "query": "recsys_llm_probe_tokens{type=\"total\"} or vector(0)",
+      "series": 2
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Gateway request rate by status",
+      "panel_id": 5,
+      "pass": true,
+      "query": "sum(rate(agentgateway_requests_total[5m])) by (status)",
+      "series": 5
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Gateway round-trip p50 / p95",
+      "panel_id": 6,
+      "pass": true,
+      "query": "histogram_quantile(0.50, sum(rate(agentgateway_request_duration_seconds_bucket[5m])) by (le)) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Gateway round-trip p50 / p95",
+      "panel_id": 6,
+      "pass": true,
+      "query": "recsys_llm_request_duration_p95_seconds or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Exact synthetic TTFT and round-trip",
+      "panel_id": 7,
+      "pass": true,
+      "query": "recsys_llm_probe_ttft_seconds or vector(0)",
+      "series": 2
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Exact synthetic TTFT and round-trip",
+      "panel_id": 7,
+      "pass": true,
+      "query": "recsys_llm_probe_round_trip_seconds or vector(0)",
+      "series": 2
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Native prompt / output tokens per second",
+      "panel_id": 8,
+      "pass": true,
+      "query": "avg({__name__=\"llamacpp:prompt_tokens_seconds\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Native prompt / output tokens per second",
+      "panel_id": 8,
+      "pass": true,
+      "query": "avg({__name__=\"llamacpp:predicted_tokens_seconds\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Processing / deferred requests",
+      "panel_id": 9,
+      "pass": true,
+      "query": "sum({__name__=\"llamacpp:requests_processing\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Processing / deferred requests",
+      "panel_id": 9,
+      "pass": true,
+      "query": "sum({__name__=\"llamacpp:requests_deferred\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Busy slots / decode",
+      "panel_id": 10,
+      "pass": true,
+      "query": "avg({__name__=\"llamacpp:n_busy_slots_per_decode\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Maximum context observed",
+      "panel_id": 11,
+      "pass": true,
+      "query": "max({__name__=\"llamacpp:n_tokens_max\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-llm-runtime",
+      "error": null,
+      "panel": "Native LLM targets",
+      "panel_id": 12,
+      "pass": true,
+      "query": "up{job=~\"recsys-llama-cpp|recsys-agentgateway-dataplane\"}",
+      "series": 3
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "Agent calls by coordinator / context / recommendation",
+      "panel_id": 1,
+      "pass": true,
+      "query": "sum(rate(recsys_agent_calls_total{agent=~\".*\"}[5m])) by (agent) or vector(0)",
+      "series": 4
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "Agent success / failure",
+      "panel_id": 2,
+      "pass": true,
+      "query": "sum(increase(recsys_agent_calls_total{agent=~\".*\"}[30m])) by (agent,status) or vector(0)",
+      "series": 4
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "Agent p95 duration",
+      "panel_id": 3,
+      "pass": true,
+      "query": "histogram_quantile(0.95, sum(rate(recsys_agent_duration_seconds_bucket{agent=~\".*\"}[5m])) by (le,agent)) or vector(0)",
+      "series": 4
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "Agent tool calls",
+      "panel_id": 4,
+      "pass": true,
+      "query": "sum(rate(recsys_agent_tool_calls_total{agent=~\".*\",tool=~\".*\"}[5m])) by (agent,tool,status) or vector(0)",
+      "series": 5
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "MCP calls by server / tool",
+      "panel_id": 5,
+      "pass": true,
+      "query": "sum(rate(recsys_mcp_tool_calls_total[5m])) by (tool,status)",
+      "series": 5
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "MCP calls by server / tool",
+      "panel_id": 5,
+      "pass": true,
+      "query": "sum(rate(recsys_recommendation_mcp_tool_calls_total[5m])) by (status)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "MCP failure ratio",
+      "panel_id": 6,
+      "pass": true,
+      "query": "sum(rate(recsys_mcp_tool_calls_total{status!=\"success\"}[5m])) / clamp_min(sum(rate(recsys_mcp_tool_calls_total[5m])),0.001) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "MCP failure ratio",
+      "panel_id": 6,
+      "pass": true,
+      "query": "sum(rate(recsys_recommendation_mcp_tool_calls_total{status!=\"success\"}[5m])) / clamp_min(sum(rate(recsys_recommendation_mcp_tool_calls_total[5m])),0.001) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "MCP p95 duration",
+      "panel_id": 7,
+      "pass": true,
+      "query": "histogram_quantile(0.95, sum(rate(recsys_mcp_tool_duration_seconds_bucket[5m])) by (le,tool)) or vector(0)",
+      "series": 5
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "MCP p95 duration",
+      "panel_id": 7,
+      "pass": true,
+      "query": "histogram_quantile(0.95, sum(rate(recsys_recommendation_mcp_tool_duration_seconds_bucket[5m])) by (le)) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "Recommendation retries",
+      "panel_id": 8,
+      "pass": true,
+      "query": "sum(increase(recsys_recommendation_mcp_retries_total[30m])) by (reason) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "Feature-RAG partial results",
+      "panel_id": 9,
+      "pass": true,
+      "query": "sum(increase(recsys_mcp_partial_results_total[30m])) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "Agent-to-tool matrix (trace exemplars on time-series panels)",
+      "panel_id": 10,
+      "pass": true,
+      "query": "sum(increase(recsys_agent_tool_calls_total{agent=~\".*\",tool=~\".*\"}[30m])) by (agent,tool,status)",
+      "series": 4
+    },
+    {
+      "dashboard": "recsys-agent-mcp",
+      "error": null,
+      "panel": "Agent / MCP telemetry health",
+      "panel_id": 11,
+      "pass": true,
+      "query": "min by (job) (up{job=~\"recsys-otel-collector|recsys-kubernetes-pods\"})",
+      "series": 2
+    },
+    {
+      "dashboard": "recsys-safety-pii",
+      "error": null,
+      "panel": "Observe-only detections / 30m",
+      "panel_id": 1,
+      "pass": true,
+      "query": "sum(recsys_prompt_safety_detections_total) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-safety-pii",
+      "error": null,
+      "panel": "Category distribution",
+      "panel_id": 2,
+      "pass": true,
+      "query": "sum(recsys_prompt_safety_detections_total) by (category) or vector(0)",
+      "series": 5
+    },
+    {
+      "dashboard": "recsys-safety-pii",
+      "error": null,
+      "panel": "Redaction pipeline health",
+      "panel_id": 3,
+      "pass": true,
+      "query": "min(up{job=\"recsys-otel-collector\"}) or vector(0)",
+      "series": 1
+    },
+    {
+      "dashboard": "recsys-safety-pii",
+      "error": null,
+      "panel": "Cumulative detections by category",
+      "panel_id": 4,
+      "pass": true,
+      "query": "sum(recsys_prompt_safety_detections_total) by (category)",
+      "series": 4
+    },
+    {
+      "dashboard": "recsys-safety-pii",
+      "error": null,
+      "panel": "Latest synthetic detections (timestamp / category / action only)",
+      "panel_id": 5,
+      "pass": true,
+      "query": "timestamp(recsys_prompt_safety_detections_total)",
+      "series": 8
+    },
+    {
+      "dashboard": "recsys-safety-pii",
+      "error": null,
+      "panel": "Categories currently exported (expected 4; no prompt or detected value stored)",
+      "panel_id": 6,
+      "pass": true,
+      "query": "count(count by (category) (recsys_prompt_safety_detections_total)) or vector(0)",
+      "series": 1
+    }
+  ],
+  "summary": {
+    "checks_passed": 39,
+    "checks_total": 39,
+    "panels_passed": 51,
+    "panels_total": 51
+  }
+}

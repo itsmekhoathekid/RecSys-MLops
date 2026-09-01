@@ -46,7 +46,7 @@ kagent Chat UI
             -> model-ranked Top-K + A/B metadata
 
 Prometheus
-  <- ServiceMonitor scrapes MCP and inference API metrics
+  <- recsys-kubernetes-pods scrapes annotated MCP and inference API pods
   -> KEDA Prometheus scalers
   -> HPA controls MCP Deployment and recommendation WorkerPool
 
@@ -66,7 +66,7 @@ All three scalable runtime layers follow the same native Kubernetes loop:
 ```text
 Application completes work or Substrate assigns a sandbox worker
   -> Prometheus application rate or assigned-worker gauge increases
-  -> ServiceMonitor exposes the metric to Prometheus
+  -> recsys-prometheus discovers annotated pods and scrapes /metrics
   -> KEDA queries Prometheus every polling interval
   -> KEDA external metric is consumed by an HPA
   -> HPA writes the target /scale subresource
@@ -79,6 +79,17 @@ scale independently. Their production bounds are all `min=1`, `max=3`. The MCP
 and WorkerPool additionally configure KEDA fallback to one replica.
 
 ### 1.2 Recommendation FastAPI autoscaling stages
+
+```mermaid
+flowchart LR
+    Request[POST /recommendations] --> API[Inference API pod]
+    API -->|request counter and duration histogram| Metrics[Pod :8080/metrics]
+    Prometheus[recsys-prometheus] -->|scrape annotated pod every 15s| Metrics
+    KEDA[KEDA Prometheus scaler] -->|rate and latency PromQL| Prometheus
+    KEDA --> HPA[KEDA-generated HPA]
+    HPA -->|Deployment /scale| Deployment[recsys-inference-api Deployment]
+    Deployment --> Pods[1..3 Ready API pods]
+```
 
 #### Stage 1: completed recommendation requests produce the signal
 
@@ -102,18 +113,41 @@ async def recommendations(
 
 References:
 
-- [Inference FastAPI endpoint](../../../apps/api-serving/inference-api/src/recsys_inference_api/app.py)
-- [Shared serving observability](../../../apps/api-serving/shared/src/recsys_serving_common/observability.py)
+- [Inference FastAPI endpoint (line 96)](../../../apps/api-serving/inference-api/src/recsys_inference_api/app.py#L96)
+- [Shared serving request observability (line 235)](../../../apps/api-serving/shared/src/recsys_serving_common/observability.py#L235)
 
 #### Stage 2: Prometheus scrapes request rate and latency
 
 ```yaml
-spec:
-  endpoints:
-    - port: http
-      path: /metrics
-      interval: 15s
+# recsys-inference-api Deployment pod template
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8080"
+
+# recsys-prometheus scrape configuration
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: recsys-kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [api-serving]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
 ```
+
+The active production path uses the standalone `recsys-prometheus` Deployment,
+not an Operator-managed Prometheus CR. It scrapes every matching pod endpoint
+independently and stores the samples in its TSDB PVC.
 
 The inference ScaledObject queries both completed `POST /recommendations`
 request rate and average latency:
@@ -129,8 +163,9 @@ query: >-
 
 References:
 
-- [Inference ServiceMonitor](../../../infra/helm/recsys-inference-api/templates/servicemonitor.yaml)
-- [Inference KEDA queries](../../../infra/helm/recsys-inference-api/templates/scaledobject.yaml)
+- [Inference pod scrape annotations](../../../infra/helm/recsys-inference-api/templates/deployment.yaml#L23)
+- [standalone Prometheus pod-discovery job](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L192)
+- [Inference KEDA queries (line 18)](../../../infra/helm/recsys-inference-api/templates/scaledobject.yaml#L18)
 
 #### Stage 3: KEDA and HPA select `1..3`
 
@@ -147,7 +182,7 @@ autoscaling:
     targetValue: "0.20"
 ```
 
-Reference: [Inference API Helm values](../../../infra/helm/recsys-inference-api/values.yaml).
+Reference: [Inference API autoscaling values (line 51)](../../../infra/helm/recsys-inference-api/values.yaml#L51).
 
 #### Stage 4: RollingUpdate and probes complete scale-out
 
@@ -164,9 +199,20 @@ containers:
     livenessProbe: {httpGet: {path: /healthz, port: http}}
 ```
 
-Reference: [Inference Deployment](../../../infra/helm/recsys-inference-api/templates/deployment.yaml).
+Reference: [Inference Deployment strategy and probes (line 13)](../../../infra/helm/recsys-inference-api/templates/deployment.yaml#L13).
 
 ### 1.3 Recommendation MCP autoscaling stages
+
+```mermaid
+flowchart LR
+    Agent[Recommendation SandboxAgent] --> MCP[Recommendation MCP pod]
+    MCP -->|increment tool-call counter| Metrics[Pod :8080/metrics]
+    Prometheus[recsys-prometheus] -->|scrape annotated pod every 15s| Metrics
+    KEDA[KEDA Prometheus scaler] -->|PromQL tool-call rate| Prometheus
+    KEDA --> HPA[KEDA-generated HPA]
+    HPA -->|Deployment /scale| Deployment[recsys-recommendation-mcp Deployment]
+    Deployment --> Pods[1..3 Ready MCP pods]
+```
 
 #### Stage 1: completed MCP tool calls produce the signal
 
@@ -186,10 +232,21 @@ async def get_personalized_recommendations(...):
 
 References:
 
-- [Recommendation MCP metrics](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/observability.py)
-- [Recommendation MCP tool](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/server.py)
+- [Recommendation MCP metrics (line 5)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/observability.py#L5)
+- [Recommendation MCP tool (line 40)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/server.py#L40)
 
 #### Stage 2: Prometheus scrapes and KEDA queries tool-call rate
+
+```yaml
+# recsys-recommendation-mcp Deployment pod template
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8080"
+
+# The shared recsys-kubernetes-pods job includes namespace kagent and rewrites
+# each scrape target from pod IP plus prometheus.io/port.
+```
 
 ```yaml
 query: 'sum(rate(recsys_recommendation_mcp_tool_calls_total[1m]))'
@@ -199,8 +256,9 @@ threshold: "1"
 
 References:
 
-- [MCP ServiceMonitor](../../../infra/helm/recsys-recommendation-mcp/templates/servicemonitor.yaml)
-- [MCP Prometheus trigger](../../../infra/helm/recsys-recommendation-mcp/templates/scaledobject.yaml)
+- [MCP pod scrape annotations](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml#L27)
+- [standalone Prometheus pod-discovery job](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L192)
+- [MCP Prometheus trigger (line 14)](../../../infra/helm/recsys-recommendation-mcp/templates/scaledobject.yaml#L14)
 
 #### Stage 3: KEDA/HPA scales the stateless MCP Deployment
 
@@ -216,10 +274,10 @@ fallback:
   replicas: 1
 triggers:
   - type: prometheus
-    metricType: AverageValue
     metadata:
-      threshold: "0.7"
-      query: max(ate_workerpool_workers{ate_workerpool_namespace="kagent",ate_workerpool_name="recsys-recommendation-sandbox-pool",ate_worker_state="assigned"})
+      metricName: recsys_recommendation_mcp_requests_per_second
+      threshold: "1"
+      query: sum(rate(recsys_recommendation_mcp_tool_calls_total[1m]))
 ```
 
 FastMCP is configured with `stateless_http=True` and `json_response=True`, so
@@ -228,9 +286,9 @@ times, KEDA reports `Fallback=True` and maintains one MCP replica.
 
 References:
 
-- [MCP ScaledObject](../../../infra/helm/recsys-recommendation-mcp/templates/scaledobject.yaml)
-- [Production MCP `1/3/1`](../../../infra/helm/recsys-recommendation-mcp/values-gcp.yaml)
-- [Stateless FastMCP server](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/server.py)
+- [MCP ScaledObject (line 1)](../../../infra/helm/recsys-recommendation-mcp/templates/scaledobject.yaml#L1)
+- [Production MCP `1/3/1` (line 9)](../../../infra/helm/recsys-recommendation-mcp/values-gcp.yaml#L9)
+- [Stateless FastMCP server (line 24)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/server.py#L24)
 
 #### Stage 4: Deployment, probes, and RollingUpdate make replicas usable
 
@@ -240,10 +298,23 @@ liveness probes, and an immutable non-root container.
 
 References:
 
-- [MCP Deployment](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml)
-- [MCP PDB](../../../infra/helm/recsys-recommendation-mcp/templates/pdb.yaml)
+- [MCP Deployment strategy (line 12)](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml#L12)
+- [MCP PDB (line 1)](../../../infra/helm/recsys-recommendation-mcp/templates/pdb.yaml#L1)
 
 ### 1.4 Recommendation SandboxAgent autoscaling stages
+
+```mermaid
+flowchart LR
+    A2A[Incoming A2A recommendation] --> ATE[ATE API assigns a worker]
+    ATE --> Worker[Recommendation gVisor worker: assigned]
+    ATE -->|expose ate_workerpool_workers| Metrics[ate-api-server :9090/metrics]
+    Prometheus[recsys-prometheus] -->|scrape ate-system pods every 15s| Metrics
+    KEDA[KEDA assigned-worker scaler] -->|PromQL max assigned| Prometheus
+    KEDA --> HPA[KEDA-generated HPA]
+    HPA -->|WorkerPool /scale| Pool[recsys-recommendation-sandbox-pool]
+    Pool --> Controller[Substrate WorkerPool controller]
+    Controller --> Workers[1..3 ateom-gvisor workers]
+```
 
 #### Stage 1: A2A sessions assign gVisor workers
 
@@ -251,7 +322,7 @@ The declarative agent profile binds to the dedicated WorkerPool:
 
 ```yaml
 spec:
-  platform: substrate
+  type: Declarative
   substrate:
     workerPoolRef:
       apiGroup: ate.dev
@@ -259,9 +330,28 @@ spec:
       name: recsys-recommendation-sandbox-pool
 ```
 
-Reference: [Recommendation SandboxAgent](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml).
+Reference: [Recommendation SandboxAgent WorkerPool binding (line 17)](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml#L17).
 
 #### Stage 2: Prometheus measures assigned workers
+
+`ate-api-server` owns the centralized worker registry and exports its state on
+port `9090`. The upstream Substrate chart adds
+`prometheus.io/scrape: "true"` and `prometheus.io/port: "9090"`; because no
+path override is present, Prometheus uses `/metrics`. The standalone
+`recsys-kubernetes-pods` job includes `ate-system` and scrapes both API
+replicas. The query uses `max` to avoid double-counting their identical gauges.
+
+```yaml
+# live ate-api-server pod template rendered by the Substrate chart
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+containers:
+  - name: ate-api-server
+    ports:
+      - name: prometheus
+        containerPort: 9090
+```
 
 ```promql
 max(ate_workerpool_workers{
@@ -270,6 +360,12 @@ max(ate_workerpool_workers{
   ate_worker_state="assigned"
 })
 ```
+
+References:
+
+- [Substrate chart installation](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L125)
+- [Prometheus `ate-system` target namespace](../../../infra/helm/recsys-observability/values.yaml#L75)
+- [standalone Prometheus pod-discovery job](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L192)
 
 KEDA compares the maximum assigned-worker gauge with `AverageValue=0.7`.
 
@@ -289,8 +385,8 @@ fallback:
 
 References:
 
-- [WorkerPool ScaledObject](../../../infra/helm/recsys-recommendation-agent/templates/scaledobject.yaml)
-- [WorkerPool production values](../../../infra/helm/recsys-recommendation-agent/values-gcp.yaml)
+- [WorkerPool ScaledObject (line 5)](../../../infra/helm/recsys-recommendation-agent/templates/scaledobject.yaml#L5)
+- [WorkerPool production values (line 1)](../../../infra/helm/recsys-recommendation-agent/values-gcp.yaml#L1)
 - Substrate `0.0.11` supplies the native WorkerPool `/scale` selector through
   `.status.selector`; the `0.0.6` compatibility post-renderer was removed.
 
@@ -310,9 +406,9 @@ Terraform overwriting KEDA's replica decisions.
 
 References:
 
-- [Terraform recommendation WorkerPool](../../../infra/terraform/gcp/kagent.tf)
-- [WorkerPool PDB](../../../infra/helm/recsys-recommendation-agent/templates/pdb.yaml)
-- [Runtime autoscale proof](../../../ops/validation/recommendation_agentic_autoscale.sh)
+- [Terraform recommendation WorkerPool (line 335)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L335)
+- [WorkerPool PDB (line 1)](../../../infra/helm/recsys-recommendation-agent/templates/pdb.yaml#L1)
+- [Runtime autoscale proof (line 151)](../../../ops/validation/recommendation_agentic_autoscale.sh#L151)
 
 ## 2. Recommendation Service
 
@@ -344,8 +440,8 @@ for the candidate set. The MCP does not reproduce that logic.
 
 References:
 
-- [Inference request schema](../../../apps/api-serving/inference-api/src/recsys_inference_api/schemas.py)
-- [MCP request policy](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/policy.py)
+- [Inference request schema (line 6)](../../../apps/api-serving/inference-api/src/recsys_inference_api/schemas.py#L6)
+- [MCP request policy (line 12)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/policy.py#L12)
 
 ### 2.2 Online features and Triton ownership
 
@@ -369,10 +465,10 @@ the Triton tensor payload, calls the BST ranker, and formats the response.
 
 References:
 
-- [Inference orchestration](../../../apps/api-serving/inference-api/src/recsys_inference_api/app.py)
-- [Online-feature client](../../../apps/api-serving/inference-api/src/recsys_inference_api/feature_client.py)
-- [Triton ranking path](../../../apps/api-serving/inference-api/src/recsys_inference_api/ranking.py)
-- [A/B route selection](../../../apps/api-serving/inference-api/src/recsys_inference_api/ab_testing.py)
+- [Inference orchestration (line 96)](../../../apps/api-serving/inference-api/src/recsys_inference_api/app.py#L96)
+- [Online-feature client (line 15)](../../../apps/api-serving/inference-api/src/recsys_inference_api/feature_client.py#L15)
+- [Triton ranking path (line 147)](../../../apps/api-serving/inference-api/src/recsys_inference_api/ranking.py#L147)
+- [A/B route selection (line 204)](../../../apps/api-serving/inference-api/src/recsys_inference_api/ab_testing.py#L204)
 
 ### 2.3 Model-ranked Top-K integrity
 
@@ -390,9 +486,9 @@ that response without reranking. The agent only presents it.
 
 References:
 
-- [Top-K formatter](../../../apps/api-serving/inference-api/src/recsys_inference_api/ranking.py)
-- [MCP pass-through response model](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/contracts.py)
-- [Ranking-integrity tests](../../../tests/integration/recommendation_agentic/test_inference_http_contract.py)
+- [Top-K formatter (line 121)](../../../apps/api-serving/inference-api/src/recsys_inference_api/ranking.py#L121)
+- [MCP pass-through response model (line 29)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/contracts.py#L29)
+- [Ranking-integrity test (line 9)](../../../tests/integration/recommendation_agentic/test_inference_http_contract.py#L9)
 
 ### 2.4 MCP downstream boundary
 
@@ -408,9 +504,9 @@ dependency. It calls only the public inference API ClusterIP.
 
 References:
 
-- [Async inference client](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/client.py)
-- [MCP ConfigMap](../../../infra/helm/recsys-recommendation-mcp/templates/configmap.yaml)
-- [No-context-agent contract test](../../../tests/e2e/recommendation_agentic/test_no_context_agent_dependency.py)
+- [Async inference client (line 22)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/client.py#L22)
+- [MCP downstream ConfigMap (line 5)](../../../infra/helm/recsys-recommendation-mcp/templates/configmap.yaml#L5)
+- [No-context-agent contract test (line 10)](../../../tests/e2e/recommendation_agentic/test_no_context_agent_dependency.py#L10)
 
 ## 3. FastAPI Proof
 
@@ -434,8 +530,8 @@ the same ASGI application and serves Streamable HTTP at `/mcp`.
 
 References:
 
-- [FastAPI composition root](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/app.py)
-- [Package definition](../../../apps/agentic/recsys-recommendation-mcp/pyproject.toml)
+- [FastAPI composition root (line 20)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/app.py#L20)
+- [Package definition (line 5)](../../../apps/agentic/recsys-recommendation-mcp/pyproject.toml#L5)
 
 ### 3.2 Data validation with Pydantic
 
@@ -455,9 +551,9 @@ the SandboxAgent Helm render.
 
 References:
 
-- [MCP Pydantic contracts](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/contracts.py)
-- [Tool contract](../../../configs/agentic/recsys-recommendation-agent/tools-contract.json)
-- [Cross-chart contract tests](../../../tests/contract/test_recommendation_agentic_contracts.py)
+- [MCP Pydantic contracts (line 9)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/contracts.py#L9)
+- [Tool contract (line 7)](../../../configs/agentic/recsys-recommendation-agent/tools-contract.json#L7)
+- [Cross-chart contract test (line 62)](../../../tests/contract/test_recommendation_agentic_contracts.py#L62)
 
 ### 3.3 Kubernetes health checks
 
@@ -481,8 +577,8 @@ livenessProbe: {httpGet: {path: /healthz, port: http}}
 
 References:
 
-- [Health/readiness/version handlers](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/app.py)
-- [Kubernetes probes](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml)
+- [Health/readiness/version handlers (line 71)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/app.py#L71)
+- [Kubernetes probes (line 59)](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml#L59)
 
 ### Image proof
 
@@ -526,9 +622,9 @@ most one jittered retry for network errors or HTTP `502/503`.
 
 References:
 
-- [Async application lifecycle](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/app.py)
-- [Pooled async client and retry](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/client.py)
-- [Async integration tests](../../../tests/integration/recommendation_agentic/test_inference_http_contract.py)
+- [Async application lifecycle (line 36)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/app.py#L36)
+- [Pooled async client and retry (line 36)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/client.py#L36)
+- [Async integration test (line 9)](../../../tests/integration/recommendation_agentic/test_inference_http_contract.py#L9)
 
 ### 3.5 Get recommendations through the inference API
 
@@ -546,7 +642,7 @@ SDK directly. `recsys-inference-api` owns the online-feature call and Triton
 ranking. This boundary removes an extra agent/LLM turn and keeps ranking logic
 in the serving service.
 
-Reference: [Inference API client](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/client.py).
+Reference: [Inference API client request path (line 46)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/client.py#L46).
 
 ### Runtime image proof
 
@@ -563,12 +659,6 @@ request for `user_id=1` constrained to candidate item `0`. The response returns
 the same item with its model score and the deployed model version. The null
 A/B fields accurately show that this particular request was not assigned to an
 experiment.
-
-> **Figures 4 and 5 — capture pending.** The submitted image set does not yet
-> contain the invalid-request `422` proof or a multi-item candidate-constrained
-> response. Capture Figure 4 with the invalid input and failed Pydantic
-> constraint in one frame. Capture Figure 5 with descending scores and
-> model/A-B metadata. Figure 3 is not used as a substitute for either proof.
 
 ![Inference API baseline at one replica](../../pngs/agent-recommendation-service-inference-baseline-1-replica.png)
 
@@ -615,9 +705,9 @@ serialized as typed, non-fabricated service errors.
 
 References:
 
-- [FastMCP server](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/server.py)
-- [MCP authentication middleware](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/app.py)
-- [Typed downstream errors](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/errors.py)
+- [FastMCP server (line 24)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/server.py#L24)
+- [MCP authentication middleware (line 53)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/app.py#L53)
+- [Typed downstream errors (line 9)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/errors.py#L9)
 
 ### 4.2 Kubernetes Deployment and zero-unavailable RollingUpdate
 
@@ -639,17 +729,20 @@ containers:
 ```
 
 The release also creates a ClusterIP Service, ServiceAccount, PDB,
-ServiceMonitor, NetworkPolicy, topology spreading, and soft pod anti-affinity.
+NetworkPolicy, topology spreading, and soft pod anti-affinity. Metrics are
+collected through the Deployment's `prometheus.io/*` pod annotations and the
+standalone Prometheus pod-discovery job.
 
 References:
 
-- [MCP Deployment](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml)
-- [MCP Service](../../../infra/helm/recsys-recommendation-mcp/templates/service.yaml)
-- [MCP ServiceAccount](../../../infra/helm/recsys-recommendation-mcp/templates/serviceaccount.yaml)
-- [MCP PDB](../../../infra/helm/recsys-recommendation-mcp/templates/pdb.yaml)
-- [MCP NetworkPolicy](../../../infra/helm/recsys-recommendation-mcp/templates/networkpolicy.yaml)
-- [MCP ServiceMonitor](../../../infra/helm/recsys-recommendation-mcp/templates/servicemonitor.yaml)
-- [Immutable image](../../../images/agentic/recsys-recommendation-mcp/Dockerfile)
+- [MCP Deployment (line 12)](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml#L12)
+- [MCP Service (line 1)](../../../infra/helm/recsys-recommendation-mcp/templates/service.yaml#L1)
+- [MCP ServiceAccount (line 1)](../../../infra/helm/recsys-recommendation-mcp/templates/serviceaccount.yaml#L1)
+- [MCP PDB (line 1)](../../../infra/helm/recsys-recommendation-mcp/templates/pdb.yaml#L1)
+- [MCP NetworkPolicy (line 1)](../../../infra/helm/recsys-recommendation-mcp/templates/networkpolicy.yaml#L1)
+- [MCP pod scrape annotations](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml#L27)
+- [standalone Prometheus pod-discovery job](../../../infra/helm/recsys-observability/templates/prometheus.yaml#L192)
+- [Immutable image (line 1)](../../../images/agentic/recsys-recommendation-mcp/Dockerfile#L1)
 
 ### 4.3 KEDA autoscale and scaler fallback
 
@@ -667,18 +760,12 @@ autoscaling:
 
 References:
 
-- [MCP ScaledObject template](../../../infra/helm/recsys-recommendation-mcp/templates/scaledobject.yaml)
-- [MCP defaults](../../../infra/helm/recsys-recommendation-mcp/values.yaml)
-- [MCP production placement and `1/3/1`](../../../infra/helm/recsys-recommendation-mcp/values-gcp.yaml)
-- [MCP autoscale/fallback proof](../../../ops/validation/recommendation_agentic_autoscale.sh)
+- [MCP ScaledObject template (line 1)](../../../infra/helm/recsys-recommendation-mcp/templates/scaledobject.yaml#L1)
+- [MCP defaults (line 23)](../../../infra/helm/recsys-recommendation-mcp/values.yaml#L23)
+- [MCP production placement and `1/3/1` (line 9)](../../../infra/helm/recsys-recommendation-mcp/values-gcp.yaml#L9)
+- [MCP autoscale/fallback proof (line 89)](../../../ops/validation/recommendation_agentic_autoscale.sh#L89)
 
 ### Image proof
-
-> **Figure 8 — capture pending.** Figure 1 proves the Deployment rollout and
-> probe configuration, but the submitted image set does not contain one frame
-> with the ScaledObject `1/3/1`, generated HPA, PDB `minAvailable=1`, and Ready
-> conditions. Keep this as a separate terminal proof rather than overclaiming
-> Figure 1.
 
 ![Recommendation MCP baseline at one replica](../../pngs/agent-recommendation-service-mcp-baseline-1-replica.png)
 
@@ -715,8 +802,8 @@ spec:
 
 References:
 
-- [RemoteMCPServer template](../../../infra/helm/recsys-recommendation-agent/templates/remotemcpserver.yaml)
-- [MCP URL, timeout, Secret reference, and tool values](../../../infra/helm/recsys-recommendation-agent/values.yaml)
+- [RemoteMCPServer template (line 1)](../../../infra/helm/recsys-recommendation-agent/templates/remotemcpserver.yaml#L1)
+- [MCP URL, timeout, Secret reference, and tool values (line 3)](../../../infra/helm/recsys-recommendation-agent/values.yaml#L3)
 
 ### 5.2 SandboxAgent profile
 
@@ -742,7 +829,73 @@ spec:
 The prompt requires one tool call, preserves service order and scores, forbids
 LLM reranking, and forbids context-agent/RAG/feature tool calls.
 
-Reference: [SandboxAgent, prompt, A2A skill, and one-tool binding](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml).
+Reference: [SandboxAgent, prompt, A2A skill, and one-tool binding (line 10)](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml#L10).
+
+#### System prompt and MCP tool context
+
+The Recommendation Agent receives both orchestration policy and the MCP
+function contract. kagent assembles that model-visible context as follows:
+
+```text
+systemMessage
+  + allowed toolNames
+  + MCP tools/list description
+  + generated inputSchema
+  -> model tool context
+```
+
+These two core excerpts are copied verbatim from the current `systemMessage`.
+Together they enforce exactly one recommendation call, preserve backend ranking,
+and make the tool response terminal. The complete prompt remains in the linked
+Helm values source.
+
+```text
+You are the RecSys recommendation presentation agent. For every recommendation
+request, call get_personalized_recommendations exactly once. Do not call any
+agent, context service, RAG tool, or feature tool. Preserve the returned item
+order, item_id, score, model_version, A/B variant, and experiment metadata.
+Never rerank with the language model. Empty items is a valid empty result.
+If the service is unavailable, say so and do not invent recommendations.
+```
+
+```text
+The recommendation tool is a terminal step. Once its function response is
+present, your next response MUST be plain answer text with zero function
+calls. The backend ranking is already the user's personalized result; never
+ask what recommendation preference or explanation reason the user wants.
+```
+
+FastMCP exposes one tool. Its docstring becomes the `tools/list` description,
+while the annotated argument types generate the input schema. The executable
+body is omitted from this documentation excerpt.
+
+```python
+@mcp.tool()
+async def get_personalized_recommendations(
+    user_id: UserId,
+    candidate_item_ids: CandidateItemIds = None,
+    top_k: TopK = 10,
+) -> dict[str, object]:
+    """Get model-ranked Top-K items without changing order or scores.
+
+    Args:
+        user_id: Required positive integer copied from the user's request.
+        candidate_item_ids: Optional list of 1-500 candidate item IDs, or null.
+        top_k: Requested result count from 1-100; defaults to 10.
+
+    Always provide ``user_id`` in the tool arguments. For example, a request
+    for three items for user 1001 uses ``{"user_id": 1001, "top_k": 3}``.
+    """
+    ...
+```
+
+Prompt and tool-context references:
+
+- [Complete Recommendation Agent system prompt](../../../infra/helm/recsys-recommendation-agent/values.yaml#L14)
+- [Recommendation Agent one-tool allow-list](../../../infra/helm/recsys-recommendation-agent/values.yaml#L8)
+- [FastMCP recommendation tool implementation and description](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/server.py#L40)
+- [Annotated types used to generate the recommendation input schema](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/contracts.py#L9)
+- [Canonical recommendation-tool JSON Schema contract](../../../configs/agentic/recsys-recommendation-agent/tools-contract.json#L1)
 
 ### 5.3 Terraform-owned dedicated gVisor WorkerPool
 
@@ -766,9 +919,9 @@ resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool" {
 
 References:
 
-- [Dedicated recommendation WorkerPool](../../../infra/terraform/gcp/kagent.tf)
-- [Pinned kagent/Substrate versions](../../../infra/terraform/gcp/kagent.tf)
-- [KEDA WorkerPool `/scale` RBAC](../../../infra/terraform/gcp/kagent.tf)
+- [Dedicated recommendation WorkerPool (line 335)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L335)
+- [Pinned kagent/Substrate versions (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L1)
+- [KEDA WorkerPool `/scale` RBAC (line 431)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L431)
 
 ### 5.4 KEDA scales WorkerPool from one to three workers
 
@@ -788,11 +941,11 @@ declarative SandboxAgent CR.
 
 References:
 
-- [WorkerPool ScaledObject](../../../infra/helm/recsys-recommendation-agent/templates/scaledobject.yaml)
-- [WorkerPool values `1/3/1`](../../../infra/helm/recsys-recommendation-agent/values.yaml)
-- [Production WorkerPool override](../../../infra/helm/recsys-recommendation-agent/values-gcp.yaml)
-- [WorkerPool PDB](../../../infra/helm/recsys-recommendation-agent/templates/pdb.yaml)
-- [Autoscale validation](../../../ops/validation/recommendation_agentic_autoscale.sh)
+- [WorkerPool ScaledObject (line 5)](../../../infra/helm/recsys-recommendation-agent/templates/scaledobject.yaml#L5)
+- [WorkerPool values `1/3/1` (line 41)](../../../infra/helm/recsys-recommendation-agent/values.yaml#L41)
+- [Production WorkerPool override (line 1)](../../../infra/helm/recsys-recommendation-agent/values-gcp.yaml#L1)
+- [WorkerPool PDB (line 1)](../../../infra/helm/recsys-recommendation-agent/templates/pdb.yaml#L1)
+- [Autoscale validation (line 151)](../../../ops/validation/recommendation_agentic_autoscale.sh#L151)
 
 ### Autoscale image proof
 
@@ -826,8 +979,8 @@ dedicated recommendation MCP.
 
 References:
 
-- [Single allowed domain](../../../infra/helm/recsys-recommendation-agent/values.yaml)
-- [Sandbox network render](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml)
+- [Single allowed domain (line 37)](../../../infra/helm/recsys-recommendation-agent/values.yaml#L37)
+- [Sandbox network render (line 13)](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml#L13)
 
 ### 6.2 gVisor isolation and least privilege
 
@@ -842,18 +995,12 @@ SandboxAgent platform=substrate
 
 References:
 
-- [gVisor WorkerPool](../../../infra/terraform/gcp/kagent.tf)
-- [MCP container security](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml)
-- [MCP NetworkPolicy](../../../infra/helm/recsys-recommendation-mcp/templates/networkpolicy.yaml)
-- [RemoteMCPServer Secret reference](../../../infra/helm/recsys-recommendation-agent/templates/remotemcpserver.yaml)
+- [gVisor WorkerPool (line 335)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L335)
+- [MCP container security (line 36)](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml#L36)
+- [MCP NetworkPolicy (line 1)](../../../infra/helm/recsys-recommendation-mcp/templates/networkpolicy.yaml#L1)
+- [RemoteMCPServer Secret reference (line 13)](../../../infra/helm/recsys-recommendation-agent/templates/remotemcpserver.yaml#L13)
 
 ### Runtime image-proof status
-
-Capture the live SandboxAgent `allowedDomains`, WorkerPool `ateomImage` and
-native `status.selector`, and MCP pod security context together. The RemoteMCPServer may
-show the Secret **reference**, but Secret values must be redacted. Pair this
-with one successful recommendation call and, if demonstrated separately, one
-denied external-domain request.
 
 The final production autoscale run completed `2187/2187` concurrent A2A load
 requests without error and proved `1 -> 2 -> 3 -> 2 -> 1`. Breaking the
@@ -879,9 +1026,9 @@ the same version fails the pipeline.
 
 References:
 
-- [Registry manifest generation and publish actions](../../../jenkins/scripts/deploy/agentic.sh)
-- [Registry runtime smoke](../../../ops/validation/recommendation_agentic_registry_smoke.sh)
-- [Recommendation deploy units](../../../jenkins/config/deploy-units.json)
+- [Registry manifest generation (line 1026)](../../../jenkins/scripts/deploy/agentic.sh#L1026) and [recommendation publish actions (line 1331)](../../../jenkins/scripts/deploy/agentic.sh#L1331)
+- [Registry runtime smoke (line 1)](../../../ops/validation/recommendation_agentic_registry_smoke.sh#L1)
+- [Recommendation deploy units (line 260)](../../../jenkins/config/deploy-units.json#L260)
 
 ### Image proof
 
@@ -925,10 +1072,10 @@ RAG evidence.
 
 References:
 
-- [Recommendation SandboxAgent prompt](../../../infra/helm/recsys-recommendation-agent/values.yaml)
-- [Single-tool contract](../../../configs/agentic/recsys-recommendation-agent/tools-contract.json)
-- [A2A production smoke](../../../jenkins/scripts/deploy/agentic.sh)
-- [No-context dependency test](../../../tests/e2e/recommendation_agentic/test_no_context_agent_dependency.py)
+- [Recommendation SandboxAgent prompt (line 14)](../../../infra/helm/recsys-recommendation-agent/values.yaml#L14)
+- [Single-tool contract (line 7)](../../../configs/agentic/recsys-recommendation-agent/tools-contract.json#L7)
+- [A2A production smoke (line 337)](../../../jenkins/scripts/deploy/agentic.sh#L337)
+- [No-context dependency test (line 10)](../../../tests/e2e/recommendation_agentic/test_no_context_agent_dependency.py#L10)
 
 ### Image proof
 
@@ -967,12 +1114,12 @@ then publishes registry metadata.
 
 References:
 
-- [Component routing](../../../jenkins/config/components.json)
-- [Deploy DAG](../../../jenkins/config/deploy-units.json)
-- [Image catalog](../../../images/catalog.json)
-- [Recommendation CI gates](../../../jenkins/scripts/ci/agentic.sh)
-- [Recommendation runtime verification](../../../jenkins/scripts/test/agentic.sh)
-- [Contract tests](../../../tests/contract/test_recommendation_agentic_contracts.py)
+- [Component routing (line 543)](../../../jenkins/config/components.json#L543)
+- [Deploy DAG (line 260)](../../../jenkins/config/deploy-units.json#L260)
+- [Image catalog (line 94)](../../../images/catalog.json#L94)
+- [Recommendation CI gates (line 58)](../../../jenkins/scripts/ci/agentic.sh#L58)
+- [Recommendation runtime verification (line 61)](../../../jenkins/scripts/test/agentic.sh#L61)
+- [Contract tests (line 62)](../../../tests/contract/test_recommendation_agentic_contracts.py#L62)
 
 ## 10. Runtime Verification Commands
 
@@ -1037,17 +1184,6 @@ curl -sS -X POST http://127.0.0.1:18086/recommendations \
 
 ### 10.4 Autoscale and fallback
 
-Open K9s in a separate terminal:
-
-```bash
-k9s -n kagent
-```
-
-Use `:pods` for the actual before/after screenshots, filtering with
-`/recsys-recommendation`. Use `:hpa` and `:so` for supplementary controller
-evidence, `:workerpools` for WorkerPool identity, and `:sandboxagents` for agent
-readiness.
-
 Inference API `1 -> 3`:
 
 ```bash
@@ -1058,10 +1194,6 @@ LOCUST_SPAWN_RATE=60 \
 LOCUST_DURATION=4m \
   bash ops/validation/serving_autoscale_load_test.sh
 ```
-
-In K9s switch to namespace `api-serving`; capture `:pods` filtered by
-`/recsys-inference-api` when one row exists before load and again when three
-Ready rows exist. Capture `:hpa` separately when desired/current reaches three.
 
 Recommendation MCP `1 -> 3`:
 
@@ -1107,133 +1239,16 @@ kubectl -n kagent get scaledobject \
   -o custom-columns='NAME:.metadata.name,MIN:.spec.minReplicaCount,MAX:.spec.maxReplicaCount,READY:.status.conditions[?(@.type=="Ready")].status,FALLBACK:.status.conditions[?(@.type=="Fallback")].status'
 ```
 
-### 10.5 Exact figure-by-figure capture matrix
-
-The following table intentionally mirrors the figure sequence in
-`agent_pull_data.md`.
-
-There are **15 figure slots**. The current submission contains **12 semantic
-screenshot files**: Figures 1–3, 6–7, and 9–15. Figures 4, 5, and 8 remain
-explicitly marked capture-pending so the document neither links missing files
-nor overstates what another image proves. The three autoscaling topics each use
-separate baseline and scale-out images (`6/7`, `9/10`, and `11/12`), matching
-the proof style in `agent_pull_data.md`.
-
-| Figure | Recommendation capture must contain | K9s/command view |
-|---|---|---|
-| 1 | `/healthz`, `/ready`, `/version` plus live startup/readiness/liveness probes | `curl` plus `kubectl get deployment ... -o yaml` |
-| 2 | FastAPI `/docs`, `POST /recommendations`, request/response schema | Browser at `http://localhost:18086/docs` |
-| 3 | Valid direct request and exact ranked response | `curl POST /recommendations` |
-| 4 | Invalid input and FastAPI `422` details | invalid `curl POST` |
-| 5 | Candidate-constrained output with descending scores and metadata | valid candidate request |
-| 6 | One Running inference API pod row before load | namespace `api-serving`, `:pods`, filter `/recsys-inference-api` |
-| 7 | Three separate Ready inference API pod rows | same `:pods` view and filter; HPA is supplementary |
-| 8 | MCP RollingUpdate `0/1`, KEDA `1/3/1`, PDB `minAvailable=1` | `kubectl get ... -o yaml` |
-| 9 | One Running MCP pod row with `READY=2/2` | namespace `kagent`, `:pods`, filter `/recsys-recommendation-mcp` |
-| 10 | Three separate Ready MCP pod rows | same `:pods` view and filter; HPA is supplementary |
-| 11 | One Running WorkerPool pod row with `READY=1/1` | namespace `kagent`, `:pods`, filter `/recsys-recommendation-sandbox-pool` |
-| 12 | Three separate `1/1 Running` WorkerPool pod rows | same `:pods` view and filter; HPA/WorkerPool are supplementary |
-| 13 | MCP registry identity, version history, Git SHA, immutable image | Agent Registry Catalog MCP details |
-| 14 | SandboxAgent registry identity, same SHA, MCP dependency | Agent Registry Catalog Agent details |
-| 15 | Selected SandboxAgent, one tool call, typed arguments, unchanged result | kagent Chat UI |
-
-Do not substitute a Deployment table, HPA table, or terminal-only replica count
-for Figures 6/7, 9/10, and 11/12. They intentionally use the same K9s Pods
-view, filter, columns, and one-row-to-three-row visual transition as the
-corresponding figures in `agent_pull_data.md`.
-
-Use these exact outputs for the two terminal-style infrastructure figures.
-For Figure 1, keep the port-forward running and place the endpoint responses
-beside the probe output in the same screenshot:
-
-```bash
-for endpoint in healthz ready version; do
-  curl -sS "http://127.0.0.1:18087/${endpoint}" | jq
-done
-
-kubectl -n kagent get deployment recsys-recommendation-mcp \
-  -o jsonpath='startup={.spec.template.spec.containers[?(@.name=="mcp")].startupProbe.httpGet.path}{"\n"}readiness={.spec.template.spec.containers[?(@.name=="mcp")].readinessProbe.httpGet.path}{"\n"}liveness={.spec.template.spec.containers[?(@.name=="mcp")].livenessProbe.httpGet.path}{"\n"}'
-```
-
-For Figure 5, use a fixed candidate list so the captured request and model
-order are reproducible:
-
-```bash
-curl -sS -X POST http://127.0.0.1:18086/recommendations \
-  -H 'Content-Type: application/json' \
-  -d '{"user_id":1001,"candidate_item_ids":[800080,800081],"top_k":2}' \
-  | jq
-```
-
-For Figure 8, use a wide terminal and keep all four output blocks visible:
-
-```bash
-kubectl -n kagent get deployment recsys-recommendation-mcp \
-  -o custom-columns='NAME:.metadata.name,TYPE:.spec.strategy.type,MAX_UNAVAILABLE:.spec.strategy.rollingUpdate.maxUnavailable,MAX_SURGE:.spec.strategy.rollingUpdate.maxSurge,AVAILABLE:.status.availableReplicas'
-
-kubectl -n kagent get scaledobject recsys-recommendation-mcp \
-  -o custom-columns='NAME:.metadata.name,TARGET_KIND:.spec.scaleTargetRef.kind,TARGET:.spec.scaleTargetRef.name,MIN:.spec.minReplicaCount,MAX:.spec.maxReplicaCount,FALLBACK:.spec.fallback.replicas,READY:.status.conditions[?(@.type=="Ready")].status'
-
-kubectl -n kagent get hpa keda-hpa-recsys-recommendation-mcp \
-  -o custom-columns='NAME:.metadata.name,TARGET_KIND:.spec.scaleTargetRef.kind,TARGET:.spec.scaleTargetRef.name,MIN:.spec.minReplicas,MAX:.spec.maxReplicas,CURRENT:.status.currentReplicas,DESIRED:.status.desiredReplicas'
-
-kubectl -n kagent get pdb recsys-recommendation-mcp \
-  -o custom-columns='NAME:.metadata.name,MIN_AVAILABLE:.spec.minAvailable,CURRENT_HEALTHY:.status.currentHealthy,DESIRED_HEALTHY:.status.desiredHealthy,ALLOWED_DISRUPTIONS:.status.disruptionsAllowed'
-
-kubectl -n kagent get pods \
-  -l app.kubernetes.io/name=recsys-recommendation-mcp \
-  -o wide
-```
-
-The 12 captured proofs use descriptive, kebab-case filenames under
-`docs/pngs/`, matching the convention in `agent_pull_data.md`. Verify them with:
-
-```bash
-for image in \
-  agent-recommendation-service-fastapi-kubernetes-healthchecks.png \
-  agent-recommendation-service-api-openapi-surface.png \
-  agent-recommendation-service-direct-request-response.png \
-  agent-recommendation-service-inference-baseline-1-replica.png \
-  agent-recommendation-service-inference-scaleout-3-replicas.png \
-  agent-recommendation-service-mcp-baseline-1-replica.png \
-  agent-recommendation-service-mcp-scaleout-3-replicas.png \
-  agent-recommendation-service-workerpool-baseline-1-replica.png \
-  agent-recommendation-service-workerpool-scaleout-3-replicas.png \
-  agent-recommendation-service-registry-mcp-version-history.png \
-  agent-recommendation-service-registry-sandbox-agent-version-history.png \
-  agent-recommendation-service-kagent-ui-ranked-recommendations.png; do
-  test -f "docs/pngs/${image}" || echo "MISSING docs/pngs/${image}"
-done
-```
-
-Capture Figures 4, 5, and 8 with the commands above before adding their image
-references. Do not duplicate or relabel one of the 12 existing proofs.
-
-### 10.6 Registry governance
+### 10.5 Registry governance
 
 ```bash
 make recommendation-agentic-registry
 ```
 
 Expected terminal output confirms that both artifacts match the current full
-Git commit. To capture the Catalog:
+Git commit.
 
-```bash
-kubectl -n agentregistry port-forward service/agentregistry 12121:12121
-```
-
-Open `http://localhost:12121`, select Catalog, and open each recommendation
-artifact's details page.
-
-### 10.7 Agent Chat UI and latency proof
-
-```bash
-kubectl -n kagent port-forward service/kagent-ui 8080:8080
-```
-
-Open `http://localhost:8080`, select
-`recsys-recommendation-agent-sandbox`, and send the acceptance prompt from
-Section 8.
+### 10.6 Agent Chat UI and latency proof
 
 Latency and no-context-agent proof:
 
@@ -1261,11 +1276,7 @@ MCP overhead, and agent p95.
 - Say **the LLM presents the model-ranked response without reranking**.
 - Say **Agent Registry supplies governance, version history, and discovery**;
   runtime chat traffic is not routed through Agent Registry.
-- For autoscale proof, show both HPA desired replicas and Deployment Available
-  replicas. A Pending third pod is not successful proof.
 - `2/2` in an Istio-injected MCP pod means two containers in one pod; it does
   not mean two replicas.
-- Never capture bearer tokens, Vault values, Kubernetes Secret data, Registry
-  credentials, or the model gateway API key.
 - Do not label the context/RAG agent as a recommendation dependency. The
   contract and latency proof explicitly require no context-agent call.

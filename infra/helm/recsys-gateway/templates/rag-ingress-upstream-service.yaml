@@ -1,0 +1,19 @@
+{{- if .Values.rag.enabled }}
+{{- $ingressService := .Values.rag.ingressService | default dict }}
+{{- $ingressServiceName := $ingressService.name | default (printf "%s-ingress-upstream" .Values.rag.service.name) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $ingressServiceName }}
+  namespace: {{ .Values.rag.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $ingressServiceName }}
+    app.kubernetes.io/component: ingress-upstream
+spec:
+  type: ExternalName
+  externalName: {{ .Values.rag.upstreamHost | default (printf "%s.%s.svc.cluster.local" .Values.rag.service.name .Values.rag.namespace) }}
+  ports:
+    - name: http
+      port: {{ .Values.rag.service.port }}
+      protocol: TCP
+{{- end }}

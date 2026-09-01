@@ -1,0 +1,135 @@
+{{- if .Values.llmProbe.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: recsys-llm-observability-probe
+  namespace: {{ .Values.llmProbe.namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recsys-llm-observability-probe
+  namespace: {{ .Values.llmProbe.namespace }}
+data:
+  llm_observability_probe.py: |
+{{ .Files.Get "files/llm_observability_probe.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: recsys-llm-observability-probe
+  namespace: {{ .Values.llmProbe.namespace }}
+spec:
+  schedule: {{ .Values.llmProbe.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.llmProbe.timeoutSeconds }}
+      backoffLimit: 0
+      template:
+        metadata:
+          annotations:
+            checksum/probe-script: {{ .Files.Get "files/llm_observability_probe.py" | sha256sum | quote }}
+            # The Pushgateway destination enforces STRICT mTLS. A native Istio
+            # sidecar gives this short-lived Job a workload identity and exits
+            # automatically after the probe container completes.
+            sidecar.istio.io/inject: "true"
+            sidecar.istio.io/nativeSidecar: "true"
+          labels:
+            app: recsys-llm-observability-probe
+        spec:
+          serviceAccountName: recsys-llm-observability-probe
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: probe
+              image: {{ .Values.images.probe }}
+              imagePullPolicy: IfNotPresent
+              command: ["python", "/opt/recsys-probe/llm_observability_probe.py"]
+              env:
+                - {name: LLM_GATEWAY_URL, value: {{ .Values.llmProbe.gatewayUrl | quote }}}
+                - {name: LLM_MODEL, value: {{ .Values.llmProbe.model | quote }}}
+                - {name: LLM_BASE_MODEL, value: {{ .Values.llmProbe.baseModel | quote }}}
+                - {name: LLM_MAX_TOKENS, value: {{ .Values.llmProbe.maxTokens | quote }}}
+                - {name: LLM_TIMEOUT_SECONDS, value: {{ .Values.llmProbe.timeoutSeconds | quote }}}
+                - {name: OTEL_TRACES_URL, value: {{ .Values.llmProbe.otelTracesUrl | quote }}}
+                - name: AGENT_GATEWAY_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.llmProbe.apiKeySecret.name }}
+                      key: {{ .Values.llmProbe.apiKeySecret.key }}
+              resources:
+                requests: {cpu: 10m, memory: 32Mi}
+                limits: {cpu: 100m, memory: 128Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: script
+                  mountPath: /opt/recsys-probe
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: script
+              configMap:
+                name: recsys-llm-observability-probe
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recsys-llm-observability-probe-egress
+  namespace: {{ .Values.llmProbe.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: recsys-llm-observability-probe
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.targets.llmNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: llm-d-inference-gateway
+      ports:
+        - {protocol: TCP, port: 80}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespace.name }}
+          podSelector:
+            matchLabels:
+              app: recsys-pushgateway
+      ports:
+        - {protocol: TCP, port: 9091}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespace.name }}
+          podSelector:
+            matchLabels:
+              app: recsys-otel-collector
+      ports:
+        - {protocol: TCP, port: 4318}
+{{- end }}

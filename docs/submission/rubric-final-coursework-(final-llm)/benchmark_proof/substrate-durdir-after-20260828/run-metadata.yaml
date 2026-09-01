@@ -1,0 +1,28 @@
+benchmark:
+  suite: substrate-durdir
+  phase: after
+  treatment: reserved-cpu-placement
+  job: durdir-data-after-20260828
+  namespace: benchmark-workloads
+  startTime: "2026-08-28T12:10:05Z"
+  completionTime: "2026-08-28T12:11:12Z"
+  succeeded: 1
+  failed: 0
+
+worker:
+  pod: benchmark-ateom-optimized-5bd686bb5-4gsqq
+  node: gke-recsys-mlops-gke-recsys-mlops-cpu-2224da7a-j33x
+  nodePool: recsys-mlops-cpu
+  replicas: 1
+  requests:
+    cpu: "1"
+    memory: 1Gi
+  limits:
+    cpu: unbounded
+    memory: 2Gi
+
+storageAfterRun:
+  capacity: 974Mi
+  used: 512Mi
+  available: 446Mi
+  utilizationPercent: 54

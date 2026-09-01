@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -84,6 +85,16 @@ def _percentile(values: list[float], percentile: float) -> float:
     return ordered[index]
 
 
+def _resolve_indexed_item_count(cli_value: int, golden_catalog_item_count: int) -> int:
+    """Resolve explicit CLI input, then Jenkins' promotion contract, then full size."""
+
+    return (
+        cli_value
+        or int(os.getenv("RAG_EXPECTED_ITEM_COUNT", "0"))
+        or golden_catalog_item_count
+    )
+
+
 def verify(
     *,
     base_url: str,
@@ -92,8 +103,21 @@ def verify(
     maximum_p95_ms: float,
     concurrency: int,
     timeout: float,
+    indexed_item_count: int | None = None,
+    golden_catalog_item_count: int | None = None,
 ) -> dict[str, Any]:
     """Run recall, latency, uniqueness, and hard-constraint release gates."""
+
+    if (indexed_item_count is None) != (golden_catalog_item_count is None):
+        raise ValueError(
+            "indexed_item_count and golden_catalog_item_count must be provided together"
+        )
+    coverage_ratio = 1.0
+    if indexed_item_count is not None and golden_catalog_item_count is not None:
+        if indexed_item_count <= 0 or golden_catalog_item_count <= 0:
+            raise ValueError("catalog item counts must be positive")
+        coverage_ratio = min(indexed_item_count / golden_catalog_item_count, 1.0)
+    effective_minimum_recall = minimum_recall * coverage_ratio
 
     endpoint = f"{base_url.rstrip('/')}/v1/rag/retrieve"
 
@@ -156,7 +180,7 @@ def verify(
     mean_recall = sum(recalls) / len(recalls)
     p95_ms = _percentile(latencies, 0.95)
     passed = (
-        mean_recall >= minimum_recall
+        mean_recall >= effective_minimum_recall
         and p95_ms <= maximum_p95_ms
         and duplicate_responses == 0
         and violations == 0
@@ -167,6 +191,10 @@ def verify(
         "query_count": len(cases),
         "recall_at_10": mean_recall,
         "minimum_recall_at_10": minimum_recall,
+        "effective_minimum_recall_at_10": effective_minimum_recall,
+        "catalog_coverage_ratio": coverage_ratio,
+        "indexed_item_count": indexed_item_count,
+        "golden_catalog_item_count": golden_catalog_item_count,
         "warm_api_p95_ms": p95_ms,
         "maximum_warm_api_p95_ms": maximum_p95_ms,
         "concurrency": concurrency,
@@ -185,11 +213,24 @@ def main() -> int:
     parser.add_argument("--golden", required=True)
     parser.add_argument("--report", required=True)
     parser.add_argument("--minimum-recall", type=float, default=0.90)
+    parser.add_argument(
+        "--indexed-item-count",
+        type=int,
+        default=0,
+        help=(
+            "Indexed corpus size used to scale the full-catalog recall threshold. "
+            "Zero assumes the complete golden catalog."
+        ),
+    )
     parser.add_argument("--maximum-p95-ms", type=float, default=750.0)
     parser.add_argument("--concurrency", type=int, default=10)
     parser.add_argument("--timeout", type=float, default=10.0)
     args = parser.parse_args()
     config = json.loads(Path(args.golden).read_text(encoding="utf-8"))
+    golden_catalog_item_count = int(config["item_count"])
+    indexed_item_count = _resolve_indexed_item_count(
+        args.indexed_item_count, golden_catalog_item_count
+    )
     report = verify(
         base_url=args.base_url,
         cases=build_cases(config),
@@ -197,6 +238,8 @@ def main() -> int:
         maximum_p95_ms=args.maximum_p95_ms,
         concurrency=args.concurrency,
         timeout=args.timeout,
+        indexed_item_count=indexed_item_count,
+        golden_catalog_item_count=golden_catalog_item_count,
     )
     report_path = Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)

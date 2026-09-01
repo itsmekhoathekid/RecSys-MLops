@@ -318,9 +318,6 @@ case "${unit_name}" in
   milvus-credentials)
     rag_milvus_credentials_bootstrap "$(resolve_release_image recsys-data-ingestion)"
     ;;
-  rag-index-promotion)
-    rag_index_promote "$(resolve_release_image recsys-data-ingestion)"
-    ;;
   datahub-catalog)
     datahub_catalog_sync "$(resolve_release_image recsys-data-ingestion)"
     ;;

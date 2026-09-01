@@ -1,0 +1,192 @@
+{
+  "annotations": {"list": []},
+  "description": "Production health and ingestion path for Langfuse v4 on GKE. Prometheus remains the SLO source; Langfuse is the per-request analysis store.",
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": true, "tags": [], "targetBlank": true, "title": "Open Langfuse", "type": "link", "url": "https://langfuse.recsys-mlops.site"},
+    {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": false, "tags": [], "targetBlank": true, "title": "Open trace ID", "type": "link", "url": "https://langfuse.recsys-mlops.site/trace/${trace_id}"}
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "cyan"}, "decimals": 2, "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "recsys_langfuse_ingestion_spans_per_second", "legendFormat": "spans/s", "refId": "A"}],
+      "title": "Langfuse ingestion",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.01}, {"color": "red", "value": 0.05}]}, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "recsys_langfuse_export_error_ratio", "legendFormat": "error ratio", "refId": "A"}],
+      "title": "Exporter error ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "amber", "value": 1}, {"color": "green", "value": 2}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "count(count by (pod) (container_last_seen{namespace=\"langfuse\",pod=~\"langfuse-web.*\"}))", "legendFormat": "web", "refId": "A"}],
+      "title": "Web replicas observed",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "amber", "value": 1}, {"color": "green", "value": 2}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "count(count by (pod) (container_last_seen{namespace=\"langfuse\",pod=~\"langfuse-worker.*\"}))", "legendFormat": "worker", "refId": "A"}],
+      "title": "Worker replicas observed",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "amber", "value": 2}, {"color": "green", "value": 3}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "id": 5,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "count(count by (pod) (container_last_seen{namespace=\"langfuse\",pod=~\"langfuse-clickhouse-[0-9]+-[0-9]+-[0-9]+\",container!=\"POD\"}))", "legendFormat": "clickhouse", "refId": "A"}],
+      "title": "ClickHouse replicas observed",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "amber", "value": 2}, {"color": "green", "value": 3}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+      "id": 6,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "count(count by (pod) (container_last_seen{namespace=\"langfuse\",pod=~\".*keeper.*\",container!=\"POD\"}))", "legendFormat": "keeper", "refId": "A"}],
+      "title": "Keeper replicas observed",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 20, "gradientMode": "opacity", "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 4, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 4},
+      "id": 7,
+      "options": {"legend": {"calcs": ["lastNotNull", "mean"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum(rate(otelcol_receiver_accepted_spans_total[5m]))", "legendFormat": "collector accepted", "refId": "A"},
+        {"expr": "sum(rate(otelcol_exporter_sent_spans{exporter=\"otlphttp/langfuse\"}[5m]))", "legendFormat": "Langfuse sent", "refId": "B"},
+        {"expr": "sum(rate(otelcol_exporter_send_failed_spans{exporter=\"otlphttp/langfuse\"}[5m])) or vector(0)", "legendFormat": "failed", "refId": "C"}
+      ],
+      "title": "Collector → Langfuse ingestion flow",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "spans", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 3, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 4},
+      "id": 8,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum(otelcol_exporter_queue_size{exporter=\"otlphttp/langfuse\"})", "legendFormat": "queue size", "refId": "A"},
+        {"expr": "sum(otelcol_exporter_queue_capacity{exporter=\"otlphttp/langfuse\"})", "legendFormat": "capacity", "refId": "B"},
+        {"expr": "sum(rate(otelcol_exporter_send_failed_spans{exporter=\"otlphttp/langfuse\"}[5m])) or vector(0)", "legendFormat": "failures/s", "refId": "C"}
+      ],
+      "title": "Exporter queue, retry pressure & failures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 10, "gradientMode": "opacity", "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 3, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 4},
+      "id": 9,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum(rate(recsys_agent_raw_duration_seconds_bucket{service_name=~\"langfuse-(web|worker)\"}[5m])) by (le, service_name))", "legendFormat": "{{service_name}} p95", "refId": "A"}
+      ],
+      "title": "Web / worker operation latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "max": 8, "min": 0, "unit": "cores"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 12},
+      "id": 10,
+      "options": {"displayMode": "gradient", "minVizHeight": 10, "minVizWidth": 0, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
+      "targets": [{"expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"langfuse\",pod=~\".*(clickhouse|keeper).*\",container!=\"POD\"}[5m]))", "legendFormat": "{{pod}}", "refId": "A"}],
+      "title": "ClickHouse / Keeper CPU",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "max": 8589934592, "min": 0, "unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 12},
+      "id": 11,
+      "options": {"displayMode": "gradient", "minVizHeight": 10, "minVizWidth": 0, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
+      "targets": [{"expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"langfuse\",pod=~\".*(clickhouse|keeper).*\",container!=\"POD\"})", "legendFormat": "{{pod}}", "refId": "A"}],
+      "title": "ClickHouse / Keeper RAM",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "amber", "value": 1}, {"color": "red", "value": 3}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
+      "id": 12,
+      "options": {"displayMode": "lcd", "minVizHeight": 10, "minVizWidth": 0, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
+      "targets": [{"expr": "sum by (pod) (changes(container_start_time_seconds{namespace=\"langfuse\",container!=\"POD\"}[30m]))", "legendFormat": "{{pod}}", "refId": "A"}],
+      "title": "Container restarts (30m)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "mappings": [{"options": {"0": {"color": "red", "text": "DOWN"}, "1": {"color": "green", "text": "CONNECTED"}}, "type": "value"}], "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 20},
+      "id": 13,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "(count(count by (pod) (container_last_seen{namespace=\"langfuse\",pod=~\"langfuse-(web|worker).*\"})) >= bool 4)", "legendFormat": "application datastore readiness", "refId": "A"}],
+      "title": "PostgreSQL / Redis connectivity gate",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 20},
+      "id": 14,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "max(up{job=\"recsys-kubernetes-pods\",namespace=\"langfuse\"})", "legendFormat": "operator metrics", "refId": "A"}],
+      "title": "ClickHouse operator scrape",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.01}]}, "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 20},
+      "id": 15,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "sum(rate(otelcol_exporter_send_failed_spans{exporter=\"otlphttp/langfuse\"}[5m])) or vector(0)", "legendFormat": "failed spans/s", "refId": "A"}],
+      "title": "Failed / retried exports",
+      "type": "stat"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 40,
+  "tags": ["recsys", "production", "langfuse", "otel"],
+  "templating": {
+    "list": [
+      {"allValue": ".*", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "Prometheus"}, "definition": "label_values(up, namespace)", "includeAll": true, "label": "Namespace", "multi": true, "name": "namespace", "query": {"query": "label_values(up, namespace)", "refId": "var-namespace"}, "type": "query"},
+      {"allValue": ".*", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "Prometheus"}, "definition": "label_values(recsys_agent_calls_total, agent)", "includeAll": true, "label": "Agent", "multi": true, "name": "agent", "query": {"query": "label_values(recsys_agent_calls_total, agent)", "refId": "var-agent"}, "type": "query"},
+      {"allValue": ".*", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "Prometheus"}, "definition": "label_values(up{job=\"recsys-llama-cpp\"}, model)", "includeAll": true, "label": "Model", "multi": true, "name": "model", "query": {"query": "label_values(up{job=\"recsys-llama-cpp\"}, model)", "refId": "var-model"}, "type": "query"},
+      {"allValue": ".*", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "Prometheus"}, "definition": "label_values(recsys_agent_tool_calls_total, tool)", "includeAll": true, "label": "Tool", "multi": true, "name": "tool", "query": {"query": "label_values(recsys_agent_tool_calls_total, tool)", "refId": "var-tool"}, "type": "query"},
+      {"current": {"text": "", "value": ""}, "hide": 2, "label": "Trace ID", "name": "trace_id", "query": "", "skipUrlSync": false, "type": "textbox"}
+    ]
+  },
+  "time": {"from": "now-30m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Langfuse Platform",
+  "uid": "recsys-langfuse-platform",
+  "version": 1,
+  "weekStart": ""
+}

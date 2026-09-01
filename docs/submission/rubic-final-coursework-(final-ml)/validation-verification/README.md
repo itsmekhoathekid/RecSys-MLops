@@ -1,5 +1,24 @@
 # Validation & Verification Evidence
 
+## Current split-service result (2026-08-30)
+
+All five rubric rows now have passing evidence for Inference API, Online Feature
+API, and RAG Feature API. The authoritative matrix, commands, test-design map,
+and current measurements are in
+[service-test-matrix.md](service-test-matrix.md).
+
+| Rubric evidence | Inference API | Online Feature API | RAG Feature API |
+| --- | ---: | ---: | ---: |
+| Unit/Web API tests | PASS | PASS | PASS |
+| Line coverage `> 90%` | 98.44% | 92.39% | 94.20% |
+| EP/BVA parametrization | PASS | PASS | PASS |
+| Full public-path mutation score `> 80%` | 88.40% | 84.91% | 87.19% |
+| Hypothesis idempotency | PASS | PASS | PASS |
+| Locust + HTML SLA evidence | PASS | PASS | PASS |
+
+The sections below preserve the original coursework evidence and therefore use
+the older monolithic component names and measurements.
+
 ## Coverage
 
 | Component | Line coverage |
@@ -18,10 +37,10 @@
 
 ## Required Proof
 
-- Web API unit tests use `TestClient`, pytest fixtures, and mocked Redis/Triton services ([test_validation_verification.py (line 18)](../../../../tests/unit/api_serving/test_validation_verification.py#L18), [test_validation_verification.py (line 73)](../../../../tests/unit/api_serving/test_validation_verification.py#L73)).
-- EP/BVA cases are visible in pytest IDs containing `equivalence-*` and `boundary-*` ([test_validation_verification.py (line 75)](../../../../tests/unit/api_serving/test_validation_verification.py#L75), [test_validation_verification.py (line 127)](../../../../tests/unit/api_serving/test_validation_verification.py#L127)).
-- Property-based idempotency uses Hypothesis ([test_validation_verification.py (line 341)](../../../../tests/unit/api_serving/test_validation_verification.py#L341), [test_validation_verification.py (line 378)](../../../../tests/unit/api_serving/test_validation_verification.py#L378)).
-- Mutation score: 90.74%.
+- Web API suites use real `TestClient`, service fixtures and injected mocks under [`tests/unit/api_serving`](../../../../tests/unit/api_serving/).
+- EP/BVA cases are visible in the three service `test_validation_design.py` files.
+- HTTP idempotency uses Hypothesis with 60 examples and three requests per example.
+- Mutation oracles are centralized under [`tests/mutation/api_serving`](../../../../tests/mutation/api_serving/).
 - Locust HTML SLA report: archived `locust-api.html`.
 
 The original one-off evidence, mutation and load runners were removed from the

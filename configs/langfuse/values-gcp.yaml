@@ -1,0 +1,445 @@
+# Production profile for Langfuse chart 2.0.1 / Langfuse 4.17.0.
+# Runtime endpoints and the GCS Workload Identity annotation are supplied by
+# Terraform. All credential-bearing values are read from Kubernetes Secrets.
+fullnameOverride: langfuse
+
+langfuse:
+  logging:
+    level: info
+    format: json
+  salt:
+    secretKeyRef:
+      name: recsys-langfuse-runtime
+      key: salt
+  encryptionKey:
+    secretKeyRef:
+      name: recsys-langfuse-runtime
+      key: encryption-key
+  features:
+    telemetryEnabled: false
+    signUpDisabled: true
+    experimentalFeaturesEnabled: false
+  nodeEnv: production
+  serviceAccount:
+    create: true
+    name: langfuse
+    automountServiceAccountToken: true
+  nextauth:
+    url: https://langfuse.recsys-mlops.site
+    secret:
+      secretKeyRef:
+        name: recsys-langfuse-runtime
+        key: nextauth-secret
+  image:
+    pullPolicy: IfNotPresent
+  nodeSelector:
+    recsys.ai/pool: langfuse
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: langfuse
+      effect: NoSchedule
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  deployment:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 0
+  extraVolumes:
+    - name: redis-ca
+      secret:
+        secretName: recsys-langfuse-runtime
+        items:
+          - key: redis-ca.pem
+            path: redis-ca.pem
+  extraVolumeMounts:
+    - name: redis-ca
+      mountPath: /var/run/langfuse/redis
+      readOnly: true
+  additionalEnv:
+    - name: SHADOW_DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: recsys-langfuse-runtime
+          key: shadow-database-url
+    - name: LANGFUSE_INIT_ORG_ID
+      value: recsys
+    - name: LANGFUSE_INIT_ORG_NAME
+      value: RecSys
+    - name: LANGFUSE_INIT_PROJECT_ID
+      value: recsys-production
+    - name: LANGFUSE_INIT_PROJECT_NAME
+      value: RecSys Production
+    - name: LANGFUSE_INIT_PROJECT_RETENTION
+      value: "30"
+    - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+      valueFrom:
+        secretKeyRef:
+          name: recsys-langfuse-runtime
+          key: project-public-key
+    - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: recsys-langfuse-runtime
+          key: project-secret-key
+    - name: LANGFUSE_INIT_USER_EMAIL
+      value: admin@recsys-mlops.site
+    - name: LANGFUSE_INIT_USER_NAME
+      value: RecSys Admin
+    - name: LANGFUSE_INIT_USER_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: recsys-langfuse-runtime
+          key: initial-admin-password
+    - name: AUTH_SESSION_MAX_AGE
+      value: "480"
+    - name: LANGFUSE_CSP_ENFORCE_HTTPS
+      value: "true"
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://recsys-otel-collector.observability.svc.cluster.local:4318
+    - name: OTEL_EXPORTER_OTLP_PROTOCOL
+      value: http/protobuf
+    - name: OTEL_TRACES_SAMPLER
+      value: always_on
+    - name: OTEL_TRACE_SAMPLING_RATIO
+      value: "1"
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: deployment.environment.name=production,recsys.telemetry.no_langfuse_export=true
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/auth-type: basic
+      nginx.ingress.kubernetes.io/auth-secret: recsys-gateway-basic-auth
+      nginx.ingress.kubernetes.io/auth-realm: Authentication Required
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: 20m
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    hosts:
+      - host: langfuse.recsys-mlops.site
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      enabled: true
+      secretName: recsys-langfuse-tls
+  web:
+    image:
+      repository: docker.langfuse.com/langfuse/langfuse
+      tag: 4.17.0@sha256:26b4dc06819dd15761822f6a79eb37bf34bac18a414692fcdde3593964e3dd4e
+      pullPolicy: IfNotPresent
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 1500m
+        memory: 3Gi
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 4
+      targetCPUUtilizationPercentage: 60
+    pdb:
+      create: true
+      minAvailable: 1
+    pod:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: langfuse
+              app: web
+      additionalEnv:
+        - name: OTEL_SERVICE_NAME
+          value: langfuse-web
+  worker:
+    image:
+      repository: docker.langfuse.com/langfuse/langfuse-worker
+      tag: 4.17.0@sha256:38cb37b87a6dd2aa1f09ae4496653bccdb33664a49b3dec37b52f3e32de166d2
+      pullPolicy: IfNotPresent
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 1500m
+        memory: 3Gi
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 4
+      targetCPUUtilizationPercentage: 60
+    pdb:
+      create: true
+      minAvailable: 1
+    pod:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: langfuse
+              app: worker
+      additionalEnv:
+        - name: OTEL_SERVICE_NAME
+          value: langfuse-worker
+
+postgresql:
+  deploy: false
+  host: set-by-terraform.invalid
+  port: 5432
+  args: sslmode=require&connect_timeout=10
+  auth:
+    username: langfuse
+    database: langfuse
+    existingSecret: recsys-langfuse-runtime
+    secretKeys:
+      userPasswordKey: postgres-password
+      adminPasswordKey: postgres-password
+  migration:
+    autoMigrate: true
+
+redis:
+  deploy: false
+  host: set-by-terraform.invalid
+  port: 6378
+  tls:
+    enabled: true
+    caPath: /var/run/langfuse/redis/redis-ca.pem
+  auth:
+    enabled: true
+    username: null
+    existingSecret: recsys-langfuse-runtime
+    existingSecretPasswordKey: redis-password
+    database: 0
+  cluster:
+    enabled: false
+  sentinel:
+    enabled: false
+
+clickhouse:
+  deploy: true
+  crdCheck: true
+  database: default
+  auth:
+    username: default
+    existingSecret: recsys-langfuse-runtime
+    existingSecretKey: clickhouse-password
+  migration:
+    ssl: false
+    autoMigrate: true
+  cluster:
+    enabled: true
+    replicas: 3
+    image:
+      repository: clickhouse/clickhouse-server
+      tag: 26.4@sha256:c7796a1335d14385c052f10061cf719f4a368a908432ec25980860b1333e9ccd
+    storage:
+      size: 100Gi
+      className: langfuse-hdd-rwo
+      accessModes:
+        - ReadWriteOnce
+    resources:
+      requests:
+        cpu: 1500m
+        memory: 6Gi
+      limits:
+        cpu: "2"
+        memory: 8Gi
+    nodeSelector:
+      recsys.ai/pool: langfuse
+    tolerations:
+      - key: recsys.ai/workload
+        operator: Equal
+        value: langfuse
+        effect: NoSchedule
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchExpressions:
+                - key: clickhouse.com/cluster
+                  operator: Exists
+  keeper:
+    enabled: true
+    replicas: 3
+    image:
+      repository: clickhouse/clickhouse-keeper
+      tag: 26.4@sha256:3e356a2d04518ec4687275c8c0794985a67ab7a1acf0918c1ff2fcfffa1fd5a5
+    storage:
+      size: 10Gi
+      className: langfuse-hdd-rwo
+      accessModes:
+        - ReadWriteOnce
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    nodeSelector:
+      recsys.ai/pool: langfuse
+    tolerations:
+      - key: recsys.ai/workload
+        operator: Equal
+        value: langfuse
+        effect: NoSchedule
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchExpressions:
+                - key: clickhouse.com/keeper
+                  operator: Exists
+
+s3:
+  deploy: false
+  storageProvider: gcs
+  bucket: set-by-terraform
+  region: asia-southeast1
+  forcePathStyle: false
+  eventUpload:
+    prefix: events/
+  batchExport:
+    enabled: true
+    prefix: exports/
+  mediaUpload:
+    enabled: true
+    prefix: media/
+    maxContentLength: 1000000000
+    downloadUrlExpirySeconds: 3600
+
+# Namespace isolation is intentionally part of the atomic Langfuse release.
+# Private Service Access addresses are allocated from RFC1918 space; egress is
+# port-scoped so application pods can only reach PostgreSQL and Redis there.
+extraManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: langfuse-default-deny
+      namespace: langfuse
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: langfuse-web-ingress
+      namespace: langfuse
+    spec:
+      podSelector:
+        matchLabels:
+          app: web
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: ingress-nginx
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: observability
+          ports:
+            - protocol: TCP
+              port: 3000
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: langfuse-internal-ingress
+      namespace: langfuse
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - podSelector: {}
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: observability
+          ports:
+            - protocol: TCP
+              port: 8080
+            - protocol: TCP
+              port: 3000
+            - protocol: TCP
+              port: 3030
+        - from:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+          ports:
+            - protocol: TCP
+              port: 9443
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: langfuse-controlled-egress
+      namespace: langfuse
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Egress
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+          ports:
+            - protocol: UDP
+              port: 53
+            - protocol: TCP
+              port: 53
+        - to:
+            - podSelector: {}
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: observability
+          ports:
+            - protocol: TCP
+              port: 4318
+        - to:
+            - ipBlock:
+                cidr: 10.0.0.0/8
+          ports:
+            - protocol: TCP
+              port: 5432
+            - protocol: TCP
+              port: 6378
+        - to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+          ports:
+            - protocol: TCP
+              port: 443

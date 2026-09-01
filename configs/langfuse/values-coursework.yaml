@@ -1,0 +1,212 @@
+# Cost-bounded coursework overlay for Langfuse chart 2.0.1.
+# This file is merged after values-gcp.yaml only when
+# langfuse_backend_mode="in_cluster". It deliberately trades HA and burst
+# capacity for a small, fully functional data plane on the shared CPU pool.
+
+langfuse:
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+  tolerations: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  additionalEnv:
+    - name: LANGFUSE_INIT_ORG_ID
+      value: recsys
+    - name: LANGFUSE_INIT_ORG_NAME
+      value: RecSys
+    - name: LANGFUSE_INIT_PROJECT_ID
+      value: recsys-production
+    - name: LANGFUSE_INIT_PROJECT_NAME
+      value: RecSys Production
+    - name: LANGFUSE_INIT_PROJECT_RETENTION
+      value: "30"
+    - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+      valueFrom:
+        secretKeyRef:
+          name: recsys-langfuse-runtime
+          key: project-public-key
+    - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: recsys-langfuse-runtime
+          key: project-secret-key
+    - name: LANGFUSE_INIT_USER_EMAIL
+      value: admin@recsys-mlops.site
+    - name: LANGFUSE_INIT_USER_NAME
+      value: RecSys Admin
+    - name: LANGFUSE_INIT_USER_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: recsys-langfuse-runtime
+          key: initial-admin-password
+    - name: AUTH_SESSION_MAX_AGE
+      value: "480"
+    - name: LANGFUSE_CSP_ENFORCE_HTTPS
+      value: "true"
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://recsys-otel-collector.observability.svc.cluster.local:4318
+    - name: OTEL_EXPORTER_OTLP_PROTOCOL
+      value: http/protobuf
+    - name: OTEL_TRACES_SAMPLER
+      value: always_on
+    - name: OTEL_TRACE_SAMPLING_RATIO
+      value: "1"
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: deployment.environment.name=production,recsys.telemetry.no_langfuse_export=true
+  web:
+    replicas: 1
+    livenessProbe:
+      initialDelaySeconds: 120
+      failureThreshold: 6
+    readinessProbe:
+      initialDelaySeconds: 30
+      failureThreshold: 12
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    hpa:
+      enabled: false
+    pdb:
+      create: false
+    pod:
+      topologySpreadConstraints: []
+      additionalEnv:
+        - name: OTEL_SERVICE_NAME
+          value: langfuse-web
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=1536
+  worker:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    hpa:
+      enabled: false
+    pdb:
+      create: false
+    pod:
+      topologySpreadConstraints: []
+      additionalEnv:
+        - name: OTEL_SERVICE_NAME
+          value: langfuse-worker
+
+# Chart 2.0.1 forwards this value to the bundled PostgreSQL sub-chart, whose
+# container args field is a list. An empty list avoids the chart's string/list
+# collision while the in-cluster connection uses its native non-TLS endpoint.
+postgresql:
+  deploy: true
+  host: ""
+  port: 5432
+  args: []
+  auth:
+    username: langfuse
+    database: langfuse
+    existingSecret: ""
+  replicaCount: 1
+  storage:
+    requestedSize: 10Gi
+    className: langfuse-hdd-rwo
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+      whenScaled: Retain
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+  tolerations: []
+  affinity: null
+
+redis:
+  deploy: true
+  host: ""
+  port: 6379
+  tls:
+    enabled: false
+    caPath: ""
+  auth:
+    enabled: true
+    username: default
+    existingSecret: ""
+    existingSecretPasswordKey: ""
+    usersExistingSecret: langfuse-redis-auth
+    database: 0
+  cluster:
+    enabled: false
+  sentinel:
+    enabled: false
+  replica:
+    enabled: false
+    replicas: 0
+  dataStorage:
+    enabled: true
+    requestedSize: 8Gi
+    className: langfuse-hdd-rwo
+    accessModes:
+      - ReadWriteOnce
+    keepPvc: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+  tolerations: []
+  affinity: null
+
+clickhouse:
+  cluster:
+    enabled: true
+    replicas: 1
+    storage:
+      size: 20Gi
+      className: langfuse-hdd-rwo
+      accessModes:
+        - ReadWriteOnce
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    nodeSelector:
+      recsys.ai/pool: cpu-services
+    tolerations: []
+    affinity: null
+  keeper:
+    # The Langfuse 2.0.1 ClickHouse CRD requires keeperClusterRef even for a
+    # single ClickHouse replica, so this is one non-HA Keeper rather than zero.
+    enabled: true
+    replicas: 1
+    storage:
+      size: 5Gi
+      className: langfuse-hdd-rwo
+      accessModes:
+        - ReadWriteOnce
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    nodeSelector:
+      recsys.ai/pool: cpu-services
+    tolerations: []
+    affinity: null

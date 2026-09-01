@@ -82,12 +82,12 @@ flowchart TD
 | North-south access | NGINX terminates TLS and applies shared Basic Auth and rate limits before its Envoy sidecar sends mTLS traffic to API and observability workloads. |
 | Release ownership | Vault owns the central payloads. Terraform owns Vault/KMS/IAM, `recsys-security`, Istio/operator releases, and gateway. Jenkins owns application image releases and reads already-synced runtime Secrets; it does not receive plaintext secrets through Helm arguments. |
 
-The Vault infrastructure is defined in [vault.tf](../../../infra/terraform/gcp/vault.tf#L1),
+The Vault infrastructure is defined in [vault.tf](../../../infra/terraform/gcp/modules/kubernetes-platform/vault.tf#L1),
 its HA server configuration is in [values.yaml.tftpl](../../../configs/vault/values.yaml.tftpl#L1),
 and the safe initialization/migration workflow is in
 [bootstrap_vault.sh](../../../ops/gcp/bootstrap_vault.sh#L1). The effective
 External Secrets overrides are assembled in
-[locals.tf](../../../infra/terraform/gcp/locals.tf#L89).
+[locals.tf](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L89).
 
 ### Effective Secret Backend
 
@@ -182,7 +182,7 @@ and are not hand-copied into service charts.
 
 ### Code Reference
 
-- [vault.tf (line 1)](../../../infra/terraform/gcp/vault.tf#L1), [vault.tf (line 20)](../../../infra/terraform/gcp/vault.tf#L20), [vault.tf (line 56)](../../../infra/terraform/gcp/vault.tf#L56): creates the Vault GSA, Cloud KMS key/IAM, Workload Identity binding, official Helm release, and TokenReview RBAC.
+- [vault.tf (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/vault.tf#L1), [vault.tf (line 20)](../../../infra/terraform/gcp/modules/kubernetes-platform/vault.tf#L20), [vault.tf (line 56)](../../../infra/terraform/gcp/modules/kubernetes-platform/vault.tf#L56): creates the Vault GSA, Cloud KMS key/IAM, Workload Identity binding, official Helm release, and TokenReview RBAC.
 - [values.yaml.tftpl (line 1)](../../../configs/vault/values.yaml.tftpl#L1), [values.yaml.tftpl (line 55)](../../../configs/vault/values.yaml.tftpl#L55), [values.yaml.tftpl (line 86)](../../../configs/vault/values.yaml.tftpl#L86): configures Vault 2.0.3, three-node HA Raft, PVCs, internal service, and GCP KMS seal.
 - [bootstrap_vault.sh (line 112)](../../../ops/gcp/bootstrap_vault.sh#L112), [bootstrap_vault.sh (line 145)](../../../ops/gcp/bootstrap_vault.sh#L145), [bootstrap_vault.sh (line 164)](../../../ops/gcp/bootstrap_vault.sh#L164), [bootstrap_vault.sh (line 175)](../../../ops/gcp/bootstrap_vault.sh#L175): initializes Vault, enables KV v2, writes least-privilege policy/Kubernetes auth, and migrates grouped secret values without printing them.
 - [recsys-security values (line 28)](../../../infra/helm/recsys-security/values.yaml#L28): configures the core service `vaultPath` values, including the two `agent-gateway` mappings and the `agentregistry` database mapping.
@@ -243,7 +243,7 @@ with the concrete values defined in
 
 1. Terraform deploys the Vault endpoint and its unseal trust chain.
 
-   [vault.tf (line 1)](../../../infra/terraform/gcp/vault.tf#L1) creates a
+   [vault.tf (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/vault.tf#L1) creates a
    dedicated GSA and exact-key KMS permissions. Workload Identity maps
    `vault/vault` to that GSA without a JSON service-account key. The official
    HashiCorp Helm chart installs three Vault pods backed by Raft PVCs. The live
@@ -268,7 +268,7 @@ with the concrete values defined in
    | `recsys/data/kserve-minio` | 6 | [recsys-security values (line 60)](../../../infra/helm/recsys-security/values.yaml#L60) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | KServe S3 storage initializer credentials |
    | `recsys/data/gateway` | 1 | [recsys-security values (line 69)](../../../infra/helm/recsys-security/values.yaml#L69) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | Shared ingress Basic Auth payload |
    | `recsys/data/analytics` | 16 | [recsys-analytics values (line 6)](../../../infra/helm/recsys-analytics/values.yaml#L6) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | Trino/catalog/Superset/PostgreSQL credentials |
-   | `recsys/data/jenkins-runtime` | 3 | [Terraform additional path (line 109)](../../../infra/terraform/gcp/locals.tf#L109) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | Jenkins URL, user, and runtime token merged into the Kubeflow runtime Secret |
+   | `recsys/data/jenkins-runtime` | 3 | [Terraform additional path (line 109)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L109) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) | Jenkins URL, user, and runtime token merged into the Kubeflow runtime Secret |
    | `recsys/data/agent-gateway` | 1 | [client/server paths (line 28)](../../../infra/helm/recsys-security/values.yaml#L28) | [generated API-key writer (line 177)](../../../ops/gcp/bootstrap_vault.sh#L177) | Generated `AGENT_GATEWAY_API_KEY` shared by the kagent client and agentgateway validator |
    | `recsys/data/agentregistry` | 4 | [Agent Registry path (line 38)](../../../infra/helm/recsys-security/values.yaml#L38) | [generated PostgreSQL writer (line 192)](../../../ops/gcp/bootstrap_vault.sh#L192) | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `AGENT_REGISTRY_DATABASE_URL` |
 
@@ -282,7 +282,7 @@ with the concrete values defined in
 
    The GCP deployment selects provider `vault`, store `recsys-vault`, mount
    `recsys`, auth mount `kubernetes`, role `recsys-external-secrets`, and JWT
-   audience `vault` in [locals.tf (line 89)](../../../infra/terraform/gcp/locals.tf#L89).
+   audience `vault` in [locals.tf (line 89)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L89).
 
 4. Service-level `ExternalSecret` resources request only the credential group needed in their namespace.
 
@@ -798,8 +798,8 @@ Istio enforces service identity and network-level access control. The baseline p
 
 ### Code Reference
 
-- [locals.tf (line 80)](../../../infra/terraform/gcp/locals.tf#L80), [locals.tf (line 110)](../../../infra/terraform/gcp/locals.tf#L110): selects the six namespaces that receive the production mesh enforcement baseline and passes them to the security chart.
-- [namespaces.tf (line 1)](../../../infra/terraform/gcp/namespaces.tf#L1), [namespaces.tf (line 51)](../../../infra/terraform/gcp/namespaces.tf#L51), [namespaces.tf (line 65)](../../../infra/terraform/gcp/namespaces.tf#L65): labels the observability, experiment-tracking, dataflow, KServe/Triton, and API namespaces for automatic Envoy sidecar injection.
+- [locals.tf (line 80)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L80), [locals.tf (line 110)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L110): selects the six namespaces that receive the production mesh enforcement baseline and passes them to the security chart.
+- [namespaces.tf (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/namespaces.tf#L1), [namespaces.tf (line 51)](../../../infra/terraform/gcp/modules/kubernetes-platform/namespaces.tf#L51), [namespaces.tf (line 65)](../../../infra/terraform/gcp/modules/kubernetes-platform/namespaces.tf#L65): labels the observability, experiment-tracking, dataflow, KServe/Triton, and API namespaces for automatic Envoy sidecar injection.
 - [istio-mtls.yaml (line 1)](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L1), [istio-mtls.yaml (line 116)](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L116): renders namespace STRICT mTLS and selected permissive exceptions.
 - [istio-authorization.yaml (line 1)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L1), [istio-authorization.yaml (line 235)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L235): renders default-deny and explicit allow policies for API, KServe/Triton, Dataflow, Kubeflow, MLflow, and Observability traffic.
 - [istio-authorization.yaml (line 162)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L162), [istio-authorization.yaml (line 179)](../../../infra/helm/recsys-security/templates/istio-authorization.yaml#L179): implements the concrete API-to-Triton and ingress/API service-to-service allow rules shown below.
@@ -807,7 +807,7 @@ Istio enforces service identity and network-level access control. The baseline p
 ### Applied Service-To-Service Authentication Configuration
 
 Terraform passes the production namespace list from
-[locals.tf (line 80)](../../../infra/terraform/gcp/locals.tf#L80) into the
+[locals.tf (line 80)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L80) into the
 `recsys-security` Helm chart. For every selected namespace, the chart renders
 the following baseline from
 [istio-mtls.yaml (line 1)](../../../infra/helm/recsys-security/templates/istio-mtls.yaml#L1):
@@ -955,7 +955,7 @@ The request is protected by these layers:
 
 1. The namespace receives an Envoy sidecar through
    `istio-injection=enabled` in
-   [namespaces.tf (line 1)](../../../infra/terraform/gcp/namespaces.tf#L1).
+   [namespaces.tf (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/namespaces.tf#L1).
 2. `PeerAuthentication` in `STRICT` mode requires mutually authenticated TLS.
 3. An empty namespace-level `AuthorizationPolicy` establishes default deny.
 4. Explicit `ALLOW` policies reopen only the required caller identities and

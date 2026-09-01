@@ -5,9 +5,15 @@ import os
 
 from locust import HttpUser, between, task
 
+from tests.load.payload_oracles import online_feature_payload_error
+
 
 def _int_list(name: str, default: str) -> list[int]:
-    return [int(item.strip()) for item in os.getenv(name, default).split(",") if item.strip()]
+    return [
+        int(item.strip())
+        for item in os.getenv(name, default).split(",")
+        if item.strip()
+    ]
 
 
 def _candidates() -> list[int]:
@@ -26,7 +32,11 @@ USER_ID_RANGE = max(1, int(os.getenv("RECSYS_USER_ID_RANGE", "1000000")))
 USER_IDS = itertools.count(USER_ID_START)
 CANDIDATES = _candidates()
 TOP_K = int(os.getenv("RECSYS_TOP_K", "3"))
-API_RECOMMENDATIONS_PATH = os.getenv("RECSYS_API_RECOMMENDATIONS_PATH", "/recommendations")
+API_RECOMMENDATIONS_PATH = os.getenv(
+    "RECSYS_API_RECOMMENDATIONS_PATH", "/recommendations"
+)
+RAG_QUERY = os.getenv("RECSYS_RAG_QUERY", "tai nghe khong day")
+RAG_TOP_K = int(os.getenv("RECSYS_RAG_TOP_K", "5"))
 
 
 def _next_user_id() -> int:
@@ -50,6 +60,8 @@ class RecsysServingUser(HttpUser):
             self._triton_infer()
         elif TARGET == "feature":
             self._online_features()
+        elif TARGET == "rag":
+            self._rag_retrieve()
         else:
             self._api_recommendations()
 
@@ -67,7 +79,9 @@ class RecsysServingUser(HttpUser):
             catch_response=True,
         ) as response:
             if response.status_code != 200:
-                response.failure(f"status={response.status_code} body={response.text[:300]}")
+                response.failure(
+                    f"status={response.status_code} body={response.text[:300]}"
+                )
                 return
             items = response.json().get("items", [])
             if not items:
@@ -87,26 +101,100 @@ class RecsysServingUser(HttpUser):
             catch_response=True,
         ) as response:
             if response.status_code != 200:
-                response.failure(f"status={response.status_code} body={response.text[:300]}")
+                response.failure(
+                    f"status={response.status_code} body={response.text[:300]}"
+                )
+                return
+            error = online_feature_payload_error(response.json())
+            if error is not None:
+                response.failure(error)
+
+    def _rag_retrieve(self) -> None:
+        payload = {
+            "query": RAG_QUERY,
+            "top_k_items": RAG_TOP_K,
+            "filters": {"in_stock": True},
+        }
+        with self.client.post(
+            "/v1/rag/retrieve",
+            json=payload,
+            headers=self._headers(),
+            name="rag:/v1/rag/retrieve",
+            catch_response=True,
+        ) as response:
+            if response.status_code != 200:
+                response.failure(
+                    f"status={response.status_code} body={response.text[:300]}"
+                )
                 return
             body = response.json()
-            if not body.get("user_sequence") or not body.get("item_features"):
-                response.failure("empty online feature payload")
+            if not body.get("pipeline_run_id") or not body.get("items"):
+                response.failure("empty RAG retrieval payload")
 
     def _triton_infer(self) -> None:
         n_candidates = len(CANDIDATES)
         payload = {
             "inputs": [
-                {"name": "candidate_item_id", "shape": [n_candidates], "datatype": "INT64", "data": CANDIDATES},
-                {"name": "candidate_category", "shape": [n_candidates], "datatype": "INT64", "data": [(item % 20) + 1 for item in CANDIDATES]},
-                {"name": "candidate_brand", "shape": [n_candidates], "datatype": "INT64", "data": [(item % 80) + 1 for item in CANDIDATES]},
-                {"name": "candidate_price_bucket", "shape": [n_candidates], "datatype": "INT64", "data": [(item % 4) + 1 for item in CANDIDATES]},
-                {"name": "hist_item_id", "shape": [4], "datatype": "INT64", "data": [398, 3, 215, 415]},
-                {"name": "hist_event_type", "shape": [4], "datatype": "INT64", "data": [1, 1, 1, 1]},
-                {"name": "hist_category", "shape": [4], "datatype": "INT64", "data": [15, 7, 1, 12]},
-                {"name": "hist_brand", "shape": [4], "datatype": "INT64", "data": [79, 18, 46, 27]},
-                {"name": "hist_price_bucket", "shape": [4], "datatype": "INT64", "data": [1, 1, 1, 2]},
-                {"name": "hist_time", "shape": [4], "datatype": "INT64", "data": [0, 0, 0, 0]},
+                {
+                    "name": "candidate_item_id",
+                    "shape": [n_candidates],
+                    "datatype": "INT64",
+                    "data": CANDIDATES,
+                },
+                {
+                    "name": "candidate_category",
+                    "shape": [n_candidates],
+                    "datatype": "INT64",
+                    "data": [(item % 20) + 1 for item in CANDIDATES],
+                },
+                {
+                    "name": "candidate_brand",
+                    "shape": [n_candidates],
+                    "datatype": "INT64",
+                    "data": [(item % 80) + 1 for item in CANDIDATES],
+                },
+                {
+                    "name": "candidate_price_bucket",
+                    "shape": [n_candidates],
+                    "datatype": "INT64",
+                    "data": [(item % 4) + 1 for item in CANDIDATES],
+                },
+                {
+                    "name": "hist_item_id",
+                    "shape": [4],
+                    "datatype": "INT64",
+                    "data": [398, 3, 215, 415],
+                },
+                {
+                    "name": "hist_event_type",
+                    "shape": [4],
+                    "datatype": "INT64",
+                    "data": [1, 1, 1, 1],
+                },
+                {
+                    "name": "hist_category",
+                    "shape": [4],
+                    "datatype": "INT64",
+                    "data": [15, 7, 1, 12],
+                },
+                {
+                    "name": "hist_brand",
+                    "shape": [4],
+                    "datatype": "INT64",
+                    "data": [79, 18, 46, 27],
+                },
+                {
+                    "name": "hist_price_bucket",
+                    "shape": [4],
+                    "datatype": "INT64",
+                    "data": [1, 1, 1, 2],
+                },
+                {
+                    "name": "hist_time",
+                    "shape": [4],
+                    "datatype": "INT64",
+                    "data": [0, 0, 0, 0],
+                },
             ],
             "outputs": [
                 {"name": "candidate_item_id_out"},
@@ -121,7 +209,9 @@ class RecsysServingUser(HttpUser):
             catch_response=True,
         ) as response:
             if response.status_code != 200:
-                response.failure(f"status={response.status_code} body={response.text[:300]}")
+                response.failure(
+                    f"status={response.status_code} body={response.text[:300]}"
+                )
                 return
             outputs = response.json().get("outputs", [])
             if not outputs:

@@ -5,9 +5,9 @@
 | Cost driver | Repository evidence |
 |---|---|
 | Current CPU, ML, and GPU node counts, machine types, and boot-disk sizes | [terraform.tfvars (line 8)](../../../infra/terraform/gcp/terraform.tfvars#L8), [terraform.tfvars (line 24)](../../../infra/terraform/gcp/terraform.tfvars#L24) |
-| GKE node-pool autoscaling and `pd-balanced` boot disks | [gke.tf (line 97)](../../../infra/terraform/gcp/gke.tf#L97), [gke.tf (line 220)](../../../infra/terraform/gcp/gke.tf#L220) |
-| Optional ingress controller uses a public `LoadBalancer` | [dependencies.tf (line 126)](../../../infra/terraform/gcp/dependencies.tf#L126), [dependencies.tf (line 145)](../../../infra/terraform/gcp/dependencies.tf#L145) |
-| Optional RecSys gateway release and routes | [recsys_services.tf (line 226)](../../../infra/terraform/gcp/recsys_services.tf#L226), [recsys_services.tf (line 299)](../../../infra/terraform/gcp/recsys_services.tf#L299) |
+| GKE node-pool autoscaling and `pd-balanced` boot disks | [gke.tf (line 97)](../../../infra/terraform/gcp/modules/gke/main.tf#L97), [gke.tf (line 220)](../../../infra/terraform/gcp/modules/gke/main.tf#L220) |
+| Optional ingress controller uses a public `LoadBalancer` | [dependencies.tf (line 126)](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L126), [dependencies.tf (line 145)](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L145) |
+| Optional RecSys gateway release and routes | [recsys_services.tf (line 226)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L226), [recsys_services.tf (line 299)](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L299) |
 | `make gcp-services-down` entry point | [Makefile target](../../../Makefile#L88) |
 | Down operation preserves PVC/PV objects and scales all node pools to zero | [`hibernate_down()`](../../../ops/gcp/services_power.sh#L981) |
 

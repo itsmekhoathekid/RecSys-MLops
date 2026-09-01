@@ -50,6 +50,104 @@ data:
         honor_labels: true
         static_configs:
           - targets: ["recsys-pushgateway.{{ .Values.namespace.name }}.svc.cluster.local:9091"]
+      # Scrape each llama.cpp Pod independently. A Service scrape would rotate
+      # between replicas and make monotonic counters appear to go backwards.
+      - job_name: recsys-llama-cpp
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Values.targets.llmNamespace | quote }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: qwen35-gguf
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:8000
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_llm_d_ai_model]
+            target_label: model
+      - job_name: recsys-agentgateway-dataplane
+        metrics_path: /stats/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Values.targets.llmNamespace | quote }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: llm-d-inference-gateway
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:15020
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      - job_name: recsys-agentgateway-controlplane
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Values.targets.agentgatewayNamespace | quote }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: agentgateway
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:9092
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      - job_name: recsys-otel-collector
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Values.namespace.name | quote }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: recsys-otel-collector
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:9464
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      - job_name: recsys-otel-collector-internal
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Values.namespace.name | quote }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: recsys-otel-collector
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:8888
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
       - job_name: recsys-redis-exporter
         static_configs:
           - targets: ["redis-exporter.{{ .Values.namespace.name }}.svc.cluster.local:9121"]
@@ -103,6 +201,7 @@ data:
                 - {{ .Values.targets.kserveNamespace }}
                 - {{ .Values.targets.mlflowNamespace }}
                 - {{ .Values.targets.kubeflowNamespace }}
+                - {{ .Values.targets.langfuseNamespace }}
         relabel_configs:
           - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
             action: keep
@@ -202,6 +301,57 @@ data:
               severity: warning
             annotations:
               summary: Candidate model is returning too many empty recommendation responses.
+  recsys-ai-observability.yml: |
+    groups:
+      - name: recsys-ai-observability
+        interval: 15s
+        rules:
+          - record: recsys_llm_input_tokens_per_second
+            expr: sum(rate({__name__="llamacpp:prompt_tokens_total"}[5m]))
+          - record: recsys_llm_output_tokens_per_second
+            expr: sum(rate({__name__="llamacpp:tokens_predicted_total"}[5m]))
+          - record: recsys_llm_total_tokens_per_second
+            expr: recsys_llm_input_tokens_per_second + recsys_llm_output_tokens_per_second
+          - record: recsys_llm_input_tokens_per_request
+            expr: sum(rate({__name__="llamacpp:prompt_tokens_total"}[5m])) / clamp_min(sum(rate(agentgateway_requests_total{status=~"2.."}[5m])), 0.001)
+          - record: recsys_llm_output_tokens_per_request
+            expr: sum(rate({__name__="llamacpp:tokens_predicted_total"}[5m])) / clamp_min(sum(rate(agentgateway_requests_total{status=~"2.."}[5m])), 0.001)
+          - record: recsys_llm_total_tokens_per_request
+            expr: recsys_llm_input_tokens_per_request + recsys_llm_output_tokens_per_request
+          - record: recsys_llm_request_error_ratio
+            expr: sum(rate(agentgateway_requests_total{status!~"2.."}[5m])) / clamp_min(sum(rate(agentgateway_requests_total[5m])), 0.001)
+          - record: recsys_llm_request_duration_p95_seconds
+            expr: histogram_quantile(0.95, sum(rate(agentgateway_request_duration_seconds_bucket[5m])) by (le))
+          - record: recsys_agent_calls_total
+            expr: sum by (agent, status) (max_over_time(recsys_agent_raw_calls_total{span_kind="SPAN_KIND_SERVER",agent!="unknown"}[30m]))
+          - record: recsys_agent_duration_seconds_bucket
+            expr: sum by (le, agent, status) (max_over_time(recsys_agent_raw_duration_seconds_bucket{span_kind="SPAN_KIND_SERVER",agent!="unknown"}[30m]))
+          - record: recsys_agent_duration_seconds_count
+            expr: sum by (agent, status) (max_over_time(recsys_agent_raw_duration_seconds_count{span_kind="SPAN_KIND_SERVER",agent!="unknown"}[30m]))
+          - record: recsys_agent_duration_seconds_sum
+            expr: sum by (agent, status) (max_over_time(recsys_agent_raw_duration_seconds_sum{span_kind="SPAN_KIND_SERVER",agent!="unknown"}[30m]))
+          - record: recsys_agent_tool_calls_total
+            expr: sum by (agent, tool, status) (max_over_time(recsys_agent_raw_calls_total{tool!="none"}[30m]))
+          - record: recsys_prompt_safety_detections_total
+            labels: {category: email, action: observe}
+            expr: max_over_time(recsys_prompt_safety_email_total[30m])
+          - record: recsys_prompt_safety_detections_total
+            labels: {category: phone, action: observe}
+            expr: max_over_time(recsys_prompt_safety_phone_total[30m])
+          - record: recsys_prompt_safety_detections_total
+            labels: {category: payment_card, action: observe}
+            expr: max_over_time(recsys_prompt_safety_payment_card_total[30m])
+          - record: recsys_prompt_safety_detections_total
+            labels: {category: prompt_injection, action: observe}
+            expr: max_over_time(recsys_prompt_safety_prompt_injection_total[30m])
+          - record: recsys_langfuse_ingestion_spans_per_second
+            expr: sum(rate(otelcol_exporter_sent_spans{exporter="otlphttp/langfuse"}[5m]))
+          - record: recsys_langfuse_export_error_ratio
+            expr: (sum(rate(otelcol_exporter_send_failed_spans{exporter="otlphttp/langfuse"}[5m])) or vector(0)) / clamp_min(sum(rate(otelcol_exporter_sent_spans{exporter="otlphttp/langfuse"}[5m])) + (sum(rate(otelcol_exporter_send_failed_spans{exporter="otlphttp/langfuse"}[5m])) or vector(0)), 0.001)
+          - record: recsys_langfuse_web_request_p95_seconds
+            expr: histogram_quantile(0.95, sum(rate(recsys_agent_raw_duration_seconds_bucket{service_name="langfuse-web"}[5m])) by (le))
+          - record: recsys_langfuse_worker_operations_per_second
+            expr: sum(rate(recsys_agent_raw_calls_total{service_name="langfuse-worker"}[5m]))
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -210,13 +360,15 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: recsys-prometheus
   template:
     metadata:
       annotations:
-        checksum/prometheus-config: {{ printf "%s-%s-%s-%s-%s" .Values.targets.apiNamespace .Values.targets.kserveNamespace .Values.targets.substrateNamespace .Values.images.prometheus "pod-scrape-v3" | sha256sum | quote }}
+        checksum/prometheus-config: {{ printf "%s-%s-%s-%s-%s-%s-%s-%s-%s" .Values.targets.apiNamespace .Values.targets.kserveNamespace .Values.targets.substrateNamespace .Values.targets.llmNamespace .Values.targets.agentgatewayNamespace .Values.targets.langfuseNamespace .Values.images.prometheus "langfuse-v1" (.Values.chartRevision | default "local") | sha256sum | quote }}
       labels:
         app: recsys-prometheus
     spec:
@@ -266,6 +418,9 @@ metadata:
   annotations:
     "helm.sh/resource-policy": keep
 spec:
+{{- with .Values.persistence.prometheus.storageClassName }}
+  storageClassName: {{ . | quote }}
+{{- end }}
   accessModes:
     - ReadWriteOnce
   resources:

@@ -1,0 +1,100 @@
+test:
+  name: kagent-referenced-secret-rotation
+  namespace: kagent
+  date: "2026-08-29"
+  productionCredentialChanged: false
+  canarySecret: secret-rotation-proof-key
+  canaryModelConfig: secret-rotation-proof
+  canarySandboxAgent: secret-rotation-proof
+  canaryWorkerPool: secret-rotation-proof
+
+build:
+  sourceCommit: e6df917e9fa8
+  compatibilityBuild: 0.10.0-e6df917-substrate0011-v8
+  cloudBuildID: 67772eb7-4218-48c0-8a68-af6a5753b7c6
+  cloudBuildStatus: SUCCESS
+  controllerDigest: sha256:b319fb2c2479be0132b1ba047ecd3115a9e4fc665eb8774407ab0a13bb884131
+  helmRevision: 27
+  controllerReplicasReady: 3
+
+beforeFix:
+  compatibilityBuild: 0.10.0-e6df917-substrate0011-v7
+  baseline:
+    modelConfigSecretHash: 7e89e1a2d8dff4088f11855c53788b693540a6946f61373adfe019553dfea172
+    actorTemplate: secret-rotation-proof-4e8d9b0e5095db29
+    actorTemplateConfigHash: 444364f7daab8ce8
+    goldenActorID: 3adc9400-97b1-4d1d-a12d-144b9d4eebaf
+  rotation:
+    modelConfigSecretHash: e9fafe0ccfa3c81880f297bcae27ca2fdfdf0d79309a5b9f2f5236fac3204bd5
+    actorTemplate: secret-rotation-proof-4e8d9b0e5095db29
+    actorTemplateConfigHash: f1d921467d3bb8cb
+    goldenActorID: 3adc9400-97b1-4d1d-a12d-144b9d4eebaf
+    observationWindowSeconds: 51
+    lifecycleRPCsAfterRotation: 0
+  status: NOT_MET_FOR_SUBSTRATE_SANDBOX_AGENT
+
+afterFix:
+  baseline:
+    capturedAt: "2026-08-28T19:30:48Z"
+    sourceSecretResourceVersion: "1787945417784351020"
+    modelConfigResourceVersion: "1787945418051855022"
+    modelConfigSecretHash: 7e89e1a2d8dff4088f11855c53788b693540a6946f61373adfe019553dfea172
+    sandboxAgentResourceVersion: "1787945422096271018"
+    sandboxAgentReady: true
+    actorTemplate: secret-rotation-proof-ee291dbe231a88d1
+    actorTemplateResourceVersion: "1787945422046095014"
+    actorTemplateConfigHash: 444364f7daab8ce8
+    actorTemplateShapeHash: ee291dbe231a88d1
+    configRevisionEnv: 444364f7daab8ce8
+    actorTemplatePhase: Ready
+    goldenActorID: 706658d3-d342-4e1d-bd15-958bf02b7c52
+    renderedConfigSecretResourceVersion: "1787945418554255023"
+  rotation:
+    requestedAt: "2026-08-28T19:31:05Z"
+    capturedAt: "2026-08-28T19:31:25Z"
+    sourceSecretResourceVersion: "1787945466438639020"
+    modelConfigResourceVersion: "1787945466472671022"
+    modelConfigSecretHash: e9fafe0ccfa3c81880f297bcae27ca2fdfdf0d79309a5b9f2f5236fac3204bd5
+    actorTemplate: secret-rotation-proof-a2d56e690c07948c
+    actorTemplateResourceVersion: "1787945467311519024"
+    actorTemplateConfigHash: f1d921467d3bb8cb
+    actorTemplateShapeHash: a2d56e690c07948c
+    configRevisionEnv: f1d921467d3bb8cb
+    actorTemplatePhase: Ready
+    goldenActorID: 07e60e80-7a2e-4c7b-b891-11d3d55d0e07
+    sandboxAgentResourceVersion: "1787945422096271018"
+    sandboxAgentReady: true
+    renderedConfigSecretResourceVersion: "1787945418554255023"
+    newGoldenCreatedWithinSeconds: 1.54
+    newTemplateReadyObservedWithinSeconds: 4
+    lifecycleRPCs:
+      createActor:
+        time: "2026-08-28T19:31:06.533380403Z"
+      resumeActor:
+        time: "2026-08-28T19:31:06.943740284Z"
+        resumed: true
+      suspendActor:
+        time: "2026-08-28T19:31:07.294809713Z"
+        snapshotID: 4bfe85d9-9b5d-42cc-8b3e-6047f21f2834
+  restore:
+    requestedAt: "2026-08-28T19:32:20Z"
+    modelConfigResourceVersion: "1787945540996351022"
+    modelConfigSecretHash: 7e89e1a2d8dff4088f11855c53788b693540a6946f61373adfe019553dfea172
+  result:
+    secretWatchTriggered: true
+    modelConfigHashChanged: true
+    actorTemplateSpecRevisionChanged: true
+    actorTemplateNameChanged: true
+    goldenActorIDChanged: true
+    lifecycleRPCsAfterRotation: 3
+    sandboxAgentRuntimeRestarted: true
+    status: MET_FOR_SUBSTRATE_SANDBOX_AGENT
+
+cleanup:
+  verifiedAt: "2026-08-28T19:38:17Z"
+  canaryResourcesRemaining: 0
+  canaryPodsRemaining: 0
+  productionControllerReadyReplicas: 3
+  productionSandboxAgentsReady: 3
+  productionWorkerPoolsReady: 3
+  productionModelConfigSecretHash: f4885724ee2f90009bef3af56de6e0cba87414f44c8df1706e98b1fcef9f9276

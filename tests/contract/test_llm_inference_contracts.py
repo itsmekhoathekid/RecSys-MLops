@@ -30,10 +30,10 @@ def test_qwen_llama_cpp_chart_is_cpu_scheduled_and_openai_compatible() -> None:
 
 
 def test_llm_pool_is_quota_safe_and_scales_from_one_to_two() -> None:
-    gke = (ROOT / "infra/terraform/gcp/gke.tf").read_text()
+    gke = (ROOT / "infra/terraform/gcp/modules/gke/main.tf").read_text()
     variables = (ROOT / "infra/terraform/gcp/variables.tf").read_text()
     assert 'resource "google_container_node_pool" "llm_cpu"' in gke
-    assert "disk_type       = var.llm_cpu_disk_type" in gke
+    assert "disk_type       = var.config.llm_cpu_disk_type" in gke
     assert "max_surge       = 0" in gke
     assert 'default     = "pd-standard"' in variables
     assert 'variable "llm_cpu_min_nodes"' in variables
@@ -45,8 +45,8 @@ def test_shared_cpu_node_profile_fits_the_live_quota_constrained_topology() -> N
     shared = (
         ROOT / "infra/helm/recsys-llm-serving/values-cpu-shared.yaml"
     ).read_text()
-    terraform = (ROOT / "infra/terraform/gcp/llm_inference.tf").read_text()
-    gke = (ROOT / "infra/terraform/gcp/gke.tf").read_text()
+    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf").read_text()
+    gke = (ROOT / "infra/terraform/gcp/modules/gke/main.tf").read_text()
     deployment = (
         ROOT / "infra/helm/recsys-llm-serving/templates/deployment.yaml"
     ).read_text()
@@ -67,15 +67,15 @@ def test_shared_cpu_node_profile_fits_the_live_quota_constrained_topology() -> N
     assert "ml_min_nodes    = 1" in production
     assert "ml_max_nodes    = 1" in production
     assert "enable_gpu_pool       = false" in production
-    assert 'var.llm_node_pool_mode == "cpu-services-shared"' in terraform
+    assert 'var.config.llm_node_pool_mode == "cpu-services-shared"' in terraform
     assert (
-        'var.deploy_llm_inference && var.llm_node_pool_mode == "dedicated"'
+        'var.config.deploy_llm_inference && var.config.llm_node_pool_mode == "dedicated"'
         in gke
     )
 
 
 def test_agentgateway_and_llama_cpp_router_are_managed_by_terraform() -> None:
-    terraform = (ROOT / "infra/terraform/gcp/llm_inference.tf").read_text()
+    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf").read_text()
     baseline = (
         ROOT / "configs/llm-d/router-llama-cpp-cpu-baseline-values.yaml"
     ).read_text()
@@ -89,7 +89,7 @@ def test_agentgateway_and_llama_cpp_router_are_managed_by_terraform() -> None:
         "llm_d_router",
     ):
         assert f'resource "helm_release" "{release}"' in terraform
-    assert 'var.llm_optimization_profile == "optimized"' in terraform
+    assert 'var.config.llm_optimization_profile == "optimized"' in terraform
     assert "random-picker" in baseline
     assert "prefix-cache" not in baseline
     assert "inflight-load" not in baseline
@@ -99,7 +99,14 @@ def test_agentgateway_and_llama_cpp_router_are_managed_by_terraform() -> None:
 
 
 def test_kagent_global_model_config_routes_through_agentgateway() -> None:
-    terraform = (ROOT / "infra/terraform/gcp/kagent.tf").read_text()
+    terraform = "\n".join(
+        (
+            (
+                ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf"
+            ).read_text(),
+            (ROOT / "infra/terraform/gcp/variables.tf").read_text(),
+        )
+    )
     values = (ROOT / "configs/kagent/values.yaml").read_text()
     agent = (
         ROOT / "infra/helm/recsys-kagent-agent/templates/sandboxagent.yaml"
@@ -109,13 +116,13 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     assert 'default     = "0.10.0-e6df917"' in terraform
     assert 'kagent_source_commit    = "e6df917e9fa8"' in terraform
     assert (
-        'kagent_image_version    = "0.10.0-e6df917-substrate0011-v7"'
+        'kagent_image_version    = "0.10.0-e6df917-substrate0011-v8"'
         in terraform
     )
     cloudbuild = (ROOT / "ops/gcp/cloudbuild_kagent_source.yaml").read_text()
     assert "build-push-controller" in cloudbuild
     assert "build-push-golang-adk" in cloudbuild
-    assert "0.10.0-e6df917-substrate0011-v7" in cloudbuild
+    assert "0.10.0-e6df917-substrate0011-v8" in cloudbuild
     compatibility_patch = (
         ROOT / "ops/gcp/patches/kagent-e6df917-substrate0011.patch"
     ).read_text()
@@ -126,6 +133,8 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     assert "newExplicitToolSelectionGuard" in compatibility_patch
     assert "Suppressing duplicate tool-call loop" in compatibility_patch
     assert "desired spec must match the Substrate CRD default" in compatibility_patch
+    assert "KAGENT_CONFIG_REVISION" in compatibility_patch
+    assert "config-only change must produce a new template" in compatibility_patch
     assert '"kagent.dev/worker-pool"' in terraform
     assert '"recsys-recommendation-sandbox-pool"' in terraform
     assert '"recsys-coordinator-sandbox-pool"' in terraform
@@ -141,6 +150,7 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     assert "maxTokens: 384" in values
     assert 'temperature: "0"' in values
     assert "seed: 42" in values
+    assert "enabled: true" in values
     assert "tls:" not in values
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
     assert 'resource "helm_release" "substrate"' in terraform
@@ -148,7 +158,7 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     assert "k8s-agent:\n  enabled: false" in values
 
 
-def test_agentgateway_auth_uses_one_vault_key_for_client_and_server() -> None:
+def test_agentgateway_auth_uses_one_vault_key_for_all_consumers() -> None:
     policy = (
         ROOT / "infra/helm/recsys-llm-serving/templates/gateway-auth.yaml"
     ).read_text()
@@ -159,9 +169,15 @@ def test_agentgateway_auth_uses_one_vault_key_for_client_and_server() -> None:
     assert "kind: AgentgatewayPolicy" in policy
     assert "phase: PreRouting" in policy
     assert "mode: {{ .Values.gateway.auth.mode }}" in policy
-    assert "secretName: kagent-agent-gateway" in security_values
-    assert "secretName: agentgateway-api-keys" in security_values
-    assert security_values.count("vaultPath: agent-gateway") == 2
+    for consumer in (
+        "agentGatewayClient:\n    enabled: false\n    namespace: kagent\n"
+        "    secretName: kagent-agent-gateway\n    vaultPath: agent-gateway",
+        "agentGatewayServer:\n    enabled: false\n    namespace: llm-inference\n"
+        "    secretName: agentgateway-api-keys\n    vaultPath: agent-gateway",
+        "agentGatewayProbe:\n    enabled: false\n    namespace: observability\n"
+        "    secretName: agentgateway-api-keys\n    vaultPath: agent-gateway",
+    ):
+        assert consumer in security_values
     assert "AGENT_GATEWAY_API_KEY" in bootstrap
     assert 'write "recsys/data/${secret_group}"' in bootstrap
     assert 'unauthenticated_status' in smoke
@@ -183,7 +199,7 @@ def test_llm_treatment_overlays_select_baseline_and_optimized_runtime() -> None:
 
 
 def test_gateway_api_crds_are_pinned_and_installed_before_agentgateway() -> None:
-    terraform = (ROOT / "infra/terraform/gcp/llm_inference.tf").read_text()
+    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf").read_text()
     variables = (ROOT / "infra/terraform/gcp/variables.tf").read_text()
     installer = (ROOT / "ops/gcp/install_llm_gateway_crds.sh").read_text()
     assert 'resource "null_resource" "llm_gateway_api_crds"' in terraform

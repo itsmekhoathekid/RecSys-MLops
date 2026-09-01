@@ -19,8 +19,9 @@ if git rev-parse --verify origin/main >/dev/null 2>&1 \
 fi
 if [[ "${branch_name}" != "main" && "${branch_name}" != "origin/main" ]] \
   && [[ "${checked_out_main}" != "1" ]] \
+  && ! recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}" \
   && ! recsys_is_true "${FORCE_DEPLOY:-0}"; then
-  recsys_error "GCP production deploy requires main or FORCE_DEPLOY=true"
+  recsys_error "GCP production deploy requires main, DEPLOY_PULL_REQUESTS=true, or FORCE_DEPLOY=true"
   exit 2
 fi
 recsys_is_true "${PUBLISH_IMAGES:-0}" || {

@@ -215,10 +215,14 @@ spec:
               - cluster.local/ns/observability/sa/default
               - cluster.local/ns/observability/sa/recsys-prometheus
               - cluster.local/ns/observability/sa/recsys-promtail
+              - cluster.local/ns/observability/sa/recsys-otel-collector
+              - cluster.local/ns/kagent/sa/kagent-controller
+              - cluster.local/ns/llm-inference/sa/recsys-llm-observability-probe
+              - cluster.local/ns/observability/sa/recsys-llm-observability-probe
               - cluster.local/ns/ingress-nginx/sa/ingress-nginx
       to:
         - operation:
-            ports: ["3000", "3100", "3200", "4317", "9090", "9091", "9121", "9187"]
+            ports: ["3000", "3100", "3200", "4317", "4318", "9090", "9091", "9121", "9187", "9464"]
 ---
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy

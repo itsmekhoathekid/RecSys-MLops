@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: durdir-locustfile
+  namespace: benchmark-workloads
+data:
+  durdir.py: |
+    from locust import User, task
+
+    class DurdirUser(User):
+        host = "api.ate-system.svc.cluster.local:443"
+
+        @task
+        def noop(self):
+            pass
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: durdir-after-endpointslices
+  namespace: ate-system
+rules:
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: durdir-after-endpointslices
+  namespace: ate-system
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: benchmark-workloads
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: durdir-after-endpointslices
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: durdir-data-after-20260828
+  namespace: benchmark-workloads
+  labels:
+    benchmark.recsys.ai/suite: substrate-durdir
+    benchmark.recsys.ai/phase: after
+    benchmark.recsys.ai/treatment: reserved-cpu-placement
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: durdir-data-after
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: locust-master
+          image: locustio/locust:2.32.7@sha256:a8d802c7f86ca834de82b0aca4015c30ecdc351d3765020d6496b94dfba7afb4
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              set +e
+              mkdir -p /tmp/results
+              python -m locust \
+                --headless \
+                -f /bench/durdir.py \
+                --master \
+                --expect-workers 1 \
+                -u 1 \
+                -r 1 \
+                -t 1m \
+                --stop-timeout 60 \
+                --only-summary \
+                --csv /tmp/results/durdir-data-after \
+                --csv-full-history
+              code=$?
+              echo BEGIN_DURDIR_DATA_AFTER_STATS_CSV
+              sed -n '1,240p' /tmp/results/durdir-data-after_stats.csv
+              echo END_DURDIR_DATA_AFTER_STATS_CSV
+              echo BEGIN_DURDIR_DATA_AFTER_FAILURES_CSV
+              sed -n '1,240p' /tmp/results/durdir-data-after_failures.csv
+              echo END_DURDIR_DATA_AFTER_FAILURES_CSV
+              exit "$code"
+          volumeMounts:
+            - name: locustfile
+              mountPath: /bench
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+        - name: boomer-durdir
+          image: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/substrate-benchmark-boomer:durdir-backport-b8193a6-678bb80@sha256:63574b0ee235ee4764a08bb5f379dcb6c55433b317820b602a6bda759fd9613a
+          args:
+            - --user-class=durdir
+            - --api-endpoint=k8s:///api.ate-system.svc.cluster.local:443
+            - --router-url=http://atenet-router.ate-system.svc.cluster.local
+            - --atespace=benchmark-after
+            - --prometheus-addr=:8001
+            - --config-json={"durdir_file_size_bytes":8388608,"resume_mode":"explicit","durdir_read_mode":"data","durdir_template":"glutton-durdir-data-optimized","min_wait_time":1.0,"max_wait_time":1.0}
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://127.0.0.1:4317
+          volumeMounts:
+            - name: servicedns-ca
+              mountPath: /run/servicedns-ca
+              readOnly: true
+            - name: podidentity
+              mountPath: /run/podidentity.podcert.ate.dev
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+      volumes:
+        - name: locustfile
+          configMap:
+            name: durdir-locustfile
+        - name: servicedns-ca
+          projected:
+            sources:
+              - clusterTrustBundle:
+                  signerName: servicedns.podcert.ate.dev/identity
+                  labelSelector:
+                    matchLabels:
+                      podcert.ate.dev/canarying: live
+                  path: ca.crt
+        - name: podidentity
+          projected:
+            sources:
+              - podCertificate:
+                  signerName: podidentity.podcert.ate.dev/identity
+                  keyType: ECDSAP256
+                  credentialBundlePath: credential-bundle.pem

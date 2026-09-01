@@ -17,6 +17,10 @@ data:
         access: proxy
         url: http://recsys-prometheus:9090
         isDefault: true
+        jsonData:
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: Tempo
       - name: Loki
         uid: Loki
         type: loki
@@ -27,6 +31,14 @@ data:
         type: tempo
         access: proxy
         url: http://recsys-tempo:3200
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: Loki
+            spanStartTimeShift: -1m
+            spanEndTimeShift: 1m
+            filterByTraceID: true
+          nodeGraph:
+            enabled: true
 ---
 {{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
 apiVersion: v1

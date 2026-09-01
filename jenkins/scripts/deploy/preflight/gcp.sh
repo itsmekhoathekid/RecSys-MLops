@@ -144,7 +144,7 @@ gcp_verify_unit_secrets() {
     data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|feature-registry|streaming|airflow)
       gcp_verify_external_secret_target recsys-dataflow recsys-data-platform-secret
       ;;
-    milvus|milvus-credentials|rag-feature-registry|rag-index-promotion)
+    milvus|milvus-credentials|rag-feature-registry)
       gcp_verify_external_secret_target recsys-dataflow recsys-data-platform-secret \
         AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY MILVUS_USERNAME MILVUS_PASSWORD
       ;;

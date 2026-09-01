@@ -58,7 +58,7 @@ data:
     <?xml version='1.1' encoding='UTF-8'?>
     <flow-definition plugin="workflow-job">
       <actions/>
-      <description>GitHub webhook CI/CD entrypoint. GitHub push or PR event calls /github-webhook/, Jenkins checks out the repository, reads Jenkinsfile, detects changed components, runs test/build, and deploys only when the resolved branch is main.</description>
+      <description>GitHub webhook CI/CD entrypoint. Pull-request/feature branches run path-based CI; main commits, including merged pull requests, publish immutable images, deploy in dependency order, and verify production.</description>
       <keepDependencies>false</keepDependencies>
       <properties>
         <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github">
@@ -80,6 +80,10 @@ data:
             </hudson.model.BooleanParameterDefinition>
             <hudson.model.BooleanParameterDefinition>
               <name>FORCE_DEPLOY</name>
+              <defaultValue>false</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>DEPLOY_PULL_REQUESTS</name>
               <defaultValue>false</defaultValue>
             </hudson.model.BooleanParameterDefinition>
             <hudson.model.StringParameterDefinition>
@@ -131,6 +135,7 @@ data:
     def projectUrl = "{{ .Values.jenkins.github.projectUrl }}"
     def scriptPath = "{{ .Values.jenkins.seedJob.scriptPath }}"
     def mainJobName = "{{ .Values.jenkins.seedJob.name }}"
+    def mainBranchSpec = "*/main"
 
     def xmlEscape = { value ->
       (value ?: "")
@@ -141,7 +146,7 @@ data:
         .replace("'", "&apos;")
     }
 
-    def scmPipelineXml = { jobName, description, forceComponents, forceDeploy, githubTrigger, jobScriptPath ->
+    def scmPipelineXml = { jobName, description, forceComponents, forceDeploy, githubTrigger, jobScriptPath, scmBranchSpec ->
       def triggerProperty = githubTrigger ? """<org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
           <triggers>
             <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
@@ -175,6 +180,10 @@ data:
               <name>FORCE_DEPLOY</name>
               <defaultValue>${forceDeploy ? "true" : "false"}</defaultValue>
             </hudson.model.BooleanParameterDefinition>
+            <hudson.model.BooleanParameterDefinition>
+              <name>DEPLOY_PULL_REQUESTS</name>
+              <defaultValue>false</defaultValue>
+            </hudson.model.BooleanParameterDefinition>
             <hudson.model.StringParameterDefinition>
               <name>REGISTRY_CREDENTIALS_ID</name>
               <defaultValue></defaultValue>
@@ -193,6 +202,16 @@ data:
             <hudson.model.StringParameterDefinition>
               <name>PROMOTION_MANIFEST_URI</name>
               <defaultValue>s3://recsys-model-store/promotions/bst/latest.json</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>AGENTIC_SMOKE_CHUNK_ID</name>
+              <defaultValue>800080:review:rev_800080_02:0</defaultValue>
+              <trim>true</trim>
+            </hudson.model.StringParameterDefinition>
+            <hudson.model.StringParameterDefinition>
+              <name>COMPONENT_CI_MAX_PARALLEL</name>
+              <defaultValue>3</defaultValue>
               <trim>true</trim>
             </hudson.model.StringParameterDefinition>
             <hudson.model.StringParameterDefinition>
@@ -218,7 +237,7 @@ data:
           </userRemoteConfigs>
           <branches>
             <hudson.plugins.git.BranchSpec>
-              <name>${xmlEscape(branchSpec)}</name>
+              <name>${xmlEscape(scmBranchSpec)}</name>
             </hudson.plugins.git.BranchSpec>
           </branches>
           <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -328,7 +347,7 @@ data:
           </userRemoteConfigs>
           <branches>
             <hudson.plugins.git.BranchSpec>
-              <name>${xmlEscape(branchSpec)}</name>
+              <name>${xmlEscape(mainBranchSpec)}</name>
             </hudson.plugins.git.BranchSpec>
           </branches>
           <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -354,9 +373,65 @@ data:
     }
 
     def kserveCdJobName = "RecSys-KServe-Model-CD"
+    def ragJobName = "RecSys-RAG-Data-Pipeline-CICD"
+    def contextAgentJobName = "RecSys-Context-Agent-CICD"
+    def recommendationAgentJobName = "RecSys-Recommendation-Agent-CICD"
+    def coordinatorAgentJobName = "RecSys-Coordinator-Agent-CICD"
 
-    def mainDescription = "Main GitHub webhook CI/CD entrypoint. Push/merge events call /github-webhook/, Jenkins detects changed paths, runs test/build for affected components, and deploys automatically when the resolved branch is main."
-    upsertJob(mainJobName, scmPipelineXml(mainJobName, mainDescription, "", false, true, scriptPath))
+    def mainDescription = "GitHub webhook CI/CD entrypoint. Pull-request branches run CI without production mutation; a PR merge creates a main commit that publishes Git-SHA images, deploys the dependency-ordered release, and verifies production."
+    upsertJob(mainJobName, scmPipelineXml(mainJobName, mainDescription, "", false, true, scriptPath, branchSpec))
+
+    upsertJob(
+      ragJobName,
+      scmPipelineXml(
+        ragJobName,
+        "Dedicated RAG data pipeline CI/CD proof: RAG index and retrieval API tests, immutable image publish, Milvus/Feast deployment, blue-green index promotion, retrieval verification, and rollback evidence.",
+        "rag_index,rag_api,ci_config",
+        true,
+        false,
+        scriptPath,
+        mainBranchSpec
+      )
+    )
+
+    upsertJob(
+      contextAgentJobName,
+      scmPipelineXml(
+        contextAgentJobName,
+        "Dedicated Context Agent CI/CD proof: Feature/RAG MCP tests and image publish, Context SandboxAgent deployment, MCP/A2A verification, autoscaling checks, and Agent Registry publication.",
+        "feature_rag_mcp,context_agent,ci_config",
+        true,
+        false,
+        scriptPath,
+        mainBranchSpec
+      )
+    )
+
+    upsertJob(
+      recommendationAgentJobName,
+      scmPipelineXml(
+        recommendationAgentJobName,
+        "Dedicated Recommendation Agent CI/CD proof: Recommendation MCP tests and image publish, Recommendation SandboxAgent deployment, MCP/A2A verification, autoscaling checks, and Agent Registry publication.",
+        "recommendation_mcp,recommendation_agent,ci_config",
+        true,
+        false,
+        scriptPath,
+        mainBranchSpec
+      )
+    )
+
+    upsertJob(
+      coordinatorAgentJobName,
+      scmPipelineXml(
+        coordinatorAgentJobName,
+        "Dedicated Coordinator Agent dependency-closed CI/CD proof: both specialist MCPs and agents, Coordinator routing deployment, six-case A2A verification, and same-commit Agent Registry publication.",
+        "feature_rag_mcp,context_agent,recommendation_mcp,recommendation_agent,coordinator_agent,ci_config",
+        true,
+        false,
+        scriptPath,
+        mainBranchSpec
+      )
+    )
 
     upsertJob(
       kserveCdJobName,
@@ -394,9 +469,37 @@ data:
 
     resetListView(
       "00 Main Auto Deploy",
-      "Main RecSys CI/CD view. This view contains the GitHub webhook job that automatically runs path-based test/build and deploys changed components after push or merge to main.",
+      "Main RecSys CI/CD view. PR branches run CI; merged PR commits on main publish immutable images, deploy and verify production.",
       [mainJobName],
       true
+    )
+
+    resetListView(
+      "01 RAG Data Pipeline",
+      "RAG index and retrieval API CI/CD: test, build, publish, Milvus/Feast deployment, blue-green promotion, verification and rollback evidence.",
+      [ragJobName],
+      false
+    )
+
+    resetListView(
+      "02 Context Agent",
+      "Context Agent CI/CD: Feature/RAG MCP, SandboxAgent, WorkerPool, A2A smoke, autoscaling and registry publication.",
+      [contextAgentJobName],
+      false
+    )
+
+    resetListView(
+      "03 Recommendation Agent",
+      "Recommendation Agent CI/CD: Recommendation MCP, SandboxAgent, WorkerPool, A2A smoke, autoscaling and registry publication.",
+      [recommendationAgentJobName],
+      false
+    )
+
+    resetListView(
+      "04 Coordinator Agent",
+      "Coordinator dependency-closed CI/CD: both specialists and MCPs, routing verification, partial-result behavior and registry dependency proof.",
+      [coordinatorAgentJobName],
+      false
     )
 
     resetListView(

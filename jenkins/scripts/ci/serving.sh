@@ -5,7 +5,7 @@ ci_online_feature_api() {
     tests/unit/api_serving/test_serving.py
     tests/unit/api_serving/test_concurrency.py
     tests/unit/api_serving/test_split_services.py
-    tests/unit/api_serving/test_validation_verification.py
+    tests/unit/api_serving/online_feature_api
     tests/contract/test_serving_contracts.py
   )
   append_integration_dir online_feature_api
@@ -18,7 +18,7 @@ ci_inference_api() {
     tests/unit/api_serving/test_serving.py
     tests/unit/api_serving/test_concurrency.py
     tests/unit/api_serving/test_split_services.py
-    tests/unit/api_serving/test_validation_verification.py
+    tests/unit/api_serving/inference_api
     tests/contract/test_serving_contracts.py
     tests/contract/test_gateway_contracts.py
   )

@@ -311,7 +311,7 @@ def test_gcp_mcp_can_use_both_node_pools_and_sandbox_has_no_fake_scheduling_fiel
 
 
 def test_terraform_owns_platform_but_not_the_agent_application_release():
-    terraform = (ROOT / "infra/terraform/gcp/kagent.tf").read_text(encoding="utf-8")
+    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf").read_text(encoding="utf-8")
     assert 'resource "helm_release" "substrate"' in terraform
     assert 'resource "kubernetes_persistent_volume_claim_v1" "substrate_rustfs"' in terraform
     assert 'resource "kubernetes_persistent_volume_claim_v1" "substrate_valkey"' in terraform
@@ -319,7 +319,7 @@ def test_terraform_owns_platform_but_not_the_agent_application_release():
     assert "prevent_destroy = true" in terraform
     assert 'default     = "0.0.11"' in terraform
     assert 'default     = "0.10.0-e6df917"' in terraform
-    assert 'kagent_image_version    = "0.10.0-e6df917-substrate0011-v7"' in terraform
+    assert 'kagent_image_version    = "0.10.0-e6df917-substrate0011-v8"' in terraform
     assert 'postrender {' in terraform
     assert "substrate_gke_postrender.py" in terraform
     assert "substrate_crds_hpa_postrender.py" not in terraform

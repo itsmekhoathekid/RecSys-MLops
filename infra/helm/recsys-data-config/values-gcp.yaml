@@ -25,8 +25,10 @@ airflow:
   featureDriftSchedule: "30 3 * * *"
 
 rag:
-  sourceRunId: rag-items-deepseek-8a3e686-20260817
-  pipelineRunId: rag-pipeline-2859b30-20260818
+  # Canonical fallback artifact verified by the successful
+  # rag-index-fallback96-20260823 Airflow run.
+  sourceRunId: rag-source-quota-fallback96-20260823
+  pipelineRunId: rag-pipeline-fallback96-20260823
 
 dataSetup:
   generatorConfig: configs/data-platform/generator/e2e-2k.yaml
@@ -90,7 +92,7 @@ realtimeFlinkConsumer:
   replicas: 1
   istioInject: "true"
   parallelism: "1"
-  checkpointIntervalSeconds: "120"
+  checkpointIntervalSeconds: "300"
   offlineStoreEnabled: true
   online:
     # Resume normal rollouts without replaying the full CDC topic. The source
@@ -101,6 +103,9 @@ streaming:
   # The proof workload backdates events by 45-180 minutes; one hour yields
   # both accepted-late and post-cleanup events for the three UI counters.
   allowedLatenessSeconds: 3600
+  # Recent RocksDB checkpoints reached ~272s on the in-cluster MinIO store.
+  # Give checkpoints enough time to finish instead of repeatedly restarting jobs.
+  checkpointTimeoutSeconds: 900
 
 drift:
   sampleRows: "5000"

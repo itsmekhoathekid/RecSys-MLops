@@ -5,8 +5,14 @@
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 2,
-  "refresh": "10s",
-  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "15s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {"list": [
+    {"name":"namespace","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(up, namespace)","refId":"v1"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"agent","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(recsys_agent_calls_total, agent)","refId":"v2"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"model","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(up{job=\"recsys-llama-cpp\"}, model)","refId":"v3"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}},
+    {"name":"tool","type":"query","datasource":{"type":"prometheus","uid":"Prometheus"},"query":{"query":"label_values(recsys_agent_tool_calls_total, tool)","refId":"v4"},"includeAll":true,"multi":true,"allValue":".*","current":{"text":"All","value":"$__all"}}
+  ]},
   "panels": [
     {
       "id": 1,
@@ -14,7 +20,7 @@
       "title": "Error Logs",
       "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
       "datasource": { "type": "loki", "uid": "Loki" },
-      "targets": [{ "expr": "sum(count_over_time({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking\"} |= \"ERROR\" [5m]))", "legendFormat": "errors" }],
+      "targets": [{ "expr": "sum(count_over_time({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking|kagent|llm-inference|agentgateway-system\"} |= \"ERROR\" [5m])) or vector(0)", "legendFormat": "errors" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] } } },
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
     },
@@ -34,7 +40,7 @@
       "title": "Log Volume by Namespace",
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
       "datasource": { "type": "loki", "uid": "Loki" },
-      "targets": [{ "expr": "sum by (namespace) (rate({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking|observability\"}[1m]))", "legendFormat": "{{namespace}}" }],
+      "targets": [{ "expr": "sum by (namespace) (rate({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking|observability|kagent|llm-inference|agentgateway-system\"}[1m]))", "legendFormat": "{{namespace}}" }],
       "fieldConfig": { "defaults": { "unit": "logs/s", "custom": { "drawStyle": "bars", "fillOpacity": 35, "stacking": { "mode": "normal", "group": "A" } } } },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
@@ -44,7 +50,7 @@
       "title": "Errors Over Time",
       "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
       "datasource": { "type": "loki", "uid": "Loki" },
-      "targets": [{ "expr": "sum by (namespace, pod) (rate({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking\"} |= \"ERROR\" [1m]))", "legendFormat": "{{namespace}}/{{pod}}" }],
+      "targets": [{ "expr": "sum by (namespace, pod) (rate({namespace=~\"api-serving|recsys-dataflow|kubeflow|experiment-tracking|kagent|llm-inference|agentgateway-system\"} |= \"ERROR\" [1m]))", "legendFormat": "{{namespace}}/{{pod}}" }],
       "fieldConfig": { "defaults": { "unit": "logs/s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 } } },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
@@ -60,10 +66,10 @@
     {
       "id": 6,
       "type": "logs",
-      "title": "Airflow, Drift, and Retrain Logs",
+      "title": "Agent, LLM, Gateway, Airflow and Drift Logs",
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 13 },
       "datasource": { "type": "loki", "uid": "Loki" },
-      "targets": [{ "expr": "{namespace=\"recsys-dataflow\"} |~ \"ERROR|drift|trigger_kubeflow_retrain|retrain\"" }],
+      "targets": [{ "expr": "{namespace=~\"recsys-dataflow|kagent|llm-inference|agentgateway-system\"} |~ \"ERROR|WARN|drift|retrain|agent|gateway\"" }],
       "options": { "showLabels": true, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
     }
   ]

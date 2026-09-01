@@ -1,0 +1,9 @@
+metric,count,failures,mean_ms,min_ms,p50_ms,p95_ms,p99_ms,max_ms
+DurDirWrite,1,0,177.00,177,180,180,180,177
+DurDirServeInitial,1,0,99.00,99,99,99,99,99
+SuspendActor,28,0,348.50,298,330,430,750,746
+ResumeActor,28,0,430.61,387,420,500,530,528
+DurDirServeAfterResume,27,0,101.52,78,99,130,150,149
+DurDirServeWarm,27,0,71.85,45,72,95,130,129
+DurDirOverwrite,27,0,53.70,48,52,63,71,71
+AllRequestsIncludingActorSetup,141,0,200.18,1,100,460,530,746

@@ -8,7 +8,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_agent_registry_uses_pinned_oci_chart_and_external_pgvector() -> None:
-    terraform = (ROOT / "infra/terraform/gcp/agent_registry.tf").read_text()
+    terraform = "\n".join(
+        (
+            (
+                ROOT
+                / "infra/terraform/gcp/modules/kubernetes-platform/agent_registry.tf"
+            ).read_text(),
+            (ROOT / "infra/terraform/gcp/variables.tf").read_text(),
+        )
+    )
     values = (ROOT / "configs/agentregistry/values.yaml").read_text()
     postgres = (
         ROOT
