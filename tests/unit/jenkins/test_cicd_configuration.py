@@ -681,6 +681,7 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "checkout scm" not in source
     assert "disableConcurrentBuilds()" in source
     assert "githubPush()" not in source
+    assert 'uv pip install --python "${ci_config_venv}/bin/python" pytest pyyaml' in source
     assert "script: 'git rev-parse HEAD'" in source
     assert "values_args=(" not in source
     assert "source jenkins/scripts/" not in source

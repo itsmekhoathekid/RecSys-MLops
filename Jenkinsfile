@@ -100,7 +100,7 @@ pipeline {
               set -euo pipefail
               ci_config_venv="${CI_TMP_ROOT}/ci-config-venv"
               uv venv "${ci_config_venv}"
-              uv pip install --python "${ci_config_venv}/bin/python" pytest
+              uv pip install --python "${ci_config_venv}/bin/python" pytest pyyaml
               "${ci_config_venv}/bin/python" -m pytest \
                 tests/unit/jenkins \
                 tests/unit/observability \
