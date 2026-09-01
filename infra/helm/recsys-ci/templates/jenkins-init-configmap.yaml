@@ -58,7 +58,7 @@ data:
     <?xml version='1.1' encoding='UTF-8'?>
     <flow-definition plugin="workflow-job">
       <actions/>
-      <description>GitHub webhook CI/CD entrypoint. Pull-request/feature branches run path-based CI; main commits, including merged pull requests, publish immutable images, deploy in dependency order, and verify production.</description>
+      <description>GitHub webhook CI/CD entrypoint pinned to main. Every main commit publishes immutable images, deploys in dependency order, and verifies production.</description>
       <keepDependencies>false</keepDependencies>
       <properties>
         <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github">
@@ -117,7 +117,7 @@ data:
           <extensions/>
         </scm>
         <scriptPath>{{ .Values.jenkins.seedJob.scriptPath }}</scriptPath>
-        <lightweight>false</lightweight>
+        <lightweight>true</lightweight>
       </definition>
       <disabled>false</disabled>
     </flow-definition>
@@ -147,7 +147,6 @@ data:
     }
 
     def scmPipelineXml = { jobName, description, forceComponents, forceDeploy, githubTrigger, jobScriptPath, scmBranchSpec ->
-      def lightweightCheckout = scmBranchSpec == "**" ? "false" : "true"
       def triggerProperty = githubTrigger ? """<org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
           <triggers>
             <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
@@ -246,7 +245,7 @@ data:
           <extensions/>
         </scm>
         <scriptPath>${xmlEscape(jobScriptPath)}</scriptPath>
-        <lightweight>${lightweightCheckout}</lightweight>
+        <lightweight>true</lightweight>
       </definition>
       <disabled>false</disabled>
     </flow-definition>"""
@@ -379,7 +378,7 @@ data:
     def recommendationAgentJobName = "RecSys-Recommendation-Agent-CICD"
     def coordinatorAgentJobName = "RecSys-Coordinator-Agent-CICD"
 
-    def mainDescription = "GitHub webhook CI/CD entrypoint. Pull-request branches run CI without production mutation; a PR merge creates a main commit that publishes Git-SHA images, deploys the dependency-ordered release, and verifies production."
+    def mainDescription = "GitHub webhook CI/CD entrypoint pinned to main. Every main commit publishes Git-SHA images, deploys the dependency-ordered release, and verifies production."
     upsertJob(mainJobName, scmPipelineXml(mainJobName, mainDescription, "", false, true, scriptPath, branchSpec))
 
     upsertJob(
@@ -470,7 +469,7 @@ data:
 
     resetListView(
       "00 Main Auto Deploy",
-      "Main RecSys CI/CD view. PR branches run CI; merged PR commits on main publish immutable images, deploy and verify production.",
+      "Main RecSys CI/CD view. Main commits publish immutable images, deploy, and verify production.",
       [mainJobName],
       true
     )

@@ -31,9 +31,9 @@ jenkins:
   github:
     projectUrl: https://github.com/itsmekhoathekid/RecSys-MLops/
     repositoryUrl: https://github.com/itsmekhoathekid/RecSys-MLops.git
-    # Build pushes to main and pull-request/feature branches. The Jenkinsfile
-    # keeps the deploy behavior explicit through DEPLOY_PULL_REQUESTS.
-    branchSpec: "**"
+    # The production webhook job deterministically checks out main. Alternate
+    # or manual jobs may still use DEPLOY_PULL_REQUESTS explicitly.
+    branchSpec: "*/main"
   plugins:
     installOnStartup: true
     required:

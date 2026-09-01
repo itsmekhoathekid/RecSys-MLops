@@ -2,8 +2,8 @@
 
 Root `Jenkinsfile` is the component-aware CI/CD entrypoint. It detects changed
 paths, runs only the affected component gates, pushes only the affected images,
-and updates only the affected deployed component. Pull-request branches run CI;
-the merge commit on `main` publishes and deploys by default.
+and updates only the affected deployed component. The production webhook job is
+pinned to `main`, so each automatic build publishes and deploys that exact commit.
 
 Serving mutation testing is intentionally isolated from the push/PR feedback
 loop. The standalone [`ServingMutation.Jenkinsfile`](ServingMutation.Jenkinsfile)
@@ -18,7 +18,7 @@ The in-cluster Jenkins chart seeds a Pipeline-from-SCM job named
 Jenkins UI.
 
 ```text
-GitHub push (feature/PR branch or main)
+GitHub push to main
   -> GitHub Webhook
   -> Jenkins /github-webhook/
   -> RecSys-GitHub-CICD job
@@ -26,8 +26,7 @@ GitHub push (feature/PR branch or main)
   -> Detect Changed Components
   -> Component CI
   -> Component Build And Publish
-  -> PR branch: stop after CI/build proof
-  -> PR merged to main: publish image and Component Deploy Or Update
+  -> publish image and Component Deploy Or Update
 ```
 
 Webhook settings:
@@ -39,10 +38,10 @@ Required event: push
 ```
 
 The Helm chart exposes only `/github-webhook/` through the ingress controller.
-The root pipeline declares [`githubPush()`](../Jenkinsfile#L20-L22). Updating a
-PR branch is a push to that branch; merging the PR creates a new push on
-`main`. A separate `pull_request` delivery is not required by this job and
-should not be used to queue a duplicate build for the same commit.
+The root pipeline declares [`githubPush()`](../Jenkinsfile#L20-L22). Merging a
+pull request creates a new push on `main`, which is the exact revision this job
+checks out. A separate `pull_request` delivery is not required and should not
+queue a duplicate build for the same commit.
 
 ## Components
 

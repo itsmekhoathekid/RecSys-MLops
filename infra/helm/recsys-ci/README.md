@@ -10,9 +10,9 @@ pod template with `sidecar.istio.io/inject: "false"`.
 The chart seeds Jenkins jobs and views at startup:
 
 - `00 Main Auto Deploy`: contains `RecSys-GitHub-CICD`, the GitHub webhook job.
-  Pushes to `main` and pull-request/feature branches call `/github-webhook/`.
-  PR branches run CI without production mutation; merging a PR creates a `main`
-  commit that publishes immutable images, deploys and verifies production.
+  GitHub push deliveries call `/github-webhook/`, and the production job pins
+  SCM checkout to `*/main` so each automatic build uses the exact main commit
+  that publishes immutable images, deploys, and verifies production.
 - `01 RAG Data Pipeline`: contains `RecSys-RAG-Data-Pipeline-CICD`.
 - `02 Context Agent`: contains `RecSys-Context-Agent-CICD`.
 - `03 Recommendation Agent`: contains `RecSys-Recommendation-Agent-CICD`.
