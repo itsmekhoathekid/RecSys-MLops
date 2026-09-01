@@ -117,7 +117,7 @@ data:
           <extensions/>
         </scm>
         <scriptPath>{{ .Values.jenkins.seedJob.scriptPath }}</scriptPath>
-        <lightweight>true</lightweight>
+        <lightweight>false</lightweight>
       </definition>
       <disabled>false</disabled>
     </flow-definition>
@@ -147,6 +147,7 @@ data:
     }
 
     def scmPipelineXml = { jobName, description, forceComponents, forceDeploy, githubTrigger, jobScriptPath, scmBranchSpec ->
+      def lightweightCheckout = scmBranchSpec == "**" ? "false" : "true"
       def triggerProperty = githubTrigger ? """<org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
           <triggers>
             <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
@@ -245,7 +246,7 @@ data:
           <extensions/>
         </scm>
         <scriptPath>${xmlEscape(jobScriptPath)}</scriptPath>
-        <lightweight>true</lightweight>
+        <lightweight>${lightweightCheckout}</lightweight>
       </definition>
       <disabled>false</disabled>
     </flow-definition>"""

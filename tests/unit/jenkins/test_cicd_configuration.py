@@ -753,6 +753,8 @@ def test_jenkins_seeds_four_dedicated_rag_and_agent_cicd_views() -> None:
     assert 'branchSpec: "**"' in values
     assert 'def mainBranchSpec = "*/main"' in seed
     assert "scriptPath, branchSpec))" in seed
+    assert 'def lightweightCheckout = scmBranchSpec == "**" ? "false" : "true"' in seed
+    assert "<lightweight>${lightweightCheckout}</lightweight>" in seed
     assert seed.count("mainBranchSpec") >= 6
     assert seed.count(
         "<name>DEPLOY_PULL_REQUESTS</name>\n"
