@@ -97,6 +97,29 @@ def test_retained_autoscalers_are_locked_to_one() -> None:
         assert values["autoscaling"]["maxReplicas"] == 1
 
 
+def test_compact_monitoring_uses_the_ml_node_spare_capacity() -> None:
+    deployments = {
+        doc["metadata"]["name"]: doc
+        for doc in render("recsys-observability")
+        if doc.get("kind") == "Deployment"
+    }
+    for name in (
+        "recsys-grafana",
+        "recsys-loki",
+        "recsys-tempo",
+        "recsys-pushgateway",
+        "redis-exporter",
+        "recsys-otel-collector",
+    ):
+        pod_spec = deployments[name]["spec"]["template"]["spec"]
+        assert pod_spec["nodeSelector"] == {"recsys.ai/workload": "ml-system"}
+        assert any(
+            toleration.get("value") == "ml-system"
+            and toleration.get("effect") == "NoSchedule"
+            for toleration in pod_spec["tolerations"]
+        )
+
+
 def test_up_bootstraps_admission_webhooks_before_helm_suspend() -> None:
     script = (ROOT / "ops/gcp/compact_12vcpu.sh").read_text()
     up_body = script.split("up() {", 1)[1].split("\ndown() {", 1)[0]

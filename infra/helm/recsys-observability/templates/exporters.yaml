@@ -14,6 +14,14 @@ spec:
       labels:
         app: redis-exporter
     spec:
+      {{- with .Values.monitoringPlacement.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.monitoringPlacement.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       containers:
         - name: redis-exporter
           image: {{ .Values.images.redisExporter }}
@@ -54,6 +62,14 @@ spec:
       labels:
         app: warehouse-postgres-exporter
     spec:
+      {{- with .Values.monitoringPlacement.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.monitoringPlacement.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       containers:
         - name: postgres-exporter
           image: {{ .Values.images.postgresExporter }}
@@ -104,6 +120,14 @@ spec:
       labels:
         app: source-postgres-exporter
     spec:
+      {{- with .Values.monitoringPlacement.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.monitoringPlacement.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       containers:
         - name: postgres-exporter
           image: {{ .Values.images.postgresExporter }}

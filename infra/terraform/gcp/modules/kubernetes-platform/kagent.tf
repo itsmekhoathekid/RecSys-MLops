@@ -262,10 +262,11 @@ resource "helm_release" "kagent" {
   atomic     = true
   wait       = true
   timeout    = 900
-  values = concat(
-    [file("${var.repo_root}/configs/kagent/values.yaml")],
-    var.config.capacity_profile == "compact-12vcpu" ? [file("${var.repo_root}/configs/kagent/values-compact-12vcpu.yaml")] : [],
-  )
+  # The private OCI chart requires registry credentials at plan/apply time.
+  # Compact recovery changes only replica count, so the orchestration script
+  # scales the existing controller after Terraform rather than pulling the
+  # chart again.
+  values = [file("${var.repo_root}/configs/kagent/values.yaml")]
 
   set {
     name  = "registry"

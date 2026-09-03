@@ -245,6 +245,14 @@ spec:
         app: recsys-otel-collector
     spec:
       serviceAccountName: recsys-otel-collector
+      {{- with .Values.otelCollector.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.otelCollector.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname

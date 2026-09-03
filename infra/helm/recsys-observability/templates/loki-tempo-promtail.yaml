@@ -13,6 +13,14 @@ spec:
       labels:
         app: recsys-loki
     spec:
+      {{- with .Values.monitoringPlacement.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.monitoringPlacement.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       containers:
         - name: loki
           image: {{ .Values.images.loki }}
@@ -49,6 +57,14 @@ spec:
       labels:
         app: recsys-tempo
     spec:
+      {{- with .Values.monitoringPlacement.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.monitoringPlacement.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       containers:
         - name: tempo
           image: {{ .Values.images.tempo }}

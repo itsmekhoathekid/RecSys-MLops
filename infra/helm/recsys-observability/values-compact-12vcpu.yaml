@@ -1,5 +1,20 @@
 otelCollector:
   replicas: 1
+  nodeSelector:
+    recsys.ai/workload: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
+monitoringPlacement:
+  nodeSelector:
+    recsys.ai/workload: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
 exporters:
   redis:
     enabled: true

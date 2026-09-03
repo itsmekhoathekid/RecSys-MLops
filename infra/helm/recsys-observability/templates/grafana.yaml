@@ -78,6 +78,14 @@ spec:
       labels:
         app: recsys-grafana
     spec:
+      {{- with .Values.monitoringPlacement.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.monitoringPlacement.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       containers:
         - name: grafana
           image: {{ .Values.images.grafana }}

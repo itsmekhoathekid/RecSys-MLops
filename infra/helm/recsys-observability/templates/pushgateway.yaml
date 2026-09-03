@@ -13,6 +13,14 @@ spec:
       labels:
         app: recsys-pushgateway
     spec:
+      {{- with .Values.monitoringPlacement.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      {{- with .Values.monitoringPlacement.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       containers:
         - name: pushgateway
           image: {{ .Values.images.pushgateway }}

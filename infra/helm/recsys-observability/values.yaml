@@ -25,6 +25,10 @@ promtail:
       value: ml-system
       effect: NoSchedule
 
+monitoringPlacement:
+  nodeSelector: {}
+  tolerations: []
+
 storage:
   prometheus: 10Gi
   grafana: 2Gi
@@ -47,6 +51,8 @@ exporters:
 otelCollector:
   enabled: true
   replicas: 2
+  nodeSelector: {}
+  tolerations: []
   resources:
     requests:
       cpu: 250m
