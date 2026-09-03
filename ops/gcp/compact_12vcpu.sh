@@ -473,9 +473,21 @@ verify() {
   echo "compact verification OK: N2=8, E2=4, global requested capacity=12"
 }
 
+configure_bounded_node_drain() {
+  local pool
+  for pool in "${CPU_POOL}" "${ML_POOL}"; do
+    gcloud container node-pools update "${pool}" --cluster "${CLUSTER}" \
+      --zone "${ZONE}" --project "${PROJECT_ID}" \
+      --node-drain-grace-period-seconds=300 \
+      --node-drain-pdb-timeout-seconds=600 \
+      --respect-pdb-during-node-pool-deletion --quiet || true
+  done
+}
+
 rollback_compact_nodes_to_zero() {
   local pool
   echo "compact rollout failed; returning compact node pools to zero and keeping snapshots/PVCs" >&2
+  configure_bounded_node_drain
   for pool in "${CPU_POOL}" "${ML_POOL}"; do
     gcloud container node-pools update "${pool}" --cluster "${CLUSTER}" \
       --zone "${ZONE}" --project "${PROJECT_ID}" --enable-autoscaling \
@@ -511,6 +523,7 @@ down() {
   require_compact_branch
   get_credentials
   record_pvcs
+  configure_bounded_node_drain
   for pool in "${CPU_POOL}" "${ML_POOL}"; do
     gcloud container node-pools update "${pool}" --cluster "${CLUSTER}" \
       --zone "${ZONE}" --project "${PROJECT_ID}" --enable-autoscaling \
