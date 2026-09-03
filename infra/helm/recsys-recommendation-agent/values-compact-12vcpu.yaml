@@ -1,3 +1,7 @@
+sandbox:
+  # Do not reuse a golden checkpoint captured before the compact node move.
+  modelConfigRevision: substrate-0.0.11-kagent-e6df917-compact-12vcpu-v1
+
 autoscaling:
   minReplicas: 1
   maxReplicas: 1

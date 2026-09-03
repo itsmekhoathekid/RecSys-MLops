@@ -159,6 +159,16 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "AGENTIC_A2A_MAX_ATTEMPTS='3'" in jenkinsfile
     assert "RECOMMENDATION_A2A_MAX_ATTEMPTS='3'" in jenkinsfile
+    for chart in (
+        "recsys-kagent-agent",
+        "recsys-recommendation-agent",
+        "recsys-coordinator-agent",
+    ):
+        compact_values = (
+            ROOT / "infra/helm" / chart / "values-compact-12vcpu.yaml"
+        ).read_text(encoding="utf-8")
+        assert "modelConfigRevision:" in compact_values
+        assert "compact-12vcpu" in compact_values
     assert "deployment/recsys-context-sandbox-pool" in deploy
     assert "deployment/recsys-coordinator-sandbox-pool" in deploy
     assert "/api/a2a-sandboxes/kagent/${agent_name}" in deploy

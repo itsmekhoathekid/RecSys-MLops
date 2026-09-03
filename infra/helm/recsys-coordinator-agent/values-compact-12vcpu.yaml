@@ -1,3 +1,7 @@
+sandbox:
+  # Keep the coordinator checkpoint on the same CPU feature set as its worker.
+  modelConfigRevision: substrate-0.0.11-kagent-e6df917-compact-12vcpu-v1
+
 autoscaling:
   minReplicas: 1
   maxReplicas: 1
