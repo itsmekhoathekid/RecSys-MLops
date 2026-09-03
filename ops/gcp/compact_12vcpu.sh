@@ -222,9 +222,45 @@ PY
 helm_profile() {
   local release="$1" namespace="$2" chart="$3"
   local overlay="${ROOT}/${chart}/values-compact-12vcpu.yaml"
+  local gcp_values="${ROOT}/${chart}/values-gcp.yaml"
+  local current_values
+  local helm_args=()
   helm status "${release}" -n "${namespace}" >/dev/null 2>&1 || return 0
-  helm upgrade "${release}" "${ROOT}/${chart}" -n "${namespace}" \
-    --reuse-values -f "${overlay}" --wait=false
+  current_values="$(mktemp)"
+  chmod 600 "${current_values}"
+  helm get values "${release}" -n "${namespace}" -o yaml >"${current_values}"
+  helm_args=(-f "${current_values}")
+  [[ -f "${gcp_values}" ]] && helm_args+=(-f "${gcp_values}")
+  helm_args+=(-f "${overlay}")
+  case "${release}" in
+    recsys-data-lakehouse)
+      helm_args+=(--set-string "minio.storage=$(kubectl -n recsys-dataflow get pvc data-data-platform-minio-0 -o jsonpath='{.spec.resources.requests.storage}')")
+      ;;
+    recsys-source-store)
+      helm_args+=(--set-string "sourcePostgres.storage=$(kubectl -n recsys-dataflow get pvc data-source-postgres-0 -o jsonpath='{.spec.resources.requests.storage}')")
+      ;;
+    recsys-event-stream)
+      helm_args+=(
+        --set-string "kafka.persistence.storage=$(kubectl -n recsys-dataflow get pvc kafka-data -o jsonpath='{.spec.resources.requests.storage}')"
+        --set-string "zookeeper.persistence.storage=$(kubectl -n recsys-dataflow get pvc zookeeper-data -o jsonpath='{.spec.resources.requests.storage}')"
+      )
+      ;;
+    recsys-airflow)
+      helm_args+=(--set-string "airflowPostgres.storage=$(kubectl -n recsys-dataflow get pvc data-airflow-postgres-0 -o jsonpath='{.spec.resources.requests.storage}')")
+      ;;
+    recsys-analytics)
+      helm_args+=(
+        --set-string "catalog.storage=$(kubectl -n analytics get pvc data-recsys-analytics-catalog-postgres-0 -o jsonpath='{.spec.resources.requests.storage}')"
+        --set-string "superset.storage=$(kubectl -n analytics get pvc data-recsys-analytics-superset-postgres-0 -o jsonpath='{.spec.resources.requests.storage}')"
+      )
+      ;;
+  esac
+  if ! helm upgrade "${release}" "${ROOT}/${chart}" -n "${namespace}" \
+    --reset-values "${helm_args[@]}" --wait=hookOnly; then
+    rm -f "${current_values}"
+    return 1
+  fi
+  rm -f "${current_values}"
 }
 
 suspend_excluded() {
