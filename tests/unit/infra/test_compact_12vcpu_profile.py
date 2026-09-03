@@ -129,7 +129,7 @@ def test_up_bootstraps_admission_webhooks_before_helm_suspend() -> None:
     assert up_body.index("ensure_admission_webhooks") < up_body.index(
         "suspend_excluded"
     )
-    assert "wait_for_ready_nodes 1" in script
+    assert 'wait_for_node_pool_ready "${CPU_POOL}"' in script
     assert "rollout status deployment/konnectivity-agent" in script
     assert "wait_for_ready_nodes 2" in up_body
     assert "--node-drain-pdb-timeout-seconds=600" in script

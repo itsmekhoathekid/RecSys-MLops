@@ -305,10 +305,22 @@ wait_for_ready_nodes() {
   return 1
 }
 
+wait_for_node_pool_ready() {
+  local pool="$1" attempts="${2:-240}" ready_nodes=0
+  for _ in $(seq 1 "${attempts}"); do
+    ready_nodes="$(kubectl get nodes -l "cloud.google.com/gke-nodepool=${pool}" --no-headers 2>/dev/null | awk '$2=="Ready" {count++} END {print count+0}')"
+    [[ "${ready_nodes}" -ge 1 ]] && return 0
+    sleep 5
+  done
+  kubectl get nodes -l "cloud.google.com/gke-nodepool=${pool}" -o wide || true
+  echo "timed out waiting for a Ready node in pool ${pool}" >&2
+  return 1
+}
+
 ensure_admission_webhooks() {
-  local ready_nodes
-  ready_nodes="$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready" {count++} END {print count+0}')"
-  if [[ "${ready_nodes}" == "0" ]]; then
+  local cpu_ready
+  cpu_ready="$(kubectl get nodes -l "cloud.google.com/gke-nodepool=${CPU_POOL}" --no-headers 2>/dev/null | awk '$2=="Ready" {count++} END {print count+0}')"
+  if [[ "${cpu_ready}" == "0" ]]; then
     echo "configuring a quota-safe CPU boot disk before starting the webhook node"
     gcloud container node-pools update "${CPU_POOL}" --cluster "${CLUSTER}" \
       --zone "${ZONE}" --project "${PROJECT_ID}" \
@@ -321,9 +333,9 @@ ensure_admission_webhooks() {
     gcloud container clusters resize "${CLUSTER}" --node-pool "${CPU_POOL}" \
       --num-nodes=1 --zone "${ZONE}" --project "${PROJECT_ID}" --quiet
   fi
-  wait_for_ready_nodes 1
-  kubectl -n kube-system rollout status deployment/konnectivity-agent --timeout=10m
-  kubectl -n external-secrets rollout status deployment/external-secrets-webhook --timeout=10m
+  wait_for_node_pool_ready "${CPU_POOL}"
+  kubectl -n kube-system rollout status deployment/konnectivity-agent --timeout=30m
+  kubectl -n external-secrets rollout status deployment/external-secrets-webhook --timeout=30m
 }
 
 apply_retained_overlays() {
@@ -478,8 +490,8 @@ configure_bounded_node_drain() {
   for pool in "${CPU_POOL}" "${ML_POOL}"; do
     gcloud container node-pools update "${pool}" --cluster "${CLUSTER}" \
       --zone "${ZONE}" --project "${PROJECT_ID}" \
-      --node-drain-grace-period-seconds=300 \
-      --node-drain-pdb-timeout-seconds=600 \
+      --node-drain-grace-period-seconds=300s \
+      --node-drain-pdb-timeout-seconds=600s \
       --respect-pdb-during-node-pool-deletion --quiet || true
   done
 }
