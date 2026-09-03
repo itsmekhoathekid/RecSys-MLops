@@ -12,7 +12,7 @@ sandbox_agent_model_revision() {
 sandbox_agent_rebuild_golden_if_revision_changed() {
   local agent_name="$1"
   local previous_revision="$2"
-  local current_revision template_name candidate candidate_uid ready
+  local current_revision template_name candidate candidate_uid ready worker_pool
   local old_uids=" "
   local -a old_templates=()
   local -a candidates=()
@@ -45,6 +45,20 @@ sandbox_agent_rebuild_golden_if_revision_changed() {
     )"
     old_uids+="${candidate_uid} "
   done
+  # A failed restore can keep the only compact worker leased even though its
+  # Deployment remains Ready. Recycle that stateless worker before deleting
+  # the old templates so the replacement golden actor starts on a clean slot.
+  worker_pool="$(
+    kubectl -n kagent get sandboxagent "${agent_name}" \
+      -o jsonpath='{.spec.substrate.workerPoolRef.name}'
+  )"
+  [[ -n "${worker_pool}" ]] || {
+    recsys_error "${agent_name} has no Substrate WorkerPool reference"
+    return 1
+  }
+  kubectl -n kagent rollout restart "deployment/${worker_pool}"
+  kubectl -n kagent rollout status "deployment/${worker_pool}" \
+    --timeout="${timeout}"
   # Every ActorTemplate with this SandboxAgent prefix is controller-owned.
   # Remove all stale generations together; otherwise an older Ready template
   # can make the rebuild gate pass before the desired revision is compiled.
@@ -443,6 +457,7 @@ coordinator_a2a_smoke() {
   # so the production registry gate defaults to one longer bounded attempt.
   local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800}"
   local max_attempts="${COORDINATOR_A2A_MAX_ATTEMPTS:-1}"
+  local case_delay="${COORDINATOR_A2A_CASE_DELAY_SECONDS:-0}"
   local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents,direct_context_mcp,direct_recommendation_mcp,partial_result}"
   local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
   local log_file="reports/agentic/${agent_name}-port-forward.log"
@@ -463,14 +478,16 @@ coordinator_a2a_smoke() {
     for attempt in $(seq 1 "${max_attempts}"); do
       if python3 - "${base_url}/" "${user_id}" "${chunk_id}" \
         "${request_timeout}" "${selected_cases}" \
-        "${output_file}" <<'PY'
+        "${output_file}" "${case_delay}" <<'PY'
 import json
 import sys
+import time
 import urllib.request
 import uuid
 
-url, user_id, chunk_id, request_timeout, selected_cases, output_path = sys.argv[1:]
+url, user_id, chunk_id, request_timeout, selected_cases, output_path, case_delay = sys.argv[1:]
 request_timeout = int(request_timeout)
+case_delay = int(case_delay)
 cases = {
     "context_agent": (
         "Call exactly one tool: "
@@ -680,7 +697,9 @@ def invoke(case_name, prompt):
     return body
 
 
-for name, prompt in cases.items():
+for index, (name, prompt) in enumerate(cases.items()):
+    if index:
+        time.sleep(case_delay)
     invoke(name, prompt)
 PY
       then
@@ -734,6 +753,7 @@ agentic_a2a_smoke() {
   local local_port="${AGENTIC_A2A_LOCAL_PORT:-18084}"
   local request_timeout="${AGENTIC_A2A_REQUEST_TIMEOUT_SECONDS:-600}"
   local max_attempts="${AGENTIC_A2A_MAX_ATTEMPTS:-1}"
+  local case_delay="${AGENTIC_A2A_CASE_DELAY_SECONDS:-0}"
   local a2a_path="api/a2a-sandboxes"
   local card_path=".well-known/agent-card.json"
   local base_url="http://127.0.0.1:${local_port}/${a2a_path}/kagent/${agent_name}"
@@ -774,14 +794,16 @@ PY
   for attempt in $(seq 1 "${max_attempts}"); do
     smoke_status=0
     python3 - "${base_url}/" "${user_id}" "${chunk_id}" \
-      "${request_timeout}" "${response_file}" <<'PY' || smoke_status=$?
+      "${request_timeout}" "${response_file}" "${case_delay}" <<'PY' || smoke_status=$?
 import json
 import sys
+import time
 import urllib.request
 import uuid
 
-url, user_id, chunk_id, request_timeout, output_path = sys.argv[1:]
+url, user_id, chunk_id, request_timeout, output_path, case_delay = sys.argv[1:]
 request_timeout = int(request_timeout)
+case_delay = int(case_delay)
 cases = {
     "get_user_online_features": (
         f"Call get_user_online_features with user_id={user_id}, "
@@ -910,7 +932,11 @@ def invoke(tool_name, prompt):
 
 
 evidence = {}
-body = {tool_name: invoke(tool_name, prompt) for tool_name, prompt in cases.items()}
+body = {}
+for index, (tool_name, prompt) in enumerate(cases.items()):
+    if index:
+        time.sleep(case_delay)
+    body[tool_name] = invoke(tool_name, prompt)
 with open(output_path, "w", encoding="utf-8") as stream:
     json.dump(body, stream, indent=2, sort_keys=True)
 PY

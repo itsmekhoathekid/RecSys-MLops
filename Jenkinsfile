@@ -204,7 +204,7 @@ pipeline {
           // that worker briefly unavailable even after the Deployment is Ready,
           // so retry only the bounded specialist A2A gates for this profile.
           def compactAgenticEnv = params.CAPACITY_PROFILE == 'compact-12vcpu' ?
-            " AGENTIC_A2A_MAX_ATTEMPTS='3' RECOMMENDATION_A2A_MAX_ATTEMPTS='3'" : ''
+            " AGENTIC_A2A_MAX_ATTEMPTS='3' RECOMMENDATION_A2A_MAX_ATTEMPTS='3' AGENTIC_A2A_CASE_DELAY_SECONDS='10' COORDINATOR_A2A_CASE_DELAY_SECONDS='10'" : ''
           def commandEnv = "DEPLOY_TARGET='gcp-production' CAPACITY_PROFILE='${params.CAPACITY_PROFILE}' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' AGENTIC_SMOKE_CHUNK_ID='${params.AGENTIC_SMOKE_CHUNK_ID}'${compactAgenticEnv}"
           componentPipeline.deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json') // Respect dependency layers and serialize units sharing the same Jenkins lock.
           if (params.DATAHUB_CUTOVER_MODE != 'skip') {

@@ -159,6 +159,10 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "AGENTIC_A2A_MAX_ATTEMPTS='3'" in jenkinsfile
     assert "RECOMMENDATION_A2A_MAX_ATTEMPTS='3'" in jenkinsfile
+    assert "AGENTIC_A2A_CASE_DELAY_SECONDS='10'" in jenkinsfile
+    assert "COORDINATOR_A2A_CASE_DELAY_SECONDS='10'" in jenkinsfile
+    assert 'rollout restart "deployment/${worker_pool}"' in deploy
+    assert "time.sleep(case_delay)" in deploy
     for chart in (
         "recsys-kagent-agent",
         "recsys-recommendation-agent",
