@@ -377,7 +377,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/prometheus-config: {{ printf "%s-%s-%s-%s-%s-%s-%s-%s-%s" .Values.targets.apiNamespace .Values.targets.kserveNamespace .Values.targets.substrateNamespace .Values.targets.llmNamespace .Values.targets.agentgatewayNamespace .Values.targets.langfuseNamespace .Values.images.prometheus "langfuse-v1" (.Values.chartRevision | default "local") | sha256sum | quote }}
+        checksum/prometheus-config: {{ printf "%s-%s-%s-%s-%s-%s-%s-%s-%s-%t-%t-%t-%s" .Values.targets.apiNamespace .Values.targets.kserveNamespace .Values.targets.substrateNamespace .Values.targets.llmNamespace .Values.targets.agentgatewayNamespace .Values.targets.langfuseNamespace .Values.images.prometheus "langfuse-v1" (.Values.chartRevision | default "local") .Values.exporters.redis.enabled .Values.exporters.sourcePostgres.enabled .Values.exporters.warehousePostgres.enabled "running-pods-v1" | sha256sum | quote }}
       labels:
         app: recsys-prometheus
     spec:

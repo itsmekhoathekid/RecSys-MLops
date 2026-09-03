@@ -148,6 +148,14 @@ def test_compact_prometheus_omits_suspended_postgres_exporter_targets():
     assert "job_name: recsys-source-postgres-exporter" not in config
     assert "job_name: recsys-warehouse-postgres-exporter" not in config
 
+    standard_docs = _render_observability()
+    standard_deployment = _by_kind_name(standard_docs)[("Deployment", "recsys-prometheus")]
+    compact_deployment = resources[("Deployment", "recsys-prometheus")]
+    assert (
+        standard_deployment["spec"]["template"]["metadata"]["annotations"]["checksum/prometheus-config"]
+        != compact_deployment["spec"]["template"]["metadata"]["annotations"]["checksum/prometheus-config"]
+    )
+
 
 def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
     docs = _render_streaming()
