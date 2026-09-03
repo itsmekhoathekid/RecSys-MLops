@@ -322,6 +322,7 @@ ensure_admission_webhooks() {
       --num-nodes=1 --zone "${ZONE}" --project "${PROJECT_ID}" --quiet
   fi
   wait_for_ready_nodes 1
+  kubectl -n kube-system rollout status deployment/konnectivity-agent --timeout=10m
   kubectl -n external-secrets rollout status deployment/external-secrets-webhook --timeout=10m
 }
 

@@ -107,4 +107,5 @@ def test_up_bootstraps_admission_webhooks_before_helm_suspend() -> None:
         "suspend_excluded"
     )
     assert "wait_for_ready_nodes 1" in script
+    assert "rollout status deployment/konnectivity-agent" in script
     assert "wait_for_ready_nodes 2" in up_body
