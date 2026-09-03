@@ -355,7 +355,13 @@ apply_retained_overlays() {
 
 patch_workerpool_strategy() {
   local deployment count=0
-  for deployment in $(kubectl -n kagent get deployment -o json | jq -r '.items[] | select(.metadata.labels["ate.dev/worker-pool"] or .metadata.labels["kagent.dev/worker-pool"]) | .metadata.name'); do
+  local deployments=(
+    recsys-context-sandbox-pool
+    recsys-recommendation-sandbox-pool
+    recsys-coordinator-sandbox-pool
+  )
+  for deployment in "${deployments[@]}"; do
+    kubectl -n kagent get "deployment/${deployment}" >/dev/null
     kubectl -n kagent patch "deployment/${deployment}" --type merge -p '{"spec":{"strategy":{"type":"Recreate","rollingUpdate":null}}}'
     count=$((count + 1))
   done
@@ -363,7 +369,9 @@ patch_workerpool_strategy() {
     echo "expected three WorkerPool-generated Deployments, patched ${count}" >&2
     return 1
   }
-  kubectl -n kagent get deployment -o json | jq -e '[.items[] | select(.metadata.labels["ate.dev/worker-pool"] or .metadata.labels["kagent.dev/worker-pool"]) | select(.spec.strategy.type == "Recreate")] | length == 3' >/dev/null
+  for deployment in "${deployments[@]}"; do
+    [[ "$(kubectl -n kagent get "deployment/${deployment}" -o jsonpath='{.spec.strategy.type}')" == "Recreate" ]]
+  done
 }
 
 materialize_online() {
