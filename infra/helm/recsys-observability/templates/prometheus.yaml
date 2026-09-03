@@ -148,15 +148,21 @@ data:
             replacement: $1:8888
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+{{ if .Values.exporters.redis.enabled }}
       - job_name: recsys-redis-exporter
         static_configs:
           - targets: ["redis-exporter.{{ .Values.namespace.name }}.svc.cluster.local:9121"]
+{{ end }}
+{{ if .Values.exporters.sourcePostgres.enabled }}
       - job_name: recsys-source-postgres-exporter
         static_configs:
           - targets: ["source-postgres-exporter.{{ .Values.namespace.name }}.svc.cluster.local:9187"]
+{{ end }}
+{{ if .Values.exporters.warehousePostgres.enabled }}
       - job_name: recsys-warehouse-postgres-exporter
         static_configs:
           - targets: ["warehouse-postgres-exporter.{{ .Values.namespace.name }}.svc.cluster.local:9187"]
+{{ end }}
       - job_name: kubernetes-cadvisor
         scheme: https
         bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -206,6 +212,9 @@ data:
           - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
             action: keep
             regex: "true"
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
           - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
             action: replace
             target_label: __metrics_path__

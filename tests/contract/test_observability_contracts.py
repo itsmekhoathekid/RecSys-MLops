@@ -111,6 +111,8 @@ def test_prometheus_scrapes_api_metrics_once_per_pod():
     assert "- kagent" in config
     assert "job_name: recsys-api-serving" not in config
     assert "job_name: recsys-online-feature-api" not in config
+    assert "source_labels: [__meta_kubernetes_pod_phase]" in config
+    assert "regex: Running" in config
 
     deployment = resources[("Deployment", "recsys-prometheus")]
     assert "checksum/prometheus-config" in deployment["spec"]["template"]["metadata"]["annotations"]
@@ -132,6 +134,19 @@ def test_prometheus_scrapes_api_metrics_once_per_pod():
     assert persistent_data["persistentVolumeClaim"]["claimName"] == "recsys-prometheus-data"
     pvc = persistent_resources[("PersistentVolumeClaim", "recsys-prometheus-data")]
     assert pvc["spec"]["resources"]["requests"]["storage"] == "10Gi"
+
+
+def test_compact_prometheus_omits_suspended_postgres_exporter_targets():
+    docs = _render_observability(
+        "--values",
+        "infra/helm/recsys-observability/values-compact-12vcpu.yaml",
+    )
+    resources = _by_kind_name(docs)
+    config = resources[("ConfigMap", "recsys-prometheus-config")]["data"]["prometheus.yml"]
+
+    assert "job_name: recsys-redis-exporter" in config
+    assert "job_name: recsys-source-postgres-exporter" not in config
+    assert "job_name: recsys-warehouse-postgres-exporter" not in config
 
 
 def test_flink_exports_live_prometheus_metrics_from_job_and_task_managers():
