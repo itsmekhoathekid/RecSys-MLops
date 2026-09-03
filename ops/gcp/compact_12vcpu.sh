@@ -313,7 +313,7 @@ ensure_admission_webhooks() {
     gcloud container node-pools update "${CPU_POOL}" --cluster "${CLUSTER}" \
       --zone "${ZONE}" --project "${PROJECT_ID}" \
       --machine-type=n2-standard-8 --disk-type=pd-standard --disk-size=50 \
-      --enable-autoscaling --min-nodes=0 --max-nodes=1 --quiet
+      --quiet
     echo "starting one CPU node so admission webhooks can validate Helm upgrades"
     gcloud container node-pools update "${CPU_POOL}" --cluster "${CLUSTER}" \
       --zone "${ZONE}" --project "${PROJECT_ID}" --enable-autoscaling \
