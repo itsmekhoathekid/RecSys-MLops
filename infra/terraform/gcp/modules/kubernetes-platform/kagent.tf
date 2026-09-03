@@ -344,7 +344,7 @@ resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool" {
         }
         resources = {
           requests = {
-            cpu    = "1"
+            cpu    = var.config.capacity_profile == "compact-12vcpu" ? "500m" : "1"
             memory = "1Gi"
           }
           limits = {
@@ -395,7 +395,7 @@ resource "kubernetes_manifest" "recsys_coordinator_sandbox_pool" {
         }
         resources = {
           requests = {
-            cpu    = "1"
+            cpu    = var.config.capacity_profile == "compact-12vcpu" ? "500m" : "1"
             memory = "1Gi"
           }
           limits = {

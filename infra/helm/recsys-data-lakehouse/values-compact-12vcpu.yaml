@@ -1,1 +1,6 @@
 suspend: true
+minio:
+  # Milvus stores its Woodpecker log and vector payloads in this existing
+  # bucket. Keep only the object-store controller while all lakehouse jobs
+  # and ingestion surfaces remain suspended.
+  retainWhenSuspended: true

@@ -45,7 +45,10 @@ def test_suspended_charts_keep_controllers_and_pvc_contracts() -> None:
             if doc.get("kind") in {"Deployment", "StatefulSet"}
         ]
         assert controllers, chart_name
-        assert all(doc["spec"]["replicas"] == 0 for doc in controllers), chart_name
+        expected_replicas = 1 if chart_name == "recsys-data-lakehouse" else 0
+        assert all(
+            doc["spec"]["replicas"] == expected_replicas for doc in controllers
+        ), chart_name
         assert not any(doc.get("kind") in {"Job", "Ingress"} for doc in documents)
 
     stateful_documents = [
@@ -70,7 +73,7 @@ def test_terraform_profile_is_exactly_twelve_vcpu() -> None:
         'ml_machine_type = "e2-standard-4"',
         "ml_min_nodes    = 1",
         "ml_max_nodes    = 1",
-        "ml_disk_size_gb = 30",
+        "ml_disk_size_gb = 50",
         'ml_disk_type    = "pd-standard"',
         'llm_node_pool_mode = "cpu-services-shared"',
         "enable_gpu_pool    = false",
@@ -133,4 +136,60 @@ def test_up_bootstraps_admission_webhooks_before_helm_suspend() -> None:
     assert "rollout status deployment/konnectivity-agent" in script
     assert "wait_for_ready_nodes 2" in up_body
     assert "--node-drain-pdb-timeout-seconds=600" in script
+
+
+def test_compact_worker_pools_reserve_half_a_cpu_each() -> None:
+    script = (ROOT / "ops/gcp/compact_12vcpu.sh").read_text()
+    kagent = (
+        ROOT
+        / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf"
+    ).read_text()
+    compact_values = (
+        ROOT / "configs/kagent/values-compact-12vcpu.yaml"
+    ).read_text()
+
+    assert '"cpu":"500m"' in script
+    assert kagent.count(
+        'var.config.capacity_profile == "compact-12vcpu" ? "500m" : "1"'
+    ) == 2
+    assert "cpu: 500m" in compact_values
     assert "--respect-pdb-during-node-pool-deletion" in script
+
+
+def test_compact_runtime_reconciles_generated_triton_placement() -> None:
+    script = (ROOT / "ops/gcp/compact_12vcpu.sh").read_text()
+
+    assert "patch_triton_placement" in script
+    assert "serving.kserve.io/inferenceservice=recsys-bst-triton" in script
+    assert 'select(.spec.nodeSelector["recsys.ai/workload"] != "ml-system")' in script
+    assert '\"recsys.ai/workload\":\"ml-system\"' in script
+    assert "wait --for=condition=Ready pod" in script
+    assert "serving.kserve.io/inferenceservice=recsys-bst-triton --timeout=30m" in script
+
+
+def test_compact_reconnects_valkey_without_resetting_persistent_state() -> None:
+    script = (ROOT / "ops/gcp/compact_12vcpu.sh").read_text()
+
+    assert "reconcile_substrate_valkey_cluster" in script
+    assert "cluster meet" in script
+    assert "cluster info" in script
+    assert "cluster_state" in script
+    assert "cluster reset" not in script.lower()
+    assert "valkey-cluster-0.valkey-cluster-service.ate-system.svc" in script
+    assert "restart_substrate_consumers" in script
+    assert "rollout restart deployment/ate-api-server" in script
+    assert "rollout restart deployment/kagent-controller" in script
+
+
+def test_compact_llm_selector_replaces_dedicated_pool_map() -> None:
+    values = (
+        ROOT / "infra/helm/recsys-llm-serving/values-compact-12vcpu.yaml"
+    ).read_text()
+    deployment = (
+        ROOT / "infra/helm/recsys-llm-serving/templates/deployment.yaml"
+    ).read_text()
+
+    assert "nodeSelectorOverride:" in values
+    assert "cloud.google.com/gke-nodepool: recsys-mlops-cpu" in values
+    assert "if .Values.nodeSelectorOverride" in deployment
+    assert "toYaml .Values.nodeSelectorOverride" in deployment

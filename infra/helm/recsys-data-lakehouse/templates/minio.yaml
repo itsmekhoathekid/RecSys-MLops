@@ -21,7 +21,7 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   serviceName: {{ .Values.minio.name }}
-  replicas: {{ ternary 0 1 .Values.suspend }}
+  replicas: {{ ternary 0 1 (and .Values.suspend (not .Values.minio.retainWhenSuspended)) }}
   selector:
     matchLabels:
       app: {{ .Values.minio.name }}

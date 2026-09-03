@@ -19,9 +19,14 @@ spec:
         {{- include "recsys-llm-serving.labels" . | nindent 8 }}
     spec:
       terminationGracePeriodSeconds: 60
+      {{- if .Values.nodeSelectorOverride }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelectorOverride | nindent 8 }}
+      {{- else }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:

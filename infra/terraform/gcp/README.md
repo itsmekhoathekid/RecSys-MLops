@@ -157,8 +157,11 @@ The compact profile keeps the ML/LLM serving path, Jenkins, gateway, agents,
 Langfuse and observability on exactly two nodes while preserving every existing
 stateful release and PVC. Data generation, streaming, Airflow, analytics and
 the demo web/API render their controllers at zero replicas; their bootstrap
-Jobs and Ingresses are omitted. Both compact node pools use `pd-standard` boot
-disks (50 GiB for CPU and 30 GiB for ML) so existing PVCs can retain the
+Jobs and Ingresses are omitted. The lakehouse release retains only its MinIO
+controller because Milvus' existing Woodpecker log and vector payloads depend
+on that bucket. Both compact node pools use `pd-standard` boot
+disks (50 GiB for both CPU and ML) so large serving images such as Triton can
+unpack without exhausting the node filesystem while existing PVCs retain the
 project's constrained regional SSD quota.
 
 ```bash

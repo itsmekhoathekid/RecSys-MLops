@@ -10,3 +10,9 @@ substrateWorkerPool:
   template:
     nodeSelector:
       cloud.google.com/gke-nodepool: recsys-mlops-cpu
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 2Gi

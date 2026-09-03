@@ -55,6 +55,7 @@ resources:
     memory: 3Gi
 
 nodeSelector: {}
+nodeSelectorOverride: {}
 tolerations: []
 
 topologySpread:

@@ -353,6 +353,90 @@ apply_retained_overlays() {
   kubectl -n kagent scale deployment -l app.kubernetes.io/component=controller --replicas=1 || true
 }
 
+apply_compact_workerpool_resources() {
+  local worker_pool
+  for worker_pool in \
+    recsys-context-sandbox-pool \
+    recsys-recommendation-sandbox-pool \
+    recsys-coordinator-sandbox-pool; do
+    kubectl -n kagent patch "workerpool/${worker_pool}" --type merge -p \
+      '{"spec":{"template":{"resources":{"requests":{"cpu":"500m","memory":"1Gi"},"limits":{"memory":"2Gi"}}}}}'
+  done
+}
+
+reconcile_substrate_valkey_cluster() {
+  local index pod_ip state
+  local valkey_cli=(
+    valkey-cli --tls
+    --cacert /etc/valkey-ca/ca.crt
+    --cert /run/servicedns.podcert.ate.dev/credential-bundle.pem
+    --key /run/servicedns.podcert.ate.dev/credential-bundle.pem
+    -h valkey-cluster-0.valkey-cluster-service.ate-system.svc
+  )
+
+  kubectl -n ate-system wait --for=condition=Ready pod \
+    -l app=valkey-cluster --timeout=10m
+  for index in 0 1 2 3 4 5; do
+    pod_ip="$(kubectl -n ate-system get "pod/valkey-cluster-${index}" \
+      -o jsonpath='{.status.podIP}')"
+    [[ -n "${pod_ip}" ]] || {
+      echo "Valkey pod ${index} has no IP" >&2
+      return 1
+    }
+    # Preserve node IDs, slots, AOF data, and replica relationships; only
+    # refresh peer addresses after GKE reschedules the StatefulSet.
+    kubectl -n ate-system exec valkey-cluster-0 -- \
+      "${valkey_cli[@]}" cluster meet "${pod_ip}" 6379 >/dev/null
+  done
+
+  for _ in $(seq 1 60); do
+    state="$(kubectl -n ate-system exec valkey-cluster-0 -- \
+      "${valkey_cli[@]}" cluster info 2>/dev/null \
+      | tr -d '\r' | awk -F: '$1 == "cluster_state" {print $2}')"
+    [[ "${state}" == "ok" ]] && return 0
+    sleep 5
+  done
+  kubectl -n ate-system exec valkey-cluster-0 -- \
+    "${valkey_cli[@]}" cluster nodes >&2 || true
+  echo "Valkey cluster did not recover after peer reconciliation" >&2
+  return 1
+}
+
+restart_substrate_consumers() {
+  kubectl -n ate-system rollout restart deployment/ate-api-server
+  kubectl -n ate-system rollout status deployment/ate-api-server --timeout=10m
+  kubectl -n kagent rollout restart deployment/kagent-controller
+  kubectl -n kagent rollout status deployment/kagent-controller --timeout=10m
+}
+
+patch_triton_placement() {
+  local deployment pod
+  deployment="$(kubectl -n kserve-triton-inference get deployment \
+    -l serving.kserve.io/inferenceservice=recsys-bst-triton \
+    -o jsonpath='{.items[0].metadata.name}')"
+  [[ -n "${deployment}" ]] || {
+    echo "Triton predictor Deployment is missing" >&2
+    return 1
+  }
+  kubectl -n kserve-triton-inference patch "deployment/${deployment}" --type merge -p \
+    '{"spec":{"template":{"spec":{"nodeSelector":{"recsys.ai/workload":"ml-system"},"tolerations":[{"key":"recsys.ai/workload","operator":"Equal","value":"ml-system","effect":"NoSchedule"}]}}}}'
+  for pod in $(kubectl -n kserve-triton-inference get pod \
+    -l serving.kserve.io/inferenceservice=recsys-bst-triton -o json | jq -r '
+      .items[] | select(.spec.nodeSelector["recsys.ai/workload"] != "ml-system") | .metadata.name
+    '); do
+    kubectl -n kserve-triton-inference delete "pod/${pod}" --wait=false
+  done
+  # A long first image pull may leave Deployment.Progressing with an old
+  # ProgressDeadlineExceeded condition even after the replacement pod becomes
+  # healthy. Wait on the actual KServe pod readiness gate instead.
+  kubectl -n kserve-triton-inference wait --for=condition=Ready pod \
+    -l serving.kserve.io/inferenceservice=recsys-bst-triton --timeout=30m
+  kubectl -n kserve-triton-inference get "deployment/${deployment}" -o json | jq -e '
+    .spec.template.spec.nodeSelector["recsys.ai/workload"] == "ml-system"
+    and any(.spec.template.spec.tolerations[]; .key == "recsys.ai/workload" and .value == "ml-system")
+  ' >/dev/null
+}
+
 patch_workerpool_strategy() {
   local deployment count=0
   local deployments=(
@@ -381,7 +465,7 @@ materialize_online() {
   kubectl -n recsys-dataflow delete job compact-feature-materialize --ignore-not-found
   kubectl -n recsys-dataflow create job compact-feature-materialize --image="${image}" \
     --dry-run=client -o json -- bash -lc \
-    'export FEAST_SQL_REGISTRY_URL="$(python -m recsys_feature_store_runtime.sql_registry_state url)"; python -m feature_store.materialize_online' \
+    'export FEAST_SQL_REGISTRY_URL="$(/opt/venv/bin/python -m recsys_feature_store_runtime.sql_registry_state url)"; /opt/venv/bin/python -m feature_store.materialize_online' \
     | jq '.spec.template.spec.containers[0].envFrom = [{"configMapRef":{"name":"recsys-data-platform-config"}},{"secretRef":{"name":"recsys-data-platform-secret"}}]' \
     | kubectl apply -f -
   kubectl -n recsys-dataflow wait --for=condition=complete job/compact-feature-materialize --timeout=20m
@@ -531,7 +615,11 @@ up() {
   terraform -chdir="${TF_DIR}" apply -input=false -auto-approve "${PLAN_FILE}"
   get_credentials
   wait_for_ready_nodes 2
+  reconcile_substrate_valkey_cluster
+  restart_substrate_consumers
   apply_retained_overlays
+  patch_triton_placement
+  apply_compact_workerpool_resources
   patch_workerpool_strategy
   materialize_online
   trigger_jenkins
