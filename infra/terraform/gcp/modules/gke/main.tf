@@ -160,7 +160,7 @@ resource "google_container_node_pool" "cpu" {
   node_config {
     machine_type    = var.config.cpu_machine_type
     disk_size_gb    = var.config.cpu_disk_size_gb
-    disk_type       = "pd-balanced"
+    disk_type       = var.config.cpu_disk_type
     image_type      = "COS_CONTAINERD"
     spot            = var.config.cpu_spot
     service_account = google_service_account.gke_nodes.email
@@ -313,7 +313,7 @@ resource "google_container_node_pool" "ml_system" {
   node_config {
     machine_type    = var.config.ml_machine_type
     disk_size_gb    = var.config.ml_disk_size_gb
-    disk_type       = "pd-balanced"
+    disk_type       = var.config.ml_disk_type
     image_type      = "COS_CONTAINERD"
     spot            = var.config.ml_spot
     service_account = google_service_account.gke_nodes.email

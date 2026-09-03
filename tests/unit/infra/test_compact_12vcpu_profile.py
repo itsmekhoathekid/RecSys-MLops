@@ -65,9 +65,13 @@ def test_terraform_profile_is_exactly_twelve_vcpu() -> None:
         'cpu_machine_type = "n2-standard-8"',
         "cpu_min_nodes    = 1",
         "cpu_max_nodes    = 1",
+        "cpu_disk_size_gb = 50",
+        'cpu_disk_type    = "pd-standard"',
         'ml_machine_type = "e2-standard-4"',
         "ml_min_nodes    = 1",
         "ml_max_nodes    = 1",
+        "ml_disk_size_gb = 30",
+        'ml_disk_type    = "pd-standard"',
         'llm_node_pool_mode = "cpu-services-shared"',
         "enable_gpu_pool    = false",
     ):

@@ -309,7 +309,12 @@ ensure_admission_webhooks() {
   local ready_nodes
   ready_nodes="$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready" {count++} END {print count+0}')"
   if [[ "${ready_nodes}" == "0" ]]; then
-    echo "starting one temporary CPU node so admission webhooks can validate Helm upgrades"
+    echo "configuring a quota-safe CPU boot disk before starting the webhook node"
+    gcloud container node-pools update "${CPU_POOL}" --cluster "${CLUSTER}" \
+      --zone "${ZONE}" --project "${PROJECT_ID}" \
+      --machine-type=n2-standard-8 --disk-type=pd-standard --disk-size=50 \
+      --enable-autoscaling --min-nodes=0 --max-nodes=1 --quiet
+    echo "starting one CPU node so admission webhooks can validate Helm upgrades"
     gcloud container node-pools update "${CPU_POOL}" --cluster "${CLUSTER}" \
       --zone "${ZONE}" --project "${PROJECT_ID}" --enable-autoscaling \
       --min-nodes=1 --max-nodes=1 --quiet

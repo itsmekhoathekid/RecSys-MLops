@@ -105,6 +105,12 @@ variable "cpu_disk_size_gb" {
   default     = 100
 }
 
+variable "cpu_disk_type" {
+  description = "Boot disk type for CPU nodes."
+  type        = string
+  default     = "pd-balanced"
+}
+
 variable "cpu_spot" {
   description = "Use Spot VMs for CPU node pool. Leave false for stateful services."
   type        = bool
@@ -191,6 +197,12 @@ variable "ml_disk_size_gb" {
   description = "Boot disk size for ML system nodes."
   type        = number
   default     = 30
+}
+
+variable "ml_disk_type" {
+  description = "Boot disk type for ML system nodes."
+  type        = string
+  default     = "pd-balanced"
 }
 
 variable "ml_spot" {

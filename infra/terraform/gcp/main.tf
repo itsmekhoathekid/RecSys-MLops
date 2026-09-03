@@ -16,6 +16,7 @@ locals {
     cpu_min_nodes                                = var.cpu_min_nodes
     cpu_max_nodes                                = var.cpu_max_nodes
     cpu_disk_size_gb                             = var.cpu_disk_size_gb
+    cpu_disk_type                                = var.cpu_disk_type
     cpu_spot                                     = var.cpu_spot
     llm_cpu_machine_type                         = var.llm_cpu_machine_type
     llm_cpu_min_nodes                            = var.llm_cpu_min_nodes
@@ -29,6 +30,7 @@ locals {
     ml_min_nodes                                 = var.ml_min_nodes
     ml_max_nodes                                 = var.ml_max_nodes
     ml_disk_size_gb                              = var.ml_disk_size_gb
+    ml_disk_type                                 = var.ml_disk_type
     ml_spot                                      = var.ml_spot
     gpu_machine_type                             = var.gpu_machine_type
     enable_gpu_pool                              = var.enable_gpu_pool
