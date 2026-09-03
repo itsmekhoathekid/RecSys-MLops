@@ -293,6 +293,18 @@ EOF
   kubectl -n datahub scale deployment,statefulset --all --replicas=0 || true
 }
 
+wait_for_ready_nodes() {
+  local expected="$1" attempts="${2:-240}" ready_nodes=0
+  for _ in $(seq 1 "${attempts}"); do
+    ready_nodes="$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready" {count++} END {print count+0}')"
+    [[ "${ready_nodes}" -ge "${expected}" ]] && return 0
+    sleep 5
+  done
+  kubectl get nodes -o wide || true
+  echo "timed out waiting for ${expected} Ready node(s); got ${ready_nodes}" >&2
+  return 1
+}
+
 ensure_admission_webhooks() {
   local ready_nodes
   ready_nodes="$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready" {count++} END {print count+0}')"
@@ -304,7 +316,7 @@ ensure_admission_webhooks() {
     gcloud container clusters resize "${CLUSTER}" --node-pool "${CPU_POOL}" \
       --num-nodes=1 --zone "${ZONE}" --project "${PROJECT_ID}" --quiet
   fi
-  kubectl wait --for=condition=Ready nodes --all --timeout=20m
+  wait_for_ready_nodes 1
   kubectl -n external-secrets rollout status deployment/external-secrets-webhook --timeout=10m
 }
 
@@ -480,7 +492,7 @@ up() {
   terraform_plan
   terraform -chdir="${TF_DIR}" apply -input=false -auto-approve "${PLAN_FILE}"
   get_credentials
-  kubectl wait --for=condition=Ready nodes --all --timeout=20m
+  wait_for_ready_nodes 2
   apply_retained_overlays
   patch_workerpool_strategy
   materialize_online
