@@ -208,8 +208,8 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
         )["units"]
     }
     assert units["coordinator-agent"]["dependsOn"] == [
-        "context-agent",
-        "recommendation-agent",
+        "context-agent-registry",
+        "recommendation-agent-registry",
     ]
     assert units["coordinator-agent-registry"]["dependsOn"] == [
         "coordinator-agent",

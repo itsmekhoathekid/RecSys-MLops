@@ -200,7 +200,12 @@ pipeline {
         script {
           echo '[DEPLOY] Deploy release'
           env.DEPLOY_STARTED = 'true' // Mark that the build crossed from validation into production-changing work.
-          def commandEnv = "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' AGENTIC_SMOKE_CHUNK_ID='${params.AGENTIC_SMOKE_CHUNK_ID}'"
+          // A compact WorkerPool has one worker. A controller reconcile can leave
+          // that worker briefly unavailable even after the Deployment is Ready,
+          // so retry only the bounded specialist A2A gates for this profile.
+          def compactAgenticEnv = params.CAPACITY_PROFILE == 'compact-12vcpu' ?
+            " AGENTIC_A2A_MAX_ATTEMPTS='3' RECOMMENDATION_A2A_MAX_ATTEMPTS='3'" : ''
+          def commandEnv = "DEPLOY_TARGET='gcp-production' CAPACITY_PROFILE='${params.CAPACITY_PROFILE}' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' AGENTIC_SMOKE_CHUNK_ID='${params.AGENTIC_SMOKE_CHUNK_ID}'${compactAgenticEnv}"
           componentPipeline.deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json') // Respect dependency layers and serialize units sharing the same Jenkins lock.
           if (params.DATAHUB_CUTOVER_MODE != 'skip') {
             sh "${commandEnv} jenkins/scripts/entrypoints/datahub_cutover.sh plan .ci-deploy/datahub-dataset-lineage-cutover.json"

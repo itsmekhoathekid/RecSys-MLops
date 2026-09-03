@@ -136,8 +136,8 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
         "recommendation_agent",
     ]
     assert units["coordinator-agent"]["dependsOn"] == [
-        "context-agent",
-        "recommendation-agent",
+        "context-agent-registry",
+        "recommendation-agent-registry",
     ]
     assert units["coordinator-agent-registry"]["dependsOn"] == [
         "coordinator-agent",
@@ -148,6 +148,7 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     ]
 
     deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(encoding="utf-8")
+    jenkinsfile = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in deploy
     assert "0.1.0+%s" in deploy
     assert '"remote": {' in deploy
@@ -156,6 +157,8 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert "RECOMMENDATION_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "AGENTIC_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy
+    assert "AGENTIC_A2A_MAX_ATTEMPTS='3'" in jenkinsfile
+    assert "RECOMMENDATION_A2A_MAX_ATTEMPTS='3'" in jenkinsfile
     assert "deployment/recsys-context-sandbox-pool" in deploy
     assert "deployment/recsys-coordinator-sandbox-pool" in deploy
     assert "/api/a2a-sandboxes/kagent/${agent_name}" in deploy

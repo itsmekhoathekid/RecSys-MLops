@@ -301,7 +301,10 @@
       "consumesImages": [],
       "imageValues": {},
       "consumesArtifacts": [],
-      "dependsOn": ["context-agent", "recommendation-agent"]
+      "dependsOn": [
+        "context-agent-registry",
+        "recommendation-agent-registry"
+      ]
     },
     {
       "name": "coordinator-agent-registry",
