@@ -1,3 +1,4 @@
+{{- if not .Values.suspend }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -32,3 +33,4 @@ spec:
               done
               mc mb --ignore-existing "data-platform/{{ .Values.minio.lakeBucket }}"
               mc mb --ignore-existing "data-platform/{{ .Values.minio.offlineFeatureBucket }}"
+{{- end }}

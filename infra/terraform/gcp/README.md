@@ -151,6 +151,41 @@ terraform plan -detailed-exitcode
 
 Review any exit code `2`; application image-only drift must not appear.
 
+## Compact 12-vCPU Recovery Profile
+
+The compact profile keeps the ML/LLM serving path, Jenkins, gateway, agents,
+Langfuse and observability on exactly two nodes while preserving every existing
+stateful release and PVC. Data generation, streaming, Airflow, analytics and
+the demo web/API render their controllers at zero replicas; their bootstrap
+Jobs and Ingresses are omitted.
+
+```bash
+# Inspect quota, PVC identity and the protected Terraform plan.
+ops/gcp/compact_12vcpu.sh plan
+
+# Snapshot critical disks and upload the manifest to the Terraform-state bucket.
+ops/gcp/compact_12vcpu.sh snapshot
+
+# Snapshot, suspend excluded workloads, apply the node profile, materialize
+# Feast online data, verify the retained stack and optionally trigger Jenkins.
+ops/gcp/compact_12vcpu.sh up
+
+# Verify without mutating the node pools, or hibernate both compact nodes.
+ops/gcp/compact_12vcpu.sh verify
+ops/gcp/compact_12vcpu.sh down
+```
+
+The script discovers the production `terraform.tfvars` from the `main`
+worktree. Set `COMPACT_BASE_TFVARS` only when that file is stored elsewhere.
+`restore-standard` refuses to run until both global and E2 quota are at least
+20 vCPU. It never restores a disk snapshot automatically; snapshot restore is
+reserved for confirmed corruption.
+
+For the constrained Jenkins build, use `FORCE_COMPONENTS_MODE=replace`,
+`CAPACITY_PROFILE=compact-12vcpu`, `COMPONENT_CI_MAX_PARALLEL=1`, and the exact
+component set recorded in `ops/gcp/compact_12vcpu.sh`. This prevents changes to
+suspended charts from adding data, analytics, demo, or RAG-index deploy units.
+
 ## Hibernate And Resume Without Deleting PVC Data
 
 Use these commands when you want to stop paying for GKE worker nodes while keeping PVC/PV-backed data such as MinIO, Postgres, Airflow, MLflow, and DataHub volumes.

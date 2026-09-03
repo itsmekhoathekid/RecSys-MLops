@@ -1,0 +1,7 @@
+replicas: 1
+rollout:
+  maxSurge: 0
+  maxUnavailable: 1
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 1

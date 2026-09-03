@@ -23,7 +23,7 @@ metadata:
   labels:
     app: {{ .Values.lakehouseThrift.name }}
 spec:
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   strategy:
     type: RollingUpdate
     rollingUpdate:

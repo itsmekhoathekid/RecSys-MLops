@@ -1,0 +1,9 @@
+otelCollector:
+  replicas: 1
+exporters:
+  redis:
+    enabled: true
+  warehousePostgres:
+    enabled: false
+  sourcePostgres:
+    enabled: false

@@ -136,6 +136,7 @@
         "jenkins/python/",
         "jenkins/scripts/",
         "tests/unit/jenkins/",
+        "tests/unit/infra/",
         "tests/unit/observability/",
         "tests/mutation/",
         "tests/contract/"

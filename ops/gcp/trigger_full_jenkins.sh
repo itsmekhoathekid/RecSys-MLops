@@ -10,6 +10,9 @@ coverage_min="${COVERAGE_MIN:-90}"
 gateway_credentials_id="${GATEWAY_SMOKE_CREDENTIALS_ID:-}"
 promotion_manifest_uri="${PROMOTION_MANIFEST_URI:-s3://recsys-model-store/promotions/bst/latest.json}"
 components="${FORCE_COMPONENTS:-materialize,training,dp1,dp2,dp3,online_feature_api,inference_api,kserve,rollout,drift,stream_offline,stream_online,analytics,demo_web,rag_index,rag_api,feature_rag_mcp,context_agent,recommendation_mcp,recommendation_agent,ci_config}"
+components_mode="${FORCE_COMPONENTS_MODE:-union}"
+capacity_profile="${CAPACITY_PROFILE:-standard}"
+deploy_pull_requests="${DEPLOY_PULL_REQUESTS:-false}"
 datahub_cutover_mode="${DATAHUB_CUTOVER_MODE:-skip}"
 agentic_smoke_chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
 if [[ "${INCLUDE_DATA_DEPENDENT_COMPONENTS:-0}" == "1" ]]; then
@@ -47,13 +50,16 @@ curl -fsS \
   -X POST "${jenkins_url}/job/${jenkins_job}/buildWithParameters" \
   --data-urlencode "PUBLISH_IMAGES=true" \
   --data-urlencode "FORCE_DEPLOY=true" \
+  --data-urlencode "DEPLOY_PULL_REQUESTS=${deploy_pull_requests}" \
   --data-urlencode "COMPONENT_CI_MAX_PARALLEL=${max_parallel}" \
   --data-urlencode "COVERAGE_MIN=${coverage_min}" \
   --data-urlencode "GATEWAY_SMOKE_CREDENTIALS_ID=${gateway_credentials_id}" \
   --data-urlencode "PROMOTION_MANIFEST_URI=${promotion_manifest_uri}" \
   --data-urlencode "AGENTIC_SMOKE_CHUNK_ID=${agentic_smoke_chunk_id}" \
   --data-urlencode "DATAHUB_CUTOVER_MODE=${datahub_cutover_mode}" \
-  --data-urlencode "FORCE_COMPONENTS=${components}"
+  --data-urlencode "FORCE_COMPONENTS=${components}" \
+  --data-urlencode "FORCE_COMPONENTS_MODE=${components_mode}" \
+  --data-urlencode "CAPACITY_PROFILE=${capacity_profile}"
 
 queue_url="$(
   awk 'tolower($1) == "location:" {gsub(/\r/, "", $2); print $2}' \

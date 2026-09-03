@@ -1,0 +1,6 @@
+replicas: 1
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 1
+  fallback:
+    replicas: 1

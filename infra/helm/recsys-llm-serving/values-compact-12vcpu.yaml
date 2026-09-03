@@ -1,0 +1,6 @@
+replicaCount: 1
+nodeSelector:
+  cloud.google.com/gke-nodepool: recsys-mlops-cpu
+tolerations: []
+topologySpread:
+  enabled: false

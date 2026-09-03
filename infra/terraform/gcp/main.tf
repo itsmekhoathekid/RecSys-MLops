@@ -5,6 +5,7 @@ locals {
     zone                                         = var.zone
     name_prefix                                  = var.name_prefix
     labels                                       = var.labels
+    capacity_profile                             = var.capacity_profile
     release_channel                              = var.release_channel
     deletion_protection                          = var.deletion_protection
     vpc_cidr                                     = var.vpc_cidr

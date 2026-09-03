@@ -18,7 +18,7 @@ metadata:
   namespace: {{ .Values.namespace.name }}
 spec:
   serviceName: {{ .Values.airflowPostgres.name }}
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   selector:
     matchLabels:
       app: {{ .Values.airflowPostgres.name }}

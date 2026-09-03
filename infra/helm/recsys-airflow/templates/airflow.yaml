@@ -4,7 +4,7 @@ metadata:
   name: airflow-webserver
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   minReadySeconds: 15
   progressDeadlineSeconds: 600
   strategy:
@@ -80,7 +80,7 @@ metadata:
   name: airflow-scheduler
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   minReadySeconds: 15
   progressDeadlineSeconds: 600
   selector:

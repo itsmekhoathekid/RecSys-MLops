@@ -164,6 +164,7 @@ def detect_changed_components(
     *,
     commit: str = "",
     forced_components: str = "",
+    forced_components_mode: str = "union",
 ) -> DetectionOutcome:
     config = load_component_config()
     components = config["components"]
@@ -182,7 +183,12 @@ def detect_changed_components(
     deleted_unmapped: list[str] = []
     directly_changed_images: set[str] = set()
 
-    if forced_components.strip():
+    if forced_components_mode not in {"union", "replace"}:
+        raise ValueError(
+            "FORCE_COMPONENTS_MODE must be one of: union, replace"
+        )
+
+    if forced_components.strip() and forced_components_mode == "replace":
         ordered_names, force_ci_config = _forced_selection(
             forced_components, components
         )
@@ -237,6 +243,19 @@ def detect_changed_components(
             for component in components
             if component["name"] in direct_component_names
         )
+        if forced_components.strip():
+            forced_names, force_ci_config = _forced_selection(
+                forced_components, components
+            )
+            selected_names = set(ordered_names) | set(forced_names)
+            ordered_names = tuple(
+                component["name"]
+                for component in components
+                if component["name"] in selected_names
+            )
+            flags["RUN_CI_CONFIG"] = (
+                flags["RUN_CI_CONFIG"] or force_ci_config
+            )
 
     for component in components:
         if component["name"] in ordered_names:
@@ -247,7 +266,11 @@ def detect_changed_components(
     release_plan = create_release_plan(
         list(ordered_names),
         changed_images=list(changed_image_names),
-        changed_paths=[change.path for change in normalized_changes],
+        changed_paths=(
+            []
+            if forced_components.strip() and forced_components_mode == "replace"
+            else [change.path for change in normalized_changes]
+        ),
         commit=commit,
     )
     if ordered_names:
@@ -297,6 +320,12 @@ def main() -> int:
     parser.add_argument("--base-ref", default="")
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--force-components", default="")
+    parser.add_argument(
+        "--force-components-mode",
+        choices=("union", "replace"),
+        default="union",
+        help="Union forced components with path detection, or replace path detection.",
+    )
     parser.add_argument("--plan-output", default=".ci-release-plan.json")
     parser.add_argument("--commit", default="")
     args = parser.parse_args()
@@ -319,6 +348,7 @@ def main() -> int:
             changes,
             commit=commit,
             forced_components=args.force_components,
+            forced_components_mode=args.force_components_mode,
         )
     except ValueError as error:
         print(f"ERROR: {error}")

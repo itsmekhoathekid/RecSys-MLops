@@ -29,10 +29,9 @@ def test_langfuse_backend_mode_guards_managed_cloud_resources() -> None:
         'var.config.deploy_langfuse && var.config.langfuse_backend_mode == "managed"'
         in gke
     )
-    assert (
-        'var.config.deploy_langfuse && var.config.langfuse_backend_mode == "managed"'
-        in network
-    )
+    assert 'var.config.deploy_langfuse && (' in network
+    assert 'var.config.langfuse_backend_mode == "managed" ||' in network
+    assert 'var.config.capacity_profile == "compact-12vcpu"' in network
     assert (
         'var.config.deploy_langfuse && var.config.langfuse_backend_mode == "managed"'
         in services

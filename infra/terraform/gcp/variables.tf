@@ -31,6 +31,17 @@ variable "labels" {
   }
 }
 
+variable "capacity_profile" {
+  description = "Capacity envelope for the cluster. compact-12vcpu is a fixed two-node, CPU-only recovery profile."
+  type        = string
+  default     = "standard"
+
+  validation {
+    condition     = contains(["standard", "compact-12vcpu"], var.capacity_profile)
+    error_message = "capacity_profile must be standard or compact-12vcpu."
+  }
+}
+
 variable "release_channel" {
   description = "GKE release channel."
   type        = string

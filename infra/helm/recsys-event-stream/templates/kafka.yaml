@@ -48,7 +48,7 @@ metadata:
   name: zookeeper
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   strategy:
     type: Recreate
   selector:
@@ -104,7 +104,7 @@ metadata:
   name: {{ .Values.kafka.name }}
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   strategy:
     type: Recreate
   selector:

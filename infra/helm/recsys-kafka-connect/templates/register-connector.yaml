@@ -1,4 +1,4 @@
-{{- if .Values.realtimeCdcConnector.enabled }}
+{{- if and (not .Values.suspend) .Values.realtimeCdcConnector.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:

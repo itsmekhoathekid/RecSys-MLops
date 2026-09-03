@@ -13,7 +13,7 @@ metadata:
   name: recsys-analytics-redis
   namespace: {{ .Values.namespace }}
 spec:
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   selector:
     matchLabels: {app: recsys-analytics-redis}
   template:
@@ -29,4 +29,3 @@ spec:
           args: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
           ports: [{name: redis, containerPort: 6379}]
           readinessProbe: {tcpSocket: {port: redis}, initialDelaySeconds: 3, periodSeconds: 5}
-

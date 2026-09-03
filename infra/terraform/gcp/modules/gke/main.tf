@@ -306,8 +306,8 @@ resource "google_container_node_pool" "ml_system" {
   }
 
   upgrade_settings {
-    max_surge       = 1
-    max_unavailable = 0
+    max_surge       = var.config.capacity_profile == "compact-12vcpu" ? 0 : 1
+    max_unavailable = var.config.capacity_profile == "compact-12vcpu" ? 1 : 0
   }
 
   node_config {

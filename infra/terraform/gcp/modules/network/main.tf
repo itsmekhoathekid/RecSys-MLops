@@ -30,7 +30,10 @@ resource "google_compute_subnetwork" "gke" {
 }
 
 resource "google_compute_global_address" "private_service_access" {
-  count = var.config.deploy_langfuse && var.config.langfuse_backend_mode == "managed" ? 1 : 0
+  count = var.config.deploy_langfuse && (
+    var.config.langfuse_backend_mode == "managed" ||
+    var.config.capacity_profile == "compact-12vcpu"
+  ) ? 1 : 0
 
   name          = "${var.config.name_prefix}-private-services"
   purpose       = "VPC_PEERING"
@@ -40,7 +43,10 @@ resource "google_compute_global_address" "private_service_access" {
 }
 
 resource "google_service_networking_connection" "private_service_access" {
-  count = var.config.deploy_langfuse && var.config.langfuse_backend_mode == "managed" ? 1 : 0
+  count = var.config.deploy_langfuse && (
+    var.config.langfuse_backend_mode == "managed" ||
+    var.config.capacity_profile == "compact-12vcpu"
+  ) ? 1 : 0
 
   network                 = google_compute_network.recsys.id
   service                 = "servicenetworking.googleapis.com"

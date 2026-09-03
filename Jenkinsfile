@@ -18,6 +18,8 @@ pipeline {
     choice(name: 'DATAHUB_CUTOVER_MODE', choices: ['skip', 'plan', 'apply'], description: 'Optional one-time cleanup after static catalog deployment.')
     string(name: 'COVERAGE_MIN', defaultValue: '90', description: 'Minimum per-component unit coverage percentage.')
     string(name: 'FORCE_COMPONENTS', defaultValue: '', description: 'Comma-separated component names for manual proof jobs, including ci_config. Empty keeps path-based detection.')
+    choice(name: 'FORCE_COMPONENTS_MODE', choices: ['union', 'replace'], description: 'Union forced components with changed paths, or replace changed-path selection for a constrained deployment profile.')
+    choice(name: 'CAPACITY_PROFILE', choices: ['standard', 'compact-12vcpu'], description: 'Optional Helm capacity overlay used by constrained branch deployments.')
   }
 
   environment {
@@ -52,8 +54,11 @@ pipeline {
           env.CI_BASE_REF = baseRef
           echo "Changed-path range: ${baseRef ?: '<current commit>'}...HEAD"
           def baseArgument = baseRef ? "--base-ref '${baseRef}'" : ''
-          withEnv(["FORCE_COMPONENTS_VALUE=${params.FORCE_COMPONENTS ?: ''}"]) {
-            sh "python3 -m jenkins.python.change_detection.detector ${baseArgument} --force-components \"\${FORCE_COMPONENTS_VALUE}\" --commit '${env.GIT_COMMIT}' --plan-output .ci-release-plan.json > .ci-components.env" // Write the machine-readable release plan and shell-style RUN_* flags used by later stages.
+          withEnv([
+            "FORCE_COMPONENTS_VALUE=${params.FORCE_COMPONENTS ?: ''}",
+            "FORCE_COMPONENTS_MODE_VALUE=${params.FORCE_COMPONENTS_MODE ?: 'union'}",
+          ]) {
+            sh "python3 -m jenkins.python.change_detection.detector ${baseArgument} --force-components \"\${FORCE_COMPONENTS_VALUE}\" --force-components-mode \"\${FORCE_COMPONENTS_MODE_VALUE}\" --commit '${env.GIT_COMMIT}' --plan-output .ci-release-plan.json > .ci-components.env" // Write the machine-readable release plan and shell-style RUN_* flags used by later stages.
           }
           readFile('.ci-components.env').split('\\n').each { line ->
             if (line.trim() && line.contains('=')) {

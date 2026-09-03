@@ -36,6 +36,14 @@ persistence:
     enabled: false
     storageClassName: ""
 
+exporters:
+  redis:
+    enabled: true
+  warehousePostgres:
+    enabled: true
+  sourcePostgres:
+    enabled: true
+
 otelCollector:
   enabled: true
   replicas: 2

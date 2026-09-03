@@ -262,9 +262,10 @@ resource "helm_release" "kagent" {
   atomic     = true
   wait       = true
   timeout    = 900
-  values = [
-    file("${var.repo_root}/configs/kagent/values.yaml"),
-  ]
+  values = concat(
+    [file("${var.repo_root}/configs/kagent/values.yaml")],
+    var.config.capacity_profile == "compact-12vcpu" ? [file("${var.repo_root}/configs/kagent/values-compact-12vcpu.yaml")] : [],
+  )
 
   set {
     name  = "registry"

@@ -6,7 +6,7 @@ metadata:
   name: {{ .Values.realtimeProducer.name }}
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: {{ .Values.realtimeProducer.replicas }}
+  replicas: {{ ternary 0 .Values.realtimeProducer.replicas .Values.suspend }}
   strategy:
     type: RollingUpdate
     rollingUpdate:

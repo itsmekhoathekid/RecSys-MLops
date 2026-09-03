@@ -444,16 +444,61 @@ def test_rename_is_classified_as_delete_and_add():
     assert result.deleted_unmapped_paths == ("legacy/old.py",)
 
 
-def test_force_components_builds_one_plan_without_classifying_paths():
+def test_force_components_replace_builds_one_plan_without_classifying_paths():
     result = detect_changed_components(
         [ChangedFile("M", "unmapped/ignored-by-force.py")],
         commit="abc",
         forced_components="dp2,ci_config",
+        forced_components_mode="replace",
     )
     assert result.component_names == ("dp2",)
     assert result.flags["RUN_CI_CONFIG"] is True
     assert result.unmapped_paths == ()
     assert result.release_plan["commit"] == "abc"
+
+
+def test_force_components_union_is_the_default():
+    result = detect_changed_components(
+        [ChangedFile("M", "apps/api-serving/inference-api/app/main.py")],
+        forced_components="rag_api,ci_config",
+    )
+    assert result.component_names == ("rag_api", "inference_api")
+    assert result.flags["RUN_CI_CONFIG"] is True
+
+
+def test_compact_replace_plan_excludes_data_analytics_demo_and_rag_index():
+    result = detect_changed_components(
+        [ChangedFile("M", "infra/helm/recsys-data-lakehouse/values.yaml")],
+        forced_components=(
+            "online_feature_api,inference_api,kserve,rag_api,feature_rag_mcp,"
+            "context_agent,recommendation_mcp,recommendation_agent,"
+            "coordinator_agent,ci_config"
+        ),
+        forced_components_mode="replace",
+    )
+    forbidden = {
+        "airflow",
+        "streaming",
+        "analytics",
+        "demo_web",
+        "rag_index",
+        "rag-index-promotion",
+    }
+    assert not (forbidden & set(result.component_names))
+    deploy_units = set(result.release_plan["deployUnits"])
+    assert not any(
+        token in unit
+        for unit in deploy_units
+        for token in (
+            "airflow",
+            "streaming",
+            "analytics",
+            "demo",
+            "rag-index",
+            "data-lakehouse",
+        )
+    )
+    assert result.unmapped_paths == ()
 
 
 def test_detector_creates_release_plan_once(monkeypatch):

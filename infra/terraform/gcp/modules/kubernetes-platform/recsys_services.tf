@@ -6,9 +6,10 @@ resource "helm_release" "recsys_observability" {
   wait             = true
   timeout          = 900
 
-  values = [
-    file("${local.helm_dir}/recsys-observability/values-gcp.yaml"),
-  ]
+  values = concat(
+    [file("${local.helm_dir}/recsys-observability/values-gcp.yaml")],
+    var.config.capacity_profile == "compact-12vcpu" ? [file("${local.helm_dir}/recsys-observability/values-compact-12vcpu.yaml")] : [],
+  )
 
   set {
     name  = "chartRevision"
@@ -399,9 +400,10 @@ resource "helm_release" "recsys_serving" {
   wait             = true
   timeout          = 1200
 
-  values = [
-    file(var.config.enable_gpu_pool ? "${local.helm_dir}/recsys-serving/values-gcp-gpu.yaml" : "${local.helm_dir}/recsys-serving/values-gcp-cpu.yaml"),
-  ]
+  values = concat(
+    [file(var.config.enable_gpu_pool ? "${local.helm_dir}/recsys-serving/values-gcp-gpu.yaml" : "${local.helm_dir}/recsys-serving/values-gcp-cpu.yaml")],
+    var.config.capacity_profile == "compact-12vcpu" ? [file("${local.helm_dir}/recsys-serving/values-compact-12vcpu.yaml")] : [],
+  )
 
   dynamic "set" {
     for_each = local.serving_sets

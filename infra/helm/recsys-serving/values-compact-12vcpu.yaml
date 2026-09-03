@@ -1,0 +1,16 @@
+kserve:
+  nodeSelector:
+    recsys.ai/workload: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
+autoscaling:
+  http:
+    kserve:
+      minReplicas: 1
+      maxReplicas: 1
+  kserveResource:
+    minReplicas: 1
+    maxReplicas: 1

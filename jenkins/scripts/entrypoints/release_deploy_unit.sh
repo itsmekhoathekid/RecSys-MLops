@@ -132,6 +132,7 @@ resolve_unit_image() {
 
 deploy_helm_unit() {
   local values_file="${unit_chart}/values-gcp.yaml"
+  local capacity_values_file="${unit_chart}/values-${CAPACITY_PROFILE:-standard}.yaml"
   local image_index image_reference
   local helm_args=()
   local helm_failure_args=(--atomic --cleanup-on-fail)
@@ -142,6 +143,13 @@ deploy_helm_unit() {
     return 2
   }
   [[ -f "${values_file}" ]] && helm_args+=(-f "${values_file}")
+  if [[ "${CAPACITY_PROFILE:-standard}" != "standard" ]]; then
+    [[ -f "${capacity_values_file}" ]] || {
+      recsys_error "capacity profile ${CAPACITY_PROFILE} is unsupported by ${unit_chart}"
+      return 2
+    }
+    helm_args+=(-f "${capacity_values_file}")
+  fi
   if [[ "${unit_name}" == "online-feature-api" ]]; then
     # The first split-service release adopts the existing Feature API objects
     # after the legacy recsys-serving revision marks them as keep. Helm 4 keeps

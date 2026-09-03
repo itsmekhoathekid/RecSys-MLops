@@ -23,7 +23,7 @@ metadata:
   name: flink-jobmanager
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   strategy:
     type: Recreate
   selector:
@@ -84,7 +84,7 @@ metadata:
   name: flink-taskmanager
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: {{ .Values.flinkTaskManager.replicas }}
+  replicas: {{ ternary 0 .Values.flinkTaskManager.replicas .Values.suspend }}
   strategy:
     type: Recreate
   selector:

@@ -7,5 +7,8 @@ output "subnetwork_id" {
 }
 
 output "private_service_connection_id" {
-  value = var.config.deploy_langfuse && var.config.langfuse_backend_mode == "managed" ? google_service_networking_connection.private_service_access[0].id : null
+  value = var.config.deploy_langfuse && (
+    var.config.langfuse_backend_mode == "managed" ||
+    var.config.capacity_profile == "compact-12vcpu"
+  ) ? google_service_networking_connection.private_service_access[0].id : null
 }

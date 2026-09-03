@@ -78,7 +78,7 @@ resource "helm_release" "recsys_llm_serving" {
   cleanup_on_fail  = true
   wait             = true
   timeout          = 1200
-  values = [
+  values = concat([
     file(
       var.config.llm_node_pool_mode == "cpu-services-shared"
       ? "${local.helm_dir}/recsys-llm-serving/values-cpu-shared.yaml"
@@ -89,7 +89,9 @@ resource "helm_release" "recsys_llm_serving" {
       ? "${local.helm_dir}/recsys-llm-serving/values-optimized.yaml"
       : "${local.helm_dir}/recsys-llm-serving/values-baseline.yaml"
     ),
-  ]
+    ], var.config.capacity_profile == "compact-12vcpu" ? [
+    file("${local.helm_dir}/recsys-llm-serving/values-compact-12vcpu.yaml"),
+  ] : [])
 
   set {
     name  = "gateway.auth.enabled"

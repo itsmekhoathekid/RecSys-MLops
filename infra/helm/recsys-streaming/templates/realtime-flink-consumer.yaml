@@ -7,7 +7,7 @@ metadata:
   name: {{ default "realtime-flink-online-store" $consumer.online.name }}
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: {{ default $consumer.replicas $consumer.online.replicas }}
+  replicas: {{ ternary 0 (default $consumer.replicas $consumer.online.replicas) $.Values.suspend }}
   strategy:
     type: Recreate
   selector:
@@ -124,7 +124,7 @@ metadata:
   name: {{ default "realtime-flink-offline-store" $consumer.offline.name }}
   namespace: {{ .Values.namespace.name }}
 spec:
-  replicas: {{ default $consumer.replicas $consumer.offline.replicas }}
+  replicas: {{ ternary 0 (default $consumer.replicas $consumer.offline.replicas) $.Values.suspend }}
   strategy:
     type: Recreate
   selector:

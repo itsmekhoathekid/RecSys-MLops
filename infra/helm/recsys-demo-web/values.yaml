@@ -1,3 +1,5 @@
+suspend: false
+
 namespace: api-serving
 
 frontend:

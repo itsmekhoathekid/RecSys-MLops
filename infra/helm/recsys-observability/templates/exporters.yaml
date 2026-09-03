@@ -1,3 +1,4 @@
+{{- if .Values.exporters.redis.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,7 +36,9 @@ spec:
     - name: metrics
       port: 9121
       targetPort: metrics
+{{- end }}
 ---
+{{- if .Values.exporters.warehousePostgres.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -83,7 +86,9 @@ spec:
     - name: metrics
       port: 9187
       targetPort: metrics
+{{- end }}
 ---
+{{- if .Values.exporters.sourcePostgres.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -131,3 +136,4 @@ spec:
     - name: metrics
       port: 9187
       targetPort: metrics
+{{- end }}

@@ -1,0 +1,12 @@
+controller:
+  replicas: 1
+  pdb:
+    enabled: false
+  topologySpreadConstraints: []
+  nodeSelector:
+    cloud.google.com/gke-nodepool: recsys-mlops-cpu
+substrateWorkerPool:
+  replicas: 1
+  template:
+    nodeSelector:
+      cloud.google.com/gke-nodepool: recsys-mlops-cpu

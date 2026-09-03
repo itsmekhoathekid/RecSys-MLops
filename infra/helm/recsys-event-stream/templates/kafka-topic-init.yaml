@@ -1,3 +1,4 @@
+{{- if not .Values.suspend }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -29,3 +30,4 @@ spec:
               if [ "${current:-0}" -lt {{ .Values.kafka.topicPartitions }} ]; then
                 kafka-topics --bootstrap-server {{ .Values.kafka.bootstrapServers }} --alter --topic {{ .Values.realtimeFlinkConsumer.topic }} --partitions {{ .Values.kafka.topicPartitions }}
               fi
+{{- end }}

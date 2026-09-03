@@ -83,3 +83,4 @@ temp/
 
 .docker-metrics/
 .DS_Store
+.compact-12vcpu/

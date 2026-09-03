@@ -13,7 +13,7 @@ metadata:
   name: recsys-analytics-superset
   namespace: {{ .Values.namespace }}
 spec:
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   strategy:
     type: RollingUpdate
     rollingUpdate:

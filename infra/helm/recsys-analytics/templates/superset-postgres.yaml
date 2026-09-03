@@ -14,7 +14,7 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   serviceName: recsys-analytics-superset-postgres
-  replicas: 1
+  replicas: {{ ternary 0 1 .Values.suspend }}
   selector:
     matchLabels: {app: recsys-analytics-superset-postgres}
   template:
