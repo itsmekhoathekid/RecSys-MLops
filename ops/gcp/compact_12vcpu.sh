@@ -173,6 +173,19 @@ snapshot() {
   echo "snapshot manifest: ${uri}"
 }
 
+ensure_snapshot() {
+  local uri=""
+  if [[ "${COMPACT_FORCE_SNAPSHOT:-0}" != "1" && -f "${STATE_DIR}/latest-snapshot-uri" ]]; then
+    uri="$(<"${STATE_DIR}/latest-snapshot-uri")"
+    if [[ -n "${uri}" ]] && gcloud storage objects describe "${uri}" >/dev/null 2>&1; then
+      echo "reusing completed snapshot manifest: ${uri}"
+      record_pvcs
+      return
+    fi
+  fi
+  snapshot
+}
+
 terraform_plan() {
   mkdir -p "${STATE_DIR}"
   local tfvars bucket shared_data_dir
@@ -207,7 +220,8 @@ PY
 }
 
 helm_profile() {
-  local release="$1" namespace="$2" chart="$3" overlay="${ROOT}/${chart}/values-compact-12vcpu.yaml"
+  local release="$1" namespace="$2" chart="$3"
+  local overlay="${ROOT}/${chart}/values-compact-12vcpu.yaml"
   helm status "${release}" -n "${namespace}" >/dev/null 2>&1 || return 0
   helm upgrade "${release}" "${ROOT}/${chart}" -n "${namespace}" \
     --reuse-values -f "${overlay}" --wait=false
@@ -388,7 +402,7 @@ up() {
   require_compact_branch
   preflight
   get_credentials
-  snapshot
+  ensure_snapshot
   trap 'status=$?; if [[ ${status} -ne 0 ]]; then rollback_compact_nodes_to_zero; fi; exit ${status}' EXIT
   cp "${PVC_BASELINE}" "${STATE_DIR}/pvc-identities.before-up.json"
   suspend_excluded
