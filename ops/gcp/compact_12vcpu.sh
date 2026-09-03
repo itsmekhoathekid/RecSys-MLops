@@ -470,6 +470,32 @@ materialize_online() {
     | kubectl apply -f -
   kubectl -n recsys-dataflow wait --for=condition=complete job/compact-feature-materialize --timeout=20m
   kubectl -n recsys-dataflow logs job/compact-feature-materialize
+
+  # Feast materialization restores online feature values but not the sorted
+  # candidate pools normally maintained by the suspended Flink pipeline.
+  # Rebuild only aggregate candidate pools from the latest retained item
+  # feature snapshot; user lookups safely fall back to the global ranking.
+  kubectl -n recsys-dataflow create configmap compact-candidate-restore \
+    --from-file="restore_candidate_pools.py=${ROOT}/ops/gcp/restore_candidate_pools.py" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n recsys-dataflow delete job compact-candidate-restore --ignore-not-found
+  kubectl -n recsys-dataflow create job compact-candidate-restore --image="${image}" \
+    --dry-run=client -o json -- \
+    /opt/venv/bin/python /opt/recsys-compact/restore_candidate_pools.py \
+    | jq '
+      .spec.template.spec.containers[0].envFrom = [
+        {"configMapRef":{"name":"recsys-data-platform-config"}},
+        {"secretRef":{"name":"recsys-data-platform-secret"}}
+      ]
+      | .spec.template.spec.containers[0].volumeMounts = [
+        {"name":"restore-script","mountPath":"/opt/recsys-compact","readOnly":true}
+      ]
+      | .spec.template.spec.volumes = [
+        {"name":"restore-script","configMap":{"name":"compact-candidate-restore"}}
+      ]
+    ' | kubectl apply -f -
+  kubectl -n recsys-dataflow wait --for=condition=complete job/compact-candidate-restore --timeout=10m
+  kubectl -n recsys-dataflow logs job/compact-candidate-restore
 }
 
 trigger_jenkins() {
