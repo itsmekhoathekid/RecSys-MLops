@@ -234,10 +234,10 @@ helm_profile() {
   helm_args+=(-f "${overlay}")
   case "${release}" in
     recsys-data-lakehouse)
-      helm_args+=(--set-string "minio.storage=$(kubectl -n recsys-dataflow get pvc data-data-platform-minio-0 -o jsonpath='{.spec.resources.requests.storage}')")
+      helm_args+=(--set-string "minio.storage=$(kubectl -n recsys-dataflow get statefulset data-platform-minio -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}')")
       ;;
     recsys-source-store)
-      helm_args+=(--set-string "sourcePostgres.storage=$(kubectl -n recsys-dataflow get pvc data-source-postgres-0 -o jsonpath='{.spec.resources.requests.storage}')")
+      helm_args+=(--set-string "sourcePostgres.storage=$(kubectl -n recsys-dataflow get statefulset source-postgres -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}')")
       ;;
     recsys-event-stream)
       helm_args+=(
@@ -246,12 +246,12 @@ helm_profile() {
       )
       ;;
     recsys-airflow)
-      helm_args+=(--set-string "airflowPostgres.storage=$(kubectl -n recsys-dataflow get pvc data-airflow-postgres-0 -o jsonpath='{.spec.resources.requests.storage}')")
+      helm_args+=(--set-string "airflowPostgres.storage=$(kubectl -n recsys-dataflow get statefulset airflow-postgres -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}')")
       ;;
     recsys-analytics)
       helm_args+=(
-        --set-string "catalog.storage=$(kubectl -n analytics get pvc data-recsys-analytics-catalog-postgres-0 -o jsonpath='{.spec.resources.requests.storage}')"
-        --set-string "superset.storage=$(kubectl -n analytics get pvc data-recsys-analytics-superset-postgres-0 -o jsonpath='{.spec.resources.requests.storage}')"
+        --set-string "catalog.storage=$(kubectl -n analytics get statefulset recsys-analytics-catalog-postgres -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}')"
+        --set-string "superset.storage=$(kubectl -n analytics get statefulset recsys-analytics-superset-postgres -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}')"
       )
       ;;
   esac
