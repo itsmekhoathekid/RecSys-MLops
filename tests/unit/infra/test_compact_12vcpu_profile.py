@@ -91,3 +91,14 @@ def test_retained_autoscalers_are_locked_to_one() -> None:
         )
         assert values["autoscaling"]["minReplicas"] == 1
         assert values["autoscaling"]["maxReplicas"] == 1
+
+
+def test_up_bootstraps_admission_webhooks_before_helm_suspend() -> None:
+    script = (ROOT / "ops/gcp/compact_12vcpu.sh").read_text()
+    up_body = script.split("up() {", 1)[1].split("\ndown() {", 1)[0]
+    assert up_body.index("scale_excluded_before_bootstrap") < up_body.index(
+        "ensure_admission_webhooks"
+    )
+    assert up_body.index("ensure_admission_webhooks") < up_body.index(
+        "suspend_excluded"
+    )

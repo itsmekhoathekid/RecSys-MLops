@@ -275,6 +275,39 @@ suspend_excluded() {
   kubectl -n datahub scale deployment,statefulset --all --replicas=0 || true
 }
 
+scale_excluded_before_bootstrap() {
+  local namespace release
+  while read -r namespace release; do
+    kubectl -n "${namespace}" scale deployment,statefulset \
+      -l "app.kubernetes.io/instance=${release}" --replicas=0 || true
+  done <<'EOF'
+recsys-dataflow recsys-data-lakehouse
+recsys-dataflow recsys-source-store
+recsys-dataflow recsys-event-stream
+recsys-dataflow recsys-kafka-connect
+recsys-dataflow recsys-streaming
+recsys-dataflow recsys-airflow
+analytics recsys-analytics
+api-serving recsys-demo-web
+EOF
+  kubectl -n datahub scale deployment,statefulset --all --replicas=0 || true
+}
+
+ensure_admission_webhooks() {
+  local ready_nodes
+  ready_nodes="$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready" {count++} END {print count+0}')"
+  if [[ "${ready_nodes}" == "0" ]]; then
+    echo "starting one temporary CPU node so admission webhooks can validate Helm upgrades"
+    gcloud container node-pools update "${CPU_POOL}" --cluster "${CLUSTER}" \
+      --zone "${ZONE}" --project "${PROJECT_ID}" --enable-autoscaling \
+      --min-nodes=1 --max-nodes=1 --quiet
+    gcloud container clusters resize "${CLUSTER}" --node-pool "${CPU_POOL}" \
+      --num-nodes=1 --zone "${ZONE}" --project "${PROJECT_ID}" --quiet
+  fi
+  kubectl wait --for=condition=Ready nodes --all --timeout=20m
+  kubectl -n external-secrets rollout status deployment/external-secrets-webhook --timeout=10m
+}
+
 apply_retained_overlays() {
   helm_profile recsys-observability observability infra/helm/recsys-observability
   helm_profile recsys-llm-serving llm-inference infra/helm/recsys-llm-serving
@@ -441,6 +474,8 @@ up() {
   ensure_snapshot
   trap 'status=$?; if [[ ${status} -ne 0 ]]; then rollback_compact_nodes_to_zero; fi; exit ${status}' EXIT
   cp "${PVC_BASELINE}" "${STATE_DIR}/pvc-identities.before-up.json"
+  scale_excluded_before_bootstrap
+  ensure_admission_webhooks
   suspend_excluded
   terraform_plan
   terraform -chdir="${TF_DIR}" apply -input=false -auto-approve "${PLAN_FILE}"
