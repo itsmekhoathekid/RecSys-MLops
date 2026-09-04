@@ -172,7 +172,7 @@ def load_component_config(
         missing = REQUIRED_COMPONENT_FIELDS - component.keys()
         if missing:
             raise ValueError(f"component is missing fields: {sorted(missing)}")
-        unknown = set(component) - REQUIRED_COMPONENT_FIELDS
+        unknown = set(component) - (REQUIRED_COMPONENT_FIELDS | {"releaseDependsOn"})
         if unknown:
             raise ValueError(
                 f"component {component.get('name', '<unknown>')} contains unsupported fields: "
@@ -204,6 +204,10 @@ def load_component_config(
             component["verifyDependsOn"],
             f"component {component['name']} verifyDependsOn",
         )
+        _validate_string_list(
+            component.get("releaseDependsOn", []),
+            f"component {component['name']} releaseDependsOn",
+        )
         unknown_artifacts = set(component["buildArtifacts"]) - SUPPORTED_BUILD_ARTIFACTS
         if unknown_artifacts:
             raise ValueError(
@@ -227,6 +231,18 @@ def load_component_config(
             raise ValueError(
                 f"component {component['name']} cannot verifyDependsOn itself"
             )
+        unknown_release_dependencies = (
+            set(component.get("releaseDependsOn", [])) - component_names
+        )
+        if unknown_release_dependencies:
+            raise ValueError(
+                f"component {component['name']} releaseDependsOn references unknown "
+                f"components: {sorted(unknown_release_dependencies)}"
+            )
+        if component["name"] in component.get("releaseDependsOn", []):
+            raise ValueError(
+                f"component {component['name']} cannot releaseDependsOn itself"
+            )
     visiting: set[str] = set()
     visited: set[str] = set()
     by_name = {component["name"]: component for component in components}
@@ -244,6 +260,23 @@ def load_component_config(
 
     for name in by_name:
         visit_verification(name)
+
+    visiting.clear()
+    visited.clear()
+
+    def visit_release(name: str) -> None:
+        if name in visited:
+            return
+        if name in visiting:
+            raise ValueError(f"component release dependency cycle includes {name}")
+        visiting.add(name)
+        for dependency in by_name[name].get("releaseDependsOn", []):
+            visit_release(dependency)
+        visiting.remove(name)
+        visited.add(name)
+
+    for name in by_name:
+        visit_release(name)
     payload["globalExcludes"] = global_excludes
     return payload
 

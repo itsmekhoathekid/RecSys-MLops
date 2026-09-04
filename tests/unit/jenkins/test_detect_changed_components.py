@@ -92,6 +92,35 @@ def test_dedicated_pipeline_release_plan_golden(golden):
     assert plan["deployUnits"] == golden["deployUnits"]
 
 
+def test_forced_pipeline_scope_ignores_unrelated_changed_chart_paths():
+    result = detect_changed_components(
+        [ChangedFile("M", "infra/helm/recsys-analytics/values.yaml")],
+        forced_components="recommendation_mcp,recommendation_agent,ci_config",
+        commit="forced",
+    )
+
+    assert list(result.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "recommendation"
+    ]["components"]
+    assert result.release_plan["deployUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "recommendation"
+    ]["deployUnits"]
+
+
+def test_coordinator_change_expands_release_dependencies():
+    result = detect_changed_components(
+        [ChangedFile("M", "configs/agentic/recsys-coordinator-agent/tools-contract.json")],
+        commit="coordinator",
+    )
+
+    assert list(result.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "coordinator"
+    ]["components"]
+    assert result.release_plan["deployUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "coordinator"
+    ]["deployUnits"]
+
+
 def selected(paths: list[str]) -> set[str]:
     return set(
         detect_changed_components(
@@ -312,12 +341,15 @@ def test_agentic_change_routing_and_release_order_matrix():
     ]
 
     agent = detect(["infra/helm/recsys-kagent-agent/values.yaml"])
-    assert agent.component_names == ("context_agent",)
-    assert agent.release_plan["buildImages"] == []
-    assert agent.release_plan["deployUnits"] == [
-        "context-agent",
-        "context-agent-registry",
+    assert list(agent.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS["context"][
+        "components"
     ]
+    assert agent.release_plan["buildImages"] == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "context"
+    ]["buildImages"]
+    assert agent.release_plan["deployUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "context"
+    ]["deployUnits"]
 
     interface = detect(
         ["configs/agentic/recsys-context-agent/tools-contract.json"]
@@ -343,15 +375,20 @@ def test_coordinator_change_selects_its_helm_and_registry_units_in_order():
     coordinator = detect(
         ["infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml"]
     )
-    assert coordinator.component_names == ("coordinator_agent",)
-    assert coordinator.release_plan["buildImages"] == []
-    assert coordinator.release_plan["deployUnits"] == [
-        "coordinator-agent",
-        "coordinator-agent-registry",
-    ]
+    assert list(coordinator.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "coordinator"
+    ]["components"]
+    assert coordinator.release_plan["buildImages"] == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "coordinator"
+    ]["buildImages"]
+    assert coordinator.release_plan["deployUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "coordinator"
+    ]["deployUnits"]
 
     validation = detect(["ops/validation/coordinator_agentic_autoscale.sh"])
-    assert validation.component_names == ("coordinator_agent",)
+    assert list(validation.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS[
+        "coordinator"
+    ]["components"]
 
 
 def test_rag_change_detection_and_release_dependency_order():

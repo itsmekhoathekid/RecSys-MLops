@@ -552,6 +552,9 @@
       },
       "buildImages": [],
       "buildArtifacts": [],
+      "releaseDependsOn": [
+        "feature_rag_mcp"
+      ],
       "verifyDependsOn": [
         "feature_rag_mcp"
       ],
@@ -606,6 +609,7 @@
       },
       "buildImages": [],
       "buildArtifacts": [],
+      "releaseDependsOn": ["recommendation_mcp"],
       "verifyDependsOn": ["recommendation_mcp"],
       "migrationPolicy": "none"
     },
@@ -634,6 +638,7 @@
       },
       "buildImages": [],
       "buildArtifacts": [],
+      "releaseDependsOn": ["context_agent", "recommendation_agent"],
       "verifyDependsOn": ["context_agent", "recommendation_agent"],
       "migrationPolicy": "none"
     },

@@ -159,6 +159,29 @@ def _forced_selection(
     )
 
 
+def _release_dependency_selection(
+    names: tuple[str, ...], components: list[dict]
+) -> tuple[str, ...]:
+    """Expand product components needed to publish a coherent release."""
+    by_name = {component["name"]: component for component in components}
+    selected: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in selected:
+            return
+        for dependency in by_name[name].get("releaseDependsOn", []):
+            visit(dependency)
+        selected.add(name)
+
+    for name in names:
+        visit(name)
+    return tuple(
+        component["name"]
+        for component in components
+        if component["name"] in selected
+    )
+
+
 def detect_changed_components(
     changes: list[ChangedFile],
     *,
@@ -238,6 +261,8 @@ def detect_changed_components(
             if component["name"] in direct_component_names
         )
 
+    ordered_names = _release_dependency_selection(ordered_names, components)
+
     for component in components:
         if component["name"] in ordered_names:
             flags[component["flag"]] = True
@@ -247,7 +272,11 @@ def detect_changed_components(
     release_plan = create_release_plan(
         list(ordered_names),
         changed_images=list(changed_image_names),
-        changed_paths=[change.path for change in normalized_changes],
+        changed_paths=(
+            []
+            if forced_components.strip()
+            else [change.path for change in normalized_changes]
+        ),
         commit=commit,
     )
     if ordered_names:
