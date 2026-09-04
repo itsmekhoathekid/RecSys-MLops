@@ -12,6 +12,17 @@ CHART = ROOT / "infra/helm/recsys-coordinator-agent"
 CONTRACT = ROOT / "configs/agentic/recsys-coordinator-agent/tools-contract.json"
 
 
+def _agentic_deploy_source() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            ROOT / "jenkins/scripts/deploy/agentic.sh",
+            ROOT / "jenkins/scripts/lib/runtime.sh",
+            *sorted((ROOT / "jenkins/scripts/deploy/agentic").glob("*.sh")),
+        )
+    )
+
+
 def _render(values: str | None = None) -> list[dict[str, Any]]:
     command = ["helm", "template", "contract-test", str(CHART)]
     if values:
@@ -174,9 +185,7 @@ agentic_write_registry_manifest "$1" coordinator-agent \
 
 
 def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
-    deploy_script = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
-        encoding="utf-8"
-    )
+    deploy_script = _agentic_deploy_source()
     assert "Pass the Recommendation Agent exactly this complete JSON request" in (
         deploy_script
     )
@@ -186,8 +195,10 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert '"http_422"' in deploy_script
     assert "assert_usable_agent_response" in deploy_script
     assert "Recommended item_id: <first returned item_id>" in deploy_script
-    coordinator_smoke = deploy_script.split("coordinator_a2a_smoke()", 1)[1].split(
-        "agentic_mcp_protocol_smoke()", 1
+    coordinator_smoke = (
+        ROOT / "jenkins/scripts/deploy/agentic/a2a.sh"
+    ).read_text(encoding="utf-8").split("coordinator_a2a_smoke()", 1)[1].split(
+        "agentic_a2a_smoke()", 1
     )[0]
     assert 'for attempt in $(seq 1 "${max_attempts}")' in coordinator_smoke
     assert "for attempt in 1 2 3" not in coordinator_smoke
@@ -224,6 +235,11 @@ def test_coordinator_shell_entrypoints_are_syntactically_valid() -> None:
     for relative_path in (
         "jenkins/scripts/ci/agentic.sh",
         "jenkins/scripts/deploy/agentic.sh",
+        "jenkins/scripts/deploy/agentic/a2a.sh",
+        "jenkins/scripts/deploy/agentic/kubernetes.sh",
+        "jenkins/scripts/deploy/agentic/mcp.sh",
+        "jenkins/scripts/deploy/agentic/registry.sh",
+        "jenkins/scripts/deploy/agentic/sandbox.sh",
         "jenkins/scripts/test/agentic.sh",
         "ops/validation/coordinator_agentic_smoke.sh",
         "ops/validation/coordinator_agentic_autoscale.sh",
@@ -239,7 +255,7 @@ def test_coordinator_shell_entrypoints_are_syntactically_valid() -> None:
     a2a_generators = "\n".join(
         (ROOT / relative_path).read_text(encoding="utf-8")
         for relative_path in (
-            "jenkins/scripts/deploy/agentic.sh",
+            "jenkins/scripts/deploy/agentic/a2a.sh",
             "ops/validation/coordinator_agentic_autoscale.sh",
             "ops/validation/agentic_autoscale_capture.sh",
         )

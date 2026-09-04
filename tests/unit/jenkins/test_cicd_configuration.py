@@ -26,6 +26,11 @@ EXPECTED_STAGES = [
     "Component Build And Publish",
     "Component Deploy Or Update",
 ]
+EXPECTED_STAGE_VIEW = [
+    "Declarative: Checkout SCM",
+    *EXPECTED_STAGES,
+    "Declarative: Post Actions",
+]
 EXPECTED_LABELS = [
     "Materialize Pipeline",
     "Training Pipeline",
@@ -50,6 +55,56 @@ EXPECTED_LABELS = [
     "Analytics And BI",
     "Recommendation Demo Web",
 ]
+
+
+def _deploy_bundle(name: str) -> str:
+    loader = (ROOT / "jenkins/scripts/deploy" / f"{name}.sh").read_text(
+        encoding="utf-8"
+    )
+    modules = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "jenkins/scripts/deploy" / name).glob("*.sh"))
+    )
+    runtime = (ROOT / "jenkins/scripts/lib/runtime.sh").read_text(encoding="utf-8")
+    return f"{loader}\n{runtime}\n{modules}"
+
+
+def test_deploy_helpers_are_modular_and_preserve_caller_shell_options():
+    expected_modules = {
+        "agentic": {"sandbox.sh", "kubernetes.sh", "mcp.sh", "a2a.sh", "registry.sh"},
+        "rag": {"bootstrap.sh", "kubernetes.sh", "api.sh", "index_lifecycle.sh", "rollback.sh"},
+    }
+    for name, expected in expected_modules.items():
+        loader = (ROOT / "jenkins/scripts/deploy" / f"{name}.sh").read_text(
+            encoding="utf-8"
+        )
+        module_paths = sorted((ROOT / "jenkins/scripts/deploy" / name).glob("*.sh"))
+        assert {path.name for path in module_paths} == expected
+        assert "source jenkins/scripts/lib/runtime.sh" in loader
+        for path in module_paths:
+            source = path.read_text(encoding="utf-8")
+            assert not re.search(r"^set [+-]", source, flags=re.MULTILINE)
+            assert f'/{path.name}"' in loader
+    runtime = (ROOT / "jenkins/scripts/lib/runtime.sh").read_text(encoding="utf-8")
+    assert not re.search(r"^set [+-]", runtime, flags=re.MULTILINE)
+    assert "recsys_cleanup_process()" in runtime
+    assert "recsys_wait_http()" in runtime
+    assert "recsys_wait_kubernetes_job()" in runtime
+    assert "recsys_write_registry_evidence()" in runtime
+
+
+def test_stage_view_contract_keeps_all_nine_stages_in_order():
+    assert EXPECTED_STAGE_VIEW == [
+        "Declarative: Checkout SCM",
+        "Checkout",
+        "Detect Changed Components",
+        "Python Env",
+        "Component CI",
+        "Docker Login",
+        "Component Build And Publish",
+        "Component Deploy Or Update",
+        "Declarative: Post Actions",
+    ]
 
 
 def test_component_catalog_is_valid_and_preserves_stage_view_labels():
@@ -147,7 +202,7 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
         "recommendation-mcp-registry",
     ]
 
-    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(encoding="utf-8")
+    deploy = _deploy_bundle("agentic")
     assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in deploy
     assert "0.1.0+%s" in deploy
     assert '"remote": {' in deploy
@@ -389,7 +444,9 @@ def test_online_feature_deploy_uses_canonical_registry_secret_without_cli_leakag
 
 
 def test_rag_promotion_contract_gate_uses_the_required_python_runtime():
-    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
+    deployment = (ROOT / "jenkins/scripts/deploy/rag/api.sh").read_text(
+        encoding="utf-8"
+    )
     contract_gate = deployment.split("rag_verify_api_contract()", 1)[1].split("\n}", 1)[
         0
     ]
@@ -400,9 +457,15 @@ def test_rag_promotion_contract_gate_uses_the_required_python_runtime():
 
 
 def test_rag_job_wait_retries_visibility_and_fails_fast_on_failed_condition():
-    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
-    wait_job = deployment.split("rag_wait_job()", 1)[1].split("\n}", 1)[0]
+    wrapper = (ROOT / "jenkins/scripts/deploy/rag/kubernetes.sh").read_text(
+        encoding="utf-8"
+    )
+    deployment = (ROOT / "jenkins/scripts/lib/runtime.sh").read_text(encoding="utf-8")
+    wait_job = deployment.split("recsys_wait_kubernetes_job()", 1)[1].split(
+        "\n}", 1
+    )[0]
 
+    assert 'recsys_wait_kubernetes_job "$@"' in wrapper
     assert "for _ in $(seq 1 30)" in wait_job
     assert 'get "job/${job}"' in wait_job
     assert "sleep 1" in wait_job
@@ -435,7 +498,9 @@ def test_analytics_reuses_deployed_digests_for_images_not_built_in_release():
 
 
 def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
-    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
+    deployment = (ROOT / "jenkins/scripts/deploy/rag/api.sh").read_text(
+        encoding="utf-8"
+    )
     tunnel = deployment.split("rag_start_api_port_forward()", 1)[1].split("\n}", 1)[0]
     gcp_values = (ROOT / "infra/helm/recsys-rag-api/values-gcp.yaml").read_text(
         encoding="utf-8"
@@ -444,7 +509,9 @@ def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
     assert "--field-selector=status.phase=Running" in tunnel
     assert 'port-forward "pod/${ready_pod}"' in tunnel
     assert "rollout status deployment/recsys-rag-api" in tunnel
-    assert "for _ in $(seq 1 30)" in tunnel
+    assert 'recsys_wait_http "http://127.0.0.1:${port}/ready" 30 1' in tunnel
+    runtime = (ROOT / "jenkins/scripts/lib/runtime.sh").read_text(encoding="utf-8")
+    assert "for _ in $(seq 1 \"${attempts}\")" in runtime
     assert "nodeSelector: {}" in gcp_values
     assert "recsys.ai/pool: cpu-services" not in gcp_values
     assert "key: recsys.ai/workload" in gcp_values
@@ -456,17 +523,19 @@ def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
 
 
 def test_rag_transient_milvus_jobs_use_released_ml_capacity():
-    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
-    bootstrap = deployment.split("rag_milvus_credentials_bootstrap()", 1)[1].split(
-        "rag_rollback_pointer()", 1
-    )[0]
+    deployment = (ROOT / "jenkins/scripts/deploy/rag/bootstrap.sh").read_text(
+        encoding="utf-8"
+    )
+    bootstrap = deployment.split("rag_milvus_credentials_bootstrap()", 1)[1]
 
     assert "nodeSelector: {recsys.ai/workload: ml-system}" in bootstrap
     assert "value: ml-system, effect: NoSchedule" in bootstrap
 
 
 def test_rag_promotion_uses_pinned_embedding_batch_and_schedulable_request():
-    deployment = (ROOT / "jenkins/scripts/deploy/rag.sh").read_text(encoding="utf-8")
+    deployment = (ROOT / "jenkins/scripts/deploy/rag/index_lifecycle.sh").read_text(
+        encoding="utf-8"
+    )
     promotion = deployment.split("rag_index_promote()", 1)[1]
 
     assert promotion.count("embed-chunks") == 2
@@ -724,9 +793,7 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "env.SHOULD_PUBLISH_IMAGES = shouldPublishImages()" in pipeline_helper
     assert "REQUIRE_GCP_ARTIFACT_REGISTRY=${env.SHOULD_PUBLISH_IMAGES" in pipeline_helper
     assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" not in pipeline_helper
-    agentic_deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
-        encoding="utf-8"
-    )
+    agentic_deploy = _deploy_bundle("agentic")
     assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in agentic_deploy
     assert "git rev-parse --verify origin/main^{commit}" in agentic_deploy
     assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in agentic_deploy
@@ -1027,7 +1094,7 @@ def test_prometheus_operator_is_pinned_and_operator_only():
 
 
 def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
-    agentic = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(encoding="utf-8")
+    agentic = _deploy_bundle("agentic")
     deploy = (ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh").read_text(
         encoding="utf-8"
     )

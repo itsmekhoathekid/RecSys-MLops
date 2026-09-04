@@ -20,6 +20,17 @@ sys.path.insert(
 server = importlib.import_module("recsys_recommendation_mcp.server")
 
 
+def _agentic_deploy_source() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            ROOT / "jenkins/scripts/deploy/agentic.sh",
+            ROOT / "jenkins/scripts/lib/runtime.sh",
+            *sorted((ROOT / "jenkins/scripts/deploy/agentic").glob("*.sh")),
+        )
+    )
+
+
 def _contract() -> dict[str, Any]:
     return json.loads(
         (
@@ -189,7 +200,7 @@ def test_terraform_owns_dedicated_pool_and_ignores_keda_replica_drift() -> None:
 
 
 def test_jenkins_preflight_verifies_keda_rbac_without_impersonated_ssar() -> None:
-    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(encoding="utf-8")
+    deploy = _agentic_deploy_source()
     recommendation_preflight = deploy.split(
         "recommendation_agentic_preflight()", maxsplit=1
     )[1].split("recommendation_mcp_protocol_smoke()", maxsplit=1)[0]

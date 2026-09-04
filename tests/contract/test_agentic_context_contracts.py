@@ -22,6 +22,17 @@ TOOL_NAMES = server_module.TOOL_NAMES
 create_mcp_server = server_module.create_mcp_server
 
 
+def _agentic_deploy_source() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            ROOT / "jenkins/scripts/deploy/agentic.sh",
+            ROOT / "jenkins/scripts/lib/runtime.sh",
+            *sorted((ROOT / "jenkins/scripts/deploy/agentic").glob("*.sh")),
+        )
+    )
+
+
 class _UnusedClient:
     """The contract test only needs FastMCP's generated tool metadata."""
 
@@ -343,9 +354,7 @@ def test_runtime_verifier_accepts_keda_static_fallback_defaulting():
 
 
 def test_a2a_smoke_requires_all_tools_and_a_completed_grounded_answer():
-    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
-        encoding="utf-8"
-    )
+    deploy = _agentic_deploy_source()
     assert 'status.get("state") not in {"completed", "TASK_STATE_COMPLETED"}' in deploy
     assert '"get_user_online_features": (' in deploy
     assert '"get_chunk_by_id": (' in deploy
@@ -378,9 +387,7 @@ def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
 
 
 def test_registry_uses_arctl_v04_declarative_resources():
-    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
-        encoding="utf-8"
-    )
+    deploy = _agentic_deploy_source()
     assert "recsys/recsys-feature-rag-mcp" in deploy
     assert '"apiVersion": "ar.dev/v1alpha1"' in deploy
     assert '"kind": "MCPServer"' in deploy
@@ -411,9 +418,7 @@ def test_registry_uses_arctl_v04_declarative_resources():
 
 
 def test_a2a_smoke_payloads_use_protocol_v03_message_ids():
-    deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
-        encoding="utf-8"
-    )
+    deploy = _agentic_deploy_source()
     autoscale = (
         ROOT / "ops/validation/agentic_context_autoscale.sh"
     ).read_text(encoding="utf-8")
