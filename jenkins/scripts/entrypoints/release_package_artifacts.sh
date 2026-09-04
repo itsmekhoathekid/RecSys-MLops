@@ -28,7 +28,7 @@ while IFS= read -r artifact; do
       training_image="$(release_image_reference recsys-mlops-training)"
       RECSYS_PIPELINE_IMAGE="${training_image}" \
         RECSYS_RAY_IMAGE="${training_image}" \
-        RECSYS_SPARK_IMAGE="$(release_image_reference recsys-spark)" \
+        RECSYS_SPARK_ML_IMAGE="$(release_image_reference recsys-spark-ml)" \
         bash jenkins/scripts/build/kfp_package.sh
       ;;
     *)

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import io
+import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from botocore.exceptions import ClientError
 
 from rag_data.artifact_storage import PointerConflictError, RagArtifactStore
+from rag_data.contracts import RunManifest
 from rag_data.pipeline_contracts import ActiveIndexPointer
 
 
@@ -34,6 +37,19 @@ class ConditionalS3:
         self.objects[(Bucket, Key)] = (Body, etag)
         return {"ETag": f'"{etag}"'}
 
+    def list_objects_v2(self, *, Bucket, Prefix, ContinuationToken=None):
+        keys = sorted(
+            key for bucket, key in self.objects if bucket == Bucket and key.startswith(Prefix)
+        )
+        start = int(ContinuationToken or 0)
+        page = keys[start : start + 2]
+        next_offset = start + len(page)
+        return {
+            "Contents": [{"Key": key} for key in page],
+            "IsTruncated": next_offset < len(keys),
+            "NextContinuationToken": str(next_offset),
+        }
+
 
 def pointer(run_id: str) -> ActiveIndexPointer:
     return ActiveIndexPointer(
@@ -57,3 +73,28 @@ def test_active_pointer_uses_etag_compare_and_swap():
     assert store.compare_and_swap_pointer(pointer("run-2"), expected_etag="etag-1") == "etag-2"
     with pytest.raises(PointerConflictError):
         store.compare_and_swap_pointer(pointer("stale"), expected_etag="etag-1")
+
+
+def test_latest_complete_source_run_uses_manifest_timestamp_and_pagination():
+    client = ConditionalS3()
+    now = datetime.now(timezone.utc)
+    for run_id, status, updated_at in (
+        ("older", "complete", now - timedelta(days=1)),
+        ("newest-running", "running", now + timedelta(days=1)),
+        ("newest-complete", "complete", now),
+    ):
+        manifest = RunManifest(
+            run_id=run_id,
+            status=status,
+            model="model",
+            prompt_version="v1",
+            updated_at=updated_at,
+        )
+        client.put_object(
+            Bucket="lake",
+            Key=f"raw/{run_id}/rag_item_documents/manifest.json",
+            Body=json.dumps(manifest.model_dump(mode="json")).encode(),
+            ContentType="application/json",
+        )
+    store = RagArtifactStore(client=client, bucket="lake")
+    assert store.latest_complete_source_run() == "newest-complete"

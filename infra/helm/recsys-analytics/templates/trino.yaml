@@ -34,7 +34,7 @@ spec:
       nodeSelector: {{ toYaml .Values.nodeSelectors.trino | nindent 8 }}
       initContainers:
         - name: initialize-iceberg-jdbc-catalog
-          image: {{ .Values.images.spark | quote }}
+          image: {{ .Values.images.sparkAnalytics | quote }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["/opt/spark/bin/spark-submit"]
           args: ["local:///opt/recsys/apps/analytics/src/init_catalog.py"]

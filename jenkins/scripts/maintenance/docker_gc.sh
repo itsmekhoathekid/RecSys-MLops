@@ -14,7 +14,7 @@ command -v flock >/dev/null 2>&1 || {
 
 lock_root="${JENKINS_HOME:-/tmp}/ci-build-locks"
 retention="${DOCKER_GC_RETENTION:-168h}"
-keep_storage="${DOCKER_GC_KEEP_STORAGE:-80GB}"
+keep_storage="${DOCKER_GC_KEEP_STORAGE:-40GB}"
 mkdir -p "${lock_root}"
 
 (
@@ -22,8 +22,8 @@ mkdir -p "${lock_root}"
     echo "[recsys-cicd] skip Docker GC because another cleanup is active"
     exit 0
   fi
-  docker image prune --all --force --filter "until=${retention}" || true
-  docker builder prune --all --force \
+  docker image prune --force --filter "until=${retention}" || true
+  docker builder prune --force \
     --filter "until=${retention}" \
     --keep-storage "${keep_storage}" || true
   docker system df || true

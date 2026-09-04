@@ -36,6 +36,20 @@ def dataset_result(checks: list[dict[str, Any]]) -> dict[str, Any]:
     return {"status": status, "checks": checks}
 
 
+def build_validation_report(
+    pipeline: str, datasets: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    statuses = {result["status"] for result in datasets.values()}
+    status = (
+        "ERROR"
+        if "ERROR" in statuses
+        else "FAILURE"
+        if "FAILURE" in statuses
+        else "SUCCESS"
+    )
+    return {"pipeline": pipeline, "status": status, "datasets": datasets}
+
+
 @dataclass(frozen=True)
 class DatasetValidationResult:
     dataset_key: str

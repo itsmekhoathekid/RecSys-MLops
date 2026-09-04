@@ -13,16 +13,17 @@ except ImportError:  # pragma: no cover
 
 
 NAMESPACE = os.getenv("ANALYTICS_NAMESPACE", "analytics")
-SPARK_IMAGE = os.getenv(
-    "SPARK_IMAGE", "registry.example.invalid/recsys/recsys-spark:required"
+SPARK_ANALYTICS_IMAGE = os.getenv(
+    "SPARK_ANALYTICS_IMAGE",
+    "registry.example.invalid/recsys/recsys-spark-analytics:required",
 )
 DBT_IMAGE = os.getenv(
     "ANALYTICS_DBT_IMAGE",
     "registry.example.invalid/recsys/recsys-analytics-dbt:required",
 )
-DATA_INGESTION_IMAGE = os.getenv(
-    "DATA_INGESTION_IMAGE",
-    "registry.example.invalid/recsys/recsys-data-ingestion:required",
+DATAHUB_OPS_IMAGE = os.getenv(
+    "DATAHUB_OPS_IMAGE",
+    "registry.example.invalid/recsys/recsys-datahub-ops:required",
 )
 ANALYTICS_NODE_SELECTOR = os.getenv("ANALYTICS_NODE_SELECTOR", "")
 REPORT_URI = (
@@ -147,7 +148,7 @@ if DAG is not None:
     ) as recsys_analytics_daily:
         sync_silver = analytics_task(
             "sync_silver_catalog",
-            SPARK_IMAGE,
+            SPARK_ANALYTICS_IMAGE,
             ["/opt/spark/bin/spark-submit"],
             [
                 "local:///opt/recsys/apps/analytics/src/sync_silver.py",
@@ -171,7 +172,7 @@ if DAG is not None:
         )
         publish_datahub_validation = analytics_task(
             "publish_datahub_validation",
-            DATA_INGESTION_IMAGE,
+            DATAHUB_OPS_IMAGE,
             ["python", "-m", "metadata.publish_datahub_validation"],
             [
                 "--product",

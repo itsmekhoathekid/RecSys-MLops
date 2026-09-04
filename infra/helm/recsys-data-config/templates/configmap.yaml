@@ -30,11 +30,9 @@ data:
   DATA_GENERATOR_CONFIG: {{ .Values.dataSetup.generatorConfig | quote }}
   DATA_GENERATOR_RUN_ID: {{ .Values.dataSetup.generatorRunId | quote }}
   DP3_CONFIG: {{ .Values.dataSetup.dp3Config | quote }}
-  DATA_INGESTION_IMAGE: {{ .Values.images.dataIngestion | quote }}
   FEATURE_STORE_IMAGE: {{ .Values.images.featureStore | quote }}
   DRIFT_RETRAIN_IMAGE: {{ .Values.images.driftRetrain | quote }}
   FLINK_IMAGE: {{ .Values.images.flink | quote }}
-  SPARK_IMAGE: {{ .Values.images.spark | quote }}
   ANALYTICS_DBT_IMAGE: {{ .Values.images.analyticsDbt | quote }}
   REALTIME_LIMIT_PER_TABLE: {{ .Values.dataSetup.realtimeLimitPerTable | quote }}
   DP1_DAG_SCHEDULE: {{ .Values.airflow.dp1Schedule | quote }}
@@ -55,7 +53,6 @@ data:
   REALTIME_E2E_ENABLED: {{ .Values.e2e.realtimeEnabled | quote }}
   SPARK_K8S_MASTER: {{ .Values.spark.k8sMaster | quote }}
   SPARK_K8S_NAMESPACE: {{ .Values.namespace.name | quote }}
-  SPARK_K8S_IMAGE: {{ .Values.images.spark | quote }}
   SPARK_K8S_IMAGE_PULL_POLICY: {{ .Values.images.pullPolicy | quote }}
   SPARK_K8S_SERVICE_ACCOUNT: {{ .Values.spark.serviceAccountName | quote }}
   SPARK_K8S_DRIVER_MEMORY: {{ .Values.spark.driverMemory | quote }}

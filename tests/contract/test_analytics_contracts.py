@@ -89,8 +89,11 @@ def test_lakehouse_thrift_endpoint_exposes_all_iceberg_layers_internally():
     assert "silver_order_facts" not in rendered
 
     deploy = (ROOT / "jenkins" / "scripts" / "deploy" / "analytics.sh").read_text()
-    assert "analytics_release_image recsys-spark images.spark" in deploy
-    assert '--set-string "images.spark=${spark_image}"' in deploy
+    assert (
+        "analytics_release_image recsys-spark-analytics images.sparkAnalytics"
+        in deploy
+    )
+    assert '--set-string "images.sparkAnalytics=${spark_image}"' in deploy
     assert "wait_rollout_if_exists deployment recsys-lakehouse-thrift" in deploy
 
 

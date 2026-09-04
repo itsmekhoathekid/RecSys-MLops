@@ -46,7 +46,7 @@ deploy_analytics() {
   local secret_create=true
   local external_secret_enabled=false
   local spark_image dbt_image superset_image
-  spark_image="$(analytics_release_image recsys-spark images.spark)"
+  spark_image="$(analytics_release_image recsys-spark-analytics images.sparkAnalytics)"
   dbt_image="$(analytics_release_image recsys-analytics-dbt images.dbt)"
   superset_image="$(analytics_release_image recsys-analytics-superset images.superset)"
   if [[ "${ANALYTICS_EXTERNAL_SECRET_ENABLED:-1}" == "1" ]]; then
@@ -65,7 +65,7 @@ deploy_analytics() {
     --set "externalSecret.enabled=${external_secret_enabled}" \
     --set "dashboardBootstrap.enabled=${ANALYTICS_DASHBOARD_BOOTSTRAP_ENABLED:-true}" \
     --set "images.pullPolicy=Always" \
-    --set-string "images.spark=${spark_image}" \
+    --set-string "images.sparkAnalytics=${spark_image}" \
     --set-string "images.dbt=${dbt_image}" \
     --set-string "images.superset=${superset_image}"
   verify_and_wait_workload deployment recsys-analytics-superset "${namespace_analytics}" "${superset_image}"

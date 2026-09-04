@@ -4,7 +4,7 @@ set -euo pipefail
 package_path="${KFP_PACKAGE_PATH:-pipelines/kubeflow/compiled/bst_training_pipeline.yaml}"
 training_image="${RECSYS_PIPELINE_IMAGE:?RECSYS_PIPELINE_IMAGE is required}"
 ray_image="${RECSYS_RAY_IMAGE:-${training_image}}"
-spark_image="${RECSYS_SPARK_IMAGE:?RECSYS_SPARK_IMAGE is required}"
+spark_image="${RECSYS_SPARK_ML_IMAGE:?RECSYS_SPARK_ML_IMAGE is required}"
 
 python_cmd=()
 if [[ -n "${KFP_CICD_PYTHON:-}" ]]; then
@@ -20,7 +20,7 @@ fi
 export PYTHONPATH="${PYTHONPATH:-apps/ml-system/src:apps/data-platform/src}"
 export RECSYS_PIPELINE_IMAGE="${training_image}"
 export RECSYS_RAY_IMAGE="${ray_image}"
-export RECSYS_SPARK_IMAGE="${spark_image}"
+export RECSYS_SPARK_ML_IMAGE="${spark_image}"
 
 echo "Compiling Kubeflow package with training image: ${training_image}"
 echo "Compiling Kubeflow package with Spark image: ${spark_image}"

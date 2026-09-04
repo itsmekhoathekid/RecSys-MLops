@@ -2,7 +2,7 @@ namespace:
   name: recsys-dataflow
 images:
   kafkaConnect: registry.example.invalid/recsys/recsys-kafka-connect:required
-  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  kafkaConnectAdmin: registry.example.invalid/recsys/recsys-kafka-connect-admin:required
   pullPolicy: IfNotPresent
 kafka:
   bootstrapServers: kafka:29092

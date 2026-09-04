@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: register-debezium
-          image: {{ .Values.images.dataIngestion }}
+          image: {{ .Values.images.kafkaConnectAdmin }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["bash", "-lc"]
           args:

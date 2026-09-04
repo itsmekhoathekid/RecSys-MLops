@@ -50,10 +50,10 @@ should not queue a duplicate build for the same commit.
 | --- | --- | --- |
 | `ci_config` | `Jenkinsfile`, `jenkins/`, `infra/helm/`, Terraform and `ops/` | None. Runs catalog/detector contracts, Python compile checks, shell syntax, and all Helm renders. |
 | `materialize` | feature-store source, materialize DAG/config | `recsys-feature-store`, `recsys-airflow` |
-| `training` | `apps/ml-system/`, `pipelines/kubeflow/`, `configs/ml-system/training/bst.yaml` | `recsys-mlops-training`, `recsys-spark`, `recsys-mlflow`, `recsys-drift-retrain`, compiled/uploaded KFP YAML |
-| `dp1` | raw ingestion, data generator, source CDC config | `recsys-data-ingestion`, `recsys-spark`, `recsys-airflow`, `recsys-kafka-connect` |
-| `dp2` | silver/gold Spark transforms and DAG/config | `recsys-spark`, `recsys-airflow` |
-| `dp3` | offline feature builders and feature store config | `recsys-spark`, `recsys-feature-store`, `recsys-airflow` |
+| `training` | `apps/ml-system/`, `pipelines/kubeflow/`, `configs/ml-system/training/bst.yaml` | `recsys-mlops-training`, `recsys-spark-ml`, `recsys-mlflow`, `recsys-drift-retrain`, compiled/uploaded KFP YAML |
+| `dp1` | raw ingestion, data generator, source CDC config | `recsys-ingestion`, `recsys-kafka-connect-admin`, `recsys-spark-data`, `recsys-airflow`, `recsys-kafka-connect` |
+| `dp2` | silver/gold Spark transforms and DAG/config | `recsys-spark-data`, `recsys-airflow` |
+| `dp3` | offline feature builders and feature store config | `recsys-spark-data`, `recsys-feature-store`, `recsys-airflow` |
 | `rag_api` | RAG API/runtime, exact-chunk and semantic retrieval contracts | `recsys-rag-api` |
 | `online_feature_api` | shared/Feature source, Feature chart and contract tests | `recsys-online-feature-api` |
 | `feature_rag_mcp` | stateless MCP facade, tool contract, image and Helm chart | `recsys-feature-rag-mcp`, MCP Registry metadata |
@@ -64,7 +64,7 @@ should not queue a duplicate build for the same commit.
 | `drift` | `validate/`, `mlops/`, drift DAG and observability manifests | `recsys-drift-retrain`, `recsys-airflow` |
 | `stream_offline` | Flink stream jobs and Iceberg sink code | `recsys-flink` |
 | `stream_online` | Flink stream jobs, Redis/online writer code | `recsys-flink` |
-| `analytics` | `apps/analytics/`, analytics tests, Airflow analytics DAG, and `infra/helm/recsys-analytics/` | `recsys-spark`, `recsys-analytics-dbt`, `recsys-analytics-superset`, `recsys-airflow` |
+| `analytics` | `apps/analytics/`, analytics tests, Airflow analytics DAG, and `infra/helm/recsys-analytics/` | `recsys-spark-analytics`, `recsys-analytics-dbt`, `recsys-analytics-superset`, `recsys-airflow` |
 | `demo_web` | demo frontend/backend, chart, security and smoke test | `recsys-demo-api`, `recsys-demo-web` |
 
 `jenkins/config/components.json` is the source of truth for path
@@ -172,7 +172,7 @@ The Jenkins job has no project, registry, cluster, or kubeconfig override.
 Services pull `@sha256:` references; the pipeline does not deploy mutable tags.
 
 The `training` component has an extra Kubeflow package gate: CI/CD builds and
-pushes `recsys-mlops-training`, `recsys-spark`, and `recsys-mlflow`,
+pushes `recsys-mlops-training`, `recsys-spark-ml`, and `recsys-mlflow`,
 compiles `pipelines/kubeflow/compiled/bst_training_pipeline.yaml` with those real
 image refs, validates and archives it, then uploads or versions the package in
 Kubeflow. Runtime retrain jobs submit the uploaded pipeline by name/version and

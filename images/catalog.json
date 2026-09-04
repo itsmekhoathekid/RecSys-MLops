@@ -6,8 +6,57 @@
       "context": ".",
       "dependencies": []
     },
-    "recsys-data-ingestion": {
-      "dockerfile": "images/data/recsys-data-ingestion/Dockerfile",
+    "recsys-ingestion": {
+      "dockerfile": "images/data/recsys-ingestion/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-base-python",
+          "buildArg": "RECSYS_BASE_IMAGE"
+        }
+      ]
+    },
+    "recsys-kafka-connect-admin": {
+      "dockerfile": "images/data/recsys-kafka-connect-admin/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-base-python",
+          "buildArg": "RECSYS_BASE_IMAGE"
+        }
+      ]
+    },
+    "recsys-datahub-ops": {
+      "dockerfile": "images/data/recsys-datahub-ops/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-base-python",
+          "buildArg": "RECSYS_BASE_IMAGE"
+        }
+      ]
+    },
+    "recsys-rag-model-e5": {
+      "dockerfile": "images/data/recsys-rag-model-e5/Dockerfile",
+      "context": ".",
+      "dependencies": []
+    },
+    "recsys-rag-indexer": {
+      "dockerfile": "images/data/recsys-rag-indexer/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-base-python",
+          "buildArg": "RECSYS_BASE_IMAGE"
+        },
+        {
+          "image": "recsys-rag-model-e5",
+          "buildArg": "RAG_MODEL_IMAGE"
+        }
+      ]
+    },
+    "recsys-rag-admin": {
+      "dockerfile": "images/data/recsys-rag-admin/Dockerfile",
       "context": ".",
       "dependencies": [
         {
@@ -36,10 +85,40 @@
         }
       ]
     },
-    "recsys-spark": {
-      "dockerfile": "images/data/recsys-spark/Dockerfile",
+    "recsys-spark-runtime": {
+      "dockerfile": "images/data/recsys-spark-runtime/Dockerfile",
       "context": ".",
       "dependencies": []
+    },
+    "recsys-spark-data": {
+      "dockerfile": "images/data/recsys-spark-data/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-spark-runtime",
+          "buildArg": "RECSYS_SPARK_RUNTIME_IMAGE"
+        }
+      ]
+    },
+    "recsys-spark-analytics": {
+      "dockerfile": "images/analytics/recsys-spark-analytics/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-spark-runtime",
+          "buildArg": "RECSYS_SPARK_RUNTIME_IMAGE"
+        }
+      ]
+    },
+    "recsys-spark-ml": {
+      "dockerfile": "images/ml/recsys-spark-ml/Dockerfile",
+      "context": ".",
+      "dependencies": [
+        {
+          "image": "recsys-spark-runtime",
+          "buildArg": "RECSYS_SPARK_RUNTIME_IMAGE"
+        }
+      ]
     },
     "recsys-flink": {
       "dockerfile": "images/data/recsys-flink/Dockerfile",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from orchestration.airflow.spark_utils import (
     DAG,
-    DATA_INGESTION_IMAGE,
+    DATAHUB_OPS_IMAGE,
     FEATURE_STORE_IMAGE,
     datahub_validation_command,
     datetime,
@@ -65,7 +65,7 @@ if DAG is not None:
         )
         publish_datahub_validation = pod_task(
             "publish_datahub_validation",
-            DATA_INGESTION_IMAGE,
+            DATAHUB_OPS_IMAGE,
             datahub_validation_command("DP3", (REPORT_URI,), REDIS_DATASET_KEYS),
             trigger_rule="all_success",
             retries=2,

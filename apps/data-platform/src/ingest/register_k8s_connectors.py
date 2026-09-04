@@ -10,7 +10,7 @@ from typing import Any
 import requests
 
 from lakehouse.iceberg import RAW_GENERATOR_TABLES
-from validate.governance_contracts import build_validation_report, check, dataset_result
+from validate.report_io import build_validation_report, check, dataset_result
 
 
 TABLE_INCLUDE_LIST = (

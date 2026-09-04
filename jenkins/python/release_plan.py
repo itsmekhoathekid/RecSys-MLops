@@ -335,6 +335,12 @@ def main() -> int:
     deploy_context.add_argument("--plan", required=True)
     plan_units = subparsers.add_parser("plan-units")
     plan_units.add_argument("--plan", required=True)
+    plan_units.add_argument(
+        "--phase",
+        choices=("all", "deploy", "finalize"),
+        default="all",
+        help="Select workload deployment units or post-verification finalizers.",
+    )
     plan_images = subparsers.add_parser("plan-images")
     plan_images.add_argument("--plan", required=True)
     plan_artifacts = subparsers.add_parser("plan-artifacts")
@@ -389,13 +395,24 @@ def main() -> int:
             raise SystemExit(
                 f"release plan references unknown deploy units: {sorted(unknown)}"
             )
+        def is_finalizer(name: str) -> bool:
+            unit = units[name]
+            return unit["kind"] == "jenkins-action" and name.endswith("-registry")
+
+        phase_selected = {
+            name
+            for name in selected
+            if args.phase == "all"
+            or (args.phase == "finalize" and is_finalizer(name))
+            or (args.phase == "deploy" and not is_finalizer(name))
+        }
         depths: dict[str, int] = {}
-        for name in topological_order(units, selected):
+        for name in topological_order(units, phase_selected):
             depths[name] = max(
                 (
                     depths[dependency] + 1
                     for dependency in units[name]["dependsOn"]
-                    if dependency in selected
+                    if dependency in phase_selected
                 ),
                 default=0,
             )

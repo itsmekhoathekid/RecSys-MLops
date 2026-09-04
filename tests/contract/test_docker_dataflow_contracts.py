@@ -36,12 +36,55 @@ def render(chart_name: str, *, set_values: tuple[str, ...] = ()) -> str:
     ).stdout
 
 
-def test_image_catalog_has_required_images_and_one_spark():
+def test_image_catalog_has_required_split_runtime_images():
     catalog = json.loads((ROOT / "images/catalog.json").read_text())
     assert "recsys-feature-rag-mcp" in catalog["images"]
-    assert {name for name in catalog["images"] if name.endswith("-spark")} == {
-        "recsys-spark"
-    }
+    assert {
+        "recsys-ingestion",
+        "recsys-kafka-connect-admin",
+        "recsys-datahub-ops",
+        "recsys-rag-model-e5",
+        "recsys-rag-indexer",
+        "recsys-rag-admin",
+        "recsys-spark-runtime",
+        "recsys-spark-data",
+        "recsys-spark-analytics",
+        "recsys-spark-ml",
+    } <= catalog["images"].keys()
+    assert "recsys-data-ingestion" not in catalog["images"]
+    assert "recsys-spark" not in catalog["images"]
+    assert not (ROOT / "images/data/recsys-data-ingestion/Dockerfile").exists()
+    assert not (ROOT / "images/data/recsys-spark/Dockerfile").exists()
+
+
+def test_split_data_images_keep_domain_dependencies_bounded():
+    ingestion = (ROOT / "images/data/recsys-ingestion/Dockerfile").read_text()
+    kafka_admin = (
+        ROOT / "images/data/recsys-kafka-connect-admin/Dockerfile"
+    ).read_text()
+    datahub_ops = (ROOT / "images/data/recsys-datahub-ops/Dockerfile").read_text()
+    rag_indexer = (ROOT / "images/data/recsys-rag-indexer/Dockerfile").read_text()
+    rag_admin = (ROOT / "images/data/recsys-rag-admin/Dockerfile").read_text()
+    airflow = (ROOT / "images/data/recsys-airflow/Dockerfile").read_text()
+
+    for dependency in (
+        "acryl-datahub",
+        "feast",
+        "onnxruntime",
+        "pymilvus",
+        "transformers",
+    ):
+        assert dependency not in ingestion
+    for excluded_source in ("src/metadata", "src/rag_data", "data-generator"):
+        assert excluded_source not in kafka_admin
+    for excluded_source in ("src/rag_data", "data-generator", "rag-runtime"):
+        assert excluded_source not in datahub_ops
+    for excluded_dependency in ("acryl-datahub", "apache-airflow"):
+        assert excluded_dependency not in rag_indexer
+    for excluded_source in ("src/rag_data", "src/metadata", "data-generator"):
+        assert excluded_source not in rag_admin
+    for excluded_source in ("data-generator", "feature-store/rag_feature_repo"):
+        assert excluded_source not in airflow
 
 
 def test_monolithic_data_platform_chart_and_component_dispatchers_are_deleted():
@@ -245,7 +288,7 @@ def test_airflow_runtime_is_pinned_to_the_stable_2_9_control_plane():
     assert "BATCH_FEATURE_DAG_SCHEDULE" not in data_config
 
 
-def test_static_catalog_sdk_is_isolated_to_data_ingestion_runtime():
+def test_static_catalog_sdk_is_isolated_to_datahub_ops_runtime():
     dependency_files = [
         ROOT / "pyproject.toml",
         ROOT / "uv.lock",
@@ -253,11 +296,13 @@ def test_static_catalog_sdk_is_isolated_to_data_ingestion_runtime():
         ROOT / "apps/data-platform/uv.lock",
         ROOT / "apps/ml-system/uv.lock",
     ]
-    datahub_image = ROOT / "images/data/recsys-data-ingestion/Dockerfile"
+    datahub_image = ROOT / "images/data/recsys-datahub-ops/Dockerfile"
     runtime_images = [
         ROOT / "images/data/recsys-feature-store/Dockerfile",
         ROOT / "images/data/recsys-flink/Dockerfile",
-        ROOT / "images/data/recsys-spark/Dockerfile",
+        ROOT / "images/data/recsys-spark-data/Dockerfile",
+        ROOT / "images/data/recsys-ingestion/Dockerfile",
+        ROOT / "images/data/recsys-rag-indexer/Dockerfile",
     ]
     for path in dependency_files + runtime_images + [datahub_image]:
         assert "openlineage-python" not in path.read_text().lower()
@@ -270,7 +315,7 @@ def test_static_catalog_sdk_is_isolated_to_data_ingestion_runtime():
     assert "from datahub.sdk import DataHubClient, Dataset, Tag" in datahub_image.read_text()
 
 
-def test_unified_spark_and_dp_profiles_are_the_only_batch_contract():
+def test_split_spark_data_image_and_dp_profiles_are_the_batch_contract():
     assert (ROOT / "configs/data-platform/spark/dp1.yaml").is_file()
     assert (ROOT / "configs/data-platform/spark/dp2.yaml").is_file()
     assert (ROOT / "configs/data-platform/spark/dp3.yaml").is_file()
@@ -284,9 +329,12 @@ def test_unified_spark_and_dp_profiles_are_the_only_batch_contract():
     assert "dp3_offline_feature_entrypoint.py" in dag
 
 
-def test_unified_spark_contains_all_three_domain_capabilities():
-    dockerfile = (ROOT / "images/data/recsys-spark/Dockerfile").read_text()
-    smoke = (ROOT / "jenkins/scripts/test/unified_spark_image.sh").read_text()
+def test_split_spark_images_isolate_the_three_domain_capabilities():
+    runtime = (ROOT / "images/data/recsys-spark-runtime/Dockerfile").read_text()
+    data = (ROOT / "images/data/recsys-spark-data/Dockerfile").read_text()
+    analytics = (ROOT / "images/analytics/recsys-spark-analytics/Dockerfile").read_text()
+    ml = (ROOT / "images/ml/recsys-spark-ml/Dockerfile").read_text()
+    smoke = (ROOT / "jenkins/scripts/test/spark_image.sh").read_text()
     for artifact in (
         "iceberg-spark-runtime-3.5_2.12",
         "hudi-spark3.5-bundle_2.12",
@@ -294,17 +342,32 @@ def test_unified_spark_contains_all_three_domain_capabilities():
         "aws-java-sdk-bundle",
         "postgresql-${POSTGRES_JDBC_VERSION}.jar",
     ):
-        assert artifact in dockerfile
-    for source in (
-        "apps/data-platform/src",
-        "apps/data-platform/data-generator",
-        "apps/data-platform/feature-store",
-        "apps/ml-system/src",
-        "apps/analytics/src",
-    ):
-        assert f"COPY {source} " in dockerfile
-    assert "PYSPARK_PYTHON=/opt/venv/bin/python" in dockerfile
-    assert "PYSPARK_DRIVER_PYTHON=/opt/venv/bin/python" in dockerfile
+        assert artifact in runtime
+    assert "python3.10-venv" in runtime
+    assert "COPY apps/data-platform/src " in data
+    assert "apps/ml-system/src" not in data
+    assert "apps/analytics/src" not in data
+    assert "COPY apps/analytics/src " in analytics
+    assert "COPY apps/data-platform/src/validate /opt/recsys/validate" in analytics
+    assert "COPY apps/data-platform/src /opt" not in analytics
+    assert "COPY apps/ml-system/src/cli/prepare_bst_training_data.py " in ml
+    assert "COPY apps/ml-system/src/cli/create_hudi_savepoint.py " in ml
+    assert "COPY apps/ml-system/src/lineage/dataset_versioning.py " in ml
+    assert "COPY apps/ml-system/src /opt" not in ml
+    assert "apps/data-platform/data-generator" not in ml
+    assert "numpy==2.2.6" in ml
+    assert "numpy==2.4.6" not in ml
+    assert "scikit-learn==1.9.0" not in ml
+    for dockerfile in (data, analytics, ml):
+        assert "PYSPARK_PYTHON=/opt/venv/bin/python" in dockerfile
+        assert "PYSPARK_DRIVER_PYTHON=/opt/venv/bin/python" in dockerfile
+    for dockerfile in (data, analytics):
+        assert "pyarrow==25.0.0" in dockerfile
+        assert "pyarrow==24.0.0" not in dockerfile
+    assert "pyarrow==24.0.0" in ml
+    assert "pyarrow==25.0.0" not in ml
+    for excluded_dependency in ("torch==", "ray[", "mlflow==", "kfp==", "onnx=="):
+        assert excluded_dependency not in ml
     assert "generator_config" in smoke
     assert "cli.prepare_bst_training_data" in smoke
     assert "sync_silver" in smoke
@@ -340,10 +403,12 @@ def test_feature_store_chart_bootstraps_sql_registry_schema():
 def test_runtime_images_expose_the_src_layout_feature_store_package():
     package_src = "/opt/recsys/apps/data-platform/feature-store/runtime/src"
     dockerfiles = (
-        "images/data/recsys-data-ingestion/Dockerfile",
+        "images/data/recsys-rag-indexer/Dockerfile",
+        "images/data/recsys-rag-admin/Dockerfile",
         "images/data/recsys-feature-store/Dockerfile",
         "images/data/recsys-drift-retrain/Dockerfile",
-        "images/data/recsys-spark/Dockerfile",
+        "images/data/recsys-spark-data/Dockerfile",
+        "images/ml/recsys-spark-ml/Dockerfile",
         "images/ml/recsys-mlops-training/Dockerfile",
     )
     for path in dockerfiles:
@@ -364,7 +429,7 @@ def test_runtime_images_expose_the_src_layout_feature_store_package():
 def test_runtime_images_expose_the_src_layout_rag_package():
     package_src = "/opt/recsys/apps/data-platform/rag-runtime"
     for path in (
-        "images/data/recsys-data-ingestion/Dockerfile",
+        "images/data/recsys-rag-indexer/Dockerfile",
         "images/serving/recsys-rag-api/Dockerfile",
     ):
         assert package_src in (ROOT / path).read_text(), path
@@ -460,9 +525,10 @@ def test_flink_taskmanagers_fit_the_production_node_pool_cpu_budget():
 def test_release_planner_and_jenkins_use_one_global_plan():
     jenkinsfile = (ROOT / "Jenkinsfile").read_text()
     groovy = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text()
-    assert "--plan-output .ci-release-plan.json" in jenkinsfile
-    assert "release_build_publish.sh .ci-release-plan.json" in jenkinsfile
-    assert "deployReleasePlan" in jenkinsfile
+    assert "componentPipeline.detectReleasePlan()" in jenkinsfile
+    assert "--plan-output .ci-release-plan.json" in groovy
+    assert "release_build_publish.sh .ci-release-plan.json" in groovy
+    assert "deployReleasePlan" in groovy
     assert "runComponentDeployBranches" not in groovy
 
 

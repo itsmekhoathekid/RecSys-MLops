@@ -16,16 +16,17 @@ FEATURE_STORE_IMAGE = os.getenv(
     "FEATURE_STORE_IMAGE",
     "registry.example.invalid/recsys/recsys-feature-store:required",
 )
-DATA_INGESTION_IMAGE = os.getenv(
-    "DATA_INGESTION_IMAGE",
-    "registry.example.invalid/recsys/recsys-data-ingestion:required",
+DATAHUB_OPS_IMAGE = os.getenv(
+    "DATAHUB_OPS_IMAGE",
+    "registry.example.invalid/recsys/recsys-datahub-ops:required",
 )
-SPARK_IMAGE = os.getenv(
-    "SPARK_IMAGE",
-    os.getenv(
-        "SPARK_K8S_IMAGE",
-        "registry.example.invalid/recsys/recsys-spark:required",
-    ),
+RAG_INDEXER_IMAGE = os.getenv(
+    "RAG_INDEXER_IMAGE",
+    "registry.example.invalid/recsys/recsys-rag-indexer:required",
+)
+SPARK_DATA_IMAGE = os.getenv(
+    "SPARK_DATA_IMAGE",
+    "registry.example.invalid/recsys/recsys-spark-data:required",
 )
 DRIFT_RETRAIN_IMAGE = os.getenv(
     "DRIFT_RETRAIN_IMAGE",
@@ -39,6 +40,7 @@ COMMON_ENV = {
     # KPO env vars override the image-level PYTHONPATH, so every source-backed
     # runtime imported by data-platform tasks must remain explicit here.
     "PYTHONPATH": "/opt/recsys/apps/data-platform/src:/opt/recsys/apps/data-platform/feature-store/runtime/src:/opt/recsys/apps/data-platform/rag-runtime/src:/opt/recsys",
+    "SPARK_DATA_IMAGE": SPARK_DATA_IMAGE,
 }
 SPARK_DRIVER_EXECUTOR_ENV = (
     "PYTHONPATH",
@@ -138,6 +140,7 @@ def pod_task(
     istio_inject: bool = False,
     trigger_rule: str = "all_success",
     retries: int = 0,
+    do_xcom_push: bool = False,
 ):
     annotations = {"sidecar.istio.io/inject": str(istio_inject).lower()}
     if istio_inject:
@@ -170,6 +173,7 @@ def pod_task(
         startup_timeout_seconds=600,
         trigger_rule=trigger_rule,
         retries=retries,
+        do_xcom_push=do_xcom_push,
     )
 
 
@@ -216,7 +220,7 @@ def spark_native_submit(
         "--deploy-mode cluster "
         f"--name {app_name}-${{SPARK_APP_SUFFIX}} "
         "--conf spark.kubernetes.namespace=${SPARK_K8S_NAMESPACE:-recsys-dataflow} "
-        "--conf spark.kubernetes.container.image=${SPARK_K8S_IMAGE:-registry.example.invalid/recsys/recsys-spark:required} "
+        "--conf spark.kubernetes.container.image=${SPARK_DATA_IMAGE:-registry.example.invalid/recsys/recsys-spark-data:required} "
         "--conf spark.kubernetes.container.image.pullPolicy=${SPARK_K8S_IMAGE_PULL_POLICY:-IfNotPresent} "
         "--conf spark.kubernetes.authenticate.driver.serviceAccountName=${SPARK_K8S_SERVICE_ACCOUNT:-default} "
         "--conf spark.kubernetes.submission.waitAppCompletion=true "

@@ -3,10 +3,8 @@ namespace:
   name: recsys-dataflow
 
 images:
-  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
   featureStore: registry.example.invalid/recsys/recsys-feature-store:required
   driftRetrain: registry.example.invalid/recsys/recsys-drift-retrain:required
-  spark: registry.example.invalid/recsys/recsys-spark:required
   flink: registry.example.invalid/recsys/recsys-flink:required
   minio: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
   minioClient: minio/mc:RELEASE.2025-04-16T18-13-26Z

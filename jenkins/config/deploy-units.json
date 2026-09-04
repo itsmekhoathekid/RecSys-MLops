@@ -4,7 +4,7 @@
     "kubeflow-bst": {
       "consumesImages": [
         "recsys-mlops-training",
-        "recsys-spark"
+        "recsys-spark-ml"
       ]
     }
   },
@@ -19,18 +19,14 @@
         "dp1"
       ],
       "consumesImages": [
-        "recsys-data-ingestion",
         "recsys-feature-store",
         "recsys-drift-retrain",
-        "recsys-spark",
         "recsys-flink",
         "recsys-analytics-dbt"
       ],
       "imageValues": {
-        "recsys-data-ingestion": "images.dataIngestion",
         "recsys-feature-store": "images.featureStore",
         "recsys-drift-retrain": "images.driftRetrain",
-        "recsys-spark": "images.spark",
         "recsys-flink": "images.flink",
         "recsys-analytics-dbt": "images.analyticsDbt"
       },
@@ -62,7 +58,7 @@
       "namespace": "datahub",
       "components": ["datahub_catalog"],
       "requiresExplicitComponent": true,
-      "consumesImages": ["recsys-data-ingestion"],
+      "consumesImages": ["recsys-datahub-ops"],
       "consumesArtifacts": [],
       "dependsOn": ["data-config"]
     },
@@ -74,10 +70,10 @@
       "chart": "infra/helm/recsys-source-store",
       "components": [],
       "consumesImages": [
-        "recsys-data-ingestion"
+        "recsys-ingestion"
       ],
       "imageValues": {
-        "recsys-data-ingestion": "images.dataIngestion"
+        "recsys-ingestion": "images.ingestion"
       },
       "consumesArtifacts": [],
       "dependsOn": [
@@ -128,11 +124,11 @@
       "components": [],
       "consumesImages": [
         "recsys-kafka-connect",
-        "recsys-data-ingestion"
+        "recsys-kafka-connect-admin"
       ],
       "imageValues": {
         "recsys-kafka-connect": "images.kafkaConnect",
-        "recsys-data-ingestion": "images.dataIngestion"
+        "recsys-kafka-connect-admin": "images.kafkaConnectAdmin"
       },
       "consumesArtifacts": [],
       "dependsOn": [
@@ -175,7 +171,7 @@
       "release": "recsys-rag-feature-registry",
       "namespace": "recsys-dataflow",
       "components": ["rag_index"],
-      "consumesImages": ["recsys-data-ingestion"],
+      "consumesImages": ["recsys-rag-admin"],
       "consumesArtifacts": [],
       "requiresExplicitComponent": true,
       "dependsOn": ["feature-store", "milvus-credentials"]
@@ -186,7 +182,7 @@
       "release": "recsys-milvus-credentials",
       "namespace": "recsys-dataflow",
       "components": ["rag_index"],
-      "consumesImages": ["recsys-data-ingestion"],
+      "consumesImages": ["recsys-rag-admin"],
       "consumesArtifacts": [],
       "requiresExplicitComponent": true,
       "dependsOn": ["milvus"]
@@ -327,11 +323,11 @@
       "chart": "infra/helm/recsys-streaming",
       "components": [],
       "consumesImages": [
-        "recsys-data-ingestion",
+        "recsys-ingestion",
         "recsys-flink"
       ],
       "imageValues": {
-        "recsys-data-ingestion": "images.dataIngestion",
+        "recsys-ingestion": "images.ingestion",
         "recsys-flink": "images.flink"
       },
       "consumesArtifacts": [],
@@ -351,18 +347,22 @@
       "components": ["rag_index"],
       "consumesImages": [
         "recsys-airflow",
-        "recsys-data-ingestion",
+        "recsys-datahub-ops",
+        "recsys-rag-indexer",
         "recsys-analytics-dbt",
         "recsys-drift-retrain",
         "recsys-feature-store",
-        "recsys-spark"
+        "recsys-spark-data",
+        "recsys-spark-analytics"
       ],
       "imageValues": {
         "recsys-airflow": "images.airflow",
-        "recsys-data-ingestion": "images.dataIngestion",
+        "recsys-datahub-ops": "images.datahubOps",
+        "recsys-rag-indexer": "images.ragIndexer",
         "recsys-feature-store": "images.featureStore",
         "recsys-drift-retrain": "images.driftRetrain",
-        "recsys-spark": "images.spark",
+        "recsys-spark-data": "images.sparkData",
+        "recsys-spark-analytics": "images.sparkAnalytics",
         "recsys-analytics-dbt": "images.analyticsDbt"
       },
       "consumesArtifacts": [],
@@ -395,7 +395,7 @@
       "components": [],
       "consumesImages": [
         "recsys-mlops-training",
-        "recsys-spark"
+        "recsys-spark-ml"
       ],
       "consumesArtifacts": [
         "kubeflow-bst"
@@ -412,12 +412,14 @@
       "chart": "infra/helm/recsys-analytics",
       "components": [],
       "consumesImages": [
-        "recsys-data-ingestion",
+        "recsys-datahub-ops",
+        "recsys-spark-analytics",
         "recsys-analytics-dbt",
         "recsys-analytics-superset"
       ],
       "imageValues": {
-        "recsys-data-ingestion": "images.dataIngestion",
+        "recsys-datahub-ops": "images.datahubOps",
+        "recsys-spark-analytics": "images.sparkAnalytics",
         "recsys-analytics-dbt": "images.dbt",
         "recsys-analytics-superset": "images.superset"
       },

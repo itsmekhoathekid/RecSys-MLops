@@ -22,7 +22,7 @@ spec:
       {{- end }}
       containers:
         - name: init-source-schema
-          image: {{ .Values.images.dataIngestion }}
+          image: {{ .Values.images.ingestion }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["bash", "-lc"]
           args:

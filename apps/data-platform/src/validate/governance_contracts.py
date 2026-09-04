@@ -15,6 +15,7 @@ from ingest.postgres_cdc_contracts import SOURCE_TABLE_CONTRACTS
 from features.spark.session import read_iceberg_table, row_count, spark_session
 from lakehouse.iceberg import IcebergCatalogConfig, RAW_GENERATOR_TABLES
 from validate.report_io import (
+    build_validation_report,
     check,
     dataset_result,
     validation_report,
@@ -50,20 +51,6 @@ EXPECTED_DATASET_KEYS = {
         )
     ),
 }
-
-
-def build_validation_report(
-    pipeline: str, datasets: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
-    statuses = {result["status"] for result in datasets.values()}
-    status = (
-        "ERROR"
-        if "ERROR" in statuses
-        else "FAILURE"
-        if "FAILURE" in statuses
-        else "SUCCESS"
-    )
-    return {"pipeline": pipeline, "status": status, "datasets": datasets}
 
 
 # DP1 validates readable, non-empty Bronze tables with source/audit keys present and non-null.

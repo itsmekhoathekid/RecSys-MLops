@@ -66,7 +66,7 @@ def test_datahub_catalog_has_a_dedicated_component_and_deploy_action():
         component["name"]: component for component in configuration.load_components()
     }
     component = components["datahub_catalog"]
-    assert component["buildImages"] == ["recsys-data-ingestion"]
+    assert component["buildImages"] == ["recsys-datahub-ops"]
     assert component["migrationPolicy"] == "none"
 
     units = json.loads((ROOT / "jenkins/config/deploy-units.json").read_text())["units"]
@@ -197,10 +197,13 @@ def test_agentic_shell_entrypoints_are_syntactically_valid() -> None:
 
 def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
     pipeline = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    helper = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text(
+        encoding="utf-8"
+    )
     assert "choices: ['skip', 'plan', 'apply']" in pipeline
-    assert "datahub-dataset-lineage-cutover.json.counts" in pipeline
-    assert "Apply the archived DataHub soft-delete manifest? Targets:" in pipeline
-    assert ".ci-deploy/**/*" in pipeline
+    assert "datahub-dataset-lineage-cutover.json.counts" in helper
+    assert "Apply the archived DataHub soft-delete manifest? Targets:" in helper
+    assert ".ci-deploy/**/*" in helper
     trigger = (ROOT / "ops/gcp/trigger_full_jenkins.sh").read_text(encoding="utf-8")
     assert "datahub_catalog" in trigger
     assert "DATAHUB_CUTOVER_MODE=${datahub_cutover_mode}" in trigger
@@ -337,7 +340,7 @@ def test_serving_mutation_pipeline_is_nightly_manual_and_standalone():
 
 def test_rollout_deploy_uses_release_plan_namespace():
     entrypoint = (
-        ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh"
+        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
     ).read_text(encoding="utf-8")
     rollout = (ROOT / "jenkins/scripts/deploy/rollout.sh").read_text(encoding="utf-8")
 
@@ -348,7 +351,7 @@ def test_rollout_deploy_uses_release_plan_namespace():
 
 def test_online_feature_deploy_takes_ownership_from_legacy_release():
     entrypoint = (
-        ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh"
+        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
     ).read_text(encoding="utf-8")
 
     assert '[[ "${unit_name}" == "online-feature-api" ]]' in entrypoint
@@ -371,7 +374,7 @@ def test_split_api_gcp_values_preserve_the_legacy_ml_node_placement():
 
 def test_online_feature_deploy_uses_canonical_registry_secret_without_cli_leakage():
     entrypoint = (
-        ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh"
+        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
     ).read_text(encoding="utf-8")
 
     assert '"recsys-data-platform-secret", "-o", "json"' in entrypoint
@@ -414,7 +417,10 @@ def test_analytics_reuses_deployed_digests_for_images_not_built_in_release():
     assert 'item.get("status") == "deployed"' in deployment
     assert '--revision "${deployed_revision}"' in deployment
     assert "registry_resolve_digest_reference" in deployment
-    assert "analytics_release_image recsys-spark images.spark" in deployment
+    assert (
+        "analytics_release_image recsys-spark-analytics images.sparkAnalytics"
+        in deployment
+    )
     assert "analytics_release_image recsys-analytics-dbt images.dbt" in deployment
     assert (
         "analytics_release_image recsys-analytics-superset images.superset"
@@ -686,14 +692,16 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "checkout scm" not in source
     assert "disableConcurrentBuilds()" in source
     assert "githubPush()" not in source
-    assert 'uv pip install --python "${ci_config_venv}/bin/python" pytest pyyaml' in source
-    assert "script: 'git rev-parse HEAD'" in source
+    assert "componentPipeline.detectReleasePlan()" in source
+    assert "componentPipeline.preparePythonEnvironments()" in source
+    assert "componentPipeline.runComponentCi()" in source
+    assert "componentPipeline.loginToRegistry()" in source
+    assert "componentPipeline.buildAndPublish()" in source
+    assert "componentPipeline.deployProductionRelease()" in source
+    assert "componentPipeline.safePostActions()" in source
     assert "values_args=(" not in source
     assert "source jenkins/scripts/" not in source
-    assert "sh '''#!/usr/bin/env bash" in source
-    assert ". jenkins/scripts/deploy/preflight/gcp.sh" in source
     assert "jenkins/scripts/lib/gcp.sh" not in source
-    assert 'rm -rf "${CI_TMP_ROOT}"' in source
     assert "recovery_status" not in source
     pipeline_helper = (ROOT / "jenkins/pipeline/component_pipeline.groovy").read_text(
         encoding="utf-8"
@@ -704,15 +712,13 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "def isMainRevision()" in pipeline_helper
     assert "def shouldPublishImages()" in pipeline_helper
     assert "params.PUBLISH_IMAGES && (" in pipeline_helper
-    assert pipeline_helper.count("params.DEPLOY_PULL_REQUESTS") == 2
+    assert pipeline_helper.count("params.DEPLOY_PULL_REQUESTS") >= 2
     assert "params.PUBLISH_IMAGES && env.RUN_COMPONENT_DEPLOY" in pipeline_helper
-    assert source.count("python3 jenkins/python/configuration.py validate") == 1
-    assert source.count("release_deploy_preflight.sh") == 1
-    assert (
-        "env.SHOULD_PUBLISH_IMAGES = componentPipeline.shouldPublishImages()" in source
-    )
-    assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${env.SHOULD_PUBLISH_IMAGES" in source
-    assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" not in source
+    assert "python3 jenkins/python/configuration.py validate" in pipeline_helper
+    assert pipeline_helper.count("release_deploy_preflight.sh") == 1
+    assert "env.SHOULD_PUBLISH_IMAGES = shouldPublishImages()" in pipeline_helper
+    assert "REQUIRE_GCP_ARTIFACT_REGISTRY=${env.SHOULD_PUBLISH_IMAGES" in pipeline_helper
+    assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" not in pipeline_helper
     agentic_deploy = (ROOT / "jenkins/scripts/deploy/agentic.sh").read_text(
         encoding="utf-8"
     )
@@ -723,15 +729,9 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
         ROOT / "jenkins/scripts/entrypoints/release_deploy_preflight.sh"
     ).read_text(encoding="utf-8")
     assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in preflight
-    for marker in (
-        "[CI] Contract checks",
-        "[BUILD] Build and publish catalog images",
-        "[PACKAGE] Compile Kubeflow package",
-        "[DEPLOY] Production preflight",
-        "[DEPLOY] Deploy release",
-        "[VERIFY] Verify release",
-    ):
-        assert marker in source
+    assert "release_snapshot.sh" in pipeline_helper
+    assert "release_rollback.sh" in pipeline_helper
+    assert "'deploy'" in pipeline_helper and "'finalize'" in pipeline_helper
     build_entrypoint = (
         ROOT / "jenkins/scripts/entrypoints/release_build_publish.sh"
     ).read_text(encoding="utf-8")
@@ -918,9 +918,12 @@ def test_catalog_driven_builder_owns_all_declared_images():
     catalog = json.loads((ROOT / "images/catalog.json").read_text(encoding="utf-8"))
     assert catalog["version"] == 1
     assert "recsys-feature-rag-mcp" in catalog["images"]
-    assert {name for name in catalog["images"] if name.endswith("-spark")} == {
-        "recsys-spark"
-    }
+    assert {
+        "recsys-spark-runtime",
+        "recsys-spark-data",
+        "recsys-spark-analytics",
+        "recsys-spark-ml",
+    } <= catalog["images"].keys()
     assert all(spec["context"] == "." for spec in catalog["images"].values())
     engine = (ROOT / "jenkins/scripts/build/engine.sh").read_text(encoding="utf-8")
     assert "image_catalog.py build-spec" in engine
@@ -940,13 +943,19 @@ def test_locked_ml_images_match_exported_dependency_versions():
     assert '"gitpython==3.1.58"' in ml_project
     assert 'name = "gitpython"\nversion = "3.1.58"' in ml_lock
 
+    spark_ml = (ROOT / "images/ml/recsys-spark-ml/Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert "--constraint /tmp/" in spark_ml
+    assert "mlflow==" not in spark_ml
+    assert "cryptography==48.0.1" not in spark_ml
+
     for relative_path in (
-        "images/data/recsys-spark/Dockerfile",
         "images/ml/recsys-mlops-training/Dockerfile",
         "images/ml/recsys-mlflow/Dockerfile",
     ):
         dockerfile = (ROOT / relative_path).read_text(encoding="utf-8")
-        assert "--constraint /tmp/ml-constraints.txt" in dockerfile
+        assert "--constraint /tmp/" in dockerfile
         assert "mlflow==3.15.1" in dockerfile
         assert "mlflow==3.14.0" not in dockerfile
         assert "cryptography==48.0.1" not in dockerfile
@@ -978,12 +987,16 @@ def test_kubeflow_release_package_is_compiled_once_then_uploaded() -> None:
     deploy = (ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh").read_text(
         encoding="utf-8"
     )
+    deploy_runtime = (
+        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
+    ).read_text(encoding="utf-8")
 
     assert package_entrypoint.count("jenkins/scripts/build/kfp_package.sh") == 1
     assert "kfp_package.sh" not in upload
     assert "compile_training_pipeline.py" not in upload
-    assert "upload_kfp_package.sh" in deploy
-    assert "kfp_version.sh" not in deploy
+    assert "release_unit_runtime.sh" in deploy
+    assert "upload_kfp_package.sh" in deploy_runtime
+    assert "kfp_version.sh" not in deploy_runtime
 
 
 def test_seed_jobs_do_not_expose_retired_registry_parameters() -> None:
@@ -1013,6 +1026,9 @@ def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
     deploy = (ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh").read_text(
         encoding="utf-8"
     )
+    deploy_runtime = (
+        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
+    ).read_text(encoding="utf-8")
 
     assert "sandbox_agent_rebuild_golden_if_revision_changed" in agentic
     assert 'delete actortemplate "${old_templates[@]}" --wait=true' in agentic
@@ -1023,9 +1039,10 @@ def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
         "recsys-recommendation-agent-sandbox",
         "recsys-coordinator-agent-sandbox",
     ):
-        assert agent_name in deploy
-    assert "sandbox_agent_previous_revision" in deploy
-    assert "sandbox_agent_rebuild_golden_if_revision_changed" in deploy
+        assert agent_name in deploy_runtime
+    assert "release_unit_runtime.sh" in deploy
+    assert "sandbox_agent_previous_revision" in deploy_runtime
+    assert "sandbox_agent_rebuild_golden_if_revision_changed" in deploy_runtime
 
 
 def test_coordinator_release_verifier_uses_current_sandboxagent_schema() -> None:

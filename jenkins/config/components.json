@@ -221,7 +221,7 @@
       },
       "buildImages": [
         "recsys-mlops-training",
-        "recsys-spark",
+        "recsys-spark-ml",
         "recsys-mlflow",
         "recsys-drift-retrain"
       ],
@@ -267,8 +267,9 @@
         ]
       },
       "buildImages": [
-        "recsys-spark",
-        "recsys-data-ingestion",
+        "recsys-spark-data",
+        "recsys-ingestion",
+        "recsys-kafka-connect-admin",
         "recsys-kafka-connect",
         "recsys-airflow"
       ],
@@ -302,7 +303,7 @@
         "globs": []
       },
       "buildImages": [
-        "recsys-spark",
+        "recsys-spark-data",
         "recsys-airflow"
       ],
       "buildArtifacts": [],
@@ -344,7 +345,7 @@
         ]
       },
       "buildImages": [
-        "recsys-spark",
+        "recsys-spark-data",
         "recsys-feature-store",
         "recsys-airflow"
       ],
@@ -375,7 +376,7 @@
           "tests/contract/test_docker_dataflow_contracts.py"
         ]
       },
-      "buildImages": ["recsys-data-ingestion"],
+      "buildImages": ["recsys-datahub-ops"],
       "buildArtifacts": [],
       "verifyDependsOn": [],
       "migrationPolicy": "none"
@@ -412,7 +413,8 @@
         ]
       },
       "buildImages": [
-        "recsys-data-ingestion",
+        "recsys-rag-indexer",
+        "recsys-rag-admin",
         "recsys-airflow"
       ],
       "buildArtifacts": [],
@@ -859,7 +861,7 @@
         ]
       },
       "buildImages": [
-        "recsys-spark",
+        "recsys-spark-analytics",
         "recsys-analytics-dbt",
         "recsys-analytics-superset",
         "recsys-airflow"

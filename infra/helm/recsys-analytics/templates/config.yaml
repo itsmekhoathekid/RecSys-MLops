@@ -19,6 +19,6 @@ data:
   LAKEHOUSE_WAREHOUSE: s3a://recsys-lakehouse/warehouse
   ANALYTICS_DAG_SCHEDULE: {{ .Values.airflow.schedule | quote }}
   ANALYTICS_NAMESPACE: {{ .Values.namespace | quote }}
-  SPARK_IMAGE: {{ .Values.images.spark | quote }}
+  SPARK_ANALYTICS_IMAGE: {{ .Values.images.sparkAnalytics | quote }}
   ANALYTICS_DBT_IMAGE: {{ .Values.images.dbt | quote }}
-  DATA_INGESTION_IMAGE: {{ .Values.images.dataIngestion | quote }}
+  DATAHUB_OPS_IMAGE: {{ .Values.images.datahubOps | quote }}

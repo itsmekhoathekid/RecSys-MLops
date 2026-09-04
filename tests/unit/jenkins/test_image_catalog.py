@@ -26,11 +26,16 @@ def _catalog_payload() -> dict:
     return json.loads((ROOT / "images/catalog.json").read_text(encoding="utf-8"))
 
 
-def test_catalog_contains_required_images_and_one_spark() -> None:
+def test_catalog_contains_required_images_and_split_spark_profiles() -> None:
     images = load_catalog()
 
     assert "recsys-feature-rag-mcp" in images
-    assert {name for name in images if name.endswith("-spark")} == {"recsys-spark"}
+    assert {
+        "recsys-spark-runtime",
+        "recsys-spark-data",
+        "recsys-spark-analytics",
+        "recsys-spark-ml",
+    } <= images.keys()
     assert all(spec["context"] == "." for spec in images.values())
     assert all((ROOT / spec["dockerfile"]).is_file() for spec in images.values())
 
@@ -79,12 +84,18 @@ def test_dockerfile_python_dependencies_are_exactly_pinned() -> None:
 
 
 def test_internal_dependencies_are_topologically_ordered() -> None:
-    assert dependency_order("recsys-data-ingestion") == [
+    assert dependency_order("recsys-rag-indexer") == [
         "recsys-base-python",
-        "recsys-data-ingestion",
+        "recsys-rag-model-e5",
+        "recsys-rag-indexer",
     ]
-    assert dependency_build_args("recsys-data-ingestion", "abc123") == [
-        "RECSYS_BASE_IMAGE=recsys-base-python:abc123"
+    assert dependency_build_args("recsys-rag-indexer", "abc123") == [
+        "RECSYS_BASE_IMAGE=recsys-base-python:abc123",
+        "RAG_MODEL_IMAGE=recsys-rag-model-e5:abc123",
+    ]
+    assert dependency_order("recsys-spark-data") == [
+        "recsys-spark-runtime",
+        "recsys-spark-data",
     ]
 
 

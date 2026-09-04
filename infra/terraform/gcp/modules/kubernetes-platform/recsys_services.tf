@@ -18,7 +18,7 @@ resource "helm_release" "recsys_observability" {
   # Reuse the repository-owned Python runtime for the stdlib-only LLM probe.
   set {
     name  = "images.probe"
-    value = local.images.data_ingestion
+    value = local.images.ingestion
   }
 
   set {
@@ -167,8 +167,8 @@ resource "helm_release" "recsys_source_store" {
   values           = [file("${local.helm_dir}/recsys-source-store/values-gcp.yaml")]
 
   set {
-    name  = "images.dataIngestion"
-    value = local.images.data_ingestion
+    name  = "images.ingestion"
+    value = local.images.ingestion
   }
 
   lifecycle {
@@ -232,8 +232,8 @@ resource "helm_release" "recsys_kafka_connect" {
   }
 
   set {
-    name  = "images.dataIngestion"
-    value = local.images.data_ingestion
+    name  = "images.kafkaConnectAdmin"
+    value = local.images.kafka_connect_admin
   }
 
   lifecycle {
@@ -257,8 +257,8 @@ resource "helm_release" "recsys_streaming" {
   values           = [file("${local.helm_dir}/recsys-streaming/values-gcp.yaml")]
 
   set {
-    name  = "images.dataIngestion"
-    value = local.images.data_ingestion
+    name  = "images.ingestion"
+    value = local.images.ingestion
   }
 
   set {
@@ -293,8 +293,13 @@ resource "helm_release" "recsys_airflow" {
   }
 
   set {
-    name  = "images.dataIngestion"
-    value = local.images.data_ingestion
+    name  = "images.datahubOps"
+    value = local.images.datahub_ops
+  }
+
+  set {
+    name  = "images.ragIndexer"
+    value = local.images.rag_indexer
   }
 
   set {
@@ -308,8 +313,13 @@ resource "helm_release" "recsys_airflow" {
   }
 
   set {
-    name  = "images.spark"
-    value = local.images.spark
+    name  = "images.sparkData"
+    value = local.images.spark_data
+  }
+
+  set {
+    name  = "images.sparkAnalytics"
+    value = local.images.spark_analytics
   }
 
   set {

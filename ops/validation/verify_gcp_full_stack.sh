@@ -117,10 +117,10 @@ static_checks() {
     bash -c 'grep -Eq '\''^cpu_machine_type *= *"e2-standard-8"$'\'' "$1" && grep -Eq '\''^cpu_min_nodes *= *2$'\'' "$1" && grep -Eq '\''^cpu_max_nodes *= *2$'\'' "$1" && grep -Eq '\''^ml_machine_type *= *"e2-standard-4"$'\'' "$1" && grep -Eq '\''^ml_min_nodes *= *1$'\'' "$1" && grep -Eq '\''^ml_max_nodes *= *1$'\'' "$1" && grep -Eq '\''^enable_gpu_pool *= *false$'\'' "$1" && grep -Eq '\''^llm_node_pool_mode *= *"cpu-services-shared"$'\'' "$1"' _ "${TF_DIR}/terraform.tfvars"
   check_cmd inventory-images "Image catalog contains exactly 19 images" \
     bash -c '[[ "$(jq ".images | length" "$1")" == 19 ]]' _ "${ROOT_DIR}/images/catalog.json"
-  check_cmd inventory-components "CI configuration contains exactly 21 product components" \
-    bash -c '[[ "$(jq ".components | length" "$1")" == 21 ]]' _ "${ROOT_DIR}/jenkins/config/components.json"
-  check_cmd inventory-units "Release graph contains exactly 31 deploy units" \
-    bash -c '[[ "$(jq ".units | length" "$1")" == 31 ]]' _ "${ROOT_DIR}/jenkins/config/deploy-units.json"
+  check_cmd inventory-components "CI configuration contains exactly 22 product components" \
+    bash -c '[[ "$(jq ".components | length" "$1")" == 22 ]]' _ "${ROOT_DIR}/jenkins/config/components.json"
+  check_cmd inventory-units "Release graph contains exactly 33 deploy units" \
+    bash -c '[[ "$(jq ".units | length" "$1")" == 33 ]]' _ "${ROOT_DIR}/jenkins/config/deploy-units.json"
 }
 
 preflight_checks() {

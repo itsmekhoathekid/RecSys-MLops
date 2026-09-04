@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from orchestration.airflow.spark_utils import (
     DAG,
-    DATA_INGESTION_IMAGE,
+    DATAHUB_OPS_IMAGE,
     FEATURE_STORE_IMAGE,
-    SPARK_IMAGE,
+    SPARK_DATA_IMAGE,
     datahub_validation_command,
     datetime,
     env_schedule,
@@ -60,7 +60,7 @@ if DAG is not None:
     ) as recsys_dp3_offline_feature_table:
         ingest_stage = pod_task(
             "ingest_stage",
-            SPARK_IMAGE,
+            SPARK_DATA_IMAGE,
             DP3_FEATURE_COMMAND,
         )
         validate_stage = pod_task(
@@ -70,7 +70,7 @@ if DAG is not None:
         )
         publish_datahub_validation = pod_task(
             "publish_datahub_validation",
-            DATA_INGESTION_IMAGE,
+            DATAHUB_OPS_IMAGE,
             datahub_validation_command(
                 "DP3",
                 (ICEBERG_REPORT_URI, POSTGRES_REPORT_URI),

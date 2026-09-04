@@ -8,7 +8,7 @@ source jenkins/scripts/lib/image_manifest.sh
 source jenkins/scripts/deploy/runtime.sh
 source jenkins/scripts/deploy/datahub.sh
 
-image="$(resolve_release_image recsys-data-ingestion)"
+image="$(resolve_release_image recsys-datahub-ops)"
 datahub_catalog_cutover "${mode}" "${manifest}" "${image}"
 if [[ "${mode}" == "plan" ]]; then
   python3 -c 'import json, sys; data=json.load(open(sys.argv[1])); print(", ".join(f"{key}={value}" for key, value in sorted(data.get("counts", {}).items())))' \

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from orchestration.airflow.spark_utils import (
     DAG,
-    DATA_INGESTION_IMAGE,
-    SPARK_IMAGE,
+    DATAHUB_OPS_IMAGE,
+    SPARK_DATA_IMAGE,
     datahub_validation_command,
     datetime,
     env_schedule,
@@ -72,22 +72,22 @@ if DAG is not None:
     ) as recsys_dp1_raw_to_bronze:
         ingest_stage = pod_task(
             "ingest_stage",
-            SPARK_IMAGE,
+            SPARK_DATA_IMAGE,
             DP1_INGEST_COMMAND,
         )
         optimize_stage = pod_task(
             "optimize_stage",
-            SPARK_IMAGE,
+            SPARK_DATA_IMAGE,
             DP1_OPTIMIZE_COMMAND,
         )
         validate_stage = pod_task(
             "validate_stage",
-            SPARK_IMAGE,
+            SPARK_DATA_IMAGE,
             DP1_VALIDATE_COMMAND,
         )
         publish_datahub_validation = pod_task(
             "publish_datahub_validation",
-            DATA_INGESTION_IMAGE,
+            DATAHUB_OPS_IMAGE,
             datahub_validation_command("DP1", (REPORT_URI,), DP1_DATASET_KEYS),
             trigger_rule="all_success",
             retries=2,

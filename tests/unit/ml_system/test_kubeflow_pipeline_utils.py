@@ -375,10 +375,10 @@ def test_ray_tune_best_payload_falls_back_to_trial_outputs(tmp_path):
 
 def test_compile_pipeline_writes_refactored_component_commands(tmp_path, monkeypatch):
     training_image = "registry.example/recsys/recsys-mlops-training:test"
-    spark_image = "registry.example/recsys/recsys-spark:test"
+    spark_image = "registry.example/recsys/recsys-spark-ml:test"
     monkeypatch.setenv("RECSYS_PIPELINE_IMAGE", training_image)
     monkeypatch.setenv("RECSYS_RAY_IMAGE", training_image)
-    monkeypatch.setenv("RECSYS_SPARK_IMAGE", spark_image)
+    monkeypatch.setenv("RECSYS_SPARK_ML_IMAGE", spark_image)
 
     package_path = compile_pipeline(tmp_path / "bst_training_pipeline.yaml")
     compiled = package_path.read_text(encoding="utf-8")

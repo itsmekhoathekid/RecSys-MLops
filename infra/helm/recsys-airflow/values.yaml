@@ -3,10 +3,12 @@ namespace:
 storageClassName: ""
 images:
   airflow: registry.example.invalid/recsys/recsys-airflow:required
-  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  datahubOps: registry.example.invalid/recsys/recsys-datahub-ops:required
+  ragIndexer: registry.example.invalid/recsys/recsys-rag-indexer:required
   featureStore: registry.example.invalid/recsys/recsys-feature-store:required
   driftRetrain: registry.example.invalid/recsys/recsys-drift-retrain:required
-  spark: registry.example.invalid/recsys/recsys-spark:required
+  sparkData: registry.example.invalid/recsys/recsys-spark-data:required
+  sparkAnalytics: registry.example.invalid/recsys/recsys-spark-analytics:required
   analyticsDbt: registry.example.invalid/recsys/recsys-analytics-dbt:required
   postgres: postgres:16
   pullPolicy: IfNotPresent

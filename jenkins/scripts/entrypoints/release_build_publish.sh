@@ -15,7 +15,7 @@ source jenkins/scripts/build/runtime.sh
 source jenkins/scripts/build/engine.sh
 
 initialize_release_build
-built_spark=0
+spark_profiles=()
 image_index=0
 image_total="$(
   python3 jenkins/python/release_plan.py plan-images --plan "${plan_path}" \
@@ -27,16 +27,18 @@ while IFS= read -r image_name; do
   ((image_index += 1))
   recsys_log "[BUILD] Build image ${image_index}/${image_total}: ${image_name}"
   build_publish_image "${image_name}"
-  if [[ "${image_name}" == "recsys-spark" ]]; then
-    built_spark=1
-  fi
+  case "${image_name}" in
+    recsys-spark-data) spark_profiles+=(data) ;;
+    recsys-spark-analytics) spark_profiles+=(analytics) ;;
+    recsys-spark-ml) spark_profiles+=(ml) ;;
+  esac
 done < <(
   python3 jenkins/python/release_plan.py plan-images --plan "${plan_path}"
 )
 
-if [[ "${built_spark}" == "1" ]]; then
-  bash jenkins/scripts/test/unified_spark_image.sh \
-    "recsys-spark:${BUILD_IMAGE_TAG}"
-fi
+for profile in "${spark_profiles[@]}"; do
+  bash jenkins/scripts/test/spark_image.sh \
+    "recsys-spark-${profile}:${BUILD_IMAGE_TAG}" "${profile}"
+done
 
 recsys_log "wrote release image manifest: ${BUILD_MANIFEST_PATH}"

@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
@@ -16,6 +18,78 @@ from jenkins.python.change_detection.detector import (  # noqa: E402
     render_jenkins_environment,
 )
 from jenkins.python.release_plan import create_release_plan  # noqa: E402
+
+
+PIPELINE_RELEASE_PLAN_GOLDENS = {
+    "rag": {
+        "components": ["rag_index", "rag_api"],
+        "buildImages": [
+            "recsys-base-python",
+            "recsys-rag-model-e5",
+            "recsys-rag-indexer",
+            "recsys-rag-admin",
+            "recsys-airflow",
+            "recsys-rag-api",
+        ],
+        "deployUnits": [
+            "milvus",
+            "milvus-credentials",
+            "rag-feature-registry",
+            "rag-api",
+            "airflow",
+        ],
+    },
+    "context": {
+        "components": ["feature_rag_mcp", "context_agent"],
+        "buildImages": ["recsys-feature-rag-mcp"],
+        "deployUnits": [
+            "feature-rag-mcp",
+            "context-agent",
+            "feature-rag-mcp-registry",
+            "context-agent-registry",
+        ],
+    },
+    "recommendation": {
+        "components": ["recommendation_mcp", "recommendation_agent"],
+        "buildImages": ["recsys-recommendation-mcp"],
+        "deployUnits": [
+            "recommendation-mcp",
+            "recommendation-agent",
+            "recommendation-mcp-registry",
+            "recommendation-agent-registry",
+        ],
+    },
+    "coordinator": {
+        "components": [
+            "feature_rag_mcp",
+            "context_agent",
+            "recommendation_mcp",
+            "recommendation_agent",
+            "coordinator_agent",
+        ],
+        "buildImages": ["recsys-feature-rag-mcp", "recsys-recommendation-mcp"],
+        "deployUnits": [
+            "feature-rag-mcp",
+            "context-agent",
+            "feature-rag-mcp-registry",
+            "context-agent-registry",
+            "recommendation-mcp",
+            "recommendation-agent",
+            "recommendation-mcp-registry",
+            "recommendation-agent-registry",
+            "coordinator-agent",
+            "coordinator-agent-registry",
+        ],
+    },
+}
+
+
+@pytest.mark.parametrize("golden", PIPELINE_RELEASE_PLAN_GOLDENS.values())
+def test_dedicated_pipeline_release_plan_golden(golden):
+    plan = create_release_plan(golden["components"], commit="golden")
+    assert plan["components"] == golden["components"]
+    assert plan["buildImages"] == golden["buildImages"]
+    assert plan["deployUnits"] == golden["deployUnits"]
 
 
 def selected(paths: list[str]) -> set[str]:
@@ -58,7 +132,7 @@ def test_shared_data_platform_dag_helper_selects_all_consumers():
 def test_metadata_change_selects_the_static_datahub_catalog_component():
     result = detect(["apps/data-platform/src/metadata/governance_catalog.py"])
     assert result.component_names == ("datahub_catalog",)
-    assert "recsys-data-ingestion" in result.release_plan["buildImages"]
+    assert "recsys-datahub-ops" in result.release_plan["buildImages"]
     assert "datahub-catalog" in result.release_plan["deployUnits"]
 
 
@@ -76,8 +150,8 @@ def test_each_split_airflow_dag_selects_only_its_component():
         assert detect([path]).component_names == (component,)
 
 
-def test_spark_dockerfile_expands_through_image_catalog_consumers():
-    result = detect(["images/data/recsys-spark/Dockerfile"])
+def test_spark_runtime_dockerfile_expands_through_leaf_consumers():
+    result = detect(["images/data/recsys-spark-runtime/Dockerfile"])
     assert set(result.component_names) == {
         "training",
         "dp1",
@@ -85,7 +159,7 @@ def test_spark_dockerfile_expands_through_image_catalog_consumers():
         "dp3",
         "analytics",
     }
-    assert result.changed_images == ("recsys-spark",)
+    assert result.changed_images == ("recsys-spark-runtime",)
 
 
 def test_component_exclude_wins_over_broad_dp3_prefix():
@@ -156,14 +230,12 @@ def test_dp2_release_plan_does_not_expand_shared_spark_into_training_artifacts()
         commit="abc",
     )
     assert plan["buildImages"] == [
-        "recsys-spark",
+        "recsys-spark-runtime",
+        "recsys-spark-data",
         "recsys-airflow",
     ]
     assert plan["buildArtifacts"] == []
-    assert plan["deployUnits"] == [
-        "data-config",
-        "airflow",
-    ]
+    assert plan["deployUnits"] == ["airflow"]
     assert plan["version"] == 2
     assert "workflowChecks" not in plan
 
@@ -173,7 +245,7 @@ def test_training_release_plan_keeps_its_explicit_kubeflow_artifact():
 
     assert plan["buildArtifacts"] == ["kubeflow-bst"]
     assert "recsys-mlops-training" in plan["buildImages"]
-    assert "recsys-spark" in plan["buildImages"]
+    assert "recsys-spark-ml" in plan["buildImages"]
     assert "kubeflow-bst-package" in plan["deployUnits"]
 
 
@@ -285,7 +357,7 @@ def test_coordinator_change_selects_its_helm_and_registry_units_in_order():
 def test_rag_change_detection_and_release_dependency_order():
     index = detect(["apps/data-platform/src/rag_data/semantic_chunker.py"])
     assert index.component_names == ("rag_index",)
-    assert {"recsys-data-ingestion", "recsys-airflow"}.issubset(
+    assert {"recsys-rag-indexer", "recsys-rag-admin", "recsys-airflow"}.issubset(
         index.release_plan["buildImages"]
     )
 
@@ -324,7 +396,7 @@ def test_rag_change_detection_and_release_dependency_order():
 def test_data_dependent_actions_require_explicit_components():
     bootstrap = create_release_plan(
         ["dp1", "rag_api"],
-        changed_images=["recsys-data-ingestion"],
+        changed_images=["recsys-ingestion"],
     )
     assert "milvus" not in bootstrap["deployUnits"]
     assert "milvus-credentials" not in bootstrap["deployUnits"]

@@ -211,7 +211,7 @@ data:
             </hudson.model.StringParameterDefinition>
             <hudson.model.StringParameterDefinition>
               <name>COMPONENT_CI_MAX_PARALLEL</name>
-              <defaultValue>3</defaultValue>
+              <defaultValue>2</defaultValue>
               <trim>true</trim>
             </hudson.model.StringParameterDefinition>
             <hudson.model.StringParameterDefinition>

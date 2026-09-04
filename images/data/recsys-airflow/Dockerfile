@@ -14,13 +14,8 @@ USER airflow
 RUN pip install --upgrade \
     --constraint "${AIRFLOW_CONSTRAINTS_URL}" \
     "apache-airflow==${AIRFLOW_VERSION}" \
-    apache-airflow-providers-docker==3.12.2 \
-    apache-airflow-providers-http==4.12.0 \
     apache-airflow-providers-cncf-kubernetes==8.3.3 \
     apache-airflow-providers-postgres==5.11.2 \
-    pyyaml==6.0.1 \
-    redis==5.0.7 \
-    requests==2.31.0 \
     && pip install --upgrade \
     "Mako==1.3.12" \
     "PyJWT==2.13.0" \
@@ -40,16 +35,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 USER root
 WORKDIR /opt/recsys
-RUN apt-get update \
-    && apt-mark hold msodbcsql18 \
-    && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /home/airflow/.local
+RUN rm -rf /home/airflow/.local
 COPY --from=deps --chown=airflow:root /home/airflow/.local /home/airflow/.local
-COPY --chown=airflow:root configs /opt/recsys/configs
-COPY --chown=airflow:root apps/data-platform/src /opt/recsys/apps/data-platform/src
-COPY --chown=airflow:root apps/data-platform/data-generator /opt/recsys/apps/data-platform/data-generator
-COPY --chown=airflow:root apps/data-platform/feature-store /opt/recsys/apps/data-platform/feature-store
+COPY --chown=airflow:root apps/data-platform/src/orchestration /opt/recsys/apps/data-platform/src/orchestration
 COPY --chown=airflow:root apps/analytics/orchestration/airflow/dags /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
 RUN chown -R airflow:root /home/airflow \
     && chmod -R g+rwX /home/airflow \

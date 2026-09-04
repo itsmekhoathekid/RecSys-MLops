@@ -2,7 +2,7 @@ namespace:
   name: recsys-dataflow
 
 image:
-  repository: registry.example.invalid/recsys/recsys-data-ingestion
+  repository: registry.example.invalid/recsys/recsys-rag-indexer
   tag: required
   pullPolicy: IfNotPresent
 

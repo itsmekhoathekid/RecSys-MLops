@@ -23,7 +23,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: realtime-event-producer
-          image: {{ .Values.images.dataIngestion }}
+          image: {{ .Values.images.ingestion }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["bash", "-lc"]
           args:

@@ -16,10 +16,10 @@ jenkins:
   tolerations: []
   resources:
     requests:
-      cpu: 50m
-      memory: 512Mi
-    limits:
       cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
       # Full KFP package compilation briefly peaks above 2 GiB while uv links
       # the locked ML environment. Keep enough headroom to avoid cgroup
       # allocation failures without increasing the scheduler reservation.
@@ -31,6 +31,15 @@ jenkins:
     # Full releases retain large Spark/Flink/ML layers alongside Jenkins metadata,
     # so the production override keeps enough headroom for image assembly.
     useJenkinsHomePvc: true
+    gc:
+      keepStorage: 40GB
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 3Gi
     pvc:
       enabled: false
       storage: 200Gi

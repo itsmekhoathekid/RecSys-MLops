@@ -13,7 +13,10 @@ from kubeflow.components.runtime import (
 
 PIPELINE_IMAGE = os.getenv("RECSYS_PIPELINE_IMAGE", "registry.example.invalid/recsys/recsys-mlops-training:required")
 RAY_IMAGE = os.getenv("RECSYS_RAY_IMAGE", PIPELINE_IMAGE)
-SPARK_IMAGE = os.getenv("RECSYS_SPARK_IMAGE", "registry.example.invalid/recsys/recsys-spark:required")
+SPARK_IMAGE = os.getenv(
+    "RECSYS_SPARK_ML_IMAGE",
+    "registry.example.invalid/recsys/recsys-spark-ml:required",
+)
 
 
 @dsl.container_component

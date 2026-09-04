@@ -189,6 +189,10 @@ spec:
               value: tcp://localhost:2375
             - name: UV_LINK_MODE
               value: copy
+            - name: UV_CACHE_DIR
+              value: /var/jenkins_home/caches/uv
+            - name: DOCKER_BUILDKIT
+              value: "1"
             - name: JAVA_OPTS
               value: {{ .Values.jenkins.javaOpts | quote }}
             - name: DOCKER_GC_ENABLED

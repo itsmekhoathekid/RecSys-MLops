@@ -78,13 +78,13 @@ run_configured_component_tests() {
 run_kfp_compile() {
   local training_image="${RECSYS_PIPELINE_IMAGE:-ci-registry.example/recsys/recsys-mlops-training:ci}"
   local ray_image="${RECSYS_RAY_IMAGE:-${training_image}}"
-  local spark_image="${RECSYS_SPARK_IMAGE:-ci-registry.example/recsys/recsys-spark:ci}"
+  local spark_image="${RECSYS_SPARK_ML_IMAGE:-ci-registry.example/recsys/recsys-spark-ml:ci}"
   local package_path="${KFP_CI_PACKAGE_PATH:-${reports_dir}/bst_training_pipeline.${component}.yaml}"
 
   PYTHONPATH=apps/ml-system/src:apps/data-platform/src \
     RECSYS_PIPELINE_IMAGE="${training_image}" \
     RECSYS_RAY_IMAGE="${ray_image}" \
-    RECSYS_SPARK_IMAGE="${spark_image}" \
+    RECSYS_SPARK_ML_IMAGE="${spark_image}" \
     "${ci_python}" apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py \
       --package-path "${package_path}"
 

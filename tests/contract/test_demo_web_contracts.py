@@ -178,7 +178,9 @@ def test_jenkins_retires_demo_proof_jobs_and_uses_catalog_build() -> None:
         encoding="utf-8"
     )
     assert 'kubectl exec -n "${namespace}" deploy/recsys-demo-api -c backend' in smoke
-    assert ".demo-web/**/*" in (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+    assert ".demo-web/**/*" in (
+        ROOT / "jenkins/pipeline/component_pipeline.groovy"
+    ).read_text(encoding="utf-8")
     assert "release_plan.py plan-images" in build
     assert 'build_publish_image "${image_name}"' in build
     components = json.loads(

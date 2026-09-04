@@ -6,7 +6,7 @@ initSchema:
   tolerations: []
 images:
   postgres: postgres:16
-  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  ingestion: registry.example.invalid/recsys/recsys-ingestion:required
   pullPolicy: IfNotPresent
 sourcePostgres:
   name: source-postgres

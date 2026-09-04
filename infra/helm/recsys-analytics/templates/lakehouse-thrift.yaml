@@ -43,7 +43,7 @@ spec:
       nodeSelector: {{ toYaml .Values.nodeSelectors.lakehouseThrift | nindent 8 }}
       containers:
         - name: spark-thrift-server
-          image: {{ .Values.images.spark | quote }}
+          image: {{ .Values.images.sparkAnalytics | quote }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["/bin/bash", "-ec"]
           args:

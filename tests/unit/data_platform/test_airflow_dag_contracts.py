@@ -34,7 +34,11 @@ def test_task_dependencies_and_rag_runtime_parameters_are_preserved():
     )
     rag = (root / "recsys_rag_item_index.py").read_text()
     assert "RAG_ITEM_SOURCE_RUN_ID" in rag
-    assert "RAG_ITEM_PIPELINE_RUN_ID" in rag
+    assert 'PIPELINE_RUN = "rag-{{ ts_nodash }}"' in rag
+    assert '"30 2 * * *"' in rag
+    assert 'tz="Asia/Ho_Chi_Minh"' in rag
+    assert "resolve-source" in rag
+    assert "verify-active-index" in rag and "rollback-index" in rag
     assert "semantic_chunk_items" in rag and "validate_and_publish_index" in rag
     assert '"mode": "incremental"' in rag
     assert "--mode '{{{{ params.mode }}}}'" in rag

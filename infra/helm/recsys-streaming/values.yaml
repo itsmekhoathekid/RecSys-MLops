@@ -1,7 +1,7 @@
 namespace:
   name: recsys-dataflow
 images:
-  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  ingestion: registry.example.invalid/recsys/recsys-ingestion:required
   flink: registry.example.invalid/recsys/recsys-flink:required
   pullPolicy: IfNotPresent
 minio:

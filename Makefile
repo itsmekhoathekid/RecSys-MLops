@@ -100,13 +100,13 @@ compile-kfp:
 	@mkdir -p "$$(dirname "$(KFP_PACKAGE)")"
 	@RECSYS_PIPELINE_IMAGE=registry.example.invalid/recsys/recsys-mlops-training:required \
 	  RECSYS_RAY_IMAGE=registry.example.invalid/recsys/recsys-mlops-training:required \
-	  RECSYS_SPARK_IMAGE=registry.example.invalid/recsys/recsys-spark:required \
+	  RECSYS_SPARK_ML_IMAGE=registry.example.invalid/recsys/recsys-spark-ml:required \
 	  uv run python apps/ml-system/src/kubeflow/pipelines/compile_training_pipeline.py \
 	  --package-path "$(KFP_PACKAGE)"
 	@uv run python apps/ml-system/src/kubeflow/validate_pipeline_package.py \
 	  --package-path "$(KFP_PACKAGE)" \
 	  --required-image registry.example.invalid/recsys/recsys-mlops-training:required \
-	  --required-image registry.example.invalid/recsys/recsys-spark:required \
+	  --required-image registry.example.invalid/recsys/recsys-spark-ml:required \
 	  --forbidden-token "recsys-mlops-spark" \
 	  --forbidden-token "recsys-analytics-spark"
 

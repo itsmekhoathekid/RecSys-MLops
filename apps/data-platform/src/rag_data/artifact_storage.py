@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Iterable, TypeVar
 
 import pyarrow as pa
@@ -94,6 +95,42 @@ class RagArtifactStore:
             **kwargs,
         )
         return str(response.get("ETag", "")).strip('"')
+
+    def latest_complete_source_run(self) -> str:
+        """Resolve the newest complete canonical manifest in the raw zone."""
+
+        continuation: str | None = None
+        candidates: list[tuple[datetime, str]] = []
+        while True:
+            request: dict[str, Any] = {
+                "Bucket": self.bucket,
+                "Prefix": "raw/",
+            }
+            if continuation:
+                request["ContinuationToken"] = continuation
+            response = self.client.list_objects_v2(**request)
+            for item in response.get("Contents", []):
+                key = str(item.get("Key", ""))
+                suffix = "/rag_item_documents/manifest.json"
+                if not key.endswith(suffix):
+                    continue
+                run_id = key.removeprefix("raw/").removesuffix(suffix)
+                if not run_id or "/" in run_id:
+                    continue
+                value = self._get(key)
+                if value is None:
+                    continue
+                manifest = RunManifest.model_validate_json(value[0])
+                if manifest.status == "complete":
+                    candidates.append((manifest.updated_at, run_id))
+            if not response.get("IsTruncated"):
+                break
+            continuation = response.get("NextContinuationToken")
+            if not continuation:
+                raise RuntimeError("S3 listing was truncated without a continuation token")
+        if not candidates:
+            raise UpstreamNotCompleteError("No complete canonical RAG source run exists")
+        return max(candidates, key=lambda item: (item[0], item[1]))[1]
 
     @staticmethod
     def raw_prefix(source_run_id: str) -> str:

@@ -97,22 +97,22 @@ jenkins:
     gc:
       enabled: true
       retention: 168h
-      keepStorage: 80GB
+      keepStorage: 40GB
     insecureRegistries: []
     resources:
       requests:
-        cpu: 50m
-        memory: 32Mi
+        cpu: 500m
+        memory: 1Gi
       limits:
         cpu: "2"
         memory: 3Gi
   resources:
     requests:
-      cpu: 50m
-      memory: 32Mi
-    limits:
       cpu: "1"
       memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 8Gi
 
 modelRolloutWatcher:
   enabled: false

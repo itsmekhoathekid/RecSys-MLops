@@ -26,8 +26,12 @@ from rag_data.orcarouter_client import OrcaRouterClient
 from rag_data.pipeline import chunk_canonical_items, embed_item_chunks
 from rag_data.semantic_chunker import ChunkerConfig
 from rag_data.storage import CompletedRunError, MinioRunStorage
-from validate.governance_contracts import check, dataset_result
-from validate.report_io import validation_report, write_validation_report
+from validate.report_io import (
+    check,
+    dataset_result,
+    validation_report,
+    write_validation_report,
+)
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -57,6 +61,13 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--checkpoint-every", type=int, default=10)
     generate.add_argument("--workers", type=int, default=1)
     generate.add_argument("--force", action="store_true")
+
+    resolve = subparsers.add_parser(
+        "resolve-source", help="Resolve an explicit or latest complete canonical run"
+    )
+    resolve.add_argument("--config", required=True)
+    resolve.add_argument("--source-run-id", default="auto")
+    resolve.add_argument("--xcom-output", default="")
 
     chunk = subparsers.add_parser(
         "chunk-items", help="Create semantic chunks from a complete canonical run"
@@ -102,6 +113,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rollback.add_argument("--config", required=True)
     rollback.add_argument("--run-id", required=True)
+    verify = subparsers.add_parser(
+        "verify-active-index", help="Smoke the active pointer after promotion"
+    )
+    verify.add_argument("--config", required=True)
+    verify.add_argument("--run-id", required=True)
     return parser
 
 
@@ -184,6 +200,24 @@ def _artifact_store(config: dict[str, Any]) -> RagArtifactStore:
         client=_s3_client(),
         bucket=os.getenv("LAKE_BUCKET", config["storage"]["bucket"]),
     )
+
+
+def resolve_source(args: argparse.Namespace) -> int:
+    """Resolve the Airflow input without allowing an incomplete source run."""
+
+    config = load_config(args.config)
+    store = _artifact_store(config)
+    if args.source_run_id and args.source_run_id != "auto":
+        store.load_canonical_items(args.source_run_id)
+        run_id = args.source_run_id
+    else:
+        run_id = store.latest_complete_source_run()
+    if args.xcom_output:
+        output = Path(args.xcom_output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(run_id) + "\n", encoding="utf-8")
+    print(run_id)
+    return 0
 
 
 def _encoder(config: dict[str, Any]) -> tuple[OnnxE5Encoder, str]:
@@ -448,17 +482,36 @@ def rollback_item_index(args: argparse.Namespace) -> int:
     return 0
 
 
+def verify_active_index(args: argparse.Namespace) -> int:
+    """Verify the newly promoted pointer and its physical retrieval path."""
+
+    config = load_config(args.config)
+    store = _artifact_store(config)
+    active = store.load_active_pointer()
+    if active is None or active.pointer.pipeline_run_id != args.run_id:
+        raise RuntimeError("Active RAG pointer does not reference the promoted run")
+    _, records = store.load_embeddings(args.run_id)
+    if not records or not _publisher(config).smoke_search(
+        active.pointer.active_slot, records[0].embedding
+    ):
+        raise RuntimeError("Active RAG index retrieval smoke failed")
+    print(active.pointer.model_dump_json())
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Dispatch one idempotent RAG pipeline command."""
 
     args = build_parser().parse_args(argv)
     handlers = {
         "generate-items": generate_items,
+        "resolve-source": resolve_source,
         "chunk-items": chunk_items,
         "embed-chunks": embed_chunks,
         "publish-index": publish_item_index,
         "validate-index": validate_item_index,
         "rollback-index": rollback_item_index,
+        "verify-active-index": verify_active_index,
     }
     try:
         handler = handlers[args.command]

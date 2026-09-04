@@ -13,8 +13,8 @@ images:
   trino: trinodb/trino:482
   superset: registry.example.invalid/recsys/recsys-analytics-superset:required
   dbt: registry.example.invalid/recsys/recsys-analytics-dbt:required
-  spark: registry.example.invalid/recsys/recsys-spark:required
-  dataIngestion: registry.example.invalid/recsys/recsys-data-ingestion:required
+  sparkAnalytics: registry.example.invalid/recsys/recsys-spark-analytics:required
+  datahubOps: registry.example.invalid/recsys/recsys-datahub-ops:required
   postgres: postgres:16-alpine
   redis: redis:7.4-alpine
   pullPolicy: IfNotPresent

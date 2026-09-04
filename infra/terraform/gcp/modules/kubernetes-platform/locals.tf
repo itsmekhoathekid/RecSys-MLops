@@ -4,10 +4,15 @@ locals {
   image_repo    = "${var.config.region}-docker.pkg.dev/${var.config.project_id}/${var.config.artifact_registry_repository}"
 
   images = {
-    data_ingestion      = lookup(var.config.image_overrides, "data_ingestion", "") != "" ? lookup(var.config.image_overrides, "data_ingestion", "") : "${local.image_repo}/recsys-data-ingestion:${var.config.image_tag}"
+    ingestion           = lookup(var.config.image_overrides, "ingestion", "") != "" ? lookup(var.config.image_overrides, "ingestion", "") : "${local.image_repo}/recsys-ingestion:${var.config.image_tag}"
+    kafka_connect_admin = lookup(var.config.image_overrides, "kafka_connect_admin", "") != "" ? lookup(var.config.image_overrides, "kafka_connect_admin", "") : "${local.image_repo}/recsys-kafka-connect-admin:${var.config.image_tag}"
+    datahub_ops         = lookup(var.config.image_overrides, "datahub_ops", "") != "" ? lookup(var.config.image_overrides, "datahub_ops", "") : "${local.image_repo}/recsys-datahub-ops:${var.config.image_tag}"
+    rag_indexer         = lookup(var.config.image_overrides, "rag_indexer", "") != "" ? lookup(var.config.image_overrides, "rag_indexer", "") : "${local.image_repo}/recsys-rag-indexer:${var.config.image_tag}"
     feature_store       = lookup(var.config.image_overrides, "feature_store", "") != "" ? lookup(var.config.image_overrides, "feature_store", "") : "${local.image_repo}/recsys-feature-store:${var.config.image_tag}"
     drift_retrain       = lookup(var.config.image_overrides, "drift_retrain", "") != "" ? lookup(var.config.image_overrides, "drift_retrain", "") : "${local.image_repo}/recsys-drift-retrain:${var.config.image_tag}"
-    spark               = lookup(var.config.image_overrides, "spark", "") != "" ? lookup(var.config.image_overrides, "spark", "") : "${local.image_repo}/recsys-spark:${var.config.image_tag}"
+    spark_data          = lookup(var.config.image_overrides, "spark_data", "") != "" ? lookup(var.config.image_overrides, "spark_data", "") : "${local.image_repo}/recsys-spark-data:${var.config.image_tag}"
+    spark_analytics     = lookup(var.config.image_overrides, "spark_analytics", "") != "" ? lookup(var.config.image_overrides, "spark_analytics", "") : "${local.image_repo}/recsys-spark-analytics:${var.config.image_tag}"
+    spark_ml            = lookup(var.config.image_overrides, "spark_ml", "") != "" ? lookup(var.config.image_overrides, "spark_ml", "") : "${local.image_repo}/recsys-spark-ml:${var.config.image_tag}"
     flink               = lookup(var.config.image_overrides, "flink", "") != "" ? lookup(var.config.image_overrides, "flink", "") : "${local.image_repo}/recsys-flink:${var.config.image_tag}"
     kafka_connect       = lookup(var.config.image_overrides, "kafka_connect", "") != "" ? lookup(var.config.image_overrides, "kafka_connect", "") : "${local.image_repo}/recsys-kafka-connect:${var.config.image_tag}"
     airflow             = lookup(var.config.image_overrides, "airflow", "") != "" ? lookup(var.config.image_overrides, "airflow", "") : "${local.image_repo}/recsys-airflow:${var.config.image_tag}"
@@ -19,10 +24,8 @@ locals {
   }
 
   data_config_sets = {
-    "images.dataIngestion" = local.images.data_ingestion
     "images.featureStore"  = local.images.feature_store
     "images.driftRetrain"  = local.images.drift_retrain
-    "images.spark"         = local.images.spark
     "images.flink"         = local.images.flink
     "images.analyticsDbt"  = local.images.analytics_dbt
     "secret.create"        = "false"
