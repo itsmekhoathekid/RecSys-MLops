@@ -45,6 +45,24 @@ def test_task_dependencies_and_rag_runtime_parameters_are_preserved():
     assert not (root / "recsys_rag_item_reconciliation.py").exists()
 
 
+def test_rag_schedule_is_owned_by_the_airflow_release_at_0230_local_time():
+    airflow_values = Path("infra/helm/recsys-airflow/values.yaml").read_text()
+    airflow_template = Path(
+        "infra/helm/recsys-airflow/templates/airflow.yaml"
+    ).read_text()
+    shared_values = Path("infra/helm/recsys-data-config/values.yaml").read_text()
+    production_values = Path(
+        "infra/helm/recsys-data-config/values-gcp.yaml"
+    ).read_text()
+
+    assert 'ragItemSchedule: "30 2 * * *"' in airflow_values
+    assert airflow_template.count("name: RAG_ITEM_DAG_SCHEDULE") == 2
+    assert airflow_template.count(".Values.airflow.ragItemSchedule") == 2
+    assert 'ragItemSchedule: "30 2 * * *"' in shared_values
+    assert 'ragItemSchedule: "30 2 * * *"' in production_values
+    assert 'ragItemSchedule: "0 2 * * *"' not in shared_values + production_values
+
+
 def test_operational_dag_commands_use_testable_runtime_modules():
     root = Path("apps/data-platform/src/orchestration/airflow/dags")
     drift = (root / "recsys_feature_drift_monitoring.py").read_text()

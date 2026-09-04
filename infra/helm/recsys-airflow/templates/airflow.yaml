@@ -70,6 +70,8 @@ spec:
               value: {{ .Values.images.datahubOps | quote }}
             - name: RAG_INDEXER_IMAGE
               value: {{ .Values.images.ragIndexer | quote }}
+            - name: RAG_ITEM_DAG_SCHEDULE
+              value: {{ .Values.airflow.ragItemSchedule | quote }}
             - name: SPARK_DATA_IMAGE
               value: {{ .Values.images.sparkData | quote }}
             - name: SPARK_ANALYTICS_IMAGE
@@ -152,6 +154,8 @@ spec:
               value: {{ .Values.images.datahubOps | quote }}
             - name: RAG_INDEXER_IMAGE
               value: {{ .Values.images.ragIndexer | quote }}
+            - name: RAG_ITEM_DAG_SCHEDULE
+              value: {{ .Values.airflow.ragItemSchedule | quote }}
             - name: SPARK_DATA_IMAGE
               value: {{ .Values.images.sparkData | quote }}
             - name: SPARK_ANALYTICS_IMAGE

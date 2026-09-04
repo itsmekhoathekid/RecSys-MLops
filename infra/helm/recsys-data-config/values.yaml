@@ -235,7 +235,7 @@ airflow:
   dp2Schedule: "0 1 * * *"
   dp3Schedule: "30 1 * * *"
   analyticsSchedule: "30 2 * * *"
-  ragItemSchedule: "0 2 * * *"
+  ragItemSchedule: "30 2 * * *"
   feastMaterializeSchedule: "20 */2 * * *"
   featureDriftSchedule: "30 3 * * *"
   lakehouseMaintenanceSchedule: "0 4 * * 0"
