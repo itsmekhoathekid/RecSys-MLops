@@ -16,8 +16,8 @@ jenkins:
   tolerations: []
   resources:
     requests:
-      cpu: "1"
-      memory: 2Gi
+      cpu: 300m
+      memory: 1Gi
     limits:
       cpu: "2"
       # Full KFP package compilation briefly peaks above 2 GiB while uv links
@@ -35,8 +35,8 @@ jenkins:
       keepStorage: 40GB
     resources:
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 200m
+        memory: 512Mi
       limits:
         cpu: "2"
         memory: 3Gi
