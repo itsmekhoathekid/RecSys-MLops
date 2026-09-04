@@ -342,7 +342,7 @@ resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool" {
         }
         resources = {
           requests = {
-            cpu    = "1"
+            cpu    = "250m"
             memory = "1Gi"
           }
           limits = {
@@ -393,7 +393,7 @@ resource "kubernetes_manifest" "recsys_coordinator_sandbox_pool" {
         }
         resources = {
           requests = {
-            cpu    = "1"
+            cpu    = "250m"
             memory = "1Gi"
           }
           limits = {
