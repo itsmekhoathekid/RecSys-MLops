@@ -38,7 +38,7 @@ assert payload["scaleTargetRef"] == {
     "kind": "WorkerPool",
     "name": "recsys-context-sandbox-pool",
 }
-assert (payload["minReplicaCount"], payload["maxReplicaCount"]) == (1, 3)
+assert (payload["minReplicaCount"], payload["maxReplicaCount"]) == (2, 3)
 fallback = payload["fallback"]
 assert (fallback["failureThreshold"], fallback["replicas"]) == (3, 1)
 assert fallback.get("behavior", "static") == "static"
@@ -104,7 +104,7 @@ assert spec["scaleTargetRef"] == {
     "apiVersion": "ate.dev/v1alpha1", "kind": "WorkerPool",
     "name": "recsys-recommendation-sandbox-pool",
 }
-assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
+assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (2, 3)
 assert spec["fallback"]["replicas"] == 1
 '
   kubectl -n kagent get sandboxagent recsys-recommendation-agent-sandbox -o yaml \
@@ -149,7 +149,7 @@ assert spec["scaleTargetRef"] == {
     "apiVersion": "ate.dev/v1alpha1", "kind": "WorkerPool",
     "name": "recsys-coordinator-sandbox-pool",
 }
-assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
+assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (2, 3)
 fallback = spec["fallback"]
 assert fallback["failureThreshold"] == 3
 assert fallback["replicas"] == 1
