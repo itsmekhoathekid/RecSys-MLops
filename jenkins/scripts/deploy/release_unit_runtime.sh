@@ -274,94 +274,71 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
   fi
 }
 
-case "${unit_name}" in
-  data-config|data-lakehouse|source-store|event-stream|feature-store|kafka-connect|streaming|airflow|online-feature-api|inference-api|milvus|rag-api|feature-rag-mcp|context-agent|recommendation-mcp|recommendation-agent|coordinator-agent)
-    sandbox_agent_name=""
-    sandbox_agent_previous_revision=""
-    case "${unit_name}" in
-      context-agent)
-        sandbox_agent_name="recsys-context-agent-sandbox"
-        ;;
-      recommendation-agent)
-        sandbox_agent_name="recsys-recommendation-agent-sandbox"
-        ;;
-      coordinator-agent)
-        sandbox_agent_name="recsys-coordinator-agent-sandbox"
-        ;;
-    esac
-    if [[ -n "${sandbox_agent_name}" ]]; then
-      sandbox_agent_previous_revision="$(
-        sandbox_agent_model_revision "${sandbox_agent_name}"
-      )"
-    fi
-    if [[ "${unit_name}" == "feature-rag-mcp" ]]; then
-      agentic_preflight false
-    elif [[ "${unit_name}" == "context-agent" ]]; then
-      agentic_preflight true
-    elif [[ "${unit_name}" == "recommendation-mcp" ]]; then
-      recommendation_agentic_preflight false
-    elif [[ "${unit_name}" == "recommendation-agent" ]]; then
-      recommendation_agentic_preflight true
-    elif [[ "${unit_name}" == "coordinator-agent" ]]; then
-      coordinator_agentic_preflight false
-    fi
+deploy_agentic_helm_unit() {
+  local preflight_function="$1"
+  local include_agent="${2:-false}"
+  local sandbox_agent_name="${3:-}"
+  local previous_revision=""
+
+  if [[ -n "${sandbox_agent_name}" ]]; then
+    previous_revision="$(sandbox_agent_model_revision "${sandbox_agent_name}")"
+  fi
+  "${preflight_function}" "${include_agent}"
+  deploy_helm_unit
+  if [[ -n "${sandbox_agent_name}" ]]; then
+    sandbox_agent_rebuild_golden_if_revision_changed \
+      "${sandbox_agent_name}" "${previous_revision}"
+  fi
+}
+
+deploy_unit_feature_rag_mcp() { deploy_agentic_helm_unit agentic_preflight false; }
+deploy_unit_context_agent() {
+  deploy_agentic_helm_unit agentic_preflight true recsys-context-agent-sandbox
+}
+deploy_unit_recommendation_mcp() {
+  deploy_agentic_helm_unit recommendation_agentic_preflight false
+}
+deploy_unit_recommendation_agent() {
+  deploy_agentic_helm_unit recommendation_agentic_preflight true \
+    recsys-recommendation-agent-sandbox
+}
+deploy_unit_coordinator_agent() {
+  deploy_agentic_helm_unit coordinator_agentic_preflight false \
+    recsys-coordinator-agent-sandbox
+}
+
+deploy_unit_feature_registry() { feast_registry_apply "$(resolve_release_image recsys-feature-store)"; }
+deploy_unit_rag_feature_registry() { rag_feature_registry_apply "$(resolve_release_image recsys-rag-admin)"; }
+deploy_unit_milvus_credentials() { rag_milvus_credentials_bootstrap "$(resolve_release_image recsys-rag-admin)"; }
+deploy_unit_datahub_catalog() { datahub_catalog_sync "$(resolve_release_image recsys-datahub-ops)"; }
+deploy_unit_feature_rag_mcp_registry() { publish_feature_rag_mcp_registry; }
+deploy_unit_context_agent_registry() { publish_context_agent_registry; }
+deploy_unit_recommendation_mcp_registry() { publish_recommendation_mcp_registry; }
+deploy_unit_recommendation_agent_registry() { publish_recommendation_agent_registry; }
+deploy_unit_coordinator_agent_registry() { publish_coordinator_agent_registry; }
+deploy_unit_mlflow() { deploy_mlflow; }
+deploy_unit_analytics() { deploy_analytics; }
+deploy_unit_kserve() { deploy_kserve; }
+deploy_unit_rollout() { deploy_rollout_watcher "${unit_namespace}"; }
+deploy_unit_demo_web() { deploy_demo_web; }
+deploy_unit_kubeflow_bst_package() {
+  mkdir -p .ci-deploy
+  open_kfp_upload_endpoint
+  KFP_UPLOAD_RESULT_PATH=.ci-deploy/kfp-upload.json \
+    KFP_ENDPOINT="${kfp_upload_endpoint_result}" \
+    bash jenkins/scripts/deploy/upload_kfp_package.sh
+}
+
+dispatch_deploy_unit() {
+  local handler="deploy_unit_${unit_name//-/_}"
+  if declare -F "${handler}" >/dev/null; then
+    "${handler}"
+  elif [[ "${unit_kind}" == "helm" ]]; then
     deploy_helm_unit
-    if [[ -n "${sandbox_agent_name}" ]]; then
-      sandbox_agent_rebuild_golden_if_revision_changed \
-        "${sandbox_agent_name}" "${sandbox_agent_previous_revision}"
-    fi
-    ;;
-  feature-registry)
-    feast_registry_apply "$(resolve_release_image recsys-feature-store)"
-    ;;
-  rag-feature-registry)
-    rag_feature_registry_apply "$(resolve_release_image recsys-rag-admin)"
-    ;;
-  milvus-credentials)
-    rag_milvus_credentials_bootstrap "$(resolve_release_image recsys-rag-admin)"
-    ;;
-  datahub-catalog)
-    datahub_catalog_sync "$(resolve_release_image recsys-datahub-ops)"
-    ;;
-  feature-rag-mcp-registry)
-    publish_feature_rag_mcp_registry
-    ;;
-  context-agent-registry)
-    publish_context_agent_registry
-    ;;
-  recommendation-mcp-registry)
-    publish_recommendation_mcp_registry
-    ;;
-  recommendation-agent-registry)
-    publish_recommendation_agent_registry
-    ;;
-  coordinator-agent-registry)
-    publish_coordinator_agent_registry
-    ;;
-  mlflow)
-    deploy_mlflow
-    ;;
-  kubeflow-bst-package)
-    mkdir -p .ci-deploy
-    open_kfp_upload_endpoint
-    KFP_UPLOAD_RESULT_PATH=.ci-deploy/kfp-upload.json \
-      KFP_ENDPOINT="${kfp_upload_endpoint_result}" \
-      bash jenkins/scripts/deploy/upload_kfp_package.sh
-    ;;
-  analytics)
-    deploy_analytics
-    ;;
-  kserve)
-    deploy_kserve
-    ;;
-  rollout)
-    deploy_rollout_watcher "${unit_namespace}"
-    ;;
-  demo-web)
-    deploy_demo_web
-    ;;
-  *)
+  else
     recsys_error "unsupported deploy unit: ${unit_name} (${unit_kind})"
-    exit 2
-    ;;
-esac
+    return 2
+  fi
+}
+
+dispatch_deploy_unit

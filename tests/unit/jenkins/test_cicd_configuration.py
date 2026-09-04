@@ -1046,8 +1046,19 @@ def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
     ):
         assert agent_name in deploy_runtime
     assert "release_unit_runtime.sh" in deploy
-    assert "sandbox_agent_previous_revision" in deploy_runtime
+    assert 'previous_revision="$(sandbox_agent_model_revision' in deploy_runtime
     assert "sandbox_agent_rebuild_golden_if_revision_changed" in deploy_runtime
+
+
+def test_release_unit_runtime_dispatches_handlers_without_a_giant_case() -> None:
+    runtime = (
+        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'handler="deploy_unit_${unit_name//-/_}"' in runtime
+    assert 'declare -F "${handler}"' in runtime
+    assert 'elif [[ "${unit_kind}" == "helm" ]]' in runtime
+    assert 'case "${unit_name}" in' not in runtime
 
 
 def test_coordinator_release_verifier_uses_current_sandboxagent_schema() -> None:
