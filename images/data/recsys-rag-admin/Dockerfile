@@ -12,7 +12,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python /opt/venv/bin/python \
         --constraint /tmp/constraints.txt \
         "feast[milvus]==0.64.0" pydantic==2.13.4 pymilvus==2.6.12 \
-        "psycopg[binary]==3.3.4" psycopg-pool==3.3.1 pyyaml==6.0.3
+        "psycopg[binary]==3.3.4" psycopg-pool==3.3.1 \
+        psycopg2-binary==2.9.12 pyyaml==6.0.3 \
+    && uv pip check --python /opt/venv/bin/python
 RUN /opt/venv/bin/python -m pip uninstall -y pip
 
 FROM python:3.11-slim AS runtime

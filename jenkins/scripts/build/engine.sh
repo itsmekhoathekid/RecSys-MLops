@@ -76,6 +76,9 @@ build_publish_image() {
   if [[ "${name}" == "recsys-online-feature-api" || "${name}" == "recsys-inference-api" || "${name}" == "recsys-rag-api" || "${name}" == "recsys-feature-rag-mcp" || "${name}" == "recsys-recommendation-mcp" ]]; then
     bash jenkins/scripts/test/serving_images.sh "${local_image}" "${name}"
   fi
+  if [[ "${name}" == "recsys-rag-admin" ]]; then
+    bash jenkins/scripts/test/rag_admin_image.sh "${local_image}"
+  fi
   docker tag "${local_image}" "${remote_image}"
   image_key="$(image_manifest_key "${name}")"
   record_built_image "${image_key}_LOCAL_IMAGE" "${local_image}"

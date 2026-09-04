@@ -83,8 +83,20 @@ def test_split_data_images_keep_domain_dependencies_bounded():
         assert excluded_dependency not in rag_indexer
     for excluded_source in ("src/rag_data", "src/metadata", "data-generator"):
         assert excluded_source not in rag_admin
+    assert "psycopg2-binary==2.9.12" in rag_admin
+    assert "uv pip check" in rag_admin
     for excluded_source in ("data-generator", "feature-store/rag_feature_repo"):
         assert excluded_source not in airflow
+
+
+def test_rag_admin_image_smoke_covers_the_feast_sql_registry_driver():
+    engine = (ROOT / "jenkins/scripts/build/engine.sh").read_text()
+    smoke = (ROOT / "jenkins/scripts/test/rag_admin_image.sh").read_text()
+
+    assert '"${name}" == "recsys-rag-admin"' in engine
+    assert "rag_admin_image.sh" in engine
+    assert "import psycopg2" in smoke
+    assert "from feast.infra.registry.sql import SqlRegistry" in smoke
 
 
 def test_monolithic_data_platform_chart_and_component_dispatchers_are_deleted():
