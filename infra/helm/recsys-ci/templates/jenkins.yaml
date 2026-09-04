@@ -74,7 +74,7 @@ spec:
           command:
             - sh
             - -c
-            - {{- if and .Values.jenkins.dind.enabled .Values.jenkins.dind.useJenkinsHomePvc }} mkdir -p /var/jenkins_home/docker-graph && chown 1000:1000 /var/jenkins_home /var/jenkins_home/docker-graph{{- else }} chown 1000:1000 /var/jenkins_home{{- end }}
+            - mkdir -p /var/jenkins_home/caches/uv /var/jenkins_home/ci-tmp{{- if and .Values.jenkins.dind.enabled .Values.jenkins.dind.useJenkinsHomePvc }} /var/jenkins_home/docker-graph{{- end }} && chown 1000:1000 /var/jenkins_home /var/jenkins_home/caches /var/jenkins_home/caches/uv /var/jenkins_home/ci-tmp{{- if and .Values.jenkins.dind.enabled .Values.jenkins.dind.useJenkinsHomePvc }} /var/jenkins_home/docker-graph{{- end }}
           securityContext:
             runAsUser: 0
           volumeMounts:
