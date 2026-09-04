@@ -202,6 +202,8 @@ spec:
               value: /var/jenkins_home/caches/uv
             - name: DOCKER_BUILDKIT
               value: "1"
+            - name: DOCKER_CLI_PLUGIN_EXTRA_DIRS
+              value: /usr/local/lib/docker/cli-plugins
             - name: JAVA_OPTS
               value: {{ .Values.jenkins.javaOpts | quote }}
             - name: DOCKER_GC_ENABLED

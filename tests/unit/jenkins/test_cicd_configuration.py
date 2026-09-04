@@ -181,6 +181,7 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert "arctlSha256" in jenkins_chart
     assert "buildxSha256" in jenkins_chart
     assert "docker buildx version" in jenkins_chart
+    assert "DOCKER_CLI_PLUGIN_EXTRA_DIRS" in jenkins_chart
 
 
 def test_agentic_shell_entrypoints_are_syntactically_valid() -> None:

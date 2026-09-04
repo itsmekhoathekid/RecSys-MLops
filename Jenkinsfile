@@ -24,6 +24,7 @@ pipeline {
     UV_LINK_MODE = 'copy'
     UV_CACHE_DIR = '/var/jenkins_home/caches/uv'
     DOCKER_BUILDKIT = '1'
+    DOCKER_CLI_PLUGIN_EXTRA_DIRS = '/usr/local/lib/docker/cli-plugins'
     DEPLOY_TARGET = 'gcp-production'
   }
 
