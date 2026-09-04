@@ -59,6 +59,7 @@ unit_namespace=""
 unit_chart=""
 unit_image_names=()
 unit_image_paths=()
+unit_image_fallback_paths=()
 selected_components=","
 while IFS=$'\t' read -r record_type value_a value_b value_c value_d; do
   case "${record_type}" in
@@ -71,6 +72,7 @@ while IFS=$'\t' read -r record_type value_a value_b value_c value_d; do
     IMAGE)
       unit_image_names+=("${value_a}")
       unit_image_paths+=("${value_b}")
+      unit_image_fallback_paths+=("${value_c}")
       ;;
     SELECTED_COMPONENT)
       selected_components+="${value_a},"
@@ -117,12 +119,27 @@ print(value if isinstance(value, str) else "")
 resolve_unit_image() {
   local image_name="$1"
   local value_path="$2"
+  local fallback_paths="${3:-}"
+  local fallback_path
   local reference
+  local -a candidate_fallback_paths=()
   reference="$(image_manifest_lookup "${image_name}")"
   if [[ -z "${reference}" ]]; then
     reference="$(read_current_helm_value "${value_path}")"
   fi
   if [[ -z "${reference}" ]]; then
+    IFS=',' read -r -a candidate_fallback_paths <<<"${fallback_paths}"
+    for fallback_path in "${candidate_fallback_paths[@]}"; do
+      [[ -n "${fallback_path}" ]] || continue
+      reference="$(read_current_helm_value "${fallback_path}")"
+      [[ -z "${reference}" ]] || break
+    done
+  fi
+  if [[ -z "${reference}" ]]; then
+    if [[ "${DEPLOY_TARGET:-gcp-production}" == "gcp-production" ]]; then
+      registry_resolve_latest_digest_reference "${image_name}" "${image_registry}"
+      return
+    fi
     reference="${image_registry}/${image_name}:${image_tag}"
   fi
   if [[ "${DEPLOY_TARGET:-gcp-production}" == "gcp-production" && "${reference}" != *@sha256:* ]]; then
@@ -234,7 +251,9 @@ PY
   fi
   for image_index in "${!unit_image_names[@]}"; do
     image_reference="$(resolve_unit_image \
-      "${unit_image_names[image_index]}" "${unit_image_paths[image_index]}")"
+      "${unit_image_names[image_index]}" \
+      "${unit_image_paths[image_index]}" \
+      "${unit_image_fallback_paths[image_index]}")"
     helm_args+=(--set-string "${unit_image_paths[image_index]}=${image_reference}")
   done
   if [[ "${unit_name}" == "data-config" && -s .ci-deploy/kfp-upload.json ]]; then

@@ -104,6 +104,68 @@ tolower($1) == "docker-content-digest:" {
   printf '%s/%s@%s' "${registry_host}" "${manifest_repository}" "${digest}"
 }
 
+registry_resolve_latest_digest_reference() {
+  local image_name="$1"
+  local expected_repository="${2%/}"
+  local project
+  local region
+  local repository_name
+  local token
+  local page_token=""
+  local response
+  local result
+  local digest_reference
+  local query_args=()
+
+  project="$(gcp_production_field projectId)"
+  region="$(gcp_production_field region)"
+  repository_name="${expected_repository##*/}"
+  token="$(registry_gcp_access_token)"
+
+  for _ in $(seq 1 10); do
+    query_args=(
+      --data-urlencode 'pageSize=1000'
+      --data-urlencode 'orderBy=UPDATE_TIME desc'
+    )
+    [[ -z "${page_token}" ]] \
+      || query_args+=(--data-urlencode "pageToken=${page_token}")
+    response="$(
+      curl -fsS -G \
+        -H "Authorization: Bearer ${token}" \
+        "${query_args[@]}" \
+        "https://artifactregistry.googleapis.com/v1/projects/${project}/locations/${region}/repositories/${repository_name}/dockerImages"
+    )"
+    result="$(
+      python3 -c '
+import json
+import sys
+
+repository, image = sys.argv[1:]
+payload = json.load(sys.stdin)
+prefix = f"{repository}/{image}@sha256:"
+match = next(
+    (item.get("uri", "") for item in payload.get("dockerImages", [])
+     if item.get("uri", "").startswith(prefix)),
+    "",
+)
+print(match)
+print(payload.get("nextPageToken", ""))
+' "${expected_repository}" "${image_name}" <<<"${response}"
+    )"
+    digest_reference="$(sed -n '1p' <<<"${result}")"
+    page_token="$(sed -n '2p' <<<"${result}")"
+    if [[ "${digest_reference}" =~ @sha256:[0-9a-f]{64}$ ]]; then
+      recsys_log REGISTRY "reusing latest immutable ${image_name} digest" >&2
+      printf '%s' "${digest_reference}"
+      return 0
+    fi
+    [[ -n "${page_token}" ]] || break
+  done
+
+  recsys_error "Artifact Registry has no immutable image for ${expected_repository}/${image_name}"
+  return 2
+}
+
 registry_verify_gcp_upload_permission() {
   local token
   local project

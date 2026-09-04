@@ -25,6 +25,7 @@ PIPELINE_RELEASE_PLAN_GOLDENS = {
         "components": ["rag_index", "rag_api"],
         "buildImages": [
             "recsys-base-python",
+            "recsys-datahub-ops",
             "recsys-rag-model-e5",
             "recsys-rag-indexer",
             "recsys-rag-admin",

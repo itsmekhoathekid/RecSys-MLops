@@ -415,6 +415,7 @@
       "buildImages": [
         "recsys-rag-indexer",
         "recsys-rag-admin",
+        "recsys-datahub-ops",
         "recsys-airflow"
       ],
       "buildArtifacts": [],

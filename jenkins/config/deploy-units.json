@@ -365,6 +365,10 @@
         "recsys-spark-analytics": "images.sparkAnalytics",
         "recsys-analytics-dbt": "images.analyticsDbt"
       },
+      "imageFallbackValues": {
+        "recsys-spark-data": ["images.spark"],
+        "recsys-spark-analytics": ["images.spark"]
+      },
       "consumesArtifacts": [],
       "dependsOn": [
         "data-config",
@@ -410,7 +414,8 @@
       "release": "recsys-analytics",
       "namespace": "analytics",
       "chart": "infra/helm/recsys-analytics",
-      "components": [],
+      "components": ["analytics"],
+      "requiresExplicitComponent": true,
       "consumesImages": [
         "recsys-datahub-ops",
         "recsys-spark-analytics",

@@ -1061,6 +1061,59 @@ def test_release_unit_runtime_dispatches_handlers_without_a_giant_case() -> None
     assert 'case "${unit_name}" in' not in runtime
 
 
+def test_release_unit_reuses_an_immutable_registry_image_for_new_chart_values() -> None:
+    runtime = (
+        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
+    ).read_text(encoding="utf-8")
+    registry = (ROOT / "jenkins/scripts/lib/registry.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'registry_resolve_latest_digest_reference "${image_name}"' in runtime
+    assert 'unit_image_fallback_paths+=("${value_c}")' in runtime
+    assert 'read_current_helm_value "${fallback_path}"' in runtime
+    assert 'orderBy=UPDATE_TIME desc' in registry
+    assert 'item.get("uri", "").startswith(prefix)' in registry
+    assert 'reusing latest immutable ${image_name} digest' in registry
+
+    deploy_config = json.loads(
+        (ROOT / "jenkins/config/deploy-units.json").read_text(encoding="utf-8")
+    )
+    airflow = next(
+        unit for unit in deploy_config["units"] if unit["name"] == "airflow"
+    )
+    assert airflow["imageFallbackValues"] == {
+        "recsys-spark-data": ["images.spark"],
+        "recsys-spark-analytics": ["images.spark"],
+    }
+    analytics = next(
+        unit for unit in deploy_config["units"] if unit["name"] == "analytics"
+    )
+    assert analytics["components"] == ["analytics"]
+    assert analytics["requiresExplicitComponent"] is True
+
+
+def test_latest_registry_image_resolver_returns_only_the_digest() -> None:
+    digest = "a" * 64
+    script = rf'''
+set -Eeuo pipefail
+source jenkins/scripts/lib/common.sh
+source jenkins/scripts/lib/registry.sh
+gcp_production_field() {{
+  [[ "$1" == projectId ]] && printf recsys-project || printf asia-southeast1
+}}
+registry_gcp_access_token() {{ printf token; }}
+curl() {{
+  printf '%s\n' '{{"dockerImages":[{{"uri":"asia-southeast1-docker.pkg.dev/recsys-project/recsys/recsys-datahub-ops@sha256:{digest}"}}]}}'
+}}
+reference="$(registry_resolve_latest_digest_reference \
+  recsys-datahub-ops \
+  asia-southeast1-docker.pkg.dev/recsys-project/recsys)"
+[[ "$reference" == "asia-southeast1-docker.pkg.dev/recsys-project/recsys/recsys-datahub-ops@sha256:{digest}" ]]
+'''
+    subprocess.run(["bash", "-c", script], cwd=ROOT, check=True)
+
+
 def test_coordinator_release_verifier_uses_current_sandboxagent_schema() -> None:
     verifier = (ROOT / "jenkins/scripts/test/agentic.sh").read_text(encoding="utf-8")
 

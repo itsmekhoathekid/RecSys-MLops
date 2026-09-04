@@ -74,7 +74,9 @@ def load_deploy_config(path: Path = CONFIG_DIR / "deploy-units.json") -> dict[st
         if missing:
             raise ValueError(f"deploy unit is missing fields: {sorted(missing)}")
         allowed = REQUIRED_UNIT_FIELDS | {"requiresExplicitComponent"} | (
-            {"chart", "imageValues"} if unit.get("kind") == "helm" else set()
+            {"chart", "imageValues", "imageFallbackValues"}
+            if unit.get("kind") == "helm"
+            else set()
         )
         unknown_fields = set(unit) - allowed
         if unknown_fields:
@@ -136,6 +138,21 @@ def load_deploy_config(path: Path = CONFIG_DIR / "deploy-units.json") -> dict[st
             ):
                 raise ValueError(
                     f"Helm deploy unit {name} imageValues paths must be strings"
+                )
+            fallback_values = unit.get("imageFallbackValues", {})
+            if not isinstance(fallback_values, dict):
+                raise ValueError(
+                    f"Helm deploy unit {name} imageFallbackValues must be an object"
+                )
+            if set(fallback_values) - set(unit["consumesImages"]):
+                raise ValueError(
+                    f"Helm deploy unit {name} imageFallbackValues contains "
+                    "non-consumed images"
+                )
+            for image_name, value_paths in fallback_values.items():
+                _string_list(
+                    value_paths,
+                    f"Helm deploy unit {name} fallback paths for {image_name}",
                 )
     by_name = {unit["name"]: unit for unit in units}
     for unit in units:
@@ -382,7 +399,10 @@ def main() -> int:
             )
         )
         for image_name, value_path in unit.get("imageValues", {}).items():
-            print(f"IMAGE\t{image_name}\t{value_path}")
+            fallback_paths = ",".join(
+                unit.get("imageFallbackValues", {}).get(image_name, [])
+            )
+            print(f"IMAGE\t{image_name}\t{value_path}\t{fallback_paths}")
         for component in plan["components"]:
             print(f"SELECTED_COMPONENT\t{component}")
         return 0
