@@ -166,11 +166,20 @@ spec:
                 install -m 0755 /tmp/arctl /usr/local/bin/arctl
                 rm -f /tmp/arctl
               fi
+              if ! docker buildx version >/dev/null 2>&1; then
+                mkdir -p /usr/local/lib/docker/cli-plugins
+                curl -fsSL -o /tmp/docker-buildx \
+                  "https://github.com/docker/buildx/releases/download/{{ .Values.jenkins.runtimeTools.buildxVersion }}/buildx-{{ .Values.jenkins.runtimeTools.buildxVersion }}.linux-amd64"
+                echo "{{ .Values.jenkins.runtimeTools.buildxSha256 }}  /tmp/docker-buildx" | sha256sum -c -
+                install -m 0755 /tmp/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx
+                rm -f /tmp/docker-buildx
+              fi
               ln -sf /opt/java/openjdk/bin/java /usr/local/bin/java
 
               python3 --version
               uv --version
               docker --version
+              docker buildx version
               kubectl version --client=true
               helm version --short
               kubeconform -v
