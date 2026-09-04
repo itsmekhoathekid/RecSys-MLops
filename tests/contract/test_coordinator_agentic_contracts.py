@@ -111,7 +111,7 @@ def test_production_coordinator_uses_assigned_worker_autoscaling() -> None:
         "kind": "WorkerPool",
         "name": "recsys-coordinator-sandbox-pool",
     }
-    assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
+    assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (2, 3)
     assert (spec["pollingInterval"], spec["cooldownPeriod"]) == (15, 300)
     assert spec["fallback"] == {"failureThreshold": 3, "replicas": 1}
     trigger = spec["triggers"][0]

@@ -131,7 +131,7 @@ mcpServers:
 autoscaling:
   enabled: true
   metricMode: cpu
-  minReplicas: 1
+  minReplicas: 2
   maxReplicas: 3
   pollingInterval: 15
   cooldownPeriod: 300

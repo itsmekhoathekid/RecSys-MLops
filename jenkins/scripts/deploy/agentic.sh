@@ -360,6 +360,7 @@ recommendation_a2a_smoke() {
       if python3 - "${base_url}/" "${user_id}" "${request_timeout}" "${output_file}" <<'PY'
 import json
 import sys
+import time
 import urllib.request
 import uuid
 
@@ -825,34 +826,40 @@ def collect_chunk_ids(value):
 
 
 def invoke(tool_name, prompt):
-    request_id = str(uuid.uuid4())
-    context_id = str(uuid.uuid4())
-    payload = {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "method": "SendMessage",
-        "params": {
-            "message": {
-                "messageId": request_id,
-                "contextId": context_id,
-                "role": "ROLE_USER",
-                "parts": [{"kind": "text", "text": prompt}],
+    body = {}
+    for attempt in range(1, 7):
+        request_id = str(uuid.uuid4())
+        context_id = str(uuid.uuid4())
+        payload = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "SendMessage",
+            "params": {
+                "message": {
+                    "messageId": request_id,
+                    "contextId": context_id,
+                    "role": "ROLE_USER",
+                    "parts": [{"kind": "text", "text": prompt}],
+                },
             },
-        },
-    }
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=request_timeout) as response:
-        body = json.load(response)
-    evidence[tool_name] = body
-    with open(output_path, "w", encoding="utf-8") as stream:
-        json.dump(evidence, stream, indent=2, sort_keys=True)
-    if body.get("error"):
-        raise SystemExit(f"{tool_name} A2A error: {body['error']}")
+        }
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=request_timeout) as response:
+            body = json.load(response)
+        evidence[tool_name] = body
+        with open(output_path, "w", encoding="utf-8") as stream:
+            json.dump(evidence, stream, indent=2, sort_keys=True)
+        if not body.get("error"):
+            break
+        error_text = json.dumps(body["error"], sort_keys=True).lower()
+        if "no free workers" not in error_text or attempt == 6:
+            raise SystemExit(f"{tool_name} A2A error: {body['error']}")
+        time.sleep(attempt * 5)
     wire_result = body.get("result", {})
     result = wire_result.get("task", wire_result)
     status = result.get("status", {})

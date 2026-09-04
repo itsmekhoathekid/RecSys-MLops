@@ -213,7 +213,7 @@ def test_production_autoscale_ranges_fit_the_quota_capped_cluster():
     worker_scaled = _resource(
         agent_documents, "ScaledObject", "recsys-context-sandbox-pool"
     )
-    assert worker_scaled["spec"]["minReplicaCount"] == 1
+    assert worker_scaled["spec"]["minReplicaCount"] == 2
     assert worker_scaled["spec"]["maxReplicaCount"] == 3
     assert worker_scaled["spec"]["fallback"] == {
         "failureThreshold": 3,
