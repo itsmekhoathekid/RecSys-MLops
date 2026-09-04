@@ -1,7 +1,7 @@
 autoscaling:
-  # Keep one idle gVisor worker and scale to at most three on the quota-capped
+  # Keep two idle gVisor workers and scale to at most three on the quota-capped
   # two-node production cluster.
-  minReplicas: 1
+  minReplicas: 2
   maxReplicas: 3
   metricMode: assignedWorkers
   assignedWorkersPerReplica: "0.7"

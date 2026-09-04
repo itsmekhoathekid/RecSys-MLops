@@ -154,7 +154,7 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
         "kind": "WorkerPool",
         "name": "recsys-context-sandbox-pool",
     }
-    assert sandbox_scaled["spec"]["minReplicaCount"] == 1
+    assert sandbox_scaled["spec"]["minReplicaCount"] == 2
     assert sandbox_scaled["spec"]["maxReplicaCount"] == 3
     assert sandbox_scaled["spec"]["fallback"] == {
         "failureThreshold": 3,

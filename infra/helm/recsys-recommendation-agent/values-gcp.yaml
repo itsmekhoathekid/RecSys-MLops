@@ -1,5 +1,5 @@
 autoscaling:
-  minReplicas: 1
+  minReplicas: 2
   maxReplicas: 3
   metricMode: assignedWorkers
   assignedWorkersPerReplica: "0.7"

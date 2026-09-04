@@ -102,7 +102,7 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     assert "Never substitute a default" in prompt
 
 
-def test_mcp_and_workerpool_scale_one_to_three_with_fallback_one() -> None:
+def test_mcp_scales_one_to_three_and_workerpool_keeps_two_warm() -> None:
     mcp_documents = _render("recsys-recommendation-mcp")
     deployment = _resource(
         mcp_documents, "Deployment", "recsys-recommendation-mcp"
@@ -135,7 +135,7 @@ def test_mcp_and_workerpool_scale_one_to_three_with_fallback_one() -> None:
         worker_scaled["spec"]["minReplicaCount"],
         worker_scaled["spec"]["maxReplicaCount"],
         worker_scaled["spec"]["fallback"]["replicas"],
-    ) == (1, 3, 1)
+    ) == (2, 3, 1)
     assert worker_scaled["spec"]["advanced"]["horizontalPodAutoscalerConfig"][
         "behavior"
     ]["scaleDown"]["stabilizationWindowSeconds"] == 300
