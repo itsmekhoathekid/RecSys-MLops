@@ -377,10 +377,10 @@ history.
 | [Agent Warm-Up](<docs/submission/rubric-final-coursework-(final-llm)/benchmark_ha.md>) | Reproducible specialist actor warm-up, Substrate/WorkerPool HA, assigned-worker scaling, and rollback evidence. |
 | [Validation & Verification](<docs/submission/rubric-final-coursework-(final-llm)/validation_verification.md>) | RAG API coverage, fixture/mock and parametrized EP/BVA design, property-based idempotency, mutation score, and Locust SLA evidence. |
 | [Improve the Data Generator](<docs/submission/rubic-final-coursework-(final-ml)/improve_data_generator.md>) | Gradual purchase-frequency drift simulation, PSI evidence, and PostgreSQL `ml_ranking_labels` generation for reproducible ranking training data. |
-| CI/CD | Work in progress. |
+| [CI/CD](<docs/submission/rubric-final-coursework-(final-llm)/ci_cd.md>) | Shared nine-stage Jenkins contract for the RAG data pipeline and three agent stacks, including immutable image publication, dependency-ordered production deployment, verification, Helm rollback boundaries, and same-commit Agent Registry finalization. |
 | [Routing & Gateway (NGINX Ingress Controller)](<docs/submission/rubric-final-coursework-(final-llm)/routing_gateway.md>) | HTTPS routing for the Agent UI, Agent Registry, and RAG API with Basic Auth, TLS, rate limiting, DNS, and stable internal upstreams. |
 | [IaC](<docs/submission/rubric-final-coursework-(final-llm)/iac.md>) | Modular Terraform architecture for GCP, GKE, and the LLM platform, including Helm ownership and state-safe migration without resource recreation. |
-| Observability | Work in progress. |
+| [Observability](<docs/submission/rubric-final-coursework-(final-llm)/observability.md>) | Prometheus/Grafana metrics, Loki logs, Tempo and Langfuse traces, LLM token/TTFT telemetry, PII-safe processing, and Agent/MCP operational evidence. |
 | A/B Testing | Work in progress. |
 | [Security](<docs/submission/rubric-final-coursework-(final-llm)/security.md>) | HashiCorp Vault HA/Raft with Cloud KMS auto-unseal, External Secrets synchronization, Agent Gateway API-key authentication, secret rotation, and verification evidence. |
 | [Repository Design](<docs/submission/rubric-final-coursework-(final-llm)/repository_design.md>) | Clean deployable boundaries and Composition Root/DI, Adapter, Strategy/State, Pipeline, and Composite patterns across the LLM, RAG, MCP, and agentic platform. |

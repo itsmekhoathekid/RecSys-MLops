@@ -97,8 +97,8 @@ GCP_ACCOUNT=<gcp-account> \
 ## Delivery inventory
 
 - [ ] All 19 catalog images are present by immutable digest.
-- [ ] All 21 product components and `ci_config` pass their gates.
-- [ ] All 31 current release-plan deploy units complete in dependency order.
+- [ ] All 22 product components and `ci_config` pass their gates.
+- [ ] All 33 current release-plan deploy units complete in dependency order.
 - [ ] Kubeflow BST package is uploaded/versioned and Jenkins uses only the new
   project, cluster context and Artifact Registry.
 

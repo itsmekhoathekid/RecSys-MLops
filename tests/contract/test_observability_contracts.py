@@ -101,6 +101,31 @@ def test_ab_dashboard_contains_shadow_candidate_proof_panels():
         assert "or vector(0)" in panels[title]["targets"][0]["expr"]
 
 
+def test_llm_runtime_exact_probe_panels_do_not_render_a_false_zero_series():
+    dashboard = json.loads(
+        Path("infra/helm/recsys-observability/dashboards/llm-runtime.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    panels = {panel["title"]: panel for panel in dashboard["panels"]}
+
+    token_expr = panels["Latest exact probe tokens"]["targets"][0]["expr"]
+    latency_exprs = {
+        target["legendFormat"]: target["expr"]
+        for target in panels["Exact synthetic TTFT and round-trip"]["targets"]
+    }
+
+    assert token_expr == 'max(recsys_llm_probe_tokens{type="total"})'
+    assert latency_exprs == {
+        "TTFT": "max(recsys_llm_probe_ttft_seconds)",
+        "round trip": "max(recsys_llm_probe_round_trip_seconds)",
+    }
+    assert all(
+        "or vector(0)" not in expression
+        for expression in [token_expr, *latency_exprs.values()]
+    )
+
+
 def test_prometheus_scrapes_api_metrics_once_per_pod():
     docs = _render_observability()
     resources = _by_kind_name(docs)
