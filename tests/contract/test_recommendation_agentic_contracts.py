@@ -255,3 +255,10 @@ def test_autoscale_and_smoke_proof_scripts_are_portable_and_bounded() -> None:
     assert "remotemcpserver/recsys-recommendation-mcp" in smoke
     assert "sandboxagent/recsys-recommendation-agent-sandbox" in smoke
     assert "workerpool/recsys-recommendation-sandbox-pool" in smoke
+
+    protocol_smoke = (
+        ROOT / "jenkins/scripts/deploy/agentic/mcp.sh"
+    ).read_text(encoding="utf-8")
+    assert "RECOMMENDATION_MCP_REQUEST_TIMEOUT_SECONDS:-60" in protocol_smoke
+    assert "timeout=httpx.Timeout(timeout_seconds)" in protocol_smoke
+    assert '"${request_timeout_seconds}"' in protocol_smoke
