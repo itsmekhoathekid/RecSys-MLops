@@ -10,13 +10,14 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_coordinator_release_reuses_canonical_mcp_resources() -> None:
+def test_coordinator_release_reuses_canonical_specialist_agents() -> None:
     chart = ROOT / "infra/helm/recsys-coordinator-agent"
     values = yaml.safe_load((chart / "values.yaml").read_text(encoding="utf-8"))
-    assert values["mcpServers"]["context"]["name"] == "recsys-feature-rag-mcp"
-    assert values["mcpServers"]["recommendation"]["name"] == (
-        "recsys-recommendation-mcp"
+    assert values["agents"]["context"]["name"] == "recsys-context-agent-sandbox"
+    assert values["agents"]["recommendation"]["name"] == (
+        "recsys-recommendation-agent-sandbox"
     )
+    assert "mcpServers" not in values
     assert not (chart / "templates/remotemcpserver.yaml").exists()
 
 

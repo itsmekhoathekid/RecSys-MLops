@@ -1366,34 +1366,33 @@ Platform references:
 - [private service, restricted namespaces, and external database values](../../../configs/agentregistry/values.yaml#L1)
 - [Vault and ExternalSecret configuration](../../../infra/helm/recsys-security/values.yaml#L38)
 
-Jenkins publishes only after live MCP and sandbox A2A smoke tests pass. Registry
-metadata contains the full Git commit, a version derived from the first twelve
-SHA characters, and an explicit MCP dependency.
+Jenkins publishes immutable MCP and Agent candidates before workload mutation,
+reads them back, and seals the exact version into a deployment lock. Registry
+metadata contains the full Git commit, OCI chart/image digests, a contract
+checksum, and explicit same-release dependencies.
 
 ```bash
-version="0.1.0+${GIT_COMMIT:0:12}"
+version="0.2.0-g${GIT_COMMIT:0:12}"
 
 arctl apply -f "${manifest}"
 arctl get agent recsys/recsys-context-agent-sandbox \
-  --tag "${version/+/-}" -o json
-
-# Performed only after sandbox publish and runtime smoke succeed.
-arctl delete agent recsys/recsys-context-agent --all-tags
+  --tag "${version}" -o json
+# Jenkins validates the read-back and seals agent-registry-lock.json.
 ```
 
 Governance references:
 
-- [registry version and idempotency logic](../../../jenkins/scripts/deploy/agentic.sh#L340)
-- [registry manifest metadata and MCP dependency](../../../jenkins/scripts/deploy/agentic.sh#L411)
-- [SandboxAgent publish and legacy regular-Agent cleanup](../../../jenkins/scripts/deploy/agentic.sh#L590)
+- [Registry manifest and lock contract](../../../jenkins/python/agent_registry_release.py)
+- [thin Registry transport](../../../jenkins/scripts/deploy/agentic/registry.sh)
 - [registry runtime smoke](../../../ops/validation/agentic_context_registry_smoke.sh#L1)
 - [application and registry deploy DAG](../../../jenkins/config/deploy-units.json#L214)
 
 ```text
-feature-rag-mcp
-  -> context-agent
-  -> feature-rag-mcp-registry
+feature-rag-mcp-registry
   -> context-agent-registry
+  -> sealed deployment lock
+  -> feature-rag-mcp
+  -> context-agent
 ```
 
 ### Image proof

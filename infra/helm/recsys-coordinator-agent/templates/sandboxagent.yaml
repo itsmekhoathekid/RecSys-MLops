@@ -3,6 +3,12 @@ kind: SandboxAgent
 metadata:
   name: {{ .Values.sandbox.name }}
   namespace: {{ .Values.namespace }}
+{{- if .Values.releaseMetadata.registryRef }}
+  annotations:
+    recsys.dev/agent-registry-ref: {{ .Values.releaseMetadata.registryRef | quote }}
+    recsys.dev/agent-release-version: {{ .Values.releaseMetadata.version | quote }}
+    recsys.dev/contract-sha256: {{ .Values.releaseMetadata.contractSha256 | quote }}
+{{- end }}
   labels:
     {{- include "recsys-coordinator-agent.labels" . | nindent 4 }}
 spec:

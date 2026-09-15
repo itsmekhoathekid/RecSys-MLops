@@ -43,6 +43,17 @@ registry_login_gcp() {
     | docker login "https://${registry_host}" --username oauth2accesstoken --password-stdin
 }
 
+registry_login_gcp_helm() {
+  local repository="$1"
+  local registry_host
+  local token
+  registry_host="$(registry_host_from_repository "${repository}")"
+  token="$(registry_gcp_access_token)"
+  printf '%s' "${token}" \
+    | helm registry login "${registry_host}" \
+        --username oauth2accesstoken --password-stdin
+}
+
 registry_resolve_digest_reference() {
   local reference="$1"
   local expected_repository="${2%/}"
@@ -69,7 +80,7 @@ registry_resolve_digest_reference() {
   }
 
   registry_host="$(registry_host_from_repository "${reference}")"
-  manifest_reference="${reference#${registry_host}/}"
+  manifest_reference="${reference#"${registry_host}"/}"
   [[ "${manifest_reference}" == *:* ]] || {
     recsys_error "image reference has no tag or digest: ${reference}"
     return 2

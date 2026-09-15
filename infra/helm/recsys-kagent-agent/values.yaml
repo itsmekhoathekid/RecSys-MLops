@@ -66,3 +66,7 @@ autoscaling:
   cpuTargetMicrocores: "200"
   scaleDownStabilizationSeconds: 300
   fallback: {failureThreshold: 3, replicas: 1}
+releaseMetadata:
+  registryRef: ""
+  version: ""
+  contractSha256: ""

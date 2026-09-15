@@ -19,6 +19,7 @@ from jenkins.python.change_detection.detector import (  # noqa: E402
 )
 from jenkins.python.release_plan import create_release_plan  # noqa: E402
 
+TEST_COMMIT = "a" * 40
 
 PIPELINE_RELEASE_PLAN_GOLDENS = {
     "rag": {
@@ -32,6 +33,8 @@ PIPELINE_RELEASE_PLAN_GOLDENS = {
             "recsys-airflow",
             "recsys-rag-api",
         ],
+        "buildArtifacts": [],
+        "publishUnits": [],
         "deployUnits": [
             "milvus",
             "milvus-credentials",
@@ -43,23 +46,32 @@ PIPELINE_RELEASE_PLAN_GOLDENS = {
     "context": {
         "components": ["feature_rag_mcp", "context_agent"],
         "buildImages": ["recsys-feature-rag-mcp"],
+        "buildArtifacts": ["feature-rag-mcp-chart", "context-agent-chart"],
+        "publishUnits": [
+            "feature-rag-mcp-registry",
+            "context-agent-registry",
+        ],
         "deployUnits": [
             "feature-rag-mcp",
             "global-model-config",
             "context-agent",
-            "feature-rag-mcp-registry",
-            "context-agent-registry",
         ],
     },
     "recommendation": {
         "components": ["recommendation_mcp", "recommendation_agent"],
         "buildImages": ["recsys-recommendation-mcp"],
+        "buildArtifacts": [
+            "recommendation-mcp-chart",
+            "recommendation-agent-chart",
+        ],
+        "publishUnits": [
+            "recommendation-mcp-registry",
+            "recommendation-agent-registry",
+        ],
         "deployUnits": [
             "global-model-config",
             "recommendation-mcp",
             "recommendation-agent",
-            "recommendation-mcp-registry",
-            "recommendation-agent-registry",
         ],
     },
     "coordinator": {
@@ -71,18 +83,27 @@ PIPELINE_RELEASE_PLAN_GOLDENS = {
             "coordinator_agent",
         ],
         "buildImages": ["recsys-feature-rag-mcp", "recsys-recommendation-mcp"],
+        "buildArtifacts": [
+            "feature-rag-mcp-chart",
+            "context-agent-chart",
+            "recommendation-mcp-chart",
+            "recommendation-agent-chart",
+            "coordinator-agent-chart",
+        ],
+        "publishUnits": [
+            "feature-rag-mcp-registry",
+            "context-agent-registry",
+            "recommendation-mcp-registry",
+            "recommendation-agent-registry",
+            "coordinator-agent-registry",
+        ],
         "deployUnits": [
             "feature-rag-mcp",
             "global-model-config",
             "context-agent",
-            "feature-rag-mcp-registry",
-            "context-agent-registry",
             "recommendation-mcp",
             "recommendation-agent",
-            "recommendation-mcp-registry",
-            "recommendation-agent-registry",
             "coordinator-agent",
-            "coordinator-agent-registry",
         ],
     },
 }
@@ -90,9 +111,11 @@ PIPELINE_RELEASE_PLAN_GOLDENS = {
 
 @pytest.mark.parametrize("golden", PIPELINE_RELEASE_PLAN_GOLDENS.values())
 def test_dedicated_pipeline_release_plan_golden(golden):
-    plan = create_release_plan(golden["components"], commit="golden")
+    plan = create_release_plan(golden["components"], commit=TEST_COMMIT)
     assert plan["components"] == golden["components"]
     assert plan["buildImages"] == golden["buildImages"]
+    assert plan["buildArtifacts"] == golden["buildArtifacts"]
+    assert plan["publishUnits"] == golden["publishUnits"]
     assert plan["deployUnits"] == golden["deployUnits"]
 
 
@@ -100,41 +123,70 @@ def test_forced_pipeline_scope_ignores_unrelated_changed_chart_paths():
     result = detect_changed_components(
         [ChangedFile("M", "infra/helm/recsys-analytics/values.yaml")],
         forced_components="recommendation_mcp,recommendation_agent,ci_config",
-        commit="forced",
+        commit=TEST_COMMIT,
     )
 
-    assert list(result.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS[
-        "recommendation"
-    ]["components"]
-    assert result.release_plan["deployUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
-        "recommendation"
-    ]["deployUnits"]
+    assert (
+        list(result.component_names)
+        == PIPELINE_RELEASE_PLAN_GOLDENS["recommendation"]["components"]
+    )
+    assert (
+        result.release_plan["deployUnits"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["recommendation"]["deployUnits"]
+    )
+    assert (
+        result.release_plan["publishUnits"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["recommendation"]["publishUnits"]
+    )
 
 
 def test_coordinator_change_expands_release_dependencies():
     result = detect_changed_components(
-        [ChangedFile("M", "configs/agentic/recsys-coordinator-agent/tools-contract.json")],
-        commit="coordinator",
+        [
+            ChangedFile(
+                "M", "configs/agentic/recsys-coordinator-agent/tools-contract.json"
+            )
+        ],
+        commit=TEST_COMMIT,
     )
+
+    assert (
+        list(result.component_names)
+        == PIPELINE_RELEASE_PLAN_GOLDENS["coordinator"]["components"]
+    )
+    assert (
+        result.release_plan["deployUnits"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["coordinator"]["deployUnits"]
+    )
+    assert (
+        result.release_plan["publishUnits"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["coordinator"]["publishUnits"]
+    )
+
+
+def test_registry_release_runtime_change_selects_the_complete_agentic_release():
+    result = detect(["jenkins/python/agent_registry_release.py"])
 
     assert list(result.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS[
         "coordinator"
     ]["components"]
-    assert result.release_plan["deployUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
+    assert result.release_plan["publishUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
         "coordinator"
-    ]["deployUnits"]
+    ]["publishUnits"]
 
 
 def selected(paths: list[str]) -> set[str]:
     return set(
         detect_changed_components(
-            [ChangedFile("M", path) for path in paths]
+            [ChangedFile("M", path) for path in paths], commit=TEST_COMMIT
         ).component_names
     )
 
 
 def detect(paths: list[str]):
-    return detect_changed_components([ChangedFile("M", path) for path in paths])
+    return detect_changed_components(
+        [ChangedFile("M", path) for path in paths], commit=TEST_COMMIT
+    )
 
 
 def test_dp2_entrypoint_selects_only_dp2():
@@ -260,7 +312,7 @@ def test_dp2_release_plan_does_not_expand_shared_spark_into_training_artifacts()
         changed_paths=[
             "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py"
         ],
-        commit="abc",
+        commit=TEST_COMMIT,
     )
     assert plan["buildImages"] == [
         "recsys-spark-runtime",
@@ -269,12 +321,12 @@ def test_dp2_release_plan_does_not_expand_shared_spark_into_training_artifacts()
     ]
     assert plan["buildArtifacts"] == []
     assert plan["deployUnits"] == ["airflow"]
-    assert plan["version"] == 2
+    assert plan["version"] == 3
     assert "workflowChecks" not in plan
 
 
 def test_training_release_plan_keeps_its_explicit_kubeflow_artifact():
-    plan = create_release_plan(["training"], commit="abc")
+    plan = create_release_plan(["training"], commit=TEST_COMMIT)
 
     assert plan["buildArtifacts"] == ["kubeflow-bst"]
     assert "recsys-mlops-training" in plan["buildImages"]
@@ -286,6 +338,7 @@ def test_chart_change_selects_its_exact_deploy_unit():
     plan = create_release_plan(
         ["stream_online"],
         changed_paths=["infra/helm/recsys-event-stream/templates/kafka.yaml"],
+        commit=TEST_COMMIT,
     )
     assert "event-stream" in plan["deployUnits"]
     assert "data-lakehouse" not in plan["deployUnits"]
@@ -327,10 +380,10 @@ def test_shared_serving_contract_change_also_rebuilds_the_mcp_facade():
     assert result.release_plan["deployUnits"] == [
         "rag-api",
         "feature-rag-mcp",
-        "feature-rag-mcp-registry",
         "online-feature-api",
         "inference-api",
     ]
+    assert result.release_plan["publishUnits"] == ["feature-rag-mcp-registry"]
 
 
 def test_agentic_change_routing_and_release_order_matrix():
@@ -339,38 +392,41 @@ def test_agentic_change_routing_and_release_order_matrix():
     )
     assert mcp.component_names == ("feature_rag_mcp",)
     assert mcp.release_plan["buildImages"] == ["recsys-feature-rag-mcp"]
-    assert mcp.release_plan["deployUnits"] == [
-        "feature-rag-mcp",
-        "feature-rag-mcp-registry",
-    ]
+    assert mcp.release_plan["deployUnits"] == ["feature-rag-mcp"]
+    assert mcp.release_plan["publishUnits"] == ["feature-rag-mcp-registry"]
 
     agent = detect(["infra/helm/recsys-kagent-agent/values.yaml"])
-    assert list(agent.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS["context"][
-        "components"
-    ]
-    assert agent.release_plan["buildImages"] == PIPELINE_RELEASE_PLAN_GOLDENS[
-        "context"
-    ]["buildImages"]
-    assert agent.release_plan["deployUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
-        "context"
-    ]["deployUnits"]
-
-    interface = detect(
-        ["configs/agentic/recsys-context-agent/tools-contract.json"]
+    assert (
+        list(agent.component_names)
+        == PIPELINE_RELEASE_PLAN_GOLDENS["context"]["components"]
     )
+    assert (
+        agent.release_plan["buildImages"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["context"]["buildImages"]
+    )
+    assert (
+        agent.release_plan["deployUnits"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["context"]["deployUnits"]
+    )
+    assert (
+        agent.release_plan["publishUnits"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["context"]["publishUnits"]
+    )
+
+    interface = detect(["configs/agentic/recsys-context-agent/tools-contract.json"])
     assert interface.component_names == ("feature_rag_mcp", "context_agent")
     assert interface.release_plan["buildImages"] == ["recsys-feature-rag-mcp"]
     assert interface.release_plan["deployUnits"] == [
         "feature-rag-mcp",
         "global-model-config",
         "context-agent",
+    ]
+    assert interface.release_plan["publishUnits"] == [
         "feature-rag-mcp-registry",
         "context-agent-registry",
     ]
 
-    rag_contract = detect(
-        ["apps/api-serving/rag-api/src/recsys_rag_api/contracts.py"]
-    )
+    rag_contract = detect(["apps/api-serving/rag-api/src/recsys_rag_api/contracts.py"])
     assert rag_contract.component_names == ("rag_api", "feature_rag_mcp")
     units = rag_contract.release_plan["deployUnits"]
     assert units.index("rag-api") < units.index("feature-rag-mcp")
@@ -380,20 +436,28 @@ def test_coordinator_change_selects_its_helm_and_registry_units_in_order():
     coordinator = detect(
         ["infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml"]
     )
-    assert list(coordinator.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS[
-        "coordinator"
-    ]["components"]
-    assert coordinator.release_plan["buildImages"] == PIPELINE_RELEASE_PLAN_GOLDENS[
-        "coordinator"
-    ]["buildImages"]
-    assert coordinator.release_plan["deployUnits"] == PIPELINE_RELEASE_PLAN_GOLDENS[
-        "coordinator"
-    ]["deployUnits"]
+    assert (
+        list(coordinator.component_names)
+        == PIPELINE_RELEASE_PLAN_GOLDENS["coordinator"]["components"]
+    )
+    assert (
+        coordinator.release_plan["buildImages"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["coordinator"]["buildImages"]
+    )
+    assert (
+        coordinator.release_plan["deployUnits"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["coordinator"]["deployUnits"]
+    )
+    assert (
+        coordinator.release_plan["publishUnits"]
+        == PIPELINE_RELEASE_PLAN_GOLDENS["coordinator"]["publishUnits"]
+    )
 
     validation = detect(["ops/validation/coordinator_agentic_autoscale.sh"])
-    assert list(validation.component_names) == PIPELINE_RELEASE_PLAN_GOLDENS[
-        "coordinator"
-    ]["components"]
+    assert (
+        list(validation.component_names)
+        == PIPELINE_RELEASE_PLAN_GOLDENS["coordinator"]["components"]
+    )
 
 
 def test_rag_change_detection_and_release_dependency_order():
@@ -427,7 +491,7 @@ def test_rag_change_detection_and_release_dependency_order():
         "online_feature_api",
     }
 
-    plan = create_release_plan(["rag_index", "rag_api"], commit="abc123")
+    plan = create_release_plan(["rag_index", "rag_api"], commit=TEST_COMMIT)
     units = plan["deployUnits"]
     assert units.index("milvus") < units.index("milvus-credentials")
     assert units.index("milvus-credentials") < units.index("rag-feature-registry")
@@ -439,6 +503,7 @@ def test_data_dependent_actions_require_explicit_components():
     bootstrap = create_release_plan(
         ["dp1", "rag_api"],
         changed_images=["recsys-ingestion"],
+        commit=TEST_COMMIT,
     )
     assert "milvus" not in bootstrap["deployUnits"]
     assert "milvus-credentials" not in bootstrap["deployUnits"]
@@ -446,7 +511,9 @@ def test_data_dependent_actions_require_explicit_components():
     assert "datahub-catalog" not in bootstrap["deployUnits"]
     assert "rag-index-promotion" not in bootstrap["deployUnits"]
 
-    data_ready = create_release_plan(["datahub_catalog", "rag_index"])
+    data_ready = create_release_plan(
+        ["datahub_catalog", "rag_index"], commit=TEST_COMMIT
+    )
     assert "datahub-catalog" in data_ready["deployUnits"]
     assert "rag-index-promotion" not in data_ready["deployUnits"]
 
@@ -481,7 +548,7 @@ def test_gateway_chart_change_deploys_gateway_without_rebuilding_inference_api()
 
 
 def test_dp1_plan_bootstraps_image_less_lakehouse_and_event_stream_releases():
-    plan = create_release_plan(["dp1"])
+    plan = create_release_plan(["dp1"], commit=TEST_COMMIT)
 
     assert "data-lakehouse" in plan["deployUnits"]
     assert "event-stream" in plan["deployUnits"]
@@ -497,7 +564,7 @@ def test_detector_cli_writes_environment_and_plan(monkeypatch, tmp_path, capsys)
             "--path",
             "apps/data-platform/src/features/spark/dp2_silver_gold_entrypoint.py",
             "--commit",
-            "abc",
+            TEST_COMMIT,
             "--plan-output",
             str(plan_path),
         ],
@@ -506,7 +573,7 @@ def test_detector_cli_writes_environment_and_plan(monkeypatch, tmp_path, capsys)
     output = capsys.readouterr().out
     assert "RUN_DP2=true" in output
     assert "CHANGED_COMPONENTS=dp2" in output
-    assert json.loads(plan_path.read_text())["commit"] == "abc"
+    assert json.loads(plan_path.read_text())["commit"] == TEST_COMMIT
 
 
 def test_changed_files_preserves_successful_empty_diff(monkeypatch):
@@ -536,7 +603,9 @@ def test_changed_files_falls_back_to_current_commit(monkeypatch):
 
 
 def test_deleted_unmapped_legacy_path_is_diagnostic_only():
-    result = detect_changed_components([ChangedFile("D", "legacy/removed.sh")])
+    result = detect_changed_components(
+        [ChangedFile("D", "legacy/removed.sh")], commit=TEST_COMMIT
+    )
     assert result.unmapped_paths == ()
     assert result.deleted_unmapped_paths == ("legacy/removed.sh",)
 
@@ -549,7 +618,7 @@ def test_rename_is_classified_as_delete_and_add():
         ChangedFile("D", "legacy/old.py"),
         ChangedFile("A", "apps/api-serving/shared/src/new.py"),
     ]
-    result = detect_changed_components(changes)
+    result = detect_changed_components(changes, commit=TEST_COMMIT)
     assert result.component_names == (
         "rag_api",
         "online_feature_api",
@@ -561,13 +630,13 @@ def test_rename_is_classified_as_delete_and_add():
 def test_force_components_builds_one_plan_without_classifying_paths():
     result = detect_changed_components(
         [ChangedFile("M", "unmapped/ignored-by-force.py")],
-        commit="abc",
+        commit=TEST_COMMIT,
         forced_components="dp2,ci_config",
     )
     assert result.component_names == ("dp2",)
     assert result.flags["RUN_CI_CONFIG"] is True
     assert result.unmapped_paths == ()
-    assert result.release_plan["commit"] == "abc"
+    assert result.release_plan["commit"] == TEST_COMMIT
 
 
 def test_detector_creates_release_plan_once(monkeypatch):

@@ -78,7 +78,13 @@ def test_deploy_helpers_are_modular_and_preserve_caller_shell_options():
             "registry.sh",
             "rotation.sh",
         },
-        "rag": {"bootstrap.sh", "kubernetes.sh", "api.sh", "index_lifecycle.sh", "rollback.sh"},
+        "rag": {
+            "bootstrap.sh",
+            "kubernetes.sh",
+            "api.sh",
+            "index_lifecycle.sh",
+            "rollback.sh",
+        },
     }
     for name, expected in expected_modules.items():
         loader = (ROOT / "jenkins/scripts/deploy" / f"{name}.sh").read_text(
@@ -122,6 +128,14 @@ def test_component_catalog_is_valid_and_preserves_stage_view_labels():
     assert all("verifyDependsOn" in component for component in components)
 
 
+def test_configuration_json_rejects_duplicate_keys(tmp_path):
+    duplicate = tmp_path / "duplicate.json"
+    duplicate.write_text('{"version": 2, "version": 3}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="duplicate JSON key: version"):
+        configuration.read_json(duplicate)
+
+
 def test_datahub_catalog_has_a_dedicated_component_and_deploy_action():
     components = {
         component["name"]: component for component in configuration.load_components()
@@ -142,6 +156,7 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
         component["name"]: component for component in configuration.load_components()
     }
     assert components["feature_rag_mcp"]["buildImages"] == ["recsys-feature-rag-mcp"]
+    assert components["feature_rag_mcp"]["buildArtifacts"] == ["feature-rag-mcp-chart"]
     assert components["feature_rag_mcp"]["verifyDependsOn"] == [
         "online_feature_api",
         "rag_api",
@@ -162,14 +177,20 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert units["milvus-credentials"]["requiresExplicitComponent"] is True
     assert units["rag-feature-registry"]["components"] == ["rag_index"]
     assert units["rag-feature-registry"]["requiresExplicitComponent"] is True
-    assert units["feature-rag-mcp"]["dependsOn"] == ["rag-api"]
-    assert units["context-agent"]["dependsOn"] == ["global-model-config", "feature-rag-mcp"]
-    assert units["context-agent-registry"]["dependsOn"] == [
-        "context-agent",
+    assert units["feature-rag-mcp"]["dependsOn"] == [
+        "rag-api",
         "feature-rag-mcp-registry",
     ]
+    assert units["context-agent"]["dependsOn"] == [
+        "global-model-config",
+        "feature-rag-mcp",
+        "context-agent-registry",
+    ]
+    assert units["context-agent-registry"]["dependsOn"] == ["feature-rag-mcp-registry"]
     assert units["feature-rag-mcp-registry"]["kind"] == "jenkins-action"
     assert units["context-agent-registry"]["kind"] == "jenkins-action"
+    assert units["feature-rag-mcp-registry"]["phase"] == "publish"
+    assert units["context-agent"]["phase"] == "deploy"
 
     assert components["recommendation_mcp"]["buildImages"] == [
         "recsys-recommendation-mcp"
@@ -180,14 +201,17 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
         "recommendation_mcp"
     ]
     assert "context_agent" not in components["recommendation_agent"]["verifyDependsOn"]
-    assert units["recommendation-mcp"]["dependsOn"] == ["inference-api"]
-    assert units["recommendation-agent"]["dependsOn"] == ["global-model-config", "recommendation-mcp"]
-    assert units["recommendation-mcp-registry"]["dependsOn"] == [
-        "recommendation-mcp",
-        "recommendation-agent",
+    assert units["recommendation-mcp"]["dependsOn"] == [
+        "inference-api",
+        "recommendation-mcp-registry",
     ]
+    assert units["recommendation-agent"]["dependsOn"] == [
+        "global-model-config",
+        "recommendation-mcp",
+        "recommendation-agent-registry",
+    ]
+    assert units["recommendation-mcp-registry"]["dependsOn"] == []
     assert units["recommendation-agent-registry"]["dependsOn"] == [
-        "recommendation-agent",
         "recommendation-mcp-registry",
     ]
 
@@ -200,28 +224,25 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
         "global-model-config",
         "context-agent",
         "recommendation-agent",
+        "coordinator-agent-registry",
     ]
     assert units["coordinator-agent-registry"]["dependsOn"] == [
-        "coordinator-agent",
-        "context-agent-registry",
-        "recommendation-agent-registry",
         "feature-rag-mcp-registry",
         "recommendation-mcp-registry",
+        "context-agent-registry",
+        "recommendation-agent-registry",
     ]
 
     deploy = _deploy_bundle("agentic")
     assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in deploy
-    assert "0.1.0+%s" in deploy
-    assert '"remote": {' in deploy
-    assert '"type": "streamable-http"' in deploy
+    assert "jenkins.python.agent_registry_release" in deploy
+    assert "publish_agent_registry_artifact" in deploy
     assert 'arctl apply -f "${manifest}"' in deploy
     assert "RECOMMENDATION_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "AGENTIC_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy
-    assert "deployment/recsys-context-sandbox-pool-deployment" in deploy
-    assert "deployment/recsys-coordinator-sandbox-pool-deployment" in deploy
     assert "/api/a2a-sandboxes/kagent/${agent_name}" in deploy
-    assert 'arctl delete agent "${legacy_name}" --all-tags' in deploy
+    assert "arctl delete" not in deploy
     assert '"apiVersion": "apps/v1"' in deploy
     assert '"kind": "Deployment"' in deploy
     assert 'active.get("status") == "True"' in deploy
@@ -283,27 +304,20 @@ def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
     assert 'volume_yaml="          volumeMounts:' in deploy_script
 
 
-def test_agent_registry_all_tags_probe_parses_v04_output_instead_of_exit_code():
-    script = r"""
-set -Eeuo pipefail
-source jenkins/scripts/deploy/agentic.sh
-fixture=missing
-arctl() {
-  if [[ "${fixture}" == "present" ]]; then
-    printf '[{"metadata":{"name":"recsys-context-agent"}}]\n'
-  else
-    printf 'No tags of agent "recsys/recsys-context-agent" found.\n'
-  fi
-}
-output="$(mktemp)"
-trap 'rm -f "${output}"' EXIT
-if agentic_registry_tagged_resource_exists agent recsys/recsys-context-agent "${output}"; then
-  exit 11
-fi
-fixture=present
-agentic_registry_tagged_resource_exists agent recsys/recsys-context-agent "${output}"
-"""
-    subprocess.run(["bash", "-c", script], cwd=ROOT, check=True)
+def test_agent_registry_publication_is_append_only_and_data_driven():
+    source = (ROOT / "jenkins/scripts/deploy/agentic/registry.sh").read_text()
+    catalog = json.loads(
+        (ROOT / "jenkins/config/agent-registry-artifacts.json").read_text()
+    )
+    assert set(catalog["artifacts"]) == {
+        "feature-rag-mcp",
+        "context-agent",
+        "recommendation-mcp",
+        "recommendation-agent",
+        "coordinator-agent",
+    }
+    assert "publish_agent_registry_artifact" in source
+    assert "arctl delete" not in source
 
 
 def test_full_release_verification_orders_data_before_training(tmp_path):
@@ -311,8 +325,9 @@ def test_full_release_verification_orders_data_before_training(tmp_path):
     plan_path.write_text(
         json.dumps(
             {
-                "version": 2,
-                "commit": "abc",
+                "version": 3,
+                "commit": "a" * 40,
+                "releaseVersion": "0.2.0-gaaaaaaaaaaaa",
                 "components": [
                     "materialize",
                     "training",
@@ -323,6 +338,7 @@ def test_full_release_verification_orders_data_before_training(tmp_path):
                 ],
                 "buildImages": [],
                 "buildArtifacts": [],
+                "publishUnits": [],
                 "deployUnits": [],
             }
         ),
@@ -405,9 +421,9 @@ def test_serving_mutation_pipeline_is_nightly_manual_and_standalone():
 
 
 def test_rollout_deploy_uses_release_plan_namespace():
-    entrypoint = (
-        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
-    ).read_text(encoding="utf-8")
+    entrypoint = (ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh").read_text(
+        encoding="utf-8"
+    )
     rollout = (ROOT / "jenkins/scripts/deploy/rollout.sh").read_text(encoding="utf-8")
 
     assert 'deploy_rollout_watcher "${unit_namespace}"' in entrypoint
@@ -416,9 +432,9 @@ def test_rollout_deploy_uses_release_plan_namespace():
 
 
 def test_online_feature_deploy_takes_ownership_from_legacy_release():
-    entrypoint = (
-        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
-    ).read_text(encoding="utf-8")
+    entrypoint = (ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert '[[ "${unit_name}" == "online-feature-api" ]]' in entrypoint
     assert "helm_args+=(--take-ownership)" in entrypoint
@@ -439,9 +455,9 @@ def test_split_api_gcp_values_preserve_the_legacy_ml_node_placement():
 
 
 def test_online_feature_deploy_uses_canonical_registry_secret_without_cli_leakage():
-    entrypoint = (
-        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
-    ).read_text(encoding="utf-8")
+    entrypoint = (ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert '"recsys-data-platform-secret", "-o", "json"' in entrypoint
     assert 'chmod 600 "${sensitive_values_file}"' in entrypoint
@@ -467,9 +483,7 @@ def test_rag_job_wait_retries_visibility_and_fails_fast_on_failed_condition():
         encoding="utf-8"
     )
     deployment = (ROOT / "jenkins/scripts/lib/runtime.sh").read_text(encoding="utf-8")
-    wait_job = deployment.split("recsys_wait_kubernetes_job()", 1)[1].split(
-        "\n}", 1
-    )[0]
+    wait_job = deployment.split("recsys_wait_kubernetes_job()", 1)[1].split("\n}", 1)[0]
 
     assert 'recsys_wait_kubernetes_job "$@"' in wrapper
     assert "for _ in $(seq 1 30)" in wait_job
@@ -477,8 +491,8 @@ def test_rag_job_wait_retries_visibility_and_fails_fast_on_failed_condition():
     assert "sleep 1" in wait_job
     assert "Complete=True" in wait_job
     assert "Failed=True" in wait_job
-    assert 'Timed out after ${timeout}' in wait_job
-    assert 'wait --for=condition=complete' not in wait_job
+    assert "Timed out after ${timeout}" in wait_job
+    assert "wait --for=condition=complete" not in wait_job
     assert "was not visible after creation" in wait_job
 
 
@@ -517,7 +531,7 @@ def test_rag_promotion_tunnels_to_a_running_pod_and_retries_readiness():
     assert "rollout status deployment/recsys-rag-api" in tunnel
     assert 'recsys_wait_http "http://127.0.0.1:${port}/ready" 30 1' in tunnel
     runtime = (ROOT / "jenkins/scripts/lib/runtime.sh").read_text(encoding="utf-8")
-    assert "for _ in $(seq 1 \"${attempts}\")" in runtime
+    assert 'for _ in $(seq 1 "${attempts}")' in runtime
     assert "nodeSelector: {}" in gcp_values
     assert "recsys.ai/pool: cpu-services" not in gcp_values
     assert "key: recsys.ai/workload" in gcp_values
@@ -721,9 +735,9 @@ def test_kfp_runtime_secret_contract_is_checked_without_reading_values():
     preflight = (ROOT / "jenkins/scripts/deploy/preflight/gcp.sh").read_text(
         encoding="utf-8"
     )
-    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf").read_text(
-        encoding="utf-8"
-    )
+    terraform = (
+        ROOT / "infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf"
+    ).read_text(encoding="utf-8")
     for key in (
         "HUDI_DATASET_TABLE",
         "HUDI_CLEAN_HOURS_RETAINED",
@@ -797,11 +811,15 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "python3 jenkins/python/configuration.py validate" in pipeline_helper
     assert pipeline_helper.count("release_deploy_preflight.sh") == 1
     assert "env.SHOULD_PUBLISH_IMAGES = shouldPublishImages()" in pipeline_helper
-    assert "REQUIRE_GCP_ARTIFACT_REGISTRY=${env.SHOULD_PUBLISH_IMAGES" in pipeline_helper
-    assert "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" not in pipeline_helper
+    assert (
+        "REQUIRE_GCP_ARTIFACT_REGISTRY=${env.SHOULD_PUBLISH_IMAGES" in pipeline_helper
+    )
+    assert (
+        "REQUIRE_GCP_ARTIFACT_REGISTRY='${params.PUBLISH_IMAGES" not in pipeline_helper
+    )
     agentic_deploy = _deploy_bundle("agentic")
     assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in agentic_deploy
-    assert "git rev-parse --verify origin/main^{commit}" in agentic_deploy
+    assert "git rev-parse --verify 'origin/main^{commit}'" in agentic_deploy
     assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in agentic_deploy
     preflight = (
         ROOT / "jenkins/scripts/entrypoints/release_deploy_preflight.sh"
@@ -809,7 +827,9 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in preflight
     assert "release_snapshot.sh" in pipeline_helper
     assert "release_rollback.sh" in pipeline_helper
-    assert "'deploy'" in pipeline_helper and "'finalize'" in pipeline_helper
+    assert "'publish'" in pipeline_helper and "'deploy'" in pipeline_helper
+    assert "'finalize'" not in pipeline_helper
+    assert "release_seal_agent_registry_lock.sh" in pipeline_helper
     build_entrypoint = (
         ROOT / "jenkins/scripts/entrypoints/release_build_publish.sh"
     ).read_text(encoding="utf-8")
@@ -839,14 +859,16 @@ def test_jenkins_seeds_four_dedicated_rag_and_agent_cicd_views() -> None:
     assert 'def mainBranchSpec = "*/main"' in seed
     assert "scriptPath, branchSpec))" in seed
     assert seed.count("mainBranchSpec") >= 6
-    assert seed.count(
-        "<name>DEPLOY_PULL_REQUESTS</name>\n"
-        "              <defaultValue>false</defaultValue>"
-    ) == 2
     assert (
-        "name: 'DEPLOY_PULL_REQUESTS', defaultValue: false"
-        in (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
+        seed.count(
+            "<name>DEPLOY_PULL_REQUESTS</name>\n"
+            "              <defaultValue>false</defaultValue>"
+        )
+        == 2
     )
+    assert "name: 'DEPLOY_PULL_REQUESTS', defaultValue: false" in (
+        ROOT / "Jenkinsfile"
+    ).read_text(encoding="utf-8")
     root_pipeline = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     assert "RAG_SOURCE_RUN_ID" not in root_pipeline
     assert "RAG_PIPELINE_RUN_ID" not in root_pipeline
@@ -1091,7 +1113,9 @@ def test_seed_jobs_do_not_expose_retired_registry_parameters() -> None:
 
 
 def test_prometheus_operator_is_pinned_and_operator_only():
-    source = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf").read_text(encoding="utf-8")
+    source = (
+        ROOT / "infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf"
+    ).read_text(encoding="utf-8")
     assert 'resource "helm_release" "prometheus_operator"' in source
     assert 'version          = "87.19.2"' in source
     assert 'name  = "prometheus.enabled"' in source
@@ -1117,9 +1141,9 @@ def test_agent_deploy_uses_native_controller_lifecycle() -> None:
 
 
 def test_release_unit_runtime_dispatches_handlers_without_a_giant_case() -> None:
-    runtime = (
-        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
-    ).read_text(encoding="utf-8")
+    runtime = (ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert 'handler="deploy_unit_${unit_name//-/_}"' in runtime
     assert 'declare -F "${handler}"' in runtime
@@ -1128,26 +1152,22 @@ def test_release_unit_runtime_dispatches_handlers_without_a_giant_case() -> None
 
 
 def test_release_unit_reuses_an_immutable_registry_image_for_new_chart_values() -> None:
-    runtime = (
-        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
-    ).read_text(encoding="utf-8")
-    registry = (ROOT / "jenkins/scripts/lib/registry.sh").read_text(
+    runtime = (ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh").read_text(
         encoding="utf-8"
     )
+    registry = (ROOT / "jenkins/scripts/lib/registry.sh").read_text(encoding="utf-8")
 
     assert 'registry_resolve_latest_digest_reference "${image_name}"' in runtime
     assert 'unit_image_fallback_paths+=("${value_c}")' in runtime
     assert 'read_current_helm_value "${fallback_path}"' in runtime
-    assert 'orderBy=UPDATE_TIME desc' in registry
+    assert "orderBy=UPDATE_TIME desc" in registry
     assert 'item.get("uri", "").startswith(prefix)' in registry
-    assert 'reusing latest immutable ${image_name} digest' in registry
+    assert "reusing latest immutable ${image_name} digest" in registry
 
     deploy_config = json.loads(
         (ROOT / "jenkins/config/deploy-units.json").read_text(encoding="utf-8")
     )
-    airflow = next(
-        unit for unit in deploy_config["units"] if unit["name"] == "airflow"
-    )
+    airflow = next(unit for unit in deploy_config["units"] if unit["name"] == "airflow")
     assert airflow["imageFallbackValues"] == {
         "recsys-spark-data": ["images.spark"],
         "recsys-spark-analytics": ["images.spark"],
@@ -1161,7 +1181,7 @@ def test_release_unit_reuses_an_immutable_registry_image_for_new_chart_values() 
 
 def test_latest_registry_image_resolver_returns_only_the_digest() -> None:
     digest = "a" * 64
-    script = rf'''
+    script = rf"""
 set -Eeuo pipefail
 source jenkins/scripts/lib/common.sh
 source jenkins/scripts/lib/registry.sh
@@ -1176,7 +1196,7 @@ reference="$(registry_resolve_latest_digest_reference \
   recsys-datahub-ops \
   asia-southeast1-docker.pkg.dev/recsys-project/recsys)"
 [[ "$reference" == "asia-southeast1-docker.pkg.dev/recsys-project/recsys/recsys-datahub-ops@sha256:{digest}" ]]
-'''
+"""
     subprocess.run(["bash", "-c", script], cwd=ROOT, check=True)
 
 

@@ -399,44 +399,20 @@ because no artifact had been published at capture time; an empty catalog does
 not mean the Registry deployment failed. The Step 7 terminal image proves
 runtime readiness, while this browser image proves that the UI is reachable.
 
-## Step 9 — Publish and deploy an agent through the registry
+## Step 9 — Publish to Agent Registry and deploy through locked Helm
 
-This step is optional for the registry-deployment rubric, but demonstrates the
-relationship with kagent. Agent Registry stores an image reference, so the
-image must be reachable by GKE before deployment. See the official
-[publish guide](https://aregistry.ai/docs/agents/publish/) and
-[Kubernetes deployment guide](https://aregistry.ai/docs/agents/deploy/kubernetes/).
+RecSys uses the Registry-gated Helm workflow documented in
+[`ci_cd.md`](ci_cd.md). Jenkins pushes container images and Helm charts to GCP
+Artifact Registry by digest, publishes their immutable pointers and dependency
+graph to Agent Registry, reads the entries back, and seals a deployment lock
+before Helm mutates the `SandboxAgent` workloads.
 
-```bash
-arctl configure --url http://localhost:12121
-arctl agent build myagent --push
-arctl agent publish myagent
-arctl agent list
+The pinned Agent Registry `v0.4.0` Kubernetes adapter creates a regular
+`kagent.dev/Agent` and its OCI validation does not authenticate to the private
+GCP registry. Therefore this repository deliberately does not use
+`arctl deployments create` for the production sandbox agents. The Agent
+Registry `deployments` view may remain empty; the catalog entries, Jenkins lock,
+and Kubernetes annotations provide the auditable deployment relationship.
 
-arctl deployments create myagent \
-  --type agent \
-  --provider-id kubernetes-default \
-  --namespace kagent
-
-arctl deployments list
-kubectl get agents.kagent.dev -n kagent
-kubectl get pods -n kagent
-```
-
-**Code block provenance:** commands adapted from the official Agent Registry
-publish and Kubernetes deployment guides linked above.
-
-The existing `global-model-config-smoke` Agent was created directly by the
-repository-owned kagent Helm release, so it does not automatically become a
-catalog entry. An Agent must be published through `arctl` before Agent Registry
-can display and deploy that artifact.
-
-For the RecSys coordinator, use the repository's governed command only after
-all routing gates pass and all dependencies share the same immutable commit:
-
-```bash
-make coordinator-agentic-registry
-```
-
-The command verifies the regular artifact before retiring the legacy sandbox
-identity. Do not run a manual `arctl delete` as a shortcut around that gate.
+Registry records are append-only. Do not manually delete or overwrite an entry
+to bypass a release conflict.

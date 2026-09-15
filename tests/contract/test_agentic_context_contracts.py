@@ -48,9 +48,7 @@ def _contract() -> dict[str, Any]:
 def _without_titles(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: _without_titles(item)
-            for key, item in value.items()
-            if key != "title"
+            key: _without_titles(item) for key, item in value.items() if key != "title"
         }
     if isinstance(value, list):
         return [_without_titles(item) for item in value]
@@ -91,9 +89,9 @@ def test_mcp_tools_list_and_generated_input_schemas_match_contract():
 
     assert list(TOOL_NAMES) == contract["tools"]
     assert [tool.name for tool in tools] == contract["tools"]
-    assert {
-        tool.name: _without_titles(tool.inputSchema) for tool in tools
-    } == contract["inputSchemas"]
+    assert {tool.name: _without_titles(tool.inputSchema) for tool in tools} == contract[
+        "inputSchemas"
+    ]
 
 
 def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
@@ -108,15 +106,16 @@ def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
 
     assert not any(item.get("kind") == "Agent" for item in documents)
 
-    sandbox = _resource(
-        documents, "SandboxAgent", "recsys-context-agent-sandbox"
-    )
-    tool_names = sandbox["spec"]["declarative"]["tools"][0]["mcpServer"][
-        "toolNames"
-    ]
+    sandbox = _resource(documents, "SandboxAgent", "recsys-context-agent-sandbox")
+    tool_names = sandbox["spec"]["declarative"]["tools"][0]["mcpServer"]["toolNames"]
     assert tool_names == contract["tools"]
-    assert "recsys.ai/model-config-revision" not in sandbox["metadata"].get("annotations", {})
-    assert "Runtime model configuration revision:" not in sandbox["spec"]["declarative"]["systemMessage"]
+    assert "recsys.ai/model-config-revision" not in sandbox["metadata"].get(
+        "annotations", {}
+    )
+    assert (
+        "Runtime model configuration revision:"
+        not in sandbox["spec"]["declarative"]["systemMessage"]
+    )
     assert sandbox["spec"]["declarative"]["runtime"] == "go"
     assert sandbox["apiVersion"] == "kagent.dev/v1alpha2"
     assert "platform" not in sandbox["spec"]
@@ -130,9 +129,7 @@ def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
 
 def test_native_agentic_workload_contracts_are_safe_and_scalable():
     mcp_documents = _render("recsys-feature-rag-mcp")
-    deployment = _resource(
-        mcp_documents, "Deployment", "recsys-feature-rag-mcp"
-    )
+    deployment = _resource(mcp_documents, "Deployment", "recsys-feature-rag-mcp")
     strategy = deployment["spec"]["strategy"]
     assert strategy["rollingUpdate"] == {"maxUnavailable": 0, "maxSurge": 1}
     pod_spec = deployment["spec"]["template"]["spec"]
@@ -175,9 +172,9 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
     assert metadata["query"].startswith("1000000 * max(")
     assert 'container="ateom"' in metadata["query"]
     assert "recsys-context-sandbox-pool-deployment-.*" in metadata["query"]
-    behavior = sandbox_scaled["spec"]["advanced"][
-        "horizontalPodAutoscalerConfig"
-    ]["behavior"]
+    behavior = sandbox_scaled["spec"]["advanced"]["horizontalPodAutoscalerConfig"][
+        "behavior"
+    ]
     assert behavior["scaleDown"]["stabilizationWindowSeconds"] == 300
     assert behavior["scaleUp"]["selectPolicy"] == "Max"
     sandbox_pdb = _resource(
@@ -186,9 +183,7 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
     assert sandbox_pdb["spec"] == {
         "minAvailable": 1,
         "selector": {
-            "matchLabels": {
-                "ate.dev/worker-pool": "recsys-context-sandbox-pool"
-            }
+            "matchLabels": {"ate.dev/worker-pool": "recsys-context-sandbox-pool"}
         },
     }
 
@@ -205,9 +200,7 @@ def test_production_autoscale_ranges_fit_the_quota_capped_cluster():
     }
 
     mcp_documents = _render("recsys-feature-rag-mcp", "values-gcp.yaml")
-    mcp_scaled = _resource(
-        mcp_documents, "ScaledObject", "recsys-feature-rag-mcp"
-    )
+    mcp_scaled = _resource(mcp_documents, "ScaledObject", "recsys-feature-rag-mcp")
     assert mcp_scaled["spec"]["minReplicaCount"] == 1
     assert mcp_scaled["spec"]["maxReplicaCount"] == 3
     assert mcp_scaled["spec"]["fallback"] == {
@@ -313,38 +306,42 @@ def test_gcp_mcp_can_use_both_node_pools_and_sandbox_has_no_fake_scheduling_fiel
     sandbox = _resource(
         sandbox_documents, "SandboxAgent", "recsys-context-agent-sandbox"
     )
-    assert "deployment" not in sandbox["spec"]["declarative"]
+    deployment = sandbox["spec"]["declarative"]["deployment"]
+    assert {item["name"] for item in deployment["env"]} == {"RECSYS_MCP_AUTH_REVISION"}
+    assert not {"affinity", "nodeSelector", "tolerations"} & deployment.keys()
 
 
 def test_terraform_owns_platform_but_not_the_agent_application_release():
     terraform = (
         ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf"
     ).read_text(encoding="utf-8")
-    variables = (ROOT / "infra/terraform/gcp/variables.tf").read_text(
-        encoding="utf-8"
-    )
+    variables = (ROOT / "infra/terraform/gcp/variables.tf").read_text(encoding="utf-8")
     assert 'resource "helm_release" "substrate"' in terraform
-    assert 'resource "kubernetes_persistent_volume_claim_v1" "substrate_rustfs"' in terraform
-    assert 'resource "kubernetes_persistent_volume_claim_v1" "substrate_valkey"' in terraform
+    assert (
+        'resource "kubernetes_persistent_volume_claim_v1" "substrate_rustfs"'
+        in terraform
+    )
+    assert (
+        'resource "kubernetes_persistent_volume_claim_v1" "substrate_valkey"'
+        in terraform
+    )
     assert 'storage_class_name = "standard"' in terraform
     assert "prevent_destroy = true" in terraform
     assert 'default     = "0.0.9"' in variables
     assert 'default     = "0.10.0-rc1"' in variables
-    assert 'kagent_image_version' not in terraform
-    assert 'postrender {' not in terraform
+    assert "kagent_image_version" not in terraform
+    assert "postrender {" not in terraform
     assert "substrate_gke_postrender.py" not in terraform
     assert "substrate_crds_hpa_postrender.py" not in terraform
     assert "kagent_workerpool_hpa_postrender.py" not in terraform
     assert 'value = "jwt"' in terraform
     assert "substrate-mtls-bootstrap" not in terraform
-    assert "valkey/valkey:9.1@sha256:" not in terraform
+    assert "valkey/valkey:9.1@sha256:" in terraform
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
 
 
 def test_runtime_verifier_accepts_keda_static_fallback_defaulting():
-    verifier = (ROOT / "jenkins/scripts/test/agentic.sh").read_text(
-        encoding="utf-8"
-    )
+    verifier = (ROOT / "jenkins/scripts/test/agentic.sh").read_text(encoding="utf-8")
     assert 'fallback.get("behavior", "static") == "static"' in verifier
     assert 'payload["fallback"] ==' not in verifier
 
@@ -384,42 +381,37 @@ def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
 
 def test_registry_uses_arctl_v04_declarative_resources():
     deploy = _agentic_deploy_source()
-    assert "recsys/recsys-feature-rag-mcp" in deploy
-    assert '"apiVersion": "ar.dev/v1alpha1"' in deploy
-    assert '"kind": "MCPServer"' in deploy
-    assert '"kind": "Agent"' in deploy
-    assert 'arctl apply -f "${manifest}"' in deploy
-    assert 'arctl get mcp "${registry_name}" --tag "${tag}"' in deploy
-    assert 'arctl delete agent "${legacy_name}" --all-tags' in deploy
-    assert "recsys/recsys-context-agent-sandbox" in deploy
-    assert "legacy_registry_backup" in deploy
-    assert "${version/+/-}" in deploy
-    context_publish = deploy[deploy.index("publish_context_agent_registry()") :]
-    publish_sandbox = context_publish.index(
-        'arctl get agent "${registry_name}" --tag "${tag}" -o json'
-    )
-    backup_legacy = context_publish.index(
-        'if agentic_registry_tagged_resource_exists agent "${legacy_name}"'
-    )
-    delete_legacy = context_publish.index(
-        'arctl delete agent "${legacy_name}" --all-tags'
-    )
-    assert publish_sandbox < backup_legacy < delete_legacy
-
-    ci_values = (ROOT / "infra/helm/recsys-ci/values.yaml").read_text(
+    registry_contract = (ROOT / "jenkins/python/agent_registry_release.py").read_text(
         encoding="utf-8"
     )
+    catalog = (ROOT / "jenkins/config/agent-registry-artifacts.json").read_text(
+        encoding="utf-8"
+    )
+    assert "recsys/recsys-feature-rag-mcp" in catalog
+    assert '"apiVersion": "ar.dev/v1alpha1"' in registry_contract
+    assert '"kind": "MCPServer"' in registry_contract
+    assert 'else "Agent"' in registry_contract
+    assert 'arctl apply -f "${manifest}"' in deploy
+    assert 'arctl get "${kind}" "${registry_name}" --tag "${tag}"' in deploy
+    assert "arctl delete" not in deploy
+    assert "recsys/recsys-context-agent-sandbox" in catalog
+    assert "release_version(commit)" in registry_contract
+    assert "validate-readback" in deploy
+
+    ci_values = (ROOT / "infra/helm/recsys-ci/values.yaml").read_text(encoding="utf-8")
     assert "arctlVersion: v0.4.0" in ci_values
-    assert "e564334357731c59faa3482f2978c21a205a60ad3bcc63a44465607cc74fa343" in ci_values
+    assert (
+        "e564334357731c59faa3482f2978c21a205a60ad3bcc63a44465607cc74fa343" in ci_values
+    )
 
 
 def test_a2a_smoke_payloads_use_protocol_v03_message_ids():
     deploy = _agentic_deploy_source()
-    autoscale = (
-        ROOT / "ops/validation/agentic_context_autoscale.sh"
-    ).read_text(encoding="utf-8")
+    autoscale = (ROOT / "ops/validation/agentic_context_autoscale.sh").read_text(
+        encoding="utf-8"
+    )
     assert '"messageId": request_id' in deploy
-    assert 'context_id = str(uuid.uuid4())' in deploy
+    assert 'context_id = os.getenv("RECSYS_FRESH_SESSION_ID") or request_id' in deploy
     assert '"contextId": context_id' in deploy
     assert '"messageId": request_id' in autoscale
     assert '"contextId": request_id' in autoscale

@@ -112,7 +112,7 @@ def detectReleasePlan() {
   env.CI_TMP_ROOT = "/var/jenkins_home/ci-tmp/recsys-ci-${env.JOB_BASE_NAME}-${env.BUILD_NUMBER}"
   env.UV_CACHE_DIR = '/var/jenkins_home/caches/uv'
   echo "Selected components: ${env.CHANGED_COMPONENTS}"
-  sh 'rm -rf reports .ci-image-manifest .ci-deploy pipelines/kubeflow/compiled/*.yaml && mkdir -p reports/junit reports/coverage .ci-image-manifest "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"'
+  sh 'rm -rf reports .ci-image-manifest .ci-artifact-manifest .ci-artifact-packages .ci-deploy pipelines/kubeflow/compiled/*.yaml && mkdir -p reports/junit reports/coverage .ci-image-manifest .ci-artifact-manifest "${CI_TMP_ROOT}" "${UV_CACHE_DIR}"'
 }
 
 def preparePythonEnvironments() {
@@ -200,10 +200,11 @@ def deployProductionRelease() {
     sh "${commandEnv} jenkins/scripts/entrypoints/release_snapshot.sh .ci-release-plan.json"
     env.DEPLOY_STARTED = 'true'
     try {
+      deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json', 'publish')
+      sh "${commandEnv} jenkins/scripts/entrypoints/release_seal_agent_registry_lock.sh .ci-release-plan.json"
       deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json', 'deploy')
       applyOptionalDatahubCutover(commandEnv)
       verifyRelease(commandEnv)
-      deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json', 'finalize')
     } catch (Throwable originalFailure) {
       try {
         sh "${commandEnv} jenkins/scripts/entrypoints/release_rollback.sh .ci-release-plan.json"
@@ -229,7 +230,7 @@ def isMissingWorkspaceContext(Throwable failure) {
 def safePostActions() {
   try {
     junit allowEmptyResults: true, testResults: 'reports/junit/*.xml'
-    archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,reports/agentic/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.ci-deploy/**/*,.model-cd/*,.demo-web/**/*'
+    archiveArtifacts allowEmptyArchive: true, artifacts: 'reports/coverage/*.xml,reports/validation/**/*,reports/gcp/**/*,reports/agentic/**/*,pipelines/kubeflow/compiled/*.yaml,.ci-components.env,.ci-release-plan.json,.ci-image-manifest/*,.ci-artifact-manifest/*,.ci-deploy/**/*,.model-cd/*,.demo-web/**/*'
     sh 'jenkins/scripts/entrypoints/release_cleanup.sh'
   } catch (Throwable failure) {
     if (isMissingWorkspaceContext(failure)) {

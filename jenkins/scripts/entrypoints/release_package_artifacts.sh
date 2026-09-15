@@ -9,6 +9,8 @@ plan_path="${1:-.ci-release-plan.json}"
 
 source jenkins/scripts/lib/common.sh
 source jenkins/scripts/lib/image_manifest.sh
+source jenkins/scripts/lib/registry.sh
+source jenkins/scripts/build/helm_oci.sh
 
 image_registry="${IMAGE_PUSH_REGISTRY:-${IMAGE_REGISTRY:-$(python3 jenkins/python/configuration.py gcp imageRegistry)}}"
 image_registry="${image_registry%/}"
@@ -23,16 +25,39 @@ release_image_reference() {
 
 while IFS= read -r artifact; do
   [[ -n "${artifact}" ]] || continue
-  case "${artifact}" in
-    kubeflow-bst)
+  artifact_kind=""
+  artifact_chart=""
+  artifact_repository=""
+  while IFS=$'\t' read -r record_type value_a value_b value_c; do
+    [[ "${record_type}" == "ARTIFACT" ]] || {
+      recsys_error "unsupported artifact context record: ${record_type}"
+      exit 2
+    }
+    artifact_kind="${value_a}"
+    artifact_chart="${value_b}"
+    artifact_repository="${value_c}"
+  done < <(
+    python3 jenkins/python/release_plan.py artifact-context "${artifact}"
+  )
+  case "${artifact_kind}" in
+    kfp-package)
       training_image="$(release_image_reference recsys-mlops-training)"
       RECSYS_PIPELINE_IMAGE="${training_image}" \
         RECSYS_RAY_IMAGE="${training_image}" \
         RECSYS_SPARK_ML_IMAGE="$(release_image_reference recsys-spark-ml)" \
         bash jenkins/scripts/build/kfp_package.sh
       ;;
+    helm-oci)
+      package_publish_helm_oci \
+        "${artifact}" \
+        "${artifact_chart}" \
+        "${artifact_repository}" \
+        "${image_registry}" \
+        "${image_tag}" \
+        "${PUBLISH_IMAGES:-0}"
+      ;;
     *)
-      recsys_error "unsupported release-plan artifact: ${artifact}"
+      recsys_error "unsupported release-plan artifact kind: ${artifact_kind}"
       exit 2
       ;;
   esac

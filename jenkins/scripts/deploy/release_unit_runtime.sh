@@ -31,8 +31,6 @@ image_registry="${IMAGE_PULL_REGISTRY:-${IMAGE_REGISTRY:-$(python3 jenkins/pytho
 image_registry="${image_registry%/}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-$(git rev-parse HEAD)}}"
 namespace_data="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
-namespace_api="${API_NAMESPACE:-api-serving}"
-namespace_kserve="${KSERVE_NAMESPACE:-kserve-triton-inference}"
 namespace_kubeflow="${KUBEFLOW_NAMESPACE:-kubeflow}"
 namespace_mlops="${MLOPS_NAMESPACE:-experiment-tracking}"
 namespace_analytics="${ANALYTICS_NAMESPACE:-analytics}"
@@ -57,6 +55,13 @@ unit_kind=""
 unit_release=""
 unit_namespace=""
 unit_chart=""
+unit_chart_reference=""
+unit_action=""
+unit_registry_artifact=""
+unit_registry_image=""
+unit_registry_ref=""
+unit_registry_version=""
+unit_registry_contract=""
 unit_image_names=()
 unit_image_paths=()
 unit_image_fallback_paths=()
@@ -74,6 +79,12 @@ while IFS=$'\t' read -r record_type value_a value_b value_c value_d; do
       unit_image_paths+=("${value_b}")
       unit_image_fallback_paths+=("${value_c}")
       ;;
+    ACTION)
+      unit_action="${value_a}"
+      ;;
+    REGISTRY_ARTIFACT)
+      unit_registry_artifact="${value_a}"
+      ;;
     SELECTED_COMPONENT)
       selected_components+="${value_a},"
       ;;
@@ -89,6 +100,7 @@ done < <(
   recsys_error "deploy context is incomplete for ${unit_name}"
   exit 2
 }
+unit_chart_reference="${unit_chart}"
 
 has_selected_component() {
   [[ "${selected_components}" == *",$1,"* ]]
@@ -116,6 +128,44 @@ print(value if isinstance(value, str) else "")
 ' "${value_path}" 2>/dev/null || true
 }
 
+load_agent_registry_lock_context() {
+  local record_type value_a value_b
+  [[ -n "${unit_registry_artifact}" && "${unit_kind}" == "helm" ]] || return 0
+  [[ -s .ci-deploy/agent-registry-lock.json ]] || {
+    recsys_error "Agent Registry deployment lock is required for ${unit_name}"
+    return 2
+  }
+  while IFS=$'\t' read -r record_type value_a value_b; do
+    case "${record_type}" in
+      CHART) unit_chart_reference="${value_a}" ;;
+      IMAGE) unit_registry_image="${value_a}" ;;
+      ANNOTATION)
+        case "${value_a}" in
+          recsys.dev/agent-registry-ref) unit_registry_ref="${value_b}" ;;
+          recsys.dev/agent-release-version) unit_registry_version="${value_b}" ;;
+          recsys.dev/contract-sha256) unit_registry_contract="${value_b}" ;;
+        esac
+        ;;
+      *)
+        recsys_error "unsupported Agent Registry lock context: ${record_type}"
+        return 2
+        ;;
+    esac
+  done < <(
+    python3 -m jenkins.python.agent_registry_release lock-context \
+      --plan "${plan_path}" \
+      --lock .ci-deploy/agent-registry-lock.json \
+      --unit "${unit_name}"
+  )
+  [[ "${unit_chart_reference}" =~ @sha256:[0-9a-f]{64}$ \
+    && -n "${unit_registry_ref}" \
+    && -n "${unit_registry_version}" \
+    && "${unit_registry_contract}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    recsys_error "Agent Registry deployment lock is incomplete for ${unit_name}"
+    return 2
+  }
+}
+
 resolve_unit_image() {
   local image_name="$1"
   local value_path="$2"
@@ -124,6 +174,14 @@ resolve_unit_image() {
   local reference
   local image_policy
   local -a candidate_fallback_paths=()
+  if [[ -n "${unit_registry_artifact}" ]]; then
+    [[ "${unit_registry_image}" == "${image_registry}/${image_name}@sha256:"* ]] || {
+      recsys_error "Agent Registry lock has no immutable ${image_name} image"
+      return 2
+    }
+    printf '%s' "${unit_registry_image}"
+    return 0
+  fi
   image_policy="$(mcp_auth_image_policy "${unit_name}")" || return
   if [[ "${image_policy}" == "installed-digest" ]]; then
     reference="$(read_current_helm_value "${value_path}")"
@@ -177,6 +235,13 @@ deploy_helm_unit() {
     return 2
   }
   [[ -f "${values_file}" ]] && helm_args+=(-f "${values_file}")
+  if [[ -n "${unit_registry_artifact}" ]]; then
+    helm_args+=(
+      --set-string "releaseMetadata.registryRef=${unit_registry_ref}"
+      --set-string "releaseMetadata.version=${unit_registry_version}"
+      --set-string "releaseMetadata.contractSha256=${unit_registry_contract}"
+    )
+  fi
   if mcp_auth_chart_consumes_manifest "${unit_name}"; then
     # The checked-in, non-secret rotation manifest is deliberately supplied
     # on every deploy. This keeps Helm value resets safe across prepare,
@@ -301,7 +366,7 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
     [[ -n "${current_kfp_version}" ]] \
       && helm_args+=(--set-string "observability.kfpPipelineVersionId=${current_kfp_version}")
   fi
-  helm upgrade --install "${unit_release}" "${unit_chart}" \
+  helm upgrade --install "${unit_release}" "${unit_chart_reference}" \
     --namespace "${unit_namespace}" \
     --create-namespace \
     --reset-values \
@@ -405,11 +470,6 @@ deploy_unit_feature_registry() { feast_registry_apply "$(resolve_release_image r
 deploy_unit_rag_feature_registry() { rag_feature_registry_apply "$(resolve_release_image recsys-rag-admin)"; }
 deploy_unit_milvus_credentials() { rag_milvus_credentials_bootstrap "$(resolve_release_image recsys-rag-admin)"; }
 deploy_unit_datahub_catalog() { datahub_catalog_sync "$(resolve_release_image recsys-datahub-ops)"; }
-deploy_unit_feature_rag_mcp_registry() { publish_feature_rag_mcp_registry; }
-deploy_unit_context_agent_registry() { publish_context_agent_registry; }
-deploy_unit_recommendation_mcp_registry() { publish_recommendation_mcp_registry; }
-deploy_unit_recommendation_agent_registry() { publish_recommendation_agent_registry; }
-deploy_unit_coordinator_agent_registry() { publish_coordinator_agent_registry; }
 deploy_unit_mlflow() { deploy_mlflow; }
 deploy_unit_analytics() { deploy_analytics; }
 deploy_unit_kserve() { deploy_kserve; }
@@ -425,7 +485,12 @@ deploy_unit_kubeflow_bst_package() {
 
 dispatch_deploy_unit() {
   local handler="deploy_unit_${unit_name//-/_}"
-  if declare -F "${handler}" >/dev/null; then
+  if [[ "${unit_action}" == "agent-registry-publish" ]]; then
+    publish_agent_registry_artifact "${unit_registry_artifact}"
+  elif [[ -n "${unit_action}" ]]; then
+    recsys_error "unsupported deploy action: ${unit_action}"
+    return 2
+  elif declare -F "${handler}" >/dev/null; then
     "${handler}"
   elif [[ "${unit_kind}" == "helm" ]]; then
     deploy_helm_unit
@@ -435,4 +500,5 @@ dispatch_deploy_unit() {
   fi
 }
 
+load_agent_registry_lock_context
 dispatch_deploy_unit

@@ -41,6 +41,10 @@ graphify-out/
 AGENTS.md
 .uv-cache/
 .ci-image-manifest/
+.ci-artifact-manifest/
+.ci-artifact-packages/
+.ci-deploy/
+.ci-release-plan.json
 .deploy-evidence/
 .vault-bootstrap/
 .hypothesis/

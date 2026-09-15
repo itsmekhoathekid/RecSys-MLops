@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
+TEST_COMMIT = "a" * 40
 
 from jenkins.python.change_detection.detector import (  # noqa: E402
     ChangedFile,
@@ -13,7 +14,7 @@ from jenkins.python.change_detection.detector import (  # noqa: E402
 
 
 def detect(path: str):
-    return detect_changed_components([ChangedFile("M", path)])
+    return detect_changed_components([ChangedFile("M", path)], commit=TEST_COMMIT)
 
 
 def test_demo_web_paths_select_only_the_demo_component() -> None:
@@ -30,10 +31,19 @@ def test_demo_web_paths_select_only_the_demo_component() -> None:
             assert result.flags["RUN_CI_CONFIG"] is True
 
 
-def test_demo_security_and_gateway_contracts_include_the_demo_component() -> None:
+def test_shared_agentic_security_and_gateway_contracts_select_affected_components() -> (
+    None
+):
     security = detect("infra/helm/recsys-security/templates/istio-authorization.yaml")
     gateway = detect("tests/contract/test_gateway_contracts.py")
 
-    assert security.component_names == ("demo_web",)
+    assert security.component_names == (
+        "feature_rag_mcp",
+        "context_agent",
+        "recommendation_mcp",
+        "recommendation_agent",
+        "coordinator_agent",
+        "demo_web",
+    )
     assert security.flags["RUN_CI_CONFIG"] is True
     assert gateway.component_names == ("inference_api", "demo_web")

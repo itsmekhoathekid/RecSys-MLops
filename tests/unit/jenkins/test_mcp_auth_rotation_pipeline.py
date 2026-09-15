@@ -14,10 +14,10 @@ from jenkins.python.change_detection.detector import (
     detect_changed_components,
 )
 
-
 ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = ROOT / "configs/agentic/mcp-auth-versions.yaml"
 VALIDATOR = ROOT / "ops/security/mcp_auth_versions.py"
+TEST_COMMIT = "a" * 40
 
 
 def _validator_module():
@@ -31,7 +31,7 @@ def _validator_module():
 def test_rotation_manifest_selects_every_consumer_and_coordinator_verification():
     result = detect_changed_components(
         [ChangedFile("M", "configs/agentic/mcp-auth-versions.yaml")],
-        commit="rotation",
+        commit=TEST_COMMIT,
     )
 
     assert result.component_names == (
@@ -49,12 +49,12 @@ def test_rotation_manifest_selects_every_consumer_and_coordinator_verification()
 
 
 def test_reset_values_deploy_always_reapplies_non_secret_rotation_manifest():
-    runtime = (
-        ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
-    ).read_text(encoding="utf-8")
-    rotation = (
-        ROOT / "jenkins/scripts/deploy/agentic/rotation.sh"
-    ).read_text(encoding="utf-8")
+    runtime = (ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    rotation = (ROOT / "jenkins/scripts/deploy/agentic/rotation.sh").read_text(
+        encoding="utf-8"
+    )
 
     for unit in (
         "feature-rag-mcp",
@@ -64,7 +64,7 @@ def test_reset_values_deploy_always_reapplies_non_secret_rotation_manifest():
     ):
         assert unit in rotation
     assert 'mcp_auth_chart_consumes_manifest "${unit_name}"' in runtime
-    assert 'mcp_auth_validate' in runtime
+    assert "mcp_auth_validate" in runtime
     assert 'helm_args+=(-f "$(mcp_auth_versions_file)")' in runtime
     assert runtime.index('helm_args+=(-f "$(mcp_auth_versions_file)")') < runtime.index(
         "--reset-values"
@@ -74,9 +74,12 @@ def test_reset_values_deploy_always_reapplies_non_secret_rotation_manifest():
     assert "mcp_auth_verify_prepare" in runtime
     assert "mcp_auth_continuous_probe.sh" in runtime
     assert "mcp_auth_retirement_gate.sh" in runtime
-    assert 'image_policy="$(mcp_auth_image_policy "${unit_name}")"' in runtime
+    registry = (ROOT / "jenkins/scripts/deploy/agentic/registry.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'policy="$(mcp_auth_image_policy "${workload_unit}")"' in registry
     assert '"${reference}" != *@sha256:*' in runtime
-    assert runtime.index('image_policy="$(mcp_auth_image_policy') < runtime.index(
+    assert registry.index('policy="$(mcp_auth_image_policy') < registry.index(
         'reference="$(image_manifest_lookup "${image_name}")"'
     )
     assert "installed-digest" in rotation
@@ -86,7 +89,11 @@ def test_reset_values_deploy_always_reapplies_non_secret_rotation_manifest():
     ("unit", "transition", "expected"),
     (
         ("feature-rag-mcp", "featureRag:prepare", "installed-digest"),
-        ("recommendation-mcp", "recommendation:cutover-or-rollback", "installed-digest"),
+        (
+            "recommendation-mcp",
+            "recommendation:cutover-or-rollback",
+            "installed-digest",
+        ),
         ("recommendation-mcp", "bootstrap", "installed-digest"),
         ("feature-rag-mcp", "unchanged", "release-artifact"),
         ("context-agent", "featureRag:prepare", "release-artifact"),
@@ -116,15 +123,12 @@ def test_rotation_image_policy_preserves_installed_mcp_digest(
 
 
 def test_registry_and_runtime_resolve_active_workload_instead_of_fixed_slot():
-    registry = (
-        ROOT / "jenkins/scripts/deploy/agentic/registry.sh"
-    ).read_text(encoding="utf-8")
-    smoke = (
-        ROOT / "jenkins/scripts/deploy/agentic/mcp.sh"
-    ).read_text(encoding="utf-8")
+    registry = (ROOT / "jenkins/scripts/deploy/agentic/registry.sh").read_text(
+        encoding="utf-8"
+    )
+    smoke = (ROOT / "jenkins/scripts/deploy/agentic/mcp.sh").read_text(encoding="utf-8")
 
-    assert "mcp_auth_active_url featureRag" in registry
-    assert "mcp_auth_active_url recommendation" in registry
+    assert 'mcp_auth_active_url "${remote_key}"' in registry
     assert (
         '"url": "http://recsys-feature-rag-mcp.kagent.svc.cluster.local:8080/mcp"'
         not in registry
@@ -166,9 +170,7 @@ def test_transition_validator_enforces_one_phase_and_one_service_per_commit():
     )
 
     retired = copy.deepcopy(cutover)
-    retired["services"]["recommendation"]["revisions"]["legacy"][
-        "deploy"
-    ] = False
+    retired["services"]["recommendation"]["revisions"]["legacy"]["deploy"] = False
     assert module.validate_transition(cutover, retired) == "recommendation:retire"
 
     purged = copy.deepcopy(retired)
@@ -244,9 +246,9 @@ def test_validator_rejects_unsafe_rotation_manifests(mutation: str):
     elif mutation == "version-mismatch":
         feature["revisions"]["v1"]["vaultVersion"] = "2"
     elif mutation == "duplicate-secret":
-        manifest["services"]["recommendation"]["revisions"]["v1"][
-            "secretName"
-        ] = feature["revisions"]["v1"]["secretName"]
+        manifest["services"]["recommendation"]["revisions"]["v1"]["secretName"] = (
+            feature["revisions"]["v1"]["secretName"]
+        )
     else:
         feature["revisions"]["v1"]["token"] = "must-never-be-here"
 
@@ -295,12 +297,10 @@ def test_rotation_operational_scripts_are_syntax_checked_and_keep_tokens_in_pods
     assert "source_workload_namespace!=" in retirement_gate
     assert "recsys-prometheus" in retirement_gate
 
-    a2a = (ROOT / "jenkins/scripts/deploy/agentic/a2a.sh").read_text(
+    a2a = (ROOT / "jenkins/scripts/deploy/agentic/a2a.sh").read_text(encoding="utf-8")
+    kubernetes = (ROOT / "jenkins/scripts/deploy/agentic/kubernetes.sh").read_text(
         encoding="utf-8"
     )
-    kubernetes = (
-        ROOT / "jenkins/scripts/deploy/agentic/kubernetes.sh"
-    ).read_text(encoding="utf-8")
     assert a2a.count("MCP_AUTH_ROTATION_SESSION_EVIDENCE") == 2
     assert "successful_context_ids.append(context_id)" in a2a
     assert 'get "secret/${secret_name}" -o json' not in kubernetes
@@ -318,16 +318,16 @@ def test_vault_rotation_helper_uses_cas_and_never_places_token_in_argv():
     assert '"@${payload_file}"' in helper
     assert '<<<"${token}"' in helper
     assert "MCP_AUTH_TOKEN=${token}" not in helper
-    assert 'printf \'%s\\n\' "${written_version}"' in helper
+    assert "printf '%s\\n' \"${written_version}\"" in helper
     assert "activeRevision" in helper
     assert "retire the mutable legacy workload" in helper
     assert "MCP_AUTH_RETIREMENT_EVIDENCE" in helper
-    assert 'deployment.apps/${legacy_workload}' in helper
+    assert "deployment.apps/${legacy_workload}" in helper
     assert "--ignore-not-found -o name" in helper
     assert "Legacy MCP workload still has live Pods" in helper
     assert 'refreshPolicy == "CreatedOnce"' in helper
-    assert '.spec.target.immutable == true' in helper
-    assert 'extract.version == $version' in helper
+    assert ".spec.target.immutable == true" in helper
+    assert "extract.version == $version" in helper
     assert "active_deployment_secret" in helper
     assert "active_deployment_image" in helper
     assert "@sha256:[0-9a-f]{64}" in helper
@@ -438,16 +438,14 @@ print('{"data":{"version":3}}')
 
 def test_terraform_and_jenkins_have_separate_destructive_phase_gates():
     terraform = (
-        ROOT
-        / "infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf"
+        ROOT / "infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf"
     ).read_text(encoding="utf-8")
-    purge_gate = (
-        ROOT / "ops/security/validate_mcp_auth_terraform.sh"
-    ).read_text(encoding="utf-8")
+    purge_gate = (ROOT / "ops/security/validate_mcp_auth_terraform.sh").read_text(
+        encoding="utf-8"
+    )
     pipeline = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     llm_inference = (
-        ROOT
-        / "infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf"
+        ROOT / "infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf"
     ).read_text(encoding="utf-8")
     kagent = (
         ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf"
@@ -455,7 +453,7 @@ def test_terraform_and_jenkins_have_separate_destructive_phase_gates():
 
     assert 'resource "null_resource" "mcp_auth_versions_valid"' in terraform
     assert "validate_mcp_auth_terraform.sh" in terraform
-    assert 'mcp_auth_enabled  = tostring(var.config.deploy_llm_inference)' in terraform
+    assert "mcp_auth_enabled  = tostring(var.config.deploy_llm_inference)" in terraform
     assert "MCP_AUTH_ENABLED" in terraform
     assert "MCP_AUTH_PURGE_APPROVED" in purge_gate
     assert "MCP_AUTH_RETIREMENT_EVIDENCE" in purge_gate
@@ -477,8 +475,7 @@ def test_terraform_and_jenkins_have_separate_destructive_phase_gates():
     assert 'check "mcp_auth_rotation_dependencies"' in llm_inference
     assert "var.config.deploy_vault && var.config.deploy_service_mesh" in llm_inference
     assert "Terraform check blocks only warn" in (
-        ROOT
-        / "infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf"
+        ROOT / "infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf"
     ).read_text(encoding="utf-8")
     assert "MCP_AUTH_RETIRE_APPROVED" in pipeline
 
@@ -530,9 +527,9 @@ def test_terraform_validator_accepts_authoritative_missing_namespace(
 
 
 def test_specialized_helm_jobs_bundle_and_reapply_the_rotation_manifest():
-    prepare = (
-        ROOT / "jenkins/python/llm_agent_cd/evaluation_prepare.py"
-    ).read_text(encoding="utf-8")
+    prepare = (ROOT / "jenkins/python/llm_agent_cd/evaluation_prepare.py").read_text(
+        encoding="utf-8"
+    )
     defaults = (
         ROOT / "jenkins/python/llm_agent_cd/default_agents_deploy.py"
     ).read_text(encoding="utf-8")
