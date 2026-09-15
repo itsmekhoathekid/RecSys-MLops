@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
 
 recommendation_mcp_protocol_smoke() {
-  local workload
+  local workload request_timeout_seconds
   workload="${1:-$(mcp_auth_active_workload recommendation)}"
+  request_timeout_seconds="${RECOMMENDATION_MCP_REQUEST_TIMEOUT_SECONDS:-60}"
+  [[ "${request_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || {
+    recsys_error "RECOMMENDATION_MCP_REQUEST_TIMEOUT_SECONDS must be a positive integer"
+    return 2
+  }
   kubectl -n kagent rollout status "deployment/${workload}" \
     --timeout="${timeout}"
   kubectl -n kagent exec "deployment/${workload}" -c mcp -- python -c '
 import asyncio
 import os
+import sys
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 async def main():
     headers = {"Authorization": "Bearer " + os.environ["MCP_AUTH_TOKEN"]}
-    async with httpx.AsyncClient(headers=headers) as http_client:
+    timeout_seconds = int(sys.argv[1])
+    async with httpx.AsyncClient(
+        headers=headers,
+        timeout=httpx.Timeout(timeout_seconds),
+    ) as http_client:
         async with streamable_http_client(
             "http://127.0.0.1:8080/mcp", http_client=http_client
         ) as streams:
@@ -31,7 +41,7 @@ async def main():
                 assert not result.isError
 
 asyncio.run(main())
-'
+' "${request_timeout_seconds}"
 }
 agentic_mcp_protocol_smoke() {
   local workload
