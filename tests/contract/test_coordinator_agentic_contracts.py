@@ -82,6 +82,8 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         "exactly two available A2A specialist tools",
         "You have no MCP tools",
         "call ask_user",
+        "Evaluate this missing-user_id rule exactly once",
+        "never emit clarification",
         "kagent__NS__recsys_context_agent_sandbox",
         "kagent__NS__recsys_recommendation_agent_sandbox",
         "null is not an empty array",
@@ -209,6 +211,9 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert '"no free workers"' in coordinator_smoke
     assert "admission_attempt == admission_attempts" in coordinator_smoke
     assert 'evidence[case_name].append(body)' in coordinator_smoke
+    assert 'call_args.append(data.get("args", {}))' in coordinator_smoke
+    assert "invalid post-tool clarification" in coordinator_smoke
+    assert "json.loads(specialist_request(0))" in coordinator_smoke
     assert "for attempt in 1 2 3" not in coordinator_smoke
     components = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")

@@ -276,6 +276,7 @@ def invoke(case_name, prompt):
             + json.dumps(result.get("status", {}), sort_keys=True)
         )
     calls = []
+    call_args = []
     responses = {}
     parts = [
         part
@@ -286,28 +287,34 @@ def invoke(case_name, prompt):
         metadata, data = part.get("metadata", {}), part.get("data", {})
         if metadata.get("adk_type") == "function_call":
             calls.append(data.get("name", ""))
+            call_args.append(data.get("args", {}))
         elif metadata.get("adk_type") == "function_response":
             responses[data.get("name", "")] = data.get("response")
+
+    answer_containers = [
+        *result.get("history", []),
+        *result.get("artifacts", []),
+    ]
+    if result.get("status", {}).get("message"):
+        answer_containers.append(result["status"]["message"])
+    answer_text = " ".join(
+        part.get("text", "")
+        for container in answer_containers
+        for part in container.get("parts", [])
+        if part.get("text")
+    ).lower()
     if case_name == "missing_user_id":
         if calls:
             raise SystemExit(f"{case_name} unexpectedly called tools: {calls}")
-        answer_containers = [
-            *result.get("history", []),
-            *result.get("artifacts", []),
-        ]
-        if result.get("status", {}).get("message"):
-            answer_containers.append(result["status"]["message"])
-        answer_text = " ".join(
-            part.get("text", "")
-            for container in answer_containers
-            for part in container.get("parts", [])
-            if part.get("text")
-        ).lower()
         if "clarification" not in answer_text or "provide user_id" not in answer_text:
             raise SystemExit(
                 f"{case_name} did not return the clarification contract: {answer_text}"
             )
         return body
+    if "clarification" in answer_text:
+        raise SystemExit(
+            f"{case_name} returned an invalid post-tool clarification: {answer_text}"
+        )
     if not calls or set(calls) - set(responses):
         raise SystemExit(
             f"{case_name} missing call/response: calls={calls}, responses={responses}"
@@ -323,27 +330,40 @@ def invoke(case_name, prompt):
         )
         assert not any(marker in serialized for marker in rejected), serialized
 
+    def specialist_request(index):
+        args = call_args[index]
+        assert set(args) == {"request"}, args
+        assert isinstance(args["request"], str), args
+        return args["request"]
+
     if case_name == "context_agent":
         assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
         context_tool = calls[0]
         assert_usable_agent_response(context_tool)
-        assert user_id in json.dumps(responses[context_tool], sort_keys=True)
+        request_text = specialist_request(0)
+        assert user_id in request_text and "get_user_online_features" in request_text
     elif case_name == "context_chunk_agent":
         assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
         assert_usable_agent_response(calls[0])
-        assert chunk_id in json.dumps(responses[calls[0]], sort_keys=True)
+        request_text = specialist_request(0)
+        assert chunk_id in request_text and "get_chunk_by_id" in request_text
     elif case_name == "recommendation_agent":
         assert calls == ["kagent__NS__recsys_recommendation_agent_sandbox"], calls
         recommendation_tool = calls[0]
         assert_usable_agent_response(recommendation_tool)
-        recommendation = json.dumps(responses[recommendation_tool], sort_keys=True)
-        assert user_id in recommendation and "items" in recommendation
+        assert json.loads(specialist_request(0)) == {
+            "user_id": int(user_id),
+            "candidate_item_ids": None,
+            "top_k": 1,
+        }
     elif case_name == "recommendation_candidates_agent":
         assert calls == ["kagent__NS__recsys_recommendation_agent_sandbox"], calls
         assert_usable_agent_response(calls[0])
-        recommendation = json.dumps(responses[calls[0]], sort_keys=True)
-        assert user_id in recommendation and "items" in recommendation
-        assert "800078" in recommendation or "800079" in recommendation
+        assert json.loads(specialist_request(0)) == {
+            "user_id": int(user_id),
+            "candidate_item_ids": [800078, 800079],
+            "top_k": 1,
+        }
     elif case_name == "composite_agents":
         assert calls == [
             "kagent__NS__recsys_recommendation_agent_sandbox",
@@ -351,7 +371,14 @@ def invoke(case_name, prompt):
         ], calls
         for tool_name in calls:
             assert_usable_agent_response(tool_name)
-        assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
+        assert json.loads(specialist_request(0)) == {
+            "user_id": int(user_id),
+            "candidate_item_ids": None,
+            "top_k": 1,
+        }
+        context_request = specialist_request(1)
+        assert user_id in context_request
+        assert "build_user_rag_context" in context_request
     return body
 
 

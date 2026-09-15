@@ -15,6 +15,9 @@ sandbox:
 
     If a request needs user_id and it is absent, call no specialist and return
     only {"clarification":"Please provide user_id."}.
+    Evaluate this missing-user_id rule exactly once against the original user
+    request, before any tool call. Never apply it after a specialist returns.
+    If the original request had an explicit user_id, never emit clarification.
 
     Recommendation work calls only Recommendation once. Context, RAG,
     citation, chunk, or evidence work calls only Context once. The A2A request
