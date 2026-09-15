@@ -37,6 +37,38 @@ push_built_image() {
   docker push "${remote_image}" 2>&1 | tee "${push_log}"
 }
 
+validate_built_image() {
+  local name="$1"
+  local local_image="$2"
+
+  case "${name}" in
+    recsys-online-feature-api|recsys-inference-api|recsys-rag-api|recsys-feature-rag-mcp|recsys-recommendation-mcp)
+      bash jenkins/scripts/test/serving_images.sh "${local_image}" "${name}"
+      ;;
+    recsys-rag-admin)
+      bash jenkins/scripts/test/rag_admin_image.sh "${local_image}"
+      ;;
+  esac
+}
+
+reuse_published_image() {
+  local remote_image="$1"
+  local local_image="$2"
+  local digest_reference="$3"
+
+  if ! docker pull --platform "${BUILD_DOCKER_PLATFORM}" "${digest_reference}"; then
+    recsys_log \
+      "Docker pull failed for ${digest_reference}; refreshing registry login and retrying once"
+    registry_login_gcp "${BUILD_IMAGE_REGISTRY}" >/dev/null
+    BUILD_REGISTRY_LOGIN_EPOCH="$(date +%s)"
+    export BUILD_REGISTRY_LOGIN_EPOCH
+    docker pull --platform "${BUILD_DOCKER_PLATFORM}" "${digest_reference}"
+  fi
+  docker tag "${digest_reference}" "${local_image}"
+  recsys_log BUILD \
+    "reusing immutable image for full-SHA tag ${remote_image}: ${digest_reference}"
+}
+
 build_publish_image() {
   local name="$1"
   local record_type value_a value_b
@@ -72,15 +104,21 @@ build_publish_image() {
     return 2
   }
 
-  docker build "${docker_args[@]}" -f "${dockerfile}" -t "${local_image}" "${context}"
-  if [[ "${name}" == "recsys-online-feature-api" || "${name}" == "recsys-inference-api" || "${name}" == "recsys-rag-api" || "${name}" == "recsys-feature-rag-mcp" || "${name}" == "recsys-recommendation-mcp" ]]; then
-    bash jenkins/scripts/test/serving_images.sh "${local_image}" "${name}"
-  fi
-  if [[ "${name}" == "recsys-rag-admin" ]]; then
-    bash jenkins/scripts/test/rag_admin_image.sh "${local_image}"
-  fi
-  docker tag "${local_image}" "${remote_image}"
   image_key="$(image_manifest_key "${name}")"
+  if recsys_is_true "${BUILD_PUBLISH_IMAGES}" \
+    && [[ "${BUILD_REGISTRY_HOST}" == *".pkg.dev" ]] \
+    && digest="$(registry_resolve_digest_reference "${remote_image}" "${BUILD_IMAGE_REGISTRY}" 2>/dev/null)"; then
+    reuse_published_image "${remote_image}" "${local_image}" "${digest}"
+    validate_built_image "${name}" "${local_image}"
+    record_built_image "${image_key}_LOCAL_IMAGE" "${local_image}"
+    record_built_image "${image_key}_IMAGE" "${remote_image}"
+    record_built_image "${image_key}_DIGEST" "${digest}"
+    return 0
+  fi
+
+  docker build "${docker_args[@]}" -f "${dockerfile}" -t "${local_image}" "${context}"
+  validate_built_image "${name}" "${local_image}"
+  docker tag "${local_image}" "${remote_image}"
   record_built_image "${image_key}_LOCAL_IMAGE" "${local_image}"
   record_built_image "${image_key}_IMAGE" "${remote_image}"
   if ! recsys_is_true "${BUILD_PUBLISH_IMAGES}"; then

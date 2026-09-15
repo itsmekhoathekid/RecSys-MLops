@@ -245,9 +245,10 @@ Deploy layer 2: Context Agent   | Recommendation Agent
 Deploy layer 3: Coordinator Agent
 ```
 
-The Coordinator catalog record names both specialist Agents and both direct MCP
-servers at the same release version. Jenkins validates those prerequisite
-read-backs before it publishes the Coordinator.
+The Coordinator catalog record names both specialist Agents and their MCP
+dependencies at the same release version. The runtime exposes only the two A2A
+specialist tools; it does not expose either MCP directly. Jenkins validates all
+four prerequisite read-backs before it publishes the Coordinator.
 
 ## 7. MCP credential rotation
 
@@ -319,9 +320,11 @@ A production run is accepted only when all of the following pass:
 - PDB, NetworkPolicy, Istio injection, non-root execution, read-only root
   filesystem, and MCP authentication invariants remain present.
 - Context and Recommendation A2A suites pass.
-- All six Coordinator cases pass: context routing, recommendation routing,
-  composite routing, direct Context MCP, direct Recommendation MCP, and partial
-  result handling.
+- All six A2A-only Coordinator cases pass: user-context routing, exact-chunk
+  routing, unrestricted recommendation, candidate-constrained recommendation,
+  composite specialist routing, and missing-user clarification. The admission
+  retry is limited to immediate `no free workers` responses and never replays a
+  completed case.
 - Each primary MCP Deployment or `SandboxAgent` contains
   `recsys.dev/agent-registry-ref`, `recsys.dev/agent-release-version`, and
   `recsys.dev/contract-sha256` matching the lock.

@@ -115,7 +115,8 @@ coordinator_a2a_smoke() {
   # so the production registry gate defaults to one longer bounded attempt.
   local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800}"
   local max_attempts="${COORDINATOR_A2A_MAX_ATTEMPTS:-1}"
-  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents}"
+  local admission_attempts="${COORDINATOR_A2A_ADMISSION_MAX_ATTEMPTS:-6}"
+  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,context_chunk_agent,recommendation_agent,recommendation_candidates_agent,composite_agents,missing_user_id}"
   local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
   local log_file="reports/agentic/${agent_name}-port-forward.log"
   local output_file="${COORDINATOR_A2A_EVIDENCE_FILE:-reports/agentic/${agent_name}-a2a.json}"
@@ -134,7 +135,7 @@ coordinator_a2a_smoke() {
   if [[ "${ready}" == "true" ]]; then
     for attempt in $(seq 1 "${max_attempts}"); do
       if python3 - "${base_url}/" "${user_id}" "${chunk_id}" \
-        "${request_timeout}" "${selected_cases}" \
+        "${request_timeout}" "${admission_attempts}" "${selected_cases}" \
         "${output_file}" <<'PY'
 import json
 import os
@@ -143,8 +144,19 @@ import time
 import urllib.request
 import uuid
 
-url, user_id, chunk_id, request_timeout, selected_cases, output_path = sys.argv[1:]
+(
+    url,
+    user_id,
+    chunk_id,
+    request_timeout,
+    admission_attempts,
+    selected_cases,
+    output_path,
+) = sys.argv[1:]
 request_timeout = int(request_timeout)
+admission_attempts = int(admission_attempts)
+if admission_attempts < 1:
+    raise SystemExit("coordinator admission attempts must be positive")
 cases = {
     "context_agent": (
         "Call exactly one tool: "
@@ -156,6 +168,14 @@ cases = {
         "recommendation Agent or any MCP tool directly. Answer immediately "
         "after the Context Agent returns."
     ),
+    "context_chunk_agent": (
+        "Call exactly one tool: "
+        "kagent__NS__recsys_context_agent_sandbox. Pass it this complete "
+        f"request: 'Call get_chunk_by_id exactly once with chunk_id={chunk_id}. "
+        f"Answer concisely and cite exact chunk_id {chunk_id}.' Do not call the "
+        "Recommendation Agent or any MCP tool directly. Answer immediately "
+        "after the Context Agent returns."
+    ),
     "recommendation_agent": (
         "Call exactly one tool: "
         "kagent__NS__recsys_recommendation_agent_sandbox. Its request field "
@@ -163,6 +183,14 @@ cases = {
         f"'{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}'. "
         "Do not call ask_user, the Context Agent, or any MCP tool directly. "
         "Answer immediately after the Recommendation Agent returns."
+    ),
+    "recommendation_candidates_agent": (
+        "Call exactly one tool: "
+        "kagent__NS__recsys_recommendation_agent_sandbox. Its request field "
+        "must be exactly this JSON object with no surrounding prose: "
+        f"'{{\"user_id\":{user_id},\"candidate_item_ids\":[800078,800079],"
+        "\"top_k\":1}}'. Do not call ask_user, the Context Agent, or any MCP "
+        "tool directly. Answer immediately after the Recommendation Agent returns."
     ),
     "composite_agents": (
         "Use exactly these two specialist Agent tools in order: first "
@@ -182,6 +210,10 @@ cases = {
         "MCP tool directly. Call each specialist exactly once, then answer. "
         "Preserve the recommendation order and cite returned chunk_id values."
     ),
+    "missing_user_id": (
+        "Recommend one item, but no user_id was provided. Do not infer an ID, "
+        "do not call any tool, and follow the missing-user_id response contract."
+    ),
 }
 requested = [name.strip() for name in selected_cases.split(",") if name.strip()]
 unknown = set(requested) - set(cases)
@@ -193,33 +225,47 @@ evidence = {}
 
 
 def invoke(case_name, prompt):
-    request_id = str(uuid.uuid4())
-    fresh_session = os.getenv("RECSYS_FRESH_SESSION_ID")
-    context_id = f"{fresh_session}-{case_name}" if fresh_session else str(uuid.uuid4())
-    payload = {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "method": "SendMessage",
-        "params": {"message": {
-            "messageId": request_id,
-            "contextId": context_id,
-            "role": "ROLE_USER",
-            "parts": [{"kind": "text", "text": prompt}],
-        }},
-    }
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=request_timeout) as response:
-        body = json.load(response)
-    evidence[case_name] = body
-    with open(output_path, "w", encoding="utf-8") as stream:
-        json.dump(evidence, stream, indent=2, sort_keys=True)
-    if body.get("error"):
-        raise SystemExit(f"{case_name}: {body['error']}")
+    body = {}
+    evidence[case_name] = []
+    for admission_attempt in range(1, admission_attempts + 1):
+        request_id = str(uuid.uuid4())
+        fresh_session = os.getenv("RECSYS_FRESH_SESSION_ID")
+        context_id = (
+            f"{fresh_session}-{case_name}-{admission_attempt}"
+            if fresh_session
+            else str(uuid.uuid4())
+        )
+        payload = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "SendMessage",
+            "params": {"message": {
+                "messageId": request_id,
+                "contextId": context_id,
+                "role": "ROLE_USER",
+                "parts": [{"kind": "text", "text": prompt}],
+            }},
+        }
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "A2A-Version": "1.0"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=request_timeout) as response:
+            body = json.load(response)
+        evidence[case_name].append(body)
+        with open(output_path, "w", encoding="utf-8") as stream:
+            json.dump(evidence, stream, indent=2, sort_keys=True)
+        if not body.get("error"):
+            break
+        error_text = json.dumps(body["error"], sort_keys=True).lower()
+        if (
+            "no free workers" not in error_text
+            or admission_attempt == admission_attempts
+        ):
+            raise SystemExit(f"{case_name}: {body['error']}")
+        time.sleep(admission_attempt * 5)
     wire_result = body.get("result", {})
     result = wire_result.get("task", wire_result)
     if result.get("status", {}).get("state") not in {
@@ -242,6 +288,26 @@ def invoke(case_name, prompt):
             calls.append(data.get("name", ""))
         elif metadata.get("adk_type") == "function_response":
             responses[data.get("name", "")] = data.get("response")
+    if case_name == "missing_user_id":
+        if calls:
+            raise SystemExit(f"{case_name} unexpectedly called tools: {calls}")
+        answer_containers = [
+            *result.get("history", []),
+            *result.get("artifacts", []),
+        ]
+        if result.get("status", {}).get("message"):
+            answer_containers.append(result["status"]["message"])
+        answer_text = " ".join(
+            part.get("text", "")
+            for container in answer_containers
+            for part in container.get("parts", [])
+            if part.get("text")
+        ).lower()
+        if "clarification" not in answer_text or "provide user_id" not in answer_text:
+            raise SystemExit(
+                f"{case_name} did not return the clarification contract: {answer_text}"
+            )
+        return body
     if not calls or set(calls) - set(responses):
         raise SystemExit(
             f"{case_name} missing call/response: calls={calls}, responses={responses}"
@@ -258,19 +324,26 @@ def invoke(case_name, prompt):
         assert not any(marker in serialized for marker in rejected), serialized
 
     if case_name == "context_agent":
-        context_tool = next(
-            name for name in calls if "context_agent_sandbox" in name
-        )
+        assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
+        context_tool = calls[0]
         assert_usable_agent_response(context_tool)
-        assert not any("recommendation_agent_sandbox" in name for name in calls), calls
-        assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
+        assert user_id in json.dumps(responses[context_tool], sort_keys=True)
+    elif case_name == "context_chunk_agent":
+        assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
+        assert_usable_agent_response(calls[0])
+        assert chunk_id in json.dumps(responses[calls[0]], sort_keys=True)
     elif case_name == "recommendation_agent":
-        recommendation_tool = next(
-            name for name in calls if "recommendation_agent_sandbox" in name
-        )
+        assert calls == ["kagent__NS__recsys_recommendation_agent_sandbox"], calls
+        recommendation_tool = calls[0]
         assert_usable_agent_response(recommendation_tool)
-        assert not any("context_agent_sandbox" in name for name in calls), calls
-        assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
+        recommendation = json.dumps(responses[recommendation_tool], sort_keys=True)
+        assert user_id in recommendation and "items" in recommendation
+    elif case_name == "recommendation_candidates_agent":
+        assert calls == ["kagent__NS__recsys_recommendation_agent_sandbox"], calls
+        assert_usable_agent_response(calls[0])
+        recommendation = json.dumps(responses[calls[0]], sort_keys=True)
+        assert user_id in recommendation and "items" in recommendation
+        assert "800078" in recommendation or "800079" in recommendation
     elif case_name == "composite_agents":
         assert calls == [
             "kagent__NS__recsys_recommendation_agent_sandbox",
