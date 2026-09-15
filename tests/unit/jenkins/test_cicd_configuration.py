@@ -63,6 +63,17 @@ def test_ci_config_environment_pins_all_runtime_imports():
     assert '--requirement "${ci_config_requirements}"' in script
 
 
+def test_jenkins_runtime_installs_and_verifies_jq():
+    template = (ROOT / "infra/helm/recsys-ci/templates/jenkins.yaml").read_text(
+        encoding="utf-8"
+    )
+    package_block = template.split("apt-get install", 1)[1].split(
+        "rm -rf /var/lib/apt/lists", 1
+    )[0]
+    assert "                jq \\\n" in package_block
+    assert "              jq --version\n" in template
+
+
 EXPECTED_LABELS = [
     "Materialize Pipeline",
     "Training Pipeline",
