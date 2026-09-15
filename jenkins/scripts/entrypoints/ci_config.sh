@@ -2,8 +2,11 @@
 set -euo pipefail
 
 ci_config_venv="${CI_TMP_ROOT:?CI_TMP_ROOT is required}/ci-config-venv"
+ci_config_requirements="jenkins/config/ci-config-requirements.txt"
 uv venv "${ci_config_venv}"
-uv pip install --python "${ci_config_venv}/bin/python" pytest pyyaml
+uv pip install \
+  --python "${ci_config_venv}/bin/python" \
+  --requirement "${ci_config_requirements}"
 "${ci_config_venv}/bin/python" -m pytest \
   tests/unit/jenkins \
   tests/unit/observability \
