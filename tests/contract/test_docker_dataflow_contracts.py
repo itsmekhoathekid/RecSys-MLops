@@ -93,8 +93,10 @@ def test_rag_admin_image_smoke_covers_the_feast_sql_registry_driver():
     engine = (ROOT / "jenkins/scripts/build/engine.sh").read_text()
     smoke = (ROOT / "jenkins/scripts/test/rag_admin_image.sh").read_text()
 
-    assert '"${name}" == "recsys-rag-admin"' in engine
-    assert "rag_admin_image.sh" in engine
+    assert "validate_built_image()" in engine
+    assert "recsys-rag-admin)" in engine
+    assert 'bash jenkins/scripts/test/rag_admin_image.sh "${local_image}"' in engine
+    assert engine.count('validate_built_image "${name}" "${local_image}"') == 2
     assert "import psycopg2" in smoke
     assert "from feast.infra.registry.sql import SqlRegistry" in smoke
 
