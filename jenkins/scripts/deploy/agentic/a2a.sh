@@ -116,7 +116,7 @@ coordinator_a2a_smoke() {
   local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800}"
   local max_attempts="${COORDINATOR_A2A_MAX_ATTEMPTS:-1}"
   local admission_attempts="${COORDINATOR_A2A_ADMISSION_MAX_ATTEMPTS:-6}"
-  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,context_chunk_agent,recommendation_agent,recommendation_candidates_agent,composite_agents,missing_user_id}"
+  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,context_chunk_agent,context_user_rag_agent,recommendation_agent,recommendation_candidates_agent,composite_agents}"
   local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
   local log_file="reports/agentic/${agent_name}-port-forward.log"
   local output_file="${COORDINATOR_A2A_EVIDENCE_FILE:-reports/agentic/${agent_name}-a2a.json}"
@@ -176,6 +176,15 @@ cases = {
         "Recommendation Agent or any MCP tool directly. Answer immediately "
         "after the Context Agent returns."
     ),
+    "context_user_rag_agent": (
+        "Call exactly one tool: "
+        "kagent__NS__recsys_context_agent_sandbox. Pass it this complete "
+        f"request: 'Call build_user_rag_context exactly once with user_id={user_id}, "
+        "query=noise-cancelling headphones, candidate_item_ids=[800078,800079], "
+        "top_k=2, top_k_items=2, and filters=null. Answer concisely and cite "
+        "returned chunk_id values.' Do not call the Recommendation Agent or any "
+        "MCP tool directly. Answer immediately after the Context Agent returns."
+    ),
     "recommendation_agent": (
         "Call exactly one tool: "
         "kagent__NS__recsys_recommendation_agent_sandbox. Its request field "
@@ -209,10 +218,6 @@ cases = {
         "Never call retrieve_rag_context, build_user_rag_context, or any other "
         "MCP tool directly. Call each specialist exactly once, then answer. "
         "Preserve the recommendation order and cite returned chunk_id values."
-    ),
-    "missing_user_id": (
-        "Recommend one item, but no user_id was provided. Do not infer an ID, "
-        "do not call any tool, and follow the missing-user_id response contract."
     ),
 }
 requested = [name.strip() for name in selected_cases.split(",") if name.strip()]
@@ -303,14 +308,6 @@ def invoke(case_name, prompt):
         for part in container.get("parts", [])
         if part.get("text")
     ).lower()
-    if case_name == "missing_user_id":
-        if calls:
-            raise SystemExit(f"{case_name} unexpectedly called tools: {calls}")
-        if "clarification" not in answer_text or "provide user_id" not in answer_text:
-            raise SystemExit(
-                f"{case_name} did not return the clarification contract: {answer_text}"
-            )
-        return body
     if "clarification" in answer_text:
         raise SystemExit(
             f"{case_name} returned an invalid post-tool clarification: {answer_text}"
@@ -347,6 +344,13 @@ def invoke(case_name, prompt):
         assert_usable_agent_response(calls[0])
         request_text = specialist_request(0)
         assert chunk_id in request_text and "get_chunk_by_id" in request_text
+    elif case_name == "context_user_rag_agent":
+        assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
+        assert_usable_agent_response(calls[0])
+        request_text = specialist_request(0)
+        assert user_id in request_text
+        assert "build_user_rag_context" in request_text
+        assert "[800078,800079]" in request_text.replace(" ", "")
     elif case_name == "recommendation_agent":
         assert calls == ["kagent__NS__recsys_recommendation_agent_sandbox"], calls
         recommendation_tool = calls[0]
