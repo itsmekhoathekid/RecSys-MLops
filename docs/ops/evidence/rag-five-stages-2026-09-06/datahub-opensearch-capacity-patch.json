@@ -1,0 +1,23 @@
+{
+  "spec": {
+    "template": {
+      "metadata": {
+        "annotations": {
+          "sidecar.istio.io/proxyCPU": "25m"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "opensearch",
+            "resources": {
+              "requests": {
+                "cpu": "50m"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

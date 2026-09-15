@@ -1,2 +1,6 @@
 autoscaling:
+  # Recommendation-only A/B owns the second native worker slot on the
+  # two-node production cluster. Keep Coordinator available but single-worker.
+  minReplicas: 1
+  maxReplicas: 1
   metricMode: assignedWorkers

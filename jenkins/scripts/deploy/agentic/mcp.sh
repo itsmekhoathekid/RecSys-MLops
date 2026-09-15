@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
 recommendation_mcp_protocol_smoke() {
-  kubectl -n kagent rollout status deployment/recsys-recommendation-mcp \
+  local workload
+  workload="${1:-$(mcp_auth_active_workload recommendation)}"
+  kubectl -n kagent rollout status "deployment/${workload}" \
     --timeout="${timeout}"
-  kubectl -n kagent exec deployment/recsys-recommendation-mcp -c mcp -- python -c '
+  kubectl -n kagent exec "deployment/${workload}" -c mcp -- python -c '
 import asyncio
 import os
 import httpx
@@ -32,9 +34,11 @@ asyncio.run(main())
 '
 }
 agentic_mcp_protocol_smoke() {
-  kubectl -n kagent rollout status deployment/recsys-feature-rag-mcp \
+  local workload
+  workload="${1:-$(mcp_auth_active_workload featureRag)}"
+  kubectl -n kagent rollout status "deployment/${workload}" \
     --timeout="${timeout}"
-  kubectl -n kagent exec deployment/recsys-feature-rag-mcp -c mcp -- python -c '
+  kubectl -n kagent exec "deployment/${workload}" -c mcp -- python -c '
 import asyncio
 import os
 import httpx

@@ -1,0 +1,8 @@
+Release "recsys-airflow" has been upgraded. Happy Helming!
+NAME: recsys-airflow
+LAST DEPLOYED: Sun Sep  6 13:30:15 2026
+NAMESPACE: recsys-dataflow
+STATUS: deployed
+REVISION: 15
+DESCRIPTION: Upgrade complete
+TEST SUITE: None

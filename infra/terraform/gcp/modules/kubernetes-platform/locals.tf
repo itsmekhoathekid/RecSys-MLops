@@ -89,10 +89,27 @@ locals {
     "observability",
   ]
 
-  external_secrets_chart_revision = sha1(join("", [
-    for path in ["externalsecrets.yaml", "secretstore.yaml"] :
-    filemd5("${local.helm_dir}/recsys-security/templates/${path}")
-  ]))
+  mcp_auth_versions_path   = "${var.repo_root}/configs/agentic/mcp-auth-versions.yaml"
+  mcp_auth_versions        = yamldecode(file(local.mcp_auth_versions_path))
+  mcp_auth_versions_sha256 = filesha256(local.mcp_auth_versions_path)
+  mcp_auth_external_secret_targets = flatten([
+    for service_name, service in local.mcp_auth_versions.services : [
+      for revision_name, revision in service.revisions : {
+        service   = service_name
+        revision  = revision_name
+        namespace = service.namespace
+        name      = revision.secretName
+      }
+    ]
+  ])
+
+  external_secrets_chart_revision = sha1(join("", concat(
+    [
+      for path in ["externalsecrets.yaml", "secretstore.yaml"] :
+      filemd5("${local.helm_dir}/recsys-security/templates/${path}")
+    ],
+    [local.mcp_auth_versions_sha256],
+  )))
 
   # helm_release does not reliably notice changes to non-template chart files
   # such as the probe script or provisioned dashboard JSON. Hash the complete

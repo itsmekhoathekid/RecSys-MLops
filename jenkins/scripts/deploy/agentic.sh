@@ -4,7 +4,7 @@
 # stable: Jenkins and existing automation source it directly.
 agentic_deploy_module_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/agentic" && pwd)"
 source jenkins/scripts/lib/runtime.sh
-source "${agentic_deploy_module_dir}/sandbox.sh"
+source "${agentic_deploy_module_dir}/rotation.sh"
 source "${agentic_deploy_module_dir}/kubernetes.sh"
 source "${agentic_deploy_module_dir}/mcp.sh"
 source "${agentic_deploy_module_dir}/a2a.sh"

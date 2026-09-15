@@ -27,6 +27,10 @@ def settings(token: str = "secret") -> McpSettings:
         allowed_origins=("https://kagent.example",),
         allowed_hosts=("127.0.0.1:*", "recsys-feature-rag-mcp.kagent.svc.cluster.local:8080"),
         image_reference="registry/recsys-feature-rag-mcp@sha256:abc",
+        tool_contract_version="2",
+        tool_contract_sha256=(
+            "3cf0423cce68a4b5984980398b9e1f630f548c9d5064cf7ddf3576246ab14576"
+        ),
     )
 
 
@@ -47,7 +51,12 @@ def test_health_ready_version_metrics_and_mcp_authentication():
     ) as client:
         assert client.get("/healthz").json() == {"status": "ok"}
         assert client.get("/ready").json() == {"status": "ready"}
-        assert client.get("/version").json()["stateless"] is True
+        version = client.get("/version").json()
+        assert version["stateless"] is True
+        assert version["tool_contract_version"] == "2"
+        assert version["tool_contract_sha256"] == (
+            "3cf0423cce68a4b5984980398b9e1f630f548c9d5064cf7ddf3576246ab14576"
+        )
         assert client.get("/metrics").status_code == 200
         assert client.post("/mcp").status_code == 401
         assert (
@@ -111,7 +120,11 @@ def test_streamable_http_initialize_list_and_all_tool_calls():
         ]
 
         calls = {
-            "get_user_online_features": {"user_id": 7},
+            "get_user_online_features": {
+                "user_id": 7,
+                "candidate_item_ids": None,
+                "top_k": 10,
+            },
             "get_chunk_by_id": {"chunk_id": "chunk-1"},
             "retrieve_rag_context": {"query": "headphones"},
             "build_user_rag_context": {"user_id": 7, "query": "headphones"},

@@ -1,0 +1,14 @@
+{
+  "version": "workflow-cases-v11",
+  "fixture_file": "workflow-cases-v11.json",
+  "fixture_file_sha256": "ec2fd035f17b8e732a3cafdb91cd95493c9895249171745bfdfba981a14a2be3",
+  "parent_fixture_file": "workflow-cases-v10.json",
+  "parent_fixture_file_sha256": "c6a6ee4e950ef68b11bddd3c4c72061bd291160da1113a596401ad7660ff5c52",
+  "root_conversations": 20,
+  "change": "Replace marker-delimited outer A2A strings with role-specific MODE/request lines and replace the stale 404 chunk with one exact chunk attested by the live RAG index; keep all case IDs, groups, trajectories and hard gates.",
+  "reason": "Create-only v24 evidence showed marker truncation and a colon-delimited unquoted chunk scalar. A read-only production retrieval on the active rag-20260907T193000 index attested chunk 800005:product_overview:overview:0. Single quotes keep the scalar intact without embedding JSON in the outer native tool string.",
+  "rag_pipeline_run_id": "rag-20260907T193000",
+  "attested_chunk_id": "800005:product_overview:overview:0",
+  "prompt_contract": "workflow-stock-a2a-v27",
+  "gate_relaxed": false
+}

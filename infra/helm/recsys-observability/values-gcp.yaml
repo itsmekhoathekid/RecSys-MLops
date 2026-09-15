@@ -25,3 +25,14 @@ langfuse:
 # Pushgateway without changing the intentionally mesh-disabled LLM namespace.
 llmProbe:
   namespace: observability
+  # Keep this finite orchestration probe off the memory-tight inference node.
+  nodeSelector:
+    recsys.ai/workload: ml-system
+  tolerations:
+    - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}
+
+# The two collector replicas use a hard hostname spread. The second GKE node
+# is dedicated with this taint, so the toleration is required for HA rollout.
+otelCollector:
+  tolerations:
+    - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}

@@ -1,0 +1,10 @@
+timeout: 1800s
+options:
+  machineType: E2_MEDIUM
+  logging: CLOUD_LOGGING_ONLY
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: [build, "--tag=${_IMAGE}", --file=apps/agentic/llm_ab_router/Dockerfile, .]
+images: ["${_IMAGE}"]
+substitutions:
+  _IMAGE: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-llm-ab-router:recommendation-poller-20260914-v1

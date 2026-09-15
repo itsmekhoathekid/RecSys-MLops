@@ -1,0 +1,10 @@
+timeout: 1800s
+options:
+  machineType: E2_MEDIUM
+  logging: CLOUD_LOGGING_ONLY
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: [build, "--tag=${_IMAGE}", --file=images/serving/recsys-online-feature-api/Dockerfile, .]
+images: ["${_IMAGE}"]
+substitutions:
+  _IMAGE: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-online-feature-api:workflow-context-contract-v2-r2-20260911

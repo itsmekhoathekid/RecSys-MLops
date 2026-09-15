@@ -1,0 +1,87 @@
+{
+  "status": "PREPARED_NOT_ACCEPTED",
+  "date": "2026-09-09",
+  "project": "recsys-mlops-506406",
+  "project_number": "222743087700",
+  "runtime": {
+    "build_id": "639000bb-3fb0-478b-b6da-7e93defe06ea",
+    "build_status": "SUCCESS",
+    "digest": "sha256:af2e97bae5f6ac94fd93c479ecb788a461003277b04a84fddef32af0cd1f19d4",
+    "baseline_release_id": "e10b72a49e62723eaab393eadd7775cd4724bbcf4fd29028a1e93ce8fd8146a4",
+    "preparation_key": "workflow/baseline-preparations/e10b72a49e62723eaab393eadd7775cd4724bbcf4fd29028a1e93ce8fd8146a4/4.json",
+    "jenkins_job": "RecSys-Workflow-Baseline-Prepare",
+    "jenkins_build": 4,
+    "jenkins_result": "SUCCESS",
+    "missing_user_infrastructure_probes": {
+      "coordinator": "PASS",
+      "context": "PASS",
+      "recommendation": "PASS"
+    },
+    "activated": false
+  },
+  "evaluation_runtime": {
+    "build_id": "422a7951-cbeb-4c23-ac81-ae7ec404b76f",
+    "build_status": "SUCCESS",
+    "digest": "sha256:67178a46049fac8d40aee68b942943c1d5d3b5c61b159067556dcdc08e4643de",
+    "jenkins_job": "RecSys-Workflow-Evaluation-Prepare",
+    "jenkins_build": 6,
+    "jenkins_result": "SUCCESS",
+    "source_checksum": "33e12e7312c3756c76028ea4451e0820d3e96d8895304fe3e7f7ae99f557e6aa",
+    "router_ready_replicas": 2,
+    "evaluator_cronjob_suspended": true,
+    "live_load_durable_claim_table_exists": true,
+    "dashboard_uid": "recsys-llm-ab"
+  },
+  "controller": {
+    "digest": "sha256:9b9150ee17398ecd2df11419db8c229de00f82e03ce6bde4b5edb064499981ef",
+    "jenkins_job": "RecSys-Workflow-Runtime-Prepare",
+    "jenkins_build": 3,
+    "jenkins_result": "SUCCESS",
+    "replicas": 1,
+    "legacy_adk_global_config_and_default_agents_unchanged": true
+  },
+  "langfuse": {
+    "version": "4.17.0",
+    "project_id": "recsys-production",
+    "automation_id": "cmtu4klxn0003yl075sh7shev",
+    "automation_status": "INACTIVE",
+    "prompt_allowlist": "recsys-workflow-ab",
+    "webhook_endpoint_planned": "https://agents.recsys-mlops.site/webhooks/langfuse",
+    "automation_second_prepare_created_duplicate": false,
+    "score_preflight_job": "recsys-workflow-evaluation-preflight-20260909",
+    "score_preflight_verdict": "PASS",
+    "probe_trace_id": "0f96f231cfed78372219ea73178d961c",
+    "verified_score_types": 3,
+    "preflight_inference_requests": 0
+  },
+  "capacity": {
+    "verdict": "PASS",
+    "scope": "read_only_preflight_not_a_reservation",
+    "includes": ["small_model", "second_facade_worker", "candidate_adapters", "receiver_replicas", "four_finite_jobs", "recovery_job", "retained_r2_and_r3_baseline_adapters"],
+    "forecast_headroom": {
+      "N2": {"cpu_millicores": 443, "memory_mib": 220.5452880859375, "pod_slots": 9},
+      "E2": {"cpu_millicores": 241, "memory_mib": 3449.14453125, "pod_slots": 63}
+    },
+    "actual_available_memory_fraction_at_preflight": {"N2": 0.4844107465107932, "E2": 0.44708962087156134},
+    "candidate_release_id_if_baseline_is_activated": "f9ae9556cd376832da28e06815d24036f2705dcdee5bd6611fbf6069f8e975a5",
+    "effective_config_unchanged": true,
+    "small_model_started": false
+  },
+  "authoritative_workflow_state": {
+    "phase": "IDLE",
+    "activated": false,
+    "champion": "dd03dedca0bfc0c8693057bc360f9b454205da32de7bc38cab6036d95628fd4d",
+    "previous": null,
+    "experiment_id": null,
+    "etag": "\"cfecf367371553063d266f716d4fadd4\"",
+    "offline_rows": 0,
+    "synthetic_rows": 0
+  },
+  "verification": {"python_unit_passed": 254, "postgres_integration_passed": 25, "git_diff_check": "PASS", "graphify_update": "PASS"},
+  "dispatch_security_blocker": {
+    "jenkins_strategy": "hudson.security.FullControlOnceLoggedInAuthorizationStrategy",
+    "job_scoped_authorization_plugins_installed": false,
+    "admin_credential_not_issued_to_receiver": true
+  },
+  "acceptance": {"offline_inference": "NOT_STARTED", "online_20": "NOT_STARTED", "envoy_10_50_100": "NOT_STARTED", "promotion": "NOT_STARTED", "fault_rollback": "NOT_STARTED", "dashboard_visual_validation": "PENDING_LOGIN", "post_promotion_monitoring": "DISABLED_BY_DESIGN"}
+}

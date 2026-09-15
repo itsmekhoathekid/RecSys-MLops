@@ -1,0 +1,14 @@
+{
+  "version": "workflow-cases-v2",
+  "fixture_file": "workflow-cases-v2.json",
+  "fixture_file_sha256": "ae3219ab9497af5fb66a59e9442b105b59e12a18bdcc383540b93a9d4e933484",
+  "parent_fixture_file": "workflow-cases.json",
+  "parent_fixture_file_sha256": "bc03d770925f8d87a98557a59486c536fafb0b43d58f65728048c2e1acbfc7d3",
+  "root_conversations": 20,
+  "change": "Replace nonexistent fixture user IDs with users verified in the existing feature store. Prompts, trajectories and assertions otherwise unchanged.",
+  "user_mapping": {"1001": 218, "1002": 37, "1003": 6, "1004": 177, "1005": 81, "1006": 91},
+  "candidate_source_snapshot": "s3://recsys-llm-ab/workflow/dependency-recovery/b8bbb81d41520b81564831fbdd97a8520d2258a0601598b80752be61a57b3dda/snapshot.json",
+  "candidate_count": 194,
+  "source_max_timestamp": "2026-03-28T23:43:50+00:00",
+  "limitations": "Historical feature data, not current organic interaction evidence. No fabricated personalized history or re-query of mutable data for evaluation. Existing v1 results are retained unchanged."
+}

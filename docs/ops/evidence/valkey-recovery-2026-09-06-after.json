@@ -1,0 +1,50 @@
+[
+  {
+    "pod": "valkey-cluster-0",
+    "cluster_state": "ok",
+    "slots_ok": "16384",
+    "nodes_fail": "0",
+    "keys": "13639",
+    "replication": "# Replication\nrole:master\nconnected_slaves:1\nslave0:ip=10.44.0.149,port=6379,state=online,offset=854,lag=0,type=replica\nreplicas_waiting_psync:0\nmaster_failover_state:no-failover\nmaster_replid:77c79c8cb1ed142136600711ad84eb76452f00b9\nmaster_replid2:0000000000000000000000000000000000000000\nmaster_repl_offset:854\nsecond_repl_offset:-1\nrepl_backlog_active:1\nrepl_backlog_size:10485760\nrepl_backlog_first_byte_offset:1\nrepl_backlog_histlen:854"
+  },
+  {
+    "pod": "valkey-cluster-1",
+    "cluster_state": "ok",
+    "slots_ok": "16384",
+    "nodes_fail": "0",
+    "keys": "13705",
+    "replication": "# Replication\nrole:master\nconnected_slaves:1\nslave0:ip=10.44.0.148,port=6379,state=online,offset=896,lag=0,type=replica\nreplicas_waiting_psync:0\nmaster_failover_state:no-failover\nmaster_replid:a59107651592b44207d37492b37b082ba122fd52\nmaster_replid2:0000000000000000000000000000000000000000\nmaster_repl_offset:896\nsecond_repl_offset:-1\nrepl_backlog_active:1\nrepl_backlog_size:10485760\nrepl_backlog_first_byte_offset:1\nrepl_backlog_histlen:896"
+  },
+  {
+    "pod": "valkey-cluster-2",
+    "cluster_state": "ok",
+    "slots_ok": "16384",
+    "nodes_fail": "0",
+    "keys": "13688",
+    "replication": "# Replication\nrole:master\nconnected_slaves:1\nslave0:ip=10.44.0.151,port=6379,state=online,offset=3078,lag=1,type=replica\nreplicas_waiting_psync:0\nmaster_failover_state:no-failover\nmaster_replid:6a09cd9194e83840dc0f92651872e11c93839239\nmaster_replid2:0000000000000000000000000000000000000000\nmaster_repl_offset:3078\nsecond_repl_offset:-1\nrepl_backlog_active:1\nrepl_backlog_size:10485760\nrepl_backlog_first_byte_offset:1\nrepl_backlog_histlen:3078"
+  },
+  {
+    "pod": "valkey-cluster-3",
+    "cluster_state": "ok",
+    "slots_ok": "16384",
+    "nodes_fail": "0",
+    "keys": "13688",
+    "replication": "# Replication\nrole:slave\nmaster_host:10.44.0.152\nmaster_port:6379\nmaster_link_status:up\nmaster_last_io_seconds_ago:3\nmaster_sync_in_progress:0\nslave_read_repl_offset:3078\nslave_repl_offset:3078\nreplicas_repl_buffer_size:0\nreplicas_repl_buffer_peak:0\nslave_priority:100\nslave_read_only:1\nreplica_announced:1\nconnected_slaves:0\nreplicas_waiting_psync:0\nmaster_failover_state:no-failover\nmaster_replid:6a09cd9194e83840dc0f92651872e11c93839239\nmaster_replid2:0000000000000000000000000000000000000000\nmaster_repl_offset:3078\nsecond_repl_offset:-1\nrepl_backlog_active:1\nrepl_backlog_size:10485760\nrepl_backlog_first_byte_offset:15\nrepl_backlog_histlen:3064"
+  },
+  {
+    "pod": "valkey-cluster-4",
+    "cluster_state": "ok",
+    "slots_ok": "16384",
+    "nodes_fail": "0",
+    "keys": "13639",
+    "replication": "# Replication\nrole:slave\nmaster_host:10.44.0.154\nmaster_port:6379\nmaster_link_status:up\nmaster_last_io_seconds_ago:5\nmaster_sync_in_progress:0\nslave_read_repl_offset:868\nslave_repl_offset:868\nreplicas_repl_buffer_size:0\nreplicas_repl_buffer_peak:0\nslave_priority:100\nslave_read_only:1\nreplica_announced:1\nconnected_slaves:0\nreplicas_waiting_psync:0\nmaster_failover_state:no-failover\nmaster_replid:77c79c8cb1ed142136600711ad84eb76452f00b9\nmaster_replid2:0000000000000000000000000000000000000000\nmaster_repl_offset:868\nsecond_repl_offset:-1\nrepl_backlog_active:1\nrepl_backlog_size:10485760\nrepl_backlog_first_byte_offset:15\nrepl_backlog_histlen:854"
+  },
+  {
+    "pod": "valkey-cluster-5",
+    "cluster_state": "ok",
+    "slots_ok": "16384",
+    "nodes_fail": "0",
+    "keys": "13705",
+    "replication": "# Replication\nrole:slave\nmaster_host:10.44.0.153\nmaster_port:6379\nmaster_link_status:up\nmaster_last_io_seconds_ago:1\nmaster_sync_in_progress:0\nslave_read_repl_offset:910\nslave_repl_offset:910\nreplicas_repl_buffer_size:0\nreplicas_repl_buffer_peak:0\nslave_priority:100\nslave_read_only:1\nreplica_announced:1\nconnected_slaves:0\nreplicas_waiting_psync:0\nmaster_failover_state:no-failover\nmaster_replid:a59107651592b44207d37492b37b082ba122fd52\nmaster_replid2:0000000000000000000000000000000000000000\nmaster_repl_offset:910\nsecond_repl_offset:-1\nrepl_backlog_active:1\nrepl_backlog_size:10485760\nrepl_backlog_first_byte_offset:15\nrepl_backlog_histlen:896"
+  }
+]

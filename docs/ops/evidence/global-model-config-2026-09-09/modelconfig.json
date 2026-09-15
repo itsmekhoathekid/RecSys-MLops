@@ -1,0 +1,32 @@
+{
+  "captured_at_utc": "2026-09-09T09:42:28.081584+00:00",
+  "apiVersion": "kagent.dev/v1alpha3",
+  "kind": "ModelConfig",
+  "metadata": {
+    "name": "recsys-global-model-config",
+    "namespace": "kagent",
+    "uid": "89383fbe-14db-4a78-9b30-7cd81a58371e",
+    "generation": 1,
+    "creationTimestamp": "2026-09-09T09:21:57Z",
+    "annotations": {
+      "meta.helm.sh/release-name": "recsys-global-model-config",
+      "meta.helm.sh/release-namespace": "kagent"
+    }
+  },
+  "spec": {
+    "apiKeySecret": "kagent-agent-gateway",
+    "apiKeySecretKey": "AGENT_GATEWAY_API_KEY",
+    "defaultHeaders": {
+      "X-Gateway-Base-Model-Name": "llm-d-optimized-baseline"
+    },
+    "model": "qwen3.5-0.8b",
+    "openAI": {
+      "apiFormat": "chatCompletions",
+      "baseUrl": "http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1",
+      "maxTokens": 384,
+      "seed": 42,
+      "temperature": "0"
+    },
+    "provider": "OpenAI"
+  }
+}

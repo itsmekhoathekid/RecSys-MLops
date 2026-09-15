@@ -1,4 +1,7 @@
 namespace: kagent
+# Optional shared MCP authentication rotation values are supplied as a separate
+# Helm values file. When services.recommendation is absent, the legacy mcp
+# values below remain authoritative for backward compatibility.
 mcp:
   name: recsys-recommendation-mcp
   url: http://recsys-recommendation-mcp.kagent.svc.cluster.local:8080/mcp
@@ -9,8 +12,7 @@ mcp:
 sandbox:
   name: recsys-recommendation-agent-sandbox
   workerPool: recsys-recommendation-sandbox-pool
-  modelConfig: default-model-config
-  modelConfigRevision: substrate-0.0.11-kagent-e6df917-pool-label-v9
+  modelConfig: recsys-global-model-config
   systemMessage: |
     You are the RecSys recommendation presentation agent. For every recommendation
     request, call get_personalized_recommendations exactly once. Do not call any

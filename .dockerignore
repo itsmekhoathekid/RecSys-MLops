@@ -11,6 +11,8 @@
 .gateway-auth
 **/.codex
 **/.model-cd
+**/.llm-agent-cd
+**/.llm-ab-venv
 **/.coverage
 **/.ci-image-manifest
 **/graphify-out

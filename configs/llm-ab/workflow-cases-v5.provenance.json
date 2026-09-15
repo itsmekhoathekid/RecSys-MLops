@@ -1,0 +1,11 @@
+{
+  "version": "workflow-cases-v5",
+  "fixture_file": "workflow-cases-v5.json",
+  "fixture_file_sha256": "7a59df82872071211e96d1215ebc433517bf96551549ecead0cf09d0771cdc03",
+  "parent_fixture_file": "workflow-cases-v4.json",
+  "parent_fixture_file_sha256": "5f6e82db1cf670c45aee301cef53349ac2a38d1aedd72313ece8ef78656814ed",
+  "change": "Keep all 20 case IDs and category counts, make route directives deterministic, and replace oversized mutable Context feature payloads with one immutable exact-chunk lookup.",
+  "reason": "Production v19 evidence proved that get_user_online_features with candidate_item_ids=null can exceed the 16K context and 384-token final-output budget. Exact-null/no-retry remains a separate stock compatibility probe; the online Context/RAG and composite cases now test routing, exact arguments, citation evidence and unchanged JSON on a bounded immutable chunk.",
+  "inference_requests_created_by_revision": 0,
+  "gate_relaxed": false
+}

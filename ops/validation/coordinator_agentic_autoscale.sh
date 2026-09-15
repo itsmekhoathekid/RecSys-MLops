@@ -6,6 +6,7 @@ cd "$(dirname "$0")/../.."
 namespace="${COORDINATOR_NAMESPACE:-kagent}"
 agent="recsys-coordinator-agent-sandbox"
 worker_pool="recsys-coordinator-sandbox-pool"
+worker_deployment="${worker_pool}-deployment"
 scaled_object="${worker_pool}"
 hpa="keda-hpa-${worker_pool}"
 local_port="${COORDINATOR_AUTOSCALE_LOCAL_PORT:-18087}"
@@ -41,9 +42,9 @@ wait_for_replicas() {
   local expected="$1" mode="$2" timeout_seconds="$3"
   local deadline=$((SECONDS + timeout_seconds)) available desired
   while ((SECONDS < deadline)); do
-    available="$(kubectl -n "${namespace}" get deployment "${worker_pool}" \
+    available="$(kubectl -n "${namespace}" get deployment "${worker_deployment}" \
       -o jsonpath='{.status.availableReplicas}')"
-    desired="$(kubectl -n "${namespace}" get workerpool "${worker_pool}" \
+    desired="$(kubectl -n "${namespace}" get deployment "${worker_deployment}" \
       -o jsonpath='{.spec.replicas}')"
     printf '%s desired=%s available=%s expected-%s=%s\n' \
       "$(date +%T)" "${desired:-0}" "${available:-0}" "${mode}" "${expected}"
@@ -64,9 +65,9 @@ kubectl -n "${namespace}" get scaledobject "${scaled_object}" -o json | python3 
 import json, sys
 spec = json.load(sys.stdin)["spec"]
 assert spec["scaleTargetRef"] == {
-    "apiVersion": "ate.dev/v1alpha1",
-    "kind": "WorkerPool",
-    "name": "recsys-coordinator-sandbox-pool",
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "name": "recsys-coordinator-sandbox-pool-deployment",
 }
 assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 3)
 assert spec["pollingInterval"] == 15 and spec["cooldownPeriod"] == 300
@@ -179,7 +180,7 @@ load_pid=$!
 seen_two=false
 deadline=$((SECONDS + scale_out_timeout))
 while ((SECONDS < deadline)); do
-  desired="$(kubectl -n "${namespace}" get workerpool "${worker_pool}" -o jsonpath='{.spec.replicas}')"
+  desired="$(kubectl -n "${namespace}" get deployment "${worker_deployment}" -o jsonpath='{.spec.replicas}')"
   metric="$(kubectl -n "${namespace}" get hpa "${hpa}" -o jsonpath='{.status.currentMetrics[0].external.current.averageValue}' 2>/dev/null || true)"
   printf '%s desired=%s assigned-average=%s\n' "$(date +%T)" "${desired:-0}" "${metric:-unknown}"
   [[ "${desired:-0}" -ge 2 ]] && seen_two=true

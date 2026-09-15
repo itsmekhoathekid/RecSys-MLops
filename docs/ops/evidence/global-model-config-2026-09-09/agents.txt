@@ -1,0 +1,20 @@
+Commands: kubectl -n kagent get sandboxagent <each named agent> -o json
+Projection: modelConfig, runtime, Ready condition and generation.
+
+name: recsys-context-agent-sandbox
+modelConfig: recsys-global-model-config
+runtime: go
+ready: True
+generation: 29
+
+name: recsys-recommendation-agent-sandbox
+modelConfig: recsys-global-model-config
+runtime: go
+ready: True
+generation: 24
+
+name: recsys-coordinator-agent-sandbox
+modelConfig: recsys-global-model-config
+runtime: go
+ready: True
+generation: 25

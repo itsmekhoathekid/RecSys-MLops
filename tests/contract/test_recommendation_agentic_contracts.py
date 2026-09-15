@@ -93,11 +93,10 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     sandbox = _resource(
         documents, "SandboxAgent", "recsys-recommendation-agent-sandbox"
     )
-    assert sandbox["apiVersion"] == "kagent.dev/v1alpha3"
+    assert sandbox["apiVersion"] == "kagent.dev/v1alpha2"
     assert "platform" not in sandbox["spec"]
-    assert sandbox["metadata"]["annotations"]["recsys.ai/model-config-revision"] == (
-        "substrate-0.0.11-kagent-e6df917-pool-label-v9"
-    )
+    assert "recsys.ai/model-config-revision" not in sandbox["metadata"].get("annotations", {})
+    assert "Runtime model configuration revision:" not in sandbox["spec"]["declarative"]["systemMessage"]
     tools = sandbox["spec"]["declarative"]["tools"]
     assert len(tools) == 1
     assert tools[0]["type"] == "McpServer"
@@ -138,15 +137,15 @@ def test_mcp_scales_one_to_three_and_workerpool_keeps_two_warm() -> None:
         agent_documents, "ScaledObject", "recsys-recommendation-sandbox-pool"
     )
     assert worker_scaled["spec"]["scaleTargetRef"] == {
-        "apiVersion": "ate.dev/v1alpha1",
-        "kind": "WorkerPool",
-        "name": "recsys-recommendation-sandbox-pool",
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "recsys-recommendation-sandbox-pool-deployment",
     }
     assert (
         worker_scaled["spec"]["minReplicaCount"],
         worker_scaled["spec"]["maxReplicaCount"],
         worker_scaled["spec"]["fallback"]["replicas"],
-    ) == (2, 3, 1)
+    ) == (2, 2, 1)
     assert worker_scaled["spec"]["advanced"]["horizontalPodAutoscalerConfig"][
         "behavior"
     ]["scaleDown"]["stabilizationWindowSeconds"] == 300

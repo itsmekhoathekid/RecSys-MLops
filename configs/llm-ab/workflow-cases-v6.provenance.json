@@ -1,0 +1,11 @@
+{
+  "version": "workflow-cases-v6",
+  "fixture_file": "workflow-cases-v6.json",
+  "fixture_file_sha256": "5b9479268e176e01d04ac639673fdec615f7b6b2c360ad84db5d4d65f9da9543",
+  "parent_fixture_file": "workflow-cases-v5.json",
+  "parent_fixture_file_sha256": "7a59df82872071211e96d1215ebc433517bf96551549ecead0cf09d0771cdc03",
+  "change": "Retain the bounded exact-chunk cases and all hard assertions, but replace ROUTE tokens with explicit natural-language A2A commands recognized by both pinned chat templates.",
+  "reason": "The create-only v5 control probe showed that ROUTE=Recommendation produced no A2A call. The prior explicit Delegate to Recommendation grammar produced native calls on llama.cpp b8646, so v6 uses that grammar without changing any expected trajectory or value.",
+  "inference_requests_created_by_revision": 0,
+  "gate_relaxed": false
+}

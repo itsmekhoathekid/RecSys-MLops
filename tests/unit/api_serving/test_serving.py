@@ -464,6 +464,21 @@ def test_get_online_features_reads_candidates_sequence_and_items():
     assert response.item_features["10"]["category_id"] == 10
 
 
+def test_unknown_and_inactive_candidates_are_not_scored_or_replaced():
+    class Features:
+        def candidates(self, *args):
+            raise AssertionError("explicit candidates must not fall back")
+        def user_sequence(self, user_id): return {"hist_item_ids": [15]}
+        def item_features_batch(self, ids):
+            return {"-1": {}, "15": {"is_active": True, "category_id": 6},
+                    "16": {"is_active": False, "category_id": 7}}
+    result = asyncio.run(get_online_features(218, [-1,16,15], 3, Features()))
+    assert result.candidate_item_ids == [15]
+    assert result.item_features == {"15": {"is_active": True, "category_id": 6}}
+    empty = asyncio.run(get_online_features(218, [-1], 3, Features()))
+    assert empty.candidate_item_ids == [] and empty.item_features == {}
+
+
 def test_feature_client_returns_defaults_when_online_store_is_unavailable(monkeypatch):
     class BrokenRedis:
         def __init__(self, *args, **kwargs):

@@ -16,9 +16,9 @@ minio:
   storage: 20Gi
 
 airflow:
-  dp1Schedule: "@daily"
-  dp2Schedule: "0 1 * * *"
-  dp3Schedule: "30 1 * * *"
+  dp1Schedule: "manual"
+  dp2Schedule: "manual"
+  dp3Schedule: "manual"
   ragItemSchedule: "30 2 * * *"
   analyticsSchedule: "30 2 * * *"
   feastMaterializeSchedule: "20 */2 * * *"

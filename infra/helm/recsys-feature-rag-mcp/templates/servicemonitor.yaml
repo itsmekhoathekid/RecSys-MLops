@@ -1,9 +1,20 @@
 {{- if .Values.observability.serviceMonitor.enabled }}
+{{- $contexts := include "recsys-feature-rag-mcp.revisionContexts" . | fromJsonArray -}}
+{{- range $context := $contexts }}
+---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
-metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }} }
+metadata:
+  name: {{ $context.name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "recsys-feature-rag-mcp.revisionLabels" $context | nindent 4 }}
 spec:
-  selector: {matchLabels: {app.kubernetes.io/name: {{ .Values.name }}}}
-  namespaceSelector: {matchNames: [{{ .Values.namespace }}]}
-  endpoints: [{port: http, path: /metrics, interval: {{ .Values.observability.serviceMonitor.interval }}}]
+  jobLabel: app.kubernetes.io/name
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $context.name }}
+  namespaceSelector: {matchNames: [{{ $.Values.namespace }}]}
+  endpoints: [{port: http, path: /metrics, interval: {{ $.Values.observability.serviceMonitor.interval }}}]
+{{- end }}
 {{- end }}

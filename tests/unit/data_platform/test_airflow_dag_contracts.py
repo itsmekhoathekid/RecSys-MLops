@@ -58,6 +58,9 @@ def test_rag_schedule_is_owned_by_the_airflow_release_at_0230_local_time():
     assert 'ragItemSchedule: "30 2 * * *"' in airflow_values
     assert airflow_template.count("name: RAG_ITEM_DAG_SCHEDULE") == 2
     assert airflow_template.count(".Values.airflow.ragItemSchedule") == 2
+    assert "ragItemSourceRunId: auto" in airflow_values
+    assert airflow_template.count("name: RAG_ITEM_SOURCE_RUN_ID") == 2
+    assert airflow_template.count(".Values.airflow.ragItemSourceRunId | quote") == 2
     assert 'ragItemSchedule: "30 2 * * *"' in shared_values
     assert 'ragItemSchedule: "30 2 * * *"' in production_values
     assert 'ragItemSchedule: "0 2 * * *"' not in shared_values + production_values

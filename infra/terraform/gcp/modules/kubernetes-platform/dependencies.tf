@@ -70,6 +70,7 @@ resource "helm_release" "external_secrets" {
   name             = "external-secrets"
   repository       = "https://charts.external-secrets.io"
   chart            = "external-secrets"
+  version          = "2.9.0"
   namespace        = "external-secrets"
   create_namespace = true
   wait             = true
@@ -344,14 +345,16 @@ resource "null_resource" "kserve" {
   count = var.config.install_kserve ? 1 : 0
 
   triggers = {
-    cluster_id = var.cluster.id
-    version    = var.config.kserve_version
+    cluster_id           = var.cluster.id
+    version              = var.config.kserve_version
+    controller_placement = "ml-system-v1"
   }
 
   provisioner "local-exec" {
     command     = <<-EOT
       set -euo pipefail
       kubectl apply --server-side --force-conflicts -f "https://github.com/kserve/kserve/releases/download/${var.config.kserve_version}/kserve.yaml"
+      kubectl patch deployment kserve-controller-manager -n kserve --type=merge --patch '{"spec":{"replicas":1,"template":{"spec":{"nodeSelector":{"recsys.ai/workload":"ml-system"},"tolerations":[{"key":"recsys.ai/workload","operator":"Equal","value":"ml-system","effect":"NoSchedule"}]}}}}'
       kubectl rollout status deploy/kserve-controller-manager -n kserve --timeout=600s
       for _ in $(seq 1 60); do
         if kubectl get endpoints kserve-webhook-server-service -n kserve -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then

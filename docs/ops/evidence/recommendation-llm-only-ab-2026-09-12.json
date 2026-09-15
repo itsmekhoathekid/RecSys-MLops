@@ -1,0 +1,107 @@
+{
+  "captured_at": "2026-09-12T13:36:00Z",
+  "scope": "recommendation",
+  "experiment_type": "llm_only",
+  "experiment_id": "rec-b421cd5867229c2813811c691e7e96e5",
+  "jenkins": {
+    "job": "RecSys-LLM-Agent-CD",
+    "build": 38,
+    "result": "SUCCESS",
+    "phase": "COMPLETED"
+  },
+  "control": {
+    "release_id": "3820e879a0cae73e2ee16d1f550fdfc178ef4237e8149b7dd50da0fdaa03b91a",
+    "llm_version_id": "b865c693a97c209203325ad150310253f80158fb44816c059def5be1a1db86b4",
+    "model": "Qwen3.5-0.8B Q4_0"
+  },
+  "candidate": {
+    "release_id": "cf45f5192429376fa7567be7c5b9bdf7cbff7f6e1f3268c19cf011982bb959d3",
+    "llm_version_id": "5f8c2912e51a1ad9ead09ba37f57aae046919dda389e2f619c6a15fe37549f63",
+    "model": "Qwen2.5-0.5B-Instruct Q4_K_M",
+    "artifact_sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+    "llama_cpp_build": "b8646"
+  },
+  "frozen_config": {
+    "config_id": "ae24eb53b8e371fcf2e425b9d0564524097c47a57bb24069fec4d25ac4ae0344",
+    "temperature": "0.0",
+    "max_tokens": 384,
+    "seed": 42,
+    "fixture_checksum": "876d4ab28fcc77a91bbd2e3e707e33b37ad809c3869f8c729b8f1a16bf2516c4",
+    "evaluator_version": "recommendation-code-v2"
+  },
+  "offline_compatibility": {
+    "expected_inferences": 6,
+    "actual_inferences": 6,
+    "control": {"passed": 3, "total": 3},
+    "candidate": {"passed": 3, "total": 3}
+  },
+  "online_evaluation": {
+    "expected_root_responses": 20,
+    "actual_root_responses": 20,
+    "control": {"passed": 11, "total": 11, "p95_seconds": 10.7162465},
+    "candidate": {"passed": 9, "total": 9, "p95_seconds": 3.8185836},
+    "failed": 0,
+    "langfuse_records_confirmed": 26,
+    "langfuse_records_total": 26,
+    "score_rows": 286
+  },
+  "closed_gate_windows": {
+    "canary_10_percent": {
+      "verdict": "PASS",
+      "control_count": 81,
+      "candidate_count": 5,
+      "control_p95_seconds": 11.918779,
+      "candidate_p95_seconds": 6.8090986
+    },
+    "ab_50_percent": {
+      "verdict": "PASS",
+      "control_count": 12,
+      "candidate_count": 8,
+      "control_p95_seconds": 11.934925,
+      "candidate_p95_seconds": 3.93607615,
+      "latency_ratio_limit": 1.2,
+      "online_scores_confirmed": 20
+    },
+    "verify_100_percent": {
+      "verdict": "PASS",
+      "candidate_count": 60,
+      "candidate_p95_seconds": 3.90362065
+    }
+  },
+  "promotion": {
+    "gate": "PASS",
+    "champion_release_id": "cf45f5192429376fa7567be7c5b9bdf7cbff7f6e1f3268c19cf011982bb959d3",
+    "previous_release_id": "3820e879a0cae73e2ee16d1f550fdfc178ef4237e8149b7dd50da0fdaa03b91a",
+    "verified_candidate_weight": 100,
+    "route_revision": "07d86091e2f8e243779c77f7cb9e12588a50431908af2e67415f64b8cfde9875",
+    "post_promotion_monitoring": "disabled"
+  },
+  "normal_deploy_preservation": {
+    "jenkins_job": "RecSys-Global-Model-Config",
+    "successful_build": 4,
+    "result": "SUCCESS",
+    "helm_release_revision": 3,
+    "helm_stored_api": "kagent.dev/v1alpha2",
+    "champion_unchanged": true,
+    "previous_unchanged": true,
+    "route_revision_unchanged": true,
+    "verified_candidate_weight": 100,
+    "default_agents_ready": 3,
+    "custom_revision_annotations_present": false
+  },
+  "dashboard": {
+    "uid": "recsys-llm-ab",
+    "title": "LLM Agent A/B Rollout",
+    "panels": 61,
+    "provisioned_configmap": "recsys-grafana-dashboard-llm-ab-rollout",
+    "grafana_health": "ok",
+    "grafana_version": "11.4.0"
+  },
+  "native_runtime": {
+    "kagent_chart": "0.10.0-rc1",
+    "substrate": "0.0.9",
+    "sandboxagent_api": "kagent.dev/v1alpha2",
+    "go_adk_image": "ghcr.io/kagent-dev/kagent/golang-adk@sha256:9ce063bcdfb2f768e00fa25ba63f5e0b5491cf7149c5cb6a57127f8e4fa53ca1",
+    "custom_go_patches_present": false
+  }
+}

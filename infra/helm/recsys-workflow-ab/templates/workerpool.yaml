@@ -1,0 +1,19 @@
+{{- if .Values.facadePool.enabled }}
+# A facade waits for a child Recommendation worker. Sharing the child's pool
+# can exhaust all workers with parents and deadlock concurrent conversations.
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: {{ .Values.workerPool }}
+  labels:
+    app.kubernetes.io/part-of: recsys-agentic
+    ate.dev/worker-pool: {{ .Values.workerPool }}
+    kagent.dev/worker-pool: {{ .Values.workerPool }}
+spec:
+  ateomImage: {{ .Values.facadePool.ateomImage | quote }}
+  replicas: {{ .Values.facadePool.replicas }}
+  sandboxClass: gvisor
+  template:
+    nodeSelector: {{ toYaml .Values.facadePool.nodeSelector | nindent 6 }}
+    resources: {{ toYaml .Values.facadePool.resources | nindent 6 }}
+{{- end }}

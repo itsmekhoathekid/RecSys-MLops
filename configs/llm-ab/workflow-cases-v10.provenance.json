@@ -1,0 +1,16 @@
+{
+  "version": "workflow-cases-v10",
+  "fixture_file": "workflow-cases-v10.json",
+  "fixture_file_sha256": "c6a6ee4e950ef68b11bddd3c4c72061bd291160da1113a596401ad7660ff5c52",
+  "parent_fixture_file": "workflow-cases-v9.json",
+  "parent_fixture_file_sha256": "7a0f4697942690be5d4fd9a9da75c269371db34e0339215bc67ff570a7f48838",
+  "root_conversations": 20,
+  "change": "Encode the two A2A request strings as quote-free plain key=value text inside explicit role markers; preserve all case IDs, groups, expected trajectories, arguments, outputs, and hard gates.",
+  "reason": "Zero-weight full-A2A candidate evidence showed Qwen2.5 emitted an unescaped nested JSON quote inside the A2A request string, which llama.cpp correctly parsed only up to the opening brace. Marker-bounded plain text removes that nested-string ambiguity without changing tools, expected tool arguments, or evaluation policy.",
+  "failed_candidate_release": "ab4e20594c7e1680a2428fa954b26e09abf03ebad2e71b19904b9d9d35eaba13",
+  "failed_probe": "candidate-coordinator-recommendation-a2a-v23",
+  "failed_probe_request_count": 1,
+  "inference_requests_created_by_revision": 0,
+  "gate_relaxed": false,
+  "replay_policy": "The failed v23 request is terminal evidence and is never replayed or counted in a v10 experiment."
+}

@@ -41,7 +41,7 @@ def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str
     )
 
 
-def test_coordinator_sandbox_references_two_agents_and_two_mcp_servers() -> None:
+def test_coordinator_sandbox_references_only_two_a2a_agents() -> None:
     documents = _render()
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     assert sum(item.get("kind") == "SandboxAgent" for item in documents) == 1
@@ -51,17 +51,13 @@ def test_coordinator_sandbox_references_two_agents_and_two_mcp_servers() -> None
     assert not any(item.get("kind") == "RemoteMCPServer" for item in documents)
 
     agent = _resource(documents, "SandboxAgent", "recsys-coordinator-agent-sandbox")
-    assert agent["apiVersion"] == "kagent.dev/v1alpha3"
+    assert agent["apiVersion"] == "kagent.dev/v1alpha2"
     assert "platform" not in agent["spec"]
     assert agent["spec"]["substrate"]["workerPoolRef"]["name"] == (
         "recsys-coordinator-sandbox-pool"
     )
     tools = agent["spec"]["declarative"]["tools"]
-    assert all(
-        item.get("isolateSessions") is True
-        for item in tools
-        if item["type"] == "Agent"
-    )
+    assert all("isolateSessions" not in item for item in tools)
     agent_tools = [item["agent"] for item in tools if item["type"] == "Agent"]
     mcp_tools = [item["mcpServer"] for item in tools if item["type"] == "McpServer"]
     assert agent_tools == contract["agents"]
@@ -74,37 +70,29 @@ def test_coordinator_sandbox_references_two_agents_and_two_mcp_servers() -> None
         }
         for item in mcp_tools
     ] == contract["mcpServers"]
-    # The Coordinator exposes only two raw verification tools. Feature/RAG
-    # aggregation stays behind the Context specialist so generic requests
-    # cannot bypass A2A routing.
-    assert sum(len(item["toolNames"]) for item in mcp_tools) == 2
+    assert mcp_tools == []
 
 
 def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> None:
     agent = _resource(_render(), "SandboxAgent", "recsys-coordinator-agent-sandbox")
     prompt = agent["spec"]["declarative"]["systemMessage"]
     for requirement in (
-        "smallest",
-        "delegate to the context agent",
-        "delegate to the recommendation agent",
-        "Call MCP tools directly only",
-        "second independent",
+        "exactly two available A2A specialist tools",
+        "You have no MCP tools",
+        "call ask_user",
+        "kagent__NS__recsys_context_agent_sandbox",
+        "kagent__NS__recsys_recommendation_agent_sandbox",
+        "null is not an empty array",
         "Never rerank",
         "chunk_id",
-        "partial results",
-        "Do not retry",
-        "only allowed",
-        "Never forward the original composite user prompt",
-        "permits exactly one call to each function",
-        "MUST contain only this JSON object",
-        "must not call ask_user",
-        "Recommended item_id: <first returned item_id>",
+        "Never invent data",
+        "Recommendation exactly once and then Context",
     ):
         assert requirement in prompt
-    assert (
-        agent["metadata"]["annotations"]["recsys.ai/model-config-revision"]
-        == "substrate-0.0.11-kagent-e6df917-assigned-workers-v22"
-    )
+    assert "builtin/a2a-communication" not in prompt
+    assert "consider retrying" not in prompt.lower()
+    assert "recsys.ai/model-config-revision" not in agent["metadata"].get("annotations", {})
+    assert "Runtime model configuration revision:" not in prompt
     skills = agent["spec"]["declarative"]["a2aConfig"]["skills"]
     assert [skill["id"] for skill in skills] == [
         "coordinated-personalized-recommendation"
@@ -118,11 +106,11 @@ def test_production_coordinator_uses_assigned_worker_autoscaling() -> None:
     scaled = _resource(documents, "ScaledObject", "recsys-coordinator-sandbox-pool")
     spec = scaled["spec"]
     assert spec["scaleTargetRef"] == {
-        "apiVersion": "ate.dev/v1alpha1",
-        "kind": "WorkerPool",
-        "name": "recsys-coordinator-sandbox-pool",
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "recsys-coordinator-sandbox-pool-deployment",
     }
-    assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (2, 3)
+    assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (1, 1)
     assert (spec["pollingInterval"], spec["cooldownPeriod"]) == (15, 300)
     assert spec["fallback"] == {"failureThreshold": 3, "replicas": 1}
     trigger = spec["triggers"][0]
@@ -178,10 +166,7 @@ agentic_write_registry_manifest "$1" coordinator-agent \
         "recsys/recsys-context-agent-sandbox@0.1.0-0123456789ab,"
         "recsys/recsys-recommendation-agent-sandbox@0.1.0-0123456789ab"
     )
-    assert [item["name"] for item in manifest["spec"]["mcpServers"]] == [
-        "recsys-feature-rag-mcp",
-        "recsys-recommendation-mcp",
-    ]
+    assert "mcpServers" not in manifest["spec"]
 
 
 def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
@@ -194,7 +179,7 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert 'COORDINATOR_A2A_MAX_ATTEMPTS:-1' in deploy_script
     assert '"http_422"' in deploy_script
     assert "assert_usable_agent_response" in deploy_script
-    assert "Recommended item_id: <first returned item_id>" in deploy_script
+    assert 'COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents' in deploy_script
     coordinator_smoke = (
         ROOT / "jenkins/scripts/deploy/agentic/a2a.sh"
     ).read_text(encoding="utf-8").split("coordinator_a2a_smoke()", 1)[1].split(
@@ -219,6 +204,7 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
         )["units"]
     }
     assert units["coordinator-agent"]["dependsOn"] == [
+        "global-model-config",
         "context-agent",
         "recommendation-agent",
     ]
@@ -239,7 +225,6 @@ def test_coordinator_shell_entrypoints_are_syntactically_valid() -> None:
         "jenkins/scripts/deploy/agentic/kubernetes.sh",
         "jenkins/scripts/deploy/agentic/mcp.sh",
         "jenkins/scripts/deploy/agentic/registry.sh",
-        "jenkins/scripts/deploy/agentic/sandbox.sh",
         "jenkins/scripts/test/agentic.sh",
         "ops/validation/coordinator_agentic_smoke.sh",
         "ops/validation/coordinator_agentic_autoscale.sh",

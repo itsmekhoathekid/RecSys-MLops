@@ -191,8 +191,19 @@ spec:
               - cluster.local/ns/observability/sa/recsys-prometheus
               - cluster.local/ns/api-serving/sa/default
               - cluster.local/ns/recsys-dataflow/sa/default
+              {{- if gt (len (.Values.services | default dict)) 0 }}
+              {{- range $serviceName := list "featureRag" "recommendation" }}
+              {{- $service := index $.Values.services $serviceName }}
+              {{- range $revisionName, $revision := $service.revisions }}
+              {{- if $revision.deploy }}
+              - {{ printf "cluster.local/ns/%s/sa/%s" (required (printf "services.%s.namespace is required" $serviceName) $service.namespace) (required (printf "services.%s.revisions.%s.workloadName is required" $serviceName $revisionName) $revision.workloadName) | quote }}
+              {{- end }}
+              {{- end }}
+              {{- end }}
+              {{- else }}
               - cluster.local/ns/kagent/sa/recsys-feature-rag-mcp
               - cluster.local/ns/kagent/sa/recsys-recommendation-mcp
+              {{- end }}
       to:
         - operation:
             ports: ["80", "8080"]

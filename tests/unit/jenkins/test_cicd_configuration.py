@@ -71,7 +71,13 @@ def _deploy_bundle(name: str) -> str:
 
 def test_deploy_helpers_are_modular_and_preserve_caller_shell_options():
     expected_modules = {
-        "agentic": {"sandbox.sh", "kubernetes.sh", "mcp.sh", "a2a.sh", "registry.sh"},
+        "agentic": {
+            "kubernetes.sh",
+            "mcp.sh",
+            "a2a.sh",
+            "registry.sh",
+            "rotation.sh",
+        },
         "rag": {"bootstrap.sh", "kubernetes.sh", "api.sh", "index_lifecycle.sh", "rollback.sh"},
     }
     for name, expected in expected_modules.items():
@@ -157,7 +163,7 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert units["rag-feature-registry"]["components"] == ["rag_index"]
     assert units["rag-feature-registry"]["requiresExplicitComponent"] is True
     assert units["feature-rag-mcp"]["dependsOn"] == ["rag-api"]
-    assert units["context-agent"]["dependsOn"] == ["feature-rag-mcp"]
+    assert units["context-agent"]["dependsOn"] == ["global-model-config", "feature-rag-mcp"]
     assert units["context-agent-registry"]["dependsOn"] == [
         "context-agent",
         "feature-rag-mcp-registry",
@@ -175,7 +181,7 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     ]
     assert "context_agent" not in components["recommendation_agent"]["verifyDependsOn"]
     assert units["recommendation-mcp"]["dependsOn"] == ["inference-api"]
-    assert units["recommendation-agent"]["dependsOn"] == ["recommendation-mcp"]
+    assert units["recommendation-agent"]["dependsOn"] == ["global-model-config", "recommendation-mcp"]
     assert units["recommendation-mcp-registry"]["dependsOn"] == [
         "recommendation-mcp",
         "recommendation-agent",
@@ -191,6 +197,7 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
         "recommendation_agent",
     ]
     assert units["coordinator-agent"]["dependsOn"] == [
+        "global-model-config",
         "context-agent",
         "recommendation-agent",
     ]
@@ -211,14 +218,13 @@ def test_agentic_components_have_separate_image_and_chart_ownership():
     assert "RECOMMENDATION_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "AGENTIC_A2A_MAX_ATTEMPTS:-1" in deploy
     assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy
-    assert "deployment/recsys-context-sandbox-pool" in deploy
-    assert "deployment/recsys-coordinator-sandbox-pool" in deploy
+    assert "deployment/recsys-context-sandbox-pool-deployment" in deploy
+    assert "deployment/recsys-coordinator-sandbox-pool-deployment" in deploy
     assert "/api/a2a-sandboxes/kagent/${agent_name}" in deploy
     assert 'arctl delete agent "${legacy_name}" --all-tags' in deploy
-    assert "workerpools/recsys-context-sandbox-pool/scale" in deploy
-    assert "kubectl get clusterrole keda-operator -o json" in deploy
-    assert "kubectl get clusterrolebinding keda-operator -o json" in deploy
-    assert '"*/scale" in rule.get("resources", [])' in deploy
+    assert '"apiVersion": "apps/v1"' in deploy
+    assert '"kind": "Deployment"' in deploy
+    assert 'active.get("status") == "True"' in deploy
     assert 'a2a_path="api/a2a-sandboxes"' in deploy
     assert "local_port=$((local_port + 1))" not in deploy
 
@@ -390,9 +396,9 @@ def test_serving_mutation_pipeline_is_nightly_manual_and_standalone():
 
     assert "cron('H H * * *')" in pipeline
     assert "choice(name: 'SERVICE'" in pipeline
-    assert "tests/mutation/api_serving/run.py" in pipeline
-    assert "tests/mutation/api_serving/reports/*.json" in pipeline
-    assert "tests/mutation/api_serving/reports/*.txt" in pipeline
+    assert "tests/unit/api_serving/run_mutation.py" in pipeline
+    assert "tests/unit/api_serving/reports/*.json" in pipeline
+    assert "tests/unit/api_serving/reports/*.txt" in pipeline
     assert "ServingMutation.Jenkinsfile" not in (ROOT / "Jenkinsfile").read_text(
         encoding="utf-8"
     )
@@ -1093,7 +1099,7 @@ def test_prometheus_operator_is_pinned_and_operator_only():
     assert 'name  = "prometheusOperator.tls.enabled"' in source
 
 
-def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
+def test_agent_deploy_uses_native_controller_lifecycle() -> None:
     agentic = _deploy_bundle("agentic")
     deploy = (ROOT / "jenkins/scripts/entrypoints/release_deploy_unit.sh").read_text(
         encoding="utf-8"
@@ -1102,19 +1108,12 @@ def test_sandbox_agent_revision_change_rebuilds_owned_golden_snapshot() -> None:
         ROOT / "jenkins/scripts/deploy/release_unit_runtime.sh"
     ).read_text(encoding="utf-8")
 
-    assert "sandbox_agent_rebuild_golden_if_revision_changed" in agentic
-    assert 'delete actortemplate "${old_templates[@]}" --wait=true' in agentic
-    assert 'old_uids+="${candidate_uid} "' in agentic
-    assert '"${old_uids}" != *" ${candidate_uid} "*' in agentic
-    for agent_name in (
-        "recsys-context-agent-sandbox",
-        "recsys-recommendation-agent-sandbox",
-        "recsys-coordinator-agent-sandbox",
-    ):
-        assert agent_name in deploy_runtime
+    assert "sandbox_agent_rebuild_golden_if_revision_changed" not in agentic
+    assert "sandbox_agent_model_revision" not in agentic
+    assert "delete actortemplate" not in agentic
     assert "release_unit_runtime.sh" in deploy
-    assert 'previous_revision="$(sandbox_agent_model_revision' in deploy_runtime
-    assert "sandbox_agent_rebuild_golden_if_revision_changed" in deploy_runtime
+    assert "modelConfigDigest" not in deploy_runtime
+    assert "sandbox_agent_rebuild_golden_if_revision_changed" not in deploy_runtime
 
 
 def test_release_unit_runtime_dispatches_handlers_without_a_giant_case() -> None:

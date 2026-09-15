@@ -1,12 +1,20 @@
+{{- $contexts := include "recsys-recommendation-mcp.revisionContexts" . | fromJsonArray -}}
+{{- range $context := $contexts }}
+---
 apiVersion: v1
 kind: ConfigMap
-metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }}}
+metadata:
+  name: {{ $context.name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "recsys-recommendation-mcp.revisionLabels" $context | nindent 4 }}
 data:
-  INFERENCE_API_URL: {{ .Values.config.inferenceApiUrl | quote }}
-  MCP_ALLOWED_ORIGINS: {{ .Values.config.allowedOrigins | quote }}
-  MCP_ALLOWED_HOSTS: {{ .Values.config.allowedHosts | quote }}
-  INFERENCE_REQUEST_TIMEOUT_SECONDS: {{ .Values.config.requestTimeoutSeconds | quote }}
-  INFERENCE_TOTAL_DEADLINE_SECONDS: {{ .Values.config.totalDeadlineSeconds | quote }}
-  DOWNSTREAM_MAX_CONNECTIONS: {{ .Values.config.downstreamMaxConnections | quote }}
-  DOWNSTREAM_MAX_KEEPALIVE_CONNECTIONS: {{ .Values.config.downstreamMaxKeepaliveConnections | quote }}
-  RECSYS_IMAGE_REFERENCE: {{ .Values.image | quote }}
+  INFERENCE_API_URL: {{ $.Values.config.inferenceApiUrl | quote }}
+  MCP_ALLOWED_ORIGINS: {{ $.Values.config.allowedOrigins | quote }}
+  MCP_ALLOWED_HOSTS: {{ include "recsys-recommendation-mcp.allowedHosts" (dict "root" $ "name" $context.name) | quote }}
+  INFERENCE_REQUEST_TIMEOUT_SECONDS: {{ $.Values.config.requestTimeoutSeconds | quote }}
+  INFERENCE_TOTAL_DEADLINE_SECONDS: {{ $.Values.config.totalDeadlineSeconds | quote }}
+  DOWNSTREAM_MAX_CONNECTIONS: {{ $.Values.config.downstreamMaxConnections | quote }}
+  DOWNSTREAM_MAX_KEEPALIVE_CONNECTIONS: {{ $.Values.config.downstreamMaxKeepaliveConnections | quote }}
+  RECSYS_IMAGE_REFERENCE: {{ $.Values.image | quote }}
+{{- end }}

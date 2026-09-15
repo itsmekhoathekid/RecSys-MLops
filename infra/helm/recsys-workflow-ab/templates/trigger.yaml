@@ -1,0 +1,161 @@
+{{- if .Values.trigger.enabled }}
+{{- $triggerImage := .Values.trigger.image | default .Values.image -}}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $triggerImage) -}}
+{{- fail "trigger image must be pinned by SHA256 digest" -}}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: recsys-workflow-trigger}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: recsys-workflow-trigger}
+rules:
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: recsys-workflow-trigger}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: recsys-workflow-trigger}
+subjects:
+  - {kind: ServiceAccount, name: recsys-workflow-trigger}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: recsys-workflow-trigger}
+spec:
+  replicas: {{ .Values.trigger.replicas }}
+  selector:
+    matchLabels: {app: recsys-workflow-trigger}
+  template:
+    metadata:
+      labels: {app: recsys-workflow-trigger}
+      annotations:
+        sidecar.istio.io/inject: "false"
+        recsys.ai/dispatch-revision: {{ .Values.trigger.revision | default "disabled" | quote }}
+    spec:
+      serviceAccountName: recsys-workflow-trigger
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{ toYaml .Values.tolerations | nindent 8 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: {type: RuntimeDefault}
+{{- if .Values.trigger.sourceOverlayConfigMap }}
+      volumes:
+        - name: trigger-code
+          configMap: {name: {{ .Values.trigger.sourceOverlayConfigMap | quote }}}
+{{- end }}
+      containers:
+        - name: receiver
+          image: {{ $triggerImage | quote }}
+          command: [python, -m, apps.agentic.llm_ab_router.trigger, serve]
+          envFrom:
+            - secretRef: {name: {{ .Values.trigger.secretName }}}
+          env:
+            - {name: AB_DISPATCH_IMAGE, value: {{ $triggerImage | quote }}}
+            - {name: AB_TRIGGER_SECRET, value: {{ .Values.trigger.secretName | quote }}}
+            - {name: AB_NAMESPACE, value: {{ .Release.Namespace | quote }}}
+{{- if .Values.trigger.sourceOverlayConfigMap }}
+            - {name: AB_PROFILE_OVERLAY_CONFIGMAP, value: {{ .Values.trigger.sourceOverlayConfigMap | quote }}}
+          volumeMounts:
+            - {name: trigger-code, mountPath: /app/apps/agentic/llm_ab_router/trigger.py, subPath: trigger.py, readOnly: true}
+            - {name: trigger-code, mountPath: /app/jenkins/python/llm_agent_cd/release.py, subPath: release.py, readOnly: true}
+            - {name: trigger-code, mountPath: /app/jenkins/python/llm_agent_cd/workflow.py, subPath: workflow.py, readOnly: true}
+            - {name: trigger-code, mountPath: /app/jenkins/python/llm_agent_cd/serving_profiles.py, subPath: serving_profiles.py, readOnly: true}
+{{- end }}
+          ports: [{name: http, containerPort: 8080}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            tcpSocket: {port: http}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: recsys-workflow-trigger}
+spec:
+  selector: {app: recsys-workflow-trigger}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: recsys-workflow-dispatch-recovery}
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  suspend: {{ .Values.trigger.suspendRecovery | default false }}
+  startingDeadlineSeconds: 30
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 55
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels: {app: recsys-workflow-dispatch}
+          annotations: {sidecar.istio.io/inject: "false"}
+        spec:
+          restartPolicy: Never
+          nodeSelector: {recsys.ai/pool: ml-system}
+          tolerations:
+            - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}
+          serviceAccountName: recsys-workflow-trigger
+          automountServiceAccountToken: true
+          securityContext: {runAsNonRoot: true, runAsUser: 1000, seccompProfile: {type: RuntimeDefault}}
+{{- if .Values.trigger.sourceOverlayConfigMap }}
+          volumes:
+            - name: trigger-code
+              configMap: {name: {{ .Values.trigger.sourceOverlayConfigMap | quote }}}
+{{- end }}
+          containers:
+            - name: reconcile
+              image: {{ $triggerImage | quote }}
+              command: [python, -m, apps.agentic.llm_ab_router.trigger, reconcile]
+              envFrom:
+                - secretRef: {name: {{ .Values.trigger.secretName }}}
+              env:
+                - {name: AB_DISPATCH_IMAGE, value: {{ $triggerImage | quote }}}
+                - {name: AB_TRIGGER_SECRET, value: {{ .Values.trigger.secretName | quote }}}
+                - {name: AB_NAMESPACE, value: {{ .Release.Namespace | quote }}}
+{{- if .Values.trigger.sourceOverlayConfigMap }}
+                - {name: AB_PROFILE_OVERLAY_CONFIGMAP, value: {{ .Values.trigger.sourceOverlayConfigMap | quote }}}
+              volumeMounts:
+                - {name: trigger-code, mountPath: /app/apps/agentic/llm_ab_router/trigger.py, subPath: trigger.py, readOnly: true}
+                - {name: trigger-code, mountPath: /app/jenkins/python/llm_agent_cd/release.py, subPath: release.py, readOnly: true}
+                - {name: trigger-code, mountPath: /app/jenkins/python/llm_agent_cd/workflow.py, subPath: workflow.py, readOnly: true}
+                - {name: trigger-code, mountPath: /app/jenkins/python/llm_agent_cd/serving_profiles.py, subPath: serving_profiles.py, readOnly: true}
+{{- end }}
+              securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: 500m, memory: 256Mi}
+{{- if .Values.trigger.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: {name: recsys-workflow-webhook}
+spec:
+  ingressClassName: {{ .Values.trigger.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.trigger.ingress.host | quote }}]
+      secretName: {{ required "webhook ingress requires existing TLS secret" .Values.trigger.ingress.tlsSecretName }}
+  rules:
+    - host: {{ .Values.trigger.ingress.host | quote }}
+      http:
+        paths:
+          - path: /webhooks/langfuse
+            pathType: Exact
+            backend:
+              service:
+                name: recsys-workflow-trigger
+                port: {number: 8080}
+{{- end }}
+{{- end }}

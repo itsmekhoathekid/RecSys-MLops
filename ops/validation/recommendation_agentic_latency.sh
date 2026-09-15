@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cd "$(dirname "$0")/../.."
+source jenkins/scripts/deploy/agentic/rotation.sh
+
 namespace="${RECOMMENDATION_NAMESPACE:-kagent}"
 direct_port="${RECOMMENDATION_DIRECT_LOCAL_PORT:-18086}"
 mcp_port="${RECOMMENDATION_MCP_LOCAL_PORT:-18087}"
 a2a_port="${RECOMMENDATION_A2A_LOCAL_PORT:-18085}"
 pids=()
+mcp_workload="$(mcp_auth_active_workload recommendation)"
+mcp_secret="$(mcp_auth_active_secret recommendation)"
 
 cleanup() {
   local pid
@@ -20,7 +25,7 @@ mkdir -p reports/agentic
 kubectl -n api-serving port-forward service/recsys-inference-api \
   "${direct_port}:80" >reports/agentic/recommendation-direct-port-forward.log 2>&1 &
 pids+=("$!")
-kubectl -n "${namespace}" port-forward service/recsys-recommendation-mcp \
+kubectl -n "${namespace}" port-forward "service/${mcp_workload}" \
   "${mcp_port}:8080" >reports/agentic/recommendation-mcp-port-forward.log 2>&1 &
 pids+=("$!")
 kubectl -n "${namespace}" port-forward service/kagent-controller \
@@ -28,7 +33,7 @@ kubectl -n "${namespace}" port-forward service/kagent-controller \
 pids+=("$!")
 sleep 3
 
-token="$(kubectl -n "${namespace}" get secret recsys-recommendation-mcp-auth \
+token="$(kubectl -n "${namespace}" get secret "${mcp_secret}" \
   -o jsonpath='{.data.MCP_AUTH_TOKEN}' | base64 --decode)"
 
 MCP_AUTH_TOKEN="${token}" python3 - \

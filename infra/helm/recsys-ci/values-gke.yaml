@@ -12,8 +12,15 @@ productionTarget:
 
 jenkins:
   nodeSelector:
-    recsys.ai/pool: cpu-services
-  tolerations: []
+    # Jenkins and its 11 GiB aggregate container limits require the larger
+    # production node. Keep this Helm-owned so an upgrade cannot undo the
+    # reviewed live placement with a stale cpu-services value.
+    recsys.ai/pool: ml-system
+  tolerations:
+    - key: recsys.ai/workload
+      operator: Equal
+      value: ml-system
+      effect: NoSchedule
   resources:
     requests:
       cpu: 300m
@@ -35,7 +42,7 @@ jenkins:
       keepStorage: 40GB
     resources:
       requests:
-        cpu: 200m
+        cpu: 50m
         memory: 512Mi
       limits:
         cpu: "2"

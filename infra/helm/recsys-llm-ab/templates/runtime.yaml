@@ -1,0 +1,138 @@
+{{- $image := required "image must be a built, digest-pinned llm_ab_router image" .Values.image -}}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $image) -}}
+{{- fail "image must be pinned by SHA256 digest" -}}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-ab-router
+spec:
+  replicas: {{ .Values.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 0, maxUnavailable: 1}
+  selector:
+    matchLabels: {app: recsys-ab-router}
+  template:
+    metadata:
+      labels: {app: recsys-ab-router}
+      annotations: {sidecar.istio.io/inject: "false"}
+    spec:
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{ toYaml .Values.tolerations | nindent 8 }}
+      automountServiceAccountToken: false
+      containers:
+        - name: router
+          image: {{ $image | quote }}
+          ports: [{name: http, containerPort: 8080}]
+          envFrom:
+            - secretRef: {name: {{ .Values.secretName }}}
+          env:
+            - {name: MODE, value: router}
+            - {name: PORT, value: "8080"}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://recsys-otel-collector.observability.svc.cluster.local:4318"}
+            - name: AB_GATEWAY_URL
+              value: http://{{ .Values.gatewayName }}.{{ .Release.Namespace }}.svc.cluster.local
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            tcpSocket: {port: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-ab-router
+  labels: {app: recsys-ab-router}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "80"
+    prometheus.io/path: /metrics
+spec:
+  selector: {app: recsys-ab-router}
+  ports: [{name: http, port: 80, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: recsys-ab-router}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {app: recsys-ab-router}
+{{- if .Values.externalEdge.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-ab-edge
+spec:
+  replicas: {{ .Values.externalEdge.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 0, maxUnavailable: 1}
+  selector:
+    matchLabels: {app: recsys-ab-edge}
+  template:
+    metadata:
+      labels: {app: recsys-ab-edge}
+      annotations: {sidecar.istio.io/inject: "false"}
+    spec:
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{ toYaml .Values.tolerations | nindent 8 }}
+      automountServiceAccountToken: false
+      containers:
+        - name: edge
+          image: {{ $image | quote }}
+          ports: [{name: http, containerPort: 8080}]
+          envFrom:
+            - secretRef: {name: {{ .Values.secretName }} }
+          env:
+            - {name: MODE, value: edge}
+            - {name: AB_SCOPE, value: recommendation}
+            - {name: PORT, value: "8080"}
+            - {name: AB_ROUTER_URL, value: "http://recsys-ab-router.{{ .Release.Namespace }}.svc.cluster.local"}
+            - {name: AB_EDGE_REVISION, value: {{ .Values.externalEdge.revision | default $image | quote }}}
+          resources: {{ toYaml .Values.externalEdge.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            tcpSocket: {port: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-ab-edge
+spec:
+  selector: {app: recsys-ab-edge}
+  ports: [{name: http, port: 80, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recsys-recommendation-ab-edge
+  annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ .Values.externalEdge.basicAuthSecretName }}
+    nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "660"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "660"
+    nginx.ingress.kubernetes.io/proxy-body-size: "256k"
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: {{ .Values.externalEdge.ingressClassName }}
+  tls:
+    - hosts: [{{ .Values.externalEdge.host | quote }}]
+      secretName: {{ .Values.externalEdge.tlsSecretName }}
+  rules:
+    - host: {{ .Values.externalEdge.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.externalEdge.path | quote }}
+            pathType: Exact
+            backend:
+              service:
+                name: recsys-ab-edge
+                port: {number: 80}
+{{- end }}

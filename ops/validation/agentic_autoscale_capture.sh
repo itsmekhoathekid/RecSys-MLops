@@ -2,8 +2,10 @@
 set -Eeuo pipefail
 
 cd "$(dirname "$0")/../.."
+source jenkins/scripts/deploy/agentic/rotation.sh
 
 mode="${1:-status}"
+mcp_workload="$(mcp_auth_active_workload featureRag)"
 hold_seconds="${AGENTIC_CAPTURE_HOLD_SECONDS:-45}"
 wait_seconds="${AGENTIC_CAPTURE_WAIT_SECONDS:-300}"
 decision_grace_seconds="${AGENTIC_CAPTURE_DECISION_GRACE_SECONDS:-60}"
@@ -187,12 +189,12 @@ show_status() {
   kubectl -n api-serving get deployment recsys-rag-api
   kubectl -n api-serving get hpa keda-hpa-recsys-rag-api
   kubectl -n kagent get deployment \
-    recsys-feature-rag-mcp recsys-context-sandbox-pool
+    "${mcp_workload}" recsys-context-sandbox-pool-deployment
   kubectl -n kagent get hpa \
-    keda-hpa-recsys-feature-rag-mcp \
+    "keda-hpa-${mcp_workload}" \
     keda-hpa-recsys-context-sandbox-pool
   kubectl -n kagent get scaledobject \
-    recsys-feature-rag-mcp recsys-context-sandbox-pool
+    "${mcp_workload}" recsys-context-sandbox-pool
   kubectl -n kagent get workerpool recsys-context-sandbox-pool
   kubectl -n kagent get sandboxagent recsys-context-agent-sandbox
   kubectl -n kagent get remotemcpserver recsys-feature-rag-mcp
@@ -317,9 +319,9 @@ PY
 run_mcp() {
   prepare_capacity
   echo "Waiting for MCP baseline 1/1."
-  wait_for_deployment kagent recsys-feature-rag-mcp 1 exact
+  wait_for_deployment kagent "${mcp_workload}" 1 exact
 
-  kubectl -n kagent exec -i deployment/recsys-feature-rag-mcp -c mcp -- \
+  kubectl -n kagent exec -i "deployment/${mcp_workload}" -c mcp -- \
     python - "${mcp_duration}" "${mcp_rps}" "${chunk_id}" \
     >reports/agentic/capture-mcp-load.json \
     2>reports/agentic/capture-mcp-load.stderr.log <<'PY' &
@@ -379,20 +381,20 @@ asyncio.run(main())
 PY
   load_pid="$!"
 
-  wait_for_scale_with_load kagent recsys-feature-rag-mcp 3 \
+  wait_for_scale_with_load kagent "${mcp_workload}" 3 \
     reports/agentic/capture-mcp-load.stderr.log
   capture_pause "MCP scaled 1 -> 3 and all three replicas are Available"
   wait_for_load_completion
   cat reports/agentic/capture-mcp-load.json
   if [[ "${run_fallback}" == "1" ]]; then
-    prove_fallback recsys-feature-rag-mcp recsys-feature-rag-mcp 1
+    prove_fallback "${mcp_workload}" "${mcp_workload}" 1
   fi
 }
 
 run_worker() {
   prepare_capacity
   echo "Waiting for Sandbox WorkerPool baseline 1/1."
-  wait_for_deployment kagent recsys-context-sandbox-pool 1 exact
+  wait_for_deployment kagent recsys-context-sandbox-pool-deployment 1 exact
 
   kubectl -n kagent port-forward service/kagent-controller \
     "${a2a_port}:8083" >reports/agentic/capture-a2a-port-forward.log 2>&1 &
@@ -482,16 +484,16 @@ if result["grounded_completed_requests"] == 0:
 PY
   load_pid="$!"
 
-  wait_for_scale_with_load kagent recsys-context-sandbox-pool 3 \
+  wait_for_scale_with_load kagent recsys-context-sandbox-pool-deployment 3 \
     reports/agentic/capture-agent-load.stderr.log
   capture_pause "Sandbox WorkerPool scaled 1 -> 3 and generated Deployment is 3/3"
   wait_for_load_completion
   cat reports/agentic/capture-agent-load.json
   echo "Waiting for assigned-worker metric scale-down to restore the 1/1 baseline."
-  wait_for_deployment kagent recsys-context-sandbox-pool 1 exact
+  wait_for_deployment kagent recsys-context-sandbox-pool-deployment 1 exact
   if [[ "${run_fallback}" == "1" ]]; then
     prove_fallback recsys-context-sandbox-pool \
-      recsys-context-sandbox-pool 1
+      recsys-context-sandbox-pool-deployment 1
   fi
   kill "${port_forward_pid}" >/dev/null 2>&1 || true
   port_forward_pid=""

@@ -16,7 +16,7 @@ from orchestration.airflow.spark_utils import (
 
 
 CONFIG = "configs/data-platform/rag/pipeline.yaml"
-SOURCE_RUN = "{{ ti.xcom_pull(task_ids='resolve_source') }}"
+SOURCE_RUN = "{{ params.source_run_id }}"
 PIPELINE_RUN = "rag-{{ ts_nodash }}"
 REPORT_URI = "s3://recsys-lakehouse/governance-validation/RAG_ITEMS/{{ ts_nodash }}/rag-index.json"
 RAG_DATASET_KEYS = (
@@ -38,25 +38,19 @@ if DAG is not None:
         max_active_runs=1,
         is_paused_upon_creation=False,
         params={
-            "source_run_id": os.getenv(
-                "RAG_ITEM_SOURCE_RUN_ID", "auto"
-            ),
+            "source_run_id": os.getenv("RAG_ITEM_SOURCE_RUN_ID", "auto"),
             "mode": "incremental",
         },
         tags=["recsys", "rag-items", "feast", "milvus"],
     ) as recsys_rag_item_index:
-        resolve_source = pod_task(
-            "resolve_source",
-            RAG_INDEXER_IMAGE,
-            f"python -m rag_data.cli resolve-source --config {CONFIG} "
-            "--source-run-id '{{ params.source_run_id }}' "
-            "--xcom-output /airflow/xcom/return.json",
-            do_xcom_push=True,
-        )
+        # Keep source selection inside the documented canonical-to-silver stage.
         semantic_chunk_items = pod_task(
             "semantic_chunk_items",
             RAG_INDEXER_IMAGE,
-            f"python -m rag_data.cli chunk-items --config {CONFIG} --source-run-id '{SOURCE_RUN}' --run-id '{PIPELINE_RUN}'",
+            f"source_run_id=$(python -m rag_data.cli resolve-source --config {CONFIG} "
+            f"--source-run-id '{SOURCE_RUN}'); "
+            f'python -m rag_data.cli chunk-items --config {CONFIG} --source-run-id "$source_run_id" '
+            f"--run-id '{PIPELINE_RUN}'",
         )
         embed_item_chunks = pod_task(
             "embed_item_chunks",
@@ -72,11 +66,8 @@ if DAG is not None:
             "validate_and_publish_index",
             RAG_INDEXER_IMAGE,
             f"python -m rag_data.cli validate-index --config {CONFIG} --run-id '{PIPELINE_RUN}' "
-            f"--promote --report-uri '{REPORT_URI}'",
-        )
-        verify_active_index = pod_task(
-            "verify_active_index",
-            RAG_INDEXER_IMAGE,
+            f"--promote --report-uri '{REPORT_URI}'; "
+            # Verification and recovery belong to the same publication stage.
             f"python -m rag_data.cli verify-active-index --config {CONFIG} --run-id '{PIPELINE_RUN}' || "
             f"{{ python -m rag_data.cli rollback-index --config {CONFIG} --run-id '{PIPELINE_RUN}'; exit 1; }}",
         )
@@ -89,11 +80,9 @@ if DAG is not None:
         )
 
         (
-            resolve_source
-            >> semantic_chunk_items
+            semantic_chunk_items
             >> embed_item_chunks
             >> publish_index
             >> validate_and_publish_index
-            >> verify_active_index
             >> publish_datahub_validation
         )

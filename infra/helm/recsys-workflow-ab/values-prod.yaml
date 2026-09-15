@@ -1,0 +1,10 @@
+# Lightweight HTTP workloads use existing ML-system capacity. No new nodes.
+nodeSelector:
+  cloud.google.com/gke-nodepool: recsys-mlops-ml-system
+tolerations:
+  - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}
+
+trigger:
+  # One durable receiver is enough for this constrained acceptance window;
+  # PostgreSQL remains the inbox/source of truth and the recovery Job is kept.
+  replicas: 1

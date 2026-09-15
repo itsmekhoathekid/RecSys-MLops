@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recsys-global-model-config
+description: Application-owned shared ModelConfig for RecSys sandbox agents.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

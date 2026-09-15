@@ -1,0 +1,20 @@
+# Lightweight HTTP workloads use existing ML-system capacity. No new nodes.
+nodeSelector:
+  cloud.google.com/gke-nodepool: recsys-mlops-ml-system
+tolerations:
+  - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}
+
+evaluation:
+  enabled: true
+  suspend: false
+  nodeSelector:
+    recsys.ai/pool: cpu-services
+  tolerations: []
+
+trigger:
+  enabled: true
+  secretName: recsys-recommendation-trigger
+  suspendPolling: false
+
+externalEdge:
+  enabled: true

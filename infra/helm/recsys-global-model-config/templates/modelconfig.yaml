@@ -1,0 +1,21 @@
+{{- if eq .Values.modelConfig.name "default-model-config" -}}
+{{- fail "default-model-config is owned by the platform kagent release; use a distinct name" -}}
+{{- end -}}
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: {{ required "modelConfig.name is required" .Values.modelConfig.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  provider: {{ .Values.modelConfig.provider | quote }}
+  model: {{ required "modelConfig.model is required" .Values.modelConfig.model | quote }}
+  apiKeySecret: {{ required "modelConfig.apiKeySecret is required" .Values.modelConfig.apiKeySecret | quote }}
+  apiKeySecretKey: {{ required "modelConfig.apiKeySecretKey is required" .Values.modelConfig.apiKeySecretKey | quote }}
+  defaultHeaders:
+    {{- toYaml .Values.modelConfig.defaultHeaders | nindent 4 }}
+  openAI:
+    {{- toYaml .Values.modelConfig.openAI | nindent 4 }}

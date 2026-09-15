@@ -1,0 +1,627 @@
+{
+  "meta": {
+    "kafka/meta.properties": "#\n#Thu Aug 27 06:27:26 GMT 2026\nbroker.id=1\nversion=0\ncluster.id=tXZfqFOdQQuF0tFycyPPBw\n"
+  },
+  "partitions": [
+    {
+      "name": "kafka/DataHubUpgradeHistory_v1-0",
+      "metadata": "version: 0\ntopic_id: VL9DHhCdTvqthKBpS6z5xQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/DataHubUpgradeHistory_v1-1",
+      "metadata": "version: 0\ntopic_id: VL9DHhCdTvqthKBpS6z5xQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/DataHubUpgradeHistory_v1-2",
+      "metadata": "version: 0\ntopic_id: VL9DHhCdTvqthKBpS6z5xQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/DataHubUpgradeHistory_v1-3",
+      "metadata": "version: 0\ntopic_id: VL9DHhCdTvqthKBpS6z5xQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/FailedMetadataChangeProposal_v1-0",
+      "metadata": "version: 0\ntopic_id: Bw5-w5NgQEaHiY290RXpZw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/MetadataChangeEvent_v4-0",
+      "metadata": "version: 0\ntopic_id: PvYMLARHSbW_Bq5wmlvpgA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/MetadataChangeEvent_v4-1",
+      "metadata": "version: 0\ntopic_id: PvYMLARHSbW_Bq5wmlvpgA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/MetadataChangeEvent_v4-2",
+      "metadata": "version: 0\ntopic_id: PvYMLARHSbW_Bq5wmlvpgA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/MetadataChangeEvent_v4-3",
+      "metadata": "version: 0\ntopic_id: PvYMLARHSbW_Bq5wmlvpgA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/MetadataChangeLog_Timeseries_v1-0",
+      "metadata": "version: 0\ntopic_id: WHM242zKQja3WEVHXaqvcg",
+      "log_bytes": 46702
+    },
+    {
+      "name": "kafka/MetadataChangeLog_Timeseries_v1-1",
+      "metadata": "version: 0\ntopic_id: WHM242zKQja3WEVHXaqvcg",
+      "log_bytes": 52748
+    },
+    {
+      "name": "kafka/MetadataChangeLog_Timeseries_v1-2",
+      "metadata": "version: 0\ntopic_id: WHM242zKQja3WEVHXaqvcg",
+      "log_bytes": 50044
+    },
+    {
+      "name": "kafka/MetadataChangeLog_Timeseries_v1-3",
+      "metadata": "version: 0\ntopic_id: WHM242zKQja3WEVHXaqvcg",
+      "log_bytes": 125674
+    },
+    {
+      "name": "kafka/MetadataChangeLog_Versioned_v1-0",
+      "metadata": "version: 0\ntopic_id: Kq4PHOxXSbOb1mJYByetoA",
+      "log_bytes": 31806
+    },
+    {
+      "name": "kafka/MetadataChangeLog_Versioned_v1-1",
+      "metadata": "version: 0\ntopic_id: Kq4PHOxXSbOb1mJYByetoA",
+      "log_bytes": 242366
+    },
+    {
+      "name": "kafka/MetadataChangeLog_Versioned_v1-2",
+      "metadata": "version: 0\ntopic_id: Kq4PHOxXSbOb1mJYByetoA",
+      "log_bytes": 249173
+    },
+    {
+      "name": "kafka/MetadataChangeLog_Versioned_v1-3",
+      "metadata": "version: 0\ntopic_id: Kq4PHOxXSbOb1mJYByetoA",
+      "log_bytes": 251965
+    },
+    {
+      "name": "kafka/MetadataChangeProposal_v1-0",
+      "metadata": "version: 0\ntopic_id: T2dvir2SQuygO-5-b-TVoQ",
+      "log_bytes": 18867
+    },
+    {
+      "name": "kafka/MetadataChangeProposal_v1-1",
+      "metadata": "version: 0\ntopic_id: T2dvir2SQuygO-5-b-TVoQ",
+      "log_bytes": 143470
+    },
+    {
+      "name": "kafka/MetadataChangeProposal_v1-2",
+      "metadata": "version: 0\ntopic_id: T2dvir2SQuygO-5-b-TVoQ",
+      "log_bytes": 147566
+    },
+    {
+      "name": "kafka/MetadataChangeProposal_v1-3",
+      "metadata": "version: 0\ntopic_id: T2dvir2SQuygO-5-b-TVoQ",
+      "log_bytes": 149247
+    },
+    {
+      "name": "kafka/PlatformEvent_v1-0",
+      "metadata": "version: 0\ntopic_id: 4LPuPbMgRcmLzfyFZLAY7w",
+      "log_bytes": 21256
+    },
+    {
+      "name": "kafka/PlatformEvent_v1-1",
+      "metadata": "version: 0\ntopic_id: 4LPuPbMgRcmLzfyFZLAY7w",
+      "log_bytes": 181247
+    },
+    {
+      "name": "kafka/PlatformEvent_v1-2",
+      "metadata": "version: 0\ntopic_id: 4LPuPbMgRcmLzfyFZLAY7w",
+      "log_bytes": 163052
+    },
+    {
+      "name": "kafka/PlatformEvent_v1-3",
+      "metadata": "version: 0\ntopic_id: 4LPuPbMgRcmLzfyFZLAY7w",
+      "log_bytes": 106576
+    },
+    {
+      "name": "kafka/__consumer_offsets-0",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-1",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-10",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-11",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-12",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 3772303
+    },
+    {
+      "name": "kafka/__consumer_offsets-13",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-14",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-15",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-16",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-17",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-18",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-19",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-2",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-20",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-21",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-22",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 129247
+    },
+    {
+      "name": "kafka/__consumer_offsets-23",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-24",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-25",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-26",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-27",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 2069403
+    },
+    {
+      "name": "kafka/__consumer_offsets-28",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-29",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-3",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-30",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 17412901
+    },
+    {
+      "name": "kafka/__consumer_offsets-31",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-32",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-33",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-34",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-35",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-36",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 598
+    },
+    {
+      "name": "kafka/__consumer_offsets-37",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-38",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-39",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-4",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 3919877
+    },
+    {
+      "name": "kafka/__consumer_offsets-40",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 625
+    },
+    {
+      "name": "kafka/__consumer_offsets-41",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-42",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-43",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-44",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-45",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-46",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-47",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-48",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 8736101
+    },
+    {
+      "name": "kafka/__consumer_offsets-49",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-5",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-6",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 786
+    },
+    {
+      "name": "kafka/__consumer_offsets-7",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-8",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/__consumer_offsets-9",
+      "metadata": "version: 0\ntopic_id: 63-99U-FTkyWAd2YQ3-bfw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.behavior_events-0",
+      "metadata": "version: 0\ntopic_id: ghGetNGaTb6l-slcqMA7Uw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.behavior_events-1",
+      "metadata": "version: 0\ntopic_id: ghGetNGaTb6l-slcqMA7Uw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.behavior_events-2",
+      "metadata": "version: 0\ntopic_id: ghGetNGaTb6l-slcqMA7Uw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.behavior_events-3",
+      "metadata": "version: 0\ntopic_id: ghGetNGaTb6l-slcqMA7Uw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.impressions-0",
+      "metadata": "version: 0\ntopic_id: 6RgnFOBwTS2hMUT0yERGtw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.impressions-1",
+      "metadata": "version: 0\ntopic_id: 6RgnFOBwTS2hMUT0yERGtw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.impressions-2",
+      "metadata": "version: 0\ntopic_id: 6RgnFOBwTS2hMUT0yERGtw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.impressions-3",
+      "metadata": "version: 0\ntopic_id: 6RgnFOBwTS2hMUT0yERGtw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.order_items-0",
+      "metadata": "version: 0\ntopic_id: Aw2qBo-uQb-v8_yxetwmIA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.order_items-1",
+      "metadata": "version: 0\ntopic_id: Aw2qBo-uQb-v8_yxetwmIA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.order_items-2",
+      "metadata": "version: 0\ntopic_id: Aw2qBo-uQb-v8_yxetwmIA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.order_items-3",
+      "metadata": "version: 0\ntopic_id: Aw2qBo-uQb-v8_yxetwmIA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.orders-0",
+      "metadata": "version: 0\ntopic_id: uL_H2DwVSbOMo05VzsNI7Q",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.orders-1",
+      "metadata": "version: 0\ntopic_id: uL_H2DwVSbOMo05VzsNI7Q",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.orders-2",
+      "metadata": "version: 0\ntopic_id: uL_H2DwVSbOMo05VzsNI7Q",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.orders-3",
+      "metadata": "version: 0\ntopic_id: uL_H2DwVSbOMo05VzsNI7Q",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.product_snapshots-0",
+      "metadata": "version: 0\ntopic_id: 1lw84K5jRTeX6IRBcsSygA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.product_snapshots-1",
+      "metadata": "version: 0\ntopic_id: 1lw84K5jRTeX6IRBcsSygA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.product_snapshots-2",
+      "metadata": "version: 0\ntopic_id: 1lw84K5jRTeX6IRBcsSygA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.product_snapshots-3",
+      "metadata": "version: 0\ntopic_id: 1lw84K5jRTeX6IRBcsSygA",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.products-0",
+      "metadata": "version: 0\ntopic_id: Z-cZdAvlRaORUvu6mq-W_Q",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.products-1",
+      "metadata": "version: 0\ntopic_id: Z-cZdAvlRaORUvu6mq-W_Q",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.products-2",
+      "metadata": "version: 0\ntopic_id: Z-cZdAvlRaORUvu6mq-W_Q",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.products-3",
+      "metadata": "version: 0\ntopic_id: Z-cZdAvlRaORUvu6mq-W_Q",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.recommendation_requests-0",
+      "metadata": "version: 0\ntopic_id: H_z4dTu_SC23laFtKU-ZkQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.recommendation_requests-1",
+      "metadata": "version: 0\ntopic_id: H_z4dTu_SC23laFtKU-ZkQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.recommendation_requests-2",
+      "metadata": "version: 0\ntopic_id: H_z4dTu_SC23laFtKU-ZkQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.recommendation_requests-3",
+      "metadata": "version: 0\ntopic_id: H_z4dTu_SC23laFtKU-ZkQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.sessions-0",
+      "metadata": "version: 0\ntopic_id: BS9klwwnTUGILHgv78JSIQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.sessions-1",
+      "metadata": "version: 0\ntopic_id: BS9klwwnTUGILHgv78JSIQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.sessions-2",
+      "metadata": "version: 0\ntopic_id: BS9klwwnTUGILHgv78JSIQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.sessions-3",
+      "metadata": "version: 0\ntopic_id: BS9klwwnTUGILHgv78JSIQ",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.user_preferences-0",
+      "metadata": "version: 0\ntopic_id: d-LM4qIEQ8KmoLhXs03Xmw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.user_preferences-1",
+      "metadata": "version: 0\ntopic_id: d-LM4qIEQ8KmoLhXs03Xmw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.user_preferences-2",
+      "metadata": "version: 0\ntopic_id: d-LM4qIEQ8KmoLhXs03Xmw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.user_preferences-3",
+      "metadata": "version: 0\ntopic_id: d-LM4qIEQ8KmoLhXs03Xmw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.users-0",
+      "metadata": "version: 0\ntopic_id: l8EbD3pVQ3e432orW4s1Gw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.users-1",
+      "metadata": "version: 0\ntopic_id: l8EbD3pVQ3e432orW4s1Gw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.users-2",
+      "metadata": "version: 0\ntopic_id: l8EbD3pVQ3e432orW4s1Gw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/cdc.users-3",
+      "metadata": "version: 0\ntopic_id: l8EbD3pVQ3e432orW4s1Gw",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/recsys_connect_configs-0",
+      "metadata": "version: 0\ntopic_id: iQsG8PCmQRWiUtaHWlfF7A",
+      "log_bytes": 7238
+    },
+    {
+      "name": "kafka/recsys_connect_offsets-0",
+      "metadata": "version: 0\ntopic_id: wTaJUwdtT-mj5uQed0IRjg",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/recsys_connect_offsets-1",
+      "metadata": "version: 0\ntopic_id: wTaJUwdtT-mj5uQed0IRjg",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/recsys_connect_offsets-2",
+      "metadata": "version: 0\ntopic_id: wTaJUwdtT-mj5uQed0IRjg",
+      "log_bytes": 0
+    },
+    {
+      "name": "kafka/recsys_connect_offsets-3",
+      "metadata": "version: 0\ntopic_id: wTaJUwdtT-mj5uQed0IRjg",
+      "log_bytes": 595181
+    },
+    {
+      "name": "kafka/recsys_connect_status-0",
+      "metadata": "version: 0\ntopic_id: xnRri_JAQWupUjof_HsA7A",
+      "log_bytes": 977
+    },
+    {
+      "name": "kafka/recsys_connect_status-1",
+      "metadata": "version: 0\ntopic_id: xnRri_JAQWupUjof_HsA7A",
+      "log_bytes": 8010
+    },
+    {
+      "name": "kafka/recsys_connect_status-2",
+      "metadata": "version: 0\ntopic_id: xnRri_JAQWupUjof_HsA7A",
+      "log_bytes": 476
+    },
+    {
+      "name": "kafka/recsys_connect_status-3",
+      "metadata": "version: 0\ntopic_id: xnRri_JAQWupUjof_HsA7A",
+      "log_bytes": 5167
+    }
+  ]
+}

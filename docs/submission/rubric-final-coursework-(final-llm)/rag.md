@@ -44,6 +44,8 @@ Primary orchestration references:
 4. `validate_and_publish_index`
 5. `publish_datahub_validation`
 
+The current DAG keeps this five-task graph. `semantic_chunk_items` first resolves the requested completed canonical source (`source_run_id=auto` selects the latest complete run), then creates the chunks. `validate_and_publish_index` also verifies the newly active index and attempts pointer rollback if that verification fails; the task remains failed even if rollback succeeds. Source resolution and post-promotion verification are internal commands, not separate Airflow tasks.
+
 The historical grid on the left contains earlier failed/retried states, while the selected run shown in the graph completed all five stages successfully. This is useful operational evidence that a failed stage can be rerun and that the final successful run reaches index validation and DataHub publication.
 
 Code references:
@@ -824,7 +826,7 @@ The separation of responsibilities is intentional:
 
 ### 5.10 Post-pipeline governance publication to DataHub
 
-After validation and promotion, the DAG writes a validation report for the six RAG assets and publishes it to DataHub. The task uses `trigger_rule="all_done"`, allowing DataHub to receive failure evidence as well as successful results.
+During validation and promotion, the DAG writes a validation report for the six RAG assets. After the active-index verification also succeeds, `publish_datahub_validation` publishes the report to DataHub with `trigger_rule="all_success"` and two retries. A failed upstream stage prevents this publication task from running; validation error reports, when generated, remain in artifact storage for diagnosis.
 
 References:
 

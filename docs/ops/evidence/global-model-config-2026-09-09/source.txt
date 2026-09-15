@@ -1,0 +1,19 @@
+Source file: infra/helm/recsys-global-model-config/values.yaml
+SHA256: 7c80b25c81cf08ca0d7379c79cd494d94d077e7bf19fe4a32dab0ff6454b07db
+
+  1 | # This release owns this name exclusively. The platform kagent chart retains
+  2 | # default-model-config for its bootstrap/UI consumers and legacy rollback.
+  3 | modelConfig:
+  4 |   name: recsys-global-model-config
+  5 |   provider: OpenAI
+  6 |   model: qwen3.5-0.8b
+  7 |   apiKeySecret: kagent-agent-gateway
+  8 |   apiKeySecretKey: AGENT_GATEWAY_API_KEY
+  9 |   defaultHeaders:
+ 10 |     X-Gateway-Base-Model-Name: llm-d-optimized-baseline
+ 11 |   openAI:
+ 12 |     apiFormat: chatCompletions
+ 13 |     baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
+ 14 |     maxTokens: 384
+ 15 |     temperature: "0"
+ 16 |     seed: 42

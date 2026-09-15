@@ -113,28 +113,14 @@ def test_kagent_global_model_config_routes_through_agentgateway() -> None:
     ).read_text()
     for release in ("kagent_crds", "kagent"):
         assert f'resource "helm_release" "{release}"' in terraform
-    assert 'default     = "0.10.0-e6df917"' in terraform
-    assert 'kagent_source_commit    = "e6df917e9fa8"' in terraform
-    assert (
-        'kagent_image_version    = "0.10.0-e6df917-substrate0011-v8"'
-        in terraform
-    )
-    cloudbuild = (ROOT / "ops/gcp/cloudbuild_kagent_source.yaml").read_text()
-    assert "build-push-controller" in cloudbuild
-    assert "build-push-golang-adk" in cloudbuild
-    assert "0.10.0-e6df917-substrate0011-v8" in cloudbuild
-    compatibility_patch = (
-        ROOT / "ops/gcp/patches/kagent-e6df917-substrate0011.patch"
-    ).read_text()
-    assert "TimeoutSeconds: 30" in compatibility_patch
-    assert "ResumeSourceColdBoot" in compatibility_patch
-    assert "newDuplicateToolCallGuard" in compatibility_patch
-    assert "duplicateToolGuard.BeforeModel" in compatibility_patch
-    assert "newExplicitToolSelectionGuard" in compatibility_patch
-    assert "Suppressing duplicate tool-call loop" in compatibility_patch
-    assert "desired spec must match the Substrate CRD default" in compatibility_patch
-    assert "KAGENT_CONFIG_REVISION" in compatibility_patch
-    assert "config-only change must produce a new template" in compatibility_patch
+    assert 'default     = "0.10.0-rc1"' in terraform
+    assert 'default     = "0.0.9"' in terraform
+    assert 'kagent_chart_repository = "oci://ghcr.io/kagent-dev/kagent/helm"' in terraform
+    assert not (ROOT / "ops/gcp/cloudbuild_kagent_source.yaml").exists()
+    assert not (ROOT / "ops/gcp/build_kagent_source.sh").exists()
+    assert not list((ROOT / "ops/gcp/patches").glob("*kagent*.patch"))
+    assert "postrender" not in terraform
+    assert "substrate-mtls-bootstrap" not in terraform
     assert '"kagent.dev/worker-pool"' in terraform
     assert '"recsys-recommendation-sandbox-pool"' in terraform
     assert '"recsys-coordinator-sandbox-pool"' in terraform

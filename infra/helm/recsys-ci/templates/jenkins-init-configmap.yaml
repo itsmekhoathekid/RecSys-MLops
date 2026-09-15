@@ -5,11 +5,23 @@ metadata:
   name: recsys-jenkins-init
   namespace: {{ .Values.namespace.name }}
 data:
+  location.groovy: |
+    import jenkins.model.JenkinsLocationConfiguration
+    // Build URLs are required for rollout evidence and reconciliation. Keep a
+    // user-configured external URL; otherwise use the stable internal service.
+    def location = JenkinsLocationConfiguration.get()
+    if (!location.getUrl()) {
+      location.setUrl("{{ .Values.jenkins.runtimeCredentialsSecret.url }}/")
+      location.save()
+    }
   basic-security.groovy: |
     import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
     import hudson.security.HudsonPrivateSecurityRealm
+    import hudson.security.ProjectMatrixAuthorizationStrategy
     import hudson.model.User
     import jenkins.model.Jenkins
+    import org.jenkinsci.plugins.matrixauth.PermissionEntry
+    import org.jenkinsci.plugins.matrixauth.AuthorizationType
 
     def instance = Jenkins.get()
     def username = System.getenv("JENKINS_ADMIN_USER") ?: "admin"
@@ -26,9 +38,19 @@ data:
       admin.save()
       instance.setSecurityRealm(realm)
 
-      def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
-      strategy.setAllowAnonymousRead(false)
-      instance.setAuthorizationStrategy(strategy)
+      // Preserve existing authenticated accounts when migrating the legacy
+      // all-users-admin strategy. Never reset a persisted scoped ACL on boot.
+      if (instance.authorizationStrategy instanceof FullControlOnceLoggedInAuthorizationStrategy) {
+        def strategy = new ProjectMatrixAuthorizationStrategy()
+        User.getAll().findAll { it.getProperty(HudsonPrivateSecurityRealm.Details) != null }.each {
+          strategy.add(Jenkins.ADMINISTER, new PermissionEntry(AuthorizationType.USER, it.id))
+        }
+        instance.setAuthorizationStrategy(strategy)
+      } else if (instance.authorizationStrategy == hudson.security.AuthorizationStrategy.UNSECURED) {
+        def strategy = new ProjectMatrixAuthorizationStrategy()
+        strategy.add(Jenkins.ADMINISTER, new PermissionEntry(AuthorizationType.USER, username))
+        instance.setAuthorizationStrategy(strategy)
+      }
       instance.save()
     }
   {{- if .Values.jenkins.seedJob.enabled }}
@@ -373,6 +395,8 @@ data:
     }
 
     def kserveCdJobName = "RecSys-KServe-Model-CD"
+    def llmAgentCdJobName = "RecSys-LLM-Agent-CD"
+    def llmOnboardJobName = "RecSys-LLM-Candidate-Onboard"
     def ragJobName = "RecSys-RAG-Data-Pipeline-CICD"
     def contextAgentJobName = "RecSys-Context-Agent-CICD"
     def recommendationAgentJobName = "RecSys-Recommendation-Agent-CICD"
@@ -441,6 +465,35 @@ data:
       )
     )
 
+    def llmAgentCdXml = kserveModelCdXml(llmAgentCdJobName, "Immutable config/LLM A/B delivery: Istio traffic shifting, 20 functional cases, champion promotion and rollback.")
+      .replace("jenkins/KServeModelCD.Jenkinsfile", "jenkins/LLMAgentCD.Jenkinsfile")
+    def llmDefaults = [
+      ACTION: "resume", EXPERIMENT_TYPE: "config_only", EXPERIMENT_ID: "", CANDIDATE_MANIFEST: "",
+      STATE_URI: "s3://recsys-model-store/llm-agent-cd/recommendation/state.json", ROUTER_IMAGE: "",
+      POLICY: "configs/llm-ab/policy.json", FIXTURES: "configs/llm-ab/cases.json"
+    ]
+    def llmParameters = "<parameterDefinitions>" + llmDefaults.collect { key, value ->
+      "<hudson.model.StringParameterDefinition><name>${xmlEscape(key)}</name><defaultValue>${xmlEscape(value)}</defaultValue><trim>true</trim></hudson.model.StringParameterDefinition>"
+    }.join("") + "</parameterDefinitions>"
+    llmAgentCdXml = llmAgentCdXml.replaceAll("(?s)<parameterDefinitions>.*?</parameterDefinitions>", java.util.regex.Matcher.quoteReplacement(llmParameters))
+    upsertJob(llmAgentCdJobName, llmAgentCdXml)
+
+    def llmOnboardXml = kserveModelCdXml(
+      llmOnboardJobName,
+      "Generic GGUF candidate onboarding: pinned artifact attestation, zero-traffic preparation, native tool compatibility and reviewed alias publication."
+    ).replace("jenkins/KServeModelCD.Jenkinsfile", "jenkins/LLMCandidateOnboard.Jenkinsfile")
+    def llmOnboardDefaults = [
+      ACTION: "prepare", ONBOARDING_ID: "", INTENT_URI: "", ROUTER_IMAGE: ""
+    ]
+    def llmOnboardParameters = "<parameterDefinitions>" + llmOnboardDefaults.collect { key, value ->
+      "<hudson.model.StringParameterDefinition><name>${xmlEscape(key)}</name><defaultValue>${xmlEscape(value)}</defaultValue><trim>true</trim></hudson.model.StringParameterDefinition>"
+    }.join("") + "</parameterDefinitions>"
+    llmOnboardXml = llmOnboardXml.replaceAll(
+      "(?s)<parameterDefinitions>.*?</parameterDefinitions>",
+      java.util.regex.Matcher.quoteReplacement(llmOnboardParameters)
+    )
+    upsertJob(llmOnboardJobName, llmOnboardXml)
+
     def resetListView = { viewName, description, jobNames, primary ->
       def view = instance.getView(viewName)
       if (view != null && !(view instanceof ListView)) {
@@ -505,7 +558,7 @@ data:
     resetListView(
       "06A KServe Model CD",
       "Auto/manual CD view for promoted BST models. Kubeflow triggers RecSys-KServe-Model-CD after promotion when metric score >= threshold, and this job deploys the promoted Triton repository to KServe.",
-      [kserveCdJobName],
+      [kserveCdJobName, llmAgentCdJobName, llmOnboardJobName],
       false
     )
 

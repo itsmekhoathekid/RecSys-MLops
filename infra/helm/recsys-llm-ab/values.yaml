@@ -1,0 +1,47 @@
+# Install only after the state bucket, DB and immutable bootstrap release exist.
+image: "" # Required registry/repository@sha256:...
+secretName: recsys-llm-ab-runtime
+replicas: 2
+gatewayName: recsys-ab-gateway
+nodeSelector: {}
+tolerations: []
+resources:
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {cpu: "1", memory: 512Mi}
+
+# Disabled until the ticket secret and Jenkins Basic Auth credential have both
+# been provisioned and the fail-closed public-path checks pass.
+externalEdge:
+  enabled: false
+  replicas: 2
+  host: agents.recsys-mlops.site
+  path: /a2a/recommendation-ab/v1
+  ingressClassName: nginx
+  tlsSecretName: recsys-agents-tls
+  basicAuthSecretName: recsys-recommendation-ab-basic-auth
+  revision: ""
+  resources:
+    requests: {cpu: 25m, memory: 96Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+
+# Deterministic Recommendation-only score delivery. This CronJob never invokes
+# an agent, model or tool; it only drains the durable evaluation outbox.
+evaluation:
+  enabled: false
+  suspend: true
+  image: "" # Optional digest; defaults to the router image.
+  secretName: recsys-recommendation-evaluation
+  nodeSelector:
+    recsys.ai/pool: ml-system
+  tolerations:
+    - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}
+
+# Recommendation polls the immutable Langfuse prompt pointer. Jenkins remains
+# the sole route/state mutator; this CronJob has no Kubernetes API permission.
+trigger:
+  enabled: false
+  image: "" # Optional digest; defaults to the router image.
+  suspendPolling: true
+  revision: disabled
+  secretName: recsys-recommendation-trigger
+  prometheusUrl: http://recsys-prometheus.observability.svc.cluster.local:9090

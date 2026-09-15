@@ -51,7 +51,38 @@ def test_lookup_uses_pointer_selected_view_and_preserves_request_order():
     result = service.get_many(["a", "missing", "c"])
 
     assert result.pipeline_run_id == "pipeline-7"
-    assert [chunk.chunk_id for chunk in result.chunks] == ["a", "c"]
+    assert [chunk.model_dump() for chunk in result.chunks] == [
+        {
+            "chunk_id": "a",
+            "item_id": 7,
+            "chunk_type": "review",
+            "source_key": "a",
+            "text": "first",
+            "brand": "A",
+            "category_l1": "one",
+            "category_l2": "",
+            "category_l3": "",
+            "current_price": 1.5,
+            "in_stock": True,
+            "average_rating": 4.2,
+            "source_run_id": "source",
+        },
+        {
+            "chunk_id": "c",
+            "item_id": 9,
+            "chunk_type": "qna",
+            "source_key": "c",
+            "text": "third",
+            "brand": "C",
+            "category_l1": "three",
+            "category_l2": "",
+            "category_l3": "",
+            "current_price": 3.5,
+            "in_stock": False,
+            "average_rating": 4.8,
+            "source_run_id": "source",
+        },
+    ]
     assert result.missing_chunk_ids == ["missing"]
     assert [chunk.in_stock for chunk in result.chunks] == [True, False]
     assert store.request["entity_rows"] == [
@@ -62,4 +93,5 @@ def test_lookup_uses_pointer_selected_view_and_preserves_request_order():
     assert store.request["features"] == [
         f"rag_item_chunks_green:{name}" for name in CHUNK_FEATURES
     ]
+    assert store.request["full_feature_names"] is False
     assert all("embedding" not in feature for feature in store.request["features"])

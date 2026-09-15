@@ -1,0 +1,24 @@
+---
+# Source: recsys-global-model-config/templates/modelconfig.yaml
+apiVersion: kagent.dev/v1alpha3
+kind: ModelConfig
+metadata:
+  name: recsys-global-model-config
+  namespace: kagent
+  labels:
+    app.kubernetes.io/name: recsys-global-model-config
+    app.kubernetes.io/instance: recsys-global-model-config
+    app.kubernetes.io/managed-by: Helm
+spec:
+  provider: "OpenAI"
+  model: "qwen3.5-0.8b"
+  apiKeySecret: "kagent-agent-gateway"
+  apiKeySecretKey: "AGENT_GATEWAY_API_KEY"
+  defaultHeaders:
+    X-Gateway-Base-Model-Name: llm-d-optimized-baseline
+  openAI:
+    apiFormat: chatCompletions
+    baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
+    maxTokens: 384
+    seed: 42
+    temperature: "0"

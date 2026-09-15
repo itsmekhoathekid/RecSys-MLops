@@ -1,0 +1,15 @@
+{
+  "cluster_context": "gke_recsys-mlops-506406_asia-southeast1-b_recsys-mlops-gke",
+  "namespace": "recsys-dataflow",
+  "helm_release": "recsys-airflow",
+  "helm_revision": 15,
+  "previous_helm_revision": 14,
+  "image": "asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-airflow@sha256:221b1f10eabbb603fd28fb205c606c53d85583eb80cd00a0d3fa5ac2032f77a0",
+  "base_image_digest": "sha256:ad88d23e2a8a83f052016d7ba6591282ecb61dd2ca644e445210489c28f121f7",
+  "dag_file": "apps/data-platform/src/orchestration/airflow/dags/recsys_rag_item_index.py",
+  "dag_sha256": "6e0842c5c99963eb229aff2266b739f66957b91ba2b57c2313eb414555135adf",
+  "dag_run_id": "manual__rag_five_stages_20260906T063100",
+  "pipeline_run_id": "rag-20260906T063109",
+  "source_run_id": "rag-source-quota-fallback96-20260823",
+  "source_run_id_default": "auto"
+}

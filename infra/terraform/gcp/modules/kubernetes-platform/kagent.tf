@@ -1,10 +1,7 @@
 locals {
-  kagent_source_commit    = "e6df917e9fa8"
-  kagent_artifact_prefix  = "kagent-e6df917"
-  kagent_image_version    = "0.10.0-e6df917-substrate0011-v8"
-  kagent_registry         = "${var.config.region}-docker.pkg.dev"
-  kagent_image_repository = "${var.config.project_id}/${var.config.artifact_registry_repository}/${local.kagent_artifact_prefix}"
-  kagent_chart_repository = "oci://${local.image_repo}/${local.kagent_artifact_prefix}/helm"
+  # Use the official, mutually tested kagent/Substrate release pair. No local
+  # source patch, private runtime image or post-renderer participates here.
+  kagent_chart_repository = "oci://ghcr.io/kagent-dev/kagent/helm"
 }
 
 resource "kubernetes_namespace" "ate_system" {
@@ -14,38 +11,6 @@ resource "kubernetes_namespace" "ate_system" {
     name = "ate-system"
   }
 
-}
-
-resource "kubernetes_namespace" "podcertificate_controller_system" {
-  count = var.config.deploy_llm_inference ? 1 : 0
-
-  metadata {
-    name = "podcertificate-controller-system"
-    labels = {
-      "app.kubernetes.io/managed-by" = "Helm"
-    }
-    annotations = {
-      "meta.helm.sh/release-name"      = "substrate"
-      "meta.helm.sh/release-namespace" = "ate-system"
-    }
-  }
-
-}
-
-resource "helm_release" "substrate_mtls_bootstrap" {
-  count = var.config.deploy_llm_inference ? 1 : 0
-
-  name      = "substrate-mtls-bootstrap"
-  chart     = "${var.helm_dir}/substrate-mtls-bootstrap"
-  namespace = kubernetes_namespace.ate_system[0].metadata[0].name
-  atomic    = true
-  wait      = true
-  timeout   = 300
-
-  depends_on = [
-    kubernetes_namespace.ate_system,
-    kubernetes_namespace.podcertificate_controller_system,
-  ]
 }
 
 resource "helm_release" "substrate_crds" {
@@ -63,9 +28,8 @@ resource "helm_release" "substrate_crds" {
   depends_on = [kubernetes_namespace.ate_system]
 }
 
-# Substrate does not expose storageClassName values for its RustFS PVC or Valkey
-# volumeClaimTemplates. Pre-creating the exact claims keeps the platform on
-# quota-safe pd-standard disks instead of consuming the regional SSD quota.
+# Pre-create the exact RustFS and Valkey claims on quota-safe pd-standard
+# storage. Official Substrate 0.0.9 owns the workloads and reuses these claims.
 resource "kubernetes_persistent_volume_claim_v1" "substrate_rustfs" {
   count = var.config.deploy_llm_inference ? 1 : 0
 
@@ -85,7 +49,7 @@ resource "kubernetes_persistent_volume_claim_v1" "substrate_rustfs" {
     access_modes       = ["ReadWriteOnce"]
     storage_class_name = "standard"
     resources {
-      requests = { storage = "1Gi" }
+      requests = { storage = "10Gi" }
     }
   }
 
@@ -134,53 +98,6 @@ resource "helm_release" "substrate" {
   wait       = true
   timeout    = 900
 
-  set {
-    name  = "auth.mode"
-    value = "mtls"
-  }
-
-  # GKE projected service-account tokens use the cluster OIDC issuer rather
-  # than Kubernetes' generic in-cluster URL. Substrate must validate the same
-  # issuer used by kagent and the ActorTemplate controller tokens.
-  set {
-    name = "auth.jwt.issuer"
-    value = format(
-      "https://container.googleapis.com/v1/projects/%s/locations/%s/clusters/%s",
-      var.config.project_id,
-      var.config.zone,
-      var.cluster.name,
-    )
-  }
-
-  # Valkey is served with the service-DNS certificate in mTLS mode. ateapi
-  # authenticates with its pod-identity bundle while validating that stable
-  # service name instead of a StatefulSet pod address.
-  set {
-    name  = "redis.clientCert"
-    value = "/run/podidentity.podcert.ate.dev/credential-bundle.pem"
-  }
-
-  set {
-    name  = "redis.tlsServerName"
-    value = "valkey-cluster-service.ate-system.svc"
-  }
-
-  # Substrate 0.0.11 upgraded the persistent AOF format. Keep the 9.1 storage
-  # engine after rolling the control plane back to 0.0.6; Valkey 8.0 cannot
-  # read the resulting appendonly.aof.11.base.rdb files. This avoids restoring
-  # the six PD snapshots solely to downgrade the storage binary.
-  set {
-    name  = "images.valkey"
-    value = "valkey/valkey:9.1@sha256:4963247afc4cd33c7d3b2d2816b9f7f8eeebab148d29056c2ca4d7cbc966f2d9"
-  }
-
-  # The chart's gateways/routes schema is normalized by the GKE post-renderer;
-  # retain the 0.0.11-bundled image for PodCertificate ECDSA support.
-  set {
-    name  = "images.agentgateway"
-    value = "cr.agentgateway.dev/agentgateway:v1.4.1"
-  }
-
   # Sandbox images live in the private regional Artifact Registry. atelet
   # performs the pull itself (outside kubelet), so it must use GCP ADC from
   # the node/workload identity instead of making an anonymous registry call.
@@ -189,21 +106,42 @@ resource "helm_release" "substrate" {
     value = "true"
   }
 
-  postrender {
-    binary_path = "${var.repo_root}/ops/helm/substrate_gke_postrender.py"
-    args        = ["gke-mtls-0011-v1"]
+  set {
+    name  = "auth.mode"
+    value = "jwt"
+  }
+
+  set {
+    name  = "auth.jwt.issuer"
+    value = "https://container.googleapis.com/v1/projects/${var.config.project_id}/locations/${var.config.region}-b/clusters/${var.config.cluster_name}"
+  }
+
+  # Reuse the existing six Valkey PVCs without downgrading their on-disk AOF
+  # format. This is a supported upstream chart value, not a runtime patch.
+  set {
+    name  = "images.valkey"
+    value = "valkey/valkey:9.1@sha256:4963247afc4cd33c7d3b2d2816b9f7f8eeebab148d29056c2ca4d7cbc966f2d9"
+  }
+
+  # The production RustFS claim has already been expanded to 10Gi. Pin the
+  # upstream chart to the same size so Helm never attempts an illegal shrink.
+  set {
+    name  = "rustfs.storageSize"
+    value = "10Gi"
   }
 
   depends_on = [
     helm_release.substrate_crds,
-    helm_release.substrate_mtls_bootstrap,
     kubernetes_persistent_volume_claim_v1.substrate_rustfs,
-    kubernetes_persistent_volume_claim_v1.substrate_valkey,
   ]
 }
 
 resource "kubernetes_namespace" "kagent" {
-  count = var.config.deploy_llm_inference ? 1 : 0
+  # Deliberately keep the namespace outside the generic feature-disable
+  # transaction. MCP workloads are Jenkins-owned and the live Terraform guard
+  # must inspect them before any teardown can remove their namespace. A full
+  # namespace deletion therefore belongs to the separately reviewed teardown.
+  count = 1
 
   metadata {
     name = "kagent"
@@ -265,44 +203,6 @@ resource "helm_release" "kagent" {
   values = [
     file("${var.repo_root}/configs/kagent/values.yaml"),
   ]
-
-  set {
-    name  = "registry"
-    value = local.kagent_registry
-  }
-
-  set {
-    name  = "tag"
-    value = local.kagent_image_version
-  }
-
-  # Also records the compatibility build on the pod template. Besides making
-  # provenance visible, this forces Helm to reconcile if an interrupted OCI
-  # pull ever advances Terraform state without updating the live release.
-  set {
-    name  = "controller.podAnnotations.recsys\\.ai/compatibility-build"
-    value = local.kagent_image_version
-  }
-
-  set {
-    name  = "controller.image.repository"
-    value = "${local.kagent_image_repository}/controller"
-  }
-
-  set {
-    name  = "controller.goAgentImage.repository"
-    value = "${local.kagent_image_repository}/golang-adk"
-  }
-
-  set {
-    name  = "controller.skillsInitImage.repository"
-    value = "${local.kagent_image_repository}/skills-init"
-  }
-
-  set {
-    name  = "ui.image.repository"
-    value = "${local.kagent_image_repository}/ui"
-  }
 
   depends_on = [
     helm_release.kagent_crds,

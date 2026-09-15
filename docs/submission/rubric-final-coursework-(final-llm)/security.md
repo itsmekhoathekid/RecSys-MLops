@@ -44,42 +44,16 @@ Secrets using their native configuration.
 | Initialization, KV v2, policy, Kubernetes auth, API-key generation, encrypted bootstrap artifact, and root-token revocation | [`bootstrap_vault.sh`, lines 29–294](../../../ops/gcp/bootstrap_vault.sh#L29-L294) |
 | Vault-backed `ClusterSecretStore` | [`secretstore.yaml`, lines 1–37](../../../infra/helm/recsys-security/templates/secretstore.yaml#L1-L37) |
 | Generic namespace-level `ExternalSecret` renderer | [`externalsecrets.yaml`, lines 1–40](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L1-L40) |
-| Agent Gateway client/server and Agent Registry database secret paths | [`values.yaml`, lines 28–42](../../../infra/helm/recsys-security/values.yaml#L28-L42) |
+| Agent Gateway client/server/probe, Agent Registry, and MCP secret paths | [`values.yaml`, lines 28–57](../../../infra/helm/recsys-security/values.yaml#L28-L57) |
 | Agent Gateway API-key generation/write, Agent Registry PostgreSQL generation/write, and generic migrated-group writer | [`bootstrap_vault.sh`, line 177](../../../ops/gcp/bootstrap_vault.sh#L177), [`bootstrap_vault.sh`, line 192](../../../ops/gcp/bootstrap_vault.sh#L192), [`bootstrap_vault.sh`, line 216](../../../ops/gcp/bootstrap_vault.sh#L216) |
-| Terraform enables both mappings and waits for both target Secrets | [`locals.tf`, lines 89–108](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L89-L108), [`secret_management.tf`, lines 92–142](../../../infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf#L92-L142) |
+| Terraform conditionally enables LLM mappings and waits for their target Secrets | [`locals.tf`, lines 125–134](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L125-L134), [`secret_management.tf`, lines 94–169](../../../infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf#L94-L169) |
 | Strict API-key enforcement at `PreRouting` | [`gateway-auth.yaml`, lines 1–19](../../../infra/helm/recsys-llm-serving/templates/gateway-auth.yaml#L1-L19), [`values.yaml`, lines 30–39](../../../infra/helm/recsys-llm-serving/values.yaml#L30-L39) |
-| Kagent reads the client copy and sends it to the internal Gateway | [`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55) |
+| Kagent reads the client copy and sends it to the internal Gateway | [`configs/kagent/values.yaml`, lines 108–118](../../../configs/kagent/values.yaml#L108-L118) |
 | Executable 401/401/success Gateway smoke test | [`llm_inference_smoke.sh`, lines 60–102](../../../ops/validation/llm_inference_smoke.sh#L60-L102) |
 
 ## Applied Configuration
 
-### 1. Vault HA, persistent storage, and auto-unseal
-
-Terraform installs the official HashiCorp chart from
-`https://helm.releases.hashicorp.com`, pinned to chart `0.34.0`. The rendered
-configuration runs three Vault `2.0.3` replicas with integrated Raft storage and
-one 10 GiB `standard` PVC per replica.
-
-The KMS trust chain is:
-
-1. Terraform creates the `recsys-mlops-vault` key ring and `vault-unseal`
-   cryptographic key. The key rotates every 90 days and has
-   `prevent_destroy = true`.
-2. A dedicated GSA receives only
-   `roles/cloudkms.cryptoKeyEncrypterDecrypter` and `roles/cloudkms.viewer` on
-   that exact key.
-3. GKE Workload Identity maps Kubernetes ServiceAccount `vault/vault` to the
-   GSA, so no downloadable GCP service-account JSON key is used.
-4. The Vault `gcpckms` seal stanza uses that identity to auto-unseal the cluster
-   after pod restarts.
-
-The Vault API and UI are `ClusterIP` services. The listener currently uses
-internal HTTP (`tls_disable = 1`) because TLS was explicitly left out of this
-coursework scope. API-key authentication controls who may use Agent Gateway, but
-it does not encrypt traffic. Do not describe this setup as transport-secure; add
-TLS before exposing Vault or the model Gateway beyond the trusted cluster path.
-
-### 2. One-time Vault bootstrap
+### 1. One-time Vault bootstrap
 
 Run from the repository root after Terraform has created the Vault pods:
 
@@ -172,34 +146,228 @@ path `recsys/data/<group>`:
 | `recsys/analytics` | [analytics remote key (line 6)](../../../infra/helm/recsys-analytics/values.yaml#L6) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) |
 | `recsys/jenkins-runtime` | [runtime additional path (line 109)](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L109) | [generic migration writer (line 216)](../../../ops/gcp/bootstrap_vault.sh#L216) |
 
-### 3. ESO authentication and secret distribution
+### 2. ESO authentication and secret distribution
 
-The `recsys-vault` `ClusterSecretStore` connects to:
+The following flow traces the actual `agent-gateway` Vault record from its
+initial write through ESO authentication and synchronization into the three LLM
+consumer namespaces. The same mechanism handles the `agentregistry`,
+`feature-rag-mcp`, and `recommendation-mcp` records mapped after the walkthrough.
 
-```text
-server:    http://vault.vault.svc.cluster.local:8200
-KV mount:  recsys (version v2)
-auth:      kubernetes
-role:      recsys-external-secrets
-identity:  external-secrets/external-secrets
-audience:  vault
+```mermaid
+flowchart TD
+    Admin["Operator / bootstrap script"] -->|"vault kv put / patch"| Vault
+
+    subgraph V["HashiCorp Vault"]
+        Vault["KV v2 mount: recsys"]
+        Path["Logical record: agent-gateway<br/>API path: recsys/data/agent-gateway"]
+        Data["AGENT_GATEWAY_API_KEY = secret value"]
+        Vault --> Path --> Data
+    end
+
+    Helm["Terraform / Helm"] -->|"Apply ExternalSecret"| API["Kubernetes API Server"]
+    API -->|"ESO watches ExternalSecret resources"| ESO["External Secrets Operator"]
+
+    ESO -->|"Read connection and authentication config"| Store["ClusterSecretStore<br/>recsys-vault"]
+    Store --> Config["Vault server + KV mount + auth role"]
+
+    ESO -->|"Kubernetes ServiceAccount JWT"| Auth["Vault Kubernetes authentication"]
+    Auth -->|"Short-lived, read-only Vault token"| ESO
+
+    ESO -->|"GET agent-gateway from mount recsys"| Path
+    Data -->|"Return authorized key-value fields"| ESO
+
+    ESO -->|"Create or update"| ClientSecret["Kubernetes Secret<br/>kagent/kagent-agent-gateway"]
+    ESO -->|"Create or update"| ServerSecret["Kubernetes Secret<br/>llm-inference/agentgateway-api-keys"]
+    ESO -->|"Create or update"| ProbeSecret["Kubernetes Secret<br/>observability/agentgateway-api-keys"]
+
+    ClientSecret --> Kagent["Kagent Pod"]
+    ServerSecret --> Gateway["Agent Gateway policy"]
+    ProbeSecret --> Probe["LLM observability probe"]
 ```
 
-Terraform enables these two mappings when
-`deploy_llm_inference=true` and `agent_gateway_auth_enabled=true`:
+#### Step 1: Apply an `ExternalSecret`
 
-| Vault record | Target Kubernetes Secret | Use |
+The operator applies a Helm release rather than maintaining an ad-hoc live
+resource. In this repository, Terraform enables the LLM entries and the generic
+security-chart template renders them as `ExternalSecret` objects:
+
+```yaml
+externalSecrets:
+  agentGatewayClient:
+    namespace: kagent
+    secretName: kagent-agent-gateway
+    vaultPath: agent-gateway
+  agentGatewayServer:
+    namespace: llm-inference
+    secretName: agentgateway-api-keys
+    vaultPath: agent-gateway
+```
+
+The source values are declared in
+[`recsys-security/values.yaml`, line 28](../../../infra/helm/recsys-security/values.yaml#L28),
+and Terraform enables the client, server, and observability-probe mappings only
+when LLM inference and Agent Gateway authentication are enabled in
+[`locals.tf`, line 127](../../../infra/terraform/gcp/modules/kubernetes-platform/locals.tf#L127).
+
+#### Step 2: The API server stores the resource and ESO observes it
+
+The rendered object is submitted to the Kubernetes API server. ESO watches the
+`ExternalSecret` custom resource and reconciles it; the application pod is not
+involved and never authenticates directly to Vault.
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: kagent-agent-gateway
+  namespace: kagent
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: recsys-vault
+  target:
+    name: kagent-agent-gateway
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: agent-gateway
+```
+
+This shape comes from the generic renderer in
+[`externalsecrets.yaml`, lines 8–46](../../../infra/helm/recsys-security/templates/externalsecrets.yaml#L8-L46).
+`refreshInterval: 1h` schedules periodic reconciliation; a new object is also
+reconciled after it is observed rather than waiting one hour for its first sync.
+
+#### Step 3: ESO reads the reference to `ClusterSecretStore/recsys-vault`
+
+ESO reads `spec.secretStoreRef` to discover the shared provider configuration:
+
+```yaml
+provider:
+  vault:
+    server: http://vault.vault.svc.cluster.local:8200
+    path: recsys
+    version: v2
+    auth:
+      kubernetes:
+        mountPath: kubernetes
+        role: recsys-external-secrets
+        serviceAccountRef:
+          name: external-secrets
+          namespace: external-secrets
+          audiences:
+            - vault
+```
+
+The chart renders this block in
+[`secretstore.yaml`, lines 23–35](../../../infra/helm/recsys-security/templates/secretstore.yaml#L23-L35).
+ESO requests a Kubernetes service-account JWT for
+`external-secrets/external-secrets` with audience `vault`, presents it to the
+Vault Kubernetes auth role, and receives a short-lived Vault token. That token
+has read access to `recsys/data/*`; the LLM application service accounts receive
+no Vault token and no direct Vault permission.
+
+#### Step 4: ESO reads the selected Vault KV v2 record
+
+The `dataFrom.extract.key` field is relative to the `recsys` KV v2 mount:
+
+```yaml
+dataFrom:
+  - extract:
+      key: agent-gateway
+```
+
+Therefore the logical CLI record `recsys/agent-gateway` is fetched through the
+KV v2 data API path `recsys/data/agent-gateway`. `dataFrom.extract` copies every
+field in the selected record; it does not expose the retrieved plaintext in the
+`ExternalSecret` manifest.
+
+For the main LLM Gateway record, the returned field is:
+
+```text
+AGENT_GATEWAY_API_KEY
+```
+
+#### Step 5: ESO creates or updates the target Kubernetes Secret
+
+ESO writes the fetched fields to the target named by `spec.target.name`:
+
+```yaml
+target:
+  name: kagent-agent-gateway
+  creationPolicy: Owner
+```
+
+On the first reconciliation it creates the Secret; after a Vault rotation it
+updates the same Secret. `creationPolicy: Owner` makes ESO the lifecycle owner,
+so operators must change the Vault source rather than manually editing the
+generated Secret. Terraform waits for each required `ExternalSecret` to become
+`Ready` and verifies that its target Secret exists in
+[`secret_management.tf`, lines 94–169](../../../infra/terraform/gcp/modules/kubernetes-platform/secret_management.tf#L94-L169).
+
+One Vault record can fan out to multiple namespace-local targets. In the current
+LLM scope, `recsys/agent-gateway` produces these three copies when authentication
+is enabled:
+
+| Target Secret | Consumer |
+|---|---|
+| `kagent/kagent-agent-gateway` | Kagent client sends the key to Agent Gateway. |
+| `llm-inference/agentgateway-api-keys` | `AgentgatewayPolicy` validates the accepted key before routing. |
+| `observability/agentgateway-api-keys` | The LLM observability probe authenticates its synthetic requests. |
+
+Other LLM-related records use the same reconciliation mechanism:
+
+| Vault KV v2 record | Target Secret | LLM use |
 |---|---|---|
-| `recsys/agent-gateway` | `kagent/kagent-agent-gateway` | Client credential read by Kagent `ModelConfig` |
-| `recsys/agent-gateway` | `llm-inference/agentgateway-api-keys` | Server-side accepted key set read by `AgentgatewayPolicy` |
-| `recsys/agentregistry` | `agentregistry/agentregistry-runtime` | Agent Registry connection URL and pgvector PostgreSQL credentials |
+| `recsys/data/agentregistry` | `agentregistry/agentregistry-runtime` | Agent Registry connection URL and pgvector PostgreSQL credentials. |
+| `recsys/data/feature-rag-mcp` | `kagent/recsys-feature-rag-mcp-auth` | Bearer token shared by the feature/RAG MCP server and its Kagent client configuration. |
+| `recsys/data/recommendation-mcp` | `kagent/recsys-recommendation-mcp-auth` | Bearer token shared by the recommendation MCP server and its Kagent client configuration. |
 
-Both targets are owned by ESO (`creationPolicy: Owner`) and refreshed every
-hour. The plaintext key is not present in Git, Helm values, or Terraform state.
-The Terraform `kagent_agent_gateway` placeholder has `count = 0` while auth is
-enabled and exists only as a no-auth development fallback.
+The mappings are declared in
+[`recsys-security/values.yaml`, lines 28–57](../../../infra/helm/recsys-security/values.yaml#L28-L57).
 
-### 4. Agent Gateway authentication
+#### Step 6: LLM workloads consume the Kubernetes Secret
+
+Kagent reads the client copy through its provider configuration:
+
+```yaml
+providers:
+  openAI:
+    apiKeySecretRef: kagent-agent-gateway
+    apiKeySecretKey: AGENT_GATEWAY_API_KEY
+```
+
+This is configured in
+[`configs/kagent/values.yaml`, lines 108–118](../../../configs/kagent/values.yaml#L108-L118).
+Agent Gateway reads the server copy from the strict pre-routing policy:
+
+```yaml
+apiKeyAuthentication:
+  mode: Strict
+  secretRef:
+    name: agentgateway-api-keys
+```
+
+That reference is rendered by
+[`gateway-auth.yaml`, lines 13–18](../../../infra/helm/recsys-llm-serving/templates/gateway-auth.yaml#L13-L18).
+The observability CronJob reads the third copy through `secretKeyRef` in
+[`llm-probe.yaml`, lines 61–65](../../../infra/helm/recsys-observability/templates/llm-probe.yaml#L61-L65).
+
+The MCP servers consume their target Secrets through `envFrom`, while the
+`RemoteMCPServer` resources read the `Authorization` field from the same
+Secrets. See
+[`feature-rag-mcp/deployment.yaml`, lines 46–52](../../../infra/helm/recsys-feature-rag-mcp/templates/deployment.yaml#L46-L52),
+[`recsys-kagent-agent/remotemcpserver.yaml`, lines 14–18](../../../infra/helm/recsys-kagent-agent/templates/remotemcpserver.yaml#L14-L18),
+[`recommendation-mcp/deployment.yaml`, lines 52–58](../../../infra/helm/recsys-recommendation-mcp/templates/deployment.yaml#L52-L58),
+and [`recsys-recommendation-agent/remotemcpserver.yaml`, lines 14–18](../../../infra/helm/recsys-recommendation-agent/templates/remotemcpserver.yaml#L14-L18).
+
+ESO updating a Kubernetes Secret does not replace environment variables already
+loaded into a running container. Consumers using `envFrom` or `secretKeyRef` as
+environment variables must be restarted after rotation and then pass a real
+authenticated request before the old credential is revoked.
+
+### 3. Agent Gateway authentication
 
 The local `recsys-llm-serving` chart renders this effective policy:
 

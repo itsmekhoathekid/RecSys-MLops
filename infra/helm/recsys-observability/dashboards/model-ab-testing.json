@@ -5,7 +5,7 @@
   "tags": ["recsys", "bst", "ab-test", "triton", "rollout"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "10s",
   "graphTooltip": 1,
   "editable": true,
@@ -294,10 +294,10 @@
       "type": "piechart",
       "title": "Current Traffic Split",
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
-      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 6 },
       "targets": [
         {
-          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant) or vector(0)",
+          "expr": "sum(rate(model_predictions_total{experiment_id=~\"$experiment\"}[$rate_window])) by (ab_variant)",
           "legendFormat": "{{ab_variant}}"
         }
       ],
@@ -305,6 +305,7 @@
         "defaults": {
           "unit": "reqps",
           "decimals": 2,
+          "noValue": "NO TRAFFIC",
           "color": { "mode": "palette-classic" }
         }
       },

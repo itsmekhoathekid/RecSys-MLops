@@ -1,0 +1,5 @@
+{
+  "captured_at_utc": "2026-09-09T09:42:28.081584+00:00",
+  "collector": "docs/ops/evidence/global-model-config-2026-09-09/capture.py",
+  "scope": "Read-only source, Helm rendering, live resource projections and local tests; no inference request."
+}

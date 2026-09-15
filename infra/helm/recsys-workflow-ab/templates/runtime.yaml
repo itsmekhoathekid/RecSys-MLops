@@ -1,0 +1,93 @@
+{{- $image := required "image must be a built, digest-pinned llm_ab_router image" .Values.image -}}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $image) -}}
+{{- fail "image must be pinned by SHA256 digest" -}}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-workflow-router
+spec:
+  replicas: {{ .Values.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 0, maxUnavailable: 1}
+  selector:
+    matchLabels: {app: recsys-workflow-router}
+  template:
+    metadata:
+      labels: {app: recsys-workflow-router}
+      annotations: {sidecar.istio.io/inject: "false"}
+    spec:
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{ toYaml .Values.tolerations | nindent 8 }}
+      automountServiceAccountToken: false
+      containers:
+        - name: router
+          image: {{ $image | quote }}
+          ports: [{name: http, containerPort: 8080}]
+          envFrom:
+            - secretRef: {name: {{ .Values.secretName }}}
+          env:
+            - {name: MODE, value: router}
+            - {name: AB_SCOPE, value: workflow}
+            - name: AB_KAGENT_GRPC_TARGET
+              value: {{ .Values.controllerService }}.{{ .Release.Namespace }}.svc.cluster.local:8084
+            - {name: PORT, value: "8080"}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://recsys-otel-collector.observability.svc.cluster.local:4318"}
+            - name: AB_GATEWAY_URL
+              value: http://{{ .Values.gatewayName }}.{{ .Release.Namespace }}.svc.cluster.local
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            tcpSocket: {port: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recsys-workflow-router
+  labels: {app: recsys-workflow-router}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "80"
+    prometheus.io/path: /metrics
+spec:
+  selector: {app: recsys-workflow-router}
+  ports: [{name: http, port: 80, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: recsys-workflow-router}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {app: recsys-workflow-router}
+---
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: {{ .Values.routerName }}
+spec:
+  type: BYO
+  description: Stable A2A workflow entrypoint; all three agents are pinned to one immutable release.
+  sandbox:
+    network:
+      allowedDomains: [recsys-workflow-router.{{ .Release.Namespace }}.svc.cluster.local]
+  substrate:
+    workerPoolRef: {apiGroup: ate.dev, kind: WorkerPool, name: {{ .Values.workerPool }}}
+  byo:
+    image: {{ $image | quote }}
+    cmd: /usr/local/bin/python
+    args: ["-m", "apps.agentic.llm_ab_router.server"]
+    env:
+      - {name: PYTHONPATH, value: /app}
+      - {name: MODE, value: facade}
+      - {name: AB_SCOPE, value: workflow}
+      - {name: PORT, value: "80"}
+      - name: AB_ROUTER_URL
+        value: http://recsys-workflow-router.{{ .Release.Namespace }}.svc.cluster.local
+      - name: PUBLIC_A2A_URL
+        value: http://{{ .Values.controllerService }}.{{ .Release.Namespace }}.svc.cluster.local:8083/api/a2a-sandboxes/{{ .Release.Namespace }}/{{ .Values.routerName }}/
+      - name: AB_INTERNAL_TOKEN
+        valueFrom:
+          secretKeyRef: {name: {{ .Values.secretName }}, key: AB_INTERNAL_TOKEN}

@@ -11,9 +11,9 @@ metadata:
     {{- include "recsys-coordinator-agent.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
-    apiVersion: ate.dev/v1alpha1
-    kind: WorkerPool
-    name: {{ .Values.sandbox.workerPool }}
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.sandbox.workerPool }}-deployment
   minReplicaCount: {{ .Values.autoscaling.minReplicas }}
   maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
   pollingInterval: {{ .Values.autoscaling.pollingInterval }}

@@ -380,6 +380,46 @@ The preference is PR target, previous commit, previous successful commit, then
 Reference code:
 [`resolveDiffBase`, lines 21-34](../../../jenkins/pipeline/component_pipeline.groovy#L21-L34).
 
+#### Execute the changed-path Git diff
+
+```python
+def _git_name_status(args: list[str]) -> list[ChangedFile]:
+    output = subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL)
+    return _parse_name_status(output)
+
+
+def changed_files(base_ref: str | None) -> list[ChangedFile]:
+    if base_ref:
+        try:
+            return _git_name_status(
+                ["diff", "--name-status", "-z", f"{base_ref}...HEAD"]
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            pass
+    try:
+        return _git_name_status(["diff", "--name-status", "-z", "HEAD~1", "HEAD"])
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+        return current_commit_changes()
+```
+
+The detector therefore executes the following command, not a content diff:
+
+```bash
+git diff --name-status -z <base-ref>...HEAD
+```
+
+The three-dot range compares `HEAD` with the merge base shared with the
+selected ref, so a pull-request build sees the complete branch change set
+without treating newer target-branch commits as changes made by the pull
+request. `--name-status` returns the path plus its Git status, while `-z` makes
+path parsing safe for whitespace and special characters. If the selected ref
+cannot be diffed, the detector compares `HEAD~1` with `HEAD`; for a root commit
+it finally enumerates the current commit's paths.
+
+Reference code:
+[`_git_name_status`, lines 73-75](../../../jenkins/python/change_detection/detector.py#L73-L75) and
+[`changed_files`, lines 99-110](../../../jenkins/python/change_detection/detector.py#L99-L110).
+
 #### Validate a forced preset
 
 ```python
@@ -705,6 +745,122 @@ component-specific function after activating that component's locked profile.
 Reference code:
 [`component dispatcher, lines 3-22`](../../../jenkins/scripts/ci/dispatch.sh#L3-L22) and
 [`stable component entrypoint, lines 1-35`](../../../jenkins/scripts/entrypoints/component_ci.sh#L1-L35).
+
+#### Shared configured pytest and coverage runner
+
+```bash
+component="${1:?component is required}"
+coverage_min="${COVERAGE_MIN:-90}"
+reports_dir="${REPORTS_DIR:-reports}"
+mkdir -p "${reports_dir}/junit" "${reports_dir}/coverage"
+ci_profile="$(python3 jenkins/python/configuration.py component-profile "${component}")"
+ci_environment="${CI_TMP_ROOT:?CI_TMP_ROOT is required}/envs/${ci_profile}"
+ci_python="${ci_environment}/bin/python"
+[[ -x "${ci_python}" ]] || {
+  echo "Locked CI environment is missing for ${component}: ${ci_environment}" >&2
+  exit 2
+}
+```
+
+The stable entrypoint establishes the component name, the default 90% coverage
+threshold, the report directories, and the component's locked Python
+interpreter before it sources the shared CI runtime. Consequently, component
+functions cannot silently fall back to the Jenkins system Python or write
+evidence outside the build's standard report paths.
+
+Reference code:
+[`component CI runtime inputs, lines 6-21`](../../../jenkins/scripts/entrypoints/component_ci.sh#L6-L21).
+
+```bash
+run_configured_component_tests() {
+  local name="$1"
+  local pythonpath="$2"
+  local args=()
+
+  for cov_path in "${cov_paths[@]}"; do
+    args+=(--cov-path "${cov_path}")
+  done
+  for test_path in "${tests[@]}"; do
+    args+=(--test-path "${test_path}")
+  done
+
+  run_pytest_with_coverage "${name}" "${pythonpath}" "${args[@]}"
+}
+```
+
+Each component-specific `ci_*` function declares `tests` and `cov_paths`
+arrays. `run_configured_component_tests` is the normalization layer: it turns
+those arrays into an explicit argument stream and delegates execution to one
+shared coverage runner. Here, “configured” means configured by the current
+component function; this helper does not independently re-read
+`components.json` or rediscover tests from the filesystem.
+
+Reference code:
+[`configured component test wrapper, lines 63-76`](../../../jenkins/scripts/ci/runtime.sh#L63-L76).
+
+```bash
+run_pytest_with_coverage() {
+  local name="$1"
+  local pythonpath="$2"
+  shift 2
+  local cov_paths=()
+  local test_paths=()
+
+  # Parse only --cov-path and --test-path; unknown arguments fail closed.
+  # An empty test set also fails instead of producing a false-green branch.
+
+  COVERAGE_FILE="${reports_dir}/coverage/.coverage.${name}" \
+  PYTHONPATH="${pythonpath}" "${ci_python}" -m pytest "${test_paths[@]}" -q \
+    -o "pythonpath=${pythonpath}" \
+    --cov-config="${PWD}/pyproject.toml" \
+    "${cov_args[@]}" \
+    --cov-report="term-missing" \
+    --cov-report="xml:${reports_dir}/coverage/${name}.xml" \
+    --cov-fail-under="${coverage_min}" \
+    --junitxml="${reports_dir}/junit/${name}.xml"
+}
+```
+
+`run_pytest_with_coverage` is the actual executor. It accepts only the two
+documented argument types, rejects a component with no configured tests, runs
+pytest with the locked interpreter and explicit `PYTHONPATH`, applies the root
+coverage configuration, and fails the branch when coverage is below
+`COVERAGE_MIN`. Every covered component emits a terminal missing-lines report,
+an XML coverage report, a build-scoped coverage data file, and JUnit XML for
+Jenkins post actions.
+
+Reference code:
+[`pytest argument validation, lines 18-50`](../../../jenkins/scripts/ci/runtime.sh#L18-L50) and
+[`pytest, coverage, and JUnit execution, lines 52-60`](../../../jenkins/scripts/ci/runtime.sh#L52-L60).
+
+```bash
+run_plain_pytest() {
+  local name="$1"
+  local pythonpath="$2"
+  shift 2
+  PYTHONPATH="${pythonpath}" "${ci_python}" -m pytest "$@" -q \
+    --junitxml="${reports_dir}/junit/${name}.xml"
+}
+
+run_plain_pytest_with_pythonpath_override() {
+  local name="$1"
+  local pythonpath="$2"
+  shift 2
+  PYTHONPATH="${pythonpath}" "${ci_python}" -m pytest "$@" -q \
+    -o "pythonpath=${pythonpath}" \
+    --junitxml="${reports_dir}/junit/${name}.xml"
+}
+```
+
+The plain runners deliberately emit JUnit without enforcing a coverage gate.
+They are used for contract/E2E checks whose executable application coverage is
+owned by another component branch, such as a declarative SandboxAgent whose MCP
+implementation is coverage-gated separately. The `pythonpath_override` variant
+also overrides pytest's configured Python path to keep those cross-component
+contract imports deterministic.
+
+Reference code:
+[`plain pytest runners, lines 100-115`](../../../jenkins/scripts/ci/runtime.sh#L100-L115).
 
 ### 2.6 `Docker Login`
 

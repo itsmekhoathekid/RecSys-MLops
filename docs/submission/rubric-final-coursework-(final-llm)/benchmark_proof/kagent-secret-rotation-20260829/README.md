@@ -39,13 +39,13 @@ helmRevision: 27
 controllerReplicas: 3/3
 ```
 
-The exact reproducible implementation is retained in the
-[`kagent-e6df917-substrate0011.patch` bridge (line 831)](../../../../../ops/gcp/patches/kagent-e6df917-substrate0011.patch#L831)
-source patch and is protected by `TestBuildActorTemplateShapeHashIdentity`.
+This directory is retained as historical evidence for the 2026-08-29 run. The
+custom source patch and build artifacts were removed on 2026-09-12 when
+production returned to the upstream kagent, Go ADK, and Substrate releases.
 
 ## Method
 
-1. Build the patched source at commit `e6df917e9fa8`; run the ADK and Substrate
+1. Historical run: build the patched source at commit `e6df917e9fa8`; run the ADK and Substrate
    package tests; push all `v8` images.
 2. Rolling-upgrade the three-replica controller with Helm
    `--rollback-on-failure`, then confirm 3/3 Ready and a renewing Lease.

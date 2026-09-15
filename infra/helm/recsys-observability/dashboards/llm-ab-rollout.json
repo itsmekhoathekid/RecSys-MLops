@@ -1,0 +1,3947 @@
+{
+  "uid": "recsys-llm-ab",
+  "title": "LLM Agent A/B Rollout",
+  "description": "Production control room for immutable LLM agent A/B releases; post-promotion monitoring disabled; shadow Disabled by design.",
+  "schemaVersion": 40,
+  "version": 19,
+  "editable": false,
+  "tags": [
+    "recsys",
+    "workflow",
+    "ab-testing",
+    "langfuse"
+  ],
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "experiment",
+        "label": "Experiment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "query": {
+          "query": "query_result(sort_desc(max_over_time(recsys_workflow_experiment_started_at[$__range])))",
+          "refId": "experiment"
+        },
+        "regex": "/experiment_id=\"([^\"]+)\"/",
+        "multi": false,
+        "includeAll": false,
+        "refresh": 1
+      },
+      {
+        "name": "source",
+        "label": "Source",
+        "type": "custom",
+        "query": "production,synthetic,live_test",
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "phase",
+        "label": "Phase",
+        "type": "custom",
+        "query": "IDLE,DEPLOY,OFFLINE,CANARY,AB,VERIFY,COMPLETED,ROLLED_BACK,ROLLBACK_FAILED",
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 101,
+      "title": "",
+      "type": "text",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [],
+      "options": {
+        "mode": "markdown",
+        "content": "<div style=\"font-size:22px;font-weight:700;line-height:1.2\">LLM Agent A/B Rollout</div><div style=\"color:#D1D5DB;margin-top:6px\"><b>A / Control</b> = current model \u00b7 <b>B / Candidate</b> = model under test</div>"
+      },
+      "transparent": true,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      }
+    },
+    {
+      "id": 102,
+      "title": "Rollout status",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "UNKNOWN",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(1, last_over_time(timestamp(recsys_workflow_info{experiment_id=~\"$experiment\"})[$__range:]))",
+          "legendFormat": "{{phase}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "id": 103,
+      "title": "Decision",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "UNKNOWN",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(1, last_over_time(timestamp(recsys_workflow_gate{experiment_id=~\"$experiment\"})[$__range:]))",
+          "legendFormat": "{{verdict}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 3,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "id": 221,
+      "title": "Public A2A 20/20",
+      "type": "stat",
+      "description": "Exactly 20 one-shot HTTPS requests must complete through DNS, TLS, NGINX and the public A2A edge.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "UNAVAILABLE",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (status) (last_over_time(recsys_workflow_external_case_count{experiment_id=~\"$experiment\",status=\"COMPLETED\"}[$__range])) / 20",
+          "legendFormat": "completed / 20",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 3,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "id": 155,
+      "title": "Evaluation confirmed",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (experiment_id) (last_over_time(recsys_workflow_evaluation_confirmed{experiment_id=~\"$experiment\"}[$__range])) / max by (experiment_id) (last_over_time(recsys_workflow_evaluation_expected{experiment_id=~\"$experiment\"}[$__range]))",
+          "legendFormat": "confirmed",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "id": 130,
+      "title": "p95 B / A \u00b7 \u22641.2",
+      "type": "stat",
+      "description": "<1: candidate is faster; 1: equal; >1: candidate is slower. PASS requires \u22641.2.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.200000001
+              }
+            ]
+          },
+          "min": 0,
+          "max": 1.5
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (sample_source) ((max by (sample_source,variant,phase,window_index,verdict) (last_over_time(recsys_workflow_gate_window_p95_seconds{experiment_id=~\"$experiment\",phase=\"AB\",variant=\"candidate\",latest=\"true\"}[$__range]))) and on (sample_source,variant,phase,window_index,verdict) (topk by (sample_source,variant) (1, last_over_time(timestamp(recsys_workflow_gate_window_p95_seconds{experiment_id=~\"$experiment\",phase=\"AB\",variant=\"candidate\",latest=\"true\"})[$__range:])))) / max by (sample_source) ((max by (sample_source,variant,phase,window_index,verdict) (last_over_time(recsys_workflow_gate_window_p95_seconds{experiment_id=~\"$experiment\",phase=\"AB\",variant=\"control\",latest=\"true\"}[$__range]))) and on (sample_source,variant,phase,window_index,verdict) (topk by (sample_source,variant) (1, last_over_time(timestamp(recsys_workflow_gate_window_p95_seconds{experiment_id=~\"$experiment\",phase=\"AB\",variant=\"control\",latest=\"true\"})[$__range:]))))",
+          "legendFormat": "{{sample_source}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 3,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "id": 223,
+      "title": "Rollout controller \u00b7 one action per Jenkins build",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 224,
+      "title": "Controller decision",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "UNKNOWN / STALE",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(1, last_over_time(timestamp(recsys_workflow_controller_last_tick{experiment_id=~\"$experiment\"})[$__range:]))",
+          "legendFormat": "{{decision}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "id": 225,
+      "title": "Traffic Job",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "NOT STARTED",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(1, last_over_time(timestamp(recsys_workflow_traffic_job_info{experiment_id=~\"$experiment\"})[$__range:]))",
+          "legendFormat": "{{status}} \u00b7 {{traffic_phase}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 8,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "id": 226,
+      "title": "Traffic heartbeat age",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "UNKNOWN / STALE",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 120
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - max by (experiment_id) (last_over_time(recsys_workflow_traffic_job_heartbeat{experiment_id=~\"$experiment\"}[$__range]))",
+          "legendFormat": "seconds",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 8,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "id": 227,
+      "title": "Jenkins actions",
+      "type": "bargauge",
+      "description": "Each value is a separate short Jenkins build number; Jenkins never selects the next action.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "NOT DISPATCHED",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by (action,target_weight,status) (last_over_time(recsys_workflow_controller_build{experiment_id=~\"$experiment\"}[$__range]))) and on (action,target_weight,status) (topk by (action,target_weight) (1, last_over_time(timestamp(recsys_workflow_controller_build{experiment_id=~\"$experiment\"})[$__range:])))",
+          "legendFormat": "{{action}} \u2192 {{target_weight}}% \u00b7 {{status}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 6,
+        "h": 5
+      }
+    },
+    {
+      "id": 228,
+      "title": "Traffic submitted",
+      "type": "bargauge",
+      "description": "live_test is capped at 360; synthetic_case is exactly 20 with no retry or top-up.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "NO TRAFFIC",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (traffic_kind) (last_over_time(recsys_workflow_traffic_submitted{experiment_id=~\"$experiment\"}[$__range]))",
+          "legendFormat": "{{traffic_kind}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 8,
+        "w": 6,
+        "h": 5
+      }
+    },
+    {
+      "id": 113,
+      "title": "Traffic rollout \u00b7 live_test only",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 114,
+      "title": "Operational throughput \u00b7 root requests",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "NO TRAFFIC",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate((sum by (variant) (max by (variant,phase) (recsys_workflow_completed_total{experiment_id=~\"$experiment\",source=\"live_test\",phase=~\"$phase\"})))[$__rate_interval:15s])",
+          "legendFormat": "{{variant}}",
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 119,
+      "title": "Candidate traffic \u00b7 target vs Envoy vs observed",
+      "type": "timeseries",
+      "description": "Target is the requested pipeline weight; Envoy is the verified weight; observed is the actual live_test root share.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (experiment_id) (recsys_workflow_intended_weight{experiment_id=~\"$experiment\"})",
+          "legendFormat": "Target",
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (experiment_id) (recsys_workflow_verified_weight{experiment_id=~\"$experiment\"})",
+          "legendFormat": "Envoy verified",
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "100 * (sum by (variant) (max by (variant,phase) (recsys_workflow_completed_total{experiment_id=~\"$experiment\",source=\"live_test\",phase=~\"$phase\",variant=\"candidate\"}))) / sum(sum by (variant) (max by (variant,phase) (recsys_workflow_completed_total{experiment_id=~\"$experiment\",source=\"live_test\",phase=~\"$phase\"})))",
+          "legendFormat": "Observed live_test",
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 120,
+      "title": "Online evaluation \u00b7 synthetic responses",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 123,
+      "title": "Total passing responses \u00b7 by variant",
+      "type": "piechart",
+      "description": "PASS responses only; the configured total is shown by Evaluation confirmed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "NO PASSING RESPONSES",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (variant) (max by (case_id,variant) (last_over_time(recsys_workflow_case{experiment_id=~\"$experiment\",verdict=\"PASS\"}[$__range])))",
+          "legendFormat": "{{variant}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [],
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "id": 222,
+      "title": "Public edge tickets & transport errors",
+      "type": "bargauge",
+      "description": "ISSUED \u2192 DISPATCH_INTENT \u2192 CLAIMED \u2192 COMPLETED. AMBIGUOUS or REJECTED is never retried or topped up.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "UNAVAILABLE",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (status) (last_over_time(recsys_workflow_external_case_count{experiment_id=~\"$experiment\",status=~\"COMPLETED|AMBIGUOUS|REJECTED\"}[$__range]))",
+          "legendFormat": "{{status}}",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (error_type) (last_over_time(recsys_workflow_external_case_errors{experiment_id=~\"$experiment\"}[$__range]))",
+          "legendFormat": "error \u00b7 {{error_type}}",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "id": 125,
+      "title": "Performance & reliability \u00b7 source selector applies",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 126,
+      "title": "Latency p50 \u00b7 root workflow",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "NO TRAFFIC",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, rate((sum by (source,variant,le) (max by (source,variant,le,phase) (recsys_workflow_duration_seconds_bucket{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s]))",
+          "legendFormat": "{{source}} \u00b7 {{variant}}",
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 8,
+        "h": 7
+      }
+    },
+    {
+      "id": 127,
+      "title": "Latency p95 \u00b7 root workflow",
+      "type": "timeseries",
+      "description": "Rolling exploration histogram; the top ratio card uses the closed AB window.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "NO TRAFFIC",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, rate((sum by (source,variant,le) (max by (source,variant,le,phase) (recsys_workflow_duration_seconds_bucket{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s]))",
+          "legendFormat": "{{source}} \u00b7 {{variant}}",
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 31,
+        "w": 8,
+        "h": 7
+      }
+    },
+    {
+      "id": 128,
+      "title": "Latency p99 \u00b7 root workflow",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "NO TRAFFIC",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, rate((sum by (source,variant,le) (max by (source,variant,le,phase) (recsys_workflow_duration_seconds_bucket{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s]))",
+          "legendFormat": "{{source}} \u00b7 {{variant}}",
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 31,
+        "w": 8,
+        "h": 7
+      }
+    },
+    {
+      "id": 131,
+      "title": "Error rate \u00b7 timeout / runtime-A2A-MCP / contract",
+      "type": "timeseries",
+      "description": "Runtime, A2A and MCP failures are one combined upstream-error family in durable evidence; the chart does not invent a finer split.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "NO TRAFFIC",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate((sum by (source,variant) (max by (source,variant,phase) (recsys_workflow_errors_total{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s]) / rate((sum by (source,variant) (max by (source,variant,phase) (recsys_workflow_completed_total{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s])",
+          "legendFormat": "{{source}} \u00b7 {{variant}} runtime/A2A/MCP",
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "100 * rate((sum by (source,variant) (max by (source,variant,phase) (recsys_workflow_timeouts_total{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s]) / rate((sum by (source,variant) (max by (source,variant,phase) (recsys_workflow_completed_total{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s])",
+          "legendFormat": "{{source}} \u00b7 {{variant}} timeout",
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "100 * rate((sum by (source,variant) (max by (source,variant,phase) (recsys_workflow_contracts_total{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s]) / rate((sum by (source,variant) (max by (source,variant,phase) (recsys_workflow_completed_total{experiment_id=~\"$experiment\",source=~\"$source\",phase=~\"$phase\"})))[$__rate_interval:15s])",
+          "legendFormat": "{{source}} \u00b7 {{variant}} contract",
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 7
+      }
+    },
+    {
+      "id": 133,
+      "title": "Functional checks \u00b7 deterministic, no LLM judge",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 157,
+      "title": "Control \u00b7 PASS rate on applicable cases",
+      "type": "bargauge",
+      "description": "Raw deterministic metrics. 100% means every applicable case passed; N/A means this branch received zero applicable cases.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "min": 0,
+          "max": 100,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "N/A \u2014 0 applicable",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"trajectory_match\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"trajectory_match\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "trajectory_match",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"tool_arguments_match\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"tool_arguments_match\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "tool_arguments_match",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"duplicate_tool_calls\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"duplicate_tool_calls\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "duplicate_tool_calls",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"missing_user_safe\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"missing_user_safe\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "missing_user_safe",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "E",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"schema_valid\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"schema_valid\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "schema_valid",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "F",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"ranking_preserved\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"ranking_preserved\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "ranking_preserved",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "G",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"empty_result_correct\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"empty_result_correct\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "empty_result_correct",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "H",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"release_consistency\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"release_consistency\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "release_consistency",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "I",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"functional_success\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"control\",metric=\"functional_success\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "functional_success",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "id": 134,
+      "title": "Candidate \u00b7 PASS rate on applicable cases",
+      "type": "bargauge",
+      "description": "Raw deterministic metrics. Any required FAIL or UNKNOWN blocks promotion; hard failures are never averaged away.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "min": 0,
+          "max": 100,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "N/A \u2014 0 applicable",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"trajectory_match\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"trajectory_match\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "trajectory_match",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"tool_arguments_match\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"tool_arguments_match\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "tool_arguments_match",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"duplicate_tool_calls\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"duplicate_tool_calls\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "duplicate_tool_calls",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"missing_user_safe\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"missing_user_safe\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "missing_user_safe",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "E",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"schema_valid\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"schema_valid\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "schema_valid",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "F",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"ranking_preserved\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"ranking_preserved\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "ranking_preserved",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "G",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"empty_result_correct\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"empty_result_correct\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "empty_result_correct",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "H",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"release_consistency\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"release_consistency\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "release_consistency",
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "I",
+          "expr": "(100 * (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"functional_success\",score_status=\"PASS\"}[$__range])))) / (sum(max by (metric,score_status) (last_over_time(recsys_workflow_quality_count{experiment_id=~\"$experiment\",variant=\"candidate\",metric=\"functional_success\",score_status=~\"PASS|FAIL|UNKNOWN\"}[$__range]))))) or on() vector(-1)",
+          "legendFormat": "functional_success",
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 46,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "id": 220,
+      "title": "Diagnostics",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 108,
+      "title": "Control / candidate immutable releases",
+      "type": "table",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (variant,role,release_id,config_id,llm_version_id,quantization) (last_over_time(recsys_workflow_release_info{experiment_id=~\"$experiment\"}[$__range]))",
+          "legendFormat": "releases",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "experiment_id": true
+            },
+            "indexByName": {
+              "case_id": 0,
+              "group": 1,
+              "variant": 2,
+              "verdict": 3
+            },
+            "renameByName": {
+              "case_id": "Case",
+              "group": "Group",
+              "variant": "Variant",
+              "verdict": "Verdict"
+            }
+          }
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 16,
+        "h": 6
+      }
+    },
+    {
+      "id": 104,
+      "title": "Champion / previous pointers",
+      "type": "table",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (pointer,release_id) (last_over_time(recsys_workflow_pointer{experiment_id=~\"$experiment\"}[$__range]))",
+          "legendFormat": "pointers",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "experiment_id": true
+            },
+            "indexByName": {
+              "case_id": 0,
+              "group": 1,
+              "variant": 2,
+              "verdict": 3
+            },
+            "renameByName": {
+              "case_id": "Case",
+              "group": "Group",
+              "variant": "Variant",
+              "verdict": "Verdict"
+            }
+          }
+        }
+      ],
+      "gridPos": {
+        "x": 16,
+        "y": 57,
+        "w": 8,
+        "h": 6
+      }
+    },
+    {
+      "id": 150,
+      "title": "Pod CPU",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"kagent|llm-inference\",pod=~\"recsys-workflow.*|recsys-ab-.*|rec-ab-.*|rec-llm-.*|qwen.*\",container!=\"\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}}",
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "id": 151,
+      "title": "Pod memory",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "UNKNOWN / UNAVAILABLE",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*control.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*candidate.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*PASS.*|.*COMPLETED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*HOLD.*|.*UNKNOWN.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*FAIL.*|.*ROLLED_BACK.*|.*ROLLBACK_FAILED.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*UNAVAILABLE.*|.*NOT_APPLICABLE.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=~\"kagent|llm-inference\",pod=~\"recsys-workflow.*|recsys-ab-.*|rec-ab-.*|rec-llm-.*|qwen.*\",container!=\"\"})",
+          "legendFormat": "{{pod}}",
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 63,
+        "w": 12,
+        "h": 7
+      }
+    }
+  ]
+}

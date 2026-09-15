@@ -11,6 +11,7 @@ pipeline {
     booleanParam(name: 'PUBLISH_IMAGES', defaultValue: true, description: 'Push images after successful component CI.')
     booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'One-run override for deploy/update from a non-main branch.')
     booleanParam(name: 'DEPLOY_PULL_REQUESTS', defaultValue: false, description: 'Optional override to publish/deploy an unmerged pull-request branch; merged PR commits deploy through main by default.')
+    booleanParam(name: 'MCP_AUTH_RETIRE_APPROVED', defaultValue: false, description: 'Separate approval to retire one drained inactive MCP auth slot. It does not approve Secret purge.')
     string(name: 'COMPONENT_CI_MAX_PARALLEL', defaultValue: '2', description: 'Maximum component CI branches running in the Jenkins controller pod.')
     string(name: 'GATEWAY_SMOKE_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins username/password credential for authenticated demo web smoke.')
     string(name: 'PROMOTION_MANIFEST_URI', defaultValue: 's3://recsys-model-store/promotions/bst/latest.json', description: 'Production model manifest URI for KServe CD.')

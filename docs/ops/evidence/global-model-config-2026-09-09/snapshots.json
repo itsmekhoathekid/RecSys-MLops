@@ -1,0 +1,24 @@
+{
+  "captured_at_utc": "2026-09-09T09:42:28.081584+00:00",
+  "spec_sha256": "d4b642a42fbdbde5ea637644dfa68baf78d718e16e778860d257c1e0a6c8438c",
+  "templates": [
+    {
+      "name": "recsys-context-agent-sandbox-6f0ac1272839010f",
+      "uid": "7e86d124-54e3-4b42-b064-542928ccb52d",
+      "created": "2026-09-09T09:22:05Z",
+      "ready": "True"
+    },
+    {
+      "name": "recsys-coordinator-agent-sandbox-662c0ac593c9bb54",
+      "uid": "4b318636-40ee-423f-b5ed-47d490019d77",
+      "created": "2026-09-09T09:22:21Z",
+      "ready": "True"
+    },
+    {
+      "name": "recsys-recommendation-agent-sandbox-4ffff4865083f59f",
+      "uid": "f57fc51f-ed0b-47d9-a901-cd40fe8ec589",
+      "created": "2026-09-09T09:22:13Z",
+      "ready": "True"
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "model": "Qwen2.5-0.5B-Instruct Q4_K_M",
+  "llm_version_id": "2c87bcf043928361e3fc16b5293dd1abaf41679eb87a4af2a03f2f6264e99c8e",
+  "infrastructure_only": true,
+  "real_tool_calls": 0,
+  "synthetic_ab_cases": 0,
+  "compatibility_http_requests": 6,
+  "passed": 3,
+  "verdict": "FAIL",
+  "cases": [
+    {
+      "case": "tool_selection",
+      "passed": true,
+      "duration_seconds": 3.3907114170724526,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_recommendations",
+              "arguments": "{\"user_id\": 1001, \"top_k\": 3}"
+            },
+            "id": "QCgjPjfcOx4qilyhEfD51BOF0OeowEHa"
+          }
+        ]
+      },
+      "usage": {
+        "completion_tokens": 32,
+        "prompt_tokens": 308,
+        "total_tokens": 340,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "arguments",
+      "passed": true,
+      "duration_seconds": 1.4139912920072675,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_recommendations",
+              "arguments": "{\"user_id\": 1002, \"top_k\": 2}"
+            },
+            "id": "sKZQNf33yM8t9iiJKmxDfiyjN3jM3SjR"
+          }
+        ]
+      },
+      "usage": {
+        "completion_tokens": 32,
+        "prompt_tokens": 306,
+        "total_tokens": 338,
+        "prompt_tokens_details": {
+          "cached_tokens": 287
+        }
+      }
+    },
+    {
+      "case": "tool_result",
+      "passed": false,
+      "duration_seconds": 2.8458840410457924,
+      "message": {
+        "role": "assistant",
+        "content": "Here are the 2 recommended items for user_id=1001:\n\n1. Item ID: 7, Score: 0.8, Metadata: {\"tag\": \"fixture\"}\n2. Item ID: 4, Score: 0.5, Metadata: {}"
+      },
+      "usage": {
+        "completion_tokens": 58,
+        "prompt_tokens": 403,
+        "total_tokens": 461,
+        "prompt_tokens_details": {
+          "cached_tokens": 288
+        }
+      }
+    },
+    {
+      "case": "missing_user",
+      "passed": false,
+      "duration_seconds": 1.225687374942936,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_recommendations",
+              "arguments": "{\"user_id\": 123, \"top_k\": 2}"
+            },
+            "id": "mPg6p2GD5gdXVwarF1Zxoe6w70bJFKLp"
+          }
+        ]
+      },
+      "usage": {
+        "completion_tokens": 31,
+        "prompt_tokens": 299,
+        "total_tokens": 330,
+        "prompt_tokens_details": {
+          "cached_tokens": 292
+        }
+      }
+    },
+    {
+      "case": "empty_result",
+      "passed": false,
+      "duration_seconds": 1.6058087920537218,
+      "message": {
+        "role": "assistant",
+        "content": "I'm sorry, but I can't provide recommendations for the user ID 1001. Could you please provide me with more information?"
+      },
+      "usage": {
+        "completion_tokens": 30,
+        "prompt_tokens": 359,
+        "total_tokens": 389,
+        "prompt_tokens_details": {
+          "cached_tokens": 292
+        }
+      }
+    },
+    {
+      "case": "composite_next_step",
+      "passed": true,
+      "duration_seconds": 1.512404500041157,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_context",
+              "arguments": "{\"item_ids\": [7, 4]}"
+            },
+            "id": "zsLpIhetf3xKCZByGowRv7rAbtOE9Obl"
+          }
+        ]
+      },
+      "usage": {
+        "completion_tokens": 25,
+        "prompt_tokens": 428,
+        "total_tokens": 453,
+        "prompt_tokens_details": {
+          "cached_tokens": 348
+        }
+      }
+    }
+  ]
+}

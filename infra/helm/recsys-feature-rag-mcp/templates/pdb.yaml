@@ -1,7 +1,16 @@
+{{- $contexts := include "recsys-feature-rag-mcp.revisionContexts" . | fromJsonArray -}}
+{{- range $context := $contexts }}
+---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
-metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }}}
+metadata:
+  name: {{ $context.name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "recsys-feature-rag-mcp.revisionLabels" $context | nindent 4 }}
 spec:
   minAvailable: 1
   selector:
-    matchLabels: {app.kubernetes.io/name: {{ .Values.name }}}
+    matchLabels:
+      app.kubernetes.io/name: {{ $context.name }}
+{{- end }}

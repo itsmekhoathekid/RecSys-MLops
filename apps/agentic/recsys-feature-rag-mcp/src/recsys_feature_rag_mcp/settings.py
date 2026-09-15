@@ -18,6 +18,8 @@ class McpSettings:
     online_feature_timeout_seconds: float = 2.0
     rag_timeout_seconds: float = 5.0
     image_reference: str = "unknown"
+    tool_contract_version: str = "unknown"
+    tool_contract_sha256: str = "unknown"
     downstream_max_connections: int = 50
     downstream_max_keepalive_connections: int = 20
 
@@ -58,6 +60,8 @@ class McpSettings:
             ),
             rag_timeout_seconds=float(os.getenv("RAG_TIMEOUT_SECONDS", "5")),
             image_reference=os.getenv("RECSYS_IMAGE_REFERENCE", "unknown"),
+            tool_contract_version=os.getenv("TOOL_CONTRACT_VERSION", "unknown"),
+            tool_contract_sha256=os.getenv("TOOL_CONTRACT_SHA256", "unknown"),
             downstream_max_connections=int(
                 os.getenv("DOWNSTREAM_MAX_CONNECTIONS", "50")
             ),

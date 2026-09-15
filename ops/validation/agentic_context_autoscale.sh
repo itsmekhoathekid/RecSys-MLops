@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+cd "$(dirname "$0")/../.."
+source jenkins/scripts/deploy/agentic/rotation.sh
+
 namespace="${KAGENT_NAMESPACE:-kagent}"
+mcp_workload="$(mcp_auth_active_workload featureRag)"
 duration="${AGENTIC_LOAD_DURATION_SECONDS:-300}"
 rps="${AGENTIC_LOAD_RPS:-20}"
 chunk_id="${AGENTIC_SMOKE_CHUNK_ID:-800080:review:rev_800080_02:0}"
@@ -36,9 +40,9 @@ wait_for_available_replicas() {
   return 1
 }
 
-kubectl -n "${namespace}" rollout status deployment/recsys-feature-rag-mcp \
+kubectl -n "${namespace}" rollout status "deployment/${mcp_workload}" \
   --timeout=10m
-kubectl -n "${namespace}" exec deployment/recsys-feature-rag-mcp -c mcp -- \
+kubectl -n "${namespace}" exec "deployment/${mcp_workload}" -c mcp -- \
   python -c '
 import asyncio
 import json
@@ -135,7 +139,7 @@ done
 scaled=false
 for _ in 1 2; do
   sleep "${poll_seconds}"
-  replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-feature-rag-mcp \
+  replicas="$(kubectl -n "${namespace}" get hpa "keda-hpa-${mcp_workload}" \
     -o jsonpath='{.status.desiredReplicas}')"
   if [[ "${replicas:-0}" -ge 3 ]]; then
     scaled=true
@@ -145,7 +149,7 @@ done
 if [[ "${scaled}" != "true" ]]; then
   for _ in $(seq 1 "${decision_grace_seconds}"); do
     sleep 1
-    replicas="$(kubectl -n "${namespace}" get hpa keda-hpa-recsys-feature-rag-mcp \
+    replicas="$(kubectl -n "${namespace}" get hpa "keda-hpa-${mcp_workload}" \
       -o jsonpath='{.status.desiredReplicas}')"
     if [[ "${replicas:-0}" -ge 3 ]]; then
       scaled=true
@@ -157,7 +161,7 @@ fi
   echo "MCP did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
 }
-wait_for_available_replicas recsys-feature-rag-mcp 3
+wait_for_available_replicas "${mcp_workload}" 3
 wait "${load_pid}"
 load_pid=""
 
@@ -247,35 +251,35 @@ fi
   echo "Sandbox WorkerPool did not scale to at least 3 replicas within two KEDA polling cycles." >&2
   exit 1
 }
-wait_for_available_replicas recsys-context-sandbox-pool 3
+wait_for_available_replicas recsys-context-sandbox-pool-deployment 3
 wait "${load_pid}"
 load_pid=""
 kill "${a2a_pf_pid}" >/dev/null 2>&1 || true
 wait "${a2a_pf_pid}" >/dev/null 2>&1 || true
 a2a_pf_pid=""
 
-original_address="$(kubectl -n "${namespace}" get scaledobject recsys-feature-rag-mcp \
+original_address="$(kubectl -n "${namespace}" get scaledobject "${mcp_workload}" \
   -o jsonpath='{.spec.triggers[0].metadata.serverAddress}')"
-mcp_fallback_replicas="$(kubectl -n "${namespace}" get scaledobject recsys-feature-rag-mcp \
+mcp_fallback_replicas="$(kubectl -n "${namespace}" get scaledobject "${mcp_workload}" \
   -o jsonpath='{.spec.fallback.replicas}')"
 [[ -n "${mcp_fallback_replicas}" ]] || {
   echo "MCP ScaledObject does not define spec.fallback.replicas." >&2
   exit 1
 }
 restore_scaler() {
-  kubectl -n "${namespace}" patch scaledobject recsys-feature-rag-mcp --type json \
+  kubectl -n "${namespace}" patch scaledobject "${mcp_workload}" --type json \
     -p "[{\"op\":\"replace\",\"path\":\"/spec/triggers/0/metadata/serverAddress\",\"value\":\"${original_address}\"}]" \
     >/dev/null
 }
 trap 'restore_scaler; cleanup' EXIT
-kubectl -n "${namespace}" patch scaledobject recsys-feature-rag-mcp --type json \
+kubectl -n "${namespace}" patch scaledobject "${mcp_workload}" --type json \
   -p '[{"op":"replace","path":"/spec/triggers/0/metadata/serverAddress","value":"http://unreachable.invalid:9090"}]' \
   >/dev/null
 
 fallback=false
 for _ in $(seq 1 $((fallback_wait_seconds / poll_seconds))); do
   sleep "${poll_seconds}"
-  replicas="$(kubectl -n "${namespace}" get deployment recsys-feature-rag-mcp \
+  replicas="$(kubectl -n "${namespace}" get deployment "${mcp_workload}" \
     -o jsonpath='{.status.availableReplicas}')"
   if [[ "${replicas:-0}" == "${mcp_fallback_replicas}" ]]; then
     fallback=true
@@ -309,7 +313,7 @@ kubectl -n "${namespace}" patch scaledobject recsys-context-sandbox-pool --type 
 sandbox_fallback=false
 for _ in $(seq 1 $((fallback_wait_seconds / poll_seconds))); do
   sleep "${poll_seconds}"
-  replicas="$(kubectl -n "${namespace}" get deployment recsys-context-sandbox-pool \
+  replicas="$(kubectl -n "${namespace}" get deployment recsys-context-sandbox-pool-deployment \
     -o jsonpath='{.status.availableReplicas}')"
   if [[ "${replicas:-0}" == "${sandbox_fallback_replicas}" ]]; then
     sandbox_fallback=true

@@ -1,0 +1,49 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: recsys-workflow-private-adapters}
+spec:
+  podSelector:
+    matchLabels: {app: recsys-workflow-adapter}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {istio: recsys-workflow-gateway}
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: recsys-workflow-private-gateway}
+spec:
+  podSelector:
+    matchLabels: {istio: recsys-workflow-gateway}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: recsys-workflow-router}
+      ports: [{protocol: TCP, port: 8080}]
+    - ports: [{protocol: TCP, port: 15021}]
+{{- if or .Values.evaluation.enabled .Values.trigger.enabled }}
+---
+# Narrow additive access: do not relax the Langfuse namespace default deny.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recsys-workflow-langfuse-clients
+  namespace: langfuse
+spec:
+  podSelector:
+    matchLabels: {app: web}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kagent}
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [recsys-workflow-evaluation, recsys-workflow-trigger, recsys-workflow-dispatch]
+      ports: [{protocol: TCP, port: 3000}]
+{{- end }}

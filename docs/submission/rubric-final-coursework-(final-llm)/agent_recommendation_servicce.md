@@ -1,14 +1,16 @@
-# Sandboxed Recommendation Agent Uses the Recommendation Service
+# Sandbox Agent Uses the Recommendation Service
 
-> **Runtime status (updated 2026-08-28):** production runs the custom kagent v7
-> compatibility image with Substrate `0.0.11`; values select assigned-worker
-> KEDA. Recommendation proved `1 -> 2 -> 3 -> 2 -> 1`, completed `2187/2187`
+> **Runtime status (updated 2026-09-12):** production runs the upstream kagent
+> `0.10.0-rc1` chart with upstream Substrate `0.0.9` and the digest-pinned
+> upstream Go ADK image. Values select assigned-worker KEDA. Recommendation
+> proved `1 -> 2 -> 3 -> 2 -> 1`, completed `2187/2187`
 > load requests, and proved fallback to one. Revision v9 copies `user_id`,
 > `candidate_item_ids`, and `top_k` exactly from each request, then emits final
 > text immediately after the single MCP response without calling `ask_user`.
 > CPU mode remains only for rollback.
 
-This submission section proves that the recommendation flow:
+This document provides source-code, configuration, deployment, and runtime
+evidence for the following coursework requirements:
 
 - exposes the existing `POST /recommendations` serving boundary through a
   dedicated FastAPI and FastMCP service;
@@ -99,16 +101,73 @@ counter after request completion:
 ```python
 @app.post("/recommendations", response_model=RecommendationResponse)
 async def recommendations(
-    payload: RecommendationRequest,
-    request: Request,
+    payload: RecommendationRequest, request: Request
 ) -> RecommendationResponse:
-    online_features = await request.app.state.feature_service.fetch(...)
-    response = await recommend_from_online_features(
-        online_features=online_features,
-        top_k=payload.top_k,
-        route=route,
+    active_router = request.app.state.ranker
+    route = select_triton_route(
+        active_router, payload.user_id, settings.model_version
     )
-    return response
+    shadow_route = (
+        active_router.shadow_route(payload.user_id)
+        if hasattr(active_router, "shadow_route")
+        else None
+    )
+    metric_labels = ab_labels(
+        route.ab_variant, route.model_version, route.ab_experiment_id
+    )
+    start = time.perf_counter()
+    status = "error"
+    confidence: float | None = None
+    try:
+        online_features = await request.app.state.feature_service.fetch(
+            OnlineFeaturesRequest(
+                user_id=payload.user_id,
+                candidate_item_ids=payload.candidate_item_ids,
+                top_k=payload.top_k,
+            )
+        )
+        response = await recommend_from_online_features(
+            online_features=online_features,
+            top_k=payload.top_k,
+            route=route,
+            metric_labels=metric_labels,
+            payload_observer=(
+                lambda triton_payload: (
+                    request.app.state.shadow_runner.submit(
+                        shadow_route, triton_payload
+                    )
+                    if shadow_route is not None
+                    else None
+                )
+            ),
+        )
+        status = "success" if response.items else "empty"
+        if response.items:
+            confidence = max(item.score for item in response.items)
+        return response
+    except CapacityExceeded as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"inference failed: {exc}"
+        ) from exc
+    finally:
+        duration = time.perf_counter() - start
+        observe_model_prediction(
+            model_version=route.model_version,
+            duration_seconds=duration,
+            confidence=confidence,
+            status=status,
+            labels={
+                "ab_variant": metric_labels["ab_variant"],
+                "experiment_id": metric_labels["experiment_id"],
+            },
+        )
+        METRICS.observe(
+            "recsys_api_recommendation_duration_seconds",
+            duration,
+            labels=metric_labels,
+        )
 ```
 
 References:
@@ -182,7 +241,9 @@ autoscaling:
     targetValue: "0.20"
 ```
 
-Reference: [Inference API autoscaling values (line 51)](../../../infra/helm/recsys-inference-api/values.yaml#L51).
+References:
+
+- [Inference API autoscaling values](../../../infra/helm/recsys-inference-api/values.yaml#L51)
 
 #### Stage 4: RollingUpdate and probes complete scale-out
 
@@ -199,7 +260,9 @@ containers:
     livenessProbe: {httpGet: {path: /healthz, port: http}}
 ```
 
-Reference: [Inference Deployment strategy and probes (line 13)](../../../infra/helm/recsys-inference-api/templates/deployment.yaml#L13).
+References:
+
+- [Inference Deployment strategy and probes](../../../infra/helm/recsys-inference-api/templates/deployment.yaml#L13)
 
 ### 1.3 Recommendation MCP autoscaling stages
 
@@ -224,8 +287,34 @@ TOOL_CALLS = Counter(
 )
 
 @mcp.tool()
-async def get_personalized_recommendations(...):
-    response = await inference_client.recommend(...)
+async def get_personalized_recommendations(
+    user_id: UserId,
+    candidate_item_ids: CandidateItemIds = None,
+    top_k: TopK = 10,
+) -> dict[str, object]:
+    """Get model-ranked Top-K items without changing order or scores.
+
+    Args:
+        user_id: Required positive integer copied from the user's request.
+        candidate_item_ids: Optional list of 1-500 candidate item IDs, or null.
+        top_k: Requested result count from 1-100; defaults to 10.
+
+    Always provide ``user_id`` in the tool arguments. For example, a request
+    for three items for user 1001 uses ``{"user_id": 1001, "top_k": 3}``.
+    """
+
+    with TOOL_DURATION.time():
+        try:
+            response: RecommendationResponse = await inference_client.recommend(
+                user_id=user_id,
+                candidate_item_ids=candidate_item_ids,
+                top_k=top_k,
+            )
+        except DownstreamError as exc:
+            TOOL_CALLS.labels("error").inc()
+            raise RuntimeError(
+                json.dumps(exc.as_dict(), sort_keys=True)
+            ) from exc
     TOOL_CALLS.labels(tool_result_status(response)).inc()
     return response.model_dump()
 ```
@@ -330,7 +419,9 @@ spec:
       name: recsys-recommendation-sandbox-pool
 ```
 
-Reference: [Recommendation SandboxAgent WorkerPool binding (line 17)](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml#L17).
+References:
+
+- [Recommendation SandboxAgent WorkerPool binding](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml#L17)
 
 #### Stage 2: Prometheus measures assigned workers
 
@@ -596,14 +687,13 @@ token or Secret value is exposed.
 ```python
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Run MCP sessions and close the shared downstream transport."""
+
     try:
         async with mcp.session_manager.run():
             yield
     finally:
         await inference_client.aclose()
-
-async def get_personalized_recommendations(...):
-    response = await inference_client.recommend(...)
 ```
 
 ```python
@@ -642,7 +732,9 @@ SDK directly. `recsys-inference-api` owns the online-feature call and Triton
 ranking. This boundary removes an extra agent/LLM turn and keeps ranking logic
 in the serving service.
 
-Reference: [Inference API client request path (line 46)](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/client.py#L46).
+References:
+
+- [Inference API client request path](../../../apps/agentic/recsys-recommendation-mcp/src/recsys_recommendation_mcp/client.py#L46)
 
 ### Runtime image proof
 
@@ -829,7 +921,9 @@ spec:
 The prompt requires one tool call, preserves service order and scores, forbids
 LLM reranking, and forbids context-agent/RAG/feature tool calls.
 
-Reference: [SandboxAgent, prompt, A2A skill, and one-tool binding (line 10)](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml#L10).
+References:
+
+- [SandboxAgent, prompt, A2A skill, and one-tool binding](../../../infra/helm/recsys-recommendation-agent/templates/sandboxagent.yaml#L10)
 
 #### System prompt and MCP tool context
 

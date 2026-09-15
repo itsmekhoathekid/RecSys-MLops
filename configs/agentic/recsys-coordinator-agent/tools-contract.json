@@ -11,22 +11,5 @@
       "name": "recsys-recommendation-agent-sandbox"
     }
   ],
-  "mcpServers": [
-    {
-      "apiGroup": "kagent.dev",
-      "kind": "RemoteMCPServer",
-      "name": "recsys-feature-rag-mcp",
-      "tools": [
-        "get_chunk_by_id"
-      ]
-    },
-    {
-      "apiGroup": "kagent.dev",
-      "kind": "RemoteMCPServer",
-      "name": "recsys-recommendation-mcp",
-      "tools": [
-        "get_personalized_recommendations"
-      ]
-    }
-  ]
+  "mcpServers": []
 }

@@ -1,0 +1,15 @@
+{
+  "version": "workflow-cases-v7",
+  "fixture_file": "workflow-cases-v7.json",
+  "fixture_file_sha256": "7ea02b5a728cc351062839d5d27a08c35ce8968c246f5ca5924ec62483802ef3",
+  "parent_fixture_file": "workflow-cases-v6.json",
+  "parent_fixture_file_sha256": "5b9479268e176e01d04ac639673fdec615f7b6b2c360ad84db5d4d65f9da9543",
+  "root_conversations": 20,
+  "change": "Keep all twenty case IDs, groups, expected trajectories and hard assertions; express outer A2A arguments directly and use an imperative bounded get_chunk_by_id request string for Context.",
+  "reason": "Production v21 canary and create-only v8 probes showed that raw Context request JSON was rendered as an answer by the stock small model instead of being executed. The revised wording makes the native outer call and inner Context instruction unambiguous without changing any expected value or gate.",
+  "failed_experiment": "wf-014091ffb124323dca6536c2d4220262",
+  "failed_preparation_release": "3ce7a06fe96289faf92b3ff53dd5299bbb88c96769639b1a98179fc89eae0bde",
+  "inference_requests_created_by_revision": 0,
+  "gate_relaxed": false,
+  "replay_policy": "No v6 request is replayed or counted in a v7 experiment."
+}

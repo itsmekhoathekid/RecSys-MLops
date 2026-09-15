@@ -1,0 +1,57 @@
+{
+  "raw/rag-source-quota-fallback96-20260823/rag_item_documents/manifest.json": {
+    "status": "complete",
+    "run_id": "rag-source-quota-fallback96-20260823",
+    "generated_count": 96,
+    "failed_count": 0
+  },
+  "silver/rag-20260906T063109/rag_item_chunks/manifest.json": {
+    "status": "complete",
+    "run_id": "rag-20260906T063109",
+    "source_run_id": "rag-source-quota-fallback96-20260823",
+    "record_count": 576,
+    "unique_item_count": 96,
+    "failed_count": 0,
+    "embedding_dimension": 384
+  },
+  "gold/rag-20260906T063109/rag_item_embeddings/manifest.json": {
+    "status": "complete",
+    "run_id": "rag-20260906T063109",
+    "source_run_id": "rag-source-quota-fallback96-20260823",
+    "record_count": 576,
+    "unique_item_count": 96,
+    "failed_count": 0,
+    "embedding_dimension": 384
+  },
+  "gold/rag-20260906T063109/rag_item_embeddings/index_manifest.json": {
+    "status": "published",
+    "pipeline_run_id": "rag-20260906T063109",
+    "slot": "green",
+    "unique_item_count": 96,
+    "vector_count": 576,
+    "retrieval_smoke_passed": true,
+    "validated_at": "2026-09-06T07:09:13.181713Z",
+    "embedding_dimension": 384,
+    "feature_view": "rag_item_chunks_green"
+  },
+  "gold/rag_item_embeddings/_active/pointer.json": {
+    "source_run_id": "rag-source-quota-fallback96-20260823",
+    "pipeline_run_id": "rag-20260906T063109",
+    "active_slot": "green",
+    "published_at": "2026-09-06T07:09:13.181777Z",
+    "embedding_dimension": 384,
+    "feature_view": "rag_item_chunks_green"
+  },
+  "governance-validation/RAG_ITEMS/20260906T063109/rag-index.json": {
+    "run_id": "rag-20260906T063109",
+    "datasets": {
+      "rag.active_pointer": "SUCCESS",
+      "rag.gold_embeddings": "SUCCESS",
+      "rag.milvus.blue": "SUCCESS",
+      "rag.milvus.green": "SUCCESS",
+      "rag.raw_documents": "SUCCESS",
+      "rag.silver_chunks": "SUCCESS"
+    }
+  }
+}
+ARTIFACT_VERIFICATION_PASSED

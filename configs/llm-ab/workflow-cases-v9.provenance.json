@@ -1,0 +1,16 @@
+{
+  "version": "workflow-cases-v9",
+  "fixture_file": "workflow-cases-v9.json",
+  "fixture_file_sha256": "7a0f4697942690be5d4fd9a9da75c269371db34e0339215bc67ff570a7f48838",
+  "parent_fixture_file": "workflow-cases-v8.json",
+  "parent_fixture_file_sha256": "013551fe321c18454ce37be819c9a42c27f99b4031e7aee22351747b440259ff",
+  "root_conversations": 20,
+  "change": "Shorten only the embedded Context A2A request to the exact one-clause scalar chunk_id instruction proven to be copied unchanged by Coordinator; preserve every case ID, group, expected value and hard gate.",
+  "reason": "Create-only v17 evidence proved correct routing and complete Context evidence but showed Coordinator consistently ended the request argument at the closing chunk_id quote. The v18 matrix used that exact bounded request and passed all six stock-ADK plus deterministic-adapter checks. A sole FastMCP output object remains a transport envelope and is normalized without flattening any business object.",
+  "failed_preparation_release": "eac556313301b7ad8c9fbab4b455e865293c5fc48598ba16375fdef40d522e20",
+  "validated_baseline_release": "499efed3f5c48bf9e836df2d71b937c8681f65d3f076d285789e4d8a36d0e228",
+  "compatibility_build": "RecSys-Workflow-Stock-B8646-Baseline/26",
+  "inference_requests_created_by_revision": 0,
+  "gate_relaxed": false,
+  "replay_policy": "No v8 request is replayed or counted in a v9 experiment."
+}

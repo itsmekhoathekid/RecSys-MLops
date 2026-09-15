@@ -122,9 +122,9 @@ resource "google_container_cluster" "recsys" {
 
   resource_labels = var.config.labels
 
-  # GKE beta APIs are enabled by ops/gcp/enable_substrate_cert_beta_apis.sh.
-  # The setting is one-way and provider 5.45 cannot safely reconcile it: after
-  # discovery it proposes replacing the cluster to remove the API block.
+  # The existing cluster has one-way beta APIs in its historical control-plane
+  # state. Provider 5.45 cannot safely reconcile their removal and would propose
+  # replacing the cluster, so keep that immutable platform fact out of plans.
   lifecycle {
     ignore_changes = [enable_k8s_beta_apis]
   }

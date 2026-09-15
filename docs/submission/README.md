@@ -41,10 +41,11 @@ across `recsys-data-config`, `recsys-data-lakehouse`,
 `recsys-source-store`, `recsys-event-stream`, `recsys-feature-store`,
 `recsys-kafka-connect`, `recsys-streaming`, and `recsys-airflow`.
 
-The repository target is a custom kagent build paired with Substrate `0.0.11`.
+The repository target is the upstream kagent `0.10.0-rc1` chart paired with
+upstream Substrate `0.0.9` and a digest-pinned upstream Go ADK image.
 Context, Recommendation, and Coordinator are SandboxAgents with independent
-WorkerPools and assigned-worker KEDA. The production v6 compatibility build
-and v19 Coordinator revision passed the complete routing suite; all three pools
+WorkerPools and assigned-worker KEDA. The current native runtime and Coordinator
+revision passed the complete routing suite; all three pools
 proved `1 -> 2 -> 3 -> 1` plus fallback to one. Historical `0.0.6`/CPU and
 regular-Coordinator screenshots remain evidence of their stated runs but are
 superseded by the current topology.

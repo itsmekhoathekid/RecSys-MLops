@@ -323,3 +323,13 @@ def test_up_normalizes_istiod_without_weakening_mesh_readiness(tmp_path: Path) -
     assert 'name  = "pilot.resources.requests.cpu"' in terraform
     assert 'value = "50m"' in terraform
     assert 'name  = "pilot.resources.requests.memory"' in terraform
+
+
+def test_kserve_controller_uses_the_reviewed_ml_system_capacity() -> None:
+    terraform = (
+        ROOT / "infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf"
+    ).read_text(encoding="utf-8")
+
+    assert 'controller_placement = "ml-system-v1"' in terraform
+    assert "kubectl patch deployment kserve-controller-manager -n kserve" in terraform
+    assert '\"recsys.ai/workload\":\"ml-system\"' in terraform

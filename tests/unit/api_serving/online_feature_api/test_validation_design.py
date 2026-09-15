@@ -100,7 +100,7 @@ def test_post_malformed_partition_does_not_call_dependencies(
             200,
         ),
         ({"user_id": 1, "candidate_item_ids": [1], "top_k": 101}, 422),
-        ({"user_id": 1, "candidate_item_ids": [], "top_k": 1}, 422),
+        ({"user_id": 1, "candidate_item_ids": [], "top_k": 1}, 200),
         ({"user_id": 1, "candidate_item_ids": list(range(1, 501)), "top_k": 1}, 200),
         ({"user_id": 1, "candidate_item_ids": list(range(1, 502)), "top_k": 1}, 422),
     ],
@@ -111,7 +111,7 @@ def test_post_malformed_partition_does_not_call_dependencies(
         "top-k-min",
         "top-k-max",
         "top-k-max-plus-one",
-        "candidate-count-min-minus-one",
+        "candidate-count-explicit-empty",
         "candidate-count-max",
         "candidate-count-max-plus-one",
     ],
@@ -125,7 +125,10 @@ def test_post_boundary_value_analysis(
     feature_client = online_feature_api.app.state.feature_client_mock
     if expected_status == 200:
         feature_client.user_sequence.assert_called_once()
-        feature_client.item_features_batch.assert_called_once()
+        if payload.get("candidate_item_ids") == []:
+            feature_client.item_features_batch.assert_not_called()
+        else:
+            feature_client.item_features_batch.assert_called_once()
     else:
         feature_client.candidates.assert_not_called()
         feature_client.user_sequence.assert_not_called()
@@ -347,16 +350,24 @@ def test_feature_service_collaboration_and_legacy_path() -> None:
     client = Mock()
     client.candidates.return_value = [10, 11, 12]
     client.user_sequence.return_value = {"hist_item_ids": [7]}
-    client.item_features_batch.return_value = {
-        "10": {"category_id": 10},
-        "11": {"category_id": 11},
-        "12": {"category_id": 12},
+    client.item_features_batch.side_effect = lambda item_ids: {
+        str(item_id): {"category_id": item_id} for item_id in item_ids
     }
     fallback = asyncio.run(get_online_features(7, None, 2, client))
     explicit = asyncio.run(get_online_features(7, [90, 91], 2, client))
     assert fallback.candidate_item_ids == [10, 11, 12]
     assert explicit.candidate_item_ids == [90, 91]
     client.candidates.assert_called_once_with(7, 10)
+
+    client.reset_mock()
+    client.user_sequence.return_value = {"hist_item_ids": [7]}
+    client.item_features_batch.side_effect = None
+    client.item_features_batch.return_value = {}
+    empty = asyncio.run(get_online_features(7, [], 2, client))
+    assert empty.candidate_item_ids == []
+    assert empty.item_features == {}
+    client.candidates.assert_not_called()
+    client.item_features_batch.assert_not_called()
 
     class LegacyFeatureClient:
         def candidates(self, user_id: int, limit: int) -> list[int]:

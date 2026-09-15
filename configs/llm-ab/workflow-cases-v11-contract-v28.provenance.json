@@ -1,0 +1,13 @@
+{
+  "version": "workflow-cases-v11-contract-v28",
+  "fixture_file": "workflow-cases-v11.json",
+  "fixture_file_sha256": "ec2fd035f17b8e732a3cafdb91cd95493c9895249171745bfdfba981a14a2be3",
+  "parent_provenance_file": "workflow-cases-v11.provenance.json",
+  "parent_provenance_file_sha256": "bebee4698d1d5f89a89b7b3b208091b7d5d943758bcffb93d6f3473b2192cfa0",
+  "root_conversations": 20,
+  "prompt_contract": "workflow-stock-a2a-v28",
+  "change": "Keep the frozen twenty-case fixture unchanged while moving specialist final output to an exact done marker; the trusted root adapter renders structured JSON from the recorded native tool response.",
+  "reason": "Create-only Qwen2.5 evidence showed a correct first specialist call followed by repeated A2A calls when prose child output was interpreted as a new request. This contract changes prompt and immutable runtime identity only; it does not add a Go ADK execution guard or relax any assertion.",
+  "gate_relaxed": false,
+  "custom_go_adk_guard": false
+}

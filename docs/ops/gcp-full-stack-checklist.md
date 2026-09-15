@@ -2,8 +2,9 @@
 
 Production target: `recsys-mlops-506406`, `asia-southeast1-b`, `recsys-mlops.site`.
 
-Current repository target (updated 2026-08-27): GKE
-`1.35.7-gke.1027000`, custom kagent build `e6df917`, and Substrate `0.0.11`.
+Current repository target (updated 2026-09-12): GKE
+`1.35.7-gke.1027000`, upstream kagent chart `0.10.0-rc1`, and upstream
+Substrate `0.0.9` with a digest-pinned upstream Go ADK image.
 The PodCertificate and ClusterTrustBundle beta APIs are enabled and cannot be
 disabled. Production validation must remain paused while Valkey quorum or ATE
 API health is red; certificate projection and metric availability alone are

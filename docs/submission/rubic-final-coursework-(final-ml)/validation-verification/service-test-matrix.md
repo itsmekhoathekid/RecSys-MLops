@@ -9,7 +9,7 @@ service.
 | Coverage `>90%` | 98.44% | 92.39% | 94.20% |
 | Full EP/BVA | PASS | PASS, POST+GET | PASS, all 3 endpoints |
 | HTTP Hypothesis idempotency | 60×3 | POST 60×3, GET 60×3 | 3 endpoints, each 60×3 |
-| Mutation `>80%` | 724/819 = 88.40% | 180/212 = 84.91% | 388/445 = 87.19% |
+| Mutation `>80%` | 724/819 = 88.40% | 189/226 = 83.63% | 691/785 = 88.03% |
 | Bad selected mutant states | 0 | 0 | 0 |
 | Locust evidence | PASS | PASS | PASS |
 
@@ -17,18 +17,18 @@ service.
 
 | Service | Validation suite | Mutation oracle |
 | --- | --- | --- |
-| Inference | [`inference_api/test_validation_design.py`](../../../../tests/unit/api_serving/inference_api/test_validation_design.py) | [`inference_api/test_public_request_path.py`](../../../../tests/mutation/api_serving/inference_api/test_public_request_path.py) |
-| Online Feature | [`online_feature_api/test_validation_design.py`](../../../../tests/unit/api_serving/online_feature_api/test_validation_design.py) | [`online_feature_api/test_public_request_path.py`](../../../../tests/mutation/api_serving/online_feature_api/test_public_request_path.py) |
-| RAG | [`rag_api/test_validation_design.py`](../../../../tests/unit/api_serving/rag_api/test_validation_design.py) | [`rag_api/test_public_request_path.py`](../../../../tests/mutation/api_serving/rag_api/test_public_request_path.py) |
+| Inference | [`inference_api/test_validation_design.py`](../../../../tests/unit/api_serving/inference_api/test_validation_design.py) | [`inference_api/test_mutation_oracles.py`](../../../../tests/unit/api_serving/inference_api/test_mutation_oracles.py) |
+| Online Feature | [`online_feature_api/test_validation_design.py`](../../../../tests/unit/api_serving/online_feature_api/test_validation_design.py) | [`online_feature_api/test_mutation_oracles.py`](../../../../tests/unit/api_serving/online_feature_api/test_mutation_oracles.py) |
+| RAG | [`rag_api/test_validation_design.py`](../../../../tests/unit/api_serving/rag_api/test_validation_design.py) | [`rag_api/test_mutation_oracles.py`](../../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py) plus direct retrieval/chunk unit tests |
 
 Root [`pyproject.toml`](../../../../pyproject.toml) is the only Mutmut config.
-[`run.py`](../../../../tests/mutation/api_serving/run.py) supports `inference`,
+[`run_mutation.py`](../../../../tests/unit/api_serving/run_mutation.py) supports `inference`,
 `online-feature`, `rag`, and `all`; it writes JSON/text reports and fails when a
 score is not strictly greater than 80% or any selected mutant has a bad state.
 
 ```bash
 UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 \
-uv run python tests/mutation/api_serving/run.py all --max-children 8
+uv run python tests/unit/api_serving/run_mutation.py all --max-children 8
 ```
 
 The standalone

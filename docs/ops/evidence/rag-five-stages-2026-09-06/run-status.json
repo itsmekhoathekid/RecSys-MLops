@@ -1,0 +1,50 @@
+{
+  "dag_id": "recsys_rag_item_index",
+  "run_id": "manual__rag_five_stages_20260906T063100",
+  "state": "success",
+  "logical_date": "2026-09-06 06:31:09+00:00",
+  "start_date": "2026-09-06 07:37:09.545157+00:00",
+  "end_date": "2026-09-06 07:46:43.226861+00:00",
+  "tasks": [
+    {
+      "task_id": "embed_item_chunks",
+      "state": "success",
+      "start_date": "2026-09-06 06:37:13.878822+00:00",
+      "end_date": "2026-09-06 07:08:28.648382+00:00",
+      "duration_seconds": 1874.76956,
+      "attempts": 1
+    },
+    {
+      "task_id": "semantic_chunk_items",
+      "state": "success",
+      "start_date": "2026-09-06 06:31:10.737186+00:00",
+      "end_date": "2026-09-06 06:37:13.061237+00:00",
+      "duration_seconds": 362.324051,
+      "attempts": 1
+    },
+    {
+      "task_id": "incremental_upsert_index",
+      "state": "success",
+      "start_date": "2026-09-06 07:08:29.450519+00:00",
+      "end_date": "2026-09-06 07:08:55.939078+00:00",
+      "duration_seconds": 26.488559,
+      "attempts": 1
+    },
+    {
+      "task_id": "validate_and_publish_index",
+      "state": "success",
+      "start_date": "2026-09-06 07:08:56.894721+00:00",
+      "end_date": "2026-09-06 07:09:40.507691+00:00",
+      "duration_seconds": 43.61297,
+      "attempts": 1
+    },
+    {
+      "task_id": "publish_datahub_validation",
+      "state": "success",
+      "start_date": "2026-09-06 07:46:25.543479+00:00",
+      "end_date": "2026-09-06 07:46:42.442470+00:00",
+      "duration_seconds": 16.898991,
+      "attempts": 5
+    }
+  ]
+}

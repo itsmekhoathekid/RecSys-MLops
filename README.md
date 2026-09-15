@@ -10,15 +10,15 @@ This project is an end-to-end recommendation platform for e-commerce. It turns c
 
 ## 📝 System Overview
 
-- **Data and analytics platform:** Generates configurable historical and real-time e-commerce events in PostgreSQL and MinIO, then streams CDC records through Debezium and Kafka. Spark builds batch features and Iceberg Bronze/Silver/Gold tables, while Flink handles event-time processing, deduplication, watermarking, streaming quality windows, and online feature updates. Airflow orchestrates ingestion, validation, compaction, materialization, drift, and analytics workflows; Feast serves PostgreSQL offline features and Redis online features; Hudi, DataHub, Trino, dbt, Superset, and Evidently provide dataset versioning, static batch dataset lineage, governed analytics, data quality, and drift monitoring.
+- **Data platform:** PostgreSQL and MinIO events flow through Debezium/Kafka CDC into Spark/Iceberg batch and Flink streaming pipelines. Airflow orchestrates ingestion and quality workflows; Feast serves PostgreSQL offline and Redis online features; Hudi, DataHub, Trino, dbt, Superset, and Evidently provide versioning, governance, analytics, and drift monitoring.
 
-- **ML training and retraining platform:** Trains a PyTorch Behavior Sequence Transformer with time-aware datasets, negative sampling, ranking metrics, checkpointing, and ONNX/Triton model packaging. Kubeflow Pipelines coordinates data preparation, KubeRay/Ray Tune hyperparameter search and distributed training, evaluation, and promotion. MLflow uses PostgreSQL for tracking and registry metadata and MinIO for artifacts and versioned models; offline NDCG gates, feature-drift checks, and online candidate error/latency gates control promotion and drift-triggered retraining.
+- **ML platform:** A PyTorch Behavior Sequence Transformer is trained with Kubeflow and Ray Tune, tracked and versioned in MLflow/MinIO, then served through FastAPI, Feast, KServe, and Triton. Offline, drift, and online gates drive retraining, autoscaling, shadow deployment, sticky A/B rollout, promotion, and rollback.
 
-- **Serving, infrastructure, and delivery:** FastAPI retrieves Feast online features, calls the Triton V2 inference API, ranks candidates, and returns personalized Top-K recommendations through NGINX. KServe manages stable and candidate Triton deployments, while KEDA HTTP/resource scalers and HPA policies autoscale API and inference workloads. Terraform and Helm provision GCP/GKE and Kubernetes resources; Jenkins validates the 15-image catalog and automates testing, immutable image publishing, deployment, shadow traffic, sticky progressive A/B rollout, model promotion, champion fallback, Helm rollback, and candidate cleanup.
+- **LLM and agent platform:** The RAG pipeline publishes semantic chunks and embeddings to Feast/Milvus, while llama.cpp models are served through llm-d and Agent Gateway. kagent SandboxAgents run on Agent Substrate, coordinate Context and Recommendation specialists through A2A, access authenticated MCP services, and use shared ModelConfig, Agent Registry, and champion/candidate delivery workflows.
 
-- **Web UI module:** Provides a React, TypeScript, Vite, and TanStack Query storefront served by a non-root NGINX container, backed by a same-origin FastAPI API. The backend uses a bounded PostgreSQL connection pool for transactional user, event, and order writes, and calls the feature and recommendation services to exercise the complete `PostgreSQL → Debezium → Kafka → Flink → Redis/Feast → Triton` real-time path. The frontend and backend are released atomically with Helm and include ingress routing, PDBs, External Secrets, Prometheus/OpenTelemetry instrumentation, CI security checks, deployment smoke tests, and revision-based rollback.
+- **Web experience:** A React, TypeScript, and Vite storefront backed by FastAPI exercises the complete real-time recommendation path from user events to ranked Top-K results. Helm releases the frontend and backend atomically with ingress, health, scaling, and rollback controls.
 
-- **Security and observability:** Vault and External Secrets Operator manage runtime credentials; Istio mTLS, authorization policies, and Kubernetes NetworkPolicies secure service-to-service communication. Prometheus and Pushgateway collect infrastructure, pipeline, quality, drift, API, and model-rollout metrics; Grafana provides dashboards and alerts, Loki/Promtail centralize logs, and Tempo/OpenTelemetry provide distributed tracing.
+- **Platform operations:** Terraform, Helm, and Jenkins provision GCP/GKE and automate validation, immutable releases, deployment, and recovery. Vault, External Secrets, Istio, and NetworkPolicies secure workloads; Prometheus/Grafana, Loki, Tempo/OpenTelemetry, and Langfuse provide metrics, logs, traces, and LLM observability.
 
 ---
 
@@ -36,7 +36,8 @@ The demo shows the production web flow from user interactions and streaming feat
 2. [📝 System Overview](#-system-overview)
 3. [🎬 Recommendation Web Demo](#-recommendation-web-demo)
 4. [🏗️ Architecture](#-architecture)
-   - [Overall System Flow](#overall-system-flow)
+   - [ML Overall System Flow](#ml-overall-system-flow)
+   - [LLM Overall System Flow](#llm-overall-system-flow)
    - [Serving Pipeline High-Level Architecture](#serving-pipeline-high-level-architecture)
    - [Progressive A/B Testing and Automatic Rollback](#progressive-ab-testing-and-automatic-rollback)
    - [Data Platform Pipeline](#data-platform-pipeline)
@@ -49,11 +50,17 @@ The demo shows the production web flow from user interactions and streaming feat
 
 ## 🏗️ Architecture
 
-### Overall System Flow
+### ML Overall System Flow
 
-The following diagram presents the **End-to-End Platform** architecture documented in [high-level system design](<docs/submission/rubic-final-coursework-(final-ml)/high_level_system_design.md>).
+The following diagram presents the **End-to-End ML Platform**. Its core data, training, and serving flows are documented in the [high-level system design](<docs/submission/rubic-final-coursework-(final-ml)/high_level_system_design.md>), [online feature API](<docs/submission/rubic-final-coursework-(final-ml)/web-api-pull-data.md>), [model prediction API](<docs/submission/rubic-final-coursework-(final-ml)/web-api-model-prediction.md>), [feature store](<docs/submission/rubic-final-coursework-(final-ml)/feature_store.md>), [ML implementation](<docs/submission/rubic-final-coursework-(final-ml)/ml.md>), [ML pipelines](<docs/submission/rubic-final-coursework-(final-ml)/ml_pipelines.md>), and [versioning](<docs/submission/rubic-final-coursework-(final-ml)/versioning.md>). Platform delivery and governance are covered by [autoscaling](<docs/submission/rubic-final-coursework-(final-ml)/autoscale.md>), [CI/CD](<docs/submission/rubic-final-coursework-(final-ml)/ci_cd.md>), [routing and gateway](<docs/submission/rubic-final-coursework-(final-ml)/routing_gateway.md>), [infrastructure as code](<docs/submission/rubic-final-coursework-(final-ml)/iac.md>), [security](<docs/submission/rubic-final-coursework-(final-ml)/security.md>), [observability and drift detection](<docs/submission/rubic-final-coursework-(final-ml)/observability.md>), [A/B testing](<docs/submission/rubic-final-coursework-(final-ml)/ab_testing.md>), and [novel ideas](<docs/submission/rubic-final-coursework-(final-ml)/noval_ideas.md>).
 
 ![End-to-End Recommendation Platform Architecture](docs/pngs/overview.png)
+
+### LLM Overall System Flow
+
+The following diagram presents the **End-to-End LLM Platform**. Its core runtime components are documented in [LLM inference](<docs/submission/rubric-final-coursework-(final-llm)/llm_inference_platform.md>), [global model configuration](<docs/submission/rubric-final-coursework-(final-llm)/global_model_config.md>), [RAG](<docs/submission/rubric-final-coursework-(final-llm)/rag.md>), [data-retrieval agents](<docs/submission/rubric-final-coursework-(final-llm)/agent_pull_data.md>), [recommendation agents](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation_servicce.md>), [agent coordination](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>), and the [Agent Registry](<docs/submission/rubric-final-coursework-(final-llm)/agent_registry.md>). Platform delivery and governance are covered by [CI/CD](<docs/submission/rubric-final-coursework-(final-llm)/ci_cd.md>), [routing and gateway](<docs/submission/rubric-final-coursework-(final-llm)/routing_gateway.md>), [infrastructure as code](<docs/submission/rubric-final-coursework-(final-llm)/iac.md>), [security](<docs/submission/rubric-final-coursework-(final-llm)/security.md>), [observability](<docs/submission/rubric-final-coursework-(final-llm)/observability.md>), [A/B testing](<docs/submission/rubric-final-coursework-(final-llm)/a_b.md>), and [novel ideas](<docs/submission/rubric-final-coursework-(final-llm)/noval_ideas.md>).
+
+![End-to-End LLM Platform Architecture](docs/pngs/15-09-2026-final-llm-with-ab.png)
 
 ### Serving Pipeline High-Level Architecture
 
@@ -347,22 +354,6 @@ Source: tab **`rubic final-coursework (final -`**.
 
 Source: tab **`rubic final-coursework (final -llm)`**.
 
-Current repository target, updated 27 August 2026: Context, Recommendation, and
-Coordinator are Substrate `0.0.11` `SandboxAgent`s with independent WorkerPools
-and assigned-worker KEDA (`AverageValue=0.7`, replicas `1..3`, fallback `1`).
-The custom kagent compatibility image is
-`0.10.0-e6df917-substrate0011-v8`; the Coordinator public identity is
-`recsys-coordinator-agent-sandbox`. Production validation is green: all three
-pools proved `1 -> 2 -> 3 -> 1`, scaler failure fallback held one replica, and
-the Coordinator routing suite passed context-only, recommendation-only,
-composite, direct-MCP, and partial-failure routing. Coordinator v22 isolates
-every specialist A2A session; Recommendation v9 copies all request arguments
-exactly and terminates after its MCP response. The partial-result contract keeps
-the valid recommendation item ID when Context is unavailable. See
-[Agent/WorkerPool Benchmark & HA](<docs/submission/rubric-final-coursework-(final-llm)/benchmark_ha.md>)
-for current operational evidence and the explicitly superseded `0.0.6`/CPU
-history.
-
 | Rubric area | Coverage |
 | --- | --- |
 | [README and High-Level System Design](README.md) | Business domain, repository structure, table of contents, and deployable-unit architecture. |
@@ -381,8 +372,8 @@ history.
 | [Routing & Gateway (NGINX Ingress Controller)](<docs/submission/rubric-final-coursework-(final-llm)/routing_gateway.md>) | HTTPS routing for the Agent UI, Agent Registry, and RAG API with Basic Auth, TLS, rate limiting, DNS, and stable internal upstreams. |
 | [IaC](<docs/submission/rubric-final-coursework-(final-llm)/iac.md>) | Modular Terraform architecture for GCP, GKE, and the LLM platform, including Helm ownership and state-safe migration without resource recreation. |
 | [Observability](<docs/submission/rubric-final-coursework-(final-llm)/observability.md>) | Prometheus/Grafana metrics, Loki logs, Tempo and Langfuse traces, LLM token/TTFT telemetry, PII-safe processing, and Agent/MCP operational evidence. |
-| A/B Testing | Work in progress. |
+| [A/B Testing](<docs/submission/rubric-final-coursework-(final-llm)/a_b.md>) | Sticky champion/candidate agent routing, progressive rollout gates, promotion, and automatic rollback. |
 | [Security](<docs/submission/rubric-final-coursework-(final-llm)/security.md>) | HashiCorp Vault HA/Raft with Cloud KMS auto-unseal, External Secrets synchronization, Agent Gateway API-key authentication, secret rotation, and verification evidence. |
 | [Repository Design](<docs/submission/rubric-final-coursework-(final-llm)/repository_design.md>) | Clean deployable boundaries and Composition Root/DI, Adapter, Strategy/State, Pipeline, and Composite patterns across the LLM, RAG, MCP, and agentic platform. |
 | [Low-Level ML Design](<docs/submission/rubic-final-coursework-(final-ml)/low_level_ml_design.md>) | Five core ML classes: `TrainingDataService`, `SplitService`, `recommenderDataset`, `BST`, and `ModelLifecycleService`. |
-| Novel Ideas | Work in progress. |
+| [Novel Ideas](<docs/submission/rubric-final-coursework-(final-llm)/noval_ideas.md>) | Agent-level progressive delivery, prompt/model release automation, observability-gated promotion, and registry-aware rollback. |

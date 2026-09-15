@@ -1,0 +1,55 @@
+{
+  "date": "2026-09-10",
+  "purpose": "Isolate llama.cpp issue 26530 from the patched workflow Go ADK runtime",
+  "llama_cpp": {
+    "release": "b8646",
+    "revision": "0c58ba3365d2bc717b447b5d70e4d6be09ff3c40",
+    "image": "asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/llama-cpp@sha256:2e9d2465b969cbdb74181687cc79b215d16488d112cf2fdab9817d63c37cdc52",
+    "chat_format_observed": "peg-native",
+    "reasoning": "off"
+  },
+  "runtime": {
+    "kind": "stock_go_adk",
+    "image": "asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/kagent-e6df917/golang-adk@sha256:7521b954b2b4ca5d187284cc78c2b6a5ddd062fa71030232634f35c61c3bc760",
+    "workflow_guard_enabled": false
+  },
+  "diagnostic_release_id": "753ebcece61e26d1356407bb71d2d10b9897da96b8eb1ebe9fed99737a630ee",
+  "results": [
+    {
+      "role": "recommendation",
+      "verdict": "PASS",
+      "native_tool_call": true,
+      "tool_executed": true
+    },
+    {
+      "role": "context",
+      "verdict": "FAIL",
+      "native_tool_call": true,
+      "tool_executed": true,
+      "reason": "candidate_item_ids changed from null to []; a second tool call was proposed and suppressed by the stock duplicate-call guard"
+    },
+    {
+      "role": "coordinator",
+      "verdict": "FAIL",
+      "native_tool_call": true,
+      "tool_executed": true,
+      "reason": "called get_personalized_recommendations directly instead of delegating to the immutable Recommendation specialist"
+    }
+  ],
+  "jenkins": {
+    "job": "RecSys-Workflow-Stock-B8646-Compatibility",
+    "terminal_build": 4,
+    "terminal_result": "FAILURE",
+    "no_case_replayed": true
+  },
+  "conclusion": "b8646 restores native tool-call parsing for this workload, but stock ADK plus the current workflow prompts does not satisfy the end-to-end workflow contract",
+  "production_after_test": {
+    "phase": "ROLLED_BACK",
+    "champion_release_id": "a9aa3fb196d3410894dbf369804d5831f2f71133409e3ad585087b87ff8e7c04",
+    "pending_release_id": "dd834beb49d47c80d8b17970d3fb92cdbcc1db76bea8b55d685cf8850ad2ebea",
+    "route_revision": "c9b77325f84eef470f38263d2aa804253372dfd0ef903dfbf7c29c761e95d9b5",
+    "diagnostic_routed": false,
+    "diagnostic_adapter_replicas": 0,
+    "diagnostic_backend_replicas": 0
+  }
+}

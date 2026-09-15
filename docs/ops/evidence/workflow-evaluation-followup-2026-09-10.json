@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "accepted": false,
+  "post_promotion_monitoring": false,
+  "experiment": {
+    "id": "wf-418d215f6a8438d05d4597fa71fc8c4a",
+    "langfuse_prompt": "recsys-workflow-ab",
+    "langfuse_version": 2,
+    "jenkins_job": "RecSys-LLM-Workflow-CD",
+    "jenkins_build": 4,
+    "jenkins_queue": 254,
+    "phase": "ROLLED_BACK",
+    "offline": {"control": {"completed": 3, "passed": 3}, "candidate": {"completed": 3, "passed": 3}, "score_readback": "PASS"},
+    "live_test": {"control": {"completed": 2, "failed": 2}, "candidate": {"completed": 1, "failed": 1}},
+    "synthetic": {"completed": 0, "budget": 20, "status": "NOT_STARTED"},
+    "verified_weights": [10, 0],
+    "promotion": false,
+    "rollback": "AUTOMATIC_VERIFIED",
+    "route_revision": "49a2bb379a6110076d0171ac95959a52934e8dd1dd6ce75cee1e7b2a7f27234e",
+    "state_etag_after_rollback": "fce44249b30f553e88c9a6c81bc027fe",
+    "control_release": "924e9b8b84915b6fd2e68e61309481f5de7c9aa173de7c5dae2096ac6fdcc8c1",
+    "candidate_release": "9ed8dd2fb66751b865db6a7618a837a718e778c227d1849b8aeb19ed4a19f83c",
+    "gate": {"verdict": "FAIL", "reason": "candidate runtime/tool contract violation", "phase": "CANARY", "source": "live_test"},
+    "trace_ids": ["a1928c8f6490758532bcf62edf3bf7fb", "797c860ccc6877ebd4c6cf618402666f", "50b8d57b94a5a9b497ffe1e29fffd884"]
+  },
+  "diagnosis": {
+    "candidate": "Correct user ID was rejected because explicitUser did not accept unquoted user_id:218. AfterTool then tried to complete an absent claim.",
+    "control": "Recorded generations returned arguments as plain text with STOP and 117/132 output tokens. The exact pinned llama.cpp server logged that object tool_choice had the wrong type and was downgraded to its default.",
+    "server_build": "b10380-0b1bad14f",
+    "trace_export": "All three traces were retrieved successfully from Langfuse /api/public/v2/observations. Deprecated v1 endpoint 404 responses were not evidence of missing telemetry."
+  },
+  "repairs": {
+    "candidate_index": {"real_products": 194, "job": "RecSys-Workflow-Candidate-Recovery", "build": 3, "result": "SUCCESS", "snapshot": "workflow/dependency-recovery/b8bbb81d41520b81564831fbdd97a8520d2258a0601598b80752be61a57b3dda/snapshot.json", "source_max_feature_time": "2026-03-28T23:43:50+00:00", "fabricated_ids": false},
+    "feature_api": {"job": "RecSys-Workflow-Serving-Repair", "build": 2, "result": "SUCCESS", "image_sha256": "5e9aacdf5eea02c2f309dd39cc6d72d71b8249bfd9be324e15ac88e348fc2b55", "valid_item_retained": true, "unknown_item_empty": true},
+    "router_collector": {"job": "RecSys-Workflow-Evaluation-Prepare", "build": 9, "result": "SUCCESS", "image_sha256": "e4147721fb7ada20c85a5b903385786e0f04d0c48ed53de55675f290ec3103d3"},
+    "runtime": {"cloud_build": "927fc285-fac5-4733-9a6a-9c4acee0fb4a", "result": "SUCCESS", "image_sha256": "e19bbb84b9944b32a724e6cd25a6bc04fcf8ff6a4c461bf0c4f0cdbd87c89892", "fixes": ["colon user-ID syntax", "blocked callback does not complete a claim", "portable required string when exactly the selected tool is exposed", "function-call count and finish-reason diagnostics"]},
+    "baseline_preparation": {"job": "RecSys-Workflow-Baseline-Prepare", "build": 6, "result": "SUCCESS", "release_id": "3d31ce1dbe53ad3b9079c615ffd493935d6121861b32bc944949e92a1599667e", "missing_user_probes": "3/3 PASS", "model_calls_in_missing_user_probes": 0, "activated": false},
+    "serving_probe": {"job": "RecSys-Workflow-Baseline-Prepare", "build": 7, "result": "FAILURE", "source": "infrastructure_test", "inference_requests": 1, "tool_executions": 0, "input_tokens": 1338, "output_tokens": 384, "finish_reason": "MAX_TOKENS", "trace_id": "c6b6a4ed2be5c73655df716fbffb12ee", "finding": "Repeated argument JSON and closing think tags, with no function call. No claim that a larger token budget would resolve it.", "result_key": "workflow/runtime-preflights/3d31ce1dbe53ad3b9079c615ffd493935d6121861b32bc944949e92a1599667e/recommendation-serving-v1/result.json", "result_created_utc": "2026-09-09T17:00:31Z", "cutover": false},
+    "artifact_fix": {"historical_build_7_artifact": "STALE_BUILD_6_SUCCESS_DO_NOT_USE", "negative_check_build": 8, "result": "FAILURE_EXPECTED", "own_artifact_stage": "PREPARATION_FAILED", "own_artifact_build_number": "8", "additional_inference": 0, "source_installed": true},
+    "cutover_guard": {"source_installed": true, "behavior": "Existing failed or unresolved serving probe blocks cutover even when an earlier preparation object is selected.", "test": "PASS"}
+  },
+  "capacity": {
+    "job": "RecSys-Workflow-Capacity-Prepare",
+    "build": 2,
+    "result": "SUCCESS",
+    "journal": "workflow/capacity-windows/2.json",
+    "scope": "baseline_repair_only",
+    "failed_candidate_adapter_replicas": 0,
+    "models_and_release_objects_retained": true,
+    "quota_or_resource_budget_changed": false,
+    "full_next_experiment": "HOLD",
+    "projected_e2_cpu_headroom_millicores": 181,
+    "required_cpu_headroom_millicores": 200,
+    "n2_memory_request_headroom_bytes": 231258496
+  },
+  "jenkins_acl": {"strategy": "ProjectMatrixAuthorizationStrategy", "plugin": "matrix-auth 3.3", "existing_admin_preserved": true, "dispatch_workflow_read_build_only": true, "workflow_config_http": 403, "other_job_http": 404, "script_console_http": 403},
+  "tests": {"ab_unit_and_disposable_db_integration": 316, "feature_api_unit": 26, "go_agent_models_tools": "PASS", "scripted_blocked_attempt": "PASS: 1 fake model call, 0 tool executions, original durable violation retained"},
+  "final_state": {"phase": "ROLLED_BACK", "champion": "924e9b8b84915b6fd2e68e61309481f5de7c9aa173de7c5dae2096ac6fdcc8c1", "previous": "e10b72a49e62723eaab393eadd7775cd4724bbcf4fd29028a1e93ce8fd8146a4", "langfuse_automation": "INACTIVE", "prepared_baseline_cutover": false, "airflow_datahub_mlflow": "PAUSED"},
+  "pending": ["control Qwen3.5 serving/template compatibility revision before any cutover", "capacity revision before fresh experiment", "20 synthetic cases", "50/100 rollout and promotion", "separate controlled fault test", "browser/dashboard screenshot acceptance", "actual Jenkins restart and normal-deploy preservation tests"]
+}

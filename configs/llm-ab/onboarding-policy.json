@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "allowed_licenses": [
+    "apache-2.0",
+    "bsd-2-clause",
+    "bsd-3-clause",
+    "mit"
+  ],
+  "artifact_max_bytes": 2147483648,
+  "gguf_metadata_max_bytes": 33554432,
+  "minimum_context_size": 16384,
+  "prepared_ttl_seconds": 7200,
+  "runtime": {
+    "name": "llama.cpp",
+    "image": "asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/llama-cpp@sha256:2e9d2465b969cbdb74181687cc79b215d16488d112cf2fdab9817d63c37cdc52",
+    "llama_cpp_revision": "0c58ba3365d2bc717b447b5d70e4d6be09ff3c40",
+    "reasoning_mode": "off",
+    "downloader_image": "asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-llm-ab-router@sha256:918bcd199c8c89f0ab2c667d065506a00cd6178d85052d4511ae26de8ec13803"
+  },
+  "resource_classes": [
+    {
+      "max_bytes": 1073741824,
+      "requests": {"cpu": "1", "memory": "2Gi"},
+      "limits": {"cpu": "2", "memory": "3Gi"}
+    },
+    {
+      "max_bytes": 2147483648,
+      "requests": {"cpu": "2", "memory": "4Gi"},
+      "limits": {"cpu": "2", "memory": "5Gi"}
+    }
+  ]
+}

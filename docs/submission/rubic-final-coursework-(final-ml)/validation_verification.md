@@ -10,15 +10,14 @@ Feature API. RAG evidence is in the
 | Coverage `> 90%` | **98.44%** | **92.39%** |
 | Full contract EP/BVA | PASS | PASS, POST and GET |
 | HTTP Hypothesis idempotency | PASS, 60 × 3 POST | PASS, 60 × 3 POST and 60 × 3 GET |
-| Public-path mutation score `> 80%` | **724/819 = 88.40%** | **180/212 = 84.91%** |
+| Unit-owned mutation score `> 80%` | **724/819 = 88.40%** | **189/226 = 83.63%** |
 | Bad mutation states | 0 | 0 |
 | Locust evidence | PASS | PASS |
 
 Tests are service-oriented under
 [`tests/unit/api_serving`](../../../tests/unit/api_serving/). Mutation oracles
-live only under
-[`tests/mutation/api_serving`](../../../tests/mutation/api_serving/), never in
-a production package.
+are ordinary service unit tests named `test_mutation_oracles.py` in those same
+directories, never code in a production package.
 
 ## 1. Inference API
 
@@ -61,7 +60,7 @@ nl -ba tests/unit/api_serving/inference_api/conftest.py | sed -n '45,85p'
 COVERAGE_FILE=/tmp/recsys-inference.coverage \
 UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 \
 uv run pytest tests/unit/api_serving \
-  tests/mutation/api_serving/inference_api -q \
+  -q \
   --cov=recsys_inference_api --cov-report=term-missing \
   --cov-fail-under=90.01
 ```
@@ -177,13 +176,13 @@ UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 uv run pytest \
 
 ![Inference HTTP TestClient idempotency property passing](../../pngs/validation-inference-idempotency-current.png)
 
-### 1.4 Centralized full-scope mutation testing
+### 1.4 Unit-owned full-scope mutation testing
 
 Root [`pyproject.toml`](../../../pyproject.toml) selects schemas, Feature client,
 ranking, A/B routing, shadow logic and Triton. The runner is
-[`tests/mutation/api_serving/run.py`](../../../tests/mutation/api_serving/run.py),
-and the actual mutation oracle is
-[`inference_api/test_public_request_path.py`](../../../tests/mutation/api_serving/inference_api/test_public_request_path.py).
+[`tests/unit/api_serving/run_mutation.py`](../../../tests/unit/api_serving/run_mutation.py),
+and the selected mutation oracle is the ordinary unit module
+[`inference_api/test_mutation_oracles.py`](../../../tests/unit/api_serving/inference_api/test_mutation_oracles.py).
 
 | Mutated area | What kills the mutant |
 | --- | --- |
@@ -196,7 +195,7 @@ and the actual mutation oracle is
 
 ```bash
 UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 uv run python \
-  tests/mutation/api_serving/run.py inference --max-children 8
+  tests/unit/api_serving/run_mutation.py inference --max-children 8
 ```
 
 > **Proof note — mutation:** 724 of 819 mutants are killed, 95 survive and no
@@ -276,7 +275,7 @@ nl -ba tests/unit/api_serving/online_feature_api/conftest.py | sed -n '35,70p'
 COVERAGE_FILE=/tmp/recsys-online.coverage \
 UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 \
 uv run pytest tests/unit/api_serving \
-  tests/mutation/api_serving/online_feature_api -q \
+  -q \
   --cov=recsys_online_feature_api --cov=recsys_serving_common.contracts \
   --cov-report=term-missing --cov-fail-under=90.01
 ```
@@ -404,11 +403,11 @@ UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 uv run pytest \
 
 ![Online Feature POST and GET HTTP TestClient idempotency properties passing](../../pngs/validation-online-feature-idempotency-current.png)
 
-### 2.4 Centralized full-scope mutation testing
+### 2.4 Unit-owned full-scope mutation testing
 
 The root Mutmut configuration includes Online Feature service logic and shared
-contracts. The service-specific oracle is
-[`online_feature_api/test_public_request_path.py`](../../../tests/mutation/api_serving/online_feature_api/test_public_request_path.py).
+contracts. The selected service-specific unit oracle is
+[`online_feature_api/test_mutation_oracles.py`](../../../tests/unit/api_serving/online_feature_api/test_mutation_oracles.py).
 
 | Mutated area | What kills the mutant |
 | --- | --- |
@@ -421,13 +420,13 @@ contracts. The service-specific oracle is
 
 ```bash
 UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 uv run python \
-  tests/mutation/api_serving/run.py online-feature --max-children 8
+  tests/unit/api_serving/run_mutation.py online-feature --max-children 8
 ```
 
-> **Proof note — mutation:** 180 of 212 mutants are killed, 32 survive and no
-> selected mutant has an invalid state; mutation score is 84.91%.
-
-![Online Feature Mutmut run: 180 killed and 32 survived from 212 mutants](../../pngs/validation-online-feature-mutation-current.png)
+> **Proof note — mutation (2026-09-13):** 189 of 226 mutants are killed, 37
+> survive and no selected mutant has an invalid state; mutation score is
+> 83.63%. This supersedes the older screenshot captured before the empty-list
+> request contract was updated.
 
 ### 2.5 Locust Web API load test
 

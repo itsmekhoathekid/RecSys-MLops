@@ -1,0 +1,54 @@
+# Install only after the state bucket, DB and immutable bootstrap release exist.
+image: "" # Required registry/repository@sha256:...
+secretName: recsys-workflow-runtime
+replicas: 2
+routerName: recsys-workflow-router
+workerPool: recsys-workflow-router-pool
+facadePool:
+  enabled: true
+  # One dedicated facade worker is sufficient for the bounded (concurrency 2)
+  # acceptance run and releases 1 GiB of scheduler reservation on N2. The
+  # A2A router and child-agent pools remain separate, so this does not recreate
+  # the parent/child deadlock this pool was introduced to prevent.
+  replicas: 1
+  ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.9
+  nodeSelector:
+    cloud.google.com/gke-nodepool: recsys-mlops-cpu
+  resources:
+    requests: {cpu: 100m, memory: 1Gi}
+    limits: {memory: 2Gi}
+gatewayName: recsys-workflow-gateway
+controllerService: kagent-controller
+nodeSelector: {}
+tolerations: []
+resources:
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {cpu: "1", memory: 512Mi}
+
+trigger:
+  enabled: false
+  # Optional separately pinned receiver/reconcile image. This lets terminal
+  # router/evaluator maintenance avoid restarting the durable webhook receiver.
+  image: ""
+  replicas: 2
+  suspendRecovery: true
+  revision: disabled
+  secretName: recsys-workflow-trigger
+  sourceOverlayConfigMap: ""
+  ingress:
+    enabled: false
+    className: nginx
+    host: agents.recsys-mlops.site
+    tlsSecretName: ""
+
+evaluation:
+  enabled: false
+  suspend: true
+  image: "" # Optional digest-pinned evaluator image; defaults to the workflow runtime image.
+  secretName: recsys-workflow-evaluation
+  # Finite evaluator Jobs can be placed independently from model backends.
+  # Override only after scheduler preflight proves per-node headroom.
+  nodeSelector:
+    recsys.ai/pool: ml-system
+  tolerations:
+    - {key: recsys.ai/workload, operator: Equal, value: ml-system, effect: NoSchedule}

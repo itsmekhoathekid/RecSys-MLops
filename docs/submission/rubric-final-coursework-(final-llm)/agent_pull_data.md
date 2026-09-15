@@ -1,7 +1,8 @@
 # Sandbox Agent Pulls Online Features and RAG Context
 
-> **Runtime status (updated 2026-08-28):** production runs the custom kagent v7
-> compatibility image with Substrate `0.0.11`; values select assigned-worker
+> **Runtime status (updated 2026-09-12):** production runs the upstream kagent
+> `0.10.0-rc1` chart with upstream Substrate `0.0.9` and the digest-pinned
+> upstream Go ADK image; values select assigned-worker
 > KEDA. Context proved `1 -> 2 -> 3 -> 2 -> 1` and fallback to one. The chart
 > runs model revision v8; revision changes rebuild a single current
 > ActorTemplate after removing stale generations. The chart retains
@@ -392,7 +393,7 @@ The `SandboxAgent` is a declarative profile, not a Deployment. Incoming A2A
 requests are executed by `ateom-gvisor` workers in the referenced WorkerPool.
 
 ```yaml
-apiVersion: kagent.dev/v1alpha3
+apiVersion: kagent.dev/v1alpha2
 kind: SandboxAgent
 spec:
   type: Declarative
@@ -1215,7 +1216,7 @@ substrateWorkerPool:
 Platform references:
 
 - [kagent and WorkerPool values](../../../configs/kagent/values.yaml#L26)
-- [pinned custom kagent build and Substrate `0.0.11`](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L1)
+- [pinned upstream kagent and Substrate releases](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L1)
 - [Terraform kagent release and WorkerPool](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L194)
 - Native `/scale` contract: `.spec.replicas`, `.status.replicas`, and
   `.status.selector`.

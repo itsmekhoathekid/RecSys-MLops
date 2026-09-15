@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cd "$(dirname "$0")/../.."
+source jenkins/scripts/deploy/agentic/rotation.sh
+
 namespace="${RECOMMENDATION_NAMESPACE:-kagent}"
 target="${1:-all}"
+mcp_workload="$(mcp_auth_active_workload recommendation)"
 deadline_seconds="${RECOMMENDATION_SCALE_TIMEOUT_SECONDS:-180}"
 mcp_load_seconds="${RECOMMENDATION_MCP_LOAD_SECONDS:-90}"
 mcp_load_concurrency="${RECOMMENDATION_MCP_LOAD_CONCURRENCY:-8}"
@@ -24,7 +28,7 @@ restore() {
   [[ -z "${worker_load_pid}" ]] || kill "${worker_load_pid}" >/dev/null 2>&1 || true
   [[ -z "${port_forward_pid}" ]] || kill "${port_forward_pid}" >/dev/null 2>&1 || true
   if [[ -n "${original_mcp_address}" ]]; then
-    kubectl -n "${namespace}" patch scaledobject recsys-recommendation-mcp \
+    kubectl -n "${namespace}" patch scaledobject "${mcp_workload}" \
       --type json -p "[{\"op\":\"replace\",\"path\":\"/spec/triggers/0/metadata/serverAddress\",\"value\":\"${original_mcp_address}\"}]" >/dev/null || true
   fi
   if [[ -n "${original_worker_address}" ]]; then
@@ -87,7 +91,7 @@ wait_for_one() {
 }
 
 load_mcp() {
-  kubectl -n "${namespace}" exec deployment/recsys-recommendation-mcp -c mcp -- \
+  kubectl -n "${namespace}" exec "deployment/${mcp_workload}" -c mcp -- \
     python -c '
 import asyncio, json, os, sys, httpx
 from time import monotonic
@@ -141,7 +145,7 @@ asyncio.run(main())
 ' "${mcp_load_seconds}" "${mcp_load_concurrency}" \
       "${mcp_request_timeout_seconds}" &
   mcp_load_pid=$!
-  wait_for_three recsys-recommendation-mcp "${mcp_load_pid}"
+  wait_for_three "${mcp_workload}" "${mcp_load_pid}"
   if kill -0 "${mcp_load_pid}" >/dev/null 2>&1; then
     wait "${mcp_load_pid}"
   fi
@@ -206,7 +210,7 @@ if result["successes"] == 0:
     raise SystemExit(1)
 PY
   worker_load_pid=$!
-  wait_for_three recsys-recommendation-sandbox-pool "${worker_load_pid}"
+  wait_for_three recsys-recommendation-sandbox-pool-deployment "${worker_load_pid}"
   if kill -0 "${worker_load_pid}" >/dev/null 2>&1; then
     wait "${worker_load_pid}"
   fi
@@ -214,7 +218,7 @@ PY
   kill "${port_forward_pid}" >/dev/null 2>&1 || true
   wait "${port_forward_pid}" >/dev/null 2>&1 || true
   port_forward_pid=""
-  wait_for_one recsys-recommendation-sandbox-pool
+  wait_for_one recsys-recommendation-sandbox-pool-deployment
 }
 
 [[ "${target}" == all || "${target}" == mcp ]] && load_mcp
@@ -223,8 +227,8 @@ PY
 if [[ "${RECOMMENDATION_PROVE_FALLBACK:-false}" == true ]]; then
   fallback_objects=()
   if [[ "${target}" == all || "${target}" == mcp ]]; then
-    original_mcp_address="$(kubectl -n "${namespace}" get scaledobject recsys-recommendation-mcp -o jsonpath='{.spec.triggers[0].metadata.serverAddress}')"
-    fallback_objects+=(recsys-recommendation-mcp)
+    original_mcp_address="$(kubectl -n "${namespace}" get scaledobject "${mcp_workload}" -o jsonpath='{.spec.triggers[0].metadata.serverAddress}')"
+    fallback_objects+=("${mcp_workload}")
   fi
   if [[ "${target}" == all || "${target}" == worker ]]; then
     original_worker_address="$(kubectl -n "${namespace}" get scaledobject recsys-recommendation-sandbox-pool -o jsonpath='{.spec.triggers[0].metadata.serverAddress}')"

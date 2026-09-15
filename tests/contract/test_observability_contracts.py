@@ -239,6 +239,21 @@ def test_gcp_observability_values_do_not_take_ownership_of_existing_namespace():
     assert values["namespace"] == {"create": False, "name": "observability"}
 
 
+def test_llm_probe_runs_as_an_explicit_non_root_user():
+    docs = _render_observability(
+        "-f", "infra/helm/recsys-observability/values-gcp.yaml"
+    )
+    cronjob = _by_kind_name(docs)[("CronJob", "recsys-llm-observability-probe")]
+    pod_security = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"][
+        "securityContext"
+    ]
+
+    assert pod_security["runAsNonRoot"] is True
+    assert pod_security["runAsUser"] == 65532
+    assert pod_security["runAsGroup"] == 65532
+    assert pod_security["fsGroup"] == 65532
+
+
 def test_observability_does_not_scrape_missing_sql_exporter():
     docs = _render_observability()
     prometheus = _by_kind_name(docs)[("ConfigMap", "recsys-prometheus-config")]

@@ -1,6 +1,8 @@
 autoscaling:
   minReplicas: 2
-  maxReplicas: 3
+  # The production load runner is concurrency two. A third worker would cross
+  # the reviewed N2 request headroom on the current fixed-size cluster.
+  maxReplicas: 2
   metricMode: assignedWorkers
   assignedWorkersPerReplica: "0.7"
   # Retained for a values-only rollback to the Substrate 0.0.6 baseline.

@@ -1,0 +1,376 @@
+[
+  {
+    "id": "workflow-01",
+    "group": "recommendation",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=218, candidate_item_ids=null, top_k=3",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-02",
+    "group": "recommendation",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=37, candidate_item_ids=null, top_k=3",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 37,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-03",
+    "group": "recommendation",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=6, candidate_item_ids=null, top_k=3",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 6,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-04",
+    "group": "recommendation",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=177, candidate_item_ids=null, top_k=3",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 177,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-05",
+    "group": "recommendation",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=81, candidate_item_ids=null, top_k=3",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 81,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-06",
+    "group": "recommendation",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=91, candidate_item_ids=null, top_k=3",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 91,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-07",
+    "group": "context",
+    "prompt": "MODE=SINGLE_CONTEXT\nCONTEXT_REQUEST=Call get_chunk_by_id exactly once with chunk_id='800005:product_overview:overview:0'",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "context"
+      ],
+      "context": {
+        "tool": "get_chunk_by_id",
+        "arguments": {
+          "chunk_id": "800005:product_overview:overview:0"
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-08",
+    "group": "context",
+    "prompt": "MODE=SINGLE_CONTEXT\nCONTEXT_REQUEST=Call get_chunk_by_id exactly once with chunk_id='800005:product_overview:overview:0'",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "context"
+      ],
+      "context": {
+        "tool": "get_chunk_by_id",
+        "arguments": {
+          "chunk_id": "800005:product_overview:overview:0"
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-09",
+    "group": "context",
+    "prompt": "MODE=SINGLE_CONTEXT\nCONTEXT_REQUEST=Call get_chunk_by_id exactly once with chunk_id='800005:product_overview:overview:0'",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "context"
+      ],
+      "context": {
+        "tool": "get_chunk_by_id",
+        "arguments": {
+          "chunk_id": "800005:product_overview:overview:0"
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-10",
+    "group": "context",
+    "prompt": "MODE=SINGLE_CONTEXT\nCONTEXT_REQUEST=Call get_chunk_by_id exactly once with chunk_id='800005:product_overview:overview:0'",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "context"
+      ],
+      "context": {
+        "tool": "get_chunk_by_id",
+        "arguments": {
+          "chunk_id": "800005:product_overview:overview:0"
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-11",
+    "group": "composite",
+    "prompt": "MODE=COMPOSITE\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=218, candidate_item_ids=null, top_k=3\nCONTEXT_REQUEST=Call get_chunk_by_id exactly once with chunk_id='800005:product_overview:overview:0'",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation",
+        "context"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      },
+      "context": {
+        "tool": "get_chunk_by_id",
+        "arguments": {
+          "chunk_id": "800005:product_overview:overview:0"
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-12",
+    "group": "composite",
+    "prompt": "MODE=COMPOSITE\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=37, candidate_item_ids=null, top_k=3\nCONTEXT_REQUEST=Call get_chunk_by_id exactly once with chunk_id='800005:product_overview:overview:0'",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation",
+        "context"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 37,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      },
+      "context": {
+        "tool": "get_chunk_by_id",
+        "arguments": {
+          "chunk_id": "800005:product_overview:overview:0"
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-13",
+    "group": "composite",
+    "prompt": "MODE=COMPOSITE\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=6, candidate_item_ids=null, top_k=3\nCONTEXT_REQUEST=Call get_chunk_by_id exactly once with chunk_id='800005:product_overview:overview:0'",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation",
+        "context"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 6,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      },
+      "context": {
+        "tool": "get_chunk_by_id",
+        "arguments": {
+          "chunk_id": "800005:product_overview:overview:0"
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-14",
+    "group": "composite",
+    "prompt": "MODE=COMPOSITE\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=177, candidate_item_ids=null, top_k=3\nCONTEXT_REQUEST=Call get_chunk_by_id exactly once with chunk_id='800005:product_overview:overview:0'",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation",
+        "context"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 177,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      },
+      "context": {
+        "tool": "get_chunk_by_id",
+        "arguments": {
+          "chunk_id": "800005:product_overview:overview:0"
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-15",
+    "group": "limits",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=218, candidate_item_ids=null, top_k=1",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 1
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-16",
+    "group": "limits",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=218, candidate_item_ids=null, top_k=2",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 2
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-17",
+    "group": "missing_user",
+    "prompt": "MODE=MISSING_USER\nREQUEST=Recommend some items for me. I have not provided a user ID.",
+    "expected": {
+      "scope": "workflow",
+      "missing_user": true,
+      "trajectory": []
+    }
+  },
+  {
+    "id": "workflow-18",
+    "group": "missing_user",
+    "prompt": "MODE=MISSING_USER\nREQUEST=Summarize my preferences. I have not provided a user ID.",
+    "expected": {
+      "scope": "workflow",
+      "missing_user": true,
+      "trajectory": []
+    }
+  },
+  {
+    "id": "workflow-19",
+    "group": "empty",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=218, candidate_item_ids=[-1], top_k=3",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": [
+            -1
+          ],
+          "top_k": 3
+        },
+        "empty": true
+      }
+    }
+  },
+  {
+    "id": "workflow-20",
+    "group": "empty",
+    "prompt": "MODE=SINGLE_RECOMMENDATION\nRECOMMENDATION_REQUEST=Call get_personalized_recommendations exactly once with user_id=37, candidate_item_ids=[-1], top_k=3",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 37,
+          "candidate_item_ids": [
+            -1
+          ],
+          "top_k": 3
+        },
+        "empty": true
+      }
+    }
+  }
+]

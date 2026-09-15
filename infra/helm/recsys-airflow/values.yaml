@@ -21,6 +21,7 @@ airflowPostgres:
 airflow:
   dagsPath: /opt/recsys/apps/data-platform/src/orchestration/airflow/dags
   ragItemSchedule: "30 2 * * *"
+  ragItemSourceRunId: auto
   istioProxyCPU: 50m
   istioProxyMemory: 64Mi
   nodeSelector:

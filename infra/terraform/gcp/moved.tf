@@ -364,11 +364,6 @@ moved {
 }
 
 moved {
-  from = kubernetes_namespace.podcertificate_controller_system
-  to   = module.kubernetes_platform.kubernetes_namespace.podcertificate_controller_system
-}
-
-moved {
   from = kubernetes_namespace.recsys_dataflow
   to   = module.kubernetes_platform.kubernetes_namespace.recsys_dataflow
 }

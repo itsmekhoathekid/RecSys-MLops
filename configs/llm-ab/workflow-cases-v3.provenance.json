@@ -1,0 +1,13 @@
+{
+  "version": "workflow-cases-v3",
+  "fixture_file": "workflow-cases-v3.json",
+  "fixture_file_sha256": "836aa8f8ad4167f2a1ab54d8402c06269092de714d9a9609a98600f0522dc341",
+  "parent_fixture_file": "workflow-cases-v2.json",
+  "parent_fixture_file_sha256": "ae3219ab9497af5fb66a59e9442b105b59e12a18bdcc383540b93a9d4e933484",
+  "root_conversations": 20,
+  "change": "Make candidate_item_ids=null explicit in recommendation, composite and limit prompts whose immutable expected arguments already require null. Empty and missing-user cases are unchanged.",
+  "reason": "The guarded control model correctly rejected an invented [1,2,3] candidate list when v2 omitted this required input. V3 removes that prompt ambiguity without changing trajectories, assertions, users, model config or expected tool arguments.",
+  "failed_experiment": "wf-2b904a38623aabbe6a4510b31be49d3d",
+  "failed_gate": "champion runtime/tool contract violation",
+  "replay_policy": "No v2 request is replayed or counted in a v3 experiment."
+}

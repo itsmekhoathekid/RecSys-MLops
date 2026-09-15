@@ -15,6 +15,8 @@ config:
   ragTimeoutSeconds: "5"
   downstreamMaxConnections: "50"
   downstreamMaxKeepaliveConnections: "20"
+  toolContractVersion: "2"
+  toolContractSha256: "3cf0423cce68a4b5984980398b9e1f630f548c9d5064cf7ddf3576246ab14576"
 resources:
   requests: {cpu: 100m, memory: 128Mi}
   limits: {cpu: "1", memory: 512Mi}
@@ -35,3 +37,8 @@ networkPolicy:
   enabled: true
   apiServingNamespaceLabel: api-serving
   observabilityNamespaceLabel: observability
+
+# Optional manifest-driven blue/green revisions. The shared
+# configs/agentic/mcp-auth-versions.yaml file supplies services.featureRag.
+# An empty map preserves the legacy single-workload rendering above.
+services: {}

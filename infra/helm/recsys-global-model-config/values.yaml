@@ -1,0 +1,15 @@
+# This release owns this name exclusively. The platform kagent chart retains
+# default-model-config for its bootstrap/UI consumers and legacy rollback.
+modelConfig:
+  name: recsys-global-model-config
+  provider: OpenAI
+  model: qwen3.5-0.8b
+  apiKeySecret: kagent-agent-gateway
+  apiKeySecretKey: AGENT_GATEWAY_API_KEY
+  defaultHeaders:
+    X-Gateway-Base-Model-Name: llm-d-optimized-baseline
+  openAI:
+    baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
+    maxTokens: 384
+    temperature: "0"
+    seed: 42

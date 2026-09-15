@@ -1,6 +1,6 @@
 apiVersion: v2
 name: recsys-coordinator-agent
-description: Intent-routing RecSys coordinator SandboxAgent with A2A, MCP, and assigned-worker autoscaling.
+description: Intent-routing RecSys coordinator SandboxAgent with A2A-only specialist access and assigned-worker autoscaling.
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "1.0.0"

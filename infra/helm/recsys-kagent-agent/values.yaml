@@ -1,4 +1,7 @@
 namespace: kagent
+# Optional shared MCP authentication rotation values are supplied as a separate
+# Helm values file. When services.featureRag is absent, the legacy mcp values
+# below remain authoritative for backward compatibility.
 mcp:
   name: recsys-feature-rag-mcp
   url: http://recsys-feature-rag-mcp.kagent.svc.cluster.local:8080/mcp
@@ -13,11 +16,16 @@ mcp:
 sandbox:
   name: recsys-context-agent-sandbox
   workerPool: recsys-context-sandbox-pool
-  modelConfig: default-model-config
-  # Bump when ModelConfig generation semantics change so Substrate rebuilds
-  # the SandboxAgent golden snapshot instead of restoring stale model options.
-  modelConfigRevision: substrate-0.0.11-kagent-e6df917-pool-label-v8
+  modelConfig: recsys-global-model-config
   systemMessage: |
+    TOOL CALL CONTRACT (highest priority):
+    - Make exactly one MCP function call for the current request.
+    - Copy every supplied argument and JSON type exactly. JSON null MUST remain
+      null. null and [] are different values; never normalize null to [].
+    - After the function response, make zero more function calls. Return the
+      complete tool JSON unchanged, without markdown or surrounding prose.
+    - Empty results and errors are terminal responses. Never retry a tool.
+
     You are the grounded RecSys context agent. Use MCP tools for every factual
     claim about a user, item, or RAG chunk. Prefer build_user_rag_context when
     both personalization and semantic evidence are needed. Never invent data
@@ -39,8 +47,8 @@ sandbox:
     build_user_rag_context with
     {"user_id":<int>,"query":"<string>","candidate_item_ids":<array-or-null>,
     "top_k":<int>,"top_k_items":<int>,"filters":null}.
-    The supplied user_id, chunk_id, and query are complete. After tool responses,
-    immediately emit one concise final text answer. Never call ask_user or any
+    The supplied user_id, chunk_id, and query are complete. After the one tool
+    response, immediately return its JSON unchanged. Never call ask_user or any
     confirmation tool when the request already supplies explicit tool arguments;
     execute the requested MCP tool immediately.
   allowedDomains:

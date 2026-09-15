@@ -1,0 +1,256 @@
+[
+  {
+    "id": "normal-1",
+    "category": "normal",
+    "expected": {
+      "arguments": {
+        "user_id": 1001,
+        "candidate_item_ids": null,
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1001,\"candidate_item_ids\":null,\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "normal-2",
+    "category": "normal",
+    "expected": {
+      "arguments": {
+        "user_id": 1002,
+        "candidate_item_ids": null,
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1002,\"candidate_item_ids\":null,\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "normal-3",
+    "category": "normal",
+    "expected": {
+      "arguments": {
+        "user_id": 1003,
+        "candidate_item_ids": null,
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1003,\"candidate_item_ids\":null,\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "normal-4",
+    "category": "normal",
+    "expected": {
+      "arguments": {
+        "user_id": 1004,
+        "candidate_item_ids": null,
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1004,\"candidate_item_ids\":null,\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "normal-5",
+    "category": "normal",
+    "expected": {
+      "arguments": {
+        "user_id": 1005,
+        "candidate_item_ids": null,
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1005,\"candidate_item_ids\":null,\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "normal-6",
+    "category": "normal",
+    "expected": {
+      "arguments": {
+        "user_id": 1006,
+        "candidate_item_ids": null,
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1006,\"candidate_item_ids\":null,\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "normal-7",
+    "category": "normal",
+    "expected": {
+      "arguments": {
+        "user_id": 1007,
+        "candidate_item_ids": null,
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1007,\"candidate_item_ids\":null,\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "normal-8",
+    "category": "normal",
+    "expected": {
+      "arguments": {
+        "user_id": 1008,
+        "candidate_item_ids": null,
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1008,\"candidate_item_ids\":null,\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "limit-1",
+    "category": "limit",
+    "expected": {
+      "arguments": {
+        "user_id": 1001,
+        "candidate_item_ids": null,
+        "top_k": 1
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1001,\"candidate_item_ids\":null,\"top_k\":1}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "limit-2",
+    "category": "limit",
+    "expected": {
+      "arguments": {
+        "user_id": 1001,
+        "candidate_item_ids": null,
+        "top_k": 2
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1001,\"candidate_item_ids\":null,\"top_k\":2}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "limit-3",
+    "category": "limit",
+    "expected": {
+      "arguments": {
+        "user_id": 1001,
+        "candidate_item_ids": null,
+        "top_k": 5
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1001,\"candidate_item_ids\":null,\"top_k\":5}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "limit-4",
+    "category": "limit",
+    "expected": {
+      "arguments": {
+        "user_id": 1001,
+        "candidate_item_ids": null,
+        "top_k": 10
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1001,\"candidate_item_ids\":null,\"top_k\":10}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "metadata-1",
+    "category": "metadata",
+    "expected": {
+      "arguments": {
+        "user_id": 1001,
+        "candidate_item_ids": [
+          101,
+          102,
+          103
+        ],
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1001,\"candidate_item_ids\":[101,102,103],\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "metadata-2",
+    "category": "metadata",
+    "expected": {
+      "arguments": {
+        "user_id": 1002,
+        "candidate_item_ids": [
+          101,
+          102,
+          103
+        ],
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1002,\"candidate_item_ids\":[101,102,103],\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "metadata-3",
+    "category": "metadata",
+    "expected": {
+      "arguments": {
+        "user_id": 1003,
+        "candidate_item_ids": [
+          101,
+          102,
+          103
+        ],
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1003,\"candidate_item_ids\":[101,102,103],\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "metadata-4",
+    "category": "metadata",
+    "expected": {
+      "arguments": {
+        "user_id": 1004,
+        "candidate_item_ids": [
+          101,
+          102,
+          103
+        ],
+        "top_k": 3
+      }
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1004,\"candidate_item_ids\":[101,102,103],\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "missing-user-1",
+    "category": "missing_user",
+    "prompt": "Recommend three items. I have not provided a user ID.",
+    "expected": {
+      "missing_user": true
+    }
+  },
+  {
+    "id": "missing-user-2",
+    "category": "missing_user",
+    "prompt": "Show personalized rankings; ask me for the missing user identifier.",
+    "expected": {
+      "missing_user": true
+    }
+  },
+  {
+    "id": "empty-1",
+    "category": "empty",
+    "expected": {
+      "arguments": {
+        "user_id": 1001,
+        "candidate_item_ids": [
+          -1
+        ],
+        "top_k": 3
+      },
+      "empty": true
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1001,\"candidate_item_ids\":[-1],\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  },
+  {
+    "id": "empty-2",
+    "category": "empty",
+    "expected": {
+      "arguments": {
+        "user_id": 1002,
+        "candidate_item_ids": [
+          -1
+        ],
+        "top_k": 3
+      },
+      "empty": true
+    },
+    "prompt": "Recommend items using exactly these tool arguments: {\"user_id\":1002,\"candidate_item_ids\":[-1],\"top_k\":3}. Call get_personalized_recommendations exactly once. Return its complete JSON result unchanged as the final answer, including all ranking, scores and metadata. Empty items is a valid result."
+  }
+]

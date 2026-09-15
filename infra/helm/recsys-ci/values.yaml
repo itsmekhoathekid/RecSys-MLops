@@ -47,6 +47,7 @@ jenkins:
       - git
       - github
       - lockable-resources
+      - matrix-auth:3.3
   runtimeTools:
     installOnStartup: false
     kubectlVersion: v1.33.0
@@ -103,7 +104,9 @@ jenkins:
     insecureRegistries: []
     resources:
       requests:
-        cpu: 200m
+        # DinD is idle between image builds. Keep burst capacity in the limit,
+        # but do not reserve a fifth of a core during the A/B serving window.
+        cpu: 50m
         memory: 512Mi
       limits:
         cpu: "2"

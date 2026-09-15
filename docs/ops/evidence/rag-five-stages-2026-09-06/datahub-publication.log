@@ -1,0 +1,18 @@
+/opt/recsys/apps/data-platform/src/metadata/datahub_client.py:27: ExperimentalWarning: The new datahub SDK (e.g. datahub.sdk.*) is experimental. Our typical backwards-compatibility and stability guarantees do not apply to this code. When it's promoted to stable, the import path will change from `from datahub.sdk import ...` to `from datahub import ...`.
+  from datahub.sdk import DataHubClient, Dataset, Tag
+{
+  "error": 0,
+  "failure": 0,
+  "product": "RAG_ITEMS",
+  "published": true,
+  "read_errors": [],
+  "success": 6
+}
+{
+  "error": 0,
+  "failure": 0,
+  "product": "RAG_ITEMS",
+  "published": true,
+  "read_errors": [],
+  "success": 6
+}

@@ -1,0 +1,20 @@
+{
+  "artifact_uri": "https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/8fea620810c4afa23dd6443f999a48574c1611a3/Qwen3.5-0.8B-Q4_0.gguf",
+  "artifact_sha256": "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf",
+  "quantization": "Q4_0",
+  "image": "ghcr.io/ggml-org/llama.cpp@sha256:9b518883e8faab479650ec802e02c9e37c6bb21d36168509efd8fb3c87fc1648",
+  "serving": {
+    "resourceProfile": "qwen35-native-tools-v3",
+    "contextSize": 16384,
+    "maxPredictedTokens": 768,
+    "parallel": 1,
+    "threads": 2,
+    "threadsBatch": 2,
+    "batchSize": 512,
+    "ubatchSize": 128,
+    "chatTemplateSha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+    "chatTemplateSourceRevision": "8fea620810c4afa23dd6443f999a48574c1611a3",
+    "chatTemplateSource": "embedded_gguf",
+    "reasoningMode": "off"
+  }
+}

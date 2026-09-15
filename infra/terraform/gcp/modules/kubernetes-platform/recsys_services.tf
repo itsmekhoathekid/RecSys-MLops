@@ -661,10 +661,29 @@ resource "helm_release" "recsys_security" {
   chart            = "${local.helm_dir}/recsys-security"
   namespace        = "recsys-security"
   create_namespace = true
+  values           = [file(local.mcp_auth_versions_path)]
   wait             = true
   atomic           = true
   cleanup_on_fail  = true
   timeout          = 600
+
+  lifecycle {
+    precondition {
+      condition     = local.mcp_auth_versions.version == 1
+      error_message = "configs/agentic/mcp-auth-versions.yaml must use schema version 1."
+    }
+
+    # Terraform check blocks only warn. Keep this safety invariant on an
+    # always-managed resource so an apply cannot render version-pinned Vault
+    # Secrets or telemetry-dependent retirement without their dependencies.
+    precondition {
+      condition = (
+        !var.config.deploy_llm_inference ||
+        (var.config.deploy_vault && var.config.deploy_service_mesh)
+      )
+      error_message = "deploy_llm_inference requires deploy_vault=true and deploy_service_mesh=true because MCP auth rotation depends on Vault/ESO and Istio telemetry."
+    }
+  }
 
   dynamic "set" {
     for_each = local.service_mesh_sets
@@ -685,6 +704,7 @@ resource "helm_release" "recsys_security" {
   }
 
   depends_on = [
+    null_resource.mcp_auth_versions_valid,
     helm_release.external_secrets,
     helm_release.istiod,
     helm_release.vault,

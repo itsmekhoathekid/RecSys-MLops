@@ -1,0 +1,16 @@
+{
+  "artifact_sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+  "artifact_uri": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+  "image": "ghcr.io/ggml-org/llama.cpp@sha256:9b518883e8faab479650ec802e02c9e37c6bb21d36168509efd8fb3c87fc1648",
+  "quantization": "Q4_K_M",
+  "serving": {
+    "resourceProfile": "qwen25-small-cpu-v1",
+    "contextSize": 16384,
+    "maxPredictedTokens": 768,
+    "parallel": 1,
+    "threads": 2,
+    "threadsBatch": 2,
+    "batchSize": 512,
+    "ubatchSize": 128
+  }
+}

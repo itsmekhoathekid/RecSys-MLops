@@ -115,15 +115,10 @@ def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
         "toolNames"
     ]
     assert tool_names == contract["tools"]
-    assert sandbox["metadata"]["annotations"]["recsys.ai/model-config-revision"] == (
-        "substrate-0.0.11-kagent-e6df917-pool-label-v8"
-    )
-    assert (
-        "Runtime model configuration revision: substrate-0.0.11-kagent-e6df917-pool-label-v8."
-        in sandbox["spec"]["declarative"]["systemMessage"]
-    )
+    assert "recsys.ai/model-config-revision" not in sandbox["metadata"].get("annotations", {})
+    assert "Runtime model configuration revision:" not in sandbox["spec"]["declarative"]["systemMessage"]
     assert sandbox["spec"]["declarative"]["runtime"] == "go"
-    assert sandbox["apiVersion"] == "kagent.dev/v1alpha3"
+    assert sandbox["apiVersion"] == "kagent.dev/v1alpha2"
     assert "platform" not in sandbox["spec"]
     assert sandbox["spec"]["sandbox"]["network"]["allowedDomains"] == [
         "recsys-feature-rag-mcp.kagent.svc.cluster.local"
@@ -161,9 +156,9 @@ def test_native_agentic_workload_contracts_are_safe_and_scalable():
         sandbox_documents, "ScaledObject", "recsys-context-sandbox-pool"
     )
     assert sandbox_scaled["spec"]["scaleTargetRef"] == {
-        "apiVersion": "ate.dev/v1alpha1",
-        "kind": "WorkerPool",
-        "name": "recsys-context-sandbox-pool",
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "recsys-context-sandbox-pool-deployment",
     }
     assert sandbox_scaled["spec"]["minReplicaCount"] == 2
     assert sandbox_scaled["spec"]["maxReplicaCount"] == 3
@@ -333,15 +328,16 @@ def test_terraform_owns_platform_but_not_the_agent_application_release():
     assert 'resource "kubernetes_persistent_volume_claim_v1" "substrate_valkey"' in terraform
     assert 'storage_class_name = "standard"' in terraform
     assert "prevent_destroy = true" in terraform
-    assert 'default     = "0.0.11"' in variables
-    assert 'default     = "0.10.0-e6df917"' in variables
-    assert 'kagent_image_version    = "0.10.0-e6df917-substrate0011-v8"' in terraform
-    assert 'postrender {' in terraform
-    assert "substrate_gke_postrender.py" in terraform
+    assert 'default     = "0.0.9"' in variables
+    assert 'default     = "0.10.0-rc1"' in variables
+    assert 'kagent_image_version' not in terraform
+    assert 'postrender {' not in terraform
+    assert "substrate_gke_postrender.py" not in terraform
     assert "substrate_crds_hpa_postrender.py" not in terraform
     assert "kagent_workerpool_hpa_postrender.py" not in terraform
-    assert 'value = "mtls"' in terraform
-    assert "valkey/valkey:9.1@sha256:" in terraform
+    assert 'value = "jwt"' in terraform
+    assert "substrate-mtls-bootstrap" not in terraform
+    assert "valkey/valkey:9.1@sha256:" not in terraform
     assert 'resource "helm_release" "recsys_kagent_agent"' not in terraform
 
 
@@ -382,7 +378,7 @@ def test_vault_bootstrap_creates_the_mcp_bearer_secret_idempotently():
     assert "keeping the existing Vault version" in bootstrap
     values = (ROOT / "configs/kagent/values.yaml").read_text(encoding="utf-8")
     assert "replicas: 1" in values
-    assert "ateom-gvisor:v0.0.11" in values
+    assert "ateom-gvisor:v0.0.9" in values
     assert "sandboxClass: gvisor" in values
 
 

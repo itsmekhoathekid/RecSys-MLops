@@ -1,0 +1,553 @@
+{
+  "expected_current_cluster_id": "38wdEbEqSCiGCWhXId3glw",
+  "restored_cluster_id": "tXZfqFOdQQuF0tFycyPPBw",
+  "broker_id": 1,
+  "topics": {
+    "DataHubUpgradeHistory_v1": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "VL9DHhCdTvqthKBpS6z5xQ"
+    },
+    "FailedMetadataChangeProposal_v1": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "Bw5-w5NgQEaHiY290RXpZw"
+    },
+    "MetadataChangeEvent_v4": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "PvYMLARHSbW_Bq5wmlvpgA"
+    },
+    "MetadataChangeLog_Timeseries_v1": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "WHM242zKQja3WEVHXaqvcg"
+    },
+    "MetadataChangeLog_Versioned_v1": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "Kq4PHOxXSbOb1mJYByetoA"
+    },
+    "MetadataChangeProposal_v1": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "T2dvir2SQuygO-5-b-TVoQ"
+    },
+    "PlatformEvent_v1": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "4LPuPbMgRcmLzfyFZLAY7w"
+    },
+    "__consumer_offsets": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "10": [
+          1
+        ],
+        "11": [
+          1
+        ],
+        "12": [
+          1
+        ],
+        "13": [
+          1
+        ],
+        "14": [
+          1
+        ],
+        "15": [
+          1
+        ],
+        "16": [
+          1
+        ],
+        "17": [
+          1
+        ],
+        "18": [
+          1
+        ],
+        "19": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "20": [
+          1
+        ],
+        "21": [
+          1
+        ],
+        "22": [
+          1
+        ],
+        "23": [
+          1
+        ],
+        "24": [
+          1
+        ],
+        "25": [
+          1
+        ],
+        "26": [
+          1
+        ],
+        "27": [
+          1
+        ],
+        "28": [
+          1
+        ],
+        "29": [
+          1
+        ],
+        "3": [
+          1
+        ],
+        "30": [
+          1
+        ],
+        "31": [
+          1
+        ],
+        "32": [
+          1
+        ],
+        "33": [
+          1
+        ],
+        "34": [
+          1
+        ],
+        "35": [
+          1
+        ],
+        "36": [
+          1
+        ],
+        "37": [
+          1
+        ],
+        "38": [
+          1
+        ],
+        "39": [
+          1
+        ],
+        "4": [
+          1
+        ],
+        "40": [
+          1
+        ],
+        "41": [
+          1
+        ],
+        "42": [
+          1
+        ],
+        "43": [
+          1
+        ],
+        "44": [
+          1
+        ],
+        "45": [
+          1
+        ],
+        "46": [
+          1
+        ],
+        "47": [
+          1
+        ],
+        "48": [
+          1
+        ],
+        "49": [
+          1
+        ],
+        "5": [
+          1
+        ],
+        "6": [
+          1
+        ],
+        "7": [
+          1
+        ],
+        "8": [
+          1
+        ],
+        "9": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "63-99U-FTkyWAd2YQ3-bfw"
+    },
+    "cdc.behavior_events": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "ghGetNGaTb6l-slcqMA7Uw"
+    },
+    "cdc.impressions": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "6RgnFOBwTS2hMUT0yERGtw"
+    },
+    "cdc.order_items": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "Aw2qBo-uQb-v8_yxetwmIA"
+    },
+    "cdc.orders": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "uL_H2DwVSbOMo05VzsNI7Q"
+    },
+    "cdc.product_snapshots": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "1lw84K5jRTeX6IRBcsSygA"
+    },
+    "cdc.products": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "Z-cZdAvlRaORUvu6mq-W_Q"
+    },
+    "cdc.recommendation_requests": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "H_z4dTu_SC23laFtKU-ZkQ"
+    },
+    "cdc.sessions": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "BS9klwwnTUGILHgv78JSIQ"
+    },
+    "cdc.user_preferences": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "d-LM4qIEQ8KmoLhXs03Xmw"
+    },
+    "cdc.users": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "l8EbD3pVQ3e432orW4s1Gw"
+    },
+    "recsys_connect_configs": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "iQsG8PCmQRWiUtaHWlfF7A"
+    },
+    "recsys_connect_offsets": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "wTaJUwdtT-mj5uQed0IRjg"
+    },
+    "recsys_connect_status": {
+      "version": 3,
+      "partitions": {
+        "0": [
+          1
+        ],
+        "1": [
+          1
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          1
+        ]
+      },
+      "adding_replicas": {},
+      "removing_replicas": {},
+      "topic_id": "xnRri_JAQWupUjof_HsA7A"
+    }
+  },
+  "compact_topics": [
+    "__consumer_offsets",
+    "recsys_connect_configs",
+    "recsys_connect_offsets",
+    "recsys_connect_status"
+  ]
+}

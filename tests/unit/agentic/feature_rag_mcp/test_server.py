@@ -49,7 +49,7 @@ async def test_mcp_lists_exact_contract_tools_and_calls_them():
 @pytest.mark.parametrize(
     "tool_name", ["get_user_online_features", "build_user_rag_context"]
 )
-async def test_empty_candidate_ids_are_normalized_to_optional_field(tool_name):
+async def test_empty_candidate_ids_are_preserved_as_explicit_empty_set(tool_name):
     feature_client = FeatureClient()
     mcp = create_mcp_server(feature_client, RagClient())
     arguments = {"user_id": 7, "candidate_item_ids": [], "top_k": 2}
@@ -59,8 +59,24 @@ async def test_empty_candidate_ids_are_normalized_to_optional_field(tool_name):
     await mcp.call_tool(tool_name, arguments)
 
     assert feature_client.calls == [
-        {"user_id": 7, "candidate_item_ids": None, "top_k": 2}
+        {"user_id": 7, "candidate_item_ids": [], "top_k": 2}
     ]
+
+
+@pytest.mark.asyncio
+async def test_online_feature_tool_schema_requires_nullable_field_and_top_k():
+    mcp = create_mcp_server(FeatureClient(), RagClient())
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    schema = tools["get_user_online_features"].inputSchema
+
+    assert schema["required"] == ["user_id", "candidate_item_ids", "top_k"]
+    candidate = schema["properties"]["candidate_item_ids"]
+    assert candidate["anyOf"] == [
+        {"items": {"type": "integer"}, "maxItems": 100, "type": "array"},
+        {"type": "null"},
+    ]
+    assert "null means resolve candidates" in candidate["description"]
+    assert "[] means an explicitly empty candidate set" in candidate["description"]
 
 
 @pytest.mark.asyncio

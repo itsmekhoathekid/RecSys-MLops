@@ -1,0 +1,398 @@
+[
+  {
+    "namespace": "kagent",
+    "kind": "workerpool",
+    "name": "recsys-coordinator-sandbox-pool",
+    "path": "/spec/template/resources/requests/cpu",
+    "uid": "bc2a903f-dc24-48a1-8c62-c32a93476183",
+    "existed": true,
+    "before": "250m",
+    "after": "100m",
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "workerpool",
+    "name": "recsys-context-sandbox-pool",
+    "path": "/spec/template/resources/requests/cpu",
+    "uid": "0822fa39-8792-4cdf-8083-c4c3de6a1a22",
+    "existed": true,
+    "before": "250m",
+    "after": "100m",
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "workerpool",
+    "name": "recsys-recommendation-sandbox-pool",
+    "path": "/spec/template/resources/requests/cpu",
+    "uid": "c78d98e7-4bf9-4f7a-91a4-17547199f21c",
+    "existed": true,
+    "before": "250m",
+    "after": "100m",
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "llm-inference",
+    "kind": "deployment",
+    "name": "llm-d-optimized-baseline-epp",
+    "path": "/spec/template/spec/containers/0/resources/requests/cpu",
+    "uid": "5e632c53-3144-4d2a-bda4-142ce46cdb5b",
+    "existed": true,
+    "before": "250m",
+    "after": "50m",
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "langfuse",
+    "kind": "clickhousecluster",
+    "name": "langfuse",
+    "path": "/spec/containerTemplate/resources/requests/cpu",
+    "uid": "dbfc565a-c9dd-4dbf-beff-aa24f160145f",
+    "existed": true,
+    "before": "500m",
+    "after": "250m",
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "kserve-triton-inference",
+    "kind": "inferenceservice",
+    "name": "recsys-bst-triton",
+    "path": "/spec/predictor/model/resources/requests/cpu",
+    "uid": "8bd9461f-5dc2-4c41-bebe-f0c8a1c3d9f2",
+    "existed": true,
+    "before": "1",
+    "after": "300m",
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "recsys-dataflow",
+    "kind": "deployment",
+    "name": "airflow-scheduler",
+    "path": "/spec/replicas",
+    "uid": "d92030e5-cc1e-485f-acf7-d4b5c7f8172d",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "recsys-dataflow",
+    "kind": "deployment",
+    "name": "airflow-webserver",
+    "path": "/spec/replicas",
+    "uid": "cce2b2a0-844c-470a-8a4c-9b5b61318458",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "datahub",
+    "kind": "deployment",
+    "name": "datahub-datahub-gms",
+    "path": "/spec/replicas",
+    "uid": "dd0363e1-8cc3-4db0-a0ea-70bf7d8cfade",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "experiment-tracking",
+    "kind": "deployment",
+    "name": "mlflow",
+    "path": "/spec/replicas",
+    "uid": "1e309147-3891-4c80-b06e-f0a77c816852",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "recsys-dataflow",
+    "kind": "statefulset",
+    "name": "airflow-postgres",
+    "path": "/spec/replicas",
+    "uid": "25126472-5373-451b-ae08-8dbebef6ebdb",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "datahub",
+    "kind": "statefulset",
+    "name": "prerequisites-mysql",
+    "path": "/spec/replicas",
+    "uid": "a3339e8b-5581-4bf1-ae74-6a49997f9a78",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "datahub",
+    "kind": "statefulset",
+    "name": "opensearch-cluster-master",
+    "path": "/spec/replicas",
+    "uid": "34a55ee1-6f06-4e09-94f6-b12df309ecd7",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "RESTORED"
+  },
+  {
+    "namespace": "recsys-dataflow",
+    "kind": "deployment",
+    "name": "airflow-scheduler",
+    "path": "/spec/replicas",
+    "uid": "d92030e5-cc1e-485f-acf7-d4b5c7f8172d",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "recsys-dataflow",
+    "kind": "deployment",
+    "name": "airflow-webserver",
+    "path": "/spec/replicas",
+    "uid": "cce2b2a0-844c-470a-8a4c-9b5b61318458",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "datahub",
+    "kind": "deployment",
+    "name": "datahub-datahub-gms",
+    "path": "/spec/replicas",
+    "uid": "dd0363e1-8cc3-4db0-a0ea-70bf7d8cfade",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "experiment-tracking",
+    "kind": "deployment",
+    "name": "mlflow",
+    "path": "/spec/replicas",
+    "uid": "1e309147-3891-4c80-b06e-f0a77c816852",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "recsys-dataflow",
+    "kind": "statefulset",
+    "name": "airflow-postgres",
+    "path": "/spec/replicas",
+    "uid": "25126472-5373-451b-ae08-8dbebef6ebdb",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "datahub",
+    "kind": "statefulset",
+    "name": "prerequisites-mysql",
+    "path": "/spec/replicas",
+    "uid": "a3339e8b-5581-4bf1-ae74-6a49997f9a78",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "datahub",
+    "kind": "statefulset",
+    "name": "opensearch-cluster-master",
+    "path": "/spec/replicas",
+    "uid": "34a55ee1-6f06-4e09-94f6-b12df309ecd7",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kserve-triton-inference",
+    "kind": "inferenceservice",
+    "name": "recsys-bst-triton",
+    "path": "/spec/predictor/model/resources/requests/cpu",
+    "uid": "8bd9461f-5dc2-4c41-bebe-f0c8a1c3d9f2",
+    "existed": true,
+    "before": "1",
+    "after": "300m",
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "ci",
+    "kind": "deployment",
+    "name": "recsys-jenkins",
+    "path": "/spec/template/spec/nodeSelector",
+    "uid": "9a60238e-38d6-4744-be93-b72118978149",
+    "existed": true,
+    "before": {
+      "recsys.ai/pool": "cpu-services"
+    },
+    "after": {
+      "recsys.ai/pool": "ml-system"
+    },
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "ci",
+    "kind": "deployment",
+    "name": "recsys-jenkins",
+    "path": "/spec/template/spec/tolerations",
+    "uid": "9a60238e-38d6-4744-be93-b72118978149",
+    "existed": false,
+    "before": null,
+    "after": [
+      {
+        "key": "recsys.ai/workload",
+        "operator": "Equal",
+        "value": "ml-system",
+        "effect": "NoSchedule"
+      }
+    ],
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "ci",
+    "kind": "deployment",
+    "name": "recsys-jenkins",
+    "path": "/spec/replicas",
+    "uid": "9a60238e-38d6-4744-be93-b72118978149",
+    "existed": true,
+    "before": 0,
+    "after": 1,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "workerpool",
+    "name": "recsys-coordinator-sandbox-pool",
+    "path": "/spec/template/resources/requests/cpu",
+    "uid": "bc2a903f-dc24-48a1-8c62-c32a93476183",
+    "existed": true,
+    "before": "250m",
+    "after": "100m",
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "workerpool",
+    "name": "recsys-context-sandbox-pool",
+    "path": "/spec/template/resources/requests/cpu",
+    "uid": "0822fa39-8792-4cdf-8083-c4c3de6a1a22",
+    "existed": true,
+    "before": "250m",
+    "after": "100m",
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "workerpool",
+    "name": "recsys-recommendation-sandbox-pool",
+    "path": "/spec/template/resources/requests/cpu",
+    "uid": "c78d98e7-4bf9-4f7a-91a4-17547199f21c",
+    "existed": true,
+    "before": "250m",
+    "after": "100m",
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "llm-inference",
+    "kind": "deployment",
+    "name": "llm-d-optimized-baseline-epp",
+    "path": "/spec/template/spec/containers/0/resources/requests/cpu",
+    "uid": "5e632c53-3144-4d2a-bda4-142ce46cdb5b",
+    "existed": true,
+    "before": "250m",
+    "after": "50m",
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "langfuse",
+    "kind": "clickhousecluster",
+    "name": "langfuse",
+    "path": "/spec/containerTemplate/resources/requests/cpu",
+    "uid": "dbfc565a-c9dd-4dbf-beff-aa24f160145f",
+    "existed": true,
+    "before": "500m",
+    "after": "250m",
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "deployment",
+    "name": "rec-llm-2c87bcf043928361e3fc",
+    "path": "/spec/replicas",
+    "uid": "e22f0bfc-95bd-49ab-be4f-06c9816775bb",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "deployment",
+    "name": "rec-llm-2c87bcf043928361e3fc",
+    "path": "/spec/replicas",
+    "uid": "e22f0bfc-95bd-49ab-be4f-06c9816775bb",
+    "existed": true,
+    "before": 0,
+    "after": 1,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "deployment",
+    "name": "rec-llm-2c87bcf043928361e3fc",
+    "path": "/spec/replicas",
+    "uid": "e22f0bfc-95bd-49ab-be4f-06c9816775bb",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "deployment",
+    "name": "rec-llm-de1d2557a58d6e111449",
+    "path": "/spec/replicas",
+    "uid": "ad9cd1e3-d01e-4a76-bfa1-44b5721c4e8a",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "deployment",
+    "name": "rec-llm-de1d2557a58d6e111449",
+    "path": "/spec/replicas",
+    "uid": "ad9cd1e3-d01e-4a76-bfa1-44b5721c4e8a",
+    "existed": true,
+    "before": 0,
+    "after": 1,
+    "status": "APPLIED"
+  },
+  {
+    "namespace": "kagent",
+    "kind": "deployment",
+    "name": "rec-llm-de1d2557a58d6e111449",
+    "path": "/spec/replicas",
+    "uid": "ad9cd1e3-d01e-4a76-bfa1-44b5721c4e8a",
+    "existed": true,
+    "before": 1,
+    "after": 0,
+    "status": "APPLIED"
+  }
+]

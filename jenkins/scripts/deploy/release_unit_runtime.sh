@@ -122,7 +122,23 @@ resolve_unit_image() {
   local fallback_paths="${3:-}"
   local fallback_path
   local reference
+  local image_policy
   local -a candidate_fallback_paths=()
+  image_policy="$(mcp_auth_image_policy "${unit_name}")" || return
+  if [[ "${image_policy}" == "installed-digest" ]]; then
+    reference="$(read_current_helm_value "${value_path}")"
+    if [[ -n "${reference}" ]]; then
+      if [[ "${DEPLOY_TARGET:-gcp-production}" == "gcp-production" &&
+            "${reference}" != *@sha256:* ]]; then
+        recsys_error "MCP auth rotation requires the installed ${unit_name} image to be digest-pinned"
+        return 2
+      fi
+      printf '%s' "${reference}"
+      return 0
+    fi
+    # A genuinely new cluster has no installed release to preserve. In that
+    # case only, continue with the normal signed release artifact resolution.
+  fi
   reference="$(image_manifest_lookup "${image_name}")"
   if [[ -z "${reference}" ]]; then
     reference="$(read_current_helm_value "${value_path}")"
@@ -161,6 +177,13 @@ deploy_helm_unit() {
     return 2
   }
   [[ -f "${values_file}" ]] && helm_args+=(-f "${values_file}")
+  if mcp_auth_chart_consumes_manifest "${unit_name}"; then
+    # The checked-in, non-secret rotation manifest is deliberately supplied
+    # on every deploy. This keeps Helm value resets safe across prepare,
+    # cutover, rollback, and retirement commits.
+    mcp_auth_validate
+    helm_args+=(-f "$(mcp_auth_versions_file)")
+  fi
   if [[ "${unit_name}" == "online-feature-api" ]]; then
     # The first split-service release adopts the existing Feature API objects
     # after the legacy recsys-serving revision marks them as keep. Helm 4 keeps
@@ -296,34 +319,86 @@ print("{}\t{}".format(payload["pipeline_name"], payload.get("pipeline_version_id
 deploy_agentic_helm_unit() {
   local preflight_function="$1"
   local include_agent="${2:-false}"
-  local sandbox_agent_name="${3:-}"
-  local previous_revision=""
-
-  if [[ -n "${sandbox_agent_name}" ]]; then
-    previous_revision="$(sandbox_agent_model_revision "${sandbox_agent_name}")"
-  fi
   "${preflight_function}" "${include_agent}"
   deploy_helm_unit
-  if [[ -n "${sandbox_agent_name}" ]]; then
-    sandbox_agent_rebuild_golden_if_revision_changed \
-      "${sandbox_agent_name}" "${previous_revision}"
+}
+
+deploy_agent_with_cutover_probes() {
+  local preflight_function="$1"
+  local service="$2"
+  local phase old_revision new_revision duration old_log new_log
+  local old_pid new_pid deploy_status=0 probe_status=0
+  phase="$(mcp_auth_transition_phase "${service}")"
+  if [[ "${phase}" != "cutover-or-rollback" ]]; then
+    deploy_agentic_helm_unit "${preflight_function}" true
+    return
+  fi
+
+  old_revision="$(mcp_auth_previous_get "${service}" activeRevision)"
+  new_revision="$(mcp_auth_active_revision "${service}")"
+  [[ "${old_revision}" != "${new_revision}" ]] || {
+    recsys_error "cutover did not change ${service} activeRevision"
+    return 2
+  }
+  duration="${MCP_AUTH_CUTOVER_PROBE_SECONDS:-${timeout%s}}"
+  [[ "${duration}" =~ ^[1-9][0-9]*$ ]] || {
+    recsys_error "MCP_AUTH_CUTOVER_PROBE_SECONDS must be a positive integer"
+    return 2
+  }
+  mkdir -p reports/agentic
+  old_log="reports/agentic/mcp-auth-cutover-${service}-${old_revision}.jsonl"
+  new_log="reports/agentic/mcp-auth-cutover-${service}-${new_revision}.jsonl"
+  bash ops/validation/mcp_auth_continuous_probe.sh \
+    "${service}" "${old_revision}" "${duration}" >"${old_log}" 2>&1 &
+  old_pid=$!
+  bash ops/validation/mcp_auth_continuous_probe.sh \
+    "${service}" "${new_revision}" "${duration}" >"${new_log}" 2>&1 &
+  new_pid=$!
+
+  deploy_agentic_helm_unit "${preflight_function}" true || deploy_status=$?
+  if ((deploy_status != 0)); then
+    kill "${old_pid}" "${new_pid}" >/dev/null 2>&1 || true
+    wait "${old_pid}" >/dev/null 2>&1 || true
+    wait "${new_pid}" >/dev/null 2>&1 || true
+    return "${deploy_status}"
+  fi
+  wait "${old_pid}" || probe_status=$?
+  wait "${new_pid}" || probe_status=$?
+  ((probe_status == 0)) || {
+    recsys_error "continuous MCP auth probe failed during ${service} cutover"
+    return "${probe_status}"
+  }
+}
+
+verify_mcp_retirement_before_deploy() {
+  local service="$1"
+  if [[ "$(mcp_auth_transition_phase "${service}")" == "retire" ]]; then
+    bash ops/validation/mcp_auth_retirement_gate.sh "${service}"
   fi
 }
 
-deploy_unit_feature_rag_mcp() { deploy_agentic_helm_unit agentic_preflight false; }
+deploy_unit_feature_rag_mcp() {
+  verify_mcp_retirement_before_deploy featureRag
+  deploy_agentic_helm_unit agentic_preflight false
+  mcp_auth_verify_prepare featureRag agentic_mcp_protocol_smoke
+}
 deploy_unit_context_agent() {
-  deploy_agentic_helm_unit agentic_preflight true recsys-context-agent-sandbox
+  deploy_agent_with_cutover_probes agentic_preflight featureRag
+  MCP_AUTH_GATE_EVIDENCE="reports/agentic/mcp-auth-context-rollout-gate.json" \
+    mcp_auth_rollout_gate featureRag metadata-only
 }
 deploy_unit_recommendation_mcp() {
+  verify_mcp_retirement_before_deploy recommendation
   deploy_agentic_helm_unit recommendation_agentic_preflight false
+  mcp_auth_verify_prepare recommendation recommendation_mcp_protocol_smoke
 }
 deploy_unit_recommendation_agent() {
-  deploy_agentic_helm_unit recommendation_agentic_preflight true \
-    recsys-recommendation-agent-sandbox
+  deploy_agent_with_cutover_probes recommendation_agentic_preflight recommendation
+  MCP_AUTH_GATE_EVIDENCE="reports/agentic/mcp-auth-recommendation-rollout-gate.json" \
+    mcp_auth_rollout_gate recommendation metadata-only
 }
 deploy_unit_coordinator_agent() {
-  deploy_agentic_helm_unit coordinator_agentic_preflight false \
-    recsys-coordinator-agent-sandbox
+  deploy_agentic_helm_unit coordinator_agentic_preflight false
 }
 
 deploy_unit_feature_registry() { feast_registry_apply "$(resolve_release_image recsys-feature-store)"; }

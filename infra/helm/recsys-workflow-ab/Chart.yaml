@@ -1,0 +1,5 @@
+apiVersion: v2
+name: recsys-workflow-ab
+description: Stable A2A entrypoint and private Istio gateway; experiment routes are CD-owned
+type: application
+version: 0.1.0

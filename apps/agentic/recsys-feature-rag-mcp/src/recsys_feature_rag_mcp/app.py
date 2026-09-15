@@ -106,6 +106,8 @@ def create_app(
             "service": "recsys-feature-rag-mcp",
             "version": __version__,
             "image_reference": settings.image_reference,
+            "tool_contract_version": settings.tool_contract_version,
+            "tool_contract_sha256": settings.tool_contract_sha256,
             "transport": "streamable-http",
             "stateless": True,
         }

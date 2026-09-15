@@ -1,0 +1,15 @@
+{
+  "case_count": 20,
+  "min_samples": 5,
+  "window_seconds": 600,
+  "stage_timeout_seconds": 3600,
+  "latency_ratio": 1.2,
+  "monitor_seconds": 0,
+  "monitor_interval_seconds": 300,
+  "telemetry_max_age_seconds": 120,
+  "request_timeout_seconds": 600,
+  "sample_source": "live_test",
+  "evaluation_version": "recommendation-code-v2",
+  "compatibility_suite": "recommendation-compatibility-smoke-v2",
+  "synthetic_entrypoint": "public_a2a"
+}

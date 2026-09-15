@@ -1,6 +1,8 @@
 # Validation & Verification — RAG API
 
-Verified on **2026-08-30** for the public data endpoints:
+Functional evidence was verified on **2026-08-30** and the combined unit plus
+mutation-oracle gate was re-verified on **2026-09-13** for the public data
+endpoints:
 
 - `POST /v1/rag/retrieve`
 - `GET /v1/rag/chunks/{chunk_id}`
@@ -15,7 +17,7 @@ Operational Substrate/HA rollout history remains in
 | Coverage `> 90%` | **94.20%** |
 | Full data-contract EP/BVA | PASS |
 | HTTP Hypothesis idempotency | PASS: 3 endpoints × 60 examples × 3 requests |
-| Public-path mutation score `> 80%` | **388/445 = 87.19%** |
+| Unit-owned mutation score `> 80%` | **691/785 = 88.03%** |
 | Bad selected mutation states | **0** |
 | Locust HTML/SLA | PASS |
 
@@ -88,7 +90,7 @@ nl -ba tests/unit/api_serving/rag_api/conftest.py | sed -n '105,155p'
 COVERAGE_FILE=/tmp/recsys-rag.coverage \
 UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 \
 uv run pytest tests/unit/api_serving \
-  tests/mutation/api_serving/rag_api -q \
+  -q \
   --cov=recsys_rag_api --cov-report=term-missing \
   --cov-fail-under=90.01
 ```
@@ -290,33 +292,46 @@ UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 uv run pytest \
 
 ![RAG retrieve, single-chunk and batch HTTP TestClient idempotency properties passing](../../pngs/validation-rag-api-idempotency-current.png)
 
-## 4. Centralized full-scope mutation testing
+## 4. Unit-owned full-scope mutation testing
 
-Root [`[tool.mutmut]` (line 98)](../../../pyproject.toml#L98) selects contracts,
-active pointer, batching, chunk lookup and retrieval. The central runner defines
-the [per-service target patterns (line 34)](../../../tests/mutation/api_serving/run.py#L34),
-executes Mutmut through the [isolated command wrapper (line 100)](../../../tests/mutation/api_serving/run.py#L100),
-and applies the [`score > 0.80` plus bad-state gate (line 128)](../../../tests/mutation/api_serving/run.py#L128).
-RAG mutation oracles live in the service-only mutation suite below.
+Root [`[tool.mutmut]` (line 99)](../../../pyproject.toml#L99) selects contracts,
+active pointer, batching, chunk lookup and retrieval. The unit-owned runner
+defines the [per-service targets and selected unit files (lines 34–69)](../../../tests/unit/api_serving/run_mutation.py#L34),
+builds an [isolated workspace (lines 96–119)](../../../tests/unit/api_serving/run_mutation.py#L96)
+only from production sources and tests under
+[`tests/unit/api_serving/rag_api`](../../../tests/unit/api_serving/rag_api/),
+executes that [complete unit directory as a clean preflight (lines 138–151)](../../../tests/unit/api_serving/run_mutation.py#L138),
+and applies the [strictly-greater-than-80% score plus bad-state gate (lines 175–185)](../../../tests/unit/api_serving/run_mutation.py#L175).
 
-| Mutated production area | Mutation oracle | What kills the mutant |
-| --- | --- | --- |
-| [Strict contracts (line 20)](../../../apps/api-serving/rag-api/src/recsys_rag_api/contracts.py#L20) | [`test_strict_contract_boundaries_and_normalization` (line 89)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L89) | Exact defaults, normalized fields, forbidden extras and adjacent bounds. |
-| [Active pointer (line 52)](../../../apps/api-serving/rag-api/src/recsys_rag_api/pointer.py#L52) | [contract/LKG oracle (line 127)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L127) and [TTL oracle (line 145)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L145) | Embedding compatibility, TTL, cold failure and last-known-good reload. |
-| [Batching encoder (line 29)](../../../apps/api-serving/rag-api/src/recsys_rag_api/batching.py#L29) | [direct-path oracle (line 425)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L425) and [worker/error oracle (line 489)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L489) | Bounds, direct/queued paths, vector split, close and propagated failure. |
-| [Chunk lookup (line 60)](../../../apps/api-serving/rag-api/src/recsys_rag_api/chunk_lookup.py#L60) | [`test_chunk_lookup_pointer_view_order_missing_and_conversions` (line 328)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L328) | Pointer-selected view, ID order, missing IDs and complete field conversion. |
-| [`_matches` (line 36)](../../../apps/api-serving/rag-api/src/recsys_rag_api/retrieval.py#L36) | [`test_matches_every_filter_boundary` (line 176)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L176) | Brand, category, inclusive prices, stock and chunk membership. |
-| [`RetrievalService.retrieve` (line 69)](../../../apps/api-serving/rag-api/src/recsys_rag_api/retrieval.py#L69) | [group/rank oracle (line 209)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L209) and [refill/final-cap oracle (line 283)](../../../tests/mutation/api_serving/rag_api/test_public_request_path.py#L283) | E5 prefix, search view/vector/pool, refill, grouping, tie-break, evidence cap and final top-k. |
+The Mutmut pass selects `test_mutation_oracles.py`, `test_retrieval.py`, and
+`test_chunk_lookup.py` from the same RAG unit-test directory. The complete RAG
+unit directory runs in the clean preflight. FastAPI `TestClient` lifecycle tests
+are not imported a second time
+inside Mutmut 3.6 because its partial module reload can produce Starlette
+`No response returned` failures. Direct batching unit tests are also excluded
+from the instrumented pass because broken synchronization mutants can block the
+caller; the deadline-safe batching mutation oracles below cover that behavior.
+
+| Production code under mutation | Example production line / possible mutation | Oracle(s) used by the gate | Contract asserted |
+| --- | --- | --- | --- |
+| [Request/response contracts](../../../apps/api-serving/rag-api/src/recsys_rag_api/contracts.py#L20) | [`contracts.py:53`](../../../apps/api-serving/rag-api/src/recsys_rag_api/contracts.py#L53): `le=20` → `le=21`, incorrectly accepting one item above the upper bound. | [`test_strict_contract_boundaries_and_normalization`](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L89) | Normalization, defaults, forbidden extras, adjacent bounds and strict schemas. |
+| [`ActivePointerManager`](../../../apps/api-serving/rag-api/src/recsys_rag_api/pointer.py#L52) | [`pointer.py:78`](../../../apps/api-serving/rag-api/src/recsys_rag_api/pointer.py#L78): TTL comparison `<` → `<=`, changing the exact cache-refresh boundary. | [Unit LKG/cold-start tests](../../../tests/unit/api_serving/rag_api/test_retrieval.py#L108), [contract/LKG oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L127), and [TTL oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L145) | Embedding compatibility, TTL refresh, cold failure and preservation of the last-known-good pointer. |
+| [`BatchingTextEncoder`](../../../apps/api-serving/rag-api/src/recsys_rag_api/batching.py#L29) | [`batching.py:113`](../../../apps/api-serving/rag-api/src/recsys_rag_api/batching.py#L113): capacity comparison `>` → `>=`, rejecting a candidate that exactly fills the batch. | [Deadline-safe direct-path oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L425) and [worker/error oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L489) | Constructor bounds, direct and queued paths, bounded splitting, shutdown and verbatim error propagation. |
+| [`ChunkLookupService`](../../../apps/api-serving/rag-api/src/recsys_rag_api/chunk_lookup.py#L60) | [`chunk_lookup.py:89`](../../../apps/api-serving/rag-api/src/recsys_rag_api/chunk_lookup.py#L89): missing-field check `or` → `and`, allowing a partial row to be treated as complete. | [Strict unit mapping oracle](../../../tests/unit/api_serving/rag_api/test_chunk_lookup.py#L47) and [pointer/order/conversion oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L328) | Pointer-selected view, exact Feast request, request-order preservation, missing IDs and complete typed field conversion. |
+| [`_matches` and `RetrievalService`](../../../apps/api-serving/rag-api/src/recsys_rag_api/retrieval.py#L36) | [`retrieval.py:89`](../../../apps/api-serving/rag-api/src/recsys_rag_api/retrieval.py#L89): unique-item stop condition `>=` → `>`, causing an unnecessary refill when the target is met exactly. | [Unit filter/group/refill tests](../../../tests/unit/api_serving/rag_api/test_retrieval.py#L83), [filter-boundary oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L176), [group/rank oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L209), and [refill/final-cap oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L283) | Every hard filter, E5 query prefix, bounded refill, item grouping, tie-break, evidence cap and final top-k. |
+| [`FeastCandidateSearch`](../../../apps/api-serving/rag-api/src/recsys_rag_api/retrieval.py#L135) | [`retrieval.py:170`](../../../apps/api-serving/rag-api/src/recsys_rag_api/retrieval.py#L170): empty row-count default `0` → `1`, fabricating a row from an empty response. | [Strict row/request oracle](../../../tests/unit/api_serving/rag_api/test_retrieval.py#L171) and [qualified multi-row oracle](../../../tests/unit/api_serving/rag_api/test_retrieval.py#L223) | Exact feature request, empty results, qualified/unqualified columns, row count and complete typed conversion. |
+| [`MilvusCandidateSearch`](../../../apps/api-serving/rag-api/src/recsys_rag_api/retrieval.py#L196) | [`retrieval.py:254`](../../../apps/api-serving/rag-api/src/recsys_rag_api/retrieval.py#L254): `limit=top_k` changed or removed, violating the requested ANN result bound. | [Request/load oracle](../../../tests/unit/api_serving/rag_api/test_retrieval.py#L315), [empty/flat-hit oracle](../../../tests/unit/api_serving/rag_api/test_retrieval.py#L366), [entity-precedence oracle](../../../tests/unit/api_serving/rag_api/test_retrieval.py#L415), and [initialization-state oracle](../../../tests/unit/api_serving/rag_api/test_mutation_oracles.py#L522) | Exact ANN parameters, idempotent collection loading, omitted embeddings, fallback fields, entity precedence and distance precedence. |
 
 ```bash
 UV_CACHE_DIR=.uv-cache RECSYS_OTEL_ENABLED=0 uv run python \
-  tests/mutation/api_serving/run.py rag --max-children 8
+  tests/unit/api_serving/run_mutation.py rag --max-children 8
 ```
 
-> **Proof note — mutation:** 388 of 445 mutants are killed, 57 survive and no
-> selected mutant has an invalid state; mutation score is 87.19%.
+> **Proof note — mutation (2026-09-13):** the complete RAG unit preflight passes 99/99;
+> 691 of 785 selected mutants are killed, 94 survive and no selected mutant has
+> an invalid state; mutation score is 88.03%.
 
-![RAG Mutmut run: 388 killed and 57 survived from 445 mutants](../../pngs/validation-rag-api-mutation-current.png)
+![RAG API Mutmut run: 691 killed, 94 survived, 785 total and no invalid states](../../pngs/validation-rag-api-mutation-20260913.png)
 
 ## 5. Locust Web API load test
 

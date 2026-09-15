@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: recsys-workflow-gateway}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ .Values.gatewayName }}}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {istio: recsys-workflow-gateway}
+  template:
+    metadata:
+      labels: {istio: recsys-workflow-gateway, sidecar.istio.io/inject: "true"}
+      annotations: {inject.istio.io/templates: gateway}
+    spec:
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{ toYaml .Values.tolerations | nindent 8 }}
+      serviceAccountName: recsys-workflow-gateway
+      containers:
+        - name: istio-proxy
+          image: auto
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: status-port, containerPort: 15021}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ .Values.gatewayName }}}
+spec:
+  type: ClusterIP
+  selector: {istio: recsys-workflow-gateway}
+  ports: [{name: http, port: 80, targetPort: 8080}]
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata: {name: {{ .Values.gatewayName }}}
+spec:
+  selector: {istio: recsys-workflow-gateway}
+  servers:
+    - port: {number: 80, name: http, protocol: HTTP}
+      hosts: ["{{ .Values.gatewayName }}.{{ .Release.Namespace }}.svc.cluster.local"]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: {{ .Values.gatewayName }}}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {istio: recsys-workflow-gateway}

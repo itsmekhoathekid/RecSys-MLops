@@ -1,0 +1,88 @@
+{
+  "probe_id": "workflow-code-v1-20260909",
+  "trace_id": "0f96f231cfed78372219ea73178d961c",
+  "source": "infrastructure_test",
+  "inference_requests": 0,
+  "scores": [
+    {
+      "type": "BOOLEAN",
+      "result": "PASS",
+      "read_status": 200,
+      "row_keys": [
+        "comment",
+        "configId",
+        "createdAt",
+        "dataType",
+        "environment",
+        "id",
+        "metadata",
+        "name",
+        "projectId",
+        "source",
+        "subject",
+        "timestamp",
+        "updatedAt",
+        "value"
+      ],
+      "value_type": "bool",
+      "subject_keys": [
+        "id",
+        "kind"
+      ]
+    },
+    {
+      "type": "NUMERIC",
+      "result": "PASS",
+      "read_status": 200,
+      "row_keys": [
+        "comment",
+        "configId",
+        "createdAt",
+        "dataType",
+        "environment",
+        "id",
+        "metadata",
+        "name",
+        "projectId",
+        "source",
+        "subject",
+        "timestamp",
+        "updatedAt",
+        "value"
+      ],
+      "value_type": "float",
+      "subject_keys": [
+        "id",
+        "kind"
+      ]
+    },
+    {
+      "type": "CATEGORICAL",
+      "result": "PASS",
+      "read_status": 200,
+      "row_keys": [
+        "comment",
+        "configId",
+        "createdAt",
+        "dataType",
+        "environment",
+        "id",
+        "metadata",
+        "name",
+        "projectId",
+        "source",
+        "subject",
+        "timestamp",
+        "updatedAt",
+        "value"
+      ],
+      "value_type": "str",
+      "subject_keys": [
+        "id",
+        "kind"
+      ]
+    }
+  ],
+  "verdict": "PASS",
+  "trace_http_status": "existing_trace"
+}

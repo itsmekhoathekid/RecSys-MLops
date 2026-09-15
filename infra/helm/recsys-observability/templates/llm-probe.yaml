@@ -40,10 +40,15 @@ spec:
           labels:
             app: recsys-llm-observability-probe
         spec:
+          nodeSelector: {{ toYaml (.Values.llmProbe.nodeSelector | default dict) | nindent 12 }}
+          tolerations: {{ toYaml (.Values.llmProbe.tolerations | default list) | nindent 12 }}
           serviceAccountName: recsys-llm-observability-probe
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
             seccompProfile:
               type: RuntimeDefault
           containers:

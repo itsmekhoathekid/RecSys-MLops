@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "services": {
+    "featureRag": {
+      "namespace": "kagent",
+      "vaultPath": "feature-rag-mcp",
+      "activeRevision": "v1",
+      "revisions": {
+        "legacy": {
+          "legacy": true,
+          "secretName": "recsys-feature-rag-mcp-auth",
+          "workloadName": "recsys-feature-rag-mcp",
+          "deploy": true
+        },
+        "v1": {
+          "vaultVersion": "1",
+          "secretName": "recsys-feature-rag-mcp-auth-v1",
+          "workloadName": "recsys-feature-rag-mcp-v1",
+          "deploy": true
+        }
+      }
+    },
+    "recommendation": {
+      "namespace": "kagent",
+      "vaultPath": "recommendation-mcp",
+      "activeRevision": "v1",
+      "revisions": {
+        "legacy": {
+          "legacy": true,
+          "secretName": "recsys-recommendation-mcp-auth",
+          "workloadName": "recsys-recommendation-mcp",
+          "deploy": true
+        },
+        "v1": {
+          "vaultVersion": "1",
+          "secretName": "recsys-recommendation-mcp-auth-v1",
+          "workloadName": "recsys-recommendation-mcp-v1",
+          "deploy": true
+        }
+      }
+    }
+  }
+}

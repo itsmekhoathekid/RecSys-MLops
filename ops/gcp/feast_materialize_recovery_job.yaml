@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: recsys-feast-materialize-recovery-20260912
+  namespace: recsys-dataflow
+  labels:
+    app.kubernetes.io/name: recsys-feast-materialize-recovery
+    recsys.ai/purpose: production-dependency-recovery
+spec:
+  activeDeadlineSeconds: 900
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: recsys-feast-materialize-recovery
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector:
+        recsys.ai/workload: ml-system
+      tolerations:
+        - key: recsys.ai/workload
+          operator: Equal
+          value: ml-system
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: materialize
+          image: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-feature-store@sha256:da0803668d441108bef36a592c3d1965dfc507a61dfabd799c45ca92b62a0268
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - feature_store.materialize_online
+          envFrom:
+            - configMapRef:
+                name: recsys-data-platform-config
+            - secretRef:
+                name: recsys-data-platform-secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

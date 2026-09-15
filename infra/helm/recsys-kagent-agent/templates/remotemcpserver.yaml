@@ -1,18 +1,21 @@
+{{- $mcpAuth := include "recsys-kagent-agent.mcpAuthRotation" . | fromJson -}}
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
 metadata:
   name: {{ .Values.mcp.name }}
   namespace: {{ .Values.namespace }}
+  annotations:
+    recsys.ai/mcp-auth-revision: {{ $mcpAuth.revision | quote }}
   labels:
     {{- include "recsys-kagent-agent.labels" . | nindent 4 }}
 spec:
   description: Authenticated RecSys online-feature and RAG MCP facade.
   protocol: STREAMABLE_HTTP
-  url: {{ .Values.mcp.url | quote }}
+  url: {{ $mcpAuth.url | quote }}
   timeout: {{ .Values.mcp.timeout }}
   headersFrom:
     - name: Authorization
       valueFrom:
         type: Secret
-        name: {{ .Values.mcp.authSecret }}
+        name: {{ $mcpAuth.secretName }}
         key: {{ .Values.mcp.authSecretKey }}

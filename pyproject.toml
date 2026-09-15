@@ -80,6 +80,7 @@ dependencies = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [
+    ".",
     "apps/api-serving/shared/src",
     "apps/api-serving/online-feature-api/src",
     "apps/api-serving/inference-api/src",

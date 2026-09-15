@@ -359,27 +359,32 @@ The three behaviors below do not each map to a single `enabled` flag. Secret
 restart is driven by resource references and controller watches; leader
 election is derived from the replica count; database selection follows a
 connection-precedence rule. The deployed configuration is shown explicitly
-below. Repository source: [`configs/kagent/values.yaml` controller HA (line 22)](../../../configs/kagent/values.yaml#L22).
+below. Each subsection links the exact declarative source lines and, where the
+current desired state differs from the historical HA run, the captured runtime
+evidence.
 
 ### 1. Automatic agent restart on Secret updates
 
 User-facing reference chain:
 
 ```yaml
-# configs/kagent/values.yaml -> chart renders ModelConfig/default-model-config
-providers:
-  default: openAI
-  openAI:
-    apiKeySecretRef: kagent-agent-gateway
-    apiKeySecretKey: AGENT_GATEWAY_API_KEY
+# infra/helm/recsys-global-model-config/values.yaml
+modelConfig:
+  name: recsys-global-model-config
+  apiKeySecret: kagent-agent-gateway
+  apiKeySecretKey: AGENT_GATEWAY_API_KEY
 
-# infra/helm/recsys-kagent-agent/templates/sandboxagent.yaml
-spec:
-  declarative:
-    modelConfig: default-model-config
+# infra/helm/recsys-kagent-agent/values.yaml
+sandbox:
+  modelConfig: recsys-global-model-config
 ```
 
-Substrate rollout bridge in compatibility image `v8`:
+Repository sources: [`ModelConfig` values (line 3)](../../../infra/helm/recsys-global-model-config/values.yaml#L3),
+[`ModelConfig.spec` rendering (line 13)](../../../infra/helm/recsys-global-model-config/templates/modelconfig.yaml#L13),
+[`SandboxAgent` value binding (line 16)](../../../infra/helm/recsys-kagent-agent/values.yaml#L16),
+and [`SandboxAgent.spec.declarative.modelConfig` rendering (line 23)](../../../infra/helm/recsys-kagent-agent/templates/sandboxagent.yaml#L23).
+
+Historical Substrate rollout bridge in compatibility image `v8`:
 
 ```go
 configHash := shortConfigHash(
@@ -391,26 +396,42 @@ containerEnv = append(containerEnv, corev1.EnvVar{
 })
 ```
 
+Historical implementation evidence: [`v8` compatibility remediation (line 17)](benchmark_proof/kagent-secret-rotation-20260829/README.md#L17)
+and [`v8` build provenance (line 12)](benchmark_proof/kagent-secret-rotation-20260829/observations.yaml#L12).
+
 Field-by-field behavior:
 
-- `apiKeySecretRef` identifies the Kubernetes Secret watched through the
-  ModelConfig controller; `apiKeySecretKey` identifies the key whose value is
-  hashed. The Secret value is not copied into Git.
-- `modelConfig: default-model-config` connects every production SandboxAgent to
-  that ModelConfig. A Secret update changes `ModelConfig.status.secretHash` and
-  enqueues the referencing SandboxAgents.
-- `KAGENT_CONFIG_REVISION` is required only by this pinned custom Substrate
-  backend. A literal env value belongs to `ActorTemplateSpec`, so its change
-  produces a different shape hash, ActorTemplate name, and golden runtime.
+- [`apiKeySecret`](../../../infra/helm/recsys-global-model-config/values.yaml#L7)
+  identifies the Kubernetes Secret watched through the ModelConfig controller;
+  [`apiKeySecretKey`](../../../infra/helm/recsys-global-model-config/values.yaml#L8)
+  identifies the key whose value is hashed. The Secret value is not copied into
+  Git.
+- [`modelConfig: recsys-global-model-config`](../../../infra/helm/recsys-kagent-agent/values.yaml#L19)
+  connects the production Context SandboxAgent to that ModelConfig. The
+  [`Recommendation`](../../../infra/helm/recsys-recommendation-agent/values.yaml#L15)
+  and [`Coordinator`](../../../infra/helm/recsys-coordinator-agent/values.yaml#L6)
+  charts declare the same binding. A Secret update changes
+  `ModelConfig.status.secretHash` and enqueues the referencing SandboxAgents.
+- The retired `KAGENT_CONFIG_REVISION` custom bridge is not part of the current
+  production runtime. Secret rotation now follows the supported upstream
+  ModelConfig/SandboxAgent reconciliation path.
 - There is deliberately no `automaticRestart.enabled` setting. The upstream
   behavior is automatic whenever a supported Secret reference exists. kagent
   documents API-key, TLS, and `secretKeyRef` changes as restart triggers in its
   [operational considerations](https://kagent.dev/docs/kagent/operations/operational-considerations/#automatic-agent-restart-on-secret-updates).
 
-The exact bridge and regression test are in
-[`KAGENT_CONFIG_REVISION` bridge and shape-hash test (line 831)](../../../ops/gcp/patches/kagent-e6df917-substrate0011.patch#L831).
+Pinned upstream code references: [`ModelConfig` Secret watch and hash reconciliation](https://github.com/kagent-dev/kagent/blob/4ed5996bfb761771ecf83e4a56addf0d3d664627/go/core/internal/controller/modelconfig_controller.go#L59-L130)
+and [dependent Agent/SandboxAgent watch wiring](https://github.com/kagent-dev/kagent/blob/4ed5996bfb761771ecf83e4a56addf0d3d664627/go/core/internal/controller/watch_helpers.go#L48-L99).
+
+The old source patch and its build artifacts were removed when production moved
+back to the upstream kagent, Go ADK, and Substrate releases.
 
 ### 2. Leader election when the controller is scaled
+
+Repository source: [`controller` values (line 22)](../../../configs/kagent/values.yaml#L22).
+The source currently requests one upstream controller; the three-replica block
+below records the historical HA deployment captured in
+[`live-state.yaml` (line 11)](benchmark_proof/kagent-ha-20260828/live-state.yaml#L11).
 
 ```yaml
 controller:
@@ -444,15 +465,19 @@ controller:
 
 Field-by-field behavior:
 
-- `replicas: 3` is the switch: the chart automatically enables Kubernetes
-  Lease leader election when the value is greater than one. One Pod reconciles;
-  the other two stay Ready as standbys. There is no separate leader-election
-  boolean in this deployment.
-- `nodeSelector` keeps all controllers on the eligible CPU pool and excludes
+- [`replicas: 3`](benchmark_proof/kagent-ha-20260828/live-state.yaml#L13) is the
+  switch used by the historical HA run: the chart automatically enables
+  Kubernetes Lease leader election when the value is greater than one. One Pod
+  reconciles; the other two stay Ready as standbys. There is no separate
+  leader-election boolean in this deployment.
+- [`nodeSelector`](../../../configs/kagent/values.yaml#L28) keeps all controllers
+  on the eligible CPU pool and excludes
   the tainted ML-system node from scheduling/topology calculations.
-- `pdb.maxUnavailable: 1` permits at most one voluntary controller disruption,
+- [`pdb.maxUnavailable: 1`](../../../configs/kagent/values.yaml#L32) permits at
+  most one voluntary controller disruption,
   retaining at least two healthy replicas during drains or managed upgrades.
-- `topologySpreadConstraints` limits hostname skew to one. The CPU pool has two
+- [`topologySpreadConstraints`](../../../configs/kagent/values.yaml#L33) limits
+  hostname skew to one. The CPU pool has two
   nodes, so the observed placement is 2/1 rather than one Pod per node.
 - If the leader dies, its 15-second Kubernetes Lease expires and a standby
   acquires it. The destructive production test observed a new holder and
@@ -464,7 +489,9 @@ This matches kagent's documented rule that
 
 ### 3. Database configuration
 
-Current deployed configuration:
+Current repository configuration:
+
+Repository source: [`database.postgres.bundled` values (line 7)](../../../configs/kagent/values.yaml#L7).
 
 ```yaml
 database:
@@ -482,13 +509,15 @@ database:
 
 Field-by-field behavior:
 
-- `bundled.enabled: true` deploys the chart-managed PostgreSQL Pod and its
+- [`bundled.enabled: true`](../../../configs/kagent/values.yaml#L13) deploys the
+  chart-managed PostgreSQL Pod and its
   storage. It is now explicit in the repository instead of relying on the chart
   default.
 - Neither `database.postgres.urlFile` nor `database.postgres.url` is set, so the
   controller selects the bundled connection. kagent's precedence is
   `urlFile > url > bundled connection string`.
-- The resource requests keep the coursework cluster quota-safe; the limits
+- The [`requests` and `limits`](../../../configs/kagent/values.yaml#L14) keep the
+  coursework cluster quota-safe and
   bound PostgreSQL CPU and memory bursts.
 - A shared PostgreSQL backend lets all three controller replicas use consistent
   state, satisfying the database requirement for controller replication.

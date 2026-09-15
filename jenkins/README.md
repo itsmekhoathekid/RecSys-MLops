@@ -127,8 +127,9 @@ exact path ownership and CI profiles remain authoritative in
 ## Agentic production gate
 
 The three agent components are Context, Recommendation, and Coordinator
-`SandboxAgent`s backed by independent Substrate WorkerPools. Coordinator v21
-sets `isolateSessions: true` on both specialist tools; Recommendation v9 copies
+`SandboxAgent`s backed by independent Substrate WorkerPools. Coordinator uses
+the native Go runtime, exposes only the two A2A specialist tools, and sets
+the upstream shared-session A2A behavior for its sequential routes; Recommendation v9 copies
 the current A2A arguments exactly and stops after its single MCP response.
 Specialist smokes use a 600-second single attempt and the six-case Coordinator
 suite uses a 1,800-second single attempt. A client timeout must never trigger a

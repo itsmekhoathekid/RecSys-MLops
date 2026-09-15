@@ -167,7 +167,7 @@ def buildAndPublish() {
 }
 
 def releaseCommandEnvironment() {
-  return "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' AGENTIC_SMOKE_CHUNK_ID='${params.AGENTIC_SMOKE_CHUNK_ID}'"
+  return "DEPLOY_TARGET='gcp-production' IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' IMAGE_TAG='${env.GIT_COMMIT ?: ''}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' PROMOTION_MANIFEST_URI='${params.PROMOTION_MANIFEST_URI}' AGENTIC_SMOKE_CHUNK_ID='${params.AGENTIC_SMOKE_CHUNK_ID}' MCP_AUTH_RETIRE_APPROVED='${params.MCP_AUTH_RETIRE_APPROVED ? 'yes' : 'no'}'"
 }
 
 def verifyRelease(String commandEnv) {
@@ -196,6 +196,7 @@ def deployProductionRelease() {
   def commandEnv = releaseCommandEnvironment()
   sh "IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' PUBLISH_IMAGES='${env.SHOULD_PUBLISH_IMAGES == 'true' ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' jenkins/scripts/entrypoints/release_deploy_preflight.sh .ci-release-plan.json"
   lock(resource: 'recsys-production-release') {
+    sh 'python3 -m jenkins.python.llm_agent_cd.release_guard'
     sh "${commandEnv} jenkins/scripts/entrypoints/release_snapshot.sh .ci-release-plan.json"
     env.DEPLOY_STARTED = 'true'
     try {

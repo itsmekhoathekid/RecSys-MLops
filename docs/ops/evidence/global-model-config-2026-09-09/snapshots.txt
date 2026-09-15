@@ -1,0 +1,17 @@
+Commands: kubectl get modelconfig / sandboxagent / actortemplates -n kagent -o json
+Derived checks: SHA256(canonical ModelConfig spec), revision and prompt marker membership.
+
+ModelConfig spec SHA256:
+d4b642a42fbdbde5ea637644dfa68baf78d718e16e778860d257c1e0a6c8438c
+
+recsys-context-agent-sandbox: revision_has_digest=True; prompt_has_digest=True
+recsys-recommendation-agent-sandbox: revision_has_digest=True; prompt_has_digest=True
+recsys-coordinator-agent-sandbox: revision_has_digest=True; prompt_has_digest=True
+
+Current ActorTemplates (name / Ready / creation time):
+recsys-context-agent-sandbox-6f0ac1272839010f
+  Ready=True  created=2026-09-09T09:22:05Z
+recsys-coordinator-agent-sandbox-662c0ac593c9bb54
+  Ready=True  created=2026-09-09T09:22:21Z
+recsys-recommendation-agent-sandbox-4ffff4865083f59f
+  Ready=True  created=2026-09-09T09:22:13Z

@@ -374,10 +374,14 @@ async def get_online_features(
     top_k: int,
     feature_client: FeatureClient,
 ) -> OnlineFeaturesResponse:
-    candidates = candidate_item_ids or await _resolve(
-        feature_client.candidates(user_id, max(top_k * 5, top_k))
+    candidates = (
+        await _resolve(feature_client.candidates(user_id, max(top_k * 5, top_k)))
+        if candidate_item_ids is None
+        else candidate_item_ids
     )
-    if hasattr(feature_client, "item_features_batch"):
+    if not candidates:
+        item_operation = _resolve({})
+    elif hasattr(feature_client, "item_features_batch"):
         item_operation = _resolve(feature_client.item_features_batch(candidates))
     else:
 
@@ -395,6 +399,16 @@ async def get_online_features(
         item_operation,
         _resolve(feature_client.user_sequence(user_id)),
     )
+    # Explicit unknown/inactive IDs are not rankable items. In particular,
+    # never score an invented negative ID with an all-zero feature vector.
+    # Keep order and existing metadata; an empty eligible set is valid data.
+    candidates = [
+        item_id
+        for item_id in candidates
+        if item_rows.get(str(item_id))
+        and item_rows[str(item_id)].get("is_active") is not False
+    ]
+    item_rows = {str(item_id): item_rows[str(item_id)] for item_id in candidates}
     return OnlineFeaturesResponse(
         user_id=user_id,
         candidate_item_ids=candidates,

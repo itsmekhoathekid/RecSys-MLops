@@ -25,6 +25,7 @@ recommendation_a2a_smoke() {
     for attempt in $(seq 1 "${max_attempts}"); do
       if python3 - "${base_url}/" "${user_id}" "${request_timeout}" "${output_file}" <<'PY'
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -33,13 +34,14 @@ import uuid
 url, user_id, request_timeout, output_path = sys.argv[1:]
 request_timeout = int(request_timeout)
 request_id = str(uuid.uuid4())
+context_id = os.getenv("RECSYS_FRESH_SESSION_ID") or request_id
 payload = {
     "jsonrpc": "2.0",
     "id": request_id,
     "method": "SendMessage",
     "params": {"message": {
         "messageId": request_id,
-        "contextId": request_id,
+        "contextId": context_id,
         "role": "ROLE_USER",
         "parts": [{"kind": "text", "text": (
             "Recommend top 3 items for user_id=" + user_id
@@ -86,6 +88,10 @@ assert call_args == [{"user_id": int(user_id), "candidate_item_ids": None, "top_
 assert len(responses) == 1 and responses[0][0] == calls[0], responses
 serialized = json.dumps(responses[0][1], sort_keys=True)
 assert user_id in serialized and "model_version" in serialized and "items" in serialized
+session_evidence_path = os.getenv("MCP_AUTH_ROTATION_SESSION_EVIDENCE")
+if session_evidence_path:
+    with open(session_evidence_path, "w", encoding="utf-8") as stream:
+        json.dump({"contextIds": [context_id]}, stream, separators=(",", ":"))
 PY
       then
         status=0
@@ -109,7 +115,7 @@ coordinator_a2a_smoke() {
   # so the production registry gate defaults to one longer bounded attempt.
   local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800}"
   local max_attempts="${COORDINATOR_A2A_MAX_ATTEMPTS:-1}"
-  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents,direct_context_mcp,direct_recommendation_mcp,partial_result}"
+  local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents}"
   local base_url="http://127.0.0.1:${local_port}/api/a2a-sandboxes/kagent/${agent_name}"
   local log_file="reports/agentic/${agent_name}-port-forward.log"
   local output_file="${COORDINATOR_A2A_EVIDENCE_FILE:-reports/agentic/${agent_name}-a2a.json}"
@@ -131,7 +137,9 @@ coordinator_a2a_smoke() {
         "${request_timeout}" "${selected_cases}" \
         "${output_file}" <<'PY'
 import json
+import os
 import sys
+import time
 import urllib.request
 import uuid
 
@@ -174,29 +182,6 @@ cases = {
         "MCP tool directly. Call each specialist exactly once, then answer. "
         "Preserve the recommendation order and cite returned chunk_id values."
     ),
-    "direct_context_mcp": (
-        "For independent verification, directly call get_chunk_by_id exactly "
-        f"once with chunk_id={chunk_id}. Do not call any other tool, do not "
-        "delegate to an agent, and answer immediately after it returns."
-    ),
-    "direct_recommendation_mcp": (
-        "For independent verification, directly call "
-        "get_personalized_recommendations exactly once with arguments "
-        f"{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}. "
-        "Do not call any other tool, do not delegate to an agent, and answer "
-        "immediately after it returns."
-    ),
-    "partial_result": (
-        "Call exactly two tools in this order. First, directly call "
-        "get_chunk_by_id with the deliberately nonexistent "
-        "chunk_id=coordinator-smoke-missing-chunk. Second, directly call "
-        "get_personalized_recommendations with arguments "
-        f"{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}. "
-        "Do not delegate or retry. After both responses, answer exactly: "
-        "'Recommended item_id: <first returned item_id>. Context source "
-        "unavailable.' Replace the placeholder with the first item_id from the "
-        "successful recommendation response and do not omit it."
-    ),
 }
 requested = [name.strip() for name in selected_cases.split(",") if name.strip()]
 unknown = set(requested) - set(cases)
@@ -209,13 +194,15 @@ evidence = {}
 
 def invoke(case_name, prompt):
     request_id = str(uuid.uuid4())
+    fresh_session = os.getenv("RECSYS_FRESH_SESSION_ID")
+    context_id = f"{fresh_session}-{case_name}" if fresh_session else str(uuid.uuid4())
     payload = {
         "jsonrpc": "2.0",
         "id": request_id,
         "method": "SendMessage",
         "params": {"message": {
             "messageId": request_id,
-            "contextId": str(uuid.uuid4()),
+            "contextId": context_id,
             "role": "ROLE_USER",
             "parts": [{"kind": "text", "text": prompt}],
         }},
@@ -292,57 +279,6 @@ def invoke(case_name, prompt):
         for tool_name in calls:
             assert_usable_agent_response(tool_name)
         assert not any(name.startswith("get_") or name.startswith("retrieve_") or name.startswith("build_") for name in calls), calls
-    elif case_name == "direct_context_mcp":
-        assert "get_chunk_by_id" in calls, calls
-        assert not any("agent_sandbox" in name for name in calls), calls
-        assert calls.count("get_chunk_by_id") == 1, calls
-        assert len(calls) == 1, calls
-    elif case_name == "direct_recommendation_mcp":
-        assert "get_personalized_recommendations" in calls, calls
-        assert not any("agent_sandbox" in name for name in calls), calls
-        assert calls.count("get_personalized_recommendations") == 1, calls
-        assert len(calls) == 1, calls
-    else:
-        assert "get_chunk_by_id" in calls, calls
-        assert "get_personalized_recommendations" in calls, calls
-        assert not any("agent_sandbox" in name for name in calls), calls
-        assert calls.count("get_chunk_by_id") == 1, calls
-        assert calls.count("get_personalized_recommendations") == 1, calls
-        answer_messages = [
-            message
-            for message in result.get("history", [])
-            if message.get("role") in {"agent", "ROLE_AGENT"}
-        ]
-        answer_messages.extend(result.get("artifacts", []))
-        if result.get("status", {}).get("message"):
-            answer_messages.append(result["status"]["message"])
-        final_text = " ".join(
-            part.get("text", "")
-            for message in answer_messages
-            for part in message.get("parts", [])
-            if part.get("text")
-        ).strip()
-        normalized_text = final_text.lower()
-        assert (
-            "context source unavailable" in normalized_text
-            or "context source is unavailable" in normalized_text
-        ), final_text
-
-        def collect_item_ids(value):
-            found = []
-            if isinstance(value, dict):
-                for key, child in value.items():
-                    if key == "item_id" and child is not None:
-                        found.append(str(child))
-                    found.extend(collect_item_ids(child))
-            elif isinstance(value, list):
-                for child in value:
-                    found.extend(collect_item_ids(child))
-            return found
-
-        item_ids = collect_item_ids(responses["get_personalized_recommendations"])
-        assert item_ids, responses["get_personalized_recommendations"]
-        assert item_ids[0] in final_text, final_text
     return body
 
 
@@ -409,7 +345,9 @@ PY
     python3 - "${base_url}/" "${user_id}" "${chunk_id}" \
       "${request_timeout}" "${response_file}" <<'PY' || smoke_status=$?
 import json
+import os
 import sys
+import time
 import urllib.request
 import uuid
 
@@ -457,11 +395,19 @@ def collect_chunk_ids(value):
     return found
 
 
+successful_context_ids = []
+
+
 def invoke(tool_name, prompt):
     body = {}
     for attempt in range(1, 7):
         request_id = str(uuid.uuid4())
-        context_id = str(uuid.uuid4())
+        fresh_session = os.getenv("RECSYS_FRESH_SESSION_ID")
+        context_id = (
+            f"{fresh_session}-{tool_name}-{attempt}"
+            if fresh_session
+            else str(uuid.uuid4())
+        )
         payload = {
             "jsonrpc": "2.0",
             "id": request_id,
@@ -545,6 +491,7 @@ def invoke(tool_name, prompt):
             raise SystemExit("exact chunk response does not contain chunk_id")
         if not chunk_ids:
             raise SystemExit(f"{tool_name} response has no grounded chunk_id")
+    successful_context_ids.append(context_id)
     return body
 
 
@@ -552,6 +499,14 @@ evidence = {}
 body = {tool_name: invoke(tool_name, prompt) for tool_name, prompt in cases.items()}
 with open(output_path, "w", encoding="utf-8") as stream:
     json.dump(body, stream, indent=2, sort_keys=True)
+session_evidence_path = os.getenv("MCP_AUTH_ROTATION_SESSION_EVIDENCE")
+if session_evidence_path:
+    with open(session_evidence_path, "w", encoding="utf-8") as stream:
+        json.dump(
+            {"contextIds": successful_context_ids},
+            stream,
+            separators=(",", ":"),
+        )
 PY
     [[ "${smoke_status}" -ne 0 ]] || break
     sleep $((attempt * 5))

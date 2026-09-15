@@ -39,9 +39,12 @@ persistence:
 otelCollector:
   enabled: true
   replicas: 2
+  tolerations: []
   resources:
     requests:
-      cpu: 250m
+      # Measured production use is well below this reservation. Preserve the
+      # one-core limit while releasing scheduler headroom for evaluation Jobs.
+      cpu: 175m
       memory: 512Mi
     limits:
       cpu: "1"

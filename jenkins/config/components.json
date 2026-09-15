@@ -88,6 +88,25 @@
         "infra/helm/recsys-airflow/"
       ]
     },
+    "agentic-rotation-runtime": {
+      "prefixes": [
+        "jenkins/scripts/deploy/agentic/",
+        "ops/security/"
+      ],
+      "files": [
+        "configs/agentic/mcp-auth-versions.yaml",
+        "infra/helm/recsys-security/Chart.yaml",
+        "infra/helm/recsys-security/templates/externalsecrets.yaml",
+        "infra/helm/recsys-security/templates/istio-authorization.yaml",
+        "infra/helm/recsys-security/values.yaml",
+        "ops/security/rotate_mcp_auth_vault.sh",
+        "ops/validation/mcp_auth_continuous_probe.sh",
+        "ops/validation/mcp_auth_fresh_a2a_smoke.sh",
+        "ops/validation/mcp_auth_retirement_gate.sh",
+        "ops/validation/mcp_auth_rotation_gate.sh",
+        "ops/validation/mcp_auth_rotation_matrix.sh"
+      ]
+    },
     "spark-utils": {
       "files": [
         "apps/data-platform/src/orchestration/airflow/spark_utils.py"
@@ -115,7 +134,7 @@
     "serving-mutation-common": {
       "files": [
         "jenkins/ServingMutation.Jenkinsfile",
-        "tests/mutation/api_serving/run.py"
+        "tests/unit/api_serving/run_mutation.py"
       ]
     }
   },
@@ -137,7 +156,7 @@
         "jenkins/scripts/",
         "tests/unit/jenkins/",
         "tests/unit/observability/",
-        "tests/mutation/",
+        "tests/unit/api_serving/run_mutation.py",
         "tests/contract/"
       ],
       "files": [
@@ -148,8 +167,7 @@
         "Makefile",
         "infra/__init__.py",
         "tests/contract/test_repository_layout_contracts.py",
-        "tests/unit/test_feature_api_keep_post_renderer.py",
-        "tests/unit/test_substrate_gke_postrender.py"
+        "tests/unit/test_feature_api_keep_post_renderer.py"
       ]
     }
   },
@@ -438,8 +456,7 @@
           "apps/api-serving/shared/",
           "apps/api-serving/rag-api/",
           "infra/helm/recsys-rag-api/",
-          "tests/unit/api_serving/rag_api/",
-          "tests/mutation/api_serving/rag_api/"
+          "tests/unit/api_serving/rag_api/"
         ],
         "files": [
           "jenkins/scripts/ci/serving.sh",
@@ -472,8 +489,7 @@
           "apps/api-serving/online-feature-api/",
           "apps/data-platform/feature-store/runtime/",
           "infra/helm/recsys-online-feature-api/",
-          "tests/unit/api_serving/",
-          "tests/mutation/api_serving/online_feature_api/"
+          "tests/unit/api_serving/"
         ],
         "files": [
           "tests/contract/test_stream_online_serving_contract.py",
@@ -501,6 +517,7 @@
         "groups": [
           "python-common",
           "jenkins-shared-runtime",
+          "agentic-rotation-runtime",
           "serving-mutation-common"
         ],
         "prefixes": [
@@ -510,6 +527,7 @@
           "tests/unit/agentic/feature_rag_mcp/"
         ],
         "files": [
+          "configs/agentic/mcp-auth-versions.yaml",
           "images/agentic/recsys-feature-rag-mcp/Dockerfile",
           "configs/agentic/recsys-context-agent/tools-contract.json",
           "apps/api-serving/shared/src/recsys_serving_common/contracts.py",
@@ -537,13 +555,18 @@
       "ciProfile": "agentic",
       "changeDetection": {
         "groups": [
-          "jenkins-shared-runtime"
+          "jenkins-shared-runtime",
+          "agentic-rotation-runtime"
         ],
         "prefixes": [
           "infra/helm/recsys-kagent-agent/",
+          "infra/helm/recsys-global-model-config/",
           "tests/e2e/agentic_context/"
         ],
         "files": [
+          "configs/agentic/mcp-auth-versions.yaml",
+          "ops/helm/deploy_global_model_config.sh",
+          "tests/unit/jenkins/test_global_model_config.py",
           "configs/agentic/recsys-context-agent/tools-contract.json",
           "jenkins/scripts/ci/agentic.sh",
           "jenkins/scripts/deploy/agentic.sh",
@@ -567,7 +590,7 @@
       "label": "Recommendation MCP",
       "ciProfile": "recommendation-agentic",
       "changeDetection": {
-        "groups": ["python-common", "jenkins-shared-runtime"],
+        "groups": ["python-common", "jenkins-shared-runtime", "agentic-rotation-runtime"],
         "prefixes": [
           "apps/agentic/recsys-recommendation-mcp/",
           "infra/helm/recsys-recommendation-mcp/",
@@ -575,6 +598,7 @@
           "tests/unit/agentic/recommendation_mcp/"
         ],
         "files": [
+          "configs/agentic/mcp-auth-versions.yaml",
           "images/agentic/recsys-recommendation-mcp/Dockerfile",
           "configs/agentic/recsys-recommendation-agent/tools-contract.json",
           "apps/api-serving/inference-api/src/recsys_inference_api/schemas.py",
@@ -595,12 +619,16 @@
       "label": "Recommendation Sandbox Agent",
       "ciProfile": "recommendation-agentic",
       "changeDetection": {
-        "groups": ["jenkins-shared-runtime"],
+        "groups": ["jenkins-shared-runtime", "agentic-rotation-runtime"],
         "prefixes": [
           "infra/helm/recsys-recommendation-agent/",
+          "infra/helm/recsys-global-model-config/",
           "tests/e2e/recommendation_agentic/"
         ],
         "files": [
+          "configs/agentic/mcp-auth-versions.yaml",
+          "ops/helm/deploy_global_model_config.sh",
+          "tests/unit/jenkins/test_global_model_config.py",
           "configs/agentic/recsys-recommendation-agent/tools-contract.json",
           "jenkins/scripts/ci/agentic.sh",
           "jenkins/scripts/deploy/agentic.sh",
@@ -620,12 +648,16 @@
       "label": "RecSys Coordinator Sandbox Agent",
       "ciProfile": "agentic",
       "changeDetection": {
-        "groups": ["jenkins-shared-runtime"],
+        "groups": ["jenkins-shared-runtime", "agentic-rotation-runtime"],
         "prefixes": [
           "infra/helm/recsys-coordinator-agent/",
+          "infra/helm/recsys-global-model-config/",
           "tests/e2e/coordinator_agentic/"
         ],
         "files": [
+          "configs/agentic/mcp-auth-versions.yaml",
+          "ops/helm/deploy_global_model_config.sh",
+          "tests/unit/jenkins/test_global_model_config.py",
           "configs/agentic/recsys-coordinator-agent/tools-contract.json",
           "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf",
           "jenkins/scripts/ci/agentic.sh",
@@ -658,8 +690,7 @@
           "apps/api-serving/inference-api/",
           "infra/helm/recsys-inference-api/",
           "tests/e2e/",
-          "tests/unit/api_serving/",
-          "tests/mutation/api_serving/inference_api/"
+          "tests/unit/api_serving/"
         ],
         "files": [
           "jenkins/scripts/ci/serving.sh",

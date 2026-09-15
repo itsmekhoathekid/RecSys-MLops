@@ -45,14 +45,11 @@ for path in [coordinator_path, *dependency_paths]:
     assert commit in serialized, (path, commit)
 
 coordinator = json.load(open(coordinator_path, encoding="utf-8"))
-assert [item["name"] for item in coordinator["spec"]["mcpServers"]] == [
-    "recsys-feature-rag-mcp",
-    "recsys-recommendation-mcp",
-]
+assert "mcpServers" not in coordinator["spec"]
 assert coordinator["metadata"]["annotations"]["recsys.dev/a2a-dependencies"] == (
     f"recsys/recsys-context-agent-sandbox@{tag},"
     f"recsys/recsys-recommendation-agent-sandbox@{tag}"
 )
 PY
 
-echo "Agent Registry contains the coordinator and all four matching dependencies at ${version}."
+echo "Agent Registry contains the A2A-only coordinator and matching specialist/runtime entries at ${version}."

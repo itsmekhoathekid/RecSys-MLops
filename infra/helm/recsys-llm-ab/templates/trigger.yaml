@@ -1,0 +1,66 @@
+{{- if .Values.trigger.enabled }}
+{{- $triggerImage := .Values.trigger.image | default .Values.image -}}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $triggerImage) -}}
+{{- fail "trigger image must be pinned by SHA256 digest" -}}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: recsys-recommendation-trigger}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: recsys-ab-traffic}
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: recsys-recommendation-ab-poller}
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  suspend: {{ .Values.trigger.suspendPolling }}
+  startingDeadlineSeconds: 30
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 55
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels: {app: recsys-recommendation-ab-poller}
+          annotations:
+            sidecar.istio.io/inject: "false"
+            recsys.ai/poller-revision: {{ .Values.trigger.revision | quote }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: recsys-recommendation-trigger
+          automountServiceAccountToken: false
+          nodeSelector: {{ toYaml .Values.nodeSelector | nindent 12 }}
+          tolerations: {{ toYaml .Values.tolerations | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: poll
+              image: {{ $triggerImage | quote }}
+              command: [python, -m, apps.agentic.llm_ab_router.trigger, poll]
+              envFrom:
+                - secretRef: {name: {{ .Values.trigger.secretName }} }
+              env:
+                - {name: AB_DISPATCH_IMAGE, value: {{ $triggerImage | quote }} }
+                - {name: AB_RECOMMENDATION_ROUTER_IMAGE, value: {{ .Values.image | quote }} }
+                - {name: AB_TRIGGER_SCOPE, value: recommendation}
+                - {name: AB_TRIGGER_MODE, value: poll}
+                - {name: AB_NAMESPACE, value: {{ .Release.Namespace | quote }} }
+                - {name: AB_PROMETHEUS_URL, value: {{ .Values.trigger.prometheusUrl | quote }} }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: 500m, memory: 256Mi}
+{{- end }}

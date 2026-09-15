@@ -1,23 +1,31 @@
 {{- if .Values.autoscaling.enabled }}
+{{- $contexts := include "recsys-recommendation-mcp.revisionContexts" . | fromJsonArray -}}
+{{- range $context := $contexts }}
+---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
-metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }}}
+metadata:
+  name: {{ $context.name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "recsys-recommendation-mcp.revisionLabels" $context | nindent 4 }}
 spec:
-  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ .Values.name }}}
-  minReplicaCount: {{ .Values.autoscaling.minReplicas }}
-  maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
-  pollingInterval: {{ .Values.autoscaling.pollingInterval }}
-  cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod }}
-  fallback: {failureThreshold: {{ .Values.autoscaling.fallback.failureThreshold }}, replicas: {{ .Values.autoscaling.fallback.replicas }}}
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ $context.name }}}
+  minReplicaCount: {{ $.Values.autoscaling.minReplicas }}
+  maxReplicaCount: {{ $.Values.autoscaling.maxReplicas }}
+  pollingInterval: {{ $.Values.autoscaling.pollingInterval }}
+  cooldownPeriod: {{ $.Values.autoscaling.cooldownPeriod }}
+  fallback: {failureThreshold: {{ $.Values.autoscaling.fallback.failureThreshold }}, replicas: {{ $.Values.autoscaling.fallback.replicas }}}
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:
-        scaleDown: {stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDownStabilizationSeconds }}}
+        scaleDown: {stabilizationWindowSeconds: {{ $.Values.autoscaling.scaleDownStabilizationSeconds }}}
   triggers:
     - type: prometheus
       metadata:
-        serverAddress: {{ .Values.autoscaling.serverAddress | quote }}
-        metricName: recsys_recommendation_mcp_requests_per_second
-        threshold: {{ .Values.autoscaling.requestRateTarget | quote }}
-        query: 'sum(rate(recsys_recommendation_mcp_tool_calls_total[1m]))'
+        serverAddress: {{ $.Values.autoscaling.serverAddress | quote }}
+        metricName: {{ printf "%s_requests_per_second" ($context.name | replace "-" "_") }}
+        threshold: {{ $.Values.autoscaling.requestRateTarget | quote }}
+        query: {{ printf "sum(rate(recsys_recommendation_mcp_tool_calls_total{namespace=\"%s\",pod=~\"%s-[a-z0-9]+-[a-z0-9]+\"}[1m]))" $.Values.namespace $context.name | quote }}
+{{- end }}
 {{- end }}

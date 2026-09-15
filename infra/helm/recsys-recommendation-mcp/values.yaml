@@ -34,3 +34,8 @@ networkPolicy:
   enabled: true
   apiServingNamespace: api-serving
   observabilityNamespace: observability
+
+# Optional manifest-driven blue/green revisions. The shared
+# configs/agentic/mcp-auth-versions.yaml file supplies services.recommendation.
+# An empty map preserves the legacy single-workload rendering above.
+services: {}

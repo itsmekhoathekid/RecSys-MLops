@@ -212,6 +212,22 @@
       "dependsOn": ["rag-api"]
     },
     {
+      "name": "global-model-config",
+      "kind": "helm",
+      "release": "recsys-global-model-config",
+      "namespace": "kagent",
+      "chart": "infra/helm/recsys-global-model-config",
+      "components": [
+        "context_agent",
+        "recommendation_agent",
+        "coordinator_agent"
+      ],
+      "consumesImages": [],
+      "imageValues": {},
+      "consumesArtifacts": [],
+      "dependsOn": []
+    },
+    {
       "name": "context-agent",
       "kind": "helm",
       "release": "recsys-kagent-agent",
@@ -221,7 +237,7 @@
       "consumesImages": [],
       "imageValues": {},
       "consumesArtifacts": [],
-      "dependsOn": ["feature-rag-mcp"]
+      "dependsOn": ["global-model-config", "feature-rag-mcp"]
     },
     {
       "name": "feature-rag-mcp-registry",
@@ -265,7 +281,7 @@
       "consumesImages": [],
       "imageValues": {},
       "consumesArtifacts": [],
-      "dependsOn": ["recommendation-mcp"]
+      "dependsOn": ["global-model-config", "recommendation-mcp"]
     },
     {
       "name": "recommendation-mcp-registry",
@@ -297,7 +313,7 @@
       "consumesImages": [],
       "imageValues": {},
       "consumesArtifacts": [],
-      "dependsOn": ["context-agent", "recommendation-agent"]
+      "dependsOn": ["global-model-config", "context-agent", "recommendation-agent"]
     },
     {
       "name": "coordinator-agent-registry",

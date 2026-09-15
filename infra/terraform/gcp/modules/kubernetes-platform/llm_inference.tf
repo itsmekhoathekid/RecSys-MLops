@@ -9,6 +9,16 @@ check "agent_gateway_auth_dependencies" {
   }
 }
 
+check "mcp_auth_rotation_dependencies" {
+  assert {
+    condition = (
+      !var.config.deploy_llm_inference ||
+      (var.config.deploy_vault && var.config.deploy_service_mesh)
+    )
+    error_message = "deploy_llm_inference requires deploy_vault=true and deploy_service_mesh=true because version-pinned MCP authentication Secrets and their retirement telemetry are Vault/ESO/Istio-backed."
+  }
+}
+
 resource "null_resource" "llm_gateway_api_crds" {
   count = var.config.deploy_llm_inference ? 1 : 0
 

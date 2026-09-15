@@ -1,18 +1,26 @@
 {{- if .Values.networkPolicy.enabled }}
+{{- $contexts := include "recsys-recommendation-mcp.revisionContexts" . | fromJsonArray -}}
+{{- range $context := $contexts }}
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: {name: {{ .Values.name }}, namespace: {{ .Values.namespace }}}
+metadata:
+  name: {{ $context.name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "recsys-recommendation-mcp.revisionLabels" $context | nindent 4 }}
 spec:
   podSelector:
-    matchLabels: {app.kubernetes.io/name: {{ .Values.name }} }
+    matchLabels:
+      app.kubernetes.io/name: {{ $context.name }}
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: {{ .Values.namespace }}}
+            matchLabels: {kubernetes.io/metadata.name: {{ $.Values.namespace }}}
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.observabilityNamespace }}}
-      ports: [{protocol: TCP, port: {{ .Values.service.targetPort }}}]
+            matchLabels: {kubernetes.io/metadata.name: {{ $.Values.networkPolicy.observabilityNamespace }}}
+      ports: [{protocol: TCP, port: {{ $.Values.service.targetPort }}}]
   egress:
     - to:
         - namespaceSelector:
@@ -20,12 +28,13 @@ spec:
       ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
     - to:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.apiServingNamespace }}}
+            matchLabels: {kubernetes.io/metadata.name: {{ $.Values.networkPolicy.apiServingNamespace }}}
           podSelector:
             matchLabels: {app.kubernetes.io/name: recsys-inference-api}
       ports: [{protocol: TCP, port: 80}]
     - to:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.observabilityNamespace }}}
+            matchLabels: {kubernetes.io/metadata.name: {{ $.Values.networkPolicy.observabilityNamespace }}}
       ports: [{protocol: TCP, port: 4317}, {protocol: TCP, port: 9090}]
+{{- end }}
 {{- end }}

@@ -12,7 +12,7 @@ and current measurements are in
 | Unit/Web API tests | PASS | PASS | PASS |
 | Line coverage `> 90%` | 98.44% | 92.39% | 94.20% |
 | EP/BVA parametrization | PASS | PASS | PASS |
-| Full public-path mutation score `> 80%` | 88.40% | 84.91% | 87.19% |
+| Unit-owned mutation score `> 80%` | 88.40% | 83.63% | 88.03% |
 | Hypothesis idempotency | PASS | PASS | PASS |
 | Locust + HTML SLA evidence | PASS | PASS | PASS |
 
@@ -40,7 +40,7 @@ the older monolithic component names and measurements.
 - Web API suites use real `TestClient`, service fixtures and injected mocks under [`tests/unit/api_serving`](../../../../tests/unit/api_serving/).
 - EP/BVA cases are visible in the three service `test_validation_design.py` files.
 - HTTP idempotency uses Hypothesis with 60 examples and three requests per example.
-- Mutation oracles are centralized under [`tests/mutation/api_serving`](../../../../tests/mutation/api_serving/).
+- Mutation oracles are unit-owned under each service directory in [`tests/unit/api_serving`](../../../../tests/unit/api_serving/).
 - Locust HTML SLA report: archived `locust-api.html`.
 
 The original one-off evidence, mutation and load runners were removed from the

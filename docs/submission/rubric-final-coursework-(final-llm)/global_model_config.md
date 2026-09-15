@@ -1,322 +1,50 @@
-# Global Model Configuration for kagent Agents
+**Global Model Configuration for RecSys Agents — Helm-managed setup**
 
-This document describes the repository-owned deployment of one shared kagent
-`ModelConfig`. The configuration lets declarative Agents use the existing Qwen
-inference platform through the llm-d Agent Gateway instead of connecting to the
-llama.cpp model Service directly.
+The shared model configuration for the three default RecSys SandboxAgents is managed by the application Helm release `recsys-global-model-config` in namespace `kagent`. Settings live in a dedicated values file; Helm renders a `ModelConfig`; each agent references that resource by name. The deployment process also refreshes sandbox snapshots when the configuration changes.
 
-The live GKE deployment was completed and functionally verified on 2026-08-13.
-The then-current verification Agent returned `GLOBAL_MODEL_CONFIG_READY`
-through its A2A endpoint. That standalone smoke Agent was later superseded by
-the three specialist/coordinator SandboxAgents; its captured
-output below is retained as historical ModelConfig evidence.
+This document describes the setup deployed on 9 September 2026. Evidence was collected again for this rewrite. The figures below show the current Helm source, rendered resource, live ModelConfig, agent references and Helm release. Together with the linked raw validation output, they establish configuration ownership, agent references and snapshot readiness; they do not claim a new end-to-end inference benchmark.
 
-The production configuration was revalidated on 2026-08-26 with
-`maxTokens=384`, `temperature=0`, and `seed=42`. The 384-token cap leaves output
-capacity after the inference server's 256-token Qwen reasoning budget. It is
-the current source of truth; older 256-token screenshots are historical.
+**1. Configuration flow and ownership**
 
-## Architecture and scope
+The flow follows the [ModelConfig template (line 4)](../../../infra/helm/recsys-global-model-config/templates/modelconfig.yaml#L4), [Helm deployment script (line 21)](../../../ops/helm/deploy_global_model_config.sh#L21) and [agent reference template (line 23)](../../../infra/helm/recsys-kagent-agent/templates/sandboxagent.yaml#L23). Solid arrows describe deployment steps; dashed arrows describe resource references.
 
-**Illustrative flow:** derived from the ModelConfig source at
-[`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55),
-the Agent reference at
-the current [`coordinator sandboxagent.yaml` (line 24)](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml#L24),
-and the llm-d route at
-[`router-llama-cpp-cpu-optimized-values.yaml`, lines 1–41](../../../configs/llm-d/router-llama-cpp-cpu-optimized-values.yaml#L1-L41).
+```mermaid
+flowchart TD
+    values["Global ModelConfig values.yaml"] --> deploy["Helm script or Jenkins"]
+    deploy --> config["ModelConfig: recsys-global-model-config"]
+    config --> digest["SHA256 of the applied spec"]
+    digest --> update["Update agent revision and prompt marker"]
+    update --> rebuild["Rebuild golden snapshot when revision changes"]
+    rebuild --> ready["Wait for agent Ready"]
 
-**Code block provenance:** the three repository sources are linked immediately above.
-
-```text
-kagent Agent
-  -> default-model-config
-  -> OpenAI-compatible HTTP request
-  -> llm-d-inference-gateway.llm-inference.svc.cluster.local:80
-  -> llm-d-optimized-baseline HTTPRoute and InferencePool
-  -> qwen35-gguf llama.cpp Pods
-  -> qwen3.5-0.8b completion
+    coordinator["Coordinator SandboxAgent"] -.->|"modelConfig"| config
+    context["Context SandboxAgent"] -.->|"modelConfig"| config
+    recommendation["Recommendation SandboxAgent"] -.->|"modelConfig"| config
 ```
 
-The scope intentionally excludes TLS for this internal connection. The current
-Gateway listener uses HTTP on port 80, so the `ModelConfig` uses an `http://`
-base URL and does not include a `tls` block.
+| Resource | Owner and purpose |
+|---|---|
+| `recsys-global-model-config` | Dedicated application Helm release; shared settings for the three default RecSys agents |
+| `default-model-config` | Existing platform kagent Helm release; retained for bootstrap/UI consumers |
+| Agent prompt, tools and WorkerPool | Each agent's own Helm chart |
 
-The principal implementation files are:
+Terraform continues to manage the kagent platform. Editing the RecSys shared settings now uses the application chart and does not require a Terraform apply. The new chart explicitly rejects the name `default-model-config`, avoiding ownership collisions.
 
-**Repository path inventory:** each path below is repository-owned rather than
-downloaded from an external chart registry.
+**Source:** [ModelConfig ownership guard (line 1)](../../../infra/helm/recsys-global-model-config/templates/modelconfig.yaml#L1). The following exact excerpt covers lines 1–3.
 
-**Code block provenance:** repository paths documented and linked in the sections below.
-
-```text
-configs/kagent/values.yaml
-infra/terraform/gcp/modules/kubernetes-platform/kagent.tf
-infra/helm/recsys-kagent-agent/
-tests/contract/test_llm_inference_contracts.py
+```gotemplate
+{{- if eq .Values.modelConfig.name "default-model-config" -}}
+{{- fail "default-model-config is owned by the platform kagent release; use a distinct name" -}}
+{{- end -}}
 ```
 
-## Step 1 — Pin and install kagent with Terraform
+**2. Declare shared settings in Helm values**
 
-[`infra/terraform/gcp/modules/kubernetes-platform/kagent.tf` (line 1)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L1)
-pins kagent `0.9.9` and installs the CRDs before the application chart:
-
-**Source:** [`kagent.tf`, lines 1–5](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L1-L5)
-and [`kagent.tf`, lines 39–57](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L39-L57).
-
-```hcl
-variable "kagent_version" {
-  description = "Pinned kagent CRD and application chart version."
-  type        = string
-  default     = "0.9.9"
-}
-
-resource "helm_release" "kagent_crds" {
-  count = var.deploy_llm_inference ? 1 : 0
-
-  name       = "kagent-crds"
-  repository = "oci://ghcr.io/kagent-dev/kagent/helm"
-  chart      = "kagent-crds"
-  version    = var.kagent_version
-  namespace  = kubernetes_namespace.kagent[0].metadata[0].name
-  atomic     = true
-  wait       = true
-  timeout    = 600
-
-  set {
-    name  = "kmcp.enabled"
-    value = "false"
-  }
-
-  depends_on = [kubernetes_namespace.kagent]
-}
-```
-
-### Where the OCI chart is downloaded
-
-The `repository`, `chart`, and `version` fields combine into these version-tagged
-OCI references during Terraform plan/apply. They are version-pinned but not
-digest-pinned, so the registry tag is still the remote point of trust:
-
-**Derived references:** generated from
-[`kagent.tf`, lines 42–45](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L42-L45)
-and [`kagent.tf`, lines 62–65](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L62-L65).
-
-```text
-oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds:0.9.9
-oci://ghcr.io/kagent-dev/kagent/helm/kagent:0.9.9
-```
-
-The Terraform Helm provider pulls and renders the packages on the machine that
-runs Terraform. This repository locks provider `2.17.0` at
-[`infra/terraform/gcp/.terraform.lock.hcl`, lines 44–45](../../../infra/terraform/gcp/.terraform.lock.hcl#L44-L45).
-The embedded Helm SDK may use a temporary download directory while locating and
-loading the chart. It does **not** copy the chart source into this Git
-repository, and a GKE node does not download the chart. Kubernetes receives the
-rendered resources; Helm stores release state in the cluster.
-
-The temporary provider path is not a stable public interface and must not be
-used as a deployment input. Separately, the Helm CLI used for validation can
-keep persistent cache files. On the workstation used for this rollout, Helm
-`v4.2.3` reports:
-
-**Observed command:** environment inspection only; no repository source is
-modified.
-
-```bash
-helm version --short
-helm env | grep -E 'HELM_(CACHE_HOME|REPOSITORY_CACHE|REGISTRY_CONFIG)'
-```
-
-**Observed output:** local workstation paths, not portable repository paths.
-
-```text
-HELM_CACHE_HOME=/Users/KHOAI/Library/Caches/helm
-HELM_REPOSITORY_CACHE=/Users/KHOAI/Library/Caches/helm/repository
-HELM_REGISTRY_CONFIG=/Users/KHOAI/Library/Preferences/helm/registry/config.json
-```
-
-After the validation commands, Helm CLI cache artifacts were observed under:
-
-**Observed local cache paths:** generated artifacts; not committed and safe to
-re-download.
-
-```text
-/Users/KHOAI/Library/Caches/helm/repository/kagent-0.9.9.tgz
-/Users/KHOAI/Library/Caches/helm/content/<sha256-prefix>/<digest>.chart
-```
-
-Deleting this CLI cache does not uninstall the release. A later plan/apply can
-pull the chart again from GHCR. Do not vendor, edit, or cite the cache file as
-the configuration source; the authoritative inputs are the pinned Terraform
-block and [`configs/kagent/values.yaml`, lines 1–94](../../../configs/kagent/values.yaml#L1-L94).
-
-### Other chart source types in this repository
-
-kagent follows an OCI pattern that already existed in the LLM stack:
-
-| Source type | Terraform releases | Repository reference |
-|---|---|---|
-| OCI | `agentgateway_crds`, `agentgateway` | [`llm_inference.tf`, lines 21–60](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L21-L60) |
-| OCI | `llm_d_router` | [`llm_inference.tf`, lines 92–117](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L92-L117) |
-| OCI | `kagent_crds`, `kagent` | [`kagent.tf`, lines 249–326](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L249-L326) |
-| Local repository chart | `recsys_llm_serving` | [`llm_inference.tf`, lines 62–90](../../../infra/terraform/gcp/modules/kubernetes-platform/llm_inference.tf#L62-L90) |
-| Local repository charts | Context, Recommendation, and Coordinator Agents | [`infra/helm`](../../../infra/helm), validated by [`agentic_preflight()` (line 114)](../../../jenkins/scripts/deploy/agentic.sh#L114) |
-| Local repository chart | 17 RecSys service releases | [`recsys_services.tf`, lines 1–590](../../../infra/terraform/gcp/modules/kubernetes-platform/recsys_services.tf#L1-L590) |
-| Classic HTTPS repository | DataHub charts | [`datahub.tf`, lines 64–103](../../../infra/terraform/gcp/modules/kubernetes-platform/datahub.tf#L64-L103) |
-| Classic HTTPS repository | cert-manager, KEDA, External Secrets, KubeRay, Prometheus, Istio, ingress-nginx | [`dependencies.tf`, lines 19–315](../../../infra/terraform/gcp/modules/kubernetes-platform/dependencies.tf#L19-L315) |
-
-Therefore, five Terraform Helm releases use OCI in the current repository:
-the two agentgateway releases, the llm-d Router, and the two kagent releases.
-Nineteen application charts use repository-local paths under `infra/helm`.
-
-Internet references:
-
-- [Helm OCI registries](https://helm.sh/docs/topics/registries/).
-- [Terraform Helm provider OCI example](https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release).
-
-The `kagent` namespace has Istio sidecar injection disabled because this
-coursework path uses direct cluster-internal HTTP:
-
-**Source:** [`kagent.tf`, line 151](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L151).
-
-```hcl
-resource "kubernetes_namespace" "kagent" {
-  count = var.deploy_llm_inference ? 1 : 0
-
-  metadata {
-    labels = {
-      istio-injection = "disabled"
-    }
-
-    name = "kagent"
-  }
-}
-```
-
-The application release depends on both the kagent CRDs and the existing llm-d
-router. Consequently, the chart cannot create the `ModelConfig` before its CRD
-exists or before the intended Gateway route is deployed:
-
-**Source:** [`kagent.tf`, line 201](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L201).
-
-```hcl
-resource "helm_release" "kagent" {
-  count = var.deploy_llm_inference ? 1 : 0
-
-  name       = "kagent"
-  repository = "oci://ghcr.io/kagent-dev/kagent/helm"
-  chart      = "kagent"
-  version    = var.kagent_version
-  namespace  = kubernetes_namespace.kagent[0].metadata[0].name
-  atomic     = true
-  wait       = true
-  timeout    = 900
-  values = [
-    file("${path.module}/../../../configs/kagent/values.yaml"),
-  ]
-
-  depends_on = [
-    helm_release.kagent_crds,
-    helm_release.llm_d_router,
-    kubernetes_secret_v1.kagent_agent_gateway,
-  ]
-}
-```
-
-Internet reference:
-
-- [Installing kagent with Helm](https://kagent.dev/docs/kagent/introduction/installation).
-
-## Step 2 — Supply the Vault-backed Agent Gateway API key
-
-Agent Gateway authentication is enabled in `Strict` mode. The plaintext key is
-generated by the Vault bootstrap only when `recsys/agent-gateway` does not yet
-exist; it is written directly to Vault KV v2 and is not committed to Git or
-stored in Terraform state.
-
-**Source:** [`bootstrap_vault.sh` Agent Gateway branch (line 219)](../../../ops/gcp/bootstrap_vault.sh#L219).
-
-```bash
-agent_gateway_api_key="agw-$(openssl rand -hex 32)"
-jq -n --arg api_key "${agent_gateway_api_key}" \
-  '{data: {AGENT_GATEWAY_API_KEY: $api_key}}' >"${payload_file}"
-unset agent_gateway_api_key
-vault_exec_with_payload "${active_token}" "${payload_file}" \
-  write "recsys/data/agent-gateway" -
-```
-
-The security chart renders two `ExternalSecret` objects from that one Vault
-record:
-
-```text
-Vault KV v2: recsys/agent-gateway
-  AGENT_GATEWAY_API_KEY
-        |---> kagent/kagent-agent-gateway       (client credential)
-        `---> llm-inference/agentgateway-api-keys (server validation set)
-```
-
-The `kagent` copy is referenced by `ModelConfig/default-model-config`. The
-`llm-inference` copy is referenced by the `AgentgatewayPolicy`. Keeping both
-copies sourced from the same Vault record makes rotation atomic at the source;
-External Secrets Operator reconciles both namespace-local Secrets.
-
-The Terraform-managed placeholder remains only as an explicit development
-fallback when `agent_gateway_auth_enabled=false`.
-
-For an existing deployment that previously tracked the placeholder Secret,
-remove only its Terraform state entry before enabling the ExternalSecret. This
-keeps the live object available for ESO to adopt and avoids a delete/recreate
-race during migration:
-
-```bash
-terraform -chdir=infra/terraform/gcp state rm \
-  'kubernetes_secret_v1.kagent_agent_gateway[0]'
-```
-
-## Step 3 — Generate the global ModelConfig
-
-[`configs/kagent/values.yaml` (line 45)](../../../configs/kagent/values.yaml#L45) configures
-the upstream kagent chart to generate `default-model-config`:
-
-**Source:** [`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55).
+**Source:** [Shared ModelConfig values (line 3)](../../../infra/helm/recsys-global-model-config/values.yaml#L3). The following exact excerpt covers lines 3–16.
 
 ```yaml
-providers:
-  default: openAI
-  openAI:
-    provider: OpenAI
-    model: qwen3.5-0.8b
-    apiKeySecretRef: kagent-agent-gateway
-    apiKeySecretKey: AGENT_GATEWAY_API_KEY
-    defaultHeaders:
-      X-Gateway-Base-Model-Name: llm-d-optimized-baseline
-    config:
-      baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
-      maxTokens: 384
-      temperature: "0"
-      seed: 42
-```
-
-![Global kagent ModelConfig source](../../pngs/kagent_global_model_config_source.png)
-
-**Figure: Repository source for the global model configuration.** The captured
-`providers.openAI` block selects `qwen3.5-0.8b`, references the API-key Secret
-without displaying its value, adds the llm-d routing header, and directs every
-Agent using this configuration to the internal Agent Gateway `/v1` endpoint.
-
-The rendered Kubernetes resource is equivalent to:
-
-**Rendered from:** [`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55)
-and the upstream kagent `0.9.9` chart. Reproduce it with the `helm template`
-command in Step 5; this YAML is not maintained as a second manifest file.
-
-```yaml
-apiVersion: kagent.dev/v1alpha2
-kind: ModelConfig
-metadata:
-  name: default-model-config
-  namespace: kagent
-spec:
+modelConfig:
+  name: recsys-global-model-config
   provider: OpenAI
   model: qwen3.5-0.8b
   apiKeySecret: kagent-agent-gateway
@@ -324,390 +52,199 @@ spec:
   defaultHeaders:
     X-Gateway-Base-Model-Name: llm-d-optimized-baseline
   openAI:
+    apiFormat: chatCompletions
     baseUrl: http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1
     maxTokens: 384
-    temperature: 0
+    temperature: "0"
     seed: 42
 ```
 
-The fields have the following responsibilities:
-
-| Field | Purpose |
+| Field | Meaning |
 |---|---|
-| `provider: OpenAI` | Selects kagent's OpenAI-compatible client. |
-| `model` | Sends the llama.cpp model alias `qwen3.5-0.8b`. |
-| `apiKeySecret` | Names the Secret read by the Agent runtime. |
-| `apiKeySecretKey` | Names the key inside that Secret; it is not the key value. |
-| `openAI.baseUrl` | Sends inference through Agent Gateway rather than directly to `qwen35-gguf`. |
-| `openAI.maxTokens` | Caps each model turn at 384 output tokens: 256 may be consumed by Qwen reasoning, leaving 128 tokens for a tool call or concise answer. |
-| `openAI.temperature` | Uses deterministic decoding (`0`) to reduce tool-selection variance. |
-| `openAI.seed` | Fixes seed `42` for reproducible agent smoke tests. |
-| `defaultHeaders` | Adds the listed static headers to every model-provider request. |
+| `modelConfig.name` | Kubernetes resource name referenced by the agents |
+| `provider: OpenAI` | Selects an OpenAI-compatible client; it does not mean the model is hosted by OpenAI |
+| `model: qwen3.5-0.8b` | Model alias sent in inference requests |
+| `apiKeySecret` / `apiKeySecretKey` | References to a Kubernetes Secret and its key; no credential value is stored in this file |
+| `defaultHeaders` | Adds the gateway routing header to provider requests |
+| `openAI.apiFormat` | Uses Chat Completions |
+| `openAI.baseUrl` | Internal inference gateway endpoint |
+| `openAI.maxTokens: 384` | Requested output limit for each model call, not a budget for the whole conversation |
+| `openAI.temperature: "0"` | Reduces sampling randomness; it is not a guarantee that every runtime execution is identical |
+| `openAI.seed: 42` | Fixed seed to support reproducibility under the same execution conditions |
 
-### Why `defaultHeaders` is required
+An agent may call the model multiple times around tool execution. Therefore a conversation can consume more than 384 output tokens in total. The file contains Secret references only; the evidence collection does not read Secret values.
 
-`defaultHeaders` is a map of HTTP headers that kagent attaches to every request
-made through this model configuration. For this deployment, the effective
-request includes:
+The source projection and its SHA256 are retained as [raw text evidence](../../../docs/ops/evidence/global-model-config-2026-09-09/source.txt).
 
-**Illustrative request:** derived from
-[`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55).
-The repository's executable Gateway request uses the same routing header at
-[`llm_inference_smoke.sh`, lines 65–68](../../../ops/validation/llm_inference_smoke.sh#L65-L68).
+![Helm values for the shared ModelConfig](../../pngs/global_model_config_helm_source.png)
 
-```http
-POST /v1/chat/completions
-Content-Type: application/json
-Authorization: Bearer <value-from-secret>
-X-Gateway-Base-Model-Name: llm-d-optimized-baseline
-```
+**Figure: Helm source for the shared ModelConfig.** The screenshot shows the repository-owned values, including the model alias, Secret reference, gateway route, base URL and deterministic generation settings.
 
-`X-Gateway-Base-Model-Name` carries the logical llm-d route/pool name. It keeps
-the Agent request aligned with the deployed `llm-d-optimized-baseline`
-`HTTPRoute` and `InferencePool`. The same header is used by the repository's
-Gateway smoke test in
-[`ops/validation/llm_inference_smoke.sh` (line 65)](../../../ops/validation/llm_inference_smoke.sh#L65).
+**3. Render and verify the ModelConfig resource**
 
-Credentials must not be placed in `defaultHeaders`, because the header values
-are visible in the `ModelConfig` specification. Authentication material belongs
-in a Kubernetes Secret referenced by `apiKeySecret` and `apiKeySecretKey`.
-
-Internet references:
-
-- [kagent BYO OpenAI-compatible model](https://kagent.dev/docs/kagent/supported-providers/byo-openai).
-- [kagent `ModelConfig` API reference](https://kagent.dev/docs/kagent/resources/api-ref).
-- [llm-d multi-model routing](https://llm-d.ai/docs/dev/well-lit-paths/foundations/multi-model-routing).
-
-## Step 4 — Reference the shared configuration from an Agent
-
-At the time of the original evidence, the repository deployed one minimal
-Agent solely to prove that the shared model configuration was usable. That
-resource is no longer part of the current chart; the source below is pinned to
-the last commit before it was superseded.
-
-**Historical source:** [`agent.yaml` at commit `8902ad1`](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/helm/recsys-kagent-agent/templates/agent.yaml).
+**Source:** [ModelConfig resource template (line 4)](../../../infra/helm/recsys-global-model-config/templates/modelconfig.yaml#L4). The following exact excerpt covers lines 4–21.
 
 ```yaml
 apiVersion: kagent.dev/v1alpha2
-kind: Agent
+kind: ModelConfig
 metadata:
-  name: {{ .Values.agent.name }}
+  name: {{ required "modelConfig.name is required" .Values.modelConfig.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
-  type: Declarative
-  description: Minimal Agent proving the shared global ModelConfig is usable.
+  provider: {{ .Values.modelConfig.provider | quote }}
+  model: {{ required "modelConfig.model is required" .Values.modelConfig.model | quote }}
+  apiKeySecret: {{ required "modelConfig.apiKeySecret is required" .Values.modelConfig.apiKeySecret | quote }}
+  apiKeySecretKey: {{ required "modelConfig.apiKeySecretKey is required" .Values.modelConfig.apiKeySecretKey | quote }}
+  defaultHeaders:
+    {{- toYaml .Values.modelConfig.defaultHeaders | nindent 4 }}
+  openAI:
+    {{- toYaml .Values.modelConfig.openAI | nindent 4 }}
+```
+
+Helm maps `.Values.modelConfig` into `ModelConfig.spec`. The namespace comes from the Helm release namespace. Model name and Secret references are required by the template.
+
+**Render command:** used by the [read-only evidence collector](../../../docs/ops/evidence/global-model-config-2026-09-09/capture.py). The saved render is [rendered.yaml](../../../docs/ops/evidence/global-model-config-2026-09-09/rendered.yaml).
+
+```bash
+helm template recsys-global-model-config \
+  infra/helm/recsys-global-model-config \
+  --namespace kagent
+```
+
+![Rendered shared ModelConfig](../../pngs/global_model_config_helm_render.png)
+
+**Figure: ModelConfig rendered from the Helm chart.** The current chart maps the values into a `kagent.dev/v1alpha2` resource named `recsys-global-model-config` in namespace `kagent` and labels it as Helm-managed; the screenshot is retained as historical evidence if its displayed API version differs.
+
+The live resource is checked independently of the render. The captured [modelconfig.json](../../../docs/ops/evidence/global-model-config-2026-09-09/modelconfig.json) records API version, resource identity, Helm ownership and spec; [helm-history.json](../../../docs/ops/evidence/global-model-config-2026-09-09/helm-history.json) records the Helm release history.
+
+The captured live projection confirms owner `recsys-global-model-config`, namespace `kagent`, model alias, endpoint, `maxTokens=384`, `temperature=0` and `seed=42`. See [raw command evidence](../../../docs/ops/evidence/global-model-config-2026-09-09/modelconfig.txt).
+
+**4. Reference the shared configuration from each agent**
+
+The agent chart stores a reference, not a copy of all generation settings. For example, the Context agent declares its name, WorkerPool and shared ModelConfig as follows.
+
+**Source:** [Context Agent model reference (line 13)](../../../infra/helm/recsys-kagent-agent/values.yaml#L13). The following exact excerpt covers lines 13–18.
+
+```yaml
+sandbox:
+  name: recsys-context-agent-sandbox
+  workerPool: recsys-context-sandbox-pool
+  modelConfig: recsys-global-model-config
+```
+
+| Agent | ModelConfig declaration |
+|---|---|
+| Context | [Context values (line 16)](../../../infra/helm/recsys-kagent-agent/values.yaml#L16) |
+| Recommendation | [Recommendation values (line 12)](../../../infra/helm/recsys-recommendation-agent/values.yaml#L12) |
+| Coordinator | [Coordinator values (line 6)](../../../infra/helm/recsys-coordinator-agent/values.yaml#L6) |
+
+**Source:** [SandboxAgent declarative model binding (line 23)](../../../infra/helm/recsys-kagent-agent/templates/sandboxagent.yaml#L23). The following exact excerpt covers lines 23–29.
+
+```yaml
   declarative:
-    modelConfig: {{ .Values.agent.modelConfig }}
+    runtime: go
+    modelConfig: {{ .Values.sandbox.modelConfig }}
     stream: false
     systemMessage: |
-      {{- .Values.agent.systemMessage | nindent 6 }}
+      {{- .Values.sandbox.systemMessage | nindent 6 }}
 ```
 
-[`infra/helm/recsys-kagent-agent/values.yaml` (line 14)](../../../infra/helm/recsys-kagent-agent/values.yaml#L14)
-now configures the Context SandboxAgent. The following values block is the
-historical smoke-Agent configuration retained to explain the captured proof:
+The rendered `SandboxAgent.spec.declarative.modelConfig` points to `recsys-global-model-config`. The runtime remains `go`; prompt and tools stay defined in the individual agent chart.
 
-**Historical source:** [`values.yaml` at commit `8902ad1`](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/helm/recsys-kagent-agent/values.yaml).
+Each specialist uses its own declared ModelConfig reference. A parent agent does not pass its temperature or output limit to the specialist through delegation. The three default agents share settings because they reference the same resource.
 
-```yaml
-agent:
-  name: global-model-config-smoke
-  modelConfig: default-model-config
+The [raw agent projection](../../../docs/ops/evidence/global-model-config-2026-09-09/agents.txt) shows all three named agents using the new ModelConfig with `Ready=True`.
+
+![Live ModelConfig and agent references](../../pngs/global_model_config_live_agents.png)
+
+**Figure: Live ModelConfig, agent references and Helm release.** The screenshot confirms that Kubernetes accepted the Helm-owned ModelConfig, all three default SandboxAgents reference `recsys-global-model-config` with `Ready=True`, and revision 1 of the Helm release is deployed.
+
+**5. Let the upstream controller reconcile settings changes**
+
+The application does not hash ModelConfig into the prompt, annotate a custom
+revision, delete ActorTemplates, or patch Substrate lifecycle code. The
+upstream kagent controller owns ModelConfig/SandboxAgent reconciliation and the
+upstream Substrate controller owns ActorTemplate and snapshot lifecycle.
+
+```mermaid
+flowchart LR
+    edit["Edit values.yaml"] --> apply["Apply shared ModelConfig"]
+    apply --> native["Upstream kagent reconciliation"]
+    native --> substrate["Upstream Substrate lifecycle"]
+    substrate --> ready["Wait for SandboxAgent Ready"]
 ```
 
-The Agent and ModelConfig are both in the `kagent` namespace. kagent requires a
-declarative Agent's `modelConfig` reference to resolve in the same namespace.
-The current coordinator consumer is
-[`SandboxAgent/recsys-coordinator-agent-sandbox` (line 24)](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml#L24),
-while both specialist SandboxAgents also reference `default-model-config`.
-Other resources in this namespace can use the same configuration by setting:
+The Jenkins job upgrades the shared ModelConfig and its three Helm-owned
+consumers, then waits for each SandboxAgent to be Ready. The historical 9
+September evidence contains the retired revision-marker implementation; it is
+kept only as an audit record and is not the current deployment contract.
 
-**Reusable manifest pattern:** the concrete implementation is
-[`coordinator sandboxagent.yaml` (line 24)](../../../infra/helm/recsys-coordinator-agent/templates/sandboxagent.yaml#L24).
+**6. Apply updates with Helm or Jenkins**
 
-```yaml
-spec:
-  type: Declarative
-  declarative:
-    modelConfig: default-model-config
-```
-
-Terraform installs the shared kagent chart and `ModelConfig`; the agentic deploy
-pipeline installs the repository-owned specialist and coordinator charts only
-after that platform dependency is Ready. The following Terraform block is
-historical ownership evidence for the original smoke Agent, not current IaC:
-
-**Historical source:** [`kagent.tf` at commit `8902ad1`, lines 82–96](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L82-L96).
-
-```hcl
-resource "helm_release" "recsys_kagent_agent" {
-  count = var.deploy_llm_inference ? 1 : 0
-
-  name      = "recsys-kagent-agent"
-  chart     = "${local.helm_dir}/recsys-kagent-agent"
-  namespace = kubernetes_namespace.kagent[0].metadata[0].name
-  atomic    = true
-  wait      = true
-  timeout   = 600
-
-  depends_on = [helm_release.kagent]
-}
-```
-
-Internet reference:
-
-- [kagent Agent model configuration](https://kagent.dev/docs/kagent/concepts/agents).
-
-## Step 5 — Render and validate before deployment
-
-Run the following checks from the repository root:
-
-**Validation commands:** these render
-[`recsys-kagent-agent` chart (line 1)](../../../infra/helm/recsys-kagent-agent/Chart.yaml#L1),
-render the OCI kagent chart using
-[`configs/kagent/values.yaml`, lines 1–94](../../../configs/kagent/values.yaml#L1-L94),
-validate the current [`kagent.tf` kagent releases (line 249)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L249),
-and execute the contract at
-[`test_llm_inference_contracts.py`, lines 81–102](../../../tests/contract/test_llm_inference_contracts.py#L81-L102).
-
-**Code block provenance:** each command's repository input is linked immediately above.
+**Operator command:** invokes the Jenkins-only dispatcher. Run from the
+repository root with the project Python environment and Kubernetes/Jenkins
+credentials.
 
 ```bash
-helm lint infra/helm/recsys-kagent-agent
-
-helm template recsys-kagent-agent \
-  infra/helm/recsys-kagent-agent \
-  --namespace kagent
-
-helm template kagent \
-  oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-  --version 0.9.9 \
-  --namespace kagent \
-  --values configs/kagent/values.yaml
-
-terraform -chdir=infra/terraform/gcp fmt -check
-terraform -chdir=infra/terraform/gcp validate
-uv run pytest tests/contract/test_llm_inference_contracts.py -q
+PATH="$PWD/.venv/bin:$PATH" bash ops/helm/deploy_global_model_config.sh
 ```
 
-The retained validation result was:
-
-**Observed output:** produced by the immediately preceding commands on
-2026-08-13; it is evidence, not a repository source excerpt.
-
-```text
-Helm: 1 chart linted, 0 chart failures
-Terraform: Success! The configuration is valid.
-Pytest: 10 passed
-```
-
-The contract test in
-[`test_kagent_global_model_config_routes_through_agentgateway` (line 101)](../../../tests/contract/test_llm_inference_contracts.py#L101)
-asserts the pinned chart, model alias, internal Gateway URL, route header,
-absence of TLS configuration, deterministic output settings, and Agent
-references.
-
-## Step 6 — Apply with Terraform
-
-From `infra/terraform/gcp`, preview the changes and apply the reviewed plan:
-
-**Deployment commands:** apply the platform resources declared in the current
-[`kagent.tf` platform resources (line 219)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L219). Repository-owned Agent
-charts are subsequently deployed by the agentic release pipeline.
+**Source:** [Global ModelConfig dispatcher](../../../ops/helm/deploy_global_model_config.sh).
 
 ```bash
-terraform plan -out=kagent.tfplan
-terraform apply kagent.tfplan
+exec .venv/bin/python -m jenkins.python.llm_agent_cd.global_config_dispatch "$@"
 ```
 
-The initial targeted coursework rollout produced:
+The public script never executes Helm. Jenkins validates the request, acquires
+`recsys-production-release`, runs the release guard, then invokes the internal
+Helm helper. Jenkins unavailability or an ambiguous dispatch fails closed with
+no direct fallback.
 
-**Observed Terraform output:** initial live deployment result.
+Jenkins declares the shared config as a Helm deploy unit in [deploy-units.json (line 215)](../../../jenkins/config/deploy-units.json#L215). The Context consumer explicitly depends on it:
 
-**Code block provenance:** output from the `terraform apply` command immediately above.
-
-```text
-Apply complete! Resources: 4 added, 0 changed, 0 destroyed.
-```
-
-The follow-up Agent release produced:
-
-**Historical Terraform output:** follow-up deployment result after adding the
-now-superseded [`recsys_kagent_agent` release](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L82-L96).
-
-**Code block provenance:** output from applying the linked Terraform resource.
-
-```text
-Apply complete! Resources: 1 added, 1 changed, 0 destroyed.
-```
-
-The first line represents the `kagent` namespace, Vault-backed client Secret,
-CRD Helm release, and kagent application release. The follow-up added the
-minimal Agent release and disabled the upstream demo Agent/tool server.
-
-## Step 7 — Verify the applied ModelConfig and Agent
-
-The commands and output in this section record the original 2026-08-13 smoke
-Agent. For the current deployment, replace `global-model-config-smoke` with
-`recsys-coordinator-agent-sandbox` and inspect all three SandboxAgents.
-
-**Verification commands:** inspect the resources sourced from
-the current [`kagent.tf` platform resources (line 219)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L219),
-[`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55),
-and the [historical smoke Agent source](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/helm/recsys-kagent-agent/templates/agent.yaml).
-
-```bash
-helm list -n kagent
-
-kubectl get pods -n kagent -o wide
-
-kubectl get modelconfig,sandboxagent -n kagent -o wide
-
-kubectl get modelconfig default-model-config -n kagent -o yaml
-
-kubectl get agent global-model-config-smoke -n kagent -o yaml
-
-# Repository-target consumers
-kubectl get sandboxagent \
-  recsys-coordinator-agent-sandbox \
-  recsys-context-agent-sandbox \
-  recsys-recommendation-agent-sandbox \
-  -n kagent -o wide
-```
-
-The 2026-08-13 `ModelConfig` reported:
-
-**Observed Kubernetes output:** selected `status` fields from
-`kubectl get modelconfig default-model-config -n kagent -o yaml`; the desired
-spec is rendered from
-[`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55).
-
-```yaml
-status:
-  conditions:
-    - message: Model configuration accepted
-      reason: ModelConfigReconciled
-      status: "True"
-      type: Accepted
-  observedGeneration: 1
-```
-
-The historical smoke Agent reported both conditions as true:
-
-**Observed Kubernetes output:** produced by `kubectl get modelconfig,agent -n kagent -o wide`;
-the Agent source is the
-[pinned historical manifest](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/helm/recsys-kagent-agent/templates/agent.yaml).
-
-```text
-NAME                        TYPE          RUNTIME   READY   ACCEPTED
-global-model-config-smoke   Declarative   python    True    True
-```
-
-The Pods captured in that historical verification were:
-
-**Observed Kubernetes output:** produced by `kubectl get pods -n kagent`; the
-platform releases are declared in the current
-[`kagent.tf` kagent releases (line 249)](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L249).
-
-```text
-global-model-config-smoke   1/1   Running
-kagent-controller           1/1   Running
-kagent-postgresql           1/1   Running
-kagent-ui                   1/1   Running
-```
-
-![Applied ModelConfig and Agent runtime evidence](../../pngs/kagent_modelconfig_agent_runtime_evidence.png)
-
-**Figure: Applied kagent release, ModelConfig, Agent, and runtime proof.** The
-capture shows all three Helm releases in `deployed` state, the kagent Pods in
-`Running` state, `default-model-config` resolving to the OpenAI-compatible
-`qwen3.5-0.8b` model, and `global-model-config-smoke` reporting both
-`READY=True` and `ACCEPTED=True`. The beginning of the live `ModelConfig` YAML
-also confirms that the resource is Helm-managed in the `kagent` namespace.
-
-## Step 8 — Historical end-to-end inference proof
-
-Port-forward the controller:
-
-**Runtime command:** targets the controller installed by
-[`kagent.tf`, line 201](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L201).
-
-```bash
-kubectl port-forward -n kagent service/kagent-controller 18083:8083
-```
-
-In a second terminal, invoke the Agent through its A2A endpoint:
-
-**Historical functional verification command:** invokes the Agent defined in
-the [pinned smoke manifest](https://github.com/itsmekhoathekid/RecSys-MLops/blob/8902ad10714ffcd0db6e6e4fa0d489f8945c97a0/infra/helm/recsys-kagent-agent/templates/agent.yaml),
-which references the ModelConfig generated from
-[`configs/kagent/values.yaml`, lines 45–55](../../../configs/kagent/values.yaml#L45-L55).
-
-```bash
-curl -fsS --max-time 300 \
-  http://127.0.0.1:18083/api/a2a/kagent/global-model-config-smoke/ \
-  -H 'Content-Type: application/json' \
-  --data '{
-    "jsonrpc": "2.0",
-    "id": "global-model-config-proof",
-    "method": "message/send",
-    "params": {
-      "message": {
-        "role": "ROLE_USER",
-        "parts": [
-          {
-            "kind": "text",
-            "text": "Reply with exactly: GLOBAL_MODEL_CONFIG_READY"
-          }
-        ],
-        "messageId": "global-model-config-proof"
-      }
-    }
-  }'
-```
-
-The verified response completed successfully:
-
-**Observed A2A output:** selected fields from the response returned by the
-immediately preceding command on 2026-08-13.
+**Source:** [Context Agent deployment dependency (line 230)](../../../jenkins/config/deploy-units.json#L230). The following exact excerpt covers lines 230–241.
 
 ```json
-{
-  "status": {
-    "state": "completed"
-  },
-  "artifacts": [
     {
-      "parts": [
-        {
-          "kind": "text",
-          "text": "GLOBAL_MODEL_CONFIG_READY"
-        }
-      ]
-    }
-  ],
-  "metadata": {
-    "kagent_usage_metadata": {
-      "promptTokenCount": 485,
-      "candidatesTokenCount": 39,
-      "totalTokenCount": 524
-    }
-  }
-}
+      "name": "context-agent",
+      "kind": "helm",
+      "release": "recsys-kagent-agent",
+      "namespace": "kagent",
+      "chart": "infra/helm/recsys-kagent-agent",
+      "components": ["context_agent"],
+      "consumesImages": [],
+      "imageValues": {},
+      "consumesArtifacts": [],
+      "dependsOn": ["global-model-config", "feature-rag-mcp"]
+    },
 ```
 
-This proves more than admission of the YAML resource: the Agent resolved
-`default-model-config`, created a model request, sent it through the configured
-Agent Gateway base URL with the route header, and received a real Qwen
-completion.
+This is a source fragment of the deploy-unit list; the trailing comma belongs to the surrounding JSON array. Recommendation and Coordinator have the same global-config dependency. Changes to the global chart select all three agent components, ensuring they are refreshed after the settings are deployed.
 
-![Agent completes inference through the global ModelConfig](../../pngs/kagent_global_model_config_a2a_inference.png)
+Agent deploys use the native `spec.declarative.modelConfig` reference. There is
+no digest injection, prompt marker, ActorTemplate deletion, or custom Go/ADK
+lifecycle hook in the release-unit runtime.
 
-**Figure: End-to-end A2A inference through the global ModelConfig.** The
-capture records the request sent to `global-model-config-smoke` and the returned
-`GLOBAL_MODEL_CONFIG_READY` artifact. The completed task and token-usage
-metadata prove that the Agent resolved the shared configuration, reached the
-Qwen backend through Agent Gateway, and received an actual model completion.
+The component routing and ordering behavior is covered by [deployment order and consumer selection tests (line 39)](../../../tests/unit/jenkins/test_global_model_config.py#L39). The CI gate runs Helm lint and the model-config tests; see [Context CI entry point (line 49)](../../../jenkins/scripts/ci/agentic.sh#L49).
 
-Internet reference:
+**7. Evidence and verification limits**
 
-- [kagent A2A Agent invocation](https://kagent.dev/docs/kagent/examples/a2a-agents).
+**Verification commands:** equivalent to the live reads performed by [capture.py](../../../docs/ops/evidence/global-model-config-2026-09-09/capture.py). These commands only inspect resources.
+
+```bash
+kubectl -n kagent get modelconfig recsys-global-model-config -o yaml
+
+kubectl -n kagent get sandboxagent \
+  recsys-context-agent-sandbox \
+  recsys-recommendation-agent-sandbox \
+  recsys-coordinator-agent-sandbox \
+  -o 'custom-columns=NAME:.metadata.name,MODEL:.spec.declarative.modelConfig,READY:.status.conditions[?(@.type=="Ready")].status'
+
+helm history recsys-global-model-config -n kagent
+```
+
+The [raw validation output](../../../docs/ops/evidence/global-model-config-2026-09-09/validation.txt) records 103 passing tests and a successful Helm lint.

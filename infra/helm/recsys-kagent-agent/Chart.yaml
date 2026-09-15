@@ -2,5 +2,5 @@ apiVersion: v2
 name: recsys-kagent-agent
 description: Grounded RecSys gVisor-sandboxed kagent profile with KEDA WorkerPool scaling.
 type: application
-version: 0.3.0
+version: 0.3.2
 appVersion: "3.0.0"

@@ -72,6 +72,8 @@ spec:
               value: {{ .Values.images.ragIndexer | quote }}
             - name: RAG_ITEM_DAG_SCHEDULE
               value: {{ .Values.airflow.ragItemSchedule | quote }}
+            - name: RAG_ITEM_SOURCE_RUN_ID
+              value: {{ default "auto" .Values.airflow.ragItemSourceRunId | quote }}
             - name: SPARK_DATA_IMAGE
               value: {{ .Values.images.sparkData | quote }}
             - name: SPARK_ANALYTICS_IMAGE
@@ -156,6 +158,8 @@ spec:
               value: {{ .Values.images.ragIndexer | quote }}
             - name: RAG_ITEM_DAG_SCHEDULE
               value: {{ .Values.airflow.ragItemSchedule | quote }}
+            - name: RAG_ITEM_SOURCE_RUN_ID
+              value: {{ default "auto" .Values.airflow.ragItemSourceRunId | quote }}
             - name: SPARK_DATA_IMAGE
               value: {{ .Values.images.sparkData | quote }}
             - name: SPARK_ANALYTICS_IMAGE

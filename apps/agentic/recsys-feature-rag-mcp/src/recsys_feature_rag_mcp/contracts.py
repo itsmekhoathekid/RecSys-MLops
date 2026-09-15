@@ -7,8 +7,25 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 UserId = Annotated[int, Field(ge=0)]
-CandidateItemIds = Annotated[list[int] | None, Field(max_length=100)]
-FeatureTopK = Annotated[int, Field(ge=1, le=100)]
+CandidateItemIds = Annotated[
+    list[int] | None,
+    Field(
+        max_length=100,
+        description=(
+            "Required nullable field. JSON null means resolve candidates for the "
+            "user; [] means an explicitly empty candidate set. Preserve the "
+            "caller's JSON value exactly and never substitute one for the other."
+        ),
+    ),
+]
+FeatureTopK = Annotated[
+    int,
+    Field(
+        ge=1,
+        le=100,
+        description="Required maximum number of feature candidates to return.",
+    ),
+]
 ChunkId = Annotated[str, Field(min_length=1, max_length=512)]
 RagQuery = Annotated[str, Field(min_length=1, max_length=1000)]
 RagTopK = Annotated[int, Field(ge=1, le=20)]

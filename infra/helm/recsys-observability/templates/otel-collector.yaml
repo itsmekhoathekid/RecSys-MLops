@@ -61,7 +61,7 @@ data:
         trace_statements:
           - context: span
             statements:
-              - 'keep_keys(span.attributes, ["agent", "status", "tool", "operation", "kagent.app_name", "gen_ai.agent.name", "kagent.agent.name", "gen_ai.tool.name", "tool.name", "recsys.safety.email", "recsys.safety.phone", "recsys.safety.payment_card", "recsys.safety.prompt_injection"])'
+              - 'keep_keys(span.attributes, ["agent", "status", "tool", "operation", "kagent.app_name", "gen_ai.agent.name", "kagent.agent.name", "gen_ai.tool.name", "tool.name", "recsys.ab.experiment_id", "recsys.ab.release_id", "recsys.ab.config_id", "recsys.ab.llm_version_id", "recsys.ab.source", "recsys.safety.email", "recsys.safety.phone", "recsys.safety.payment_card", "recsys.safety.prompt_injection"])'
           - context: resource
             statements:
               - 'keep_keys(resource.attributes, ["service.name", "service.namespace", "service.instance.id", "deployment.environment", "deployment.environment.name"])'
@@ -106,7 +106,7 @@ data:
               - 'replace_pattern(span.attributes["langfuse.observation.output"], "(?i)[+]?[0-9][0-9 .()_-]{7,}[0-9]", "[REDACTED_PHONE]") where span.attributes["langfuse.observation.output"] != nil'
               - 'replace_pattern(span.attributes["langfuse.observation.output"], "(?i)([0-9][ -]?){13,19}", "[REDACTED_CARD]") where span.attributes["langfuse.observation.output"] != nil'
               - 'replace_pattern(span.attributes["langfuse.observation.output"], "(?i)(ignore (all|any|the|your) (previous|prior|above) instructions|system prompt|jailbreak)", "[REDACTED_PROMPT_INJECTION]") where span.attributes["langfuse.observation.output"] != nil'
-              - 'keep_keys(span.attributes, ["langfuse.environment", "langfuse.trace.name", "langfuse.observation.type", "langfuse.observation.level", "langfuse.observation.status_message", "langfuse.observation.input", "langfuse.observation.output", "langfuse.observation.model.name", "langfuse.observation.model.parameters", "langfuse.observation.usage_details", "langfuse.observation.cost_details", "langfuse.observation.completion_start_time", "langfuse.observation.metadata.agent", "langfuse.observation.metadata.tool", "langfuse.observation.metadata.status", "langfuse.observation.metadata.operation", "gen_ai.request.model", "gen_ai.response.model", "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.usage.total_tokens", "recsys.safety.email", "recsys.safety.phone", "recsys.safety.payment_card", "recsys.safety.prompt_injection"])'
+              - 'keep_keys(span.attributes, ["langfuse.environment", "langfuse.trace.name", "langfuse.observation.type", "langfuse.observation.level", "langfuse.observation.status_message", "langfuse.observation.input", "langfuse.observation.output", "langfuse.observation.model.name", "langfuse.observation.model.parameters", "langfuse.observation.usage_details", "langfuse.observation.cost_details", "langfuse.observation.completion_start_time", "langfuse.observation.metadata.agent", "langfuse.observation.metadata.tool", "langfuse.observation.metadata.status", "langfuse.observation.metadata.operation", "langfuse.observation.metadata.experiment_id", "langfuse.observation.metadata.variant", "langfuse.observation.metadata.release_id", "langfuse.observation.metadata.config_id", "langfuse.observation.metadata.llm_version_id", "langfuse.observation.metadata.source", "langfuse.observation.metadata.role", "langfuse.observation.metadata.fixture_checksum", "langfuse.observation.metadata.evaluator_version", "gen_ai.request.model", "gen_ai.response.model", "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.usage.total_tokens", "recsys.safety.email", "recsys.safety.phone", "recsys.safety.payment_card", "recsys.safety.prompt_injection"])'
           - context: resource
             statements:
               - 'keep_keys(resource.attributes, ["service.name", "service.namespace", "service.version", "deployment.environment", "deployment.environment.name"])'
@@ -245,6 +245,10 @@ spec:
         app: recsys-otel-collector
     spec:
       serviceAccountName: recsys-otel-collector
+{{- with .Values.otelCollector.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+{{- end }}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname

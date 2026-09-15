@@ -100,6 +100,7 @@ resource "null_resource" "recsys_external_secrets_ready" {
     langfuse           = tostring(var.config.deploy_langfuse)
     feature_rag_mcp    = tostring(var.config.deploy_llm_inference)
     recommendation_mcp = tostring(var.config.deploy_llm_inference)
+    mcp_auth_versions  = local.mcp_auth_versions_sha256
     gateway_ui_auth    = "kagent,agentregistry"
   }
 
@@ -146,29 +147,70 @@ resource "null_resource" "recsys_external_secrets_ready" {
         kubectl get "secret/agentregistry-runtime" -n agentregistry >/dev/null
       fi
 
-      if [[ "$${WAIT_FEATURE_RAG_MCP}" == "true" ]]; then
-        kubectl wait --for=condition=Ready \
-          "externalsecret/recsys-feature-rag-mcp-auth" \
-          -n kagent --timeout=300s
-        kubectl get "secret/recsys-feature-rag-mcp-auth" -n kagent >/dev/null
-      fi
-
-      if [[ "$${WAIT_RECOMMENDATION_MCP}" == "true" ]]; then
-        kubectl wait --for=condition=Ready \
-          "externalsecret/recsys-recommendation-mcp-auth" \
-          -n kagent --timeout=300s
-        kubectl get "secret/recsys-recommendation-mcp-auth" -n kagent >/dev/null
+      if [[ "$${WAIT_MCP_AUTH}" == "true" ]]; then
+        while IFS=$'\t' read -r namespace name; do
+          [[ -n "$${namespace}" && -n "$${name}" ]] || continue
+          kubectl wait --for=condition=Ready "externalsecret/$${name}" \
+            -n "$${namespace}" --timeout=300s
+          kubectl get "secret/$${name}" -n "$${namespace}" >/dev/null
+        done <<< "$${MCP_AUTH_EXTERNAL_SECRETS}"
       fi
     EOT
     interpreter = ["/bin/bash", "-c"]
     environment = {
-      WAIT_AGENT_GATEWAY      = tostring(var.config.deploy_llm_inference && var.config.agent_gateway_auth_enabled)
-      WAIT_AGENT_REGISTRY     = tostring(var.config.deploy_agent_registry)
-      WAIT_FEATURE_RAG_MCP    = tostring(var.config.deploy_llm_inference)
-      WAIT_RECOMMENDATION_MCP = tostring(var.config.deploy_llm_inference)
-      WAIT_LANGFUSE           = tostring(var.config.deploy_langfuse)
+      WAIT_AGENT_GATEWAY  = tostring(var.config.deploy_llm_inference && var.config.agent_gateway_auth_enabled)
+      WAIT_AGENT_REGISTRY = tostring(var.config.deploy_agent_registry)
+      WAIT_MCP_AUTH       = tostring(var.config.deploy_llm_inference)
+      MCP_AUTH_EXTERNAL_SECRETS = join("\n", [
+        for target in local.mcp_auth_external_secret_targets :
+        format("%s\t%s", target.namespace, target.name)
+      ])
+      WAIT_LANGFUSE = tostring(var.config.deploy_langfuse)
     }
   }
 
   depends_on = [helm_release.recsys_security]
+}
+
+# Run the same non-secret manifest validator used by CI before Terraform is
+# allowed to mutate the security Helm release. On a purge commit the helper
+# also verifies the separately approved retirement evidence and that no live
+# workload, RemoteMCPServer, or SandboxAgent still references the old slot.
+resource "null_resource" "mcp_auth_versions_valid" {
+  triggers = {
+    cluster_id        = var.cluster.id
+    manifest_sha256   = local.mcp_auth_versions_sha256
+    mcp_auth_enabled  = tostring(var.config.deploy_llm_inference)
+    validator_sha256  = filesha256("${var.repo_root}/ops/security/mcp_auth_versions.py")
+    purge_gate_sha256 = filesha256("${var.repo_root}/ops/security/validate_mcp_auth_terraform.sh")
+    # External references can change between failed/retried applies even when
+    # configuration hashes do not. Force the fail-closed live gate to run on
+    # every apply before recsys-security can mutate. The kagent namespace is
+    # deliberately retained across a generic feature-disable transaction.
+    validation_attempt = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command     = "bash \"$MCP_AUTH_TERRAFORM_VALIDATOR\" \"$MCP_AUTH_VERSIONS_FILE\""
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      MCP_AUTH_TERRAFORM_VALIDATOR = "${var.repo_root}/ops/security/validate_mcp_auth_terraform.sh"
+      MCP_AUTH_VERSIONS_FILE       = local.mcp_auth_versions_path
+      MCP_AUTH_ENABLED             = tostring(var.config.deploy_llm_inference)
+    }
+  }
+
+  lifecycle {
+    # Run the replacement guard before destroying its prior instance when a
+    # feature flag changes. This keeps recsys-security ordered behind the new
+    # validation instead of opening a destroy-before-create gap.
+    create_before_destroy = true
+  }
+
+  depends_on = [
+    helm_release.external_secrets,
+    # The namespace must exist before the live-state guard runs; generic
+    # feature disable retains it so Jenkins-owned MCP objects stay observable.
+    kubernetes_namespace.kagent,
+  ]
 }

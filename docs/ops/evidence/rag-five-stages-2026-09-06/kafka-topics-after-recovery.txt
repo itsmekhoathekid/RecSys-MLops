@@ -1,0 +1,145 @@
+Topic: cdc.user_preferences	TopicId: d-LM4qIEQ8KmoLhXs03Xmw	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.user_preferences	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.user_preferences	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.user_preferences	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.user_preferences	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: MetadataChangeEvent_v4	TopicId: PvYMLARHSbW_Bq5wmlvpgA	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: MetadataChangeEvent_v4	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeEvent_v4	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeEvent_v4	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeEvent_v4	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: FailedMetadataChangeProposal_v1	TopicId: Bw5-w5NgQEaHiY290RXpZw	PartitionCount: 1	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: FailedMetadataChangeProposal_v1	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.orders	TopicId: uL_H2DwVSbOMo05VzsNI7Q	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.orders	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.orders	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.orders	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.orders	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.users	TopicId: l8EbD3pVQ3e432orW4s1Gw	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.users	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.users	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.users	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.users	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.order_items	TopicId: Aw2qBo-uQb-v8_yxetwmIA	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.order_items	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.order_items	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.order_items	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.order_items	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.product_snapshots	TopicId: 1lw84K5jRTeX6IRBcsSygA	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.product_snapshots	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.product_snapshots	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.product_snapshots	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.product_snapshots	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: MetadataChangeLog_Timeseries_v1	TopicId: WHM242zKQja3WEVHXaqvcg	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: MetadataChangeLog_Timeseries_v1	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeLog_Timeseries_v1	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeLog_Timeseries_v1	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeLog_Timeseries_v1	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: MetadataChangeProposal_v1	TopicId: T2dvir2SQuygO-5-b-TVoQ	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: MetadataChangeProposal_v1	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeProposal_v1	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeProposal_v1	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeProposal_v1	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.impressions	TopicId: 6RgnFOBwTS2hMUT0yERGtw	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.impressions	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.impressions	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.impressions	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.impressions	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: recsys_connect_status	TopicId: xnRri_JAQWupUjof_HsA7A	PartitionCount: 4	ReplicationFactor: 1	Configs: cleanup.policy=compact,segment.bytes=268435456
+	Topic: recsys_connect_status	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: recsys_connect_status	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: recsys_connect_status	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: recsys_connect_status	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: recsys_connect_configs	TopicId: iQsG8PCmQRWiUtaHWlfF7A	PartitionCount: 1	ReplicationFactor: 1	Configs: cleanup.policy=compact,segment.bytes=268435456
+	Topic: recsys_connect_configs	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+Topic: recsys_connect_offsets	TopicId: wTaJUwdtT-mj5uQed0IRjg	PartitionCount: 4	ReplicationFactor: 1	Configs: cleanup.policy=compact,segment.bytes=268435456
+	Topic: recsys_connect_offsets	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: recsys_connect_offsets	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: recsys_connect_offsets	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: recsys_connect_offsets	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.sessions	TopicId: BS9klwwnTUGILHgv78JSIQ	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.sessions	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.sessions	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.sessions	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.sessions	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: DataHubUpgradeHistory_v1	TopicId: VL9DHhCdTvqthKBpS6z5xQ	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: DataHubUpgradeHistory_v1	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: DataHubUpgradeHistory_v1	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: DataHubUpgradeHistory_v1	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: DataHubUpgradeHistory_v1	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: PlatformEvent_v1	TopicId: 4LPuPbMgRcmLzfyFZLAY7w	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: PlatformEvent_v1	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: PlatformEvent_v1	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: PlatformEvent_v1	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: PlatformEvent_v1	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.products	TopicId: Z-cZdAvlRaORUvu6mq-W_Q	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.products	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.products	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.products	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.products	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: MetadataChangeLog_Versioned_v1	TopicId: Kq4PHOxXSbOb1mJYByetoA	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: MetadataChangeLog_Versioned_v1	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeLog_Versioned_v1	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeLog_Versioned_v1	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: MetadataChangeLog_Versioned_v1	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: __consumer_offsets	TopicId: 63-99U-FTkyWAd2YQ3-bfw	PartitionCount: 50	ReplicationFactor: 1	Configs: cleanup.policy=compact,segment.bytes=268435456
+	Topic: __consumer_offsets	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 4	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 5	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 6	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 7	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 8	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 9	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 10	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 11	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 12	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 13	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 14	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 15	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 16	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 17	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 18	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 19	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 20	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 21	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 22	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 23	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 24	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 25	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 26	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 27	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 28	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 29	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 30	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 31	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 32	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 33	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 34	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 35	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 36	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 37	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 38	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 39	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 40	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 41	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 42	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 43	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 44	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 45	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 46	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 47	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 48	Leader: 1	Replicas: 1	Isr: 1
+	Topic: __consumer_offsets	Partition: 49	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.behavior_events	TopicId: ghGetNGaTb6l-slcqMA7Uw	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.behavior_events	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.behavior_events	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.behavior_events	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.behavior_events	Partition: 3	Leader: 1	Replicas: 1	Isr: 1
+Topic: cdc.recommendation_requests	TopicId: H_z4dTu_SC23laFtKU-ZkQ	PartitionCount: 4	ReplicationFactor: 1	Configs: segment.bytes=268435456
+	Topic: cdc.recommendation_requests	Partition: 0	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.recommendation_requests	Partition: 1	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.recommendation_requests	Partition: 2	Leader: 1	Replicas: 1	Isr: 1
+	Topic: cdc.recommendation_requests	Partition: 3	Leader: 1	Replicas: 1	Isr: 1

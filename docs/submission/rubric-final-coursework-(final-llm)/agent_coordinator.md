@@ -1,8 +1,16 @@
-# Coordinator Agent with A2A, MCP, Multi-Replica Runtime, and Governance
+# Coordinator Agent with Native A2A, Multi-Replica Runtime, and Governance
+
+> **Current production state (12 September 2026):** kagent
+> `0.10.0-rc1` and Agent Substrate `0.0.9` are installed from their official
+> upstream charts. The Coordinator is a native declarative Go `SandboxAgent`
+> with exactly two `Agent` tools (Context and Recommendation), no direct MCP
+> tools, no `isolateSessions` field, no post-renderer, and no custom kagent/Go
+> ADK image. Older captures later in this document are retained as historical
+> evidence and do not describe the active runtime.
 
 `recsys-coordinator-agent-sandbox` is a declarative Go `SandboxAgent` running
 on Agent Substrate in the `kagent` namespace. It classifies each request and
-routes it to the smallest set of specialist agents or MCP tools required to
+routes it to the smallest set of specialist agents required to
 produce a grounded answer.
 
 ```text
@@ -12,28 +20,24 @@ kagent Chat UI / sandbox A2A client
 SandboxAgent/recsys-coordinator-agent-sandbox
   |-- WorkerPool --> recsys-coordinator-sandbox-pool (1..3)
   |-- A2A --------> recsys-context-agent-sandbox
-  |-- A2A --------> recsys-recommendation-agent-sandbox
-  |-- MCP --------> recsys-feature-rag-mcp
-  `-- MCP --------> recsys-recommendation-mcp
+  `-- A2A --------> recsys-recommendation-agent-sandbox
 ```
 
-The current production runtime uses Substrate `0.0.11`, the native WorkerPool
-`/scale` subresource, and the custom kagent compatibility image
-`0.10.0-e6df917-substrate0011-v8`. The model configuration revision is
-`substrate-0.0.11-kagent-e6df917-assigned-workers-v22`.
+The current production runtime uses upstream Substrate `0.0.9`, upstream
+kagent `0.10.0-rc1`, and the upstream digest-pinned `golang-adk` ActorTemplate
+image published by that kagent release.
 
-## 1. Agent Uses MCP with a Multi-Replica Autoscaled Runtime
+## 1. Agent Uses Native A2A with a Multi-Replica Autoscaled Runtime
 
-### 1.1 Declarative A2A and MCP providers
+### 1.1 Declarative A2A providers
 
 The Coordinator is a declarative `SandboxAgent`; it does not require a custom
 agent container image. Its two `Agent` providers expose the Context and
-Recommendation SandboxAgents as isolated A2A tools. Its two `McpServer`
-providers reuse the canonical `RemoteMCPServer` resources. The chart does not
-duplicate either MCP server or its authentication Secret.
+Recommendation SandboxAgents as native A2A tools. Specialist agents own their
+respective MCP bindings; the Coordinator has no direct `McpServer` provider.
 
 ```yaml
-apiVersion: kagent.dev/v1alpha3
+apiVersion: kagent.dev/v1alpha2
 kind: SandboxAgent
 metadata:
   name: recsys-coordinator-agent-sandbox
@@ -63,53 +67,36 @@ spec:
               grounded evidence.
     tools:
       - type: Agent
-        isolateSessions: true
         agent:
           apiGroup: kagent.dev
           kind: SandboxAgent
           name: recsys-context-agent-sandbox
       - type: Agent
-        isolateSessions: true
         agent:
           apiGroup: kagent.dev
           kind: SandboxAgent
           name: recsys-recommendation-agent-sandbox
-      - type: McpServer
-        mcpServer:
-          apiGroup: kagent.dev
-          kind: RemoteMCPServer
-          name: recsys-feature-rag-mcp
-          toolNames: [get_chunk_by_id]
-      - type: McpServer
-        mcpServer:
-          apiGroup: kagent.dev
-          kind: RemoteMCPServer
-          name: recsys-recommendation-mcp
-          toolNames: [get_personalized_recommendations]
 ```
 
 `a2aConfig.skills` publishes the Coordinator's inbound A2A capability in its
 Agent Card. The two `tools` entries with `type: Agent` configure outbound A2A
-delegation to the specialist SandboxAgents. `isolateSessions: true` gives every
-delegation a fresh child A2A context instead of reusing parent or earlier child
-state.
+delegation to the specialist SandboxAgents using the upstream default session
+behavior; the unsupported `isolateSessions` field is absent.
 
-The Coordinator's model context combines its routing prompt with the A2A and
-MCP providers bound by the `SandboxAgent`:
+The Coordinator's model context combines its routing prompt with the two A2A
+providers bound by the `SandboxAgent`:
 
 ```text
 systemMessage
   + allowed toolNames
-  + MCP tools/list description
   + generated inputSchema
   -> model tool context
 ```
 
 The `Agent` entries above are A2A delegation tools generated from the two
-specialist SandboxAgents. They are distinct from the two direct `McpServer`
-tools: `get_chunk_by_id` and `get_personalized_recommendations`. The following
-core excerpt is copied verbatim from the current Coordinator `systemMessage`;
-the linked values file contains the full routing and partial-result policy.
+specialist SandboxAgents. The following excerpt is retained from an older
+prompt revision for historical comparison; the linked values file is the
+source of truth for the active A2A-only routing prompt.
 
 ```text
 You are the RecSys coordinator agent. Route each request to the smallest

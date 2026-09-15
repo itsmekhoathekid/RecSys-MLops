@@ -1,0 +1,47 @@
+{{- if .Values.evaluation.enabled }}
+{{- $evaluationImage := .Values.evaluation.image | default .Values.image -}}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $evaluationImage) -}}
+{{- fail "evaluation image must be pinned by SHA256 digest" -}}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: recsys-workflow-evaluation
+spec:
+  schedule: "* * * * *"
+  suspend: {{ .Values.evaluation.suspend }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 30
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels: {app: recsys-workflow-evaluation}
+          annotations: {sidecar.istio.io/inject: "false"}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          nodeSelector: {{ toYaml .Values.evaluation.nodeSelector | nindent 12 }}
+          tolerations: {{ toYaml .Values.evaluation.tolerations | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: evaluator
+              image: {{ $evaluationImage | quote }}
+              command: [python, -m, apps.agentic.llm_ab_router.evaluation_job]
+              envFrom:
+                - secretRef: {name: {{ .Values.evaluation.secretName }}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: 500m, memory: 256Mi}
+{{- end }}

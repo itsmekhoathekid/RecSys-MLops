@@ -36,8 +36,8 @@ pipeline {
             ''|*[!0-9]*) echo "MAX_CHILDREN must be a positive integer" >&2; exit 2 ;;
           esac
           test "${MAX_CHILDREN}" -ge 1
-          mkdir -p tests/mutation/api_serving/reports
-          uv run --frozen python tests/mutation/api_serving/run.py \
+          mkdir -p tests/unit/api_serving/reports
+          uv run --frozen python tests/unit/api_serving/run_mutation.py \
             "${SERVICE}" \
             --max-children "${MAX_CHILDREN}"
         '''
@@ -47,7 +47,7 @@ pipeline {
 
   post {
     always {
-      archiveArtifacts allowEmptyArchive: true, artifacts: 'tests/mutation/api_serving/reports/*.json,tests/mutation/api_serving/reports/*.txt'
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'tests/unit/api_serving/reports/*.json,tests/unit/api_serving/reports/*.txt'
     }
   }
 }

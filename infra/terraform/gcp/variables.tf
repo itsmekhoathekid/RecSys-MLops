@@ -476,15 +476,15 @@ variable "datahub_encryption_key_secret" {
 }
 
 variable "kagent_version" {
-  description = "Pinned source-built kagent CRD and application chart version."
+  description = "Pinned official kagent CRD and application chart version."
   type        = string
-  default     = "0.10.0-e6df917"
+  default     = "0.10.0-rc1"
 }
 
 variable "agent_substrate_version" {
   description = "Pinned Agent Substrate CRD and application chart version."
   type        = string
-  default     = "0.0.11"
+  default     = "0.0.9"
 }
 
 variable "deploy_agent_registry" {

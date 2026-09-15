@@ -88,10 +88,16 @@ def test_filter_group_evidence_cap_and_tie_break():
         candidate(1, "1:c", 0.7, rating=4.8),
         candidate(3, "3:a", 0.99, stock=False),
     ]
-    service = RetrievalService(encoder=Encoder(), search=Search(rows), pointers=manager())
+    service = RetrievalService(
+        encoder=Encoder(), search=Search(rows), pointers=manager()
+    )
     response = service.retrieve(
         RetrievalRequest.model_validate(
-            {"query": "tai nghe văn phòng", "top_k_items": 2, "filters": {"in_stock": True}}
+            {
+                "query": "tai nghe văn phòng",
+                "top_k_items": 2,
+                "filters": {"in_stock": True},
+            }
         )
     )
     assert [item.item_id for item in response.items] == [1, 2]
@@ -177,61 +183,273 @@ def test_feast_adapter_coerces_column_response_and_empty_result():
         "distance": ["0.91"],
     }
     store = FeatureStore(values)
+    query_vector = [1.0] * 384
     rows = FeastCandidateSearch(store).search(
-        feature_view="rag_item_chunks_blue", query_vector=[1.0] * 384, top_k=5
+        feature_view="rag_item_chunks_blue", query_vector=query_vector, top_k=5
     )
-    assert rows[0].item_id == 1
-    assert rows[0].in_stock is True
-    assert rows[0].score == 0.91
-    assert store.kwargs["distance_metric"] == "COSINE"
-    assert FeastCandidateSearch(FeatureStore({})).search(
-        feature_view="rag_item_chunks_blue", query_vector=[1.0] * 384, top_k=5
-    ) == []
+    assert rows == [
+        CandidateChunk(
+            chunk_id="1:a",
+            item_id=1,
+            chunk_type="review",
+            source_key="r",
+            text="text",
+            brand="Sony",
+            category_l1="Điện tử",
+            category_l2="",
+            category_l3="",
+            current_price=20.99,
+            in_stock=True,
+            average_rating=4.7,
+            score=0.91,
+        )
+    ]
+    assert store.kwargs == {
+        "features": [
+            f"rag_item_chunks_blue:{field}" for field in FeastCandidateSearch.FIELDS
+        ],
+        "query": query_vector,
+        "top_k": 5,
+        "distance_metric": "COSINE",
+    }
+    assert (
+        FeastCandidateSearch(FeatureStore({})).search(
+            feature_view="rag_item_chunks_blue", query_vector=query_vector, top_k=5
+        )
+        == []
+    )
+
+
+def test_feast_adapter_supports_qualified_columns_and_multiple_rows():
+    view = "rag_item_chunks_green"
+    values = {
+        f"{view}:chunk_id": ["1:a", "2:b"],
+        f"{view}:item_id": ["1", "2"],
+        f"{view}:chunk_type": ["review", "qna"],
+        f"{view}:source_key": ["r1", "q2"],
+        f"{view}:text": ["first", "second"],
+        f"{view}:brand": ["Sony", "Bose"],
+        f"{view}:category_l1": ["Audio", "Audio"],
+        f"{view}:category_l2": ["Headphones", "Speakers"],
+        f"{view}:category_l3": ["Wireless", "Portable"],
+        f"{view}:current_price": ["20.5", "30.5"],
+        f"{view}:in_stock": ["1", "false"],
+        f"{view}:average_rating": ["4.1", "4.2"],
+        f"{view}:distance": ["0.91", "0.81"],
+    }
+
+    rows = FeastCandidateSearch(FeatureStore(values)).search(
+        feature_view=view, query_vector=[0.25, -0.5], top_k=2
+    )
+
+    assert [row.model_dump() for row in rows] == [
+        {
+            "chunk_id": "1:a",
+            "item_id": 1,
+            "chunk_type": "review",
+            "source_key": "r1",
+            "text": "first",
+            "brand": "Sony",
+            "category_l1": "Audio",
+            "category_l2": "Headphones",
+            "category_l3": "Wireless",
+            "current_price": 20.5,
+            "in_stock": True,
+            "average_rating": 4.1,
+            "score": 0.91,
+        },
+        {
+            "chunk_id": "2:b",
+            "item_id": 2,
+            "chunk_type": "qna",
+            "source_key": "q2",
+            "text": "second",
+            "brand": "Bose",
+            "category_l1": "Audio",
+            "category_l2": "Speakers",
+            "category_l3": "Portable",
+            "current_price": 30.5,
+            "in_stock": False,
+            "average_rating": 4.2,
+            "score": 0.81,
+        },
+    ]
 
 
 class MilvusClient:
-    def __init__(self):
+    def __init__(self, results=None):
         self.loaded = []
         self.calls = []
+        self.results = results
 
     def load_collection(self, *, collection_name, timeout):
         self.loaded.append((collection_name, timeout))
 
     def search(self, **kwargs):
         self.calls.append(kwargs)
-        return [
-            [
-                {
-                    "distance": 0.92,
-                    "entity": {
-                        "chunk_id": "1:a",
-                        "item_id": "1",
-                        "chunk_type": "review",
-                        "source_key": "r",
-                        "text": "text",
-                        "brand": "Sony",
-                        "category_l1": "Điện tử",
-                        "current_price": "20.99",
-                        "in_stock": "true",
-                        "average_rating": "4.7",
-                    },
-                }
+        return (
+            self.results
+            if self.results is not None
+            else [
+                [
+                    {
+                        "distance": 0.92,
+                        "entity": {
+                            "chunk_id": "1:a",
+                            "item_id": "1",
+                            "chunk_type": "review",
+                            "source_key": "r",
+                            "text": "text",
+                            "brand": "Sony",
+                            "category_l1": "Điện tử",
+                            "current_price": "20.99",
+                            "in_stock": "true",
+                            "average_rating": "4.7",
+                        },
+                    }
+                ]
             ]
-        ]
+        )
 
 
 def test_milvus_adapter_reuses_loaded_collection_and_omits_embedding_payload():
     client = MilvusClient()
-    adapter = MilvusCandidateSearch(client)
+    adapter = MilvusCandidateSearch(client, project="recsys_rag", timeout_seconds=5.0)
+    first_vector = [1.0] * 384
     first = adapter.search(
-        feature_view="rag_item_chunks_blue", query_vector=[1.0] * 384, top_k=200
+        feature_view="rag_item_chunks_blue", query_vector=first_vector, top_k=200
     )
+    second_vector = [2.0] * 384
     adapter.search(
-        feature_view="rag_item_chunks_blue", query_vector=[1.0] * 384, top_k=100
+        feature_view="rag_item_chunks_blue", query_vector=second_vector, top_k=100
     )
-    assert first[0].item_id == 1
-    assert first[0].score == 0.92
+    assert [row.model_dump() for row in first] == [
+        {
+            "chunk_id": "1:a",
+            "item_id": 1,
+            "chunk_type": "review",
+            "source_key": "r",
+            "text": "text",
+            "brand": "Sony",
+            "category_l1": "Điện tử",
+            "category_l2": "",
+            "category_l3": "",
+            "current_price": 20.99,
+            "in_stock": True,
+            "average_rating": 4.7,
+            "score": 0.92,
+        }
+    ]
     assert client.loaded == [("recsys_rag_rag_item_chunks_blue", 5.0)]
-    assert "embedding" not in client.calls[0]["output_fields"]
-    assert client.calls[0]["limit"] == 200
-    assert client.calls[0]["timeout"] == 5.0
+    assert client.calls == [
+        {
+            "collection_name": "recsys_rag_rag_item_chunks_blue",
+            "data": [first_vector],
+            "anns_field": "embedding",
+            "search_params": {"metric_type": "COSINE", "params": {}},
+            "limit": 200,
+            "output_fields": list(MilvusCandidateSearch.OUTPUT_FIELDS),
+            "timeout": 5.0,
+        },
+        {
+            "collection_name": "recsys_rag_rag_item_chunks_blue",
+            "data": [second_vector],
+            "anns_field": "embedding",
+            "search_params": {"metric_type": "COSINE", "params": {}},
+            "limit": 100,
+            "output_fields": list(MilvusCandidateSearch.OUTPUT_FIELDS),
+            "timeout": 5.0,
+        },
+    ]
+
+
+def test_milvus_adapter_handles_empty_results_and_flat_hit_fallbacks():
+    empty = MilvusClient(results=[])
+    adapter = MilvusCandidateSearch(empty, project="catalog", timeout_seconds=2.5)
+    assert adapter.search(feature_view="green", query_vector=[0.5], top_k=3) == []
+    assert empty.loaded == [("catalog_green", 2.5)]
+    assert empty.calls == [
+        {
+            "collection_name": "catalog_green",
+            "data": [[0.5]],
+            "anns_field": "embedding",
+            "search_params": {"metric_type": "COSINE", "params": {}},
+            "limit": 3,
+            "output_fields": list(MilvusCandidateSearch.OUTPUT_FIELDS),
+            "timeout": 2.5,
+        }
+    ]
+
+    flat_hit = {
+        "chunk_id": "9:q",
+        "item_id": "9",
+        "chunk_type": "qna",
+        "source_key": "questions/9",
+        "text": "flat",
+        "brand": "Acme",
+        "category_l1": "Audio",
+        "category_l2": "Portable",
+        "category_l3": "Mini",
+        "current_price": "9.5",
+        "in_stock": "1",
+        "average_rating": "4.9",
+        "score": "0.75",
+    }
+    assert MilvusCandidateSearch._candidate(flat_hit).model_dump() == {
+        "chunk_id": "9:q",
+        "item_id": 9,
+        "chunk_type": "qna",
+        "source_key": "questions/9",
+        "text": "flat",
+        "brand": "Acme",
+        "category_l1": "Audio",
+        "category_l2": "Portable",
+        "category_l3": "Mini",
+        "current_price": 9.5,
+        "in_stock": True,
+        "average_rating": 4.9,
+        "score": 0.75,
+    }
+
+
+def test_milvus_candidate_prefers_entity_values_and_distance_attribute():
+    class Hit(dict):
+        distance = 0.88
+
+    hit = Hit(
+        distance=0.11,
+        score=0.22,
+        entity={
+            "chunk_id": "4:r",
+            "item_id": "4",
+            "chunk_type": "review",
+            "source_key": "reviews/4",
+            "text": "entity",
+            "brand": "EntityBrand",
+            "category_l1": "One",
+            "category_l2": "Two",
+            "category_l3": "Three",
+            "current_price": "44.0",
+            "in_stock": "false",
+            "average_rating": "4.4",
+        },
+        chunk_id="wrong",
+        item_id="99",
+        brand="WrongBrand",
+    )
+
+    assert MilvusCandidateSearch._candidate(hit).model_dump() == {
+        "chunk_id": "4:r",
+        "item_id": 4,
+        "chunk_type": "review",
+        "source_key": "reviews/4",
+        "text": "entity",
+        "brand": "EntityBrand",
+        "category_l1": "One",
+        "category_l2": "Two",
+        "category_l3": "Three",
+        "current_price": 44.0,
+        "in_stock": False,
+        "average_rating": 4.4,
+        "score": 0.88,
+    }

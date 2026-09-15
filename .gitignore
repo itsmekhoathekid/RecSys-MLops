@@ -82,4 +82,8 @@ temp/
 .coverage
 
 .docker-metrics/
+.llm-ab-venv/
+.llm-agent-cd/
 .DS_Store
+# Generated from vendored, commit-pinned protobuf schemas during image build.
+apps/agentic/llm_ab_router/_protocol/

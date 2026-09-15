@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "server": "recsys-feature-rag-mcp",
   "tools": [
     "get_user_online_features",
@@ -10,7 +10,7 @@
   "inputSchemas": {
     "get_user_online_features": {
       "type": "object",
-      "required": ["user_id"],
+      "required": ["user_id", "candidate_item_ids", "top_k"],
       "properties": {
         "user_id": {"type": "integer", "minimum": 0},
         "candidate_item_ids": {
@@ -18,9 +18,9 @@
             {"type": "array", "items": {"type": "integer"}, "maxItems": 100},
             {"type": "null"}
           ],
-          "default": null
+          "description": "Required nullable field. JSON null means resolve candidates for the user; [] means an explicitly empty candidate set. Preserve the caller's JSON value exactly and never substitute one for the other."
         },
-        "top_k": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10}
+        "top_k": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Required maximum number of feature candidates to return."}
       }
     },
     "get_chunk_by_id": {
@@ -56,9 +56,10 @@
             {"type": "array", "items": {"type": "integer"}, "maxItems": 100},
             {"type": "null"}
           ],
+          "description": "Required nullable field. JSON null means resolve candidates for the user; [] means an explicitly empty candidate set. Preserve the caller's JSON value exactly and never substitute one for the other.",
           "default": null
         },
-        "top_k": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+        "top_k": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Required maximum number of feature candidates to return.", "default": 10},
         "top_k_items": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
         "filters": {
           "anyOf": [

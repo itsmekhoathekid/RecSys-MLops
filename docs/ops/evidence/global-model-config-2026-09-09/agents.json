@@ -1,0 +1,35 @@
+{
+  "captured_at_utc": "2026-09-09T09:42:28.081584+00:00",
+  "agents": [
+    {
+      "name": "recsys-context-agent-sandbox",
+      "modelConfig": "recsys-global-model-config",
+      "runtime": "go",
+      "ready": "True",
+      "generation": 29,
+      "revision": "substrate-0.0.11-kagent-e6df917-pool-label-v8-d4b642a42fbdbde5ea637644dfa68baf78d718e16e778860d257c1e0a6c8438c",
+      "digest_in_revision": true,
+      "digest_in_prompt_marker": true
+    },
+    {
+      "name": "recsys-recommendation-agent-sandbox",
+      "modelConfig": "recsys-global-model-config",
+      "runtime": "go",
+      "ready": "True",
+      "generation": 24,
+      "revision": "substrate-0.0.11-kagent-e6df917-pool-label-v9-d4b642a42fbdbde5ea637644dfa68baf78d718e16e778860d257c1e0a6c8438c",
+      "digest_in_revision": true,
+      "digest_in_prompt_marker": true
+    },
+    {
+      "name": "recsys-coordinator-agent-sandbox",
+      "modelConfig": "recsys-global-model-config",
+      "runtime": "go",
+      "ready": "True",
+      "generation": 25,
+      "revision": "substrate-0.0.11-kagent-e6df917-assigned-workers-v22-d4b642a42fbdbde5ea637644dfa68baf78d718e16e778860d257c1e0a6c8438c-recsys-recommendation-router",
+      "digest_in_revision": true,
+      "digest_in_prompt_marker": true
+    }
+  ]
+}

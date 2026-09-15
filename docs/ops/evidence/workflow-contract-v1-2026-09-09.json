@@ -1,0 +1,237 @@
+{
+  "contract": "workflow-json-safety-v1",
+  "baseline_revision": "b8ad3ade3b619b1a140ee2efa5e6b5258decc4f75aa80fba35d7c8e1c3c7c1f2",
+  "baseline_accepted": false,
+  "ab_conversations_executed": 0,
+  "real_tools_executed": 0,
+  "automatic_retries": 0,
+  "verdict": "HOLD",
+  "runs": [
+    {
+      "backend": "small",
+      "passed": 3,
+      "total": 6,
+      "cases": [
+        {
+          "case": "arguments",
+          "passed": true,
+          "duration_seconds": 1.391565041965805,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_recommendations",
+                  "arguments": "{\"user_id\": 1002, \"top_k\": 2}"
+                },
+                "id": "KhHfm5F9ZC5yADnhiWeDqS58CJ1UzFjv"
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "error_type": null
+        },
+        {
+          "case": "composite_next_step",
+          "passed": true,
+          "duration_seconds": 1.5950751659693196,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_context",
+                  "arguments": "{\"item_ids\": [7, 4]}"
+                },
+                "id": "KJ9w6AbHwlb9xMCATiNtqgu8cn47Dme1"
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "error_type": null
+        },
+        {
+          "case": "empty_result",
+          "passed": false,
+          "duration_seconds": 1.763793250080198,
+          "message": {
+            "role": "assistant",
+            "content": "I'm sorry, but I'm unable to provide recommendations for user_id=1001 at the moment. Please provide a different user_id."
+          },
+          "finish_reason": "stop",
+          "error_type": "JSONDecodeError"
+        },
+        {
+          "case": "missing_user",
+          "passed": false,
+          "duration_seconds": 1.148937040939927,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_recommendations",
+                  "arguments": "{\"user_id\": 1, \"top_k\": 2}"
+                },
+                "id": "JtPFc5dZ8xVyrox5ol8QZIyPByEgrZ8T"
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "error_type": null
+        },
+        {
+          "case": "tool_result",
+          "passed": false,
+          "duration_seconds": 3.0470381249906495,
+          "message": {
+            "role": "assistant",
+            "content": "The top 2 items for user_id=1001 are: \n- Item ID: 7, Score: 0.8, Metadata: {\"tag\": \"fixture\"}\n- Item ID: 4, Score: 0.5, Metadata: {}"
+          },
+          "finish_reason": "stop",
+          "error_type": "JSONDecodeError"
+        },
+        {
+          "case": "tool_selection",
+          "passed": true,
+          "duration_seconds": 4.749071458936669,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_recommendations",
+                  "arguments": "{\"user_id\": 1001, \"top_k\": 3}"
+                },
+                "id": "zstcBdRagvWLrvWlmvsS1X9e9QSuJMh4"
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "error_type": null
+        }
+      ]
+    },
+    {
+      "backend": "champion",
+      "passed": 5,
+      "total": 6,
+      "cases": [
+        {
+          "case": "arguments",
+          "passed": true,
+          "duration_seconds": 6.165678499964997,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_recommendations",
+                  "arguments": "{\"user_id\":1002,\"top_k\":2}"
+                },
+                "id": "k5hJyI3g3UmWyUhFRFh0V3PhEdJmIMyd"
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "error_type": null
+        },
+        {
+          "case": "composite_next_step",
+          "passed": true,
+          "duration_seconds": 6.708776916959323,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_context",
+                  "arguments": "{\"item_ids\":[7, 4]}"
+                },
+                "id": "0GkcSBSZSJW5PyDi8jYEhLqQjbEFk5r6"
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "error_type": null
+        },
+        {
+          "case": "empty_result",
+          "passed": false,
+          "duration_seconds": 15.7122767920373,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_recommendations",
+                  "arguments": "{\"user_id\":1001,\"top_k\":2}"
+                },
+                "id": "71jKThcT8l7EIUr488OZbv3sVkanyYdR"
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "error_type": null
+        },
+        {
+          "case": "missing_user",
+          "passed": true,
+          "duration_seconds": 5.886796250008047,
+          "message": {
+            "role": "assistant",
+            "content": "{\"clarification\":\"Please provide user_id.\"}"
+          },
+          "finish_reason": "stop",
+          "error_type": null
+        },
+        {
+          "case": "tool_result",
+          "passed": true,
+          "duration_seconds": 8.580261750030331,
+          "message": {
+            "role": "assistant",
+            "content": "{\"items\": [{\"item_id\": 7, \"score\": 0.8, \"metadata\": {\"tag\": \"fixture\"}}, {\"item_id\": 4, \"score\": 0.5, \"metadata\": {}}]}"
+          },
+          "finish_reason": "stop",
+          "error_type": null
+        },
+        {
+          "case": "tool_selection",
+          "passed": true,
+          "duration_seconds": 9.644508457975462,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_recommendations",
+                  "arguments": "{\"user_id\":1001,\"top_k\":3}"
+                },
+                "id": "ngDWDxdS6JQt4ZTHN61W63Mr7EX70tCp"
+              }
+            ]
+          },
+          "finish_reason": "tool_calls",
+          "error_type": null
+        }
+      ]
+    }
+  ]
+}

@@ -45,6 +45,7 @@ PIPELINE_RELEASE_PLAN_GOLDENS = {
         "buildImages": ["recsys-feature-rag-mcp"],
         "deployUnits": [
             "feature-rag-mcp",
+            "global-model-config",
             "context-agent",
             "feature-rag-mcp-registry",
             "context-agent-registry",
@@ -54,6 +55,7 @@ PIPELINE_RELEASE_PLAN_GOLDENS = {
         "components": ["recommendation_mcp", "recommendation_agent"],
         "buildImages": ["recsys-recommendation-mcp"],
         "deployUnits": [
+            "global-model-config",
             "recommendation-mcp",
             "recommendation-agent",
             "recommendation-mcp-registry",
@@ -71,6 +73,7 @@ PIPELINE_RELEASE_PLAN_GOLDENS = {
         "buildImages": ["recsys-feature-rag-mcp", "recsys-recommendation-mcp"],
         "deployUnits": [
             "feature-rag-mcp",
+            "global-model-config",
             "context-agent",
             "feature-rag-mcp-registry",
             "context-agent-registry",
@@ -359,6 +362,7 @@ def test_agentic_change_routing_and_release_order_matrix():
     assert interface.release_plan["buildImages"] == ["recsys-feature-rag-mcp"]
     assert interface.release_plan["deployUnits"] == [
         "feature-rag-mcp",
+        "global-model-config",
         "context-agent",
         "feature-rag-mcp-registry",
         "context-agent-registry",

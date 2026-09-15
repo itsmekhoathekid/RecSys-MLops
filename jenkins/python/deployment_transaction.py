@@ -57,9 +57,6 @@ def _namespace_workloads(namespace: str) -> dict[str, Any]:
                         "name": metadata.get("name"),
                         "generation": metadata.get("generation"),
                         "resourceVersion": metadata.get("resourceVersion"),
-                        "modelConfigRevision": metadata.get("annotations", {}).get(
-                            "recsys.ai/model-config-revision"
-                        ),
                         "images": [
                             container.get("image")
                             for container in pod_spec.get("containers", [])

@@ -1,0 +1,20 @@
+{
+  "dag_id": "recsys_rag_item_index",
+  "last_updated": "2026-09-06 06:31:04.882880+00:00",
+  "source_run_id_default": "auto",
+  "tasks": {
+    "semantic_chunk_items": [
+      "embed_item_chunks"
+    ],
+    "embed_item_chunks": [
+      "incremental_upsert_index"
+    ],
+    "incremental_upsert_index": [
+      "validate_and_publish_index"
+    ],
+    "validate_and_publish_index": [
+      "publish_datahub_validation"
+    ],
+    "publish_datahub_validation": []
+  }
+}

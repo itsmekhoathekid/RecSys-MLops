@@ -1,0 +1,19 @@
+{
+  "artifact_sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+  "artifact_uri": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+  "image": "asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/llama-cpp@sha256:2e9d2465b969cbdb74181687cc79b215d16488d112cf2fdab9817d63c37cdc52",
+  "quantization": "Q4_K_M",
+  "serving": {
+    "resourceProfile": "qwen25-small-cpu-b8646-terminal-v4",
+    "chatTemplateSha256": "242ffc1814699f2e093009747468f002127459a5a64e857254d3d95c1fdbcd3a",
+    "contextSize": 16384,
+    "maxPredictedTokens": 768,
+    "parallel": 1,
+    "threads": 2,
+    "threadsBatch": 2,
+    "batchSize": 512,
+    "ubatchSize": 128,
+    "llamaCppBuild": "b8646",
+    "llamaCppRevision": "0c58ba3365d2bc717b447b5d70e4d6be09ff3c40"
+  }
+}

@@ -1,0 +1,23 @@
+timeout: 1800s
+options:
+  machineType: E2_MEDIUM
+  logging: CLOUD_LOGGING_ONLY
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_ONLINE_IMAGE}
+      - --file=images/serving/recsys-online-feature-api/Dockerfile
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_MCP_IMAGE}
+      - --file=images/agentic/recsys-feature-rag-mcp/Dockerfile
+      - .
+images:
+  - ${_ONLINE_IMAGE}
+  - ${_MCP_IMAGE}
+substitutions:
+  _ONLINE_IMAGE: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-online-feature-api:workflow-context-contract-v2-20260911
+  _MCP_IMAGE: asia-southeast1-docker.pkg.dev/recsys-mlops-506406/recsys/recsys-feature-rag-mcp:workflow-context-contract-v2-20260911

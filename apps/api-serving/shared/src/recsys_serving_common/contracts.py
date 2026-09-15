@@ -15,6 +15,11 @@ class OnlineFeaturesResponse(BaseModel):
 class OnlineFeaturesRequest(BaseModel):
     user_id: int = Field(ge=1)
     candidate_item_ids: list[int] | None = Field(
-        default=None, min_length=1, max_length=500
+        default=None,
+        max_length=500,
+        description=(
+            "Omitted/null resolves candidates for the user; an empty array is an "
+            "explicit empty candidate set and must not trigger candidate resolution."
+        ),
     )
     top_k: int = Field(default=10, ge=1, le=100)

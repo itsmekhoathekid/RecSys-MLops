@@ -1,0 +1,24 @@
+Command: kubectl -n kagent get modelconfig recsys-global-model-config -o json
+Projection: name, namespace, Helm owner and spec; Secret values are not read.
+
+{
+  "name": "recsys-global-model-config",
+  "namespace": "kagent",
+  "helm_release": "recsys-global-model-config",
+  "spec": {
+    "apiKeySecret": "kagent-agent-gateway",
+    "apiKeySecretKey": "AGENT_GATEWAY_API_KEY",
+    "defaultHeaders": {
+      "X-Gateway-Base-Model-Name": "llm-d-optimized-baseline"
+    },
+    "model": "qwen3.5-0.8b",
+    "openAI": {
+      "apiFormat": "chatCompletions",
+      "baseUrl": "http://llm-d-inference-gateway.llm-inference.svc.cluster.local/v1",
+      "maxTokens": 384,
+      "seed": 42,
+      "temperature": "0"
+    },
+    "provider": "OpenAI"
+  }
+}

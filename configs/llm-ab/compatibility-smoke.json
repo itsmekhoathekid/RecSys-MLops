@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "name": "workflow-compatibility-smoke-v1",
+  "case_ids": ["tool_selection", "arguments", "composite_next_step"],
+  "scope": "compatibility_smoke",
+  "requests_per_model": 3,
+  "real_tools": false,
+  "note": "Selected compatibility subset; does not supersede historical failures or workflow safety gates."
+}

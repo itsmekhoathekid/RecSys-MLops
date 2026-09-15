@@ -1,5 +1,127 @@
 #!/usr/bin/env bash
 
+agentic_wait_mcp_auth_secrets() {
+  local service="$1"
+  local namespace="${2:-kagent}"
+  local revision secret_name workload_name vault_version
+  mcp_auth_validate
+  while IFS=$'\t' read -r revision secret_name workload_name vault_version; do
+    [[ -n "${revision}" ]] || continue
+    kubectl -n "${namespace}" wait --for=condition=Ready \
+      "externalsecret/${secret_name}" --timeout="${timeout}"
+    if [[ "${vault_version}" != "-" ]]; then
+      kubectl -n "${namespace}" get "externalsecret/${secret_name}" -o json \
+        | python3 -c '
+import json
+import sys
+
+expected = sys.argv[1]
+spec = json.load(sys.stdin)["spec"]
+assert spec["refreshPolicy"] == "CreatedOnce"
+assert spec["target"]["immutable"] is True
+assert spec["target"]["creationPolicy"] == "Owner"
+assert spec["dataFrom"] == [{"extract": {
+    "key": sys.argv[2], "version": expected,
+}}]
+' "${vault_version}" "$(mcp_auth_get_service_field "${service}" vaultPath)"
+      [[ "$(kubectl -n "${namespace}" get "secret/${secret_name}" \
+        -o jsonpath='{.immutable}')" == "true" ]] || {
+        recsys_error "${secret_name} is not an immutable Secret"
+        return 1
+      }
+    else
+      kubectl -n "${namespace}" get "secret/${secret_name}" >/dev/null
+    fi
+  done < <(mcp_auth_list_deployed "${service}")
+}
+
+agentic_wait_mcp_services() {
+  local service="$1"
+  local namespace="${2:-kagent}"
+  local revision secret_name workload_name vault_version endpoint_ready
+  while IFS=$'\t' read -r revision secret_name workload_name vault_version; do
+    [[ -n "${revision}" ]] || continue
+    kubectl -n "${namespace}" get "service/${workload_name}" >/dev/null
+    endpoint_ready=false
+    for _ in $(seq 1 60); do
+      if kubectl -n "${namespace}" get endpointslice \
+        -l "kubernetes.io/service-name=${workload_name}" \
+        -o jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}' \
+        | grep -Eq '.+'; then
+        endpoint_ready=true
+        break
+      fi
+      sleep 2
+    done
+    [[ "${endpoint_ready}" == "true" ]] || {
+      recsys_error "${workload_name} has no Ready EndpointSlice address"
+      return 1
+    }
+  done < <(mcp_auth_list_deployed "${service}")
+}
+
+agentic_verify_worker_pool_autoscaling() {
+  local worker_pool="$1"
+  local deployment="${worker_pool}-deployment"
+  local hpa="keda-hpa-${worker_pool}"
+  kubectl -n kagent get deployment "${deployment}" -o json | python3 -c '
+import json
+import sys
+
+pool = sys.argv[1]
+deployment = json.load(sys.stdin)
+assert any(
+    owner.get("apiVersion") == "ate.dev/v1alpha1"
+    and owner.get("kind") == "WorkerPool"
+    and owner.get("name") == pool
+    for owner in deployment["metadata"].get("ownerReferences", [])
+)
+assert deployment["spec"]["selector"]["matchLabels"] == {
+    "ate.dev/worker-pool": pool,
+}
+' "${worker_pool}"
+  kubectl -n kagent get scaledobject "${worker_pool}" -o json | python3 -c '
+import json
+import sys
+
+pool = sys.argv[1]
+scaled = json.load(sys.stdin)
+assert scaled["spec"]["scaleTargetRef"] == {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "name": f"{pool}-deployment",
+}
+' "${worker_pool}"
+
+  local hpa_ready=false
+  for _ in $(seq 1 60); do
+    if kubectl -n kagent get hpa "${hpa}" -o json | python3 -c '
+import json
+import sys
+
+pool = sys.argv[1]
+hpa = json.load(sys.stdin)
+assert hpa["spec"]["scaleTargetRef"] == {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "name": f"{pool}-deployment",
+}
+conditions = {item["type"]: item for item in hpa["status"].get("conditions", [])}
+active = conditions.get("ScalingActive", {})
+assert active.get("status") == "True", active
+assert active.get("reason") != "InvalidSelector", active
+' "${worker_pool}" 2>/dev/null; then
+      hpa_ready=true
+      break
+    fi
+    sleep 2
+  done
+  [[ "${hpa_ready}" == true ]] || {
+    recsys_error "${hpa} did not become active for ${deployment}"
+    return 1
+  }
+}
+
 agentic_preflight() {
   local include_mcp="${1:-false}"
   local crd
@@ -7,55 +129,8 @@ agentic_preflight() {
     workerpools.ate.dev scaledobjects.keda.sh; do
     kubectl get crd "${crd}" >/dev/null
   done
-  kubectl get --raw \
-    /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-context-sandbox-pool/scale \
-    >/dev/null
-  local scale_selector_path
-  scale_selector_path="$(
-    kubectl get crd workerpools.ate.dev \
-      -o jsonpath='{.spec.versions[?(@.name=="v1alpha1")].subresources.scale.labelSelectorPath}'
-  )"
-  [[ "${scale_selector_path}" == ".status.selector" ]] || {
-    recsys_error \
-      "WorkerPool /scale is missing native .status.selector labelSelectorPath"
-    return 1
-  }
-  local worker_pool_selector
-  worker_pool_selector="$(
-    kubectl -n kagent get workerpool recsys-context-sandbox-pool \
-      -o jsonpath='{.status.selector}'
-  )"
-  [[ -n "${worker_pool_selector}" ]] || {
-    recsys_error "WorkerPool native status.selector is empty"
-    return 1
-  }
-  kubectl get clusterrole keda-operator -o json | python3 -c '
-import json, sys
-rules = json.load(sys.stdin)["rules"]
-assert any(
-    "*" in rule.get("apiGroups", [])
-    and "*/scale" in rule.get("resources", [])
-    and {"patch", "update"}.issubset(rule.get("verbs", []))
-    for rule in rules
-)
-'
-  kubectl get clusterrolebinding keda-operator -o json | python3 -c '
-import json, sys
-binding = json.load(sys.stdin)
-assert binding["roleRef"] == {
-    "apiGroup": "rbac.authorization.k8s.io",
-    "kind": "ClusterRole",
-    "name": "keda-operator",
-}
-assert {
-    "kind": "ServiceAccount",
-    "name": "keda-operator",
-    "namespace": "keda",
-} in binding["subjects"]
-'
-  kubectl -n kagent wait --for=condition=Ready \
-    externalsecret/recsys-feature-rag-mcp-auth --timeout="${timeout}"
-  kubectl -n kagent get secret recsys-feature-rag-mcp-auth >/dev/null
+  agentic_verify_worker_pool_autoscaling recsys-context-sandbox-pool
+  agentic_wait_mcp_auth_secrets featureRag
   kubectl -n api-serving get service recsys-online-feature-api recsys-rag-api >/dev/null
   for service in recsys-online-feature-api recsys-rag-api; do
     local endpoint_ready=false
@@ -82,7 +157,7 @@ assert {
     --timeout="${timeout}"
   kubectl -n kagent get service kagent-ui >/dev/null
   if [[ "${include_mcp}" == "true" ]]; then
-    kubectl -n kagent get service recsys-feature-rag-mcp >/dev/null
+    agentic_wait_mcp_services featureRag
   fi
 }
 recommendation_agentic_preflight() {
@@ -92,38 +167,8 @@ recommendation_agentic_preflight() {
     workerpools.ate.dev scaledobjects.keda.sh; do
     kubectl get crd "${crd}" >/dev/null
   done
-  kubectl get --raw \
-    /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-recommendation-sandbox-pool/scale \
-    >/dev/null
-  kubectl get clusterrole keda-ate-workerpool-scaler -o json | python3 -c '
-import json, sys
-rules = json.load(sys.stdin)["rules"]
-assert any(
-    "ate.dev" in rule.get("apiGroups", [])
-    and "workerpools/scale" in rule.get("resources", [])
-    and {"get", "patch", "update"}.issubset(rule.get("verbs", []))
-    for rule in rules
-)
-'
-  kubectl get clusterrolebinding keda-ate-workerpool-scaler -o json | python3 -c '
-import json, sys
-binding = json.load(sys.stdin)
-assert binding["roleRef"] == {
-    "apiGroup": "rbac.authorization.k8s.io",
-    "kind": "ClusterRole",
-    "name": "keda-ate-workerpool-scaler",
-}
-assert {
-    "kind": "ServiceAccount",
-    "name": "keda-operator",
-    "namespace": "keda",
-} in binding["subjects"]
-'
-  kubectl -n kagent get workerpool recsys-recommendation-sandbox-pool \
-    -o jsonpath='{.status.selector}' | grep -Eq '.+'
-  kubectl -n kagent wait --for=condition=Ready \
-    externalsecret/recsys-recommendation-mcp-auth --timeout="${timeout}"
-  kubectl -n kagent get secret recsys-recommendation-mcp-auth >/dev/null
+  agentic_verify_worker_pool_autoscaling recsys-recommendation-sandbox-pool
+  agentic_wait_mcp_auth_secrets recommendation
   kubectl -n api-serving get service recsys-inference-api >/dev/null
   for _ in $(seq 1 60); do
     if kubectl -n api-serving get endpointslice \
@@ -140,7 +185,7 @@ assert {
     return 1
   }
   if [[ "${include_mcp}" == "true" ]]; then
-    kubectl -n kagent get service recsys-recommendation-mcp >/dev/null
+    agentic_wait_mcp_services recommendation
   fi
 }
 
@@ -157,33 +202,14 @@ coordinator_agentic_preflight() {
     remotemcpserver/recsys-feature-rag-mcp \
     remotemcpserver/recsys-recommendation-mcp \
     --timeout="${timeout}"
-  for service in recsys-feature-rag-mcp recsys-recommendation-mcp; do
-    endpoint_ready=false
-    for _ in $(seq 1 60); do
-      if kubectl -n kagent get endpointslice \
-        -l "kubernetes.io/service-name=${service}" \
-        -o jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}' \
-        | grep -Eq '.+'; then
-        endpoint_ready=true
-        break
-      fi
-      sleep 2
-    done
-    [[ "${endpoint_ready}" == "true" ]] || {
-      recsys_error "${service} has no Ready EndpointSlice address"
-      return 1
-    }
-  done
+  agentic_wait_mcp_services featureRag
+  agentic_wait_mcp_services recommendation
   if [[ "${include_runtime}" == "true" ]]; then
     kubectl -n kagent wait --for=condition=Ready \
       sandboxagent/recsys-coordinator-agent-sandbox --timeout="${timeout}"
-    kubectl get --raw \
-      /apis/ate.dev/v1alpha1/namespaces/kagent/workerpools/recsys-coordinator-sandbox-pool/scale \
-      >/dev/null
-    kubectl -n kagent get workerpool recsys-coordinator-sandbox-pool \
-      -o jsonpath='{.status.selector}' | grep -Eq '.+'
+    agentic_verify_worker_pool_autoscaling recsys-coordinator-sandbox-pool
     kubectl -n kagent rollout status \
-      deployment/recsys-coordinator-sandbox-pool \
+      deployment/recsys-coordinator-sandbox-pool-deployment \
       --timeout="${timeout}"
     kubectl -n kagent get scaledobject recsys-coordinator-sandbox-pool >/dev/null
     kubectl -n kagent get hpa keda-hpa-recsys-coordinator-sandbox-pool >/dev/null

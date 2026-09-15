@@ -1,0 +1,404 @@
+[
+  {
+    "id": "workflow-01",
+    "group": "recommendation",
+    "prompt": "Recommend 3 items for user_id=218 with candidate_item_ids=null. Return the complete Recommendation Agent JSON unchanged, including IDs, scores, order and metadata.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-02",
+    "group": "recommendation",
+    "prompt": "Recommend 3 items for user_id=37 with candidate_item_ids=null. Return the complete Recommendation Agent JSON unchanged, including IDs, scores, order and metadata.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 37,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-03",
+    "group": "recommendation",
+    "prompt": "Recommend 3 items for user_id=6 with candidate_item_ids=null. Return the complete Recommendation Agent JSON unchanged, including IDs, scores, order and metadata.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 6,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-04",
+    "group": "recommendation",
+    "prompt": "Recommend 3 items for user_id=177 with candidate_item_ids=null. Return the complete Recommendation Agent JSON unchanged, including IDs, scores, order and metadata.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 177,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-05",
+    "group": "recommendation",
+    "prompt": "Recommend 3 items for user_id=81 with candidate_item_ids=null. Return the complete Recommendation Agent JSON unchanged, including IDs, scores, order and metadata.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 81,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-06",
+    "group": "recommendation",
+    "prompt": "Recommend 3 items for user_id=91 with candidate_item_ids=null. Return the complete Recommendation Agent JSON unchanged, including IDs, scores, order and metadata.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 91,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-07",
+    "group": "context",
+    "prompt": "Summarize preferences for user_id=218. Ask Context to call get_user_online_features exactly once and return its complete tool result as JSON. Return the Context JSON unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "context"
+      ],
+      "context": {
+        "tool": "get_user_online_features",
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 2
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-08",
+    "group": "context",
+    "prompt": "Summarize preferences for user_id=37. Ask Context to call get_user_online_features exactly once and return its complete tool result as JSON. Return the Context JSON unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "context"
+      ],
+      "context": {
+        "tool": "get_user_online_features",
+        "arguments": {
+          "user_id": 37,
+          "candidate_item_ids": null,
+          "top_k": 2
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-09",
+    "group": "context",
+    "prompt": "Summarize preferences for user_id=6. Ask Context to call get_user_online_features exactly once and return its complete tool result as JSON. Return the Context JSON unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "context"
+      ],
+      "context": {
+        "tool": "get_user_online_features",
+        "arguments": {
+          "user_id": 6,
+          "candidate_item_ids": null,
+          "top_k": 2
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-10",
+    "group": "context",
+    "prompt": "Summarize preferences for user_id=177. Ask Context to call get_user_online_features exactly once and return its complete tool result as JSON. Return the Context JSON unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "context"
+      ],
+      "context": {
+        "tool": "get_user_online_features",
+        "arguments": {
+          "user_id": 177,
+          "candidate_item_ids": null,
+          "top_k": 2
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-11",
+    "group": "composite",
+    "prompt": "Recommend 3 items for user_id=218 with candidate_item_ids=null and explain them with grounded evidence. Call Recommendation first, then Context exactly once. Ask both specialists to return their complete tool result as JSON. Return JSON with keys recommendation and context preserving both results unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation",
+        "context"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      },
+      "context": {
+        "tool": "build_user_rag_context",
+        "arguments": {
+          "user_id": 218,
+          "query": "recommended items",
+          "candidate_item_ids": "$recommendation.items",
+          "top_k": 2,
+          "top_k_items": 2,
+          "filters": null
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-12",
+    "group": "composite",
+    "prompt": "Recommend 3 items for user_id=37 with candidate_item_ids=null and explain them with grounded evidence. Call Recommendation first, then Context exactly once. Ask both specialists to return their complete tool result as JSON. Return JSON with keys recommendation and context preserving both results unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation",
+        "context"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 37,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      },
+      "context": {
+        "tool": "build_user_rag_context",
+        "arguments": {
+          "user_id": 37,
+          "query": "recommended items",
+          "candidate_item_ids": "$recommendation.items",
+          "top_k": 2,
+          "top_k_items": 2,
+          "filters": null
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-13",
+    "group": "composite",
+    "prompt": "Recommend 3 items for user_id=6 with candidate_item_ids=null and explain them with grounded evidence. Call Recommendation first, then Context exactly once. Ask both specialists to return their complete tool result as JSON. Return JSON with keys recommendation and context preserving both results unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation",
+        "context"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 6,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      },
+      "context": {
+        "tool": "build_user_rag_context",
+        "arguments": {
+          "user_id": 6,
+          "query": "recommended items",
+          "candidate_item_ids": "$recommendation.items",
+          "top_k": 2,
+          "top_k_items": 2,
+          "filters": null
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-14",
+    "group": "composite",
+    "prompt": "Recommend 3 items for user_id=177 with candidate_item_ids=null and explain them with grounded evidence. Call Recommendation first, then Context exactly once. Ask both specialists to return their complete tool result as JSON. Return JSON with keys recommendation and context preserving both results unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation",
+        "context"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 177,
+          "candidate_item_ids": null,
+          "top_k": 3
+        }
+      },
+      "context": {
+        "tool": "build_user_rag_context",
+        "arguments": {
+          "user_id": 177,
+          "query": "recommended items",
+          "candidate_item_ids": "$recommendation.items",
+          "top_k": 2,
+          "top_k_items": 2,
+          "filters": null
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-15",
+    "group": "limits",
+    "prompt": "Recommend exactly up to 1 items for user_id=218 with candidate_item_ids=null. Return the full Recommendation Agent tool JSON unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 1
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-16",
+    "group": "limits",
+    "prompt": "Recommend exactly up to 2 items for user_id=218 with candidate_item_ids=null. Return the full Recommendation Agent tool JSON unchanged.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": null,
+          "top_k": 2
+        }
+      }
+    }
+  },
+  {
+    "id": "workflow-17",
+    "group": "missing_user",
+    "prompt": "Recommend some items for me. I have not provided a user ID.",
+    "expected": {
+      "scope": "workflow",
+      "missing_user": true,
+      "trajectory": []
+    }
+  },
+  {
+    "id": "workflow-18",
+    "group": "missing_user",
+    "prompt": "Summarize my preferences. I have not provided a user ID.",
+    "expected": {
+      "scope": "workflow",
+      "missing_user": true,
+      "trajectory": []
+    }
+  },
+  {
+    "id": "workflow-19",
+    "group": "empty",
+    "prompt": "Recommend up to 3 items for user_id=218, candidate_item_ids=[-1]. Return the full Recommendation Agent tool JSON unchanged. Empty items is valid.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 218,
+          "candidate_item_ids": [
+            -1
+          ],
+          "top_k": 3
+        },
+        "empty": true
+      }
+    }
+  },
+  {
+    "id": "workflow-20",
+    "group": "empty",
+    "prompt": "Recommend up to 3 items for user_id=37, candidate_item_ids=[-1]. Return the full Recommendation Agent tool JSON unchanged. Empty items is valid.",
+    "expected": {
+      "scope": "workflow",
+      "trajectory": [
+        "recommendation"
+      ],
+      "recommendation": {
+        "arguments": {
+          "user_id": 37,
+          "candidate_item_ids": [
+            -1
+          ],
+          "top_k": 3
+        },
+        "empty": true
+      }
+    }
+  }
+]

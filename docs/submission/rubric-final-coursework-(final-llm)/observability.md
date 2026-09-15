@@ -694,7 +694,7 @@ otel:
 
 `recsys-otel-collector.observability.svc.cluster.local` is the Kubernetes Service DNS name. It decouples kagent from individual Collector pod IPs and balances long-lived exporter connections across the two Collector replicas.
 
-The kagent Helm release consumes this file through [`kagent.tf`](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf#L254), while preserving the existing custom kagent image/version contract.
+The kagent Helm release consumes this file through [`kagent.tf`](../../../infra/terraform/gcp/modules/kubernetes-platform/kagent.tf), while preserving the digest-pinned upstream image/version contract.
 
 ### Collector resource controls
 

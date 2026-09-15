@@ -1,0 +1,12 @@
+Command: .venv/bin/pytest -q tests/unit/jenkins/test_global_model_config.py tests/unit/jenkins/test_cicd_configuration.py tests/unit/jenkins/test_detect_changed_components.py tests/contract/test_coordinator_agentic_contracts.py --disable-warnings
+
+........................................................................ [ 69%]
+...............................                                          [100%]
+103 passed in 2.01s
+
+Command: helm lint infra/helm/recsys-global-model-config
+
+==> Linting infra/helm/recsys-global-model-config
+[INFO] Chart.yaml: icon is recommended
+
+1 chart(s) linted, 0 chart(s) failed

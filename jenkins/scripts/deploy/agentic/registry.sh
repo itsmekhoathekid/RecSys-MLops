@@ -129,12 +129,26 @@ agentic_write_registry_manifest() {
   local tag="$5"
   local commit="$6"
   local git_url="$7"
+  local context_mcp_url recommendation_mcp_url
+  context_mcp_url="$(mcp_auth_active_url featureRag)"
+  recommendation_mcp_url="$(mcp_auth_active_url recommendation)"
   python3 - "${path}" "${kind}" "${qualified_name}" "${version}" \
-    "${tag}" "${commit}" "${git_url}" <<'PY'
+    "${tag}" "${commit}" "${git_url}" "${context_mcp_url}" \
+    "${recommendation_mcp_url}" <<'PY'
 import json
 import sys
 
-path, kind, qualified_name, version, tag, commit, git_url = sys.argv[1:]
+(
+    path,
+    kind,
+    qualified_name,
+    version,
+    tag,
+    commit,
+    git_url,
+    context_mcp_url,
+    recommendation_mcp_url,
+) = sys.argv[1:]
 namespace, name = qualified_name.split("/", 1)
 metadata = {
     "namespace": namespace,
@@ -160,7 +174,7 @@ if kind == "mcp":
             "description": "Grounded online-feature, exact-chunk and semantic RAG tools",
             "remote": {
                 "type": "streamable-http",
-                "url": "http://recsys-feature-rag-mcp.kagent.svc.cluster.local:8080/mcp",
+                "url": context_mcp_url,
             },
         },
     }
@@ -193,7 +207,7 @@ elif kind == "recommendation-mcp":
             "description": "Recommendation-only facade for recsys-inference-api",
             "remote": {
                 "type": "streamable-http",
-                "url": "http://recsys-recommendation-mcp.kagent.svc.cluster.local:8080/mcp",
+                "url": recommendation_mcp_url,
             },
         },
     }
@@ -234,20 +248,6 @@ elif kind == "coordinator-agent":
                 "Intent-routing coordinator for context, RAG, and "
                 "recommendation specialists"
             ),
-            "mcpServers": [
-                {
-                    "kind": "MCPServer",
-                    "namespace": namespace,
-                    "name": "recsys-feature-rag-mcp",
-                    "tag": tag,
-                },
-                {
-                    "kind": "MCPServer",
-                    "namespace": namespace,
-                    "name": "recsys-recommendation-mcp",
-                    "tag": tag,
-                },
-            ],
         },
     }
 else:
@@ -361,7 +361,7 @@ publish_context_agent_registry() {
   kubectl -n kagent wait --for=condition=Ready \
     sandboxagent/recsys-context-agent-sandbox --timeout="${timeout}"
   kubectl -n kagent rollout status \
-    deployment/recsys-context-sandbox-pool --timeout="${timeout}"
+    deployment/recsys-context-sandbox-pool-deployment --timeout="${timeout}"
   agentic_wait_for_regular_agent_removal
   agentic_a2a_smoke recsys-context-agent-sandbox
   agentic_registry_open_tunnel
@@ -445,7 +445,7 @@ publish_recommendation_agent_registry() {
   kubectl -n kagent wait --for=condition=Ready \
     sandboxagent/recsys-recommendation-agent-sandbox --timeout="${timeout}"
   kubectl -n kagent rollout status \
-    deployment/recsys-recommendation-sandbox-pool --timeout="${timeout}"
+    deployment/recsys-recommendation-sandbox-pool-deployment --timeout="${timeout}"
   recommendation_a2a_smoke
   agentic_registry_open_tunnel
   commit="${GIT_COMMIT:-$(git rev-parse HEAD)}"
@@ -487,10 +487,6 @@ publish_coordinator_agent_registry() {
   tag="$(agentic_registry_tag "${version}")"
   git_url="$(agentic_registry_git_url)"
   registry_name="recsys/recsys-coordinator-agent-sandbox"
-  agentic_registry_require_dependency mcp \
-    recsys/recsys-feature-rag-mcp "${tag}" "${version}" "${commit}"
-  agentic_registry_require_dependency mcp \
-    recsys/recsys-recommendation-mcp "${tag}" "${version}" "${commit}"
   agentic_registry_require_dependency agent \
     recsys/recsys-context-agent-sandbox "${tag}" "${version}" "${commit}"
   agentic_registry_require_dependency agent \
@@ -518,7 +514,5 @@ publish_coordinator_agent_registry() {
     .ci-deploy/coordinator-agent-registry.json "${version}" "${commit}" \
     "${registry_name}@${tag}" \
     "recsys/recsys-context-agent-sandbox@${tag}" \
-    "recsys/recsys-recommendation-agent-sandbox@${tag}" \
-    "recsys/recsys-feature-rag-mcp@${tag}" \
-    "recsys/recsys-recommendation-mcp@${tag}"
+    "recsys/recsys-recommendation-agent-sandbox@${tag}"
 }

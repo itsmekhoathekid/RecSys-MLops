@@ -1,0 +1,14 @@
+{
+  "version": "workflow-cases-v4",
+  "fixture_file": "workflow-cases-v4.json",
+  "fixture_file_sha256": "5f6e82db1cf670c45aee301cef53349ac2a38d1aedd72313ece8ef78656814ed",
+  "parent_fixture_file": "workflow-cases-v3.json",
+  "parent_fixture_file_sha256": "836aa8f8ad4167f2a1ab54d8402c06269092de714d9a9609a98600f0522dc341",
+  "root_conversations": 20,
+  "change": "Express every applicable delegated specialist request as an exact JSON string while preserving all expected arguments, trajectories, users and assertions.",
+  "reason": "The guarded control model emitted candidate_item_ids correctly but omitted top_k from an A2A request string even though the v3 natural-language prompt said Recommend 3. V4 makes the nested A2A request contract explicit without relaxing any gate or changing an expected value.",
+  "failed_experiment": "wf-63cfe90471f6f49d12dbce16ecd8a9e0",
+  "failed_gate": "champion runtime/tool contract violation",
+  "failed_evidence": "One control live_test invocation failed delegated result limit validation; candidate received no online invocation.",
+  "replay_policy": "No v3 request is replayed or counted in a v4 experiment."
+}

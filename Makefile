@@ -180,10 +180,6 @@ agentic-smoke:
 agent-substrate-warmup-benchmark:
 	@bash ops/validation/agent_substrate_warmup_benchmark.sh
 
-.PHONY: substrate-gke-compatibility
-substrate-gke-compatibility:
-	@bash ops/validation/substrate_gke_compatibility.sh
-
 .PHONY: agentic-autoscale-test
 agentic-autoscale-test:
 	@bash ops/validation/agentic_context_autoscale.sh

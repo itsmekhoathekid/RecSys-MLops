@@ -1,0 +1,10 @@
+{
+  "schema_version": 2,
+  "name": "recommendation-compatibility-smoke-v2",
+  "case_ids": ["tool_selection", "arguments", "null_arguments"],
+  "scope": "compatibility_smoke",
+  "target": "recommendation",
+  "requests_per_model": 3,
+  "real_tools": false,
+  "note": "Three direct initial-call checks. Terminal rendering is enforced by the adapter and verified separately without a second model call."
+}

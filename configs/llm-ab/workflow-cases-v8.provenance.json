@@ -1,0 +1,14 @@
+{
+  "version": "workflow-cases-v8",
+  "fixture_file": "workflow-cases-v8.json",
+  "fixture_file_sha256": "013551fe321c18454ce37be819c9a42c27f99b4031e7aee22351747b440259ff",
+  "parent_fixture_file": "workflow-cases-v7.json",
+  "parent_fixture_file_sha256": "7ea02b5a728cc351062839d5d27a08c35ce8968c246f5ca5924ec62483802ef3",
+  "root_conversations": 20,
+  "change": "Restore the proven single-route Delegate grammar and change only the bounded Context request to an imperative scalar chunk_id form; all expected values and hard gates remain identical.",
+  "reason": "Create-only v9 evidence showed the outer-arguments wording could be double-wrapped, while get_chunk_by_id received a JSON-encoded object as its scalar chunk_id. The v8 fixture uses the v6 Coordinator grammar that previously produced a valid Recommendation A2A call and removes the inner scalar ambiguity.",
+  "failed_preparation_release": "122820f690420a6d6b541cc2f75b1fc4137e7895c2ead9d9ac99038ec03d6b41",
+  "inference_requests_created_by_revision": 0,
+  "gate_relaxed": false,
+  "replay_policy": "No v7 request is replayed or counted in a v8 experiment."
+}

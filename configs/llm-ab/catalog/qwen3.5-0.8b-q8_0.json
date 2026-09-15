@@ -1,0 +1,17 @@
+{
+  "artifact_sha256": "37ae482d336108d23516fa35e8e0c4126688d81018b87178a18d752a1357814f",
+  "artifact_uri": "https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/8fea620810c4afa23dd6443f999a48574c1611a3/Qwen3.5-0.8B-Q8_0.gguf",
+  "image": "ghcr.io/ggml-org/llama.cpp@sha256:9b518883e8faab479650ec802e02c9e37c6bb21d36168509efd8fb3c87fc1648",
+  "quantization": "Q8_0",
+  "serving": {
+    "batchSize": 512,
+    "contextSize": 16384,
+    "maxPredictedTokens": 768,
+    "parallel": 1,
+    "reasoningBudget": 256,
+    "reasoningBudgetMessage": "Reasoning budget reached. Call the required tool or answer now.",
+    "threads": 2,
+    "threadsBatch": 2,
+    "ubatchSize": 128
+  }
+}

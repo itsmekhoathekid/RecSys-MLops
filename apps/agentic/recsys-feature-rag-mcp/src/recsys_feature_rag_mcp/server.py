@@ -38,12 +38,6 @@ TOOL_NAMES = (
 )
 
 
-def _optional_candidate_ids(candidate_item_ids: CandidateItemIds) -> list[int] | None:
-    """Treat the model-emitted empty array as the optional-field sentinel."""
-
-    return candidate_item_ids or None
-
-
 def create_mcp_server(
     feature_client: OnlineFeatureClient,
     rag_client: RagClient,
@@ -76,16 +70,16 @@ def create_mcp_server(
     @mcp.tool()
     async def get_user_online_features(
         user_id: UserId,
-        candidate_item_ids: CandidateItemIds = None,
-        top_k: FeatureTopK = 10,
+        candidate_item_ids: CandidateItemIds,
+        top_k: FeatureTopK,
     ) -> dict[str, Any]:
-        """Get materialized user and candidate item features for one user ID."""
+        """Get user/item features; preserve nullable candidate semantics exactly."""
 
         return await observed(
             "get_user_online_features",
             feature_client.get_features(
                 user_id=user_id,
-                candidate_item_ids=_optional_candidate_ids(candidate_item_ids),
+                candidate_item_ids=candidate_item_ids,
                 top_k=top_k,
             ),
         )
@@ -130,7 +124,7 @@ def create_mcp_server(
             results = await asyncio.gather(
                 feature_client.get_features(
                     user_id=user_id,
-                    candidate_item_ids=_optional_candidate_ids(candidate_item_ids),
+                    candidate_item_ids=candidate_item_ids,
                     top_k=top_k,
                 ),
                 rag_client.retrieve(

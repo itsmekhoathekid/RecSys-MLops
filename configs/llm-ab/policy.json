@@ -1,0 +1,11 @@
+{
+  "case_count": 20,
+  "min_samples": 5,
+  "window_seconds": 600,
+  "stage_timeout_seconds": 3600,
+  "latency_ratio": 1.2,
+  "monitor_seconds": 86400,
+  "monitor_interval_seconds": 300,
+  "telemetry_max_age_seconds": 120,
+  "request_timeout_seconds": 600
+}
