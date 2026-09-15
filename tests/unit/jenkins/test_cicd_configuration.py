@@ -860,6 +860,8 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "applyForcedComponents" not in pipeline_helper
     assert "selected.collate(maxParallel)" in pipeline_helper
     assert "def isMainRevision()" in pipeline_helper
+    assert "def isMainBranchEnvironment()" in pipeline_helper
+    assert "def assertDeploySourceIsCurrent()" in pipeline_helper
     assert "def shouldPublishImages()" in pipeline_helper
     assert "params.PUBLISH_IMAGES && (" in pipeline_helper
     assert pipeline_helper.count("params.DEPLOY_PULL_REQUESTS") >= 2
@@ -883,6 +885,23 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in preflight
     assert "release_snapshot.sh" in pipeline_helper
     assert "release_rollback.sh" in pipeline_helper
+    deploy_transaction = pipeline_helper.split(
+        "def deployProductionRelease()", 1
+    )[1].split("def isMissingWorkspaceContext", 1)[0]
+    assert (
+        deploy_transaction.index("lock(resource: 'recsys-production-release')")
+        < deploy_transaction.index("assertDeploySourceIsCurrent()")
+        < deploy_transaction.index("release_snapshot.sh")
+    )
+    assert (
+        "git fetch --no-tags origin "
+        "+refs/heads/main:refs/remotes/origin/main"
+        in pipeline_helper
+    )
+    assert (
+        'if [ "${checked_out_commit}" != "${current_main_commit}" ]'
+        in pipeline_helper
+    )
     assert "'publish'" in pipeline_helper and "'deploy'" in pipeline_helper
     assert "'finalize'" not in pipeline_helper
     assert "release_seal_agent_registry_lock.sh" in pipeline_helper

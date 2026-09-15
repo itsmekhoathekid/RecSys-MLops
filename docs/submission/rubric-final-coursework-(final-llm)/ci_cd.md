@@ -287,6 +287,8 @@ The indexing lifecycle remains owned by
 
 One `recsys-production-release` lock covers snapshot, Registry publication,
 deployment lock creation, workload deployment, and verification.
+Immediately after acquiring it, Jenkins refetches `origin/main` and rejects a
+stale checkout before taking the snapshot or publishing a Registry record.
 
 | Failure point | Result |
 | --- | --- |

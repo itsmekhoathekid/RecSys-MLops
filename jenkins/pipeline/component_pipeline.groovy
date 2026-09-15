@@ -196,6 +196,7 @@ def deployProductionRelease() {
   def commandEnv = releaseCommandEnvironment()
   sh "IMAGE_PULL_REGISTRY='${env.IMAGE_PULL_REGISTRY}' PUBLISH_IMAGES='${env.SHOULD_PUBLISH_IMAGES == 'true' ? '1' : '0'}' FORCE_DEPLOY='${params.FORCE_DEPLOY ? '1' : '0'}' DEPLOY_PULL_REQUESTS='${params.DEPLOY_PULL_REQUESTS ? '1' : '0'}' jenkins/scripts/entrypoints/release_deploy_preflight.sh .ci-release-plan.json"
   lock(resource: 'recsys-production-release') {
+    assertDeploySourceIsCurrent()
     sh 'python3 -m jenkins.python.llm_agent_cd.release_guard'
     sh "${commandEnv} jenkins/scripts/entrypoints/release_snapshot.sh .ci-release-plan.json"
     env.DEPLOY_STARTED = 'true'
@@ -241,8 +242,8 @@ def safePostActions() {
   }
 }
 
-def isMainRevision() {
-  def branchEnvironmentIsMain = [
+def isMainBranchEnvironment() {
+  return [
     env.BRANCH_NAME,
     env.GIT_BRANCH
   ].findAll { it?.trim() }.any { branch ->
@@ -251,11 +252,33 @@ def isMainRevision() {
       branch == 'refs/heads/main' ||
       branch == 'refs/remotes/origin/main'
   }
+}
+
+def isMainRevision() {
+  def branchEnvironmentIsMain = isMainBranchEnvironment()
   def checkedOutCommitIsMain = gitCommitExists('origin/main') && sh(
     returnStatus: true,
     script: 'test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"'
   ) == 0
   return branchEnvironmentIsMain || checkedOutCommitIsMain
+}
+
+def assertDeploySourceIsCurrent() {
+  def explicitNonMainDeploy = params.DEPLOY_PULL_REQUESTS || params.FORCE_DEPLOY
+  if (explicitNonMainDeploy && !isMainBranchEnvironment()) {
+    echo 'Explicit non-main deployment: origin/main freshness check is not applicable.'
+    return
+  }
+  sh '''
+    set -eu
+    timeout 30s git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+    checked_out_commit="$(git rev-parse HEAD)"
+    current_main_commit="$(git rev-parse origin/main)"
+    if [ "${checked_out_commit}" != "${current_main_commit}" ]; then
+      echo "Deployment source is stale: HEAD=${checked_out_commit}, origin/main=${current_main_commit}" >&2
+      exit 2
+    fi
+  '''
 }
 
 def shouldPublishImages() {
