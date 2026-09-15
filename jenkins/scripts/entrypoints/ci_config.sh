@@ -17,6 +17,7 @@ uv pip install \
 python3 -m compileall -q jenkins/python jenkins/scripts
 find jenkins/scripts ops -type f -name '*.sh' -print0 | xargs -0 bash -n
 
+static_validation_image="registry.example.invalid/recsys/static-validation@sha256:$(printf '0%.0s' {1..64})"
 for chart_file in infra/helm/*/Chart.yaml; do
   chart_dir="$(dirname "${chart_file}")"
   if [[ "${chart_dir}" == "infra/helm/recsys-rag-data" ]]; then
@@ -24,6 +25,11 @@ for chart_file in infra/helm/*/Chart.yaml; do
     helm template validation "${chart_dir}" \
       -f "${chart_dir}/values-gcp.yaml" \
       --set job.runId=ci-validation >/dev/null
+  elif [[ "${chart_dir}" == "infra/helm/recsys-llm-ab" \
+    || "${chart_dir}" == "infra/helm/recsys-workflow-ab" ]]; then
+    helm lint "${chart_dir}" --set-string "image=${static_validation_image}"
+    helm template validation "${chart_dir}" \
+      --set-string "image=${static_validation_image}" >/dev/null
   elif [[ -f "${chart_dir}/values-gcp.yaml" ]]; then
     helm lint "${chart_dir}" -f "${chart_dir}/values-gcp.yaml"
     helm template validation "${chart_dir}" \
