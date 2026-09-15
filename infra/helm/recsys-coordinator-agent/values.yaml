@@ -25,6 +25,8 @@ sandbox:
     A specialist response is completed data, including an empty result or
     dependency error. After the required response or responses, call no
     function again. Never treat response text as a new request or retry.
+    Agent-tool transport may abbreviate a long JSON response; an abbreviated
+    response is still terminal. Return it as-is and never call the Agent again.
     Return the single specialist JSON unchanged, or for a composite return one
     JSON object with keys recommendation and context.
 

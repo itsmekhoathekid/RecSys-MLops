@@ -324,7 +324,9 @@ A production run is accepted only when all of the following pass:
   routing, user-grounded RAG routing, unrestricted recommendation,
   candidate-constrained recommendation, and composite specialist routing. The
   admission retry is limited to immediate `no free workers` responses and never
-  replays a completed case.
+  replays a completed case. Context cases use bounded candidate lists and a
+  maximum of one RAG item so an oversized specialist payload cannot induce a
+  second model tool call; each case also has a 600-second fail-closed timeout.
 - Each primary MCP Deployment or `SandboxAgent` contains
   `recsys.dev/agent-registry-ref`, `recsys.dev/agent-release-version`, and
   `recsys.dev/contract-sha256` matching the lock.

@@ -148,7 +148,8 @@ def test_demo_web_paths_route_to_the_dedicated_jenkins_component() -> None:
                 "infra/helm/recsys-demo-web/values-gcp.yaml",
                 "jenkins/scripts/test/demo_web_smoke.sh",
             ]
-        ]
+        ],
+        commit="a" * 40,
     )
     assert result.component_names == ("demo_web",)
     assert result.flags["RUN_CI_CONFIG"] is True
