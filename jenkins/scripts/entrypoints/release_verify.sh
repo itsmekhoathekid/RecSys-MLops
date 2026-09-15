@@ -24,11 +24,15 @@ image_registry="${image_registry%/}"
 image_tag="${IMAGE_TAG:-${GIT_COMMIT:-$(git rev-parse HEAD)}}"
 namespace_data="${DATA_PLATFORM_NAMESPACE:-recsys-dataflow}"
 namespace_api="${API_NAMESPACE:-api-serving}"
+# shellcheck disable=SC2034
 namespace_kserve="${KSERVE_NAMESPACE:-kserve-triton-inference}"
 namespace_kubeflow="${KUBEFLOW_NAMESPACE:-kubeflow}"
 namespace_mlops="${MLOPS_NAMESPACE:-experiment-tracking}"
+# shellcheck disable=SC2034
 namespace_analytics="${ANALYTICS_NAMESPACE:-analytics}"
+# shellcheck disable=SC2034
 namespace_demo="${DEMO_WEB_NAMESPACE:-api-serving}"
+# shellcheck disable=SC2034
 namespace_ci="${CI_NAMESPACE:-ci}"
 timeout="${COMPONENT_DEPLOY_TIMEOUT:-600s}"
 kfp_port_forward_pids=()
@@ -52,3 +56,16 @@ while IFS= read -r component; do
 done < <(
   python3 jenkins/python/release_plan.py plan-verifications --plan "${plan_path}"
 )
+
+publish_units="$(
+  python3 jenkins/python/release_plan.py plan-units \
+    --plan "${plan_path}" --phase publish
+)"
+if [[ -n "${publish_units}" ]]; then
+  registry_lock=".ci-deploy/agent-registry-lock.json"
+  [[ -s "${registry_lock}" ]] || {
+    recsys_error "Agent Registry deployment lock is missing"
+    exit 2
+  }
+  verify_agent_registry_runtime_lock "${plan_path}" "${registry_lock}"
+fi

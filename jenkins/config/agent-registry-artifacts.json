@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "artifacts": {
+    "feature-rag-mcp": {
+      "kind": "mcp",
+      "registryName": "recsys/recsys-feature-rag-mcp",
+      "component": "feature_rag_mcp",
+      "workloadUnit": "feature-rag-mcp",
+      "chartArtifact": "feature-rag-mcp-chart",
+      "image": "recsys-feature-rag-mcp",
+      "imageValue": "image",
+      "remoteUrlKey": "featureRag",
+      "title": "RecSys Feature/RAG MCP",
+      "description": "Grounded online-feature, exact-chunk and semantic RAG tools",
+      "mcpDependencies": [],
+      "agentDependencies": []
+    },
+    "context-agent": {
+      "kind": "agent",
+      "registryName": "recsys/recsys-context-agent-sandbox",
+      "component": "context_agent",
+      "workloadUnit": "context-agent",
+      "chartArtifact": "context-agent-chart",
+      "sourcePath": "infra/helm/recsys-kagent-agent",
+      "title": "RecSys Context Agent (sandbox)",
+      "description": "Grounded personalization, exact chunk and semantic RAG agent",
+      "mcpDependencies": ["feature-rag-mcp"],
+      "agentDependencies": []
+    },
+    "recommendation-mcp": {
+      "kind": "mcp",
+      "registryName": "recsys/recsys-recommendation-mcp",
+      "component": "recommendation_mcp",
+      "workloadUnit": "recommendation-mcp",
+      "chartArtifact": "recommendation-mcp-chart",
+      "image": "recsys-recommendation-mcp",
+      "imageValue": "image",
+      "remoteUrlKey": "recommendation",
+      "title": "RecSys Recommendation MCP",
+      "description": "Recommendation-only facade for recsys-inference-api",
+      "mcpDependencies": [],
+      "agentDependencies": []
+    },
+    "recommendation-agent": {
+      "kind": "agent",
+      "registryName": "recsys/recsys-recommendation-agent-sandbox",
+      "component": "recommendation_agent",
+      "workloadUnit": "recommendation-agent",
+      "chartArtifact": "recommendation-agent-chart",
+      "sourcePath": "infra/helm/recsys-recommendation-agent",
+      "title": "RecSys Recommendation Agent (sandbox)",
+      "description": "gVisor agent that presents inference rankings without reranking",
+      "mcpDependencies": ["recommendation-mcp"],
+      "agentDependencies": []
+    },
+    "coordinator-agent": {
+      "kind": "agent",
+      "registryName": "recsys/recsys-coordinator-agent-sandbox",
+      "component": "coordinator_agent",
+      "workloadUnit": "coordinator-agent",
+      "chartArtifact": "coordinator-agent-chart",
+      "sourcePath": "infra/helm/recsys-coordinator-agent",
+      "title": "RecSys Coordinator Agent (sandbox)",
+      "description": "Intent-routing coordinator for context, RAG, and recommendation specialists",
+      "mcpDependencies": ["feature-rag-mcp", "recommendation-mcp"],
+      "agentDependencies": ["context-agent", "recommendation-agent"]
+    }
+  }
+}

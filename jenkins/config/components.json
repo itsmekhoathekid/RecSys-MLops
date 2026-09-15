@@ -24,6 +24,8 @@
     ".idea/**",
     ".vscode/**",
     ".ci-image-manifest/**",
+    ".ci-artifact-manifest/**",
+    ".ci-artifact-packages/**",
     ".ci-deploy/**",
     ".ci-release-plan.json",
     "reports/**"
@@ -107,6 +109,15 @@
         "ops/validation/mcp_auth_rotation_matrix.sh"
       ]
     },
+    "agentic-registry-release": {
+      "files": [
+        "jenkins/config/agent-registry-artifacts.json",
+        "jenkins/python/agent_registry_release.py",
+        "jenkins/python/helm_oci.py",
+        "jenkins/scripts/build/helm_oci.sh",
+        "jenkins/scripts/entrypoints/release_seal_agent_registry_lock.sh"
+      ]
+    },
     "spark-utils": {
       "files": [
         "apps/data-platform/src/orchestration/airflow/spark_utils.py"
@@ -142,9 +153,11 @@
     "flag": "RUN_CI_CONFIG",
     "changeDetection": {
       "prefixes": [
+        "apps/agentic/llm_ab_router/",
         "configs/agentregistry/",
         "configs/kagent/",
         "configs/langfuse/",
+        "configs/llm-ab/",
         "configs/llm-d/",
         "configs/vault/",
         "infra/terraform/",
@@ -163,10 +176,20 @@
         ".dockerignore",
         ".gcloudignore",
         "Jenkinsfile",
+        "jenkins/GlobalModelConfig.Jenkinsfile",
+        "jenkins/LLMAgentCD.Jenkinsfile",
+        "jenkins/LLMCandidateOnboard.Jenkinsfile",
+        "jenkins/LLMWorkflowCD.Jenkinsfile",
+        "jenkins/LLMWorkflowEvaluationPrepare.Jenkinsfile",
+        "jenkins/RecommendationBaselineMigration.Jenkinsfile",
         "jenkins/ServingMutation.Jenkinsfile",
         "Makefile",
         "infra/__init__.py",
         "tests/contract/test_repository_layout_contracts.py",
+        "tests/integration/test_llm_ab_router.py",
+        "tests/integration/test_llm_workflow_trigger.py",
+        "tests/integration/test_workflow_evaluation_outbox.py",
+        "tests/integration/test_workflow_offline.py",
         "tests/unit/test_feature_api_keep_post_renderer.py"
       ]
     }
@@ -518,6 +541,7 @@
           "python-common",
           "jenkins-shared-runtime",
           "agentic-rotation-runtime",
+          "agentic-registry-release",
           "serving-mutation-common"
         ],
         "prefixes": [
@@ -541,7 +565,7 @@
       "buildImages": [
         "recsys-feature-rag-mcp"
       ],
-      "buildArtifacts": [],
+      "buildArtifacts": ["feature-rag-mcp-chart"],
       "verifyDependsOn": [
         "online_feature_api",
         "rag_api"
@@ -556,7 +580,8 @@
       "changeDetection": {
         "groups": [
           "jenkins-shared-runtime",
-          "agentic-rotation-runtime"
+          "agentic-rotation-runtime",
+          "agentic-registry-release"
         ],
         "prefixes": [
           "infra/helm/recsys-kagent-agent/",
@@ -575,7 +600,7 @@
         ]
       },
       "buildImages": [],
-      "buildArtifacts": [],
+      "buildArtifacts": ["context-agent-chart"],
       "releaseDependsOn": [
         "feature_rag_mcp"
       ],
@@ -590,7 +615,12 @@
       "label": "Recommendation MCP",
       "ciProfile": "recommendation-agentic",
       "changeDetection": {
-        "groups": ["python-common", "jenkins-shared-runtime", "agentic-rotation-runtime"],
+        "groups": [
+          "python-common",
+          "jenkins-shared-runtime",
+          "agentic-rotation-runtime",
+          "agentic-registry-release"
+        ],
         "prefixes": [
           "apps/agentic/recsys-recommendation-mcp/",
           "infra/helm/recsys-recommendation-mcp/",
@@ -609,7 +639,7 @@
         ]
       },
       "buildImages": ["recsys-recommendation-mcp"],
-      "buildArtifacts": [],
+      "buildArtifacts": ["recommendation-mcp-chart"],
       "verifyDependsOn": ["inference_api"],
       "migrationPolicy": "none"
     },
@@ -619,7 +649,11 @@
       "label": "Recommendation Sandbox Agent",
       "ciProfile": "recommendation-agentic",
       "changeDetection": {
-        "groups": ["jenkins-shared-runtime", "agentic-rotation-runtime"],
+        "groups": [
+          "jenkins-shared-runtime",
+          "agentic-rotation-runtime",
+          "agentic-registry-release"
+        ],
         "prefixes": [
           "infra/helm/recsys-recommendation-agent/",
           "infra/helm/recsys-global-model-config/",
@@ -637,7 +671,7 @@
         ]
       },
       "buildImages": [],
-      "buildArtifacts": [],
+      "buildArtifacts": ["recommendation-agent-chart"],
       "releaseDependsOn": ["recommendation_mcp"],
       "verifyDependsOn": ["recommendation_mcp"],
       "migrationPolicy": "none"
@@ -648,7 +682,11 @@
       "label": "RecSys Coordinator Sandbox Agent",
       "ciProfile": "agentic",
       "changeDetection": {
-        "groups": ["jenkins-shared-runtime", "agentic-rotation-runtime"],
+        "groups": [
+          "jenkins-shared-runtime",
+          "agentic-rotation-runtime",
+          "agentic-registry-release"
+        ],
         "prefixes": [
           "infra/helm/recsys-coordinator-agent/",
           "infra/helm/recsys-global-model-config/",
@@ -670,7 +708,7 @@
         ]
       },
       "buildImages": [],
-      "buildArtifacts": [],
+      "buildArtifacts": ["coordinator-agent-chart"],
       "releaseDependsOn": ["context_agent", "recommendation_agent"],
       "verifyDependsOn": ["context_agent", "recommendation_agent"],
       "migrationPolicy": "none"

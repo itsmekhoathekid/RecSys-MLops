@@ -1,17 +1,49 @@
 {
-  "version": 2,
+  "version": 3,
   "artifacts": {
     "kubeflow-bst": {
+      "kind": "kfp-package",
       "consumesImages": [
         "recsys-mlops-training",
         "recsys-spark-ml"
       ]
+    },
+    "feature-rag-mcp-chart": {
+      "kind": "helm-oci",
+      "chart": "infra/helm/recsys-feature-rag-mcp",
+      "repository": "helm/recsys-feature-rag-mcp",
+      "consumesImages": []
+    },
+    "context-agent-chart": {
+      "kind": "helm-oci",
+      "chart": "infra/helm/recsys-kagent-agent",
+      "repository": "helm/recsys-kagent-agent",
+      "consumesImages": []
+    },
+    "recommendation-mcp-chart": {
+      "kind": "helm-oci",
+      "chart": "infra/helm/recsys-recommendation-mcp",
+      "repository": "helm/recsys-recommendation-mcp",
+      "consumesImages": []
+    },
+    "recommendation-agent-chart": {
+      "kind": "helm-oci",
+      "chart": "infra/helm/recsys-recommendation-agent",
+      "repository": "helm/recsys-recommendation-agent",
+      "consumesImages": []
+    },
+    "coordinator-agent-chart": {
+      "kind": "helm-oci",
+      "chart": "infra/helm/recsys-coordinator-agent",
+      "repository": "helm/recsys-coordinator-agent",
+      "consumesImages": []
     }
   },
   "units": [
     {
       "name": "data-config",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-data-config",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-data-config",
@@ -38,6 +70,7 @@
     {
       "name": "data-lakehouse",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-data-lakehouse",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-data-lakehouse",
@@ -54,6 +87,7 @@
     {
       "name": "datahub-catalog",
       "kind": "kubernetes-action",
+      "phase": "deploy",
       "release": "recsys-datahub-catalog",
       "namespace": "datahub",
       "components": ["datahub_catalog"],
@@ -65,6 +99,7 @@
     {
       "name": "source-store",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-source-store",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-source-store",
@@ -83,6 +118,7 @@
     {
       "name": "event-stream",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-event-stream",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-event-stream",
@@ -99,6 +135,7 @@
     {
       "name": "feature-store",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-feature-store",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-feature-store",
@@ -118,6 +155,7 @@
     {
       "name": "kafka-connect",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-kafka-connect",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-kafka-connect",
@@ -140,6 +178,7 @@
     {
       "name": "feature-registry",
       "kind": "kubernetes-action",
+      "phase": "deploy",
       "release": "recsys-feast-registry",
       "namespace": "recsys-dataflow",
       "components": [
@@ -156,6 +195,7 @@
     {
       "name": "milvus",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-milvus",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-milvus",
@@ -168,6 +208,7 @@
     {
       "name": "rag-feature-registry",
       "kind": "kubernetes-action",
+      "phase": "deploy",
       "release": "recsys-rag-feature-registry",
       "namespace": "recsys-dataflow",
       "components": ["rag_index"],
@@ -179,6 +220,7 @@
     {
       "name": "milvus-credentials",
       "kind": "kubernetes-action",
+      "phase": "deploy",
       "release": "recsys-milvus-credentials",
       "namespace": "recsys-dataflow",
       "components": ["rag_index"],
@@ -190,6 +232,7 @@
     {
       "name": "rag-api",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-rag-api",
       "namespace": "api-serving",
       "chart": "infra/helm/recsys-rag-api",
@@ -202,18 +245,21 @@
     {
       "name": "feature-rag-mcp",
       "kind": "helm",
+      "phase": "deploy",
+      "registryArtifact": "feature-rag-mcp",
       "release": "recsys-feature-rag-mcp",
       "namespace": "kagent",
       "chart": "infra/helm/recsys-feature-rag-mcp",
       "components": ["feature_rag_mcp"],
       "consumesImages": ["recsys-feature-rag-mcp"],
       "imageValues": {"recsys-feature-rag-mcp": "image"},
-      "consumesArtifacts": [],
-      "dependsOn": ["rag-api"]
+      "consumesArtifacts": ["feature-rag-mcp-chart"],
+      "dependsOn": ["rag-api", "feature-rag-mcp-registry"]
     },
     {
       "name": "global-model-config",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-global-model-config",
       "namespace": "kagent",
       "chart": "infra/helm/recsys-global-model-config",
@@ -230,110 +276,133 @@
     {
       "name": "context-agent",
       "kind": "helm",
+      "phase": "deploy",
+      "registryArtifact": "context-agent",
       "release": "recsys-kagent-agent",
       "namespace": "kagent",
       "chart": "infra/helm/recsys-kagent-agent",
       "components": ["context_agent"],
       "consumesImages": [],
       "imageValues": {},
-      "consumesArtifacts": [],
-      "dependsOn": ["global-model-config", "feature-rag-mcp"]
+      "consumesArtifacts": ["context-agent-chart"],
+      "dependsOn": ["global-model-config", "feature-rag-mcp", "context-agent-registry"]
     },
     {
       "name": "feature-rag-mcp-registry",
       "kind": "jenkins-action",
+      "phase": "publish",
+      "action": "agent-registry-publish",
+      "registryArtifact": "feature-rag-mcp",
       "release": "recsys-feature-rag-mcp-registry",
       "namespace": "agentregistry",
       "components": ["feature_rag_mcp"],
       "consumesImages": ["recsys-feature-rag-mcp"],
-      "consumesArtifacts": [],
-      "dependsOn": ["feature-rag-mcp"]
+      "consumesArtifacts": ["feature-rag-mcp-chart"],
+      "dependsOn": []
     },
     {
       "name": "context-agent-registry",
       "kind": "jenkins-action",
+      "phase": "publish",
+      "action": "agent-registry-publish",
+      "registryArtifact": "context-agent",
       "release": "recsys-context-agent-registry",
       "namespace": "agentregistry",
       "components": ["context_agent"],
       "consumesImages": [],
-      "consumesArtifacts": [],
-      "dependsOn": ["context-agent", "feature-rag-mcp-registry"]
+      "consumesArtifacts": ["context-agent-chart"],
+      "dependsOn": ["feature-rag-mcp-registry"]
     },
     {
       "name": "recommendation-mcp",
       "kind": "helm",
+      "phase": "deploy",
+      "registryArtifact": "recommendation-mcp",
       "release": "recsys-recommendation-mcp",
       "namespace": "kagent",
       "chart": "infra/helm/recsys-recommendation-mcp",
       "components": ["recommendation_mcp"],
       "consumesImages": ["recsys-recommendation-mcp"],
       "imageValues": {"recsys-recommendation-mcp": "image"},
-      "consumesArtifacts": [],
-      "dependsOn": ["inference-api"]
+      "consumesArtifacts": ["recommendation-mcp-chart"],
+      "dependsOn": ["inference-api", "recommendation-mcp-registry"]
     },
     {
       "name": "recommendation-agent",
       "kind": "helm",
+      "phase": "deploy",
+      "registryArtifact": "recommendation-agent",
       "release": "recsys-recommendation-agent",
       "namespace": "kagent",
       "chart": "infra/helm/recsys-recommendation-agent",
       "components": ["recommendation_agent"],
       "consumesImages": [],
       "imageValues": {},
-      "consumesArtifacts": [],
-      "dependsOn": ["global-model-config", "recommendation-mcp"]
+      "consumesArtifacts": ["recommendation-agent-chart"],
+      "dependsOn": ["global-model-config", "recommendation-mcp", "recommendation-agent-registry"]
     },
     {
       "name": "recommendation-mcp-registry",
       "kind": "jenkins-action",
+      "phase": "publish",
+      "action": "agent-registry-publish",
+      "registryArtifact": "recommendation-mcp",
       "release": "recsys-recommendation-mcp-registry",
       "namespace": "agentregistry",
       "components": ["recommendation_mcp"],
       "consumesImages": ["recsys-recommendation-mcp"],
-      "consumesArtifacts": [],
-      "dependsOn": ["recommendation-mcp", "recommendation-agent"]
+      "consumesArtifacts": ["recommendation-mcp-chart"],
+      "dependsOn": []
     },
     {
       "name": "recommendation-agent-registry",
       "kind": "jenkins-action",
+      "phase": "publish",
+      "action": "agent-registry-publish",
+      "registryArtifact": "recommendation-agent",
       "release": "recsys-recommendation-agent-registry",
       "namespace": "agentregistry",
       "components": ["recommendation_agent"],
       "consumesImages": [],
-      "consumesArtifacts": [],
-      "dependsOn": ["recommendation-agent", "recommendation-mcp-registry"]
+      "consumesArtifacts": ["recommendation-agent-chart"],
+      "dependsOn": ["recommendation-mcp-registry"]
     },
     {
       "name": "coordinator-agent",
       "kind": "helm",
+      "phase": "deploy",
+      "registryArtifact": "coordinator-agent",
       "release": "recsys-coordinator-agent",
       "namespace": "kagent",
       "chart": "infra/helm/recsys-coordinator-agent",
       "components": ["coordinator_agent"],
       "consumesImages": [],
       "imageValues": {},
-      "consumesArtifacts": [],
-      "dependsOn": ["global-model-config", "context-agent", "recommendation-agent"]
+      "consumesArtifacts": ["coordinator-agent-chart"],
+      "dependsOn": ["global-model-config", "context-agent", "recommendation-agent", "coordinator-agent-registry"]
     },
     {
       "name": "coordinator-agent-registry",
       "kind": "jenkins-action",
+      "phase": "publish",
+      "action": "agent-registry-publish",
+      "registryArtifact": "coordinator-agent",
       "release": "recsys-coordinator-agent-registry",
       "namespace": "agentregistry",
       "components": ["coordinator_agent"],
       "consumesImages": [],
-      "consumesArtifacts": [],
+      "consumesArtifacts": ["coordinator-agent-chart"],
       "dependsOn": [
-        "coordinator-agent",
-        "context-agent-registry",
-        "recommendation-agent-registry",
         "feature-rag-mcp-registry",
-        "recommendation-mcp-registry"
+        "recommendation-mcp-registry",
+        "context-agent-registry",
+        "recommendation-agent-registry"
       ]
     },
     {
       "name": "streaming",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-streaming",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-streaming",
@@ -357,6 +426,7 @@
     {
       "name": "airflow",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-airflow",
       "namespace": "recsys-dataflow",
       "chart": "infra/helm/recsys-airflow",
@@ -397,6 +467,7 @@
     {
       "name": "mlflow",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-mlflow",
       "namespace": "experiment-tracking",
       "chart": "infra/helm/mlflow-stack",
@@ -410,6 +481,7 @@
     {
       "name": "kubeflow-bst-package",
       "kind": "kubeflow-package",
+      "phase": "deploy",
       "release": "recsys-bst-feature-train-evaluate",
       "namespace": "kubeflow",
       "components": [],
@@ -427,6 +499,7 @@
     {
       "name": "analytics",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-analytics",
       "namespace": "analytics",
       "chart": "infra/helm/recsys-analytics",
@@ -453,6 +526,7 @@
     {
       "name": "online-feature-api",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-online-feature-api",
       "namespace": "api-serving",
       "chart": "infra/helm/recsys-online-feature-api",
@@ -471,6 +545,7 @@
     {
       "name": "inference-api",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-inference-api",
       "namespace": "api-serving",
       "chart": "infra/helm/recsys-inference-api",
@@ -489,6 +564,7 @@
     {
       "name": "gateway",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-gateway",
       "namespace": "api-serving",
       "chart": "infra/helm/recsys-gateway",
@@ -501,6 +577,7 @@
     {
       "name": "kserve",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-serving",
       "namespace": "kserve-triton-inference",
       "chart": "infra/helm/recsys-serving",
@@ -514,6 +591,7 @@
     {
       "name": "rollout",
       "kind": "jenkins-action",
+      "phase": "deploy",
       "release": "recsys-progressive-rollout",
       "namespace": "ci",
       "components": [
@@ -530,6 +608,7 @@
     {
       "name": "demo-web",
       "kind": "helm",
+      "phase": "deploy",
       "release": "recsys-demo-web",
       "namespace": "api-serving",
       "chart": "infra/helm/recsys-demo-web",

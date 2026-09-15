@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,9 +20,12 @@ from jenkins.python.configuration import (  # noqa: E402
 from jenkins.python.image_catalog import image_closure, load_catalog  # noqa: E402
 
 UNIT_KINDS = {"helm", "kubeflow-package", "jenkins-action", "kubernetes-action"}
+UNIT_PHASES = {"publish", "deploy"}
+ARTIFACT_KINDS = {"helm-oci", "kfp-package"}
 REQUIRED_UNIT_FIELDS = {
     "name",
     "kind",
+    "phase",
     "release",
     "namespace",
     "components",
@@ -29,6 +33,12 @@ REQUIRED_UNIT_FIELDS = {
     "consumesArtifacts",
     "dependsOn",
 }
+
+
+def release_version(commit: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("release commit must be a full 40-character lowercase Git SHA")
+    return f"0.2.0-g{commit[:12]}"
 
 
 def _string_list(value: Any, label: str) -> list[str]:
@@ -43,16 +53,58 @@ def _string_list(value: Any, label: str) -> list[str]:
 
 def load_deploy_config(path: Path = CONFIG_DIR / "deploy-units.json") -> dict[str, Any]:
     payload = read_json(path)
-    if payload.get("version") != 2:
-        raise ValueError("deploy-units.json version must be 2")
+    if payload.get("version") != 3:
+        raise ValueError("deploy-units.json version must be 3")
     components = {item["name"] for item in load_components()}
     images = set(load_catalog())
+    registry_payload = read_json(CONFIG_DIR / "agent-registry-artifacts.json")
+    if registry_payload.get("version") != 1 or not isinstance(
+        registry_payload.get("artifacts"), dict
+    ):
+        raise ValueError("agent-registry-artifacts.json must use version 1")
+    registry_artifacts = registry_payload["artifacts"]
+    for artifact_id, spec in registry_artifacts.items():
+        if (
+            not isinstance(artifact_id, str)
+            or not artifact_id
+            or not isinstance(spec, dict)
+        ):
+            raise ValueError("Agent Registry artifacts must be named objects")
+        if spec.get("component") not in components:
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} references unknown component"
+            )
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, dict):
         raise ValueError("deploy-units.json artifacts must be an object")
     for name, spec in artifacts.items():
         if not isinstance(name, str) or not name or not isinstance(spec, dict):
             raise ValueError("artifact definitions must be named objects")
+        kind = spec.get("kind")
+        if kind not in ARTIFACT_KINDS:
+            raise ValueError(f"artifact {name} has unsupported kind: {kind}")
+        allowed_artifact_fields = {"kind", "consumesImages"}
+        if kind == "helm-oci":
+            allowed_artifact_fields.update({"chart", "repository"})
+            chart = spec.get("chart")
+            repository = spec.get("repository")
+            if (
+                not isinstance(chart, str)
+                or not (ROOT / chart / "Chart.yaml").is_file()
+            ):
+                raise ValueError(
+                    f"Helm OCI artifact {name} chart does not exist: {chart}"
+                )
+            if not isinstance(repository, str) or not repository.startswith("helm/"):
+                raise ValueError(
+                    f"Helm OCI artifact {name} repository must start with helm/"
+                )
+        unknown_artifact_fields = set(spec) - allowed_artifact_fields
+        if unknown_artifact_fields:
+            raise ValueError(
+                f"artifact {name} contains unsupported fields: "
+                f"{sorted(unknown_artifact_fields)}"
+            )
         consumed = _string_list(
             spec.get("consumesImages"), f"artifact {name} consumesImages"
         )
@@ -73,10 +125,18 @@ def load_deploy_config(path: Path = CONFIG_DIR / "deploy-units.json") -> dict[st
         missing = REQUIRED_UNIT_FIELDS - unit.keys()
         if missing:
             raise ValueError(f"deploy unit is missing fields: {sorted(missing)}")
-        allowed = REQUIRED_UNIT_FIELDS | {"requiresExplicitComponent"} | (
-            {"chart", "imageValues", "imageFallbackValues"}
-            if unit.get("kind") == "helm"
-            else set()
+        allowed = (
+            REQUIRED_UNIT_FIELDS
+            | {
+                "requiresExplicitComponent",
+                "action",
+                "registryArtifact",
+            }
+            | (
+                {"chart", "imageValues", "imageFallbackValues"}
+                if unit.get("kind") == "helm"
+                else set()
+            )
         )
         unknown_fields = set(unit) - allowed
         if unknown_fields:
@@ -90,6 +150,30 @@ def load_deploy_config(path: Path = CONFIG_DIR / "deploy-units.json") -> dict[st
         names.add(name)
         if unit["kind"] not in UNIT_KINDS:
             raise ValueError(f"deploy unit {name} has unsupported kind: {unit['kind']}")
+        if unit["phase"] not in UNIT_PHASES:
+            raise ValueError(
+                f"deploy unit {name} has unsupported phase: {unit['phase']}"
+            )
+        if unit["phase"] == "publish" and unit["kind"] != "jenkins-action":
+            raise ValueError(f"publish unit {name} must be a jenkins-action")
+        action = unit.get("action")
+        registry_artifact = unit.get("registryArtifact")
+        if (
+            registry_artifact is not None
+            and registry_artifact not in registry_artifacts
+        ):
+            raise ValueError(
+                f"deploy unit {name} references unknown registryArtifact: "
+                f"{registry_artifact}"
+            )
+        if action is not None and action != "agent-registry-publish":
+            raise ValueError(f"deploy unit {name} has unsupported action: {action}")
+        if action == "agent-registry-publish" and (
+            unit["phase"] != "publish" or not isinstance(registry_artifact, str)
+        ):
+            raise ValueError(
+                f"Agent Registry unit {name} requires publish phase and registryArtifact"
+            )
         owner = (unit["namespace"], unit["release"])
         if owner in release_owners:
             raise ValueError(f"duplicate deploy release owner: {owner}")
@@ -162,7 +246,91 @@ def load_deploy_config(path: Path = CONFIG_DIR / "deploy-units.json") -> dict[st
                 f"deploy unit {unit['name']} has unknown dependencies: "
                 f"{sorted(unknown_dependencies)}"
             )
+        later_dependencies = {
+            dependency
+            for dependency in unit["dependsOn"]
+            if unit["phase"] == "publish" and by_name[dependency]["phase"] == "deploy"
+        }
+        if later_dependencies:
+            raise ValueError(
+                f"publish unit {unit['name']} cannot depend on deploy units: "
+                f"{sorted(later_dependencies)}"
+            )
     topological_order(by_name, set(by_name))
+    publisher_by_artifact: dict[str, dict[str, Any]] = {}
+    for artifact_id, spec in registry_artifacts.items():
+        workload = spec.get("workloadUnit")
+        if (
+            workload not in by_name
+            or by_name[workload].get("registryArtifact") != artifact_id
+        ):
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} has no matching workload unit"
+            )
+        publishers = [
+            unit
+            for unit in units
+            if unit.get("action") == "agent-registry-publish"
+            and unit.get("registryArtifact") == artifact_id
+        ]
+        if len(publishers) != 1:
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} must have exactly one publish unit"
+            )
+        publisher = publishers[0]
+        publisher_by_artifact[artifact_id] = publisher
+        chart_artifact = spec.get("chartArtifact")
+        if (
+            chart_artifact not in artifacts
+            or artifacts[chart_artifact]["kind"] != "helm-oci"
+        ):
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} has no Helm OCI artifact"
+            )
+        workload_unit = by_name[workload]
+        if (
+            spec["component"] not in workload_unit["components"]
+            or chart_artifact not in workload_unit["consumesArtifacts"]
+            or publisher["name"] not in workload_unit["dependsOn"]
+        ):
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} workload contract is incomplete"
+            )
+        if (
+            spec["component"] not in publisher["components"]
+            or chart_artifact not in publisher["consumesArtifacts"]
+        ):
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} publisher contract is incomplete"
+            )
+        image = spec.get("image")
+        if image and (
+            image not in publisher["consumesImages"]
+            or image not in workload_unit["consumesImages"]
+            or workload_unit.get("imageValues", {}).get(image) != spec.get("imageValue")
+        ):
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} image contract is incomplete"
+            )
+    for artifact_id, spec in registry_artifacts.items():
+        publisher = publisher_by_artifact[artifact_id]
+        dependency_ids = [
+            *spec.get("mcpDependencies", []),
+            *spec.get("agentDependencies", []),
+        ]
+        unknown_registry_dependencies = set(dependency_ids) - registry_artifacts.keys()
+        if unknown_registry_dependencies:
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} has unknown dependencies: "
+                f"{sorted(unknown_registry_dependencies)}"
+            )
+        expected_publish_dependencies = {
+            publisher_by_artifact[dependency]["name"] for dependency in dependency_ids
+        }
+        if set(publisher["dependsOn"]) != expected_publish_dependencies:
+            raise ValueError(
+                f"Agent Registry artifact {artifact_id} publish dependencies are invalid"
+            )
     return payload
 
 
@@ -199,6 +367,7 @@ def create_release_plan(
     changed_paths: list[str] | None = None,
     commit: str = "",
 ) -> dict[str, Any]:
+    release_version(commit)
     components = {item["name"]: item for item in load_components()}
     unknown = set(component_names) - components.keys()
     if unknown:
@@ -226,7 +395,8 @@ def create_release_plan(
     )
     for artifact, spec in artifact_specs.items():
         if (
-            set(spec["consumesImages"]).issubset(deploy_trigger_images)
+            spec["consumesImages"]
+            and set(spec["consumesImages"]).issubset(deploy_trigger_images)
             and artifact not in build_artifacts
         ):
             build_artifacts.append(artifact)
@@ -247,18 +417,13 @@ def create_release_plan(
     units = deploy_config["units"]
     selected_units = set()
     for unit in units:
-        explicitly_selected = bool(
-            set(unit["components"]) & set(component_names)
-        )
-        dependency_triggered = (
-            not unit.get("requiresExplicitComponent", False)
-            and (
-                (
-                    not unit["consumesArtifacts"]
-                    and bool(set(unit["consumesImages"]) & deploy_trigger_images)
-                )
-                or bool(set(unit["consumesArtifacts"]) & set(build_artifacts))
+        explicitly_selected = bool(set(unit["components"]) & set(component_names))
+        dependency_triggered = not unit.get("requiresExplicitComponent", False) and (
+            (
+                not unit["consumesArtifacts"]
+                and bool(set(unit["consumesImages"]) & deploy_trigger_images)
             )
+            or bool(set(unit["consumesArtifacts"]) & set(build_artifacts))
         )
         if explicitly_selected or dependency_triggered:
             selected_units.add(unit["name"])
@@ -271,34 +436,46 @@ def create_release_plan(
             selected_units.add(unit["name"])
     by_name = {unit["name"]: unit for unit in units}
     ordered_units = topological_order(by_name, selected_units)
+    publish_units = [
+        name for name in ordered_units if by_name[name]["phase"] == "publish"
+    ]
+    deploy_units = [
+        name for name in ordered_units if by_name[name]["phase"] == "deploy"
+    ]
     return {
-        "version": 2,
+        "version": 3,
         "commit": commit,
+        "releaseVersion": release_version(commit),
         "components": component_names,
         "buildImages": build_images,
         "buildArtifacts": build_artifacts,
-        "deployUnits": ordered_units,
+        "publishUnits": publish_units,
+        "deployUnits": deploy_units,
     }
 
 
 def load_release_plan(path: Path) -> dict[str, Any]:
     plan = read_json(path)
-    if plan.get("version") != 2:
-        raise ValueError("release plan version must be 2")
+    if plan.get("version") != 3:
+        raise ValueError("release plan version must be 3")
     required = {
         "version",
         "commit",
+        "releaseVersion",
         "components",
         "buildImages",
         "buildArtifacts",
+        "publishUnits",
         "deployUnits",
     }
     if set(plan) != required:
         raise ValueError(f"release plan fields must be {sorted(required)}")
-    for field in required - {"version", "commit"}:
+    for field in required - {"version", "commit", "releaseVersion"}:
         _string_list(plan[field], f"release plan {field}")
     if not isinstance(plan["commit"], str):
         raise ValueError("release plan commit must be a string")
+    if plan["releaseVersion"] != release_version(plan["commit"]):
+        raise ValueError("release plan releaseVersion does not match commit")
     images = load_catalog()
     selected_images = set(plan["buildImages"])
     unknown_images = selected_images - images.keys()
@@ -332,6 +509,30 @@ def load_release_plan(path: Path) -> dict[str, Any]:
         raise ValueError(
             f"release plan references unknown artifacts: {sorted(unknown_artifacts)}"
         )
+    units = {item["name"]: item for item in deploy_config["units"]}
+    selected_units = set(plan["publishUnits"]) | set(plan["deployUnits"])
+    unknown_units = selected_units - units.keys()
+    if unknown_units:
+        raise ValueError(
+            f"release plan references unknown deploy units: {sorted(unknown_units)}"
+        )
+    if set(plan["publishUnits"]) & set(plan["deployUnits"]):
+        raise ValueError("release plan publishUnits and deployUnits must be disjoint")
+    for phase, names in (
+        ("publish", plan["publishUnits"]),
+        ("deploy", plan["deployUnits"]),
+    ):
+        if any(units[name]["phase"] != phase for name in names):
+            raise ValueError(f"release plan {phase}Units contains a different phase")
+        expected = [
+            name
+            for name in topological_order(units, selected_units)
+            if units[name]["phase"] == phase
+        ]
+        if names != expected:
+            raise ValueError(
+                f"release plan {phase}Units must be in topological catalog order"
+            )
     return plan
 
 
@@ -345,7 +546,7 @@ def main() -> int:
     create.add_argument("--components", required=True)
     create.add_argument("--changed-images", default="")
     create.add_argument("--changed-path", action="append", default=[])
-    create.add_argument("--commit", default="")
+    create.add_argument("--commit", required=True)
     create.add_argument("--output", default="")
     deploy_context = subparsers.add_parser("deploy-context")
     deploy_context.add_argument("name")
@@ -354,14 +555,16 @@ def main() -> int:
     plan_units.add_argument("--plan", required=True)
     plan_units.add_argument(
         "--phase",
-        choices=("all", "deploy", "finalize"),
+        choices=("all", "publish", "deploy"),
         default="all",
-        help="Select workload deployment units or post-verification finalizers.",
+        help="Select pre-deploy publication units or workload deployment units.",
     )
     plan_images = subparsers.add_parser("plan-images")
     plan_images.add_argument("--plan", required=True)
     plan_artifacts = subparsers.add_parser("plan-artifacts")
     plan_artifacts.add_argument("--plan", required=True)
+    artifact_context = subparsers.add_parser("artifact-context")
+    artifact_context.add_argument("name")
     plan_verifications = subparsers.add_parser("plan-verifications")
     plan_verifications.add_argument("--plan", required=True)
     args = parser.parse_args()
@@ -398,6 +601,10 @@ def main() -> int:
                 )
             )
         )
+        if unit.get("action"):
+            print(f"ACTION\t{unit['action']}")
+        if unit.get("registryArtifact"):
+            print(f"REGISTRY_ARTIFACT\t{unit['registryArtifact']}")
         for image_name, value_path in unit.get("imageValues", {}).items():
             fallback_paths = ",".join(
                 unit.get("imageFallbackValues", {}).get(image_name, [])
@@ -408,35 +615,33 @@ def main() -> int:
         return 0
     if args.command == "plan-units":
         plan = load_release_plan(Path(args.plan))
-        selected = set(plan.get("deployUnits", []))
+        selected_order = (
+            [*plan["publishUnits"], *plan["deployUnits"]]
+            if args.phase == "all"
+            else plan[f"{args.phase}Units"]
+        )
+        selected = set(selected_order)
         units = {item["name"]: item for item in load_deploy_config()["units"]}
         unknown = selected - units.keys()
         if unknown:
             raise SystemExit(
                 f"release plan references unknown deploy units: {sorted(unknown)}"
             )
-        def is_finalizer(name: str) -> bool:
-            unit = units[name]
-            return unit["kind"] == "jenkins-action" and name.endswith("-registry")
-
-        phase_selected = {
-            name
-            for name in selected
-            if args.phase == "all"
-            or (args.phase == "finalize" and is_finalizer(name))
-            or (args.phase == "deploy" and not is_finalizer(name))
-        }
         depths: dict[str, int] = {}
-        for name in topological_order(units, phase_selected):
+        for name in topological_order(units, selected):
             depths[name] = max(
                 (
                     depths[dependency] + 1
                     for dependency in units[name]["dependsOn"]
-                    if dependency in phase_selected
+                    if dependency in selected
                 ),
                 default=0,
             )
-            lock_name = f"{units[name]['kind']}:{units[name]['namespace']}:{units[name]['release']}"
+            lock_name = (
+                "agent-registry:catalog"
+                if units[name].get("action") == "agent-registry-publish"
+                else f"{units[name]['kind']}:{units[name]['namespace']}:{units[name]['release']}"
+            )
             print(f"{depths[name]}\t{name}\t{lock_name}")
         return 0
     if args.command == "plan-images":
@@ -446,6 +651,22 @@ def main() -> int:
     if args.command == "plan-artifacts":
         for artifact in load_release_plan(Path(args.plan))["buildArtifacts"]:
             print(artifact)
+        return 0
+    if args.command == "artifact-context":
+        artifacts = load_deploy_config()["artifacts"]
+        if args.name not in artifacts:
+            raise SystemExit(f"unknown release artifact: {args.name}")
+        spec = artifacts[args.name]
+        print(
+            "\t".join(
+                (
+                    "ARTIFACT",
+                    spec["kind"],
+                    spec.get("chart", ""),
+                    spec.get("repository", ""),
+                )
+            )
+        )
         return 0
     if args.command == "plan-verifications":
         plan = load_release_plan(Path(args.plan))

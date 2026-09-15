@@ -26,7 +26,14 @@ REQUIRED_COMPONENT_FIELDS = {
     "verifyDependsOn",
     "migrationPolicy",
 }
-SUPPORTED_BUILD_ARTIFACTS = {"kubeflow-bst"}
+SUPPORTED_BUILD_ARTIFACTS = {
+    "kubeflow-bst",
+    "feature-rag-mcp-chart",
+    "context-agent-chart",
+    "recommendation-mcp-chart",
+    "recommendation-agent-chart",
+    "coordinator-agent-chart",
+}
 REQUIRED_GCP_FIELDS = {
     "projectId",
     "region",
@@ -39,7 +46,17 @@ REQUIRED_CI_PROFILE_FIELDS = {"projectPath", "lockFile", "pythonVersion"}
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"{path} contains duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    payload = json.loads(
+        path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicate_keys
+    )
     if not isinstance(payload, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return payload

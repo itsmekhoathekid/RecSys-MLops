@@ -14,9 +14,7 @@ import yaml
 pytest.importorskip("mcp", reason="recommendation-agentic profile owns MCP")
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(
-    0, str(ROOT / "apps/agentic/recsys-recommendation-mcp/src")
-)
+sys.path.insert(0, str(ROOT / "apps/agentic/recsys-recommendation-mcp/src"))
 server = importlib.import_module("recsys_recommendation_mcp.server")
 
 
@@ -34,8 +32,7 @@ def _agentic_deploy_source() -> str:
 def _contract() -> dict[str, Any]:
     return json.loads(
         (
-            ROOT
-            / "configs/agentic/recsys-recommendation-agent/tools-contract.json"
+            ROOT / "configs/agentic/recsys-recommendation-agent/tools-contract.json"
         ).read_text(encoding="utf-8")
     )
 
@@ -43,9 +40,7 @@ def _contract() -> dict[str, Any]:
 def _without_titles(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: _without_titles(item)
-            for key, item in value.items()
-            if key != "title"
+            key: _without_titles(item) for key, item in value.items() if key != "title"
         }
     if isinstance(value, list):
         return [_without_titles(item) for item in value]
@@ -73,9 +68,11 @@ def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str
 def test_fastmcp_schema_matches_the_single_versioned_contract() -> None:
     contract = _contract()
     tools = asyncio.run(server.create_mcp_server(object()).list_tools())
-    assert [tool.name for tool in tools] == [
-        item["name"] for item in contract["tools"]
-    ] == ["get_personalized_recommendations"]
+    assert (
+        [tool.name for tool in tools]
+        == [item["name"] for item in contract["tools"]]
+        == ["get_personalized_recommendations"]
+    )
     assert _without_titles(tools[0].inputSchema) == contract["tools"][0]["inputSchema"]
 
 
@@ -95,8 +92,13 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     )
     assert sandbox["apiVersion"] == "kagent.dev/v1alpha2"
     assert "platform" not in sandbox["spec"]
-    assert "recsys.ai/model-config-revision" not in sandbox["metadata"].get("annotations", {})
-    assert "Runtime model configuration revision:" not in sandbox["spec"]["declarative"]["systemMessage"]
+    assert "recsys.ai/model-config-revision" not in sandbox["metadata"].get(
+        "annotations", {}
+    )
+    assert (
+        "Runtime model configuration revision:"
+        not in sandbox["spec"]["declarative"]["systemMessage"]
+    )
     tools = sandbox["spec"]["declarative"]["tools"]
     assert len(tools) == 1
     assert tools[0]["type"] == "McpServer"
@@ -114,18 +116,14 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
 
 def test_mcp_scales_one_to_three_and_workerpool_keeps_two_warm() -> None:
     mcp_documents = _render("recsys-recommendation-mcp")
-    deployment = _resource(
-        mcp_documents, "Deployment", "recsys-recommendation-mcp"
-    )
+    deployment = _resource(mcp_documents, "Deployment", "recsys-recommendation-mcp")
     assert deployment["spec"]["strategy"]["rollingUpdate"] == {
         "maxUnavailable": 0,
         "maxSurge": 1,
     }
     container = deployment["spec"]["template"]["spec"]["containers"][0]
     assert container["securityContext"]["readOnlyRootFilesystem"] is True
-    mcp_scaled = _resource(
-        mcp_documents, "ScaledObject", "recsys-recommendation-mcp"
-    )
+    mcp_scaled = _resource(mcp_documents, "ScaledObject", "recsys-recommendation-mcp")
     assert (
         mcp_scaled["spec"]["minReplicaCount"],
         mcp_scaled["spec"]["maxReplicaCount"],
@@ -145,10 +143,13 @@ def test_mcp_scales_one_to_three_and_workerpool_keeps_two_warm() -> None:
         worker_scaled["spec"]["minReplicaCount"],
         worker_scaled["spec"]["maxReplicaCount"],
         worker_scaled["spec"]["fallback"]["replicas"],
-    ) == (2, 2, 1)
-    assert worker_scaled["spec"]["advanced"]["horizontalPodAutoscalerConfig"][
-        "behavior"
-    ]["scaleDown"]["stabilizationWindowSeconds"] == 300
+    ) == (2, 3, 1)
+    assert (
+        worker_scaled["spec"]["advanced"]["horizontalPodAutoscalerConfig"]["behavior"][
+            "scaleDown"
+        ]["stabilizationWindowSeconds"]
+        == 300
+    )
     trigger = worker_scaled["spec"]["triggers"][0]
     assert trigger["metricType"] == "AverageValue"
     assert trigger["metadata"]["threshold"] == "400"
@@ -190,29 +191,38 @@ def test_assigned_worker_metric_is_a_renderable_supported_mode() -> None:
 
 
 def test_terraform_owns_dedicated_pool_and_ignores_keda_replica_drift() -> None:
-    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf").read_text(encoding="utf-8")
-    assert 'resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool"' in terraform
+    terraform = (
+        ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf"
+    ).read_text(encoding="utf-8")
+    assert (
+        'resource "kubernetes_manifest" "recsys_recommendation_sandbox_pool"'
+        in terraform
+    )
     assert 'computed_fields = ["spec.replicas"]' in terraform
     assert "scaleSelector" not in terraform
     assert 'name      = "keda-operator"' in terraform
     assert 'resources  = ["workerpools/scale"]' in terraform
 
 
-def test_jenkins_preflight_verifies_keda_rbac_without_impersonated_ssar() -> None:
+def test_jenkins_preflight_verifies_live_keda_scaling_without_impersonated_ssar() -> (
+    None
+):
     deploy = _agentic_deploy_source()
     recommendation_preflight = deploy.split(
         "recommendation_agentic_preflight()", maxsplit=1
     )[1].split("recommendation_mcp_protocol_smoke()", maxsplit=1)[0]
 
     assert "kubectl auth can-i" not in recommendation_preflight
-    assert "clusterrole keda-ate-workerpool-scaler" in recommendation_preflight
-    assert "clusterrolebinding keda-ate-workerpool-scaler" in recommendation_preflight
-    assert '"workerpools/scale"' in recommendation_preflight
-    assert '{"get", "patch", "update"}' in recommendation_preflight
+    assert (
+        "agentic_verify_worker_pool_autoscaling recsys-recommendation-sandbox-pool"
+        in recommendation_preflight
+    )
+    assert 'active.get("status") == "True"' in deploy
+    assert 'active.get("reason") != "InvalidSelector"' in deploy
 
-    recommendation_smoke = deploy.split(
-        "recommendation_a2a_smoke()", maxsplit=1
-    )[1].split("agentic_mcp_protocol_smoke()", maxsplit=1)[0]
+    recommendation_smoke = deploy.split("recommendation_a2a_smoke()", maxsplit=1)[
+        1
+    ].split("agentic_mcp_protocol_smoke()", maxsplit=1)[0]
     assert "RECOMMENDATION_A2A_REQUEST_TIMEOUT_SECONDS:-600" in recommendation_smoke
     assert "RECOMMENDATION_A2A_MAX_ATTEMPTS:-1" in recommendation_smoke
     assert 'for attempt in $(seq 1 "${max_attempts}")' in recommendation_smoke

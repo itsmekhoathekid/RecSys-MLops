@@ -7,6 +7,12 @@ kind: Deployment
 metadata:
   name: {{ $context.name }}
   namespace: {{ $.Values.namespace }}
+{{- if $.Values.releaseMetadata.registryRef }}
+  annotations:
+    recsys.dev/agent-registry-ref: {{ $.Values.releaseMetadata.registryRef | quote }}
+    recsys.dev/agent-release-version: {{ $.Values.releaseMetadata.version | quote }}
+    recsys.dev/contract-sha256: {{ $.Values.releaseMetadata.contractSha256 | quote }}
+{{- end }}
   labels:
     {{- include "recsys-recommendation-mcp.revisionLabels" $context | nindent 4 }}
 spec:
@@ -27,6 +33,11 @@ spec:
         {{- include "recsys-recommendation-mcp.revisionLabels" $context | nindent 8 }}
         sidecar.istio.io/inject: "true"
       annotations:
+{{- if $.Values.releaseMetadata.registryRef }}
+        recsys.dev/agent-registry-ref: {{ $.Values.releaseMetadata.registryRef | quote }}
+        recsys.dev/agent-release-version: {{ $.Values.releaseMetadata.version | quote }}
+        recsys.dev/contract-sha256: {{ $.Values.releaseMetadata.contractSha256 | quote }}
+{{- end }}
         checksum/config: {{ dict "config" $.Values.config "image" $.Values.image "allowedHosts" $allowedHosts | toJson | sha256sum }}
         sidecar.istio.io/inject: "true"
         sidecar.istio.io/proxyCPU: "20m"

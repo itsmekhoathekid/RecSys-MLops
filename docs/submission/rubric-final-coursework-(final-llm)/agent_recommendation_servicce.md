@@ -1104,14 +1104,14 @@ to `Ready=True`, `Active=False`, `Fallback=False`.
 
 ## 7. Agent Registry and Governance
 
-Jenkins publishes only after live MCP protocol smoke and SandboxAgent A2A smoke
-succeed. Registry versions are derived from the same Git commit:
+Jenkins publishes immutable MCP and SandboxAgent candidates before workload
+mutation, validates the read-backs, and seals the selected OCI artifacts into a
+deployment lock. Registry versions are derived from the same Git commit:
 
 ```text
 recsys/recsys-recommendation-mcp
 recsys/recsys-recommendation-agent-sandbox
-version: 0.1.0+<12-character-git-sha>
-tag:     0.1.0-<12-character-git-sha>
+version/tag: 0.2.0-g<12-character-git-sha>
 ```
 
 The SandboxAgent manifest declares the MCP artifact dependency. Publishing is
@@ -1120,7 +1120,8 @@ the same version fails the pipeline.
 
 References:
 
-- [Registry manifest generation (line 1026)](../../../jenkins/scripts/deploy/agentic.sh#L1026) and [recommendation publish actions (line 1331)](../../../jenkins/scripts/deploy/agentic.sh#L1331)
+- [Registry manifest and lock contract](../../../jenkins/python/agent_registry_release.py)
+- [Registry transport adapter](../../../jenkins/scripts/deploy/agentic/registry.sh)
 - [Registry runtime smoke (line 1)](../../../ops/validation/recommendation_agentic_registry_smoke.sh#L1)
 - [Recommendation deploy units (line 260)](../../../jenkins/config/deploy-units.json#L260)
 
@@ -1193,18 +1194,19 @@ The recommendation components do not depend on `context_agent` or
 `feature_rag_mcp`. The deployment order is:
 
 ```text
-inference-api
+recommendation-mcp-registry
+  -> recommendation-agent-registry
+  -> sealed deployment lock
   -> recommendation-mcp
   -> recommendation-agent
-  -> recommendation-mcp-registry
-  -> recommendation-agent-registry
 ```
 
 PR gates include Ruff, compile/type checks, unit/integration/contract/e2e
 tests, coverage, mutation tests for the new package, Helm lint/render,
 kubeconform, and image build proof. Main builds by full Git SHA, resolves the
-immutable digest, deploys with atomic Helm semantics, runs smoke tests, and only
-then publishes registry metadata.
+immutable image/chart digests, publishes and reads back Registry candidates,
+deploys the sealed artifacts with atomic Helm semantics, and then runs smoke
+tests.
 
 References:
 

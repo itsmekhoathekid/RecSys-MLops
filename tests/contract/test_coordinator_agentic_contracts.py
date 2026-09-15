@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from jenkins.python.agent_registry_release import build_resource
+
 ROOT = Path(__file__).resolve().parents[2]
 CHART = ROOT / "infra/helm/recsys-coordinator-agent"
 CONTRACT = ROOT / "configs/agentic/recsys-coordinator-agent/tools-contract.json"
@@ -91,7 +93,9 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         assert requirement in prompt
     assert "builtin/a2a-communication" not in prompt
     assert "consider retrying" not in prompt.lower()
-    assert "recsys.ai/model-config-revision" not in agent["metadata"].get("annotations", {})
+    assert "recsys.ai/model-config-revision" not in agent["metadata"].get(
+        "annotations", {}
+    )
     assert "Runtime model configuration revision:" not in prompt
     skills = agent["spec"]["declarative"]["a2aConfig"]["skills"]
     assert [skill["id"] for skill in skills] == [
@@ -139,34 +143,40 @@ def test_production_coordinator_uses_assigned_worker_autoscaling() -> None:
 
 
 def test_terraform_owns_coordinator_pool_and_lets_keda_manage_replicas() -> None:
-    terraform = (ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf").read_text(encoding="utf-8")
-    assert 'resource "kubernetes_manifest" "recsys_coordinator_sandbox_pool"' in terraform
+    terraform = (
+        ROOT / "infra/terraform/gcp/modules/kubernetes-platform/kagent.tf"
+    ).read_text(encoding="utf-8")
+    assert (
+        'resource "kubernetes_manifest" "recsys_coordinator_sandbox_pool"' in terraform
+    )
     assert 'name      = "recsys-coordinator-sandbox-pool"' in terraform
     assert 'computed_fields = ["spec.replicas"]' in terraform
     assert '"ate.dev/worker-pool"' in terraform
     assert "scaleSelector" not in terraform
 
 
-def test_registry_manifest_records_sandbox_a2a_dependencies(tmp_path: Path) -> None:
-    script = r'''
-set -Eeuo pipefail
-source jenkins/scripts/deploy/agentic.sh
-agentic_write_registry_manifest "$1" coordinator-agent \
-  recsys/recsys-coordinator-agent-sandbox \
-  0.1.0+0123456789ab 0.1.0-0123456789ab \
-  0123456789abcdef0123456789abcdef01234567 \
-  https://example.invalid/recsys.git
-'''
-    output = tmp_path / "coordinator-registry.json"
-    subprocess.run(["bash", "-c", script, "bash", str(output)], cwd=ROOT, check=True)
-    manifest = json.loads(output.read_text(encoding="utf-8"))
+def test_registry_manifest_records_exact_coordinator_dependencies() -> None:
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    manifest = build_resource(
+        "coordinator-agent",
+        commit=commit,
+        git_url="https://example.invalid/recsys.git",
+        chart_reference=(
+            "oci://asia-southeast1-docker.pkg.dev/project/recsys/helm/"
+            "recsys-coordinator-agent@sha256:" + "a" * 64
+        ),
+    )
     assert manifest["metadata"]["name"] == "recsys-coordinator-agent-sandbox"
     assert manifest["metadata"]["labels"]["recsys.dev/variant"] == "sandbox"
-    assert manifest["metadata"]["annotations"]["recsys.dev/a2a-dependencies"] == (
-        "recsys/recsys-context-agent-sandbox@0.1.0-0123456789ab,"
-        "recsys/recsys-recommendation-agent-sandbox@0.1.0-0123456789ab"
-    )
-    assert "mcpServers" not in manifest["spec"]
+    assert manifest["metadata"]["annotations"]["recsys.dev/dependencies"].split(
+        ","
+    ) == [
+        "recsys/recsys-feature-rag-mcp@0.2.0-g0123456789ab",
+        "recsys/recsys-recommendation-mcp@0.2.0-g0123456789ab",
+        "recsys/recsys-context-agent-sandbox@0.2.0-g0123456789ab",
+        "recsys/recsys-recommendation-agent-sandbox@0.2.0-g0123456789ab",
+    ]
+    assert len(manifest["spec"]["mcpServers"]) == 2
 
 
 def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
@@ -174,23 +184,29 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert "Pass the Recommendation Agent exactly this complete JSON request" in (
         deploy_script
     )
-    assert 'candidate_item_ids\\\":null,\\\"top_k\\\":1' in deploy_script
-    assert 'COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800' in deploy_script
-    assert 'COORDINATOR_A2A_MAX_ATTEMPTS:-1' in deploy_script
+    assert 'candidate_item_ids\\":null,\\"top_k\\":1' in deploy_script
+    assert "COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800" in deploy_script
+    assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy_script
     assert '"http_422"' in deploy_script
     assert "assert_usable_agent_response" in deploy_script
-    assert 'COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents' in deploy_script
+    assert (
+        "COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents"
+        in deploy_script
+    )
     coordinator_smoke = (
-        ROOT / "jenkins/scripts/deploy/agentic/a2a.sh"
-    ).read_text(encoding="utf-8").split("coordinator_a2a_smoke()", 1)[1].split(
-        "agentic_a2a_smoke()", 1
-    )[0]
+        (ROOT / "jenkins/scripts/deploy/agentic/a2a.sh")
+        .read_text(encoding="utf-8")
+        .split("coordinator_a2a_smoke()", 1)[1]
+        .split("agentic_a2a_smoke()", 1)[0]
+    )
     assert 'for attempt in $(seq 1 "${max_attempts}")' in coordinator_smoke
     assert "for attempt in 1 2 3" not in coordinator_smoke
     components = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")
     )["components"]
-    coordinator = next(item for item in components if item["name"] == "coordinator_agent")
+    coordinator = next(
+        item for item in components if item["name"] == "coordinator_agent"
+    )
     assert coordinator["buildImages"] == []
     assert coordinator["verifyDependsOn"] == ["context_agent", "recommendation_agent"]
     assert (
@@ -207,13 +223,13 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
         "global-model-config",
         "context-agent",
         "recommendation-agent",
+        "coordinator-agent-registry",
     ]
     assert units["coordinator-agent-registry"]["dependsOn"] == [
-        "coordinator-agent",
-        "context-agent-registry",
-        "recommendation-agent-registry",
         "feature-rag-mcp-registry",
         "recommendation-mcp-registry",
+        "context-agent-registry",
+        "recommendation-agent-registry",
     ]
 
 

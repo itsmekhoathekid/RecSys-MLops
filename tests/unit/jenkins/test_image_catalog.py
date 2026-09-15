@@ -12,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
+TEST_COMMIT = "a" * 40
 
 from jenkins.python.image_catalog import (  # noqa: E402
     dependency_build_args,
@@ -118,7 +119,9 @@ def test_every_catalog_image_is_reachable_from_a_component() -> None:
 
 def test_full_release_plan_builds_every_image_once_in_topological_order() -> None:
     images = load_catalog()
-    plan = create_release_plan([component["name"] for component in load_components()])
+    plan = create_release_plan(
+        [component["name"] for component in load_components()], commit=TEST_COMMIT
+    )
 
     assert len(plan["buildImages"]) == len(set(plan["buildImages"]))
     assert "recsys-feature-rag-mcp" in plan["buildImages"]
@@ -129,7 +132,9 @@ def test_full_release_plan_builds_every_image_once_in_topological_order() -> Non
 
 
 def test_release_builder_invokes_each_planned_image_once(tmp_path: Path) -> None:
-    plan = create_release_plan([component["name"] for component in load_components()])
+    plan = create_release_plan(
+        [component["name"] for component in load_components()], commit=TEST_COMMIT
+    )
     plan_path = tmp_path / "plan.json"
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
     bin_dir = tmp_path / "bin"

@@ -14,7 +14,6 @@ from jenkins.python.configuration import load_component_config, path_matches_rul
 from jenkins.python.image_catalog import image_closure, load_catalog
 from jenkins.python.release_plan import create_release_plan
 
-
 ROUTING_FLAGS = (
     "RUN_CI_CONFIG",
     "RUN_COMPONENT_CI",
@@ -176,9 +175,7 @@ def _release_dependency_selection(
     for name in names:
         visit(name)
     return tuple(
-        component["name"]
-        for component in components
-        if component["name"] in selected
+        component["name"] for component in components if component["name"] in selected
     )
 
 
@@ -285,7 +282,9 @@ def detect_changed_components(
     flags["RUN_COMPONENT_BUILD"] = bool(
         release_plan["buildImages"] or release_plan["buildArtifacts"]
     )
-    flags["RUN_COMPONENT_DEPLOY"] = bool(release_plan["deployUnits"])
+    flags["RUN_COMPONENT_DEPLOY"] = bool(
+        release_plan["publishUnits"] or release_plan["deployUnits"]
+    )
 
     return DetectionOutcome(
         flags=flags,

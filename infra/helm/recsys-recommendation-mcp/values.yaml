@@ -39,3 +39,7 @@ networkPolicy:
 # configs/agentic/mcp-auth-versions.yaml file supplies services.recommendation.
 # An empty map preserves the legacy single-workload rendering above.
 services: {}
+releaseMetadata:
+  registryRef: ""
+  version: ""
+  contractSha256: ""

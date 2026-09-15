@@ -91,7 +91,7 @@ pipeline {
       when { expression { env.SHOULD_DEPLOY_RELEASE == 'true' } }
       steps {
         script {
-          componentPipeline.deployProductionRelease() // Snapshot, deploy, verify, publish registry metadata, and rollback on any failure or abort.
+          componentPipeline.deployProductionRelease() // Snapshot, publish/read back Registry entries, seal the lock, deploy, verify, and rollback workloads on failure.
         }
       }
     }

@@ -60,3 +60,7 @@ autoscaling:
   fallback:
     failureThreshold: 3
     replicas: 1
+releaseMetadata:
+  registryRef: ""
+  version: ""
+  contractSha256: ""
