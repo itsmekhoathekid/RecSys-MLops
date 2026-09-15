@@ -107,7 +107,9 @@ assert spec["scaleTargetRef"] == {
     "apiVersion": "apps/v1", "kind": "Deployment",
     "name": "recsys-recommendation-sandbox-pool-deployment",
 }
-assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (2, 3)
+# Production intentionally caps the warm pool at two replicas so the
+# concurrency-two load profile stays within the reviewed N2 cluster headroom.
+assert (spec["minReplicaCount"], spec["maxReplicaCount"]) == (2, 2)
 assert spec["fallback"]["replicas"] == 1
 '
   kubectl -n kagent get sandboxagent recsys-recommendation-agent-sandbox -o yaml \

@@ -184,6 +184,11 @@ def test_assigned_worker_metric_is_a_renderable_supported_mode() -> None:
         "recsys-recommendation-sandbox-pool",
     )
     metadata = scaled["spec"]["triggers"][0]["metadata"]
+    assert (
+        scaled["spec"]["minReplicaCount"],
+        scaled["spec"]["maxReplicaCount"],
+        scaled["spec"]["fallback"]["replicas"],
+    ) == (2, 2, 1)
     assert scaled["spec"]["triggers"][0]["metricType"] == "AverageValue"
     assert metadata["threshold"] == "0.7"
     assert 'ate_worker_state="assigned"' in metadata["query"]
