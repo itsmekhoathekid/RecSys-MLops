@@ -112,8 +112,8 @@ coordinator_a2a_smoke() {
   local local_port="${COORDINATOR_A2A_LOCAL_PORT:-18086}"
   # A timed-out nested A2A request keeps running server-side. Retrying the
   # entire six-case suite immediately creates orphan work and amplifies load,
-  # so the production registry gate defaults to one longer bounded attempt.
-  local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800}"
+  # so the production registry gate defaults to one fail-closed attempt.
+  local request_timeout="${COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-600}"
   local max_attempts="${COORDINATOR_A2A_MAX_ATTEMPTS:-1}"
   local admission_attempts="${COORDINATOR_A2A_ADMISSION_MAX_ATTEMPTS:-6}"
   local selected_cases="${COORDINATOR_SMOKE_CASES:-context_agent,context_chunk_agent,context_user_rag_agent,recommendation_agent,recommendation_candidates_agent,composite_agents}"
@@ -161,10 +161,11 @@ cases = {
     "context_agent": (
         "Call exactly one tool: "
         "kagent__NS__recsys_context_agent_sandbox. Pass it this complete "
-        f"request: 'Summarize preferences for user_id={user_id}. Call "
+        f"request: 'Call "
         "get_user_online_features exactly once with arguments "
-        f"{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":2}}. "
-        "Do not ask for confirmation and answer concisely.' Do not call the "
+        f"{{\"user_id\":{user_id},\"candidate_item_ids\":[800078,800079],"
+        "\"top_k\":2}}. Return the tool JSON unchanged; do not ask for "
+        "confirmation.' Do not call the "
         "recommendation Agent or any MCP tool directly. Answer immediately "
         "after the Context Agent returns."
     ),
@@ -181,7 +182,7 @@ cases = {
         "kagent__NS__recsys_context_agent_sandbox. Pass it this complete "
         f"request: 'Call build_user_rag_context exactly once with user_id={user_id}, "
         "query=noise-cancelling headphones, candidate_item_ids=[800078,800079], "
-        "top_k=2, top_k_items=2, and filters=null. Answer concisely and cite "
+        "top_k=1, top_k_items=1, and filters=null. Answer concisely and cite "
         "returned chunk_id values.' Do not call the Recommendation Agent or any "
         "MCP tool directly. Answer immediately after the Context Agent returns."
     ),
@@ -212,8 +213,8 @@ cases = {
         "ask_user, and never request confirmation. "
         "After it returns, create a new Context Agent request that names "
         "build_user_rag_context exactly once and includes user_id, the returned "
-        "item IDs as candidate_item_ids, query='recommended items', top_k=2, "
-        "top_k_items=2, and filters=null. Never forward this original prompt "
+        "item IDs as candidate_item_ids, query='recommended items', top_k=1, "
+        "top_k_items=1, and filters=null. Never forward this original prompt "
         "as the Context Agent request and never let it ask for confirmation. "
         "Never call retrieve_rag_context, build_user_rag_context, or any other "
         "MCP tool directly. Call each specialist exactly once, then answer. "
@@ -339,6 +340,8 @@ def invoke(case_name, prompt):
         assert_usable_agent_response(context_tool)
         request_text = specialist_request(0)
         assert user_id in request_text and "get_user_online_features" in request_text
+        assert "[800078,800079]" in request_text.replace(" ", "")
+        assert "candidate_item_ids\":null" not in request_text.replace(" ", "")
     elif case_name == "context_chunk_agent":
         assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
         assert_usable_agent_response(calls[0])

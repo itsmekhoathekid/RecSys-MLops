@@ -89,6 +89,7 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         "chunk_id",
         "Never invent data",
         "Recommendation exactly once and then Context",
+        "response is still terminal",
     ):
         assert requirement in prompt
     assert "builtin/a2a-communication" not in prompt
@@ -185,7 +186,10 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
         deploy_script
     )
     assert 'candidate_item_ids\\":null,\\"top_k\\":1' in deploy_script
-    assert "COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800" in deploy_script
+    assert 'candidate_item_ids\\":[800078,800079]' in deploy_script
+    assert deploy_script.count("top_k=1") >= 2
+    assert deploy_script.count("top_k_items=1") >= 2
+    assert "COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-600" in deploy_script
     assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy_script
     assert "COORDINATOR_A2A_ADMISSION_MAX_ATTEMPTS:-6" in deploy_script
     assert '"http_422"' in deploy_script
