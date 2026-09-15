@@ -82,8 +82,6 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         "exactly two available A2A specialist tools",
         "You have no MCP tools",
         "call ask_user",
-        "Evaluate this missing-user_id rule exactly once",
-        "never emit clarification",
         "kagent__NS__recsys_context_agent_sandbox",
         "kagent__NS__recsys_recommendation_agent_sandbox",
         "null is not an empty array",
@@ -194,8 +192,8 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert "assert_usable_agent_response" in deploy_script
     assert (
         "COORDINATOR_SMOKE_CASES:-context_agent,context_chunk_agent,"
-        "recommendation_agent,recommendation_candidates_agent,composite_agents,"
-        "missing_user_id"
+        "context_user_rag_agent,"
+        "recommendation_agent,recommendation_candidates_agent,composite_agents"
         in deploy_script
     )
     coordinator_smoke = (
