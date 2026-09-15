@@ -74,6 +74,19 @@ def test_jenkins_runtime_installs_and_verifies_jq():
     assert "              jq --version\n" in template
 
 
+def test_static_helm_validation_supplies_a_non_production_digest():
+    script = (ROOT / "jenkins/scripts/entrypoints/ci_config.sh").read_text(
+        encoding="utf-8"
+    )
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    for source in (script, makefile):
+        assert "registry.example.invalid/recsys/static-validation@sha256:" in source
+        assert "recsys-llm-ab" in source
+        assert "recsys-workflow-ab" in source
+        assert "--set-string" in source
+        assert "static_validation_image" in source
+
+
 EXPECTED_LABELS = [
     "Materialize Pipeline",
     "Training Pipeline",
