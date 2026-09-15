@@ -187,10 +187,13 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert 'candidate_item_ids\\":null,\\"top_k\\":1' in deploy_script
     assert "COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-1800" in deploy_script
     assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy_script
+    assert "COORDINATOR_A2A_ADMISSION_MAX_ATTEMPTS:-6" in deploy_script
     assert '"http_422"' in deploy_script
     assert "assert_usable_agent_response" in deploy_script
     assert (
-        "COORDINATOR_SMOKE_CASES:-context_agent,recommendation_agent,composite_agents"
+        "COORDINATOR_SMOKE_CASES:-context_agent,context_chunk_agent,"
+        "recommendation_agent,recommendation_candidates_agent,composite_agents,"
+        "missing_user_id"
         in deploy_script
     )
     coordinator_smoke = (
@@ -200,6 +203,12 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
         .split("agentic_a2a_smoke()", 1)[0]
     )
     assert 'for attempt in $(seq 1 "${max_attempts}")' in coordinator_smoke
+    assert "for admission_attempt in range(1, admission_attempts + 1)" in (
+        coordinator_smoke
+    )
+    assert '"no free workers"' in coordinator_smoke
+    assert "admission_attempt == admission_attempts" in coordinator_smoke
+    assert 'evidence[case_name].append(body)' in coordinator_smoke
     assert "for attempt in 1 2 3" not in coordinator_smoke
     components = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")

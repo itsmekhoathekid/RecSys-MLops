@@ -180,3 +180,64 @@ def test_release_builder_invokes_each_planned_image_once(tmp_path: Path) -> None
     assert any("recsys-feature-rag-mcp" in command for command in builds)
     for image_name in plan["buildImages"]:
         assert sum(f"-t {image_name}:" in line for line in builds) == 1
+
+
+def test_release_builder_reuses_existing_full_sha_image(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker_log = tmp_path / "docker.log"
+    docker_stub = bin_dir / "docker"
+    docker_stub.write_text(
+        "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >>\"${DOCKER_LOG}\"\n",
+        encoding="utf-8",
+    )
+    docker_stub.chmod(0o755)
+    manifest_path = tmp_path / "release-plan.env"
+    manifest_path.write_text("", encoding="utf-8")
+    digest = (
+        "asia-southeast1-docker.pkg.dev/example/recsys/recsys-demo-web@sha256:"
+        + "b" * 64
+    )
+    script = f"""
+set -euo pipefail
+source jenkins/scripts/lib/common.sh
+source jenkins/scripts/lib/config.sh
+source jenkins/scripts/lib/image_manifest.sh
+source jenkins/scripts/lib/registry.sh
+source jenkins/scripts/build/engine.sh
+registry_resolve_digest_reference() {{ printf '%s' '{digest}'; }}
+BUILD_IMAGE_REGISTRY=asia-southeast1-docker.pkg.dev/example/recsys
+BUILD_REGISTRY_HOST=asia-southeast1-docker.pkg.dev
+BUILD_IMAGE_TAG={'a' * 40}
+BUILD_PUBLISH_IMAGES=1
+BUILD_MANIFEST_PATH={shlex.quote(str(manifest_path))}
+BUILD_MANIFEST_DIR={shlex.quote(str(tmp_path))}
+BUILD_DOCKER_PLATFORM=linux/amd64
+BUILD_REGISTRY_LOGIN_EPOCH=0
+build_publish_image recsys-demo-web
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "DOCKER_LOG": str(docker_log),
+        }
+    )
+
+    subprocess.run(
+        ["bash", "-c", script],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    docker_commands = docker_log.read_text(encoding="utf-8").splitlines()
+    assert docker_commands == [
+        f"pull --platform linux/amd64 {digest}",
+        f"tag {digest} recsys-demo-web:{'a' * 40}",
+    ]
+    manifest = manifest_path.read_text(encoding="utf-8")
+    assert f"RECSYS_DEMO_WEB_DIGEST={digest}" in manifest
+    assert "RECSYS_DEMO_WEB_IMAGE=" in manifest
