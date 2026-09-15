@@ -31,6 +31,38 @@ EXPECTED_STAGE_VIEW = [
     *EXPECTED_STAGES,
     "Declarative: Post Actions",
 ]
+
+
+def test_ci_config_environment_pins_all_runtime_imports():
+    requirements = ROOT / "jenkins/config/ci-config-requirements.txt"
+    pins = {
+        line.split("==", 1)[0]
+        for line in requirements.read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    }
+    assert pins == {
+        "boto3",
+        "botocore",
+        "fastapi",
+        "httpx",
+        "opentelemetry-api",
+        "opentelemetry-exporter-otlp-proto-http",
+        "opentelemetry-sdk",
+        "psycopg[binary]",
+        "pytest",
+        "pyyaml",
+        "requests",
+    }
+
+    script = (ROOT / "jenkins/scripts/entrypoints/ci_config.sh").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        'ci_config_requirements="jenkins/config/ci-config-requirements.txt"' in script
+    )
+    assert '--requirement "${ci_config_requirements}"' in script
+
+
 EXPECTED_LABELS = [
     "Materialize Pipeline",
     "Training Pipeline",

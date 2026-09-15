@@ -1,0 +1,13 @@
+# Exact top-level dependencies for the isolated Jenkins configuration test env.
+# Keep these aligned with the repository uv.lock without syncing the full ML stack.
+boto3==1.35.36
+botocore==1.35.36
+fastapi==0.138.0
+httpx==0.28.1
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-sdk==1.44.0
+psycopg[binary]==3.3.4
+pytest==9.1.0
+pyyaml==6.0.3
+requests==2.34.2
