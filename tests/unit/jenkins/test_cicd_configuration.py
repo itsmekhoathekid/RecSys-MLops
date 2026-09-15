@@ -1271,6 +1271,19 @@ def test_coordinator_release_verifier_uses_current_sandboxagent_schema() -> None
     assert 'spec["fallback"] ==' not in verifier
 
 
+def test_agentic_loader_exports_legacy_regular_agent_removal_gate() -> None:
+    subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source jenkins/scripts/deploy/agentic.sh; "
+            "declare -F agentic_wait_for_regular_agent_removal >/dev/null",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+
+
 def test_jenkins_allows_the_recovery_bootstrap_bundle_checkout() -> None:
     values = (ROOT / "infra/helm/recsys-ci/values.yaml").read_text(encoding="utf-8")
     assert "-Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true" in values

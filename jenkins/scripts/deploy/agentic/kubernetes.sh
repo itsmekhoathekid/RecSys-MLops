@@ -60,6 +60,29 @@ agentic_wait_mcp_services() {
   done < <(mcp_auth_list_deployed "${service}")
 }
 
+# SandboxAgent replaced the legacy regular Agent workload. Keep this as a
+# verification-only gate: publication is append-only and cleanup is never
+# performed implicitly by the release pipeline.
+agentic_wait_for_regular_agent_removal() {
+  local resource
+  for resource in \
+    agent/recsys-context-agent \
+    deployment/recsys-context-agent \
+    scaledobject/recsys-context-agent \
+    hpa/keda-hpa-recsys-context-agent; do
+    for _ in $(seq 1 120); do
+      if ! kubectl -n kagent get "${resource}" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 2
+    done
+    if kubectl -n kagent get "${resource}" >/dev/null 2>&1; then
+      recsys_error "legacy regular Agent resource still exists: ${resource}"
+      return 1
+    fi
+  done
+}
+
 agentic_verify_worker_pool_autoscaling() {
   local worker_pool="$1"
   local deployment="${worker_pool}-deployment"
