@@ -82,6 +82,175 @@ The main implementation references used throughout this runbook are:
 | Terminal release cleanup | [`cleanup.py`](../../../jenkins/python/llm_agent_cd/cleanup.py#L49-L174) |
 | Grafana dashboard definition | [`dashboard.py`](../../../jenkins/python/llm_agent_cd/dashboard.py#L278-L440) |
 
+## How Istio traffic weights are configured and applied
+
+The Recommendation A/B `VirtualService` is **not a static Helm YAML with hard-coded release names**. The two immutable release IDs are read from experiment state, [`virtual_service`](../../../jenkins/python/llm_agent_cd/manifests.py#L226-L298) renders the exact Istio object, and the controller-authorized Jenkins action applies it. This prevents a normal Helm deploy from resetting an active experiment and prevents an operator from accidentally routing to a mixed config/model pair.
+
+Helm creates the dedicated two-replica Istio gateway workload, ClusterIP Service, and Istio `Gateway`. The selector that binds the Istio `Gateway` to those Envoy pods is shown below:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recsys-ab-gateway
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        istio: recsys-ab-gateway
+        sidecar.istio.io/inject: "true"
+      annotations:
+        inject.istio.io/templates: gateway
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: recsys-ab-gateway
+spec:
+  selector:
+    istio: recsys-ab-gateway
+  servers:
+    - port: {number: 80, name: http, protocol: HTTP}
+      hosts: ["recsys-ab-gateway.kagent.svc.cluster.local"]
+```
+
+Source: [`gateway.yaml` lines 5–45](../../../infra/helm/recsys-llm-ab/templates/gateway.yaml#L5-L45). The private router is pointed at this gateway by `AB_GATEWAY_URL` in [`runtime.yaml` lines 31–35](../../../infra/helm/recsys-llm-ab/templates/runtime.yaml#L31-L35).
+
+The core weight calculation is here. `weight` always means **candidate percentage**; control receives `100 - weight`. A zero-weight destination is removed from the rendered route:
+
+```python
+weighted = [{"destination": destination(baseline), "weight": 100 - weight}]
+if baseline["release_id"] != candidate["release_id"]:
+    weighted.append({"destination": destination(candidate), "weight": weight})
+
+spec["http"].append({
+    "name": "allocate",
+    "match": [{"uri": {"exact": "/allocate"}}],
+    "route": [route for route in weighted if route["weight"] > 0],
+    "retries": {"attempts": 0},
+    "timeout": "10s",
+})
+```
+
+Source: [`manifests.py` lines 264–275](../../../jenkins/python/llm_agent_cd/manifests.py#L264-L275). The renderer calculates a digest of the full spec, appends it to route names, and stores it as the `recsys.ai/route-revision` annotation in [`manifests.py` lines 285–298](../../../jenkins/python/llm_agent_cd/manifests.py#L285-L298).
+
+For example, the generated `allocate` route changes as follows; the real host suffix contains the immutable release ID:
+
+```yaml
+# CANARY: target candidate weight = 10
+- name: allocate-<route-revision>
+  match:
+    - uri: {exact: /allocate}
+  route:
+    - destination: {host: rec-ab-<control>.kagent.svc.cluster.local, port: {number: 80}}
+      weight: 90
+    - destination: {host: rec-ab-<candidate>.kagent.svc.cluster.local, port: {number: 80}}
+      weight: 10
+  retries: {attempts: 0}
+  timeout: 10s
+```
+
+```yaml
+# AB: target candidate weight = 50
+route:
+  - destination: {host: rec-ab-<control>.kagent.svc.cluster.local, port: {number: 80}}
+    weight: 50
+  - destination: {host: rec-ab-<candidate>.kagent.svc.cluster.local, port: {number: 80}}
+    weight: 50
+```
+
+```yaml
+# VERIFY: target candidate weight = 100
+# The zero-weight control destination is omitted.
+route:
+  - destination: {host: rec-ab-<candidate>.kagent.svc.cluster.local, port: {number: 80}}
+    weight: 100
+```
+
+Only the `/allocate` request for a **new session** uses the weighted route. The router calls `/allocate`, validates the returned release, and persists that assignment in PostgreSQL in [`server.py` lines 889–925](../../../apps/agentic/llm_ab_router/server.py#L889-L925). Every later turn carries the trusted `x-recsys-release` header and uses the corresponding `pin-<release>` route, as shown in [`manifests.py` lines 246–263](../../../jenkins/python/llm_agent_cd/manifests.py#L246-L263) and [`server.py` lines 976–988](../../../apps/agentic/llm_ab_router/server.py#L976-L988). Therefore an existing conversation never changes model when the percentage changes.
+
+The controller maps a mature PASS gate to the next target but does not touch Kubernetes:
+
+```python
+if phase == "CANARY":
+    return "route", 50
+if phase == "AB":
+    return "route", 100
+return "promote", None
+```
+
+It also performs the first `OFFLINE_PASS -> route 10` transition. Sources: [`controller.py` lines 40–52](../../../apps/agentic/llm_ab_router/controller.py#L40-L52) and [`controller.py` lines 334–370](../../../apps/agentic/llm_ab_router/controller.py#L334-L370).
+
+Jenkins receives that target as `TARGET_WEIGHT` and invokes exactly one executor action; it contains no rollout loop:
+
+```groovy
+choice(name: 'ACTION', choices: ['prepare', 'route', 'promote', 'rollback', 'cleanup'])
+choice(name: 'TARGET_WEIGHT', choices: ['', '0', '10', '50', '100'])
+
+set -- "$ACTION" \
+  --action-key "$ACTION_KEY" \
+  --experiment-id "$EXPERIMENT_ID" \
+  --expected-phase "$EXPECTED_PHASE" \
+  --expected-state-etag "$EXPECTED_STATE_ETAG"
+[ -z "${TARGET_WEIGHT:-}" ] || set -- "$@" --target-weight "$TARGET_WEIGHT"
+.llm-ab-venv/bin/python -m jenkins.python.llm_agent_cd.recommendation_action "$@"
+```
+
+Sources: [`LLMAgentCD.Jenkinsfile` lines 9–24](../../../jenkins/LLMAgentCD.Jenkinsfile#L9-L24) and [`LLMAgentCD.Jenkinsfile` lines 55–74](../../../jenkins/LLMAgentCD.Jenkinsfile#L55-L74).
+
+The Jenkins executor then writes the route intent, renders and applies the `VirtualService`, waits for Envoy acknowledgement, and only afterwards commits `verified_weight` and the next phase:
+
+```python
+engine.event(
+    "ROUTING",
+    route_intent={"weight": weight, "next_phase": target_phase},
+    stage_started=self.clock(),
+)
+revision = self.driver.route(engine.state, weight)
+while not self.driver.verify_route(engine.state, weight, revision):
+    if time.monotonic() >= deadline:
+        raise TimeoutError("Envoy propagation timeout")
+    self.sleep(2)
+engine.event(
+    target_phase,
+    route_revision=revision,
+    verified_weight=weight,
+    stage_started=self.clock(),
+)
+```
+
+Source: [`recommendation_action.py` lines 131–150](../../../jenkins/python/llm_agent_cd/recommendation_action.py#L131-L150).
+
+The actual Kubernetes mutation is exactly one `kubectl apply` of the rendered object:
+
+```python
+def route(self, state, weight):
+    obj = virtual_service(state, weight, self.namespace)
+    self.kube("apply", "-f", "-", stdin=json.dumps(obj))
+    return obj["metadata"]["annotations"]["recsys.ai/route-revision"]
+```
+
+Source: [`driver.py` lines 642–645](../../../jenkins/python/llm_agent_cd/driver.py#L642-L645). Verification does not trust the Kubernetes object alone: it reads `config_dump` from every ready gateway Envoy and calls each pinned release identity before returning true in [`driver.py` lines 647–698](../../../jenkins/python/llm_agent_cd/driver.py#L647-L698).
+
+Use these read-only commands to see the exact production configuration after each transition:
+
+```bash
+# Desired VirtualService stored by the Kubernetes API.
+kubectl -n kagent get virtualservice recsys-ab -o yaml
+
+# Compact control/candidate allocation and immutable route revision.
+show_route
+
+# Route actually loaded by both gateway Envoy replicas.
+show_envoy
+
+# Controller state must agree with the data plane.
+ab_state | jq '{phase, route_revision, verified_weight, gate}'
+```
+
+Do not consider a `10`, `50`, or `100` transition complete until `verified_weight`, the `VirtualService` annotation, and every ready Envoy route all agree.
+
 ## 0. Open one operator shell and define inspection helpers
 
 Run every command from the repository root in the same shell. The examples below match the deployed namespaces and resource names.
