@@ -117,6 +117,11 @@ def test_sandbox_uses_the_exact_remote_mcp_tool_contract():
         not in sandbox["spec"]["declarative"]["systemMessage"]
     )
     assert sandbox["spec"]["declarative"]["runtime"] == "go"
+    prompt = sandbox["spec"]["declarative"]["systemMessage"]
+    assert "containing both user_id and query" in prompt
+    assert "Call only build_user_rag_context" in prompt
+    assert "Do not call get_user_online_features" in prompt
+    assert "do not call ask_user" in prompt
     assert sandbox["apiVersion"] == "kagent.dev/v1alpha2"
     assert "platform" not in sandbox["spec"]
     assert sandbox["spec"]["sandbox"]["network"]["allowedDomains"] == [
