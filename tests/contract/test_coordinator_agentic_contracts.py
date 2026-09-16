@@ -218,6 +218,9 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert 'metadata.get("adk_type") or metadata.get("kagent_type")' in (
         coordinator_smoke
     )
+    assert "def specialist_payload(index):" in coordinator_smoke
+    assert '"candidate_item_ids": [800078, 800079]' in coordinator_smoke
+    assert '"top_k": 2' in coordinator_smoke
     assert "invalid post-tool clarification" in coordinator_smoke
     assert "json.loads(specialist_request(0))" in coordinator_smoke
     assert "for attempt in 1 2 3" not in coordinator_smoke
