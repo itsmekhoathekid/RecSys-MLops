@@ -212,9 +212,11 @@ cases = {
         "Tell it to call its recommendation tool immediately, never call "
         "ask_user, and never request confirmation. "
         "After it returns, create a new Context Agent request that names "
-        "build_user_rag_context exactly once and includes user_id, the returned "
-        "item IDs as candidate_item_ids, query='recommended items', top_k=1, "
-        "top_k_items=1, and filters=null. Never forward this original prompt "
+        "build_user_rag_context exactly once. Its request string must begin "
+        "with 'Call build_user_rag_context exactly once with arguments' and "
+        "include one JSON object containing user_id, the returned item IDs as "
+        "candidate_item_ids, query='recommended items', top_k=1, top_k_items=1, "
+        "and filters=null. Never forward this original prompt "
         "as the Context Agent request and never let it ask for confirmation. "
         "Never call retrieve_rag_context, build_user_rag_context, or any other "
         "MCP tool directly. Call each specialist exactly once, then answer. "
@@ -401,9 +403,28 @@ def invoke(case_name, prompt):
             "candidate_item_ids": None,
             "top_k": 1,
         }
-        context_request = specialist_request(1)
-        assert user_id in context_request
-        assert "build_user_rag_context" in context_request
+        context_payload, context_request = specialist_payload(1)
+        if context_payload is not None:
+            assert set(context_payload) == {
+                "user_id",
+                "query",
+                "candidate_item_ids",
+                "top_k",
+                "top_k_items",
+                "filters",
+            }, context_payload
+            assert context_payload["user_id"] == int(user_id), context_payload
+            assert context_payload["query"] == "recommended items", context_payload
+            assert context_payload["top_k"] == 1, context_payload
+            assert context_payload["top_k_items"] == 1, context_payload
+            assert context_payload["filters"] is None, context_payload
+            candidate_ids = context_payload["candidate_item_ids"]
+            assert candidate_ids and all(
+                isinstance(item_id, int) for item_id in candidate_ids
+            ), context_payload
+        else:
+            assert user_id in context_request
+            assert "build_user_rag_context" in context_request
     return body
 
 

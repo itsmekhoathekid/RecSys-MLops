@@ -188,6 +188,8 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert "Pass the Recommendation Agent exactly this complete JSON request" in (
         deploy_script
     )
+    assert "Its request string must begin" in deploy_script
+    assert "Call build_user_rag_context exactly once with arguments" in deploy_script
     assert 'candidate_item_ids\\":null,\\"top_k\\":1' in deploy_script
     assert 'candidate_item_ids\\":[800078,800079]' in deploy_script
     assert deploy_script.count("top_k=1") >= 2
@@ -223,6 +225,8 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert "def specialist_payload(index):" in coordinator_smoke
     assert '"candidate_item_ids": [800078, 800079]' in coordinator_smoke
     assert '"top_k": 2' in coordinator_smoke
+    assert 'context_payload["query"] == "recommended items"' in coordinator_smoke
+    assert 'context_payload["filters"] is None' in coordinator_smoke
     assert "invalid post-tool clarification" in coordinator_smoke
     assert "json.loads(specialist_request(0))" in coordinator_smoke
     assert "for attempt in 1 2 3" not in coordinator_smoke
