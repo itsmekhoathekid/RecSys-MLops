@@ -164,7 +164,7 @@ cases = {
         f"request: 'Call "
         "get_user_online_features exactly once with arguments "
         f"{{\"user_id\":{user_id},\"candidate_item_ids\":[800078,800079],"
-        "\"top_k\":2}}. Return the tool JSON unchanged; do not ask for "
+        "\"top_k\":2}. Return the tool JSON unchanged; do not ask for "
         "confirmation.' Do not call the "
         "recommendation Agent or any MCP tool directly. Answer immediately "
         "after the Context Agent returns."
@@ -335,14 +335,31 @@ def invoke(case_name, prompt):
         assert isinstance(args["request"], str), args
         return args["request"]
 
+    def specialist_payload(index):
+        request_text = specialist_request(index)
+        try:
+            payload = json.loads(request_text)
+        except json.JSONDecodeError:
+            return None, request_text
+        assert isinstance(payload, dict), payload
+        return payload, request_text
+
     if case_name == "context_agent":
         assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
         context_tool = calls[0]
         assert_usable_agent_response(context_tool)
-        request_text = specialist_request(0)
-        assert user_id in request_text and "get_user_online_features" in request_text
-        assert "[800078,800079]" in request_text.replace(" ", "")
-        assert "candidate_item_ids\":null" not in request_text.replace(" ", "")
+        payload, request_text = specialist_payload(0)
+        if payload is not None:
+            assert payload == {
+                "user_id": int(user_id),
+                "candidate_item_ids": [800078, 800079],
+                "top_k": 2,
+            }, payload
+        else:
+            compact_request = request_text.replace(" ", "")
+            assert user_id in request_text and "get_user_online_features" in request_text
+            assert "[800078,800079]" in compact_request
+            assert "candidate_item_ids\":null" not in compact_request
     elif case_name == "context_chunk_agent":
         assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
         assert_usable_agent_response(calls[0])
