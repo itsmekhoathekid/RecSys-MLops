@@ -21,10 +21,10 @@ def test_qwen_llama_cpp_chart_is_cpu_scheduled_and_openai_compatible() -> None:
     assert "--alias" in deployment
     assert "--ctx-size" in deployment
     assert "--n-predict" in deployment
-    assert "--reasoning-budget" in deployment
-    assert "--reasoning-budget-message" in deployment
+    assert "--reasoning" in deployment
+    assert "--reasoning-budget" not in deployment
     assert "maxPredictedTokens: 768" in values
-    assert "reasoningBudget: 256" in values
+    assert 'reasoningMode: "off"' in values
     assert "--no-mmproj" in deployment
     assert "--metrics" in deployment
 
@@ -56,6 +56,7 @@ def test_shared_cpu_node_profile_fits_the_live_quota_constrained_topology() -> N
     assert "cpu: 100m" in shared
     assert "memory: 1536Mi" in shared
     assert "contextSize: 16384" in shared
+    assert 'reasoningMode: "off"' in shared
     assert "topologySpread:" in shared
     assert "whenUnsatisfiable: DoNotSchedule" in shared
     assert "topologySpreadConstraints:" in deployment
