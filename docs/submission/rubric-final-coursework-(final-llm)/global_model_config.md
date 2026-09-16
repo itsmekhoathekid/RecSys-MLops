@@ -153,7 +153,10 @@ sandbox:
       {{- .Values.sandbox.systemMessage | nindent 6 }}
 ```
 
-The rendered `SandboxAgent.spec.declarative.modelConfig` points to `recsys-global-model-config`. The runtime remains `go`; prompt and tools stay defined in the individual agent chart.
+The rendered `SandboxAgent.spec.declarative.modelConfig` points to
+`recsys-global-model-config`. The two specialist Agents remain on the Go ADK;
+the A2A Coordinator uses Google ADK-native tool orchestration through the Python
+ADK. Prompts and tools stay defined in each Agent chart.
 
 Each specialist uses its own declared ModelConfig reference. A parent agent does not pass its temperature or output limit to the specialist through delegation. The three default agents share settings because they reference the same resource.
 
