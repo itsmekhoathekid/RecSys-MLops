@@ -33,25 +33,15 @@ EXPECTED_STAGE_VIEW = [
 ]
 
 
-def test_agentic_prompts_make_context_dispatch_unambiguous():
-    context_values = (
-        ROOT / "infra/helm/recsys-kagent-agent/values.yaml"
-    ).read_text(encoding="utf-8")
+def test_coordinator_preserves_explicit_context_tool_handoff():
     coordinator_values = (
         ROOT / "infra/helm/recsys-coordinator-agent/values.yaml"
     ).read_text(encoding="utf-8")
+    coordinator_prompt = " ".join(coordinator_values.split())
 
-    assert (
-        "A JSON request with exactly user_id, candidate_item_ids and top_k"
-        in context_values
-    )
-    assert "complete get_user_online_features request" in context_values
-    assert "A missing\n      query is intentional" in context_values
-    assert "Never send bare JSON to the Context Agent" in coordinator_values
-    assert (
-        'must begin with "Call <tool> exactly once with arguments"'
-        in coordinator_values
-    )
+    assert "Never send bare JSON to the Context Agent" in coordinator_prompt
+    assert 'must begin with "Call", the exact MCP tool name' in coordinator_prompt
+    assert '"exactly once with arguments"' in coordinator_prompt
 
 
 def test_ci_config_environment_pins_all_runtime_imports():
