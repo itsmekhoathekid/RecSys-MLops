@@ -24,8 +24,8 @@ SandboxAgent/recsys-coordinator-agent-sandbox
 ```
 
 The current production runtime uses upstream Substrate `0.0.9`, upstream
-kagent `0.10.0-rc1`, and the upstream digest-pinned `golang-adk` ActorTemplate
-image published by that kagent release.
+kagent `0.10.0-rc1`, and its upstream digest-pinned Python ADK ActorTemplate
+image for the Coordinator. The two specialist SandboxAgents remain on Go ADK.
 
 ## 1. Agent Uses Native A2A with a Multi-Replica Autoscaled Runtime
 
@@ -50,8 +50,8 @@ spec:
       kind: WorkerPool
       name: recsys-coordinator-sandbox-pool
   declarative:
-    runtime: go
-    modelConfig: default-model-config
+    runtime: python
+    modelConfig: recsys-global-model-config
     stream: false
     a2aConfig:
       skills:

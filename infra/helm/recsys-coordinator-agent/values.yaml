@@ -3,6 +3,7 @@ namespace: kagent
 sandbox:
   name: recsys-coordinator-agent-sandbox
   workerPool: recsys-coordinator-sandbox-pool
+  runtime: python
   modelConfig: recsys-global-model-config
   systemMessage: |
     You are the RecSys coordinator. Route the original user request once using

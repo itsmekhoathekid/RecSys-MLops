@@ -24,7 +24,7 @@ spec:
       kind: WorkerPool
       name: {{ .Values.sandbox.workerPool }}
   declarative:
-    runtime: go
+    runtime: {{ required "sandbox.runtime is required" .Values.sandbox.runtime }}
     modelConfig: {{ .Values.sandbox.modelConfig }}
     stream: false
     systemMessage: |

@@ -54,6 +54,7 @@ def test_coordinator_sandbox_references_only_two_a2a_agents() -> None:
 
     agent = _resource(documents, "SandboxAgent", "recsys-coordinator-agent-sandbox")
     assert agent["apiVersion"] == "kagent.dev/v1alpha2"
+    assert agent["spec"]["declarative"]["runtime"] == "python"
     assert "platform" not in agent["spec"]
     assert agent["spec"]["substrate"]["workerPoolRef"]["name"] == (
         "recsys-coordinator-sandbox-pool"

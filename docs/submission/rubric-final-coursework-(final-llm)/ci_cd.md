@@ -248,7 +248,10 @@ Deploy layer 3: Coordinator Agent
 The Coordinator catalog record names both specialist Agents and their MCP
 dependencies at the same release version. The runtime exposes only the two A2A
 specialist tools; it does not expose either MCP directly. Jenkins validates all
-four prerequisite read-backs before it publishes the Coordinator.
+four prerequisite read-backs before it publishes the Coordinator. Specialists
+use the Go ADK for direct MCP work; the Coordinator uses the
+[Python ADK runtime](https://kagent.dev/docs/kagent/concepts/agents/) for its
+Google ADK-native agent-tool orchestration path.
 
 ## 7. MCP credential rotation
 
