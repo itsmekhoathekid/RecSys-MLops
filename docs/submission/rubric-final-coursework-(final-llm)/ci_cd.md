@@ -332,6 +332,8 @@ A production run is accepted only when all of the following pass:
   replays a completed case. Context cases use bounded candidate lists and a
   maximum of one RAG item so an oversized specialist payload cannot induce a
   second model tool call; each case also has a 600-second fail-closed timeout.
+  The evidence validator normalizes Go ADK `adk_type` and Python ADK
+  `kagent_type` event metadata before enforcing the same call/response contract.
 - Each primary MCP Deployment or `SandboxAgent` contains
   `recsys.dev/agent-registry-ref`, `recsys.dev/agent-release-version`, and
   `recsys.dev/contract-sha256` matching the lock.

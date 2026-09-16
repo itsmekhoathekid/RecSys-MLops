@@ -291,10 +291,11 @@ def invoke(case_name, prompt):
     ]
     for part in parts:
         metadata, data = part.get("metadata", {}), part.get("data", {})
-        if metadata.get("adk_type") == "function_call":
+        event_type = metadata.get("adk_type") or metadata.get("kagent_type")
+        if event_type == "function_call":
             calls.append(data.get("name", ""))
             call_args.append(data.get("args", {}))
-        elif metadata.get("adk_type") == "function_response":
+        elif event_type == "function_response":
             responses[data.get("name", "")] = data.get("response")
 
     answer_containers = [

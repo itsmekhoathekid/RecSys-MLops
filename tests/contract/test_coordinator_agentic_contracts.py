@@ -215,6 +215,9 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert "admission_attempt == admission_attempts" in coordinator_smoke
     assert 'evidence[case_name].append(body)' in coordinator_smoke
     assert 'call_args.append(data.get("args", {}))' in coordinator_smoke
+    assert 'metadata.get("adk_type") or metadata.get("kagent_type")' in (
+        coordinator_smoke
+    )
     assert "invalid post-tool clarification" in coordinator_smoke
     assert "json.loads(specialist_request(0))" in coordinator_smoke
     assert "for attempt in 1 2 3" not in coordinator_smoke
