@@ -8,10 +8,11 @@ from jenkins.python.substrate_state import (
     LEGACY_QUARANTINE_ATESPACE,
     canonical_json,
     colocated_backup_key,
+    migrate_actor_to_v009,
     migrate_v008_actor,
     redis_key_slot,
 )
-from ops.maintenance.migrate_substrate_v008_actor_records import parse_args
+from ops.maintenance.migrate_substrate_v009_actor_records import parse_args
 
 
 def test_legacy_actor_migration_is_deterministic_and_parseable():
@@ -81,6 +82,62 @@ def test_current_actor_is_an_idempotent_noop_and_backup_is_colocated():
     assert redis_key_slot(backup) == redis_key_slot(key)
 
 
+def test_v011_snapshot_reference_is_removed_from_inactive_actor():
+    raw = json.dumps(
+        {
+            "metadata": {"atespace": "kagent", "name": "asr-123"},
+            "status": "STATUS_SUSPENDED",
+            "latestSnapshot": {"atespace": "kagent", "name": "snapshot-1"},
+        }
+    )
+    migrated = migrate_actor_to_v009("actor:kagent:asr-123", raw)
+    assert migrated == {
+        "metadata": {"atespace": "kagent", "name": "asr-123"},
+        "status": "STATUS_SUSPENDED",
+    }
+
+
+def test_v011_worker_assignment_is_backported_only_with_reviewed_status():
+    raw = json.dumps(
+        {
+            "metadata": {"atespace": "ate-golden", "name": "actor-1"},
+            "status": "STATUS_RUNNING",
+            "workerAssignment": {
+                "workerNamespace": "kagent",
+                "workerPool": "pool-a",
+                "workerPod": "pod-a",
+                "workerPodUid": "uid-a",
+                "workerPodIp": "10.0.0.1",
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="non-reviewed status"):
+        migrate_actor_to_v009("actor:ate-golden:actor-1", raw)
+    migrated = migrate_actor_to_v009(
+        "actor:ate-golden:actor-1",
+        raw,
+        additionally_allowed_statuses=["STATUS_RUNNING"],
+    )
+    assert migrated["ateomPodNamespace"] == "kagent"
+    assert migrated["ateomPodName"] == "pod-a"
+    assert migrated["ateomPodIp"] == "10.0.0.1"
+    assert migrated["ateomPodUid"] == "uid-a"
+    assert migrated["workerPoolName"] == "pool-a"
+    assert "workerAssignment" not in migrated
+
+
+def test_unknown_forward_field_fails_closed():
+    raw = json.dumps(
+        {
+            "metadata": {"atespace": "kagent", "name": "asr-123"},
+            "status": "STATUS_SUSPENDED",
+            "futureField": True,
+        }
+    )
+    with pytest.raises(ValueError, match="unsupported fields"):
+        migrate_actor_to_v009("actor:kagent:asr-123", raw)
+
+
 def test_apply_requires_evidence_reviewed_count_and_confirmation():
     base = ["--endpoint", "127.0.0.1:6379", "--apply"]
     with pytest.raises(SystemExit):
@@ -105,7 +162,7 @@ def test_apply_requires_evidence_reviewed_count_and_confirmation():
             "--expected-candidate-count",
             "323",
             "--confirm",
-            "rewrite-reviewed-inactive-actors",
+            "rewrite-reviewed-actor-records",
         ]
     )
     assert parsed.expected_candidate_count == 323
