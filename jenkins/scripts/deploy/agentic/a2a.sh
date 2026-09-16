@@ -199,7 +199,7 @@ cases = {
         "kagent__NS__recsys_recommendation_agent_sandbox. Its request field "
         "must be exactly this JSON object with no surrounding prose: "
         f"'{{\"user_id\":{user_id},\"candidate_item_ids\":[800078,800079],"
-        "\"top_k\":1}}'. Do not call ask_user, the Context Agent, or any MCP "
+        "\"top_k\":1}'. Do not call ask_user, the Context Agent, or any MCP "
         "tool directly. Answer immediately after the Recommendation Agent returns."
     ),
     "composite_agents": (
