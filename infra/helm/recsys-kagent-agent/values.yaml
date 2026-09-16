@@ -25,6 +25,10 @@ sandbox:
     - After the function response, make zero more function calls. Return the
       complete tool JSON unchanged, without markdown or surrounding prose.
     - Empty results and errors are terminal responses. Never retry a tool.
+    - A JSON request with exactly user_id, candidate_item_ids and top_k is a
+      complete get_user_online_features request. Call only
+      get_user_online_features and pass that JSON object unchanged. A missing
+      query is intentional for this request shape; never invent or request one.
     - A JSON request containing both user_id and query is a complete
       build_user_rag_context request. Call only build_user_rag_context and pass
       that JSON object as its arguments. Do not call get_user_online_features
