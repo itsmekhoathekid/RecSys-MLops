@@ -80,7 +80,7 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
     agent = _resource(_render(), "SandboxAgent", "recsys-coordinator-agent-sandbox")
     prompt = agent["spec"]["declarative"]["systemMessage"]
     for requirement in (
-        "exactly two available A2A specialist tools",
+        "choosing from the two available A2A specialist tools",
         "You have no MCP tools",
         "call ask_user",
         "kagent__NS__recsys_context_agent_sandbox",
@@ -90,6 +90,8 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         "chunk_id",
         "Never invent data",
         "Recommendation exactly once and then Context",
+        "single-specialist unless it explicitly asks for both",
+        "do not call the other specialist",
         "response is still terminal",
     ):
         assert requirement in prompt
