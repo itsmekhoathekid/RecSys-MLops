@@ -28,6 +28,12 @@ recsys_is_true "${PUBLISH_IMAGES:-0}" || {
   recsys_error "GCP production deploy requires PUBLISH_IMAGES=true"
   exit 2
 }
-verify_gcp_release_target "${plan_path}"
 mkdir -p .ci-deploy
+verify_gcp_release_target "${plan_path}"
+if python3 jenkins/python/release_plan.py plan-units \
+  --plan "${plan_path}" --phase publish \
+  | grep -Fq $'agent-registry:catalog'; then
+  bash ops/validation/substrate_status_gate.sh \
+    --output .ci-deploy/substrate-status-preflight.json
+fi
 git rev-parse HEAD >.ci-deploy/preflight-commit

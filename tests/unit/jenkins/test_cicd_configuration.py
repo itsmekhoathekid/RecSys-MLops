@@ -894,11 +894,15 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
         ROOT / "jenkins/scripts/entrypoints/release_deploy_preflight.sh"
     ).read_text(encoding="utf-8")
     assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in preflight
+    assert "substrate_status_gate.sh" in preflight
+    assert preflight.index("substrate_status_gate.sh") < preflight.index(
+        "preflight-commit"
+    )
     assert "release_snapshot.sh" in pipeline_helper
     assert "release_rollback.sh" in pipeline_helper
-    deploy_transaction = pipeline_helper.split(
-        "def deployProductionRelease()", 1
-    )[1].split("def isMissingWorkspaceContext", 1)[0]
+    deploy_transaction = pipeline_helper.split("def deployProductionRelease()", 1)[
+        1
+    ].split("def isMissingWorkspaceContext", 1)[0]
     assert (
         deploy_transaction.index("lock(resource: 'recsys-production-release')")
         < deploy_transaction.index("assertDeploySourceIsCurrent()")
@@ -906,12 +910,10 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     )
     assert (
         "git fetch --no-tags origin "
-        "+refs/heads/main:refs/remotes/origin/main"
-        in pipeline_helper
+        "+refs/heads/main:refs/remotes/origin/main" in pipeline_helper
     )
     assert (
-        'if [ "${checked_out_commit}" != "${current_main_commit}" ]'
-        in pipeline_helper
+        'if [ "${checked_out_commit}" != "${current_main_commit}" ]' in pipeline_helper
     )
     assert "'publish'" in pipeline_helper and "'deploy'" in pipeline_helper
     assert "'finalize'" not in pipeline_helper
