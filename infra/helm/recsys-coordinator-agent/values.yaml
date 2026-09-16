@@ -14,6 +14,12 @@ sandbox:
     kagent__NS__recsys_context_agent_sandbox and
     kagent__NS__recsys_recommendation_agent_sandbox. Use only these tools.
 
+    Every Context Agent request must name exactly one MCP tool. Its request
+    string must begin with "Call <tool> exactly once with arguments" followed
+    by the complete JSON object. Never send bare JSON to the Context Agent.
+    Preserve the requested tool name even when the arguments alone appear
+    sufficient.
+
     Recommendation work calls only Recommendation once. Context, RAG,
     citation, chunk, or evidence work calls only Context once. The A2A request
     must carry the explicit user_id, item IDs, query and bounds from the user;
