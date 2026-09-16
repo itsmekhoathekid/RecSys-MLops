@@ -117,9 +117,8 @@ providers:
       # Keep the small CPU model deterministic and bound each tool turn. A
       # larger cap allowed repeated tool calls to hold a Sandbox worker long
       # enough for the fixed kagent Agent-tool timeout to expire.
-      # The inference server reserves up to 256 tokens for Qwen reasoning; keep
-      # 128 additional tokens so a tool call or concise final answer is never
-      # starved after the reasoning budget is consumed.
+      # llama.cpp disables hidden reasoning for this CPU tool-use route, so the
+      # complete budget is available to the tool call or concise final answer.
       maxTokens: 384
       temperature: "0"
       seed: 42

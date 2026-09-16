@@ -2,5 +2,5 @@ apiVersion: v2
 name: recsys-llm-serving
 description: RecSys CPU llama.cpp GGUF model server and agentgateway Gateway resources.
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "0.1.0"

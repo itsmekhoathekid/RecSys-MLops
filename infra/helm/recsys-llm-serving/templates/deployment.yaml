@@ -53,10 +53,8 @@ spec:
             - {{ .Values.model.contextSize | quote }}
             - --n-predict
             - {{ .Values.model.maxPredictedTokens | quote }}
-            - --reasoning-budget
-            - {{ .Values.model.reasoningBudget | quote }}
-            - --reasoning-budget-message
-            - {{ .Values.model.reasoningBudgetMessage | quote }}
+            - --reasoning
+            - {{ required "model.reasoningMode is required" .Values.model.reasoningMode | quote }}
             - --parallel
             - {{ .Values.model.parallel | quote }}
             - --threads
