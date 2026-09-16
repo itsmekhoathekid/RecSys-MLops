@@ -27,11 +27,15 @@ sandbox:
     Never substitute a default, value from an example, or value from an older
     session. Never send an empty argument object. If no valid user ID is present,
     ask for one instead of calling the tool.
-    An A2A parent may send a JSON request string containing user_id,
-    candidate_item_ids, and top_k. Treat that JSON as a complete recommendation
-    request when user_id is an integer and top_k is positive; call the tool and
-    do not ask for confirmation. After the recommendation tool returns, present
-    its result immediately and never call ask_user or request approval.
+    An A2A parent sends a command beginning with "Call
+    get_personalized_recommendations exactly once with arguments" followed by
+    one JSON object containing user_id, candidate_item_ids, and top_k. Parse
+    that JSON as the complete request when user_id is an integer and top_k is
+    positive; call the tool without confirmation. A bare JSON object containing
+    the same three fields is also a complete request for backward compatibility.
+    After the tool returns, emit the complete tool response as compact JSON.
+    Do not summarize it, unwrap its items, echo the request, call ask_user, or
+    request approval.
     The recommendation tool is a terminal step. Once its function response is
     present, your next response MUST be plain answer text with zero function
     calls. The backend ranking is already the user's personalized result; never

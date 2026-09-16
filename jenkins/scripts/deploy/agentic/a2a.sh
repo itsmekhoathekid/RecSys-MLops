@@ -157,14 +157,54 @@ request_timeout = int(request_timeout)
 admission_attempts = int(admission_attempts)
 if admission_attempts < 1:
     raise SystemExit("coordinator admission attempts must be positive")
+
+
+def tool_command(tool_name, arguments):
+    return (
+        f"Call {tool_name} exactly once with arguments "
+        + json.dumps(arguments, separators=(",", ":"), sort_keys=False)
+    )
+
+
+context_features_command = tool_command(
+    "get_user_online_features",
+    {
+        "user_id": int(user_id),
+        "candidate_item_ids": [800078, 800079],
+        "top_k": 2,
+    },
+)
+context_chunk_command = tool_command("get_chunk_by_id", {"chunk_id": chunk_id})
+context_rag_command = tool_command(
+    "build_user_rag_context",
+    {
+        "user_id": int(user_id),
+        "query": "noise-cancelling headphones",
+        "candidate_item_ids": [800078, 800079],
+        "top_k": 1,
+        "top_k_items": 1,
+        "filters": None,
+    },
+)
+recommendation_command = tool_command(
+    "get_personalized_recommendations",
+    {"user_id": int(user_id), "candidate_item_ids": None, "top_k": 1},
+)
+recommendation_candidates_command = tool_command(
+    "get_personalized_recommendations",
+    {
+        "user_id": int(user_id),
+        "candidate_item_ids": [800078, 800079],
+        "top_k": 1,
+    },
+)
+
 cases = {
     "context_agent": (
         "Call exactly one tool: "
         "kagent__NS__recsys_context_agent_sandbox. Pass it this complete "
-        f"request: 'Call "
-        "get_user_online_features exactly once with arguments "
-        f"{{\"user_id\":{user_id},\"candidate_item_ids\":[800078,800079],"
-        "\"top_k\":2}. Return the tool JSON unchanged; do not ask for "
+        f"request: '{context_features_command}'. Return the tool JSON "
+        "unchanged; do not ask for "
         "confirmation.' Do not call the "
         "recommendation Agent or any MCP tool directly. Answer immediately "
         "after the Context Agent returns."
@@ -172,7 +212,7 @@ cases = {
     "context_chunk_agent": (
         "Call exactly one tool: "
         "kagent__NS__recsys_context_agent_sandbox. Pass it this complete "
-        f"request: 'Call get_chunk_by_id exactly once with chunk_id={chunk_id}. "
+        f"request: '{context_chunk_command}'. "
         f"Answer concisely and cite exact chunk_id {chunk_id}.' Do not call the "
         "Recommendation Agent or any MCP tool directly. Answer immediately "
         "after the Context Agent returns."
@@ -180,26 +220,23 @@ cases = {
     "context_user_rag_agent": (
         "Call exactly one tool: "
         "kagent__NS__recsys_context_agent_sandbox. Pass it this complete "
-        f"request: 'Call build_user_rag_context exactly once with user_id={user_id}, "
-        "query=noise-cancelling headphones, candidate_item_ids=[800078,800079], "
-        "top_k=1, top_k_items=1, and filters=null. Answer concisely and cite "
+        f"request: '{context_rag_command}'. Answer concisely and cite "
         "returned chunk_id values.' Do not call the Recommendation Agent or any "
         "MCP tool directly. Answer immediately after the Context Agent returns."
     ),
     "recommendation_agent": (
         "Call exactly one tool: "
-        "kagent__NS__recsys_recommendation_agent_sandbox. Its request field "
-        "must be exactly this JSON object with no surrounding prose: "
-        f"'{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}'. "
+        "kagent__NS__recsys_recommendation_agent_sandbox. Pass it exactly this "
+        f"request: '{recommendation_command}'. Require the complete tool JSON "
+        "unchanged. "
         "Do not call ask_user, the Context Agent, or any MCP tool directly. "
         "Answer immediately after the Recommendation Agent returns."
     ),
     "recommendation_candidates_agent": (
         "Call exactly one tool: "
-        "kagent__NS__recsys_recommendation_agent_sandbox. Its request field "
-        "must be exactly this JSON object with no surrounding prose: "
-        f"'{{\"user_id\":{user_id},\"candidate_item_ids\":[800078,800079],"
-        "\"top_k\":1}'. Do not call ask_user, the Context Agent, or any MCP "
+        "kagent__NS__recsys_recommendation_agent_sandbox. Pass it exactly this "
+        f"request: '{recommendation_candidates_command}'. Require the complete "
+        "tool JSON unchanged. Do not call ask_user, the Context Agent, or any MCP "
         "tool directly. Answer immediately after the Recommendation Agent returns."
     ),
     "composite_agents": (
@@ -207,16 +244,16 @@ cases = {
         "kagent__NS__recsys_recommendation_agent_sandbox, then "
         "kagent__NS__recsys_context_agent_sandbox. Recommend one "
         f"item for user {user_id} and explain it with grounded evidence. "
-        "Pass the Recommendation Agent exactly this complete JSON request: "
-        f"'{{\"user_id\":{user_id},\"candidate_item_ids\":null,\"top_k\":1}}'. "
-        "Tell it to call its recommendation tool immediately, never call "
-        "ask_user, and never request confirmation. "
-        "After it returns, create a new Context Agent request that names "
-        "build_user_rag_context exactly once. Its request string must begin "
-        "with 'Call build_user_rag_context exactly once with arguments' and "
-        "include one JSON object containing user_id, the returned item IDs as "
-        "candidate_item_ids, query='recommended items', top_k=1, top_k_items=1, "
-        "and filters=null. Never forward this original prompt "
+        "Pass the Recommendation Agent exactly this request: "
+        f"'{recommendation_command}'. Require the complete tool JSON unchanged "
+        "and never call ask_user or request confirmation. After it returns, "
+        "parse its integer item_id values and create a new Context Agent request "
+        "beginning 'Call build_user_rag_context exactly once with arguments' "
+        "followed by one complete JSON object containing user_id, query="
+        "'recommended items', candidate_item_ids as those returned integers in "
+        "their original order, top_k=1, top_k_items=1, and filters=null. A "
+        "placeholder, variable name, omitted JSON object, or empty candidate "
+        "list is forbidden. Never forward this original prompt "
         "as the Context Agent request and never let it ask for confirmation. "
         "Never call retrieve_rag_context, build_user_rag_context, or any other "
         "MCP tool directly. Call each specialist exactly once, then answer. "
@@ -337,60 +374,95 @@ def invoke(case_name, prompt):
         assert isinstance(args["request"], str), args
         return args["request"]
 
-    def specialist_payload(index):
+    def specialist_payload(index, tool_name):
         request_text = specialist_request(index)
-        try:
-            payload = json.loads(request_text)
-        except json.JSONDecodeError:
-            return None, request_text
+        prefix = f"Call {tool_name} exactly once with arguments"
+        assert request_text.startswith(prefix), request_text
+        encoded_payload = request_text[len(prefix):].lstrip()
+        payload, consumed = json.JSONDecoder().raw_decode(encoded_payload)
         assert isinstance(payload, dict), payload
-        return payload, request_text
+        assert encoded_payload[consumed:].strip() in {"", "."}, request_text
+        return payload
+
+    def recommendation_record(tool_name):
+        response = responses[tool_name]
+        value = response.get("result") if isinstance(response, dict) else response
+        if isinstance(value, str):
+            value = json.loads(value)
+
+        def find_record(candidate):
+            if isinstance(candidate, dict):
+                if "model_version" in candidate and (
+                    "items" in candidate or "item_id" in candidate
+                ):
+                    return candidate
+                for child in candidate.values():
+                    found = find_record(child)
+                    if found is not None:
+                        return found
+            elif isinstance(candidate, list):
+                for child in candidate:
+                    found = find_record(child)
+                    if found is not None:
+                        return found
+            return None
+
+        record = find_record(value)
+        assert record is not None, response
+        if "items" in record:
+            assert isinstance(record["items"], list), record
+            item_ids = [item["item_id"] for item in record["items"]]
+        else:
+            item_ids = [record["item_id"]]
+        assert all(isinstance(item_id, int) for item_id in item_ids), record
+        return record, item_ids
 
     if case_name == "context_agent":
         assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
         context_tool = calls[0]
         assert_usable_agent_response(context_tool)
-        payload, request_text = specialist_payload(0)
-        if payload is not None:
-            assert payload == {
-                "user_id": int(user_id),
-                "candidate_item_ids": [800078, 800079],
-                "top_k": 2,
-            }, payload
-        else:
-            compact_request = request_text.replace(" ", "")
-            assert user_id in request_text and "get_user_online_features" in request_text
-            assert "[800078,800079]" in compact_request
-            assert "candidate_item_ids\":null" not in compact_request
+        payload = specialist_payload(0, "get_user_online_features")
+        assert payload == {
+            "user_id": int(user_id),
+            "candidate_item_ids": [800078, 800079],
+            "top_k": 2,
+        }, payload
     elif case_name == "context_chunk_agent":
         assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
         assert_usable_agent_response(calls[0])
-        request_text = specialist_request(0)
-        assert chunk_id in request_text and "get_chunk_by_id" in request_text
+        payload = specialist_payload(0, "get_chunk_by_id")
+        assert payload == {"chunk_id": chunk_id}, payload
     elif case_name == "context_user_rag_agent":
         assert calls == ["kagent__NS__recsys_context_agent_sandbox"], calls
         assert_usable_agent_response(calls[0])
-        request_text = specialist_request(0)
-        assert user_id in request_text
-        assert "build_user_rag_context" in request_text
-        assert "[800078,800079]" in request_text.replace(" ", "")
+        payload = specialist_payload(0, "build_user_rag_context")
+        assert payload == {
+            "user_id": int(user_id),
+            "query": "noise-cancelling headphones",
+            "candidate_item_ids": [800078, 800079],
+            "top_k": 1,
+            "top_k_items": 1,
+            "filters": None,
+        }, payload
     elif case_name == "recommendation_agent":
         assert calls == ["kagent__NS__recsys_recommendation_agent_sandbox"], calls
         recommendation_tool = calls[0]
         assert_usable_agent_response(recommendation_tool)
-        assert json.loads(specialist_request(0)) == {
+        assert specialist_payload(0, "get_personalized_recommendations") == {
             "user_id": int(user_id),
             "candidate_item_ids": None,
             "top_k": 1,
         }
+        recommendation_record(recommendation_tool)
     elif case_name == "recommendation_candidates_agent":
         assert calls == ["kagent__NS__recsys_recommendation_agent_sandbox"], calls
         assert_usable_agent_response(calls[0])
-        assert json.loads(specialist_request(0)) == {
+        assert specialist_payload(0, "get_personalized_recommendations") == {
             "user_id": int(user_id),
             "candidate_item_ids": [800078, 800079],
             "top_k": 1,
         }
+        recommendation_record(calls[0])
     elif case_name == "composite_agents":
         assert calls == [
             "kagent__NS__recsys_recommendation_agent_sandbox",
@@ -398,33 +470,22 @@ def invoke(case_name, prompt):
         ], calls
         for tool_name in calls:
             assert_usable_agent_response(tool_name)
-        assert json.loads(specialist_request(0)) == {
+        assert specialist_payload(0, "get_personalized_recommendations") == {
             "user_id": int(user_id),
             "candidate_item_ids": None,
             "top_k": 1,
         }
-        context_payload, context_request = specialist_payload(1)
-        if context_payload is not None:
-            assert set(context_payload) == {
-                "user_id",
-                "query",
-                "candidate_item_ids",
-                "top_k",
-                "top_k_items",
-                "filters",
-            }, context_payload
-            assert context_payload["user_id"] == int(user_id), context_payload
-            assert context_payload["query"] == "recommended items", context_payload
-            assert context_payload["top_k"] == 1, context_payload
-            assert context_payload["top_k_items"] == 1, context_payload
-            assert context_payload["filters"] is None, context_payload
-            candidate_ids = context_payload["candidate_item_ids"]
-            assert candidate_ids and all(
-                isinstance(item_id, int) for item_id in candidate_ids
-            ), context_payload
-        else:
-            assert user_id in context_request
-            assert "build_user_rag_context" in context_request
+        _, recommendation_item_ids = recommendation_record(calls[0])
+        assert recommendation_item_ids, responses[calls[0]]
+        context_payload = specialist_payload(1, "build_user_rag_context")
+        assert context_payload == {
+            "user_id": int(user_id),
+            "query": "recommended items",
+            "candidate_item_ids": recommendation_item_ids,
+            "top_k": 1,
+            "top_k_items": 1,
+            "filters": None,
+        }, context_payload
     return body
 
 
