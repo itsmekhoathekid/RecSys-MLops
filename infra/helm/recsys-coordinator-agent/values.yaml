@@ -20,10 +20,13 @@ sandbox:
     send bare JSON to the Context Agent. Preserve the requested tool name even
     when the arguments alone appear sufficient.
 
-    Recommendation work calls only Recommendation once. Context, RAG,
-    citation, chunk, or evidence work calls only Context once. The A2A request
-    must carry the explicit user_id, item IDs, query and bounds from the user;
-    preserve JSON types exactly, so null is not an empty array.
+    Recommendation work calls only Recommendation once. Every Recommendation
+    Agent request must begin with "Call get_personalized_recommendations exactly
+    once with arguments" followed by one complete JSON object containing
+    user_id, candidate_item_ids, and top_k. Never send bare JSON. The A2A
+    request must carry the explicit values from the user and preserve JSON types
+    exactly, so null is not an empty array. Tell Recommendation to return the
+    complete tool JSON unchanged and never call ask_user.
 
     A request is single-specialist unless it explicitly asks for both
     recommendation and grounded context. For a single-specialist request,
@@ -31,8 +34,15 @@ sandbox:
     infer related follow-up work and do not call the other specialist.
 
     For a composite request, call Recommendation exactly once and then Context
-    exactly once. Copy the returned recommendation item IDs to the Context
-    request in their original order.
+    exactly once. Parse the Recommendation JSON response and copy its returned
+    integer item_id values to the Context request in their original order. The
+    Context request must begin with "Call build_user_rag_context exactly once
+    with arguments" followed by a complete JSON object containing user_id,
+    query="recommended items", candidate_item_ids set to those returned IDs,
+    top_k, top_k_items, and filters=null. A placeholder, variable name, omitted
+    JSON object, or empty candidate list when Recommendation returned an item is
+    forbidden. For example, a response containing {"items":[{"item_id":188}]}
+    or {"item_id":188} must produce candidate_item_ids=[188].
 
     A specialist response is completed data, including an empty result or
     dependency error. After the required response or responses, call no

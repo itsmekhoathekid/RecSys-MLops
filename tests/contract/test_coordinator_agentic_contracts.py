@@ -90,6 +90,9 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
         "chunk_id",
         "Never invent data",
         "Recommendation exactly once and then Context",
+        "Never send bare JSON",
+        "Parse the Recommendation JSON response",
+        "placeholder, variable name, omitted",
         "single-specialist unless it explicitly asks for both",
         "do not call the other specialist",
         "response is still terminal",
@@ -194,15 +197,16 @@ def test_sandbox_release_version_invalidates_the_runtime_snapshot() -> None:
 
 def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     deploy_script = _agentic_deploy_source()
-    assert "Pass the Recommendation Agent exactly this complete JSON request" in (
+    assert "Pass the Recommendation Agent exactly this request" in (
         deploy_script
     )
-    assert "Its request string must begin" in deploy_script
+    assert "beginning 'Call build_user_rag_context exactly once with arguments'" in (
+        deploy_script
+    )
     assert "Call build_user_rag_context exactly once with arguments" in deploy_script
-    assert 'candidate_item_ids\\":null,\\"top_k\\":1' in deploy_script
-    assert 'candidate_item_ids\\":[800078,800079]' in deploy_script
-    assert deploy_script.count("top_k=1") >= 2
-    assert deploy_script.count("top_k_items=1") >= 2
+    assert '"candidate_item_ids": None, "top_k": 1' in deploy_script
+    assert '"candidate_item_ids": [800078, 800079]' in deploy_script
+    assert '"top_k_items": 1' in deploy_script
     assert "COORDINATOR_A2A_REQUEST_TIMEOUT_SECONDS:-600" in deploy_script
     assert "COORDINATOR_A2A_MAX_ATTEMPTS:-1" in deploy_script
     assert "COORDINATOR_A2A_ADMISSION_MAX_ATTEMPTS:-6" in deploy_script
@@ -231,13 +235,16 @@ def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:
     assert 'metadata.get("adk_type") or metadata.get("kagent_type")' in (
         coordinator_smoke
     )
-    assert "def specialist_payload(index):" in coordinator_smoke
+    assert "def specialist_payload(index, tool_name):" in coordinator_smoke
+    assert "def recommendation_record(tool_name):" in coordinator_smoke
+    assert "json.JSONDecoder().raw_decode" in coordinator_smoke
     assert '"candidate_item_ids": [800078, 800079]' in coordinator_smoke
     assert '"top_k": 2' in coordinator_smoke
-    assert 'context_payload["query"] == "recommended items"' in coordinator_smoke
-    assert 'context_payload["filters"] is None' in coordinator_smoke
+    assert '"query": "recommended items"' in coordinator_smoke
+    assert '"filters": None' in coordinator_smoke
     assert "invalid post-tool clarification" in coordinator_smoke
-    assert "json.loads(specialist_request(0))" in coordinator_smoke
+    assert "recommendation_item_ids" in coordinator_smoke
+    assert '"candidate_item_ids": recommendation_item_ids' in coordinator_smoke
     assert "for attempt in 1 2 3" not in coordinator_smoke
     components = json.loads(
         (ROOT / "jenkins/config/components.json").read_text(encoding="utf-8")

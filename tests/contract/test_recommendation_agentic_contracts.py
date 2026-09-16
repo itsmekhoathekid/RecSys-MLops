@@ -117,6 +117,12 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     prompt = sandbox["spec"]["declarative"]["systemMessage"]
     assert "copy its\nuser_id, candidate_item_ids, and top_k values exactly" in prompt
     assert "Never substitute a default" in prompt
+    assert (
+        'beginning with "Call\nget_personalized_recommendations exactly once with '
+        'arguments"' in prompt
+    )
+    assert "complete tool response as compact JSON" in prompt
+    assert "Do not summarize it" in prompt
 
 
 def test_mcp_scales_one_to_three_and_workerpool_keeps_two_warm() -> None:
