@@ -394,6 +394,49 @@ Every Jenkins run archives:
 - JUnit and coverage reports; and
 - MCP, autoscaling, security, and A2A smoke logs.
 
+### 12.1 Verified production release: `0.2.0-gea55db5e68aa`
+
+The registry-gated transaction was exercised on `main` by
+`RecSys-GitHub-CICD` build `#82` on 16 September 2026. The build completed with
+no test failures at Git commit
+`ea55db5e68aaac7becfe00ba6cf1f6898b96ecfa`. The forced, dependency-closed
+`RecSys-Coordinator-Agent-CICD` build `#24` then reran that same commit and
+release successfully, demonstrating that publication and deployment are
+idempotent.
+
+| Gate | Archived/live result |
+| --- | --- |
+| Component CI | 756 tests passed and 2 were skipped across configuration, both MCPs, and all three Agents; Recommendation MCP mutation testing killed 14/14 mutants. |
+| Registry transaction order | Five OCI charts were published, five Agent Registry entries were applied and read back, and Jenkins logged `[PUBLISH] sealed Agent Registry deployment lock` before the deploy stage pulled any chart. |
+| Specialist verification | Context used four fresh actors; Recommendation used one fresh actor. Both A2A suites passed. |
+| Coordinator verification | All six routing/composition cases passed. The composite case propagated recommendation item `188` as `candidate_item_ids: [188]` to Context. |
+| Runtime reconciliation | Jenkins logged `[recsys-cicd] VERIFY 5 runtime resources match the Registry lock`; the two MCP Deployments and three `SandboxAgent` resources carried release `0.2.0-gea55db5e68aa`. |
+| Isolation and availability | All three Agents were `Accepted=True` and `Ready=True`; WorkerPools, gVisor, KEDA, PDBs, NetworkPolicies, and MCP credential rotation passed the production verifier. |
+
+The immutable payloads used by that deployment were:
+
+| Artifact | Locked digest |
+| --- | --- |
+| Feature/RAG MCP image | `sha256:b99e7fb03d7125f05652b00e933229a65e032f04674498c3f0d059b3822dbe7a` |
+| Recommendation MCP image | `sha256:e5829b34aaf51ba64b38ee68468f83fa024b3df125dd057983f0101761233b40` |
+| Feature/RAG MCP chart | `sha256:13edbb25f993b2867103909ef1f92d59534f670355b13e8108016f621be487b4` |
+| Context Agent chart | `sha256:e4f43673594508da192c0c3bc38c6c5f8dd356d1bd74eae6e2bd133d74d42852` |
+| Recommendation MCP chart | `sha256:bc2732a8e05b29efdd314d85187f91f91c0cc58add102269c3c07055f41febb4` |
+| Recommendation Agent chart | `sha256:cec24f4bbeace7cc6c080b4946f81eebeffa5afe437960c34d32af57cad40a4f` |
+| Coordinator Agent chart | `sha256:0667f3e3305976d543dd38b40464aec4e694d50bbec0835e49e23309f1cf48d3` |
+
+The screenshot below is the fresh Jenkins result for that exact commit and
+links the successful run to its archived build artifacts.
+
+![Successful registry-gated main release](../../pngs/cicd_registry_gated_main_82_success.png)
+
+The dedicated Coordinator run selected both MCPs and both specialist Agents,
+then completed the same publish-before-deploy contract with no test failures.
+
+![Successful registry-gated Coordinator release](../../pngs/cicd_registry_gated_coordinator_24_success.png)
+
+### 12.2 Historical screenshots
+
 The following screenshots are retained as historical evidence of the shared
 jobs and their component CI/build stages. Their former post-deploy Registry
 ordering is superseded by the source contracts above and must not be used as
