@@ -27,6 +27,10 @@ spec:
     runtime: {{ required "sandbox.runtime is required" .Values.sandbox.runtime }}
     modelConfig: {{ .Values.sandbox.modelConfig }}
     stream: false
+    deployment:
+      env:
+        - name: RECSYS_AGENT_RELEASE_VERSION
+          value: {{ .Values.releaseMetadata.version | quote }}
     systemMessage: |
       {{- .Values.sandbox.systemMessage | replace "kagent__NS__recsys_context_agent_sandbox" (printf "kagent__NS__%s" (.Values.agents.context.name | replace "-" "_")) | replace "kagent__NS__recsys_recommendation_agent_sandbox" (printf "kagent__NS__%s" (.Values.agents.recommendation.name | replace "-" "_")) | nindent 6 }}
     a2aConfig:

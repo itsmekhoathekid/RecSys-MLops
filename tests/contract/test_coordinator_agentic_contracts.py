@@ -110,7 +110,9 @@ def test_coordinator_prompt_locks_routing_grounding_and_partial_results() -> Non
 def test_production_coordinator_uses_assigned_worker_autoscaling() -> None:
     documents = _render("values-gcp.yaml")
     agent = _resource(documents, "SandboxAgent", "recsys-coordinator-agent-sandbox")
-    assert "deployment" not in agent["spec"]["declarative"]
+    assert agent["spec"]["declarative"]["deployment"]["env"] == [
+        {"name": "RECSYS_AGENT_RELEASE_VERSION", "value": ""}
+    ]
     scaled = _resource(documents, "ScaledObject", "recsys-coordinator-sandbox-pool")
     spec = scaled["spec"]
     assert spec["scaleTargetRef"] == {
@@ -181,6 +183,13 @@ def test_registry_manifest_records_exact_coordinator_dependencies() -> None:
         "recsys/recsys-recommendation-agent-sandbox@0.2.0-g0123456789ab",
     ]
     assert len(manifest["spec"]["mcpServers"]) == 2
+
+
+def test_sandbox_release_version_invalidates_the_runtime_snapshot() -> None:
+    agent = _resource(_render(), "SandboxAgent", "recsys-coordinator-agent-sandbox")
+    assert agent["spec"]["declarative"]["deployment"]["env"] == [
+        {"name": "RECSYS_AGENT_RELEASE_VERSION", "value": ""}
+    ]
 
 
 def test_coordinator_ci_and_deploy_dependencies_are_wired() -> None:

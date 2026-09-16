@@ -144,7 +144,8 @@ def _assert_agent_binding(
 
     assert sandbox["metadata"]["annotations"]["recsys.ai/mcp-auth-revision"] == revision
     assert sandbox["spec"]["declarative"]["deployment"]["env"] == [
-        {"name": "RECSYS_MCP_AUTH_REVISION", "value": revision}
+        {"name": "RECSYS_MCP_AUTH_REVISION", "value": revision},
+        {"name": "RECSYS_AGENT_RELEASE_VERSION", "value": ""},
     ]
     assert set(sandbox["spec"]["sandbox"]["network"]["allowedDomains"]) == {
         f"{workload}.kagent.svc.cluster.local" for workload in allowed_workloads

@@ -33,6 +33,8 @@ spec:
       env:
         - name: RECSYS_MCP_AUTH_REVISION
           value: {{ $mcpAuth.revision | quote }}
+        - name: RECSYS_AGENT_RELEASE_VERSION
+          value: {{ .Values.releaseMetadata.version | quote }}
     systemMessage: |
       {{- .Values.sandbox.systemMessage | nindent 6 }}
     a2aConfig:

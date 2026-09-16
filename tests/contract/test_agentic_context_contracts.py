@@ -312,7 +312,10 @@ def test_gcp_mcp_can_use_both_node_pools_and_sandbox_has_no_fake_scheduling_fiel
         sandbox_documents, "SandboxAgent", "recsys-context-agent-sandbox"
     )
     deployment = sandbox["spec"]["declarative"]["deployment"]
-    assert {item["name"] for item in deployment["env"]} == {"RECSYS_MCP_AUTH_REVISION"}
+    assert {item["name"] for item in deployment["env"]} == {
+        "RECSYS_MCP_AUTH_REVISION",
+        "RECSYS_AGENT_RELEASE_VERSION",
+    }
     assert not {"affinity", "nodeSelector", "tolerations"} & deployment.keys()
 
 
