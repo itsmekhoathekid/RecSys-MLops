@@ -485,9 +485,7 @@ deploy_unit_kubeflow_bst_package() {
 
 dispatch_deploy_unit() {
   local handler="deploy_unit_${unit_name//-/_}"
-  if [[ "${unit_action}" == "agent-registry-publish" ]]; then
-    publish_agent_registry_artifact "${unit_registry_artifact}"
-  elif [[ -n "${unit_action}" ]]; then
+  if [[ -n "${unit_action}" ]]; then
     recsys_error "unsupported deploy action: ${unit_action}"
     return 2
   elif declare -F "${handler}" >/dev/null; then

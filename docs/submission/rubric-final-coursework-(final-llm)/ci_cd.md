@@ -62,6 +62,7 @@ and [OCI validation implementation](https://github.com/agentregistry-dev/agentre
 | Release-plan schema and DAG validation | [`release_plan.py`](../../../jenkins/python/release_plan.py) |
 | Registry manifest and lock contract | [`agent_registry_release.py`](../../../jenkins/python/agent_registry_release.py) |
 | Thin `arctl` transport adapter | [`registry.sh`](../../../jenkins/scripts/deploy/agentic/registry.sh) |
+| Registry publication unit | [`release_publish_unit.sh`](../../../jenkins/scripts/entrypoints/release_publish_unit.sh) |
 | Helm deployment and lock consumption | [`release_unit_runtime.sh`](../../../jenkins/scripts/deploy/release_unit_runtime.sh) |
 
 The pipeline calculates scope once and writes `.ci-release-plan.json`. Later
@@ -80,8 +81,8 @@ The shared Stage View remains compact and stable:
 | `Python Env` | Selected locked CI environments are prepared. |
 | `Component CI` | Unit, contract, integration, static, Helm, and schema gates run in bounded parallel batches. |
 | `Docker Login` | The production GCP Artifact Registry target and upload permission are verified. |
-| `Component Build And Publish` | Images and selected Helm OCI artifacts are published and resolved to digests. |
-| `Component Deploy Or Update` | Registry publish/read-back/lock precedes Helm deployment and verification. |
+| `Component Build And Publish` | Images and Helm OCI charts are pushed by digest; MCP/Agent records are then published, read back, and sealed into the deployment lock. |
+| `Component Deploy Or Update` | The sealed lock is revalidated, snapshotted workloads are upgraded from its exact OCI references, and production is verified. |
 | `Declarative: Post Actions` | JUnit, coverage, manifests, read-backs, lock, smoke, snapshot, and rollback evidence are archived. |
 
 Main-branch deployment is automatic when publication is enabled. Pull requests
@@ -288,10 +289,13 @@ The indexing lifecycle remains owned by
 
 ## 9. Failure and rollback model
 
-One `recsys-production-release` lock covers snapshot, Registry publication,
-deployment lock creation, workload deployment, and verification.
-Immediately after acquiring it, Jenkins refetches `origin/main` and rejects a
-stale checkout before taking the snapshot or publishing a Registry record.
+The build/publish stage rejects a stale `main` checkout before Registry
+publication. All Registry units share the `agent-registry:catalog` lock; only
+after every exact read-back succeeds does Jenkins seal the deployment lock.
+The deploy stage validates that same lock and its raw evidence before acquiring
+the `recsys-production-release` lock. That production lock covers snapshot,
+workload deployment, verification, and workload rollback. Registry candidates
+remain append-only and are never rolled back as if they were workloads.
 
 | Failure point | Result |
 | --- | --- |
@@ -313,8 +317,9 @@ checksum, and MCP image with that evidence.
 
 A production run is accepted only when all of the following pass:
 
-- Jenkins logs show Registry apply/read-back and lock sealing before the first
-  agentic Helm upgrade.
+- Jenkins logs show image/chart push, Registry apply/read-back, and lock sealing
+  inside `Component Build And Publish`, before the first agentic Helm upgrade in
+  `Component Deploy Or Update`.
 - Both MCP Deployments use the image digests recorded in the lock.
 - `/healthz`, `/ready`, `/version`, and `/metrics` succeed for both MCPs.
 - `/version.image_reference` equals the locked digest.
@@ -347,6 +352,8 @@ python3 jenkins/python/release_plan.py validate
 python3 -m jenkins.python.agent_registry_release validate-catalog
 bash -n jenkins/scripts/build/helm_oci.sh \
   jenkins/scripts/deploy/agentic/registry.sh \
+  jenkins/scripts/entrypoints/release_publish_preflight.sh \
+  jenkins/scripts/entrypoints/release_publish_unit.sh \
   jenkins/scripts/deploy/release_unit_runtime.sh
 ```
 
@@ -379,6 +386,8 @@ Every Jenkins run archives:
 - `.ci-deploy/agent-registry-manifests/*`;
 - `.ci-deploy/agent-registry-readbacks/*`;
 - `.ci-deploy/agent-registry-lock.json`;
+- `.ci-deploy/substrate-status-publish-preflight.json` and
+  `.ci-deploy/publish-preflight-commit`;
 - `.ci-deploy/agent-registry-runtime-context.tsv` and
   `.ci-deploy/agent-registry-runtime-verification.tsv`;
 - deployment snapshot and rollback records;

@@ -196,13 +196,32 @@ def test_chart_record_requires_oci_digest(tmp_path):
 
 
 def test_registry_transport_is_append_only():
-    source = Path("jenkins/scripts/deploy/agentic/registry.sh").read_text()
+    source = "\n".join(
+        path.read_text()
+        for path in sorted(Path("jenkins/scripts/deploy/agentic").glob("registry*.sh"))
+    )
     verifier = Path("jenkins/scripts/entrypoints/release_verify.sh").read_text()
     assert "arctl delete" not in source
     assert "publish_context_agent_registry" not in source
     assert "publish_agent_registry_artifact" in source
     assert "verify_agent_registry_runtime_lock" in source
     assert "verify_agent_registry_runtime_lock" in verifier
+
+
+def test_registry_publication_and_workload_deployment_use_separate_entrypoints():
+    publisher = Path(
+        "jenkins/scripts/entrypoints/release_publish_unit.sh"
+    ).read_text()
+    deployer = Path("jenkins/scripts/deploy/release_unit_runtime.sh").read_text()
+    pipeline = Path("jenkins/pipeline/component_pipeline.groovy").read_text()
+
+    assert 'publish_agent_registry_artifact "${unit_registry_artifact}"' in publisher
+    assert "publish_agent_registry_artifact" not in deployer
+    assert pipeline.index("release_publish_unit.sh") < pipeline.index(
+        "def deployProductionRelease()"
+    )
+    deploy_transaction = pipeline.split("def deployProductionRelease()", 1)[1]
+    assert "release_publish_unit.sh" not in deploy_transaction
 
 
 def test_parallel_publish_layers_share_one_registry_transport_lock(tmp_path):
