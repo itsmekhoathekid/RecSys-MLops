@@ -109,6 +109,11 @@ def test_agent_has_only_recommendation_mcp_and_no_agent_dependency() -> None:
     assert sandbox["spec"]["sandbox"]["network"]["allowedDomains"] == [
         "recsys-recommendation-mcp.kagent.svc.cluster.local"
     ]
+    deployment_env = sandbox["spec"]["declarative"]["deployment"]["env"]
+    assert {item["name"] for item in deployment_env} == {
+        "RECSYS_MCP_AUTH_REVISION",
+        "RECSYS_AGENT_RELEASE_VERSION",
+    }
     prompt = sandbox["spec"]["declarative"]["systemMessage"]
     assert "copy its\nuser_id, candidate_item_ids, and top_k values exactly" in prompt
     assert "Never substitute a default" in prompt
