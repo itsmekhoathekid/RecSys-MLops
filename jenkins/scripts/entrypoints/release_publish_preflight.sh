@@ -11,6 +11,7 @@ source jenkins/scripts/lib/release_gate.sh
 
 release_verify_publish_inputs "${plan_path}"
 if release_has_agent_registry_units "${plan_path}"; then
-  release_validate_agent_registry_lock "${plan_path}"
+  bash ops/validation/substrate_status_gate.sh \
+    --output .ci-deploy/substrate-status-publish-preflight.json
 fi
-git rev-parse HEAD >.ci-deploy/preflight-commit
+git rev-parse HEAD >.ci-deploy/publish-preflight-commit

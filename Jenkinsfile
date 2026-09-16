@@ -78,11 +78,11 @@ pipeline {
       }
     }
 
-    stage('Component Build And Publish') { // Build and optionally publish only the images/artifacts listed in the release plan.
+    stage('Component Build And Publish') { // Publish OCI artifacts, then Agent/MCP records, read-backs, and the deployment lock.
       when { expression { env.RUN_COMPONENT_BUILD == 'true' } }
       steps {
         script {
-          componentPipeline.buildAndPublish() // Serialize BuildKit, publish immutable digests and compile selected release artifacts.
+          componentPipeline.buildAndPublish() // Build/push immutable OCI artifacts, publish Registry records, then seal their exact read-backs.
         }
       }
     }
@@ -91,7 +91,7 @@ pipeline {
       when { expression { env.SHOULD_DEPLOY_RELEASE == 'true' } }
       steps {
         script {
-          componentPipeline.deployProductionRelease() // Snapshot, publish/read back Registry entries, seal the lock, deploy, verify, and rollback workloads on failure.
+          componentPipeline.deployProductionRelease() // Validate the sealed lock, snapshot, deploy its exact OCI artifacts, verify, and rollback workloads on failure.
         }
       }
     }

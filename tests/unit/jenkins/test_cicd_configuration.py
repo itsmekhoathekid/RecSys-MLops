@@ -143,6 +143,9 @@ def test_deploy_helpers_are_modular_and_preserve_caller_shell_options():
             "mcp.sh",
             "a2a.sh",
             "registry.sh",
+            "registry_publish.sh",
+            "registry_transport.sh",
+            "registry_verify.sh",
             "rotation.sh",
         },
         "rag": {
@@ -163,7 +166,13 @@ def test_deploy_helpers_are_modular_and_preserve_caller_shell_options():
         for path in module_paths:
             source = path.read_text(encoding="utf-8")
             assert not re.search(r"^set [+-]", source, flags=re.MULTILINE)
-            assert f'/{path.name}"' in loader
+            if path.name.startswith("registry_"):
+                registry_loader = (
+                    ROOT / "jenkins/scripts/deploy/agentic/registry.sh"
+                ).read_text(encoding="utf-8")
+                assert f'/{path.name}"' in registry_loader
+            else:
+                assert f'/{path.name}"' in loader
     runtime = (ROOT / "jenkins/scripts/lib/runtime.sh").read_text(encoding="utf-8")
     assert not re.search(r"^set [+-]", runtime, flags=re.MULTILINE)
     assert "recsys_cleanup_process()" in runtime
@@ -372,7 +381,7 @@ def test_datahub_cutover_is_opt_in_and_archives_the_reviewed_manifest():
 
 
 def test_agent_registry_publication_is_append_only_and_data_driven():
-    source = (ROOT / "jenkins/scripts/deploy/agentic/registry.sh").read_text()
+    source = _deploy_bundle("agentic")
     catalog = json.loads(
         (ROOT / "jenkins/config/agent-registry-artifacts.json").read_text()
     )
@@ -890,16 +899,24 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert "main|origin/main|refs/heads/main|refs/remotes/origin/main" in agentic_deploy
     assert "git rev-parse --verify 'origin/main^{commit}'" in agentic_deploy
     assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in agentic_deploy
-    preflight = (
+    publish_preflight = (
+        ROOT / "jenkins/scripts/entrypoints/release_publish_preflight.sh"
+    ).read_text(encoding="utf-8")
+    deploy_preflight = (
         ROOT / "jenkins/scripts/entrypoints/release_deploy_preflight.sh"
     ).read_text(encoding="utf-8")
-    assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in preflight
-    assert "substrate_status_gate.sh" in preflight
-    assert preflight.index("substrate_status_gate.sh") < preflight.index(
-        "preflight-commit"
+    release_gate = (ROOT / "jenkins/scripts/lib/release_gate.sh").read_text(
+        encoding="utf-8"
     )
+    assert 'recsys_is_true "${DEPLOY_PULL_REQUESTS:-0}"' in release_gate
+    assert "substrate_status_gate.sh" in publish_preflight
+    assert "release_validate_agent_registry_lock" in deploy_preflight
+    assert "substrate_status_gate.sh" not in deploy_preflight
     assert "release_snapshot.sh" in pipeline_helper
     assert "release_rollback.sh" in pipeline_helper
+    publish_transaction = pipeline_helper.split(
+        "def publishRegistryArtifacts()", 1
+    )[1].split("def releaseCommandEnvironment", 1)[0]
     deploy_transaction = pipeline_helper.split("def deployProductionRelease()", 1)[
         1
     ].split("def isMissingWorkspaceContext", 1)[0]
@@ -908,6 +925,14 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
         < deploy_transaction.index("assertDeploySourceIsCurrent()")
         < deploy_transaction.index("release_snapshot.sh")
     )
+    assert "release_publish_preflight.sh" in publish_transaction
+    assert "release_publish_unit.sh" in publish_transaction
+    assert "release_seal_agent_registry_lock.sh" in publish_transaction
+    assert "'publish'" in publish_transaction
+    assert "'deploy'" not in publish_transaction
+    assert "release_publish_unit.sh" not in deploy_transaction
+    assert "release_seal_agent_registry_lock.sh" not in deploy_transaction
+    assert "'deploy'" in deploy_transaction
     assert (
         "git fetch --no-tags origin "
         "+refs/heads/main:refs/remotes/origin/main" in pipeline_helper
@@ -915,9 +940,7 @@ def test_root_jenkins_stage_view_is_compact_and_keeps_internal_checkpoints():
     assert (
         'if [ "${checked_out_commit}" != "${current_main_commit}" ]' in pipeline_helper
     )
-    assert "'publish'" in pipeline_helper and "'deploy'" in pipeline_helper
     assert "'finalize'" not in pipeline_helper
-    assert "release_seal_agent_registry_lock.sh" in pipeline_helper
     build_entrypoint = (
         ROOT / "jenkins/scripts/entrypoints/release_build_publish.sh"
     ).read_text(encoding="utf-8")

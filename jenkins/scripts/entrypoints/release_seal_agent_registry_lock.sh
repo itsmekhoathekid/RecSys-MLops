@@ -12,7 +12,7 @@ publish_count="$(
     --plan "${plan_path}" --phase publish | awk 'NF {count++} END {print count+0}'
 )"
 if [[ "${publish_count}" == "0" ]]; then
-  printf '[DEPLOY] release has no Agent Registry artifacts; lock is not required\n'
+  printf '[PUBLISH] release has no Agent Registry artifacts; lock is not required\n'
   exit 0
 fi
 
@@ -21,4 +21,4 @@ python3 -m jenkins.python.agent_registry_release seal-lock \
   --manifest-dir .ci-deploy/agent-registry-manifests \
   --readback-dir .ci-deploy/agent-registry-readbacks \
   --output .ci-deploy/agent-registry-lock.json
-printf '[DEPLOY] sealed Agent Registry deployment lock\n'
+printf '[PUBLISH] sealed Agent Registry deployment lock\n'

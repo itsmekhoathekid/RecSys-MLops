@@ -542,7 +542,7 @@ def test_release_planner_and_jenkins_use_one_global_plan():
     assert "componentPipeline.detectReleasePlan()" in jenkinsfile
     assert "--plan-output .ci-release-plan.json" in groovy
     assert "release_build_publish.sh .ci-release-plan.json" in groovy
-    assert "deployReleasePlan" in groovy
+    assert "runReleasePlanPhase" in groovy
     assert "runComponentDeployBranches" not in groovy
 
 

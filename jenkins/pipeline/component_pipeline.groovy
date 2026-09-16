@@ -58,7 +58,7 @@ def runSelectedComponentCi(String scriptPath, String extraEnv, int maxParallel) 
   }
 }
 
-def deployReleasePlan(String scriptPath, String extraEnv, String planPath, String phase = 'all') {
+def runReleasePlanPhase(String scriptPath, String extraEnv, String planPath, String phase) {
   def rows = sh(
     returnStdout: true,
     script: "python3 jenkins/python/release_plan.py plan-units --plan '${planPath}' --phase '${phase}'"
@@ -164,6 +164,22 @@ def buildAndPublish() {
       sh 'jenkins/scripts/entrypoints/release_package_artifacts.sh .ci-release-plan.json'
     }
   }
+  if (env.SHOULD_PUBLISH_IMAGES == 'true') {
+    publishRegistryArtifacts()
+  }
+}
+
+def publishRegistryArtifacts() {
+  def commandEnv = "${releaseCommandEnvironment()} PUBLISH_IMAGES='1'"
+  assertDeploySourceIsCurrent()
+  sh "${commandEnv} jenkins/scripts/entrypoints/release_publish_preflight.sh .ci-release-plan.json"
+  runReleasePlanPhase(
+    'jenkins/scripts/entrypoints/release_publish_unit.sh',
+    commandEnv,
+    '.ci-release-plan.json',
+    'publish'
+  )
+  sh "${commandEnv} jenkins/scripts/entrypoints/release_seal_agent_registry_lock.sh .ci-release-plan.json"
 }
 
 def releaseCommandEnvironment() {
@@ -201,9 +217,7 @@ def deployProductionRelease() {
     sh "${commandEnv} jenkins/scripts/entrypoints/release_snapshot.sh .ci-release-plan.json"
     env.DEPLOY_STARTED = 'true'
     try {
-      deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json', 'publish')
-      sh "${commandEnv} jenkins/scripts/entrypoints/release_seal_agent_registry_lock.sh .ci-release-plan.json"
-      deployReleasePlan('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json', 'deploy')
+      runReleasePlanPhase('jenkins/scripts/entrypoints/release_deploy_unit.sh', commandEnv, '.ci-release-plan.json', 'deploy')
       applyOptionalDatahubCutover(commandEnv)
       verifyRelease(commandEnv)
     } catch (Throwable originalFailure) {

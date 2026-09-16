@@ -74,7 +74,7 @@ def test_reset_values_deploy_always_reapplies_non_secret_rotation_manifest():
     assert "mcp_auth_verify_prepare" in runtime
     assert "mcp_auth_continuous_probe.sh" in runtime
     assert "mcp_auth_retirement_gate.sh" in runtime
-    registry = (ROOT / "jenkins/scripts/deploy/agentic/registry.sh").read_text(
+    registry = (ROOT / "jenkins/scripts/deploy/agentic/registry_publish.sh").read_text(
         encoding="utf-8"
     )
     assert 'policy="$(mcp_auth_image_policy "${workload_unit}")"' in registry
@@ -123,7 +123,7 @@ def test_rotation_image_policy_preserves_installed_mcp_digest(
 
 
 def test_registry_and_runtime_resolve_active_workload_instead_of_fixed_slot():
-    registry = (ROOT / "jenkins/scripts/deploy/agentic/registry.sh").read_text(
+    registry = (ROOT / "jenkins/scripts/deploy/agentic/registry_publish.sh").read_text(
         encoding="utf-8"
     )
     smoke = (ROOT / "jenkins/scripts/deploy/agentic/mcp.sh").read_text(encoding="utf-8")
