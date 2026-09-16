@@ -60,7 +60,7 @@ The following diagram presents the **End-to-End ML Platform**. Its core data, tr
 
 The following diagram presents the **End-to-End LLM Platform**. Its core runtime components are documented in [LLM inference](<docs/submission/rubric-final-coursework-(final-llm)/llm_inference_platform.md>), [global model configuration](<docs/submission/rubric-final-coursework-(final-llm)/global_model_config.md>), [RAG](<docs/submission/rubric-final-coursework-(final-llm)/rag.md>), [data-retrieval agents](<docs/submission/rubric-final-coursework-(final-llm)/agent_pull_data.md>), [recommendation agents](<docs/submission/rubric-final-coursework-(final-llm)/agent_recommendation_servicce.md>), [agent coordination](<docs/submission/rubric-final-coursework-(final-llm)/agent_coordinator.md>), and the [Agent Registry](<docs/submission/rubric-final-coursework-(final-llm)/agent_registry.md>). Platform delivery and governance are covered by [CI/CD](<docs/submission/rubric-final-coursework-(final-llm)/ci_cd.md>), [routing and gateway](<docs/submission/rubric-final-coursework-(final-llm)/routing_gateway.md>), [infrastructure as code](<docs/submission/rubric-final-coursework-(final-llm)/iac.md>), [security](<docs/submission/rubric-final-coursework-(final-llm)/security.md>), [observability](<docs/submission/rubric-final-coursework-(final-llm)/observability.md>), [A/B testing](<docs/submission/rubric-final-coursework-(final-llm)/a_b.md>), and [novel ideas](<docs/submission/rubric-final-coursework-(final-llm)/noval_ideas.md>).
 
-![End-to-End LLM Platform Architecture](docs/pngs/15-09-2026-final-llm-with-ab.png)
+![End-to-End LLM Platform Architecture](docs/pngs/final_llm_4k.png)
 
 ### Serving Pipeline High-Level Architecture
 
