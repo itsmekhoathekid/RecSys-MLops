@@ -10,6 +10,7 @@ images:
   pullPolicy: IfNotPresent
 sourcePostgres:
   name: source-postgres
+  replicas: 1
   database: recsys
   user: recsys
   storage: 20Gi

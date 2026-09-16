@@ -536,6 +536,17 @@ def test_chart_only_change_deploys_exact_release_without_fake_component():
     assert result.flags["RUN_COMPONENT_DEPLOY"] is True
 
 
+def test_source_store_chart_change_reconciles_only_its_release():
+    result = detect(["infra/helm/recsys-source-store/values.yaml"])
+
+    assert result.component_names == ()
+    assert result.release_plan["buildImages"] == []
+    assert result.release_plan["deployUnits"] == ["source-store"]
+    assert result.flags["RUN_CI_CONFIG"] is True
+    assert result.flags["RUN_COMPONENT_BUILD"] is False
+    assert result.flags["RUN_COMPONENT_DEPLOY"] is True
+
+
 def test_gateway_chart_change_deploys_gateway_without_rebuilding_inference_api():
     result = detect(["infra/helm/recsys-gateway/templates/rag-ingress.yaml"])
 
