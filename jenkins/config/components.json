@@ -292,7 +292,6 @@
           "apps/data-platform/data-generator/",
           "apps/data-platform/src/ingest/",
           "infra/helm/recsys-data-lakehouse/",
-          "infra/helm/recsys-source-store/",
           "tests/unit/data_generator/"
         ],
         "files": [

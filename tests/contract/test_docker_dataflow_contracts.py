@@ -155,6 +155,19 @@ def test_resource_ownership_matches_release_boundaries():
     assert "name: airflow-scheduler" in rendered["recsys-airflow"]
 
 
+def test_source_postgres_defaults_to_one_replica():
+    documents = list(yaml.safe_load_all(render("recsys-source-store")))
+    source_postgres = next(
+        document
+        for document in documents
+        if isinstance(document, dict)
+        and document.get("kind") == "StatefulSet"
+        and document.get("metadata", {}).get("name") == "source-postgres"
+    )
+
+    assert source_postgres["spec"]["replicas"] == 1
+
+
 def test_event_stream_persists_kafka_and_zookeeper_state():
     documents = list(yaml.safe_load_all(render("recsys-event-stream")))
     by_kind_name = {
