@@ -1,5 +1,7 @@
 # End-to-End E-commerce Recommendation Platform
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 A **production-style, end-to-end recommendation platform** for data engineering, machine learning, deployment, serving, governance, and observability workflows on Kubernetes.
 
 ## 🛍️ Business Domain
@@ -377,3 +379,9 @@ Source: tab **`rubic final-coursework (final -llm)`**.
 | [Repository Design](<docs/submission/rubric-final-coursework-(final-llm)/repository_design.md>) | Clean deployable boundaries and Composition Root/DI, Adapter, Strategy/State, Pipeline, and Composite patterns across the LLM, RAG, MCP, and agentic platform. |
 | [Low-Level ML Design](<docs/submission/rubic-final-coursework-(final-ml)/low_level_ml_design.md>) | Five core ML classes: `TrainingDataService`, `SplitService`, `recommenderDataset`, `BST`, and `ModelLifecycleService`. |
 | [Novel Ideas](<docs/submission/rubric-final-coursework-(final-llm)/noval_ideas.md>) | Agent-level progressive delivery, prompt/model release automation, observability-gated promotion, and registry-aware rollback. |
+
+---
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
